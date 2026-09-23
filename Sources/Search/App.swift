@@ -594,6 +594,10 @@ struct ContentView: View {
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
+        // Nor by its title bar, which the strip is all the way down: AppKit
+        // would move the window on any drag there, a tab picked up to take
+        // it elsewhere in the row included. DragStrip moves it instead.
+        window.isMovable = false
         // Where you left it, at the size you left it. A test run keeps its
         // own: the name lives in the app's standard defaults, which every
         // copy shares, and a probe resized for a test once changed the size
@@ -658,6 +662,10 @@ struct ContentView: View {
                 browser.cancelTabEdit()
                 return true
             }
+            if browser.makingSpace {
+                withAnimation(Motion.glide) { browser.makingSpace = false }
+                return true
+            }
             if browser.tuning {
                 browser.tuning = false
                 return true
@@ -715,6 +723,15 @@ struct ContentView: View {
                 return true
             }
             return false
+        }
+
+        // ⌃1–⌃9 go to that space, when there are spaces — by the key, as
+        // ⌘1–⌘9 are below, so the top row works on every layout.
+        if browser.prefs.usesSpaces, flags.contains(.control),
+           flags.isDisjoint(with: [.command, .option, .shift]),
+           let number = ContentView.digits[event.keyCode], number > 0 {
+            browser.switchSpace(index: number - 1)
+            return true
         }
 
         // A shortcut an extension registered — ⌥⇧D, ⌃⇧Y — before ours, since
@@ -817,6 +834,11 @@ struct ContentView: View {
         case "]":
             shifted ? browser.step(1) : browser.forward()
         default:
+            // Moving or selecting text belongs to the editor, not the page's
+            // history — in web forms and in the browser's own fields alike.
+            guard !shifted, browser.active?.typing != true,
+                  !(event.window?.firstResponder is NSTextView)
+            else { return false }
             // ⌘← and ⌘→, for hands that never learned the brackets.
             if event.keyCode == 123 { browser.back(); return true }
             if event.keyCode == 124 { browser.forward(); return true }

@@ -107,6 +107,20 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// Separate sets of tabs, each with its own sign-ins (see Spaces.swift).
+    /// Off unless asked for.
+    @Published var usesSpaces: Bool {
+        didSet { store.set(usesSpaces, forKey: "spaces") }
+    }
+    /// Inspect Element in a page's right-click menu, the Web Inspector
+    /// Safari shows once its Develop menu is on. Off unless asked for.
+    @Published var inspects: Bool {
+        didSet {
+            store.set(inspects, forKey: "inspector")
+            Web.inspects = inspects
+        }
+    }
+
     init() {
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
@@ -116,8 +130,10 @@ final class Preferences: ObservableObject {
         let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .system
         look = chosen
         // Before the first window, and not deferred: the window that is about
-        // to be made should be made in the right appearance.
-        NSApp.appearance = chosen.appearance
+        // to be made should be made in the right appearance. Through `shared`
+        // rather than `NSApp`: on macOS 14 SwiftUI builds this before it has
+        // made the application, and `NSApp` is still nil here.
+        NSApplication.shared.appearance = chosen.appearance
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
@@ -154,6 +170,10 @@ final class Preferences: ObservableObject {
         // Anyone who already has a session was here before the welcome
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
+        usesSpaces = store.bool(forKey: "spaces")
+        let inspecting = store.bool(forKey: "inspector")
+        inspects = inspecting
+        Web.inspects = inspecting
         let corrects = store.bool(forKey: "autocorrect")
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.

@@ -13,14 +13,23 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Spaces: separate sets of tabs in the one window, each with its own icon and, if you like, its own downloads folder — signed in wherever your other spaces are, or starting afresh with cookies and sign-ins of its own, as you choose when you make it. Turn them on in Settings › Tabs, then switch with ⌃1–⌃9, the space's icon, or two fingers sideways over the column of tabs, where the next space slides in beside this one; past the last, the column offers to make a new one. ([#4](https://github.com/driceroland/Search/issues/4))
+- Web Inspector: turn it on in Settings › General, and Inspect Element is in a page's right-click menu. ([#13](https://github.com/driceroland/Search/issues/13))
 - ⌘S folds the sidebar away and the page takes the whole window; the left edge brings the tabs back out. Thanks [@kndpt](https://github.com/kndpt) ([#7](https://github.com/driceroland/Search/pull/7))
 - A skill that teaches coding agents to drive Search with `./bench`. Thanks [@jasonkneen](https://github.com/jasonkneen) ([#14](https://github.com/driceroland/Search/pull/14))
 
 ### Fixed
 
+- Search opens on macOS 14 again: it quit as it opened, before its window, setting the look chosen in Settings on an application that didn't exist yet.
+- Folded away with ⌘S and brought out at the edge, the column arrives whole: the traffic lights and the pinned tabs come in with it instead of standing there before it.
+- A double-click along the top of the window fills the screen, as a title bar's does: it was answered twice and ended where it started. In the column's mode the page's top edge takes it too, folded away with ⌘S included, where nothing did.
+- ⌘← and ⌘→ move through text while editing; adding Shift selects text instead of navigating away from the page.
+- Extensions that open something inside a page no longer make it reload: signing in to Google with iCloud Passwords installed reloaded the page over and over, and every Vimium key that opens its bar or its link hints reloaded the page. Such a panel now gets the same answers from the browser as in Chrome. ([#2](https://github.com/driceroland/Search/issues/2))
+- Dragging a tab to put it elsewhere in the row across the top moves the tab, not the whole window, and a tab being dragged stays under the pointer as it passes the others, in the column too.
 - A fresh install follows the Mac's appearance: on a Mac set to dark the browser and its pages start out dark, instead of always starting light.
 - The address field on a new tab holds still while its suggestions appear under it, instead of jumping up. Thanks [@fschrhunt](https://github.com/fschrhunt) ([#16](https://github.com/driceroland/Search/pull/16))
 - 1Password's Sign in button works: an extension's page can send its tab to a website again, where it used to do nothing.
+- A video in the floating window costs no more to play than in its tab. The window's shadow made WindowServer composite every frame; it has none now. ([#33](https://github.com/driceroland/Search/issues/33))
 - Tab moves between a form's fields again, as in every browser; ⌃Tab and ⌃⇧Tab switch tabs.
 - ⌘1–⌘9 (and ⌘0 to reset the zoom) work on every keyboard layout, AZERTY included: they follow the key, not the character it types.
 - A private tab now leaves nothing behind: it no longer shows up in Recently Closed. Thanks [@yuxino](https://github.com/yuxino) ([#6](https://github.com/driceroland/Search/pull/6))

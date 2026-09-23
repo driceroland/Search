@@ -16,9 +16,19 @@ enum Session {
         var active: Int
     }
 
-    private static var file: URL { Store.file("session.json") }
+    /// The first space's is the session there always was; each other space
+    /// keeps its own beside it.
+    private static func file(_ space: UUID) -> URL {
+        Store.file(space == Space.firstID ? "session.json" : "session-\(space.uuidString).json")
+    }
 
-    static func read() -> Shape {
+    static func erase(space: UUID) {
+        guard space != Space.firstID else { return }
+        try? FileManager.default.removeItem(at: file(space))
+    }
+
+    static func read(space: UUID = Space.firstID) -> Shape {
+        let file = file(space)
         guard let data = try? Data(contentsOf: file) else { return Shape(tabs: [], active: 0) }
         guard let shape = try? JSONDecoder().decode(Shape.self, from: data) else {
             // A file that's there but won't decode is not the same as no
@@ -33,8 +43,8 @@ enum Session {
     /// `now` writes on the calling thread. Quitting doesn't wait for a
     /// background queue, and a session handed to one on the way out is a
     /// session that may never reach the disk.
-    static func write(now: Bool = false, _ shape: Shape) {
-        let file = Session.file
+    static func write(now: Bool = false, space: UUID = Space.firstID, _ shape: Shape) {
+        let file = file(space)
         let put = {
             guard let data = try? JSONEncoder().encode(shape) else { return }
             try? FileManager.default.createDirectory(

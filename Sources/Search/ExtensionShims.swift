@@ -199,6 +199,18 @@ enum ExtensionShims {
       // On a web page this is a content script: only Chrome's behaviour is
       // mended there, no API that Chrome doesn't give content scripts either.
       const inContent = typeof location !== "undefined" && !/^(chrome|webkit)-extension:$/.test(location.protocol);
+      // One of the extension's pages in a frame of a website — Vimium's bar,
+      // the list iCloud Passwords opens under a field. WebKit runs it in the
+      // website's process, which it trusts with no more than a content
+      // script: a single call to tabs, windows, scripting… and WebKit takes
+      // the process for compromised and ends it. The page reloads, and a
+      // frame that makes the call as it loads reloads it for ever. Chrome
+      // gives such a frame everything, so here the worker makes those calls
+      // for it (see `__searchCall`).
+      const embedded = !inContent && typeof window !== "undefined" && window.top !== window && (() => {
+        try { const a = location.ancestorOrigins; if (a && a.length) return [...a].some((o) => o !== location.origin); } catch (e) {}
+        try { return window.top.location.origin !== location.origin; } catch (e) { return true; }
+      })();
       const runtime = chrome.runtime;
 
       // WebKit's objects are kept — WebKit finds an extension's listeners
@@ -341,6 +353,22 @@ enum ExtensionShims {
             const route = root.__searchUserScriptMessage;
             return route && route(message.message, sender, sendResponse) && !settled ? true : undefined;
           }
+          // A call one of the extension's pages in a website's frame can't
+          // make itself (see `embedded`), made here for it — and only for
+          // one of its pages: a content script gets no more than Chrome
+          // gives it.
+          if (message && message.__searchCall) {
+            if (!background) return true;
+            const { space, method, args } = message.__searchCall;
+            const own = (() => { try { return new URL(sender.url).origin === location.origin; } catch (e) { return false; } })();
+            if (!own) { sendResponse({ error: "chrome." + space + " isn't available to content scripts" }); return; }
+            if (space === "tabs" && method === "getCurrent") { sendResponse({ value: sender.tab }); return; }
+            let ns; try { ns = chrome[space]; } catch (e) {}
+            if (!ns || typeof ns[method] !== "function") { sendResponse({ error: "chrome." + space + "." + method + " isn't available" }); return; }
+            Promise.resolve().then(() => ns[method](...(args || [])))
+              .then((value) => sendResponse({ value }), (e) => sendResponse({ error: String(e && e.message || e) }));
+            return true;
+          }
           for (const listener of [...listeners]) {
             let result;
             try { result = listener(message, sender, sendResponse); } catch (e) { setTimeout(() => { throw e; }); continue; }
@@ -374,6 +402,56 @@ enum ExtensionShims {
         if (background) { attached = true; add(dispatch); }
       };
       if (inContent) return;
+
+      // In a website's frame, everything WebKit keeps to the extension's own
+      // process goes through the worker instead. What stays direct is what
+      // WebKit lets a content script call too. Namespaces the shim adds
+      // itself further down answer through the browser, which is allowed.
+      if (embedded) {
+        const direct = new Set(["runtime", "storage", "i18n", "extension", "permissions", "dom", "test"]);
+        const ask = (space, method, args) => {
+          while (args.length && args[args.length - 1] === undefined) args.pop();
+          let payload;
+          try { payload = JSON.parse(JSON.stringify(args)); } catch (e) { return Promise.reject(e); }
+          return Promise.resolve(chrome.runtime.sendMessage({ __searchCall: { space, method, args: payload } })).then((reply) => {
+            if (!reply) throw new Error("chrome." + space + "." + method + " had no answer from the extension's background");
+            if (reply.error) throw new Error(reply.error);
+            return reply.value;
+          });
+        };
+        for (const space of spaces) {
+          if (direct.has(space)) continue;
+          let ns; try { ns = chrome[space]; } catch (e) { continue; }
+          if (!ns || typeof ns !== "object") continue;
+          const names = new Set();
+          for (let o = ns; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) Object.getOwnPropertyNames(o).forEach((k) => names.add(k));
+          for (const name of names) {
+            if (name === "constructor" || /^on[A-Z]/.test(name)) continue;
+            let f; try { f = ns[name]; } catch (e) { continue; }
+            if (typeof f !== "function") continue;
+            // A port can't be carried over: one that closes at once, as
+            // Chrome's does when nothing answers, rather than a dead process.
+            if (name === "connect") {
+              put(ns, name, (...args) => {
+                const port = { name: (args.find((a) => a && typeof a === "object") || {}).name || "", sender: undefined,
+                  postMessage: () => {}, disconnect: () => {}, onMessage: event(), onDisconnect: event() };
+                setTimeout(() => {
+                  put(runtime, "lastError", { message: "Could not establish connection. Receiving end does not exist." });
+                  try { for (const f of [...port.onDisconnect.listeners]) f(port); } finally { try { delete runtime.lastError; } catch (e) {} }
+                });
+                return port;
+              });
+              continue;
+            }
+            put(ns, name, (...args) => {
+              const callback = args.length && typeof args[args.length - 1] === "function" ? args.pop() : null;
+              const answer = ask(space, name, args);
+              if (!callback) return answer;
+              answer.then((value) => callback(value), (error) => withLastError(error, callback));
+            });
+          }
+        }
+      }
 
       // WebKit unloads an extension's worker after half a minute idle, and
       // starts it again for an event only if it remembers a listener for
@@ -677,7 +755,9 @@ enum ExtensionShims {
             return !!a.default_popup && new URL(a.default_popup, location.origin + "/").pathname === location.pathname;
           } catch (e) { return false; }
         })();
-        if (chrome.tabs && typeof chrome.tabs.getCurrent === "function") {
+        // Not in a website's frame: never the popup, and asking costs the
+        // worker a message for every frame the extension opens.
+        if (!embedded && chrome.tabs && typeof chrome.tabs.getCurrent === "function") {
           const getCurrent = chrome.tabs.getCurrent.bind(chrome.tabs);
           const current = () => Promise.resolve(getCurrent()).then((t) => {
             if (t && !(t.index >= 0 && t.index < 1e6)) { popup = true; return undefined; }

@@ -23,6 +23,10 @@ struct SideBar: View {
     /// A pin, picked up out of the grid — a separate state from the loose
     /// rows above, since the two gestures never happen at once but move on
     /// two different axes.
+    /// The neighbouring spaces' own grey, apart from this one's.
+    @Namespace private var before
+    @Namespace private var after
+
     @State private var pinDragging: Tab.ID?
     @State private var pinFrom = 0
     @State private var pinTravel: CGSize = .zero
@@ -34,7 +38,9 @@ struct SideBar: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            DragStrip(reserved: 0, below: rowsEnd)
+            // Not under the card for a new space: it isn't made of views that
+            // would take the click first.
+            DragStrip(reserved: 0, below: browser.makingSpace ? .greatestFiniteMagnitude : rowsEnd)
 
             // The band the lights sit in is this mode's title bar: the window
             // is dragged by it and a double-click fills the screen with it,
@@ -62,13 +68,10 @@ struct SideBar: View {
                 }
                 .frame(height: Metrics.strip)
 
-                if browser.pinnedCount > 0 {
-                    pinned
-                        .padding(.bottom, 10)
-                }
-
-                loose
-                newTab
+                // The spaces side by side, as pages: two fingers sideways move
+                // the one on screen and the next one together, the next one
+                // coming in as this one goes, with nothing between them.
+                pages
 
                 Spacer(minLength: 0)
             }
@@ -81,6 +84,9 @@ struct SideBar: View {
         }
         .frame(width: prefs.sideWidth)
         .frame(maxHeight: .infinity)
+        // Rows on their way to or from another space stay in the column.
+        .clipped()
+        .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background(landing ? Palette.hover : Palette.ground)
         .overlay(alignment: .trailing) {
             Rectangle().fill(Palette.hairline).frame(width: 1)
@@ -124,6 +130,98 @@ struct SideBar: View {
             .animation(Motion.quick, value: onEdge)
     }
 
+    // MARK: - the spaces, as pages
+
+    /// Where the space on screen sits among them: one past the last while
+    /// the card for a new one is up.
+    private var spaceAt: Int {
+        browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
+    }
+
+    private var pages: some View {
+        let width = prefs.sideWidth
+        let swipe = browser.spaceSwipe
+        let at = spaceAt
+        return ZStack(alignment: .topLeading) {
+            page(at, pill: pill)
+                .offset(x: swipe)
+            // Only while the fingers are bringing one in: the one they are
+            // bringing, a page's width away.
+            if swipe > 0, at > 0 {
+                page(at - 1, pill: before)
+                    .offset(x: swipe - width)
+            }
+            if swipe < 0, at < browser.spaces.count {
+                page(at + 1, pill: after)
+                    .offset(x: swipe + width)
+            }
+        }
+        // The pages are the column's whole width, each with its own margin.
+        .padding(.horizontal, -10)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// One space's page: the rows on screen, another space's rows as they
+    /// were left, or past the last the card for a new one.
+    @ViewBuilder
+    private func page(_ index: Int, pill: Namespace.ID) -> some View {
+        Group {
+            if index == browser.spaces.count {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    NewSpaceCard(browser: browser)
+                    Spacer(minLength: 0)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxHeight: .infinity)
+            } else if browser.spaces[index].id == browser.spaceID {
+                VStack(alignment: .leading, spacing: 0) {
+                    if browser.pinnedCount > 0 {
+                        pinned
+                            .padding(.bottom, 10)
+                    }
+                    loose
+                    newTab
+                }
+            } else {
+                preview(browser.parked[browser.spaces[index].id] ?? Parked(tabs: [], active: nil), pill: pill)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(width: prefs.sideWidth, alignment: .topLeading)
+    }
+
+    /// Another space's rows, drawn with the same pieces as this one's so the
+    /// two read as one column while they pass — and nothing to press until
+    /// it is the one on screen.
+    private func preview(_ row: Parked, pill: Namespace.ID) -> some View {
+        let pins = row.tabs.filter { $0.pin != nil }
+        let rest = row.tabs.filter { $0.pin == nil }
+        let cols = SideBar.pinColumns(pins.count)
+        let width = pinWidth(for: pins.count)
+        let height = min(SideBar.square, width)
+        return VStack(alignment: .leading, spacing: 0) {
+            if !pins.isEmpty {
+                VStack(spacing: 0) {
+                    PinGrid(columns: cols, width: width, height: height, spacing: SideBar.pinGap) {
+                        ForEach(pins) { tab in
+                            PinSquare(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
+                                      pill: pill, width: width, height: height)
+                        }
+                    }
+                }
+                .padding(.bottom, 10)
+            }
+            VStack(spacing: SideBar.gap) {
+                ForEach(rest) { tab in
+                    SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active, pill: pill, close: {})
+                }
+            }
+            newTab
+        }
+        .allowsHitTesting(false)
+    }
+
     /// Where the rows stop and the window's own drag area starts. Added up
     /// from what was drawn rather than measured: a measurement would arrive a
     /// frame late, and for one frame the whole column would drag the window.
@@ -155,8 +253,10 @@ struct SideBar: View {
     /// width between them — the row is what fills edge to edge, not each
     /// cell on its own, so this grows past 34 just as readily as it shrinks
     /// below it.
-    private var pinWidth: CGFloat {
-        let cols = SideBar.pinColumns(browser.pinnedCount)
+    private var pinWidth: CGFloat { pinWidth(for: browser.pinnedCount) }
+
+    private func pinWidth(for count: Int) -> CGFloat {
+        let cols = SideBar.pinColumns(count)
         guard cols > 0 else { return SideBar.square }
         let available = prefs.sideWidth - 20 - CGFloat(cols - 1) * SideBar.pinGap
         return max(20, available / CGFloat(cols))
@@ -178,12 +278,11 @@ struct SideBar: View {
         let cols = SideBar.pinColumns(tabs.count)
         let width = pinWidth
         let height = pinHeight
-        let columns = Array(repeating: GridItem(.fixed(width), spacing: SideBar.pinGap), count: cols)
         // Measured in the grid's own space, not the square's: a square that
         // has just been moved to a new cell would otherwise report the drag
         // from where it now is, the target would jump back, and the square
         // would shuttle between two cells for as long as the finger stayed.
-        return VStack(spacing: 0) { LazyVGrid(columns: columns, alignment: .leading, spacing: SideBar.pinGap) {
+        return VStack(spacing: 0) { PinGrid(columns: cols, width: width, height: height, spacing: SideBar.pinGap) {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
                 let held = pinDragging == tab.id
                 PinSquare(
@@ -196,6 +295,8 @@ struct SideBar: View {
                     height: height
                 )
                 .offset(pinOffset(held: held, index: index, columns: cols))
+                // Under the hand exactly, as a row is (see the rows below).
+                .transaction { if held { $0.animation = nil } }
                 .zIndex(held ? 1 : 0)
                 .shadow(color: .black.opacity(held ? 0.16 : 0), radius: 10, y: 3)
                 .gesture(pinReorder(tab: tab, index: index, columns: cols, width: width, height: height))
@@ -281,6 +382,12 @@ struct SideBar: View {
                     close: { browser.close(tab) }
                 )
                 .offset(y: held ? travel - CGFloat(index - from) * step : 0)
+                // Under the hand exactly. Its place in the row springs when it
+                // passes another tab, and the offset springs back the same way —
+                // until the next move of the hand cuts the offset's spring short
+                // and leaves the place's running: the tab jumped a whole slot and
+                // drifted back each time it passed one. Only the others glide.
+                .transaction { if held { $0.animation = nil } }
                 .zIndex(held ? 1 : 0)
                 .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
                 .gesture(reorder(tab: tab, index: index, step: step))
@@ -324,6 +431,7 @@ struct SideBar: View {
     /// One small door at the bottom: the settings.
     private var foot: some View {
         HStack(spacing: 2) {
+            if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
             ExtensionSlot(edge: .trailing)
             Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
                 .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .trailing) {
@@ -335,6 +443,38 @@ struct SideBar: View {
         .padding(.bottom, 10)
     }
 
+}
+
+/// The pinned squares' grid, every cell laid out at once. A lazy grid makes
+/// its cells only once the column is on screen, where the column's slide
+/// can't take them along: folded with ⌘S and brought back, the squares stood
+/// in place while the column came in beneath them. A dozen squares need no
+/// laziness.
+private struct PinGrid: Layout {
+    let columns: Int
+    let width: CGFloat
+    let height: CGFloat
+    let spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = (subviews.count + columns - 1) / columns
+        return CGSize(
+            width: CGFloat(columns) * width + CGFloat(max(0, columns - 1)) * spacing,
+            height: CGFloat(rows) * height + CGFloat(max(0, rows - 1)) * spacing
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (index, subview) in subviews.enumerated() {
+            subview.place(
+                at: CGPoint(
+                    x: bounds.minX + CGFloat(index % columns) * (width + spacing),
+                    y: bounds.minY + CGFloat(index / columns) * (height + spacing)
+                ),
+                proposal: ProposedViewSize(width: width, height: height)
+            )
+        }
+    }
 }
 
 /// A pinned tab as a cell in the block at the top of the column — as wide as

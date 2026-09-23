@@ -162,7 +162,7 @@ struct WelcomePanel: View {
             .animation(Motion.settle, value: isDefault)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Three things worth knowing")
+                Text("A few things worth knowing")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.faint)
                     .textCase(.uppercase)
@@ -171,6 +171,7 @@ struct WelcomePanel: View {
                 Key("⌘T", "A new tab. Type a place, or words to search.")
                 Key("⌘K", "Every open tab, by name.")
                 Key("⌘,", "Settings, including passwords and updates.")
+                Key("⌃1", "Spaces: separate tabs and sign-ins. Turn them on in Settings › Tabs.")
             }
         }
     }

@@ -261,9 +261,14 @@ struct DragStrip: NSViewRepresentable {
         var below: CGFloat = 0
         var trailing: CGFloat = 0
 
-        private var grab = NSPoint.zero
-        private var origin = NSPoint.zero
+        private var pressed: NSEvent?
         private var moved = false
+
+        /// The strip moves the window and answers the double-click itself.
+        /// Left to say yes, AppKit takes both on too in the title bar the
+        /// strip sits in, and a double-click answered twice — by AppKit on
+        /// the press, here on the release — ends where it started.
+        override var mouseDownCanMoveWindow: Bool { false }
 
         override func hitTest(_ point: NSPoint) -> NSView? {
             let inside = convert(point, from: superview)
@@ -274,21 +279,24 @@ struct DragStrip: NSViewRepresentable {
         }
 
         override func mouseDown(with event: NSEvent) {
-            guard let window else { return }
-            grab = NSEvent.mouseLocation
-            origin = window.frame.origin
+            pressed = event
             moved = false
         }
 
+        /// The window is not movable on its own (see dress in App.swift): a tab
+        /// picked up in the strip would carry the window off with it. Here
+        /// it is let go for the one drag, handed to the system's own window
+        /// drag so it snaps and tiles as any window does.
         override func mouseDragged(with event: NSEvent) {
-            guard let window else { return }
-            let now = NSEvent.mouseLocation
-            let dx = now.x - grab.x
-            let dy = now.y - grab.y
+            guard let window, let pressed, !moved else { return }
+            let dx = event.locationInWindow.x - pressed.locationInWindow.x
+            let dy = event.locationInWindow.y - pressed.locationInWindow.y
             // A little slack, so a shaky click is still a click.
-            if !moved && abs(dx) < 3 && abs(dy) < 3 { return }
+            if abs(dx) < 3 && abs(dy) < 3 { return }
             moved = true
-            window.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy))
+            window.isMovable = true
+            window.performDrag(with: pressed)
+            window.isMovable = false
         }
 
         /// A double-click does what a title bar's does. It answered every
