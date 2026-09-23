@@ -32,7 +32,7 @@
     ./bench ext-enable ID on|off       switch an extension on or off
     ./bench ext-remove ID
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
-                                       look light|dark|system, sidebar on|off, folded on|off, peek on|off
+                                       look light|dark|system, sidebar/tint/folded/peek on|off
 
 Needs Settings › General › "Let a script drive Search" switched on in the
 running app. IDs are the first characters of a tab's id, as `tabs` prints

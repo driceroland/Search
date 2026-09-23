@@ -62,6 +62,8 @@ final class PageTint {
     private var found: [String: NSColor] = [:]
     private var snapshotted: Set<String> = []
     private var pending: DispatchWorkItem?
+    /// Reject snapshots from a document that has already been replaced.
+    private var generation = 0
     /// Runs while the last page's color is held for a new page; ends the hold if it never reports.
     private var kept: DispatchWorkItem?
     /// Whether a new page has yet to say what it shows. Until it does, or the hold runs out, the strip
@@ -120,6 +122,7 @@ final class PageTint {
     /// first report, which comes with its first frames, or for `hold` if none comes: long within a
     /// site, where the header is usually the same, short when leaving it.
     func reset(holding hold: TimeInterval) {
+        generation += 1
         cancelPending()
         kept?.cancel()
         (undecided, found, snapshotted) = (nil, [:], [])
@@ -155,8 +158,9 @@ final class PageTint {
         guard let element = undecided, isShown() else { return }
         if isLoading() { return schedule() }
         snapshotted.insert(element)
+        let current = generation
         snapshot { [weak self] color in
-            guard let self, let color else { return }
+            guard let self, self.generation == current, let color else { return }
             found[element] = color
             // Only shown if that element still decides the edge; otherwise it waits for its return.
             if element == undecided { show(color) }
@@ -170,7 +174,7 @@ final class TintRouter: NSObject, WKScriptMessageHandler {
     static let name = "tint"
     weak var tab: Tab?
 
-    /// Reads the page's top edge and reports a color to the native tint controller.
+    /// Reads the page's top edge while tint is enabled and reports a color to the native tint controller.
     static let script = #"""
     // Works out which color the strip should take, from styles alone, painting nothing.
     //
@@ -228,6 +232,9 @@ final class TintRouter: NSObject, WKScriptMessageHandler {
     //
     // Reports go to the message handler named "tint"; see TintRouter in PageTint.swift.
     (() => {
+        // The preference is supplied before this script runs; an existing page can be toggled later.
+        let enabled = globalThis.pageTintEnabled === true;
+        delete globalThis.pageTintEnabled;
         const painted = /^(IMG|VIDEO|CANVAS|PICTURE|SVG|IFRAME|EMBED|OBJECT)$/i;
         const edgeProperty = /^(background|opacity|transform|visibility|height|top)/;
         const blurred = /blur\((?!0(px)?\))/;
@@ -465,6 +472,7 @@ final class TintRouter: NSObject, WKScriptMessageHandler {
         // What is pinned is looked up afresh each time: a header that only becomes fixed once the
         // page scrolls must not stay remembered as loose.
         function read() {
+            if (!enabled) return;
             clearTimeout(readTimer);
             readTimer = 0;
             readAt = performance.now();
@@ -497,6 +505,7 @@ final class TintRouter: NSObject, WKScriptMessageHandler {
         // frame of a scroll: which elements are at the middle of the edge, and the styles of the ones
         // the last read walked through. A running transition counts as one state, not sixty.
         function glance() {
+            if (!enabled) return '';
             return document.elementsFromPoint(innerWidth >> 1, 1).slice(0, 6).map(number).join(',') + '|' + watched.map(element => {
                 const style = getComputedStyle(element), moving = element.getAnimations ? element.getAnimations().length : 0;
                 return (moving ? 'moving' + moving : style.backgroundColor + style.opacity + style.backgroundImage.slice(0, 160)) + style.position;
@@ -510,6 +519,7 @@ final class TintRouter: NSObject, WKScriptMessageHandler {
         // change are followed by changes that come with no event; watching frames catches them in the
         // frame they are drawn, where a timer would be late or early. Frames stop while a page is hidden.
         function watchFrames(ms) {
+            if (!enabled) return;
             watchUntil = Math.max(watchUntil, performance.now() + ms);
             if (!frame) frame = requestAnimationFrame(tick);
         }
@@ -521,6 +531,7 @@ final class TintRouter: NSObject, WKScriptMessageHandler {
         }
 
         function request(settle) {
+            if (!enabled) return;
             if (!readTimer) readTimer = setTimeout(read, Math.max(0, 100 - (performance.now() - readAt)));
             if (!settle) return;
             clearTimeout(settleTimer);
@@ -529,6 +540,7 @@ final class TintRouter: NSObject, WKScriptMessageHandler {
 
         // Something happened that pages answer by changing, a little later and with no event.
         function expectChange() {
+            if (!enabled) return;
             listenLast();
             watchFrames(1000);
             followUps.forEach(clearTimeout);
@@ -570,13 +582,30 @@ final class TintRouter: NSObject, WKScriptMessageHandler {
             if (!document.hidden && missed) { missed = false; expectChange(); }
         });
         globalThis.readPageTint = () => { request(true); expectChange(); };
-        // The first frames of a page decide what the strip shows as it appears.
-        watchFrames(3000);
+        globalThis.setPageTintEnabled = on => {
+            if (enabled === on) return;
+            enabled = on;
+            if (on) {
+                last = undefined;
+                read();
+                expectChange();
+            } else {
+                clearTimeout(readTimer);
+                clearTimeout(settleTimer);
+                followUps.forEach(clearTimeout);
+                cancelAnimationFrame(frame);
+                readTimer = settleTimer = frame = 0;
+                followUps = [];
+            }
+        };
+        // The first frames of an enabled page decide what the strip shows as it appears.
+        if (enabled) watchFrames(3000);
     })();
     """#
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let report = message.body as? String, message.webView === tab?.built else { return }
+        guard Store.settings.bool(forKey: "tabs.tint"),
+              let report = message.body as? String, message.webView === tab?.built else { return }
         tab?.pageTint.report(report)
     }
 }

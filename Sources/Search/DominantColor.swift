@@ -9,9 +9,10 @@ enum DominantColor {
         let samples = 32
         var pixels = [UInt8](repeating: 0, count: samples * 4)
         guard
+            let space = CGColorSpace(name: CGColorSpace.sRGB),
             let context = CGContext(
                 data: &pixels, width: samples, height: 1, bitsPerComponent: 8, bytesPerRow: samples * 4,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                space: space,
                 bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
         else { return nil }
         context.interpolationQuality = .medium

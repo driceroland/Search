@@ -271,6 +271,11 @@ final class Tab: ObservableObject, Identifiable {
         updateTint()
     }
 
+    /// Start or stop reading this tab's current page when the setting changes.
+    func setTintEnabled(_ enabled: Bool) {
+        built?.evaluateJavaScript("globalThis.setPageTintEnabled?.(\(enabled))", in: nil, in: .defaultClient) { _ in }
+    }
+
     private var watch: [NSKeyValueObservation] = []
 
     /// A tab that has never been anywhere shows the address field instead of a
@@ -436,7 +441,8 @@ final class Tab: ObservableObject, Identifiable {
             WKUserScript(source: StoreRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
         controller.addUserScript(WKUserScript(
-            source: TintRouter.script, injectionTime: .atDocumentStart,
+            source: "globalThis.pageTintEnabled = \(Store.settings.bool(forKey: "tabs.tint"));\n" + TintRouter.script,
+            injectionTime: .atDocumentStart,
             forMainFrameOnly: true, in: .defaultClient
         ))
         if !FormRelay.passkeysOffered {

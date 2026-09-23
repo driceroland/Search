@@ -5,10 +5,11 @@ import SwiftUI
 struct TintedTabBar: View {
     @ObservedObject var tab: Tab
     @ObservedObject var browser: Browser
+    @ObservedObject var prefs: Preferences
 
     @ViewBuilder
     var body: some View {
-        if browser.prefs.pageTint, let tint = tab.tint {
+        if prefs.pageTint, let tint = tab.tint {
             TabBar(browser: browser)
                 .background(Color(nsColor: tint).animation(fade, value: tint))
                 .environment(\.colorScheme, scheme(for: tint))

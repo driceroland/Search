@@ -282,7 +282,10 @@ struct ContentView: View {
 
             if !browser.prefs.sidebar, browser.active?.immersed != true {
                 if let tab = browser.active {
-                    TintedTabBar(tab: tab, browser: browser)
+                    TintedTabBar(tab: tab, browser: browser, prefs: browser.prefs)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                } else {
+                    TabBar(browser: browser)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
@@ -383,6 +386,9 @@ struct ContentView: View {
             .background(WindowSetup { window = $0; dress($0) })
             .onChange(of: browser.prefs.sidebar) { _, _ in
                 DispatchQueue.main.async { measureLights() }
+            }
+            .onChange(of: browser.prefs.pageTint) { _, on in
+                for tab in browser.tabs { tab.setTintEnabled(on) }
             }
             // Stepping away to another app: macOS draws its own resting
             // buttons, and on a light window they come out nearly white. Ours
