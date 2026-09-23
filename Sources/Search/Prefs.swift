@@ -110,10 +110,10 @@ final class Preferences: ObservableObject {
     init() {
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
-        // Light unless asked otherwise — the browser was only ever light
-        // before this was a choice.
+        // The Mac's own unless asked otherwise — a Mac in dark mode expects
+        // a dark browser, pages included.
         bench = store.bool(forKey: "bench")
-        let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .light
+        let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .system
         look = chosen
         // Before the first window, and not deferred: the window that is about
         // to be made should be made in the right appearance.

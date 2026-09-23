@@ -18,6 +18,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A fresh install follows the Mac's appearance: on a Mac set to dark the browser and its pages start out dark, instead of always starting light.
 - The address field on a new tab holds still while its suggestions appear under it, instead of jumping up. Thanks [@fschrhunt](https://github.com/fschrhunt) ([#16](https://github.com/driceroland/Search/pull/16))
 - 1Password's Sign in button works: an extension's page can send its tab to a website again, where it used to do nothing.
 - Tab moves between a form's fields again, as in every browser; ⌃Tab and ⌃⇧Tab switch tabs.
