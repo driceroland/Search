@@ -554,18 +554,37 @@ final class Browser: NSObject, ObservableObject {
     /// form, ready to be changed.
     @Published private(set) var editingTab: Tab.ID?
     @Published var tabDraft = ""
+    /// Set while that field is being used to name the tab rather than to go
+    /// somewhere: the same field, the same keys, a different thing at the end.
+    @Published private(set) var renamingTab = false
 
     func beginTabEdit(_ tab: Tab) {
         guard let url = tab.address else {
             edit()
             return
         }
+        renamingTab = false
         tabDraft = Address.pretty(url)
+        editingTab = tab.id
+    }
+
+    /// Rename. The name the tab is wearing arrives selected, so typing
+    /// replaces it; emptying the field gives the page its own title back.
+    func beginTabRename(_ tab: Tab) {
+        renamingTab = true
+        tabDraft = tab.label
         editingTab = tab.id
     }
 
     func commitTabEdit() {
         guard let id = editingTab, let tab = tabs.first(where: { $0.id == id }) else { return }
+        if renamingTab {
+            let typed = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            tab.name = typed.isEmpty ? nil : typed
+            cancelTabEdit()
+            writeSession(now: true)
+            return
+        }
         guard let url = Google.destination(for: tabDraft) else {
             // Stay put and say so, rather than quietly throwing the edit away.
             refusals += 1
@@ -577,6 +596,7 @@ final class Browser: NSObject, ObservableObject {
 
     func cancelTabEdit() {
         editingTab = nil
+        renamingTab = false
         tabDraft = ""
     }
 
@@ -750,7 +770,7 @@ final class Browser: NSObject, ObservableObject {
             guard let url = URL(string: entry.url) else { continue }
             let tab = Tab()
             prepare(tab)
-            tab.restore(url: url, title: entry.title)
+            tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
             tabs.append(tab)
         }
@@ -868,7 +888,9 @@ final class Browser: NSObject, ObservableObject {
                     guard let url = tab.pending ?? tab.address,
                           url.scheme?.hasPrefix("http") == true
                     else { return nil }
-                    return Session.Entry(url: url.absoluteString, title: tab.title, pin: tab.pin)
+                    return Session.Entry(
+                        url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name
+                    )
                 },
                 active: tabs.firstIndex { $0.id == activeID } ?? 0
             )

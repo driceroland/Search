@@ -243,6 +243,11 @@ final class Tab: ObservableObject, Identifiable {
     /// is all you need for the five or six pages you keep open all day.
     @Published var pin: String?
 
+    /// A name you gave it, in place of whatever the page calls itself. It
+    /// stays through navigation: a tab you named is a tab you are keeping for
+    /// a job, not for a page.
+    @Published var name: String?
+
     /// When you last looked at it. The summon lists pages by this, because
     /// what you were just reading is what you are most likely to want back.
     private(set) var touched = Date()
@@ -273,6 +278,7 @@ final class Tab: ObservableObject, Identifiable {
     /// that says nothing at all for the first second of every load is a tab you
     /// can't find your way back to.
     var label: String {
+        if let name, !name.isEmpty { return name }
         if !title.isEmpty { return title }
         if let address { return Address.pretty(address) }
         return "New Tab"
@@ -583,9 +589,10 @@ final class Tab: ObservableObject, Identifiable {
 
     /// Brought back from the last session: everything the row needs to draw it,
     /// and nothing fetched.
-    func restore(url: URL, title: String) {
+    func restore(url: URL, title: String, name: String? = nil) {
         address = url
         self.title = title
+        self.name = name
         pending = url
         adoptIcon()
     }

@@ -113,6 +113,8 @@ struct SearchApp: App {
                         Button("Unpin Tab") { browser.unpin(tab) }
                     }
                 }
+                Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
+                    .disabled(browser.active == nil)
                 Button("Duplicate Tab") { browser.duplicate() }
                     .keyboardShortcut("d")
                     .disabled(browser.active?.isBlank ?? true)
