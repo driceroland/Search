@@ -670,11 +670,13 @@ private struct SideRow: View {
         if live {
             ZStack(alignment: .leading) {
                 Rectangle().fill(Palette.wash)
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(Palette.ink.opacity(0.055))
-                        .frame(width: geo.size.width * tab.reading)
-                        .animation(.easeOut(duration: 0.15), value: tab.reading)
+                if prefs.showsReading {
+                    GeometryReader { geo in
+                        Rectangle()
+                            .fill(Palette.ink.opacity(0.055))
+                            .frame(width: geo.size.width * tab.reading)
+                            .animation(.easeOut(duration: 0.15), value: tab.reading)
+                    }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))

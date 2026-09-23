@@ -30,7 +30,9 @@ in [ROADMAP.md](ROADMAP.md).
 - Web Inspector: Inspect Element in a page's right-click menu, and in the View menu the inspector (⌥⌘I), the JavaScript console (⌥⌘J) and picking an element (⌥⌘C), the keys Chrome and Arc use. ([#13](https://github.com/driceroland/Search/issues/13))
 - ⌘S folds the sidebar away and the page takes the whole window; the left edge brings the tabs back out. Thanks [@kndpt](https://github.com/kndpt) ([#7](https://github.com/driceroland/Search/pull/7))
 - Search with something other than Google: Settings › General › Search with offers DuckDuckGo, Bing, Ecosia, Startpage and Kagi, or any address with `%s` where the words go. Google stays the default. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#43](https://github.com/driceroland/Search/issues/43))
+- The grey that fills the tab you're on as you read down the page can be turned off: Settings › Tabs › Show how far you've read. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#57](https://github.com/driceroland/Search/pull/57))
 - A skill that teaches coding agents to drive Search with `./bench`. Thanks [@jasonkneen](https://github.com/jasonkneen) ([#14](https://github.com/driceroland/Search/pull/14))
+- Extensions can be pinned to the toolbar from Settings › Extensions, not just from the puzzle-piece menu.
 - An address bar above the page while the tabs are in the sidebar, as in Arc's developer mode: back, forward, reload, the site and the page's title. Click the site for whether the connection is secure (and, a step in, the certificate), copying the address, printing and zoom; click the title to go somewhere else. Settings › Tabs › Address bar above the page. ([#15](https://github.com/driceroland/Search/issues/15))
 
 ### Fixed

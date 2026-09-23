@@ -700,6 +700,10 @@ struct ContentView: View {
                 browser.managing = false
                 return true
             }
+            if browser.recalling {
+                browser.recalling = false
+                return true
+            }
             if browser.suggesting != nil {
                 browser.dropChoice()
                 return true

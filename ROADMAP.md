@@ -18,7 +18,6 @@ don't build it twice.
 
 ## Next — small additions people asked for
 
-- [ ] **A setting to turn off the reading-progress fill** in the tab you are on. *(X)*
 - [ ] **Where a link goes, shown on hover**, as an option. *([#29](https://github.com/driceroland/Search/pull/29))*
 - [ ] **Import from Comet**, alongside Chrome, Arc, Brave, Edge and Dia. *(X)*
 - [ ] **Homebrew**: `brew install --cask search`. *(X)*
