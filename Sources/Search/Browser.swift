@@ -1039,7 +1039,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     private func remember(_ tab: Tab, at index: Int) {
-        guard let url = tab.address else { return }
+        guard !tab.shy, let url = tab.address else { return }
         ghosts.append(Ghost(url: url, title: tab.title, index: index))
         if ghosts.count > 12 { ghosts.removeFirst() }
     }
