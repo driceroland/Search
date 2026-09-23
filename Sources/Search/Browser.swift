@@ -1028,6 +1028,7 @@ final class Browser: NSObject, ObservableObject {
         leaving()
         activeID = tab.id
         tab.touch()
+        tab.pageTint.resume()
         // A tab brought back from last time, or waking from ⌘W while pinned,
         // opens the moment you look at it — and only if there was nothing to
         // wake is this the other case, one whose page quietly died while you
@@ -1915,6 +1916,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard let tab = tab(for: webView) else { return }
+        tab.resetTint(for: webView.url)
         tab.failure = nil
         tab.typing = false
         // Whatever you last set this site to, before it draws a single frame
@@ -2060,9 +2062,5 @@ extension Browser: WKDownloadDelegate {
         return candidate
     }
 }
-
-
-
-
 
 

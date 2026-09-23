@@ -386,6 +386,7 @@ final class Bench {
                 "offering": browser.offering != nil,
                 "modal": NSApp.modalWindow.map { "\(type(of: $0)) “\($0.title)”" } ?? "",
                 "look": browser.prefs.look.rawValue,
+                "tint": browser.prefs.pageTint,
                 "appearance": NSApp.appearance?.name.rawValue ?? "system",
                 "key": NSApp.keyWindow.map { "\(type(of: $0)) “\($0.title)”" } ?? "",
             ]
@@ -942,6 +943,7 @@ final class Bench {
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
+            if let on = request["tint"] as? Bool { browser.prefs.pageTint = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
@@ -1096,6 +1098,9 @@ final class Bench {
             "bench": tab.bench,
             "active": tab.id == browser?.activeID,
             "asleep": tab.asleep,
+            "tint": tab.tint?.usingColorSpace(.sRGB).map { color in
+                [Double(color.redComponent), Double(color.greenComponent), Double(color.blueComponent)]
+            } ?? [],
         ]
     }
 

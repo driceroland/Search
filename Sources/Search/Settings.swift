@@ -243,6 +243,10 @@ struct SettingsPanel: View {
                 }
             }
             Rule()
+            Line("Match the page color", "Let the tab row pick up the color along the top of the page") {
+                Switch(on: $prefs.pageTint)
+            }
+            Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
             }

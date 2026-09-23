@@ -43,6 +43,10 @@ final class Preferences: ObservableObject {
     @Published var sidebar: Bool {
         didSet { store.set(sidebar, forKey: "sidebar") }
     }
+    /// Let the tab strip take the color of the page's top edge. Off by default.
+    @Published var pageTint: Bool {
+        didSet { store.set(pageTint, forKey: "tabs.tint") }
+    }
     /// The column folded away whenever the pointer isn't at the left edge,
     /// rather than only after ⌘S (see Fold.swift). Off unless asked for.
     @Published var sideHides: Bool {
@@ -150,6 +154,7 @@ final class Preferences: ObservableObject {
         NSApplication.shared.appearance = chosen.appearance
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
+        pageTint = store.bool(forKey: "tabs.tint")
         sideHides = store.bool(forKey: "sidebar.hides")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))

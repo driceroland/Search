@@ -293,8 +293,13 @@ struct ContentView: View {
             }
 
             if !browser.prefs.sidebar, !browser.folded, browser.active?.immersed != true {
-                TabBar(browser: browser)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                if let tab = browser.active {
+                    TintedTabBar(tab: tab, browser: browser, prefs: browser.prefs)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                } else {
+                    TabBar(browser: browser)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
         }
         .ignoresSafeArea()
@@ -387,12 +392,19 @@ struct ContentView: View {
             // The column folded away, and out again at the edge (see Fold.swift).
             .overlay(alignment: .leading) { Fold(browser: browser, prefs: browser.prefs) }
             .overlay(alignment: .bottom) { bars }
-            .overlay { field }
+            // ⌘L raises the field over a page. A blank tab shows it at once;
+            // its page and strip have no reason to join that animation.
+            .overlay {
+                field.animation(browser.active?.isBlank == true ? nil : Motion.settle,
+                                value: browser.fieldShowing)
+            }
             .overlay { panels }
-            .animation(Motion.settle, value: browser.fieldShowing)
             .background(WindowSetup { window = $0; dress($0) })
             .onChange(of: browser.prefs.sidebar) { _, _ in
                 DispatchQueue.main.async { measureLights() }
+            }
+            .onChange(of: browser.prefs.pageTint) { _, on in
+                for tab in browser.tabs { tab.setTintEnabled(on) }
             }
             // Stepping away to another app: macOS draws its own resting
             // buttons, and on a light window they come out nearly white. Ours
