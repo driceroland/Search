@@ -44,9 +44,10 @@
                                        double: test run, a double-click there (start the probe hidden)
     ./bench drag X Y TOX TOY           test run: press at X Y, move to TOX TOY in steps and let go there
     ./bench place ID INDEX             put a tab at another place in the row
-    ./bench shelf [seed|open NAME|close NAME|drop NAME Y]  the bookmarks in the column, row by row;
+    ./bench shelf [seed|open NAME|close NAME|drop NAME Y|fold|unfold]  the bookmarks in the column, row by row;
                                        seed: test run, a few sites and a folder; open/close a folder by title;
-                                       drop: test run, that row let go Y points down the shelf, as a drag would
+                                       drop: test run, that row let go Y points down the shelf, as a drag would;
+                                       fold/unfold: the whole section under its heading
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
@@ -198,9 +199,10 @@ def main(argv):
         if len(args) == 3: request[args[2]] = True
     elif verb == "shelf":
         if args == ["seed"]: request["seed"] = True
+        elif args in (["fold"], ["unfold"]): request["fold"] = args[0] == "fold"
         elif len(args) >= 3 and args[0] == "drop": request["drop"], request["y"] = " ".join(args[1:-1]), float(args[-1])
         elif len(args) >= 2 and args[0] in ("open", "close"): request[args[0]] = " ".join(args[1:])
-        elif args: sys.exit("usage: bench shelf [seed | open NAME | close NAME | drop NAME Y]")
+        elif args: sys.exit("usage: bench shelf [seed | open NAME | close NAME | drop NAME Y | fold | unfold]")
     elif verb == "drag":
         if len(args) != 4: sys.exit("usage: bench drag X Y TOX TOY")
         request["x"], request["y"], request["toX"], request["toY"] = map(float, args)

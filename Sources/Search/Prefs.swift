@@ -53,6 +53,10 @@ final class Preferences: ObservableObject {
     @Published var sideBookmarks: Bool {
         didSet { store.set(sideBookmarks, forKey: "sidebar.bookmarks") }
     }
+    /// Those bookmarks folded under their heading. Remembered.
+    @Published var sideBookmarksFolded: Bool {
+        didSet { store.set(sideBookmarksFolded, forKey: "sidebar.bookmarks.folded") }
+    }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
@@ -146,6 +150,7 @@ final class Preferences: ObservableObject {
             ?? (store.string(forKey: "manner") == "side")
         sideHides = store.bool(forKey: "sidebar.hides")
         sideBookmarks = store.bool(forKey: "sidebar.bookmarks")
+        sideBookmarksFolded = store.bool(forKey: "sidebar.bookmarks.folded")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters

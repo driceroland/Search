@@ -17,7 +17,10 @@ import SwiftUI
 // quiet row inviting a tab. The other way, a bookmark dragged down among the
 // tabs stops being one: its tab, or a new one when it was shut, joins the
 // tabs where it is let go. A shut folder with an open bookmark somewhere in
-// it wears the same dot, so no open tab is ever out of sight.
+// it wears the same dot, so no open tab is ever out of sight. The whole
+// section folds under its heading, whose chevron shows under the pointer;
+// folded, the heading takes a dropped tab at the end of the bookmarks, and
+// wears the dot when one of them is open.
 //
 // That tab is still one of the browser's tabs, so everything a tab does —
 // sleep, ⌘W, spaces — it does. The browser only remembers which bookmark it
@@ -77,8 +80,10 @@ struct Shelf: View {
 
     /// What the shelf takes of the column: its two headings and its rows,
     /// with a gap under each — one row when empty, the one inviting a tab.
+    /// Folded, the two headings alone.
     static func height(for browser: Browser) -> CGFloat {
-        let rows = CGFloat(max(1, lines(browser.bookmarks.roots, open: browser.shelfOpen).count))
+        let rows = browser.prefs.sideBookmarksFolded
+            ? 0 : CGFloat(max(1, lines(browser.bookmarks.roots, open: browser.shelfOpen).count))
         return 2 * heading + rows * row + (rows + 1) * gap
     }
 
@@ -89,24 +94,29 @@ struct Shelf: View {
         let lines = Shelf.lines(bookmarks.roots, open: browser.shelfOpen)
         let carried = Shelf.carried(dragging, in: lines)
         let open = Set(browser.tabs.compactMap { browser.shelfTabs[$0.id] })
+        let folded = browser.prefs.sideBookmarksFolded
         VStack(alignment: .leading, spacing: Shelf.gap) {
-            Heading(title: "Bookmarks")
-            if lines.isEmpty { Empty(lit: aim != nil) }
-            ForEach(Array(lines.enumerated()), id: \.element.node.id) { index, line in
-                let held = carried.contains(index)
-                let tab = browser.shelfTab(for: line.node.id)
-                ShelfRow(browser: browser, node: line.node, depth: line.depth,
-                         isOpen: browser.shelfOpen.contains(line.node.id),
-                         target: aim?.into == line.node.id,
-                         tab: tab, live: tab != nil && tab?.id == browser.activeID,
-                         hides: line.node.isFolder && !browser.shelfOpen.contains(line.node.id)
-                            && Shelf.holds(any: open, line.node.children ?? []))
-                    .offset(y: held ? travel : 0)
-                    // Under the hand exactly, as a tab is (see SideBar.loose).
-                    .transaction { if held { $0.animation = nil } }
-                    .zIndex(held ? 1 : 0)
-                    .shadow(color: .black.opacity(held && index == carried.lowerBound ? 0.14 : 0), radius: 12, y: 4)
-                    .gesture(pick(line, lines: lines))
+            Top(folded: folded, lit: folded && aim != nil, holdsOpen: folded && Shelf.holds(any: open, bookmarks.roots)) {
+                withAnimation(Motion.settle) { browser.prefs.sideBookmarksFolded.toggle() }
+            }
+            if !folded {
+                if lines.isEmpty { Empty(lit: aim != nil) }
+                ForEach(Array(lines.enumerated()), id: \.element.node.id) { index, line in
+                    let held = carried.contains(index)
+                    let tab = browser.shelfTab(for: line.node.id)
+                    ShelfRow(browser: browser, node: line.node, depth: line.depth,
+                             isOpen: browser.shelfOpen.contains(line.node.id),
+                             target: aim?.into == line.node.id,
+                             tab: tab, live: tab != nil && tab?.id == browser.activeID,
+                             hides: line.node.isFolder && !browser.shelfOpen.contains(line.node.id)
+                                && Shelf.holds(any: open, line.node.children ?? []))
+                        .offset(y: held ? travel : 0)
+                        // Under the hand exactly, as a tab is (see SideBar.loose).
+                        .transaction { if held { $0.animation = nil } }
+                        .zIndex(held ? 1 : 0)
+                        .shadow(color: .black.opacity(held && index == carried.lowerBound ? 0.14 : 0), radius: 12, y: 4)
+                        .gesture(pick(line, lines: lines))
+                }
             }
             // The tabs' own heading, so the two lists read as two.
             Heading(title: "Tabs")
@@ -114,7 +124,7 @@ struct Shelf: View {
                     Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 10)
                 }
         }
-        .overlay(alignment: .topLeading) { if !lines.isEmpty { mark(rows: lines.count) } }
+        .overlay(alignment: .topLeading) { if !lines.isEmpty, !folded { mark(rows: lines.count) } }
         .coordinateSpace(name: "shelf")
     }
 
@@ -258,6 +268,56 @@ struct Shelf: View {
         }
     }
 
+    /// The bookmarks' heading, which folds them: its chevron shows under the
+    /// pointer, the dot while folded over an open bookmark.
+    private struct Top: View {
+        let folded: Bool
+        let lit: Bool
+        let holdsOpen: Bool
+        let toggle: () -> Void
+
+        @State private var hovering = false
+
+        var body: some View {
+            // Set as the tabs' heading is, so the two read alike; what folds
+            // it sits over its end.
+            Text("Bookmarks")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
+                .padding(.leading, 10)
+                .padding(.bottom, 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .frame(height: Shelf.heading)
+                .overlay(alignment: .bottomTrailing) {
+                    HStack(spacing: 8) {
+                        if holdsOpen {
+                            Circle()
+                                .fill(Palette.muted)
+                                .frame(width: 5, height: 5)
+                                .frame(width: 15, height: 15)
+                        }
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Palette.faint)
+                            .rotationEffect(.degrees(folded ? -90 : 0))
+                            .frame(width: 15, height: 15)
+                            .opacity(hovering ? 1 : 0)
+                    }
+                    .padding(.trailing, 7)
+                    .padding(.bottom, 3)
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(lit ? Palette.wash : .clear)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture(perform: toggle)
+                .onHover { hovering = $0 }
+                .animation(Motion.quick, value: hovering)
+                .animation(Motion.quick, value: lit)
+        }
+    }
+
     private struct Heading: View {
         let title: String
 
@@ -391,12 +451,14 @@ extension Browser {
         let lines = Shelf.lines(bookmarks.roots, open: shelfOpen)
         // The shelf sits right above the rows, so its bottom is their top.
         let at = Shelf.height(for: self) + y
-        let bottom = Shelf.heading + CGFloat(max(1, lines.count)) * (Shelf.row + Shelf.gap)
+        let folded = prefs.sideBookmarksFolded
+        let bottom = Shelf.heading + (folded ? 0 : CGFloat(max(1, lines.count)) * (Shelf.row + Shelf.gap))
         guard prefs.sideBookmarks, at < bottom else {
             if shelfAim != nil { shelfAim = nil }
             return false
         }
-        let aim = Shelf.drop(at: at, lines: lines, carrying: nil)
+        // Folded, the heading takes it at the end of the bookmarks.
+        let aim = folded ? Shelf.Drop() : Shelf.drop(at: at, lines: lines, carrying: nil)
         if shelfAim != aim { shelfAim = aim }
         return true
     }
@@ -502,6 +564,7 @@ extension Shelf {
         if let title = request["close"] as? String, let folder = folders.first(where: { $0.title == title }) {
             browser.shelfOpen.remove(folder.id)
         }
+        if let fold = request["fold"] as? Bool { browser.prefs.sideBookmarksFolded = fold }
         var landed: [String: Any] = [:]
         if let title = request["drop"] as? String, let y = request["y"] as? Double {
             guard Store.testing else { return ["error": "shelf drop only works on a --test run"] }
@@ -520,6 +583,6 @@ extension Shelf {
              "tab": browser.shelfTab(for: line.node.id) != nil,
              "live": browser.shelfTab(for: line.node.id)?.id == browser.activeID]
         }
-        return ["on": browser.prefs.sideBookmarks, "rows": rows, "height": Double(height(for: browser)), "landed": landed]
+        return ["on": browser.prefs.sideBookmarks, "folded": browser.prefs.sideBookmarksFolded, "rows": rows, "height": Double(height(for: browser)), "landed": landed]
     }
 }
