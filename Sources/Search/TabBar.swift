@@ -492,6 +492,7 @@ private struct TabPill: View {
                 if prefs.glyph == .icons, !tab.isBlank {
                     Mark(icon: tab.icon, letter: tab.monogram, size: 15)
                 }
+                MuteBadge(tab: tab)
                 if tab.bench {
                     // A script's tab, not yours.
                     Image(systemName: "flask")
@@ -526,18 +527,6 @@ private struct TabPill: View {
                         .transition(.opacity)
                 } else if tab.loading {
                     Ring().transition(.opacity)
-                } else if tab.muted {
-                    // Silenced by hand, in the tab's own right-click menu.
-                    Image(systemName: "speaker.slash.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(Palette.muted)
-                        .transition(.opacity)
-                } else if tab.noisy {
-                    // Which tab the noise is coming from. ⌘⇧M stops it.
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(Palette.muted)
-                        .transition(.opacity)
                 }
             }
             .frame(width: editing ? 0 : 15, height: 15)
@@ -556,8 +545,6 @@ private struct TabPill: View {
             }
             .animation(Motion.quick, value: hovering)
             .animation(Motion.quick, value: tab.loading)
-            .animation(Motion.quick, value: tab.noisy)
-            .animation(Motion.quick, value: tab.muted)
         }
         .padding(.leading, 11)
         .padding(.trailing, editing ? 11 : 7)

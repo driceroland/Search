@@ -604,6 +604,7 @@ private struct SideRow: View {
                 if prefs.glyph == .icons, !tab.isBlank {
                     Mark(icon: tab.icon, letter: tab.monogram, size: 15)
                 }
+                MuteBadge(tab: tab)
                 if tab.bench {
                     // A script's tab, not yours.
                     Image(systemName: "flask")
@@ -752,6 +753,36 @@ struct Quiet: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(Motion.quick, value: hovering)
+    }
+}
+
+/// The speaker in front of a tab's title, not sharing the cross's spot at
+/// the other end — sharing it was exactly what people right-clicking to
+/// mute a tab kept missing. Tap it to mute or unmute directly.
+struct MuteBadge: View {
+    @ObservedObject var tab: Tab
+
+    @State private var hovering = false
+
+    var body: some View {
+        if tab.muted || tab.noisy {
+            Button(action: tab.toggleMute) {
+                // A fixed box, so which icon it holds never moves the title
+                // beside it — the two read at different widths on their own.
+                Image(systemName: tab.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(hovering ? Palette.ink.opacity(0.85) : Palette.muted)
+                    .frame(width: 16, height: 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(hovering ? Palette.hover : .clear)
+                    )
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(tab.muted ? "Unmute Tab" : "Mute Tab")
+            .animation(Motion.quick, value: hovering)
+        }
     }
 }
 
