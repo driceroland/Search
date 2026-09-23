@@ -131,6 +131,8 @@ struct SearchApp: App {
                 Button("Copy Address") { browser.copyAddress() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
                     .disabled(browser.active?.isBlank ?? true)
+                Button("Copy as Markdown Link") { browser.copyMarkdownLink() }
+                    .disabled(browser.active?.isBlank ?? true)
                 Button("Paste and Go") { browser.pasteAndGo() }
                     .keyboardShortcut("v", modifiers: [.command, .shift])
                 Divider()

@@ -640,6 +640,16 @@ final class Browser: NSObject, ObservableObject {
         announce("Address copied")
     }
 
+    /// For pasting into notes and messages that read Markdown: a title that
+    /// links, not a bare address to explain in your own words.
+    func copyMarkdownLink() {
+        guard let tab = active, let url = tab.address else { return }
+        let title = tab.label.replacingOccurrences(of: "]", with: "\\]")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("[\(title)](\(url.absoluteString))", forType: .string)
+        announce("Link copied")
+    }
+
     func announce(_ text: String) {
         announcement = text
         hush?.cancel()
