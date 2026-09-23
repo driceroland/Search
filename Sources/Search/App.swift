@@ -601,14 +601,11 @@ struct ContentView: View {
         // copy shares, and a probe resized for a test once changed the size
         // the real window came back at.
         window.setFrameAutosaveName(Store.world.map { "search (\($0))" } ?? "search")
-        if window.toolbar == nil {
-            window.toolbar = NSToolbar(identifier: "SearchTitlebar")
-            window.toolbarStyle = .unified
-            window.titlebarSeparatorStyle = .none
-        }
-
-        // AppKit places the lights in the unified titlebar; the column's
-        // doors sit on their line without moving the buttons by hand.
+        // The traffic lights set in from the corner and centred in the strip's
+        // height, in both modes, without a toolbar's rounder corners — see
+        // Lights.swift. The column's first row is the strip's height too, so
+        // its three doors sit on the lights' line.
+        Lights.keep(window) { measureLights() }
         DispatchQueue.main.async { measureLights() }
 
         // The traffic lights are drawn — measured, they paint themselves — but

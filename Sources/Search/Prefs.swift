@@ -43,6 +43,10 @@ final class Preferences: ObservableObject {
     @Published var sidebar: Bool {
         didSet { store.set(sidebar, forKey: "sidebar") }
     }
+    /// Let the tab strip take the color of the page's top edge. Off by default.
+    @Published var pageTint: Bool {
+        didSet { store.set(pageTint, forKey: "tabs.tint") }
+    }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
@@ -120,6 +124,7 @@ final class Preferences: ObservableObject {
         NSApp.appearance = chosen.appearance
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
+        pageTint = store.bool(forKey: "tabs.tint")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters

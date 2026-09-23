@@ -83,8 +83,10 @@ enum Look: String, CaseIterable, Identifiable {
 }
 
 enum Metrics {
-    /// The tab strip matches the unified titlebar's height so the traffic
-    /// lights and tabs share a line.
+    /// The tab strip. The window's title bar is grown to match it so the
+    /// traffic lights come down with the tabs — otherwise giving the row room
+    /// to breathe just leaves it sitting below three buttons it used to line
+    /// up with.
     static let strip: CGFloat = 52
     /// Where the first tab starts. The traffic lights run from 19 to 79 —
     /// measured, not guessed — so this leaves them the same air on their right

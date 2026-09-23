@@ -8,7 +8,7 @@ struct TintedTabBar: View {
 
     @ViewBuilder
     var body: some View {
-        if let tint = tab.tint {
+        if browser.prefs.pageTint, let tint = tab.tint {
             TabBar(browser: browser)
                 .background(Color(nsColor: tint).animation(fade, value: tint))
                 .environment(\.colorScheme, scheme(for: tint))
