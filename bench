@@ -32,6 +32,9 @@
     ./bench ext-answer yes|no|ask      test run: answer extensions' questions without asking; lists what was asked
     ./bench ext-enable ID on|off       switch an extension on or off
     ./bench ext-remove ID
+    ./bench hit X Y [double]           what a press at X Y (points from the window's top left) lands on,
+                                       and whether a drag from there would move the window;
+                                       double: test run, a double-click there (start the probe hidden)
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        look light|dark|system, sidebar on|off, folded on|off, peek on|off
 
@@ -156,6 +159,10 @@ def main(argv):
         if len(args) not in (2, 3): sys.exit("usage: bench resize WIDTH HEIGHT [STEPS]")
         request["width"], request["height"] = float(args[0]), float(args[1])
         if len(args) == 3: request["steps"] = int(args[2])
+    elif verb == "hit":
+        if len(args) not in (2, 3) or (len(args) == 3 and args[2] != "double"): sys.exit("usage: bench hit X Y [double]")
+        request["x"], request["y"] = float(args[0]), float(args[1])
+        if len(args) == 3: request["double"] = True
     elif verb not in ("tabs", "probe", "extensions"):
         sys.exit(f"unknown command “{verb}” — see bench help")
 

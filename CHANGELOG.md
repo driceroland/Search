@@ -19,6 +19,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Fixed
 
 - ⌘← and ⌘→ move through text while editing; adding Shift selects text instead of navigating away from the page.
+- Dragging a tab to put it elsewhere in the row across the top moves the tab, not the whole window, and a tab being dragged stays under the pointer as it passes the others, in the column too.
 - The address field on a new tab holds still while its suggestions appear under it, instead of jumping up. Thanks [@fschrhunt](https://github.com/fschrhunt) ([#16](https://github.com/driceroland/Search/pull/16))
 - 1Password's Sign in button works: an extension's page can send its tab to a website again, where it used to do nothing.
 - Tab moves between a form's fields again, as in every browser; ⌃Tab and ⌃⇧Tab switch tabs.

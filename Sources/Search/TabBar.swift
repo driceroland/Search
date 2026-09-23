@@ -64,6 +64,12 @@ struct TabBar: View {
                                     // up with the hand: what it has travelled, less the
                                     // ground its new place has already given it.
                                     .offset(x: held ? travel - CGFloat(index - from) * step : 0)
+                                    // Under the hand exactly. Its place in the row springs when it
+                                    // passes another tab, and the offset springs back the same way —
+                                    // until the next move of the hand cuts the offset's spring short
+                                    // and leaves the place's running: the tab jumped a whole slot and
+                                    // drifted back each time it passed one. Only the others glide.
+                                    .transaction { if held { $0.animation = nil } }
                                     .zIndex(held ? 1 : 0)
                                     .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
                                     .gesture(reorder(tab: tab, index: index, step: step))

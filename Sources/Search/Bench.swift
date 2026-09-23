@@ -394,6 +394,7 @@ final class Bench {
                     "visible": window.isVisible,
                     "level": window.level.rawValue,
                     "frame": [Int(window.frame.minX), Int(window.frame.minY), Int(window.frame.width), Int(window.frame.height)],
+                    "number": window.windowNumber,
                 ]
             }
             if let window = Links.window { out["lights"] = Bench.lights(of: window) }
@@ -501,6 +502,47 @@ final class Bench {
             }
             step(1)
 
+        case "hit":
+            // What a press at a point of the window lands on, and whether
+            // AppKit would carry the window off on a drag from there — the
+            // question behind a tab that moved the window instead of itself.
+            // Only looked at, unless asked for a double-click.
+            guard let window = Links.window, let x = request["x"] as? Double, let y = request["y"] as? Double,
+                  let frame = window.contentView?.superview
+            else { answer(["error": "hit needs an x and a y"]); return }
+            let point = NSPoint(x: x, y: Double(window.frame.height) - y)
+            let hit = frame.hitTest(frame.convert(point, from: nil))
+            if request["double"] as? Bool == true {
+                // A double-click there, handed to the view under it — through
+                // the window it would never arrive, the probe being in the
+                // back. On a test run only, and meant for a probe started
+                // hidden, where the window changing size shows on no screen.
+                guard Store.testing else { answer(["error": "hit … double only works on a --test run"]); return }
+                let before = window.frame
+                func event(_ type: NSEvent.EventType, _ clicks: Int) -> NSEvent? {
+                    NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                       windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks,
+                                       pressure: type == .leftMouseUp ? 0 : 1)
+                }
+                for clicks in [1, 2] {
+                    if let down = event(.leftMouseDown, clicks) { hit?.mouseDown(with: down) }
+                    if let up = event(.leftMouseUp, clicks) { hit?.mouseUp(with: up) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    let after = window.frame
+                    answer(["view": hit.map { String("\(type(of: $0))".prefix(60)) } ?? "",
+                            "before": [Int(before.width), Int(before.height)], "after": [Int(after.width), Int(after.height)],
+                            "zoomed": window.isZoomed])
+                }
+                return
+            }
+            answer([
+                "view": hit.map { String("\(type(of: $0))".prefix(60)) } ?? "",
+                "canMoveWindow": hit?.mouseDownCanMoveWindow ?? false,
+                "windowMovable": window.isMovable,
+                "titleBar": y <= Double(window.frame.height - window.contentLayoutRect.height),
+            ])
+
         case "ui":
             // Open or close the app's own panels, to reproduce what a person
             // did without a person.
@@ -527,7 +569,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "ui",
             ]])
         }
     }

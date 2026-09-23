@@ -594,6 +594,10 @@ struct ContentView: View {
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
+        // Nor by its title bar, which the strip is all the way down: AppKit
+        // would move the window on any drag there, a tab picked up to take
+        // it elsewhere in the row included. DragStrip moves it instead.
+        window.isMovable = false
         // Where you left it, at the size you left it. A test run keeps its
         // own: the name lives in the app's standard defaults, which every
         // copy shares, and a probe resized for a test once changed the size
