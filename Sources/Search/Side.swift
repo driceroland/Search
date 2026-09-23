@@ -619,6 +619,11 @@ private struct SideRow: View {
                         .transition(.opacity)
                 } else if tab.loading {
                     Ring().transition(.opacity)
+                } else if tab.muted {
+                    Image(systemName: "speaker.slash.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(Palette.muted)
+                        .transition(.opacity)
                 } else if tab.noisy {
                     Image(systemName: "speaker.wave.2.fill")
                         .font(.system(size: 8))
@@ -639,6 +644,7 @@ private struct SideRow: View {
             .animation(Motion.quick, value: hovering)
             .animation(Motion.quick, value: tab.loading)
             .animation(Motion.quick, value: tab.noisy)
+            .animation(Motion.quick, value: tab.muted)
         }
         .padding(.leading, 10)
         .padding(.trailing, editing ? 10 : 7)
