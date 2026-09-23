@@ -57,10 +57,12 @@ struct SearchApp: App {
                     set: { _ in browser.toggleSidebar() }
                 ))
                 .keyboardShortcut("s", modifiers: [.command, .shift])
-                // Folded away, not moved (see Fold.swift).
-                Button(browser.folded ? "Show Sidebar" : "Hide Sidebar") { browser.toggleFold() }
+                // Folded away, not moved (see Fold.swift) — the column, or the
+                // strip across the top.
+                Button(browser.prefs.sidebar
+                       ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
+                       : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
                     .keyboardShortcut("s")
-                    .disabled(!browser.prefs.sidebar)
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
                     set: { browser.prefs.glyph = $0 }
@@ -290,7 +292,7 @@ struct ContentView: View {
                 }
             }
 
-            if !browser.prefs.sidebar, browser.active?.immersed != true {
+            if !browser.prefs.sidebar, !browser.folded, browser.active?.immersed != true {
                 TabBar(browser: browser)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -571,7 +573,8 @@ struct ContentView: View {
     /// starts at the very top; the strip needs a band.
     private var band: CGFloat {
         guard browser.active?.immersed != true else { return 0 }
-        return browser.prefs.sidebar ? 0 : Metrics.strip
+        // Folded, the strip is out of the window and the page has its height.
+        return browser.prefs.sidebar || browser.folded ? 0 : Metrics.strip
     }
 
     /// Put the resting circles in the title bar, exactly over the buttons.
@@ -809,8 +812,7 @@ struct ContentView: View {
         case "s" where shifted:
             browser.toggleSidebar()
         case "s" where !shifted:
-            // The strip has nothing to fold; ⌘S stays the page's (see Fold.swift).
-            guard browser.prefs.sidebar else { return false }
+            // The column or the strip, folded away (see Fold.swift).
             browser.toggleFold()
         case "b" where shifted:
             browser.bookmarkCurrent()

@@ -188,7 +188,7 @@ struct NewSpaceCard: View {
             // Most people want Google and the rest to know them here too;
             // some want a clean slate.
             VStack(spacing: 6) {
-                Segmented(options: [(true, "Same sign-ins"), (false, "Signed out")], selection: $shared, wide: true)
+                Segmented(options: [(true, "Signed in"), (false, "Signed out")], selection: $shared, wide: true)
                 Text(shared ? "Signed in wherever your other spaces are." : "Its own cookies and sign-ins, starting from none.")
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.muted)

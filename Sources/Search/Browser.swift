@@ -709,7 +709,7 @@ final class Browser: NSObject, ObservableObject {
         if prefs.bench { Bench.shared.start(for: self) }
         welcoming = !prefs.welcomed
         // Asked to stay out of the way: it starts that way (see Fold.swift).
-        folded = prefs.sideHides
+        folded = prefs.sidebar && prefs.sideHides
         // Once a day, quietly: is there a newer one?
         Updater.shared.checkIfDue { [weak self] line in self?.announce(line) }
         FormRelay.passkeysOffered = prefs.passkeys
