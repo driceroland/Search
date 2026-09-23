@@ -249,6 +249,63 @@ struct SpaceDot: View {
     }
 }
 
+/// Every space as a dot of its colour, along the foot of the column — the
+/// way Arc keeps them, so the one you want is a click away rather than a
+/// menu away. The one on screen is lit, and a click on it opens the same
+/// menu the single dot does. With one space there is nothing to choose
+/// between, and it is the single dot.
+struct SpaceRow: View {
+    @ObservedObject var browser: Browser
+
+    var body: some View {
+        if browser.spaces.count < 2 {
+            SpaceDot(browser: browser)
+        } else {
+            HStack(spacing: 0) {
+                ForEach(Array(browser.spaces.enumerated()), id: \.element.id) { index, space in
+                    SpaceStop(space: space, index: index, live: space.id == browser.spaceID) {
+                        if space.id == browser.spaceID {
+                            SpaceMenu.show(for: browser)
+                        } else {
+                            browser.switchSpace(to: space.id)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One space in the row. Narrower than the lone dot, so five or six still
+/// fit beside the bookmarks at the column's narrowest.
+private struct SpaceStop: View {
+    let space: Space
+    let index: Int
+    let live: Bool
+    let act: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: act) {
+            Circle()
+                .fill(Spaces.colours[space.colour % Spaces.colours.count].opacity(live || hovering ? 1 : 0.45))
+                .frame(width: live ? 9 : 7, height: live ? 9 : 7)
+                .frame(width: 20, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(live ? Palette.wash : (hovering ? Palette.hover : .clear))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(index < 9 ? "\(space.name) — ⌃\(index + 1)" : space.name)
+        .animation(Motion.quick, value: hovering)
+        .animation(Motion.quick, value: live)
+    }
+}
+
 /// The dot's menu: the spaces, then what can be done to the one on screen.
 @MainActor
 enum SpaceMenu {
