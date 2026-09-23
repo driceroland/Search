@@ -52,6 +52,11 @@ BINARY=".build/$CONFIG/Search"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/$NAME"
+# PageTint.js is a SwiftPM resource; its generated accessor looks for the
+# bundle beside the app's other resources, not beside the built executable.
+if [ -d ".build/$CONFIG/Search_Search.bundle" ]; then
+  cp -R ".build/$CONFIG/Search_Search.bundle" "$APP/Contents/Resources/"
+fi
 
 # Symbols stay out of the app. The linker leaves every function's name and a
 # map back to the source in the binary — 15,000 entries, more than half of

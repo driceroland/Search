@@ -321,7 +321,7 @@ struct DragStrip: NSViewRepresentable {
 /// the title bar draws above everything the app puts on screen.
 final class RestingLights: NSView {
     var spots: [CGRect] = [] {
-        didSet { needsDisplay = true }
+        didSet { if spots != oldValue { needsDisplay = true } }
     }
 
     override func draw(_ dirty: NSRect) {

@@ -1,5 +1,44 @@
 import SwiftUI
 
+/// The strip uses the page's top color while keeping Search's
+/// tab controls and the rest of the window's chosen appearance intact.
+struct TintedTabBar: View {
+    @ObservedObject var tab: Tab
+    @ObservedObject var browser: Browser
+
+    @ViewBuilder
+    var body: some View {
+        if let tint = tab.tint {
+            TabBar(browser: browser)
+                .background(Color(nsColor: tint).animation(fade, value: tint))
+                .environment(\.colorScheme, scheme(for: tint))
+        } else {
+            TabBar(browser: browser)
+                .background(Palette.ground)
+        }
+    }
+
+    private func scheme(for tint: NSColor) -> ColorScheme {
+        guard let color = tint.usingColorSpace(.sRGB) else { return .light }
+        let light = 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent
+        return light < 0.5 ? .dark : .light
+    }
+
+    /// Use the header's own CSS transition when it has one; instant page
+    /// changes stay instant instead of trailing the web view.
+    private var fade: Animation? {
+        guard tab.pageTint.isFromStyles, let fade = tab.pageTint.fade else { return nil }
+        var first = [Swift.Float](repeating: 0, count: 2)
+        var second = first
+        fade.curve.getControlPoint(at: 1, values: &first)
+        fade.curve.getControlPoint(at: 2, values: &second)
+        return .timingCurve(
+            Double(first[0]), Double(first[1]), Double(second[0]), Double(second[1]),
+            duration: min(fade.duration, 1)
+        )
+    }
+}
+
 /// The only chrome there is. Titles, one of them in a grey pill, and the pill
 /// slides from the tab you left to the tab you picked rather than blinking out
 /// of one and into the other.

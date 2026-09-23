@@ -239,6 +239,38 @@ final class Tab: ObservableObject, Identifiable {
     /// coming back to a tab that slept starts from what you left, not white.
     @Published private(set) var cover: NSImage?
 
+    /// The top edge of this page, shown behind its tab in the titlebar.
+    @Published private(set) var tint: NSColor?
+    private var tintedHost: String?
+    private let tintRouter = TintRouter()
+    lazy var pageTint = PageTint(
+        isLoading: { [weak self] in self?.built?.isLoading ?? false },
+        isShown: { [weak self] in self?.built?.window != nil },
+        snapshot: { [weak self] done in
+            guard let web = self?.built, web.bounds.width > 0 else { return done(nil) }
+            let request = WKSnapshotConfiguration()
+            request.rect = CGRect(x: 0, y: 0, width: web.bounds.width, height: 2)
+            request.afterScreenUpdates = false
+            web.takeSnapshot(with: request) { image, _ in
+                done(image?.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap(DominantColor.of))
+            }
+        },
+        onChange: { [weak self] in self?.updateTint() }
+    )
+
+    private func updateTint() {
+        let color = pageTint.color ?? built?.underPageBackgroundColor?.withAlphaComponent(1)
+        if tint != color { tint = color }
+    }
+
+    /// A new document must report its own header before the old tint is released.
+    func resetTint(for url: URL?) {
+        let host = url?.host()
+        pageTint.reset(holding: host != nil && host == tintedHost ? 2 : 0.25)
+        tintedHost = host
+        updateTint()
+    }
+
     private var watch: [NSKeyValueObservation] = []
 
     /// A tab that has never been anywhere shows the address field instead of a
@@ -291,11 +323,14 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeScriptMessageHandler(forName: FormRelay.name)
         controller.removeScriptMessageHandler(forName: ImageRelay.name)
         controller.removeScriptMessageHandler(forName: StoreRelay.name)
+        controller.removeScriptMessageHandler(forName: TintRouter.name, contentWorld: .defaultClient)
         controller.add(relay, name: ScrollRelay.name)
         controller.add(veils_, name: VeilRelay.name)
         controller.add(images, name: ImageRelay.name)
         controller.add(shop, name: StoreRelay.name)
         controller.add(forms, name: FormRelay.name)
+        tintRouter.tab = self
+        controller.add(tintRouter, contentWorld: .defaultClient, name: TintRouter.name)
         Shield.shared.protect(controller)
         built = web
         arm(hiding: veils)
@@ -316,6 +351,7 @@ final class Tab: ObservableObject, Identifiable {
                     let moved = fresh.host() != self.address?.host()
                     self.address = fresh
                     if moved { self.adoptIcon() }
+                    self.built?.evaluateJavaScript("globalThis.readPageTint?.()", in: nil, in: .defaultClient) { _ in }
                 }
             },
             web.observe(\.estimatedProgress, options: [.new]) { [weak self] _, _ in
@@ -329,6 +365,9 @@ final class Tab: ObservableObject, Identifiable {
             },
             web.observe(\.canGoForward, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.canGoForward = self?.built?.canGoForward ?? false }
+            },
+            web.observe(\.underPageBackgroundColor, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.updateTint() }
             },
         ]
 
@@ -396,6 +435,10 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: StoreRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
+        controller.addUserScript(WKUserScript(
+            source: TintRouter.script, injectionTime: .atDocumentStart,
+            forMainFrameOnly: true, in: .defaultClient
+        ))
         if !FormRelay.passkeysOffered {
             controller.addUserScript(
                 WKUserScript(
@@ -526,6 +569,7 @@ final class Tab: ObservableObject, Identifiable {
     /// Called from the page, a few dozen times a second at most — the script
     /// already waits for a frame before it says anything.
     func scrolled(to y: Double, of ceiling: Double) {
+        pageTint.userIsScrolling()
         reading = ceiling > 0 ? min(1, max(0, y / ceiling)) : 0
         let delta = y - lastY
         lastY = y
@@ -854,6 +898,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeScriptMessageHandler(forName: FormRelay.name)
         controller.removeScriptMessageHandler(forName: ImageRelay.name)
         controller.removeScriptMessageHandler(forName: StoreRelay.name)
+        controller.removeScriptMessageHandler(forName: TintRouter.name, contentWorld: .defaultClient)
         controller.removeAllUserScripts()
         web.onPull = nil
         web.onTouch = nil
@@ -1282,5 +1327,3 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
     })();
     """
 }
-
-
