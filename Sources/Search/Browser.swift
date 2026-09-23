@@ -32,6 +32,35 @@ final class Browser: NSObject, ObservableObject {
     /// Everything there is to set. Held here so the whole window redraws when
     /// one of them changes.
     let prefs = Preferences()
+    /// Every command's key, as you've set it (Settings › Shortcuts).
+    let shortcuts = ShortcutStore()
+    /// Keys handed to the page first, for the shortcuts set that way.
+    let keyRouter = KeyRouter()
+    /// Settings › Shortcuts is listening for a key: nothing else acts on one.
+    @Published var recordingShortcut = false
+    /// A site just used a key Search has a command on, and you asked to be
+    /// told when that happens.
+    @Published var shortcutAsk: ShortcutAsk?
+
+    struct ShortcutAsk: Equatable {
+        let id: String
+        let site: String?
+    }
+
+    /// A command by its id, from the menu or a key. False when it had
+    /// nothing to do just now.
+    @discardableResult
+    func run(_ id: String) -> Bool {
+        Command.named(id)?.run(self) ?? false
+    }
+
+    /// The answer to "‹site› used ⌘K": who gets the key from now on.
+    func answerShortcutAsk(app: Bool) {
+        guard let ask = shortcutAsk else { return }
+        shortcuts.setConflict(app ? .appFirst : .websiteFirst, for: ask.id)
+        shortcutAsk = nil
+    }
+
     /// The settings panel.
     @Published var tuning = false
     /// The first-launch walk-through, over everything. Also from the menu.
@@ -828,6 +857,9 @@ final class Browser: NSObject, ObservableObject {
         // The window and the menus are drawn from this object; a setting that
         // changes what they show has to be heard here.
         prefs.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &bag)
+        shortcuts.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &bag)
 
