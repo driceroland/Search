@@ -205,7 +205,8 @@ struct SideBar: View {
                     }
                 }
             } else {
-                preview(browser.parked[browser.spaces[index].id] ?? Parked(tabs: [], active: nil), pill: pill)
+                preview(browser.parked[browser.spaces[index].id] ?? Parked(tabs: [], active: nil),
+                        space: browser.spaces[index].id, pill: pill)
             }
         }
         .padding(.horizontal, 10)
@@ -215,10 +216,10 @@ struct SideBar: View {
     /// Another space's rows, drawn with the same pieces as this one's so the
     /// two read as one column while they pass — and nothing to press until
     /// it is the one on screen.
-    private func preview(_ row: Parked, pill: Namespace.ID) -> some View {
+    private func preview(_ row: Parked, space: UUID, pill: Namespace.ID) -> some View {
         let pins = row.tabs.filter { $0.pin != nil }
         // A bookmark's own tab is under its bookmark (see Shelf.swift).
-        let rest = row.tabs.filter { $0.pin == nil && !browser.onShelf($0) }
+        let rest = row.tabs.filter { $0.pin == nil && !browser.onShelf($0, in: space) }
         let cols = SideBar.pinColumns(pins.count)
         let width = pinWidth(for: pins.count)
         let height = min(SideBar.square, width)
@@ -234,8 +235,8 @@ struct SideBar: View {
                 }
                 .padding(.bottom, 10)
             }
-            // The same bookmarks in every space (see Shelf.swift).
-            if prefs.sideBookmarks { Shelf(browser: browser, bookmarks: browser.bookmarks) }
+            // That space's own bookmarks (see Shelf.swift).
+            if prefs.sideBookmarks { Shelf(browser: browser, bookmarks: browser.bookmarks(of: space)) }
             VStack(spacing: SideBar.gap) {
                 ForEach(rest) { tab in
                     SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active, pill: pill, close: {})

@@ -33,7 +33,13 @@ struct Bookmark: Codable, Identifiable, Hashable {
 final class Bookmarks: ObservableObject {
     @Published private(set) var roots: [Bookmark] = []
 
-    init() { load() }
+    /// The file it lives in: its space's (see Shelf.swift).
+    private let file: URL
+
+    init(space: UUID = Space.firstID) {
+        file = Bookmarks.file(space)
+        load()
+    }
 
     var isEmpty: Bool { roots.isEmpty }
 
@@ -171,7 +177,16 @@ final class Bookmarks: ObservableObject {
 
     // MARK: - the file
 
-    private static var file: URL { Store.file("bookmarks.json") }
+    /// The first space's is the file there always was; each other space
+    /// keeps its own beside it, as its session does.
+    private static func file(_ space: UUID) -> URL {
+        Store.file(space == Space.firstID ? "bookmarks.json" : "bookmarks-\(space.uuidString).json")
+    }
+
+    static func erase(space: UUID) {
+        guard space != Space.firstID else { return }
+        try? FileManager.default.removeItem(at: file(space))
+    }
 
     // MARK: - for extensions
 
@@ -217,9 +232,9 @@ final class Bookmarks: ObservableObject {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: Bookmarks.file) else { return }
+        guard let data = try? Data(contentsOf: file) else { return }
         guard let list = try? JSONDecoder().decode([Bookmark].self, from: data) else {
-            Store.quarantine(Bookmarks.file)
+            Store.quarantine(file)
             return
         }
         roots = list
@@ -227,7 +242,7 @@ final class Bookmarks: ObservableObject {
 
     private func save() {
         let snapshot = roots
-        let file = Bookmarks.file
+        let file = file
         DispatchQueue.global(qos: .utility).async {
             guard let data = try? JSONEncoder().encode(snapshot) else { return }
             try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)

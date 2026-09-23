@@ -9,9 +9,10 @@ import WebKit
 // has always been and its sites use the store there has always been, so
 // turning spaces on signs nobody out.
 //
-// A space's sites live in a WebKit store of their own, made by identifier;
-// history, bookmarks, the passwords in the keychain, settings and
-// extensions are shared by every space. Switching swaps the row of tabs:
+// A space's sites live in a WebKit store of their own, made by identifier,
+// and it keeps bookmarks of its own (see Shelf.swift); history, the
+// passwords in the keychain, settings and extensions are shared by every
+// space. Switching swaps the row of tabs:
 // the ones left behind are parked, their sound paused, and they sleep
 // after half an hour as any tab does. ⌃1–⌃9 switch, as in Arc.
 
@@ -268,6 +269,9 @@ extension Browser {
         spaces.remove(at: at)
         Spaces.write(spaces)
         Session.erase(space: id)
+        // Its bookmarks go with it (see Shelf.swift).
+        Bookmarks.erase(space: id)
+        shelves[id] = nil
         // A space signed in with the others has nothing of its own to erase:
         // its cookies are theirs.
         if !shared { Spaces.erase(id) }

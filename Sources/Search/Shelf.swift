@@ -41,6 +41,11 @@ import SwiftUI
 // so `Shelf.height` adds the shelf up the same way, from the same numbers,
 // and `Shelf.drop` finds the row under the pointer with them too.
 //
+// Bookmarks are each space's own, as its pinned tabs are: a file per space
+// beside its session, the first space's the file there always was, so with
+// spaces off nothing changes. The button's list, the manager, ⇧⌘B, importing
+// and extensions all see the space on screen's (Browser.bookmarks).
+//
 // Which folders are open is kept on the browser (Browser.shelfOpen), not in
 // the view. The column is drawn twice, once plain and once scrolling, and
 // ViewThatFits swaps one for the other as an opening folder makes the rows
@@ -93,7 +98,7 @@ struct Shelf: View {
     var body: some View {
         let lines = Shelf.lines(bookmarks.roots, open: browser.shelfOpen)
         let carried = Shelf.carried(dragging, in: lines)
-        let open = Set(browser.tabs.filter(browser.onShelf).compactMap { browser.shelfTabs[$0.id] })
+        let open = Set(browser.tabs.filter { browser.onShelf($0) }.compactMap { browser.shelfTabs[$0.id] })
         let folded = browser.prefs.sideBookmarksFolded
         VStack(alignment: .leading, spacing: Shelf.gap) {
             Top(folded: folded, lit: folded && aim != nil, holdsOpen: folded && Shelf.holds(any: open, bookmarks.roots)) {
@@ -506,6 +511,19 @@ extension Browser {
         move(tab, to: here < anchor ? (after ? anchor : anchor - 1) : (after ? anchor + 1 : anchor))
     }
 
+    /// The space on screen's bookmarks.
+    var bookmarks: Bookmarks { bookmarks(of: spaceID) }
+
+    /// A space's bookmarks, read from its file the first time they are
+    /// asked for; their changes redraw the window as the history's do.
+    func bookmarks(of space: UUID) -> Bookmarks {
+        if let kept = shelves[space] { return kept.list }
+        let list = Bookmarks(space: space)
+        let watch = list.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+        shelves[space] = (list, watch)
+        return list
+    }
+
     /// A bookmark's own tab, in the space on screen, while it is open.
     func shelfTab(for id: Bookmark.ID) -> Tab? {
         tabs.first { shelfTabs[$0.id] == id && onShelf($0) }
@@ -515,9 +533,10 @@ extension Browser {
     /// among the tabs — while the bookmarks are in the column, that bookmark
     /// is still kept, and the tab hasn't been pinned. Anywhere else it is
     /// drawn as a tab, and so it is saved as one.
-    func onShelf(_ tab: Tab) -> Bool {
+    /// `space` is the tab's, for a space not on screen.
+    func onShelf(_ tab: Tab, in space: UUID? = nil) -> Bool {
         guard prefs.sidebar, prefs.sideBookmarks, tab.pin == nil, let id = shelfTabs[tab.id] else { return false }
-        return Shelf.holds(id, bookmarks.roots)
+        return Shelf.holds(id, bookmarks(of: space ?? spaceID).roots)
     }
 
     /// A click on a bookmark: back to its tab, or into a new one of its own.

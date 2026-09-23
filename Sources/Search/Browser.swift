@@ -39,7 +39,10 @@ final class Browser: NSObject, ObservableObject {
 
     // MARK: - bookmarks
 
-    let bookmarks = Bookmarks()
+    /// Each space's own bookmarks, read when first asked for, and what
+    /// passes their changes on; `bookmarks` is the space on screen's (see
+    /// Shelf.swift).
+    var shelves: [UUID: (list: Bookmarks, watch: AnyCancellable)] = [:]
     /// The full list, for taking things out.
     @Published var bookmarking = false
     /// The dropdown off the button.
@@ -714,9 +717,6 @@ final class Browser: NSObject, ObservableObject {
         // The History menu lists what the history holds, and the menu is drawn
         // from this object's changes — so the history's are passed on.
         history.objectWillChange
-            .sink { [weak self] in self?.objectWillChange.send() }
-            .store(in: &bag)
-        bookmarks.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &bag)
 
