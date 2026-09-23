@@ -970,9 +970,14 @@ final class PageView: WKWebView {
     /// How many came back unused and were kept quiet, for the bench.
     static var quieted = 0
 
+    /// A key the page sent back unused, offered to Search's shortcuts first —
+    /// for one set to let websites have it first. True when it was taken.
+    static var unused: ((NSEvent) -> Bool)?
+
     override func keyDown(with event: NSEvent) {
         if let handed, PageView.same(handed, event) {
             self.handed = nil
+            if PageView.unused?(event) == true { return }
             PageView.quieted += 1
             return
         }
