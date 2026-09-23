@@ -20,7 +20,6 @@ don't build it twice.
 
 - [ ] **Where a link goes, shown on hover**, as an option. *([#29](https://github.com/driceroland/Search/pull/29))*
 - [ ] **Import from Comet**, alongside Chrome, Arc, Brave, Edge and Dia. *(X)*
-- [ ] **Homebrew**: `brew install --cask search`. *(X)*
 - [ ] **Intel Macs.** *(X)*
 
 ## Later — bigger pieces of work

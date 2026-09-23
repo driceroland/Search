@@ -1,4 +1,5 @@
 import AppKit
+import AuthenticationServices
 import SwiftUI
 import WebKit
 
@@ -412,6 +413,14 @@ final class Bench {
             out["peeking"] = browser.peeking
             out["sideHides"] = browser.prefs.sideHides
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
+            // Whether this Mac lets the browser use its passkeys at all — the
+            // one-time permission macOS asks a browser other than Safari for.
+            switch ASAuthorizationWebBrowserPublicKeyCredentialManager().authorizationStateForPlatformCredentials {
+            case .authorized: out["passkeyAccess"] = "authorized"
+            case .denied: out["passkeyAccess"] = "denied"
+            default: out["passkeyAccess"] = "notDetermined"
+            }
+            out["passkeyAsks"] = Passkeys.asked
             answer(out)
 
         case "press":

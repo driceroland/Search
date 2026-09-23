@@ -13,10 +13,14 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Scroll with the middle button, as on Windows: click the wheel on a page, then move the mouse up or down; another click stops it. Settings › General › Scroll with the middle button.
+- Homebrew: `brew install --cask driceroland/tap/search`, and `brew upgrade` brings each new version.
 - ⌘S folds the tab bar away in its layout across the top too, as it folds the column: the page takes the whole height, and the bar comes back down over it when the pointer rests against the top edge. The View menu says Hide Tab Bar there.
 
 ### Fixed
 
+- Passkeys from your Mac's keychain: the first time a site asks for one, macOS now asks whether Search may use your passkeys — a permission it had never been asked for, so the passkey a site offers under its sign-in field was refused on the spot. Refused by mistake? System Settings › Privacy & Security › Passkeys Access for Web Browsers.
+- ⌘⇧N no longer piles up empty private tabs: one already open comes to the end of the row, as with ⌘T.
 - A new space's choice of sign-ins reads in full in the column ("Signed in" / "Signed out"), where it was cut short.
 
 ## 1.0.1 — 23 September 2026

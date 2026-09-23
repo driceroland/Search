@@ -869,6 +869,18 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // Every tab's next page, and the page each is showing now (see AutoScroll.swift).
+        prefs.$autoScroll
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self else { return }
+                for tab in tabs + parkedTabs {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.built?.evaluateJavaScript(on ? AutoScroll.script : AutoScroll.off)
+                }
+            }
+            .store(in: &bag)
+
         prefs.$passkeys
             .dropFirst()
             .sink { [weak self] on in
@@ -1264,6 +1276,20 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘⇧N. A tab that keeps nothing — its own cookies, its own sign-ins, no
     /// history, and no place in tomorrow's session.
     func newShyTab() {
+        // Never two empty private tabs, as ⌘T never makes two empty ones:
+        // one already open comes to the end of the row and is the one opened.
+        if let blank = tabs.last(where: { $0.isBlank && $0.shy && !$0.bench }) {
+            if let end = tabs.indices.last, tabs.firstIndex(where: { $0.id == blank.id }) != end {
+                move(blank, to: end)
+            }
+            if activeID != blank.id { leaving() }
+            activeID = blank.id
+            summoning = false
+            typed = ""
+            editing = false
+            focusRequest += 1
+            return
+        }
         let tab = Tab(shy: true)
         adopt(tab)
         leaving()

@@ -216,6 +216,7 @@ final class Tab: ObservableObject, Identifiable {
     private let forms = FormRelay()
     private let images = ImageRelay()
     private let shop = StoreRelay()
+    private let passkeyGate = PasskeyGate()
     private let ears = AudioWatch()
     private var lastY: Double = 0
 
@@ -356,6 +357,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeScriptMessageHandler(forName: ImageRelay.name)
         controller.removeScriptMessageHandler(forName: StoreRelay.name)
         controller.removeScriptMessageHandler(forName: TintRouter.name, contentWorld: .defaultClient)
+        controller.removeScriptMessageHandler(forName: PasskeyGate.name)
         controller.add(relay, name: ScrollRelay.name)
         controller.add(veils_, name: VeilRelay.name)
         controller.add(images, name: ImageRelay.name)
@@ -363,6 +365,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(forms, name: FormRelay.name)
         tintRouter.tab = self
         controller.add(tintRouter, contentWorld: .defaultClient, name: TintRouter.name)
+        controller.addScriptMessageHandler(passkeyGate, contentWorld: .page, name: PasskeyGate.name)
         Shield.shared.protect(controller)
         built = web
         arm(hiding: veils)
@@ -453,6 +456,11 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: FormRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
+        if AutoScroll.on {
+            controller.addUserScript(
+                WKUserScript(source: AutoScroll.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+            )
+        }
         controller.addUserScript(
             WKUserScript(source: Swipe.calm, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         )
@@ -479,6 +487,12 @@ final class Tab: ObservableObject, Identifiable {
                     injectionTime: .atDocumentStart,
                     forMainFrameOnly: false
                 )
+            )
+        } else if Passkeys.undecided {
+            // Until macOS has been asked whether Search may use your passkeys,
+            // a site's request for one waits for the question (see Passkeys).
+            controller.addUserScript(
+                WKUserScript(source: Passkeys.gate, injectionTime: .atDocumentStart, forMainFrameOnly: false)
             )
         }
         guard !css.isEmpty else { return }
@@ -933,6 +947,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeScriptMessageHandler(forName: ImageRelay.name)
         controller.removeScriptMessageHandler(forName: StoreRelay.name)
         controller.removeScriptMessageHandler(forName: TintRouter.name, contentWorld: .defaultClient)
+        controller.removeScriptMessageHandler(forName: PasskeyGate.name)
         controller.removeAllUserScripts()
         web.onPull = nil
         web.onTouch = nil
