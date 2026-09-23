@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- A mouse's back and forward side buttons navigate the page, the way the trackpad's two-finger swipe already does.
+
 ## 1.0.1 — 23 September 2026
 
 ### Added
