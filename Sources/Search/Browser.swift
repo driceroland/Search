@@ -1010,7 +1010,7 @@ final class Browser: NSObject, ObservableObject {
     func replaceBlank(_ tab: Tab, with url: URL) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         let url = Browser.page(url)
-        let page = Tab(configuration: Browser.extensionConfiguration(for: url))
+        let page = Tab(for: url)
         prepare(page)
         tabs[index] = page
         page.go(to: url)
@@ -1187,7 +1187,7 @@ final class Browser: NSObject, ObservableObject {
         // An extension's own page is served only to a view built from that
         // extension's configuration.
         let url = Browser.page(url)
-        let tab = Tab(configuration: Browser.extensionConfiguration(for: url))
+        let tab = Tab(for: url)
         prepare(tab)
         let here = atEnd ? nil : tabs.firstIndex { $0.id == activeID }
         tabs.insert(tab, at: here.map { $0 + 1 } ?? tabs.count)
@@ -1209,7 +1209,7 @@ final class Browser: NSObject, ObservableObject {
     /// the site: to the eye, the page went there.
     func replace(_ tab: Tab, going url: URL) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-        let fresh = Tab(bench: tab.bench, configuration: Browser.extensionConfiguration(for: url))
+        let fresh = Tab(bench: tab.bench, for: url)
         prepare(fresh)
         let wasActive = activeID == tab.id
         tabs[index] = fresh
@@ -1226,6 +1226,13 @@ final class Browser: NSObject, ObservableObject {
         return url
     }
 
+    /// The extension an address belongs to, or nil for the web.
+    static func extensionHost(of url: URL) -> String? {
+        guard #available(macOS 15.4, *) else { return nil }
+        let url = Extensions.current(url)
+        return url.scheme == Extensions.scheme ? url.host : nil
+    }
+
     /// The configuration for an extension's page, or nil for anything else.
     static func extensionConfiguration(for url: URL) -> WKWebViewConfiguration? {
         guard #available(macOS 15.4, *) else { return nil }
@@ -1239,7 +1246,7 @@ final class Browser: NSObject, ObservableObject {
     @discardableResult
     func benchOpen(_ url: URL) -> Tab {
         let url = Browser.page(url)
-        let tab = Tab(bench: true, configuration: Browser.extensionConfiguration(for: url))
+        let tab = Tab(bench: true, for: url)
         prepare(tab)
         tabs.append(tab)
         tab.go(to: url)
@@ -1434,6 +1441,7 @@ final class Browser: NSObject, ObservableObject {
         tab.onPickEnd = { [weak self] _ in self?.veiling = false }
         tab.onImageMenu = { [weak self] tab, url in self?.showImageMenu(for: tab, at: url) }
         tab.onStoreAdd = { [weak self] tab in self?.addFromStore(tab) }
+        tab.onCross = { [weak self] tab, url in self?.replace(tab, going: url) }
 
         // The caret in a sign-in box: the accounts kept for this site hang
         // from the box, and go when the caret does. Nothing is filled on

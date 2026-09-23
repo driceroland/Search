@@ -92,6 +92,9 @@ final class Tab: ObservableObject, Identifiable {
     /// the reason there is.
     private(set) var built: PageView?
     private let configuration: WKWebViewConfiguration
+    /// The extension whose pages this tab's view was built for, nil for the
+    /// web. WebKit keeps each kind of view to its own pages.
+    private let home: String?
 
     /// Whether its page was made with the extension controller in it — every
     /// ordinary tab, and a private one only when extensions were allowed
@@ -224,6 +227,7 @@ final class Tab: ObservableObject, Identifiable {
     var onImageMenu: ((Tab, URL) -> Void)?
     /// "Add to Search" was pressed on the Chrome Web Store page this tab shows.
     var onStoreAdd: ((Tab) -> Void)?
+    var onCross: ((Tab, URL) -> Void)?
     /// The extension whose store page has its own "Add to Search" button in
     /// place — so the bar at the bottom of the window doesn't offer it twice.
     @Published var storePlaced: String?
@@ -296,10 +300,15 @@ final class Tab: ObservableObject, Identifiable {
         return "New Tab"
     }
 
-    init(shy: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil) {
+    init(shy: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil, home: String? = nil) {
         self.shy = shy
         self.bench = bench
         self.configuration = configuration ?? Web.configuration(shy: shy)
+        self.home = home
+    }
+
+    convenience init(bench: Bool = false, for url: URL) {
+        self.init(bench: bench, configuration: Browser.extensionConfiguration(for: url), home: Browser.extensionHost(of: url))
     }
 
     private func build() -> PageView {
@@ -596,6 +605,10 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     func go(to url: URL) {
+        if Browser.extensionHost(of: url) != home, let onCross {
+            onCross(self, url)
+            return
+        }
         // Set straight away rather than waiting for the observer: the tab has to
         // stop being blank in the same frame the field disappears, or the empty
         // state flashes back for an instant on its way out.
