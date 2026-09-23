@@ -374,6 +374,7 @@ private struct TabPill: View {
                 browser.select(tab)
             }
         })
+        .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
         .help(pinned || compact ? tab.label : "")
@@ -647,6 +648,50 @@ struct OneClick: ViewModifier {
             content.onTapGesture(count: 2, perform: act)
         } else {
             content.onTapGesture(perform: act)
+        }
+    }
+}
+
+/// The middle button on a tab closes it, as it does in every other browser.
+///
+/// SwiftUI has no gesture for that button, so this is a real view laid over
+/// the tab — and a real view is asked first (see DragStrip). It says yes for
+/// the middle button and nothing else: to a left click, a drag or a right
+/// click it isn't there, and the tab's own gestures and menu go on as before.
+struct MiddleClick: NSViewRepresentable {
+    let act: () -> Void
+
+    func makeNSView(context: Context) -> NSView { Catch() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        (view as? Catch)?.act = act
+    }
+
+    private final class Catch: NSView {
+        var act: () -> Void = {}
+        private var pressed = false
+
+        /// Asked about every event that lands on the tab, the pointer moving
+        /// over it included; the one being delivered is the one to judge by.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent,
+                  event.type == .otherMouseDown || event.type == .otherMouseUp,
+                  event.buttonNumber == 2
+            else { return nil }
+            return super.hitTest(point)
+        }
+
+        override func otherMouseDown(with event: NSEvent) {
+            pressed = true
+        }
+
+        /// On the release, not the press, and only if it is still over the
+        /// tab: a middle button pressed by mistake can be taken back the way
+        /// a click on the cross can, by moving off before letting go.
+        override func otherMouseUp(with event: NSEvent) {
+            guard pressed else { return }
+            pressed = false
+            if bounds.contains(convert(event.locationInWindow, from: nil)) { act() }
         }
     }
 }
