@@ -222,6 +222,12 @@ struct WindowSetup: NSViewRepresentable {
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError() }
 
+        /// Here only to learn the window, never to be clicked: set behind or
+        /// over something that spans the whole window — Fold's layer does,
+        /// since its band runs along the top — a view that answered would
+        /// take every click meant for the page and the tabs.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             guard let window else { return }
