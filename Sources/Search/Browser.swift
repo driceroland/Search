@@ -1184,6 +1184,14 @@ final class Browser: NSObject, ObservableObject {
         writeSession(now: true)
     }
 
+    func moveFolder(_ id: UUID, to target: UUID) {
+        guard let from = folders.firstIndex(where: { $0.id == id }),
+              let destination = folders.firstIndex(where: { $0.id == target }),
+              from != destination else { return }
+        folders.move(fromOffsets: IndexSet(integer: from), toOffset: destination > from ? destination + 1 : destination)
+        writeSession(now: true)
+    }
+
     func removeFolder(_ id: UUID) {
         folders.removeAll { $0.id == id }
         tabFolders = tabFolders.filter { $0.value != id }
@@ -2076,4 +2084,3 @@ extension Browser: WKDownloadDelegate {
         return candidate
     }
 }
-

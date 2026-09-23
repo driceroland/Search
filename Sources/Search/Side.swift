@@ -295,6 +295,16 @@ struct SideBar: View {
                         FolderRow(folder: folder, toggle: { browser.toggleFolder(folder.id) }) { providers in
                             dropTab(providers, into: folder.id)
                         }
+                        .onDrag {
+                            NSItemProvider(object: "folder:\(folder.id.uuidString)" as NSString)
+                        } preview: {
+                            Text(folder.name)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(Palette.ink)
+                                .padding(.horizontal, 12)
+                                .frame(height: SideBar.row)
+                                .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        }
                     }
                 }
                     .contextMenu {
@@ -363,8 +373,14 @@ struct SideBar: View {
     private func dropTab(_ providers: [NSItemProvider], into folder: UUID?) -> Bool {
         guard let provider = providers.first(where: { $0.canLoadObject(ofClass: String.self) }) else { return false }
         _ = provider.loadObject(ofClass: String.self) { text, _ in
-            guard let text, let id = UUID(uuidString: text) else { return }
+            guard let text else { return }
             DispatchQueue.main.async {
+                if text.hasPrefix("folder:"), let moving = UUID(uuidString: String(text.dropFirst("folder:".count))),
+                   let folder {
+                    withAnimation(Motion.settle) { browser.moveFolder(moving, to: folder) }
+                    return
+                }
+                guard let id = UUID(uuidString: text) else { return }
                 guard let tab = browser.tabs.first(where: { $0.id == id }) else { return }
                 withAnimation(Motion.settle) {
                     browser.file(tab, in: folder)
