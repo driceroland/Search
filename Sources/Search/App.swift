@@ -662,6 +662,10 @@ struct ContentView: View {
                 browser.cancelTabEdit()
                 return true
             }
+            if browser.makingSpace {
+                withAnimation(Motion.glide) { browser.makingSpace = false }
+                return true
+            }
             if browser.tuning {
                 browser.tuning = false
                 return true
@@ -719,6 +723,15 @@ struct ContentView: View {
                 return true
             }
             return false
+        }
+
+        // ⌃1–⌃9 go to that space, when there are spaces — by the key, as
+        // ⌘1–⌘9 are below, so the top row works on every layout.
+        if browser.prefs.usesSpaces, flags.contains(.control),
+           flags.isDisjoint(with: [.command, .option, .shift]),
+           let number = ContentView.digits[event.keyCode], number > 0 {
+            browser.switchSpace(index: number - 1)
+            return true
         }
 
         // A shortcut an extension registered — ⌥⇧D, ⌃⇧Y — before ours, since

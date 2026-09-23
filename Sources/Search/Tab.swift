@@ -25,7 +25,8 @@ enum Web {
         // launches is the difference between a browser and a preview pane. A
         // shy tab gets its own store, which exists only while it does — its own
         // cookies, its own sign-ins, and nothing left behind when it closes.
-        config.websiteDataStore = shy ? .nonPersistent() : Store.websites
+        // With spaces on, each space's tabs share a store of that space's.
+        config.websiteDataStore = shy ? .nonPersistent() : MainActor.assumeIsolated { Spaces.store(for: Spaces.current) }
         // Chrome extensions see every page but a private one. The controller
         // has to be there when the view is made; it can't be added after.
         if #available(macOS 15.4, *), !shy { MainActor.assumeIsolated { Extensions.attach(config) } }

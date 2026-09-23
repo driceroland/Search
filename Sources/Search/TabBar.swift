@@ -29,13 +29,16 @@ struct TabBar: View {
             ZStack(alignment: .leading) {
                 // The empty half of the strip is what you grab to move the
                 // window; the tabs keep the run they sit on.
-                DragStrip(reserved: Metrics.lights + run(in: geo.size.width) + Metrics.tabGap + Metrics.plusWidth, trailing: Metrics.helm + 26 + 24)
+                DragStrip(reserved: Metrics.lights + dot + run(in: geo.size.width) + Metrics.tabGap + Metrics.plusWidth, trailing: Metrics.helm + 26 + 24)
                 // And the corner the lights sit in, which is title bar too —
                 // the one stretch left to take hold of when tabs fill the row.
                 DragStrip()
                     .frame(width: Metrics.lights)
 
                 HStack(spacing: Metrics.tabGap) {
+                    // The space on screen, first, when there are spaces.
+                    if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
+
                     // The tabs, in a run of their own. While they fit, it is
                     // exactly as wide as they are and nothing about the row
                     // changes. Past what the window holds at their narrowest
@@ -221,8 +224,11 @@ struct TabBar: View {
     /// the three of the helm and the bookmarks stand in for them.
     private func room(in strip: CGFloat) -> CGFloat {
         let far = doors > 0 ? doors : Metrics.helm + 26
-        return max(0, strip - Metrics.lights - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
+        return max(0, strip - Metrics.lights - dot - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
     }
+
+    /// What the space's dot takes before the tabs, when there are spaces.
+    private var dot: CGFloat { browser.prefs.usesSpaces ? SpaceDot.width + Metrics.tabGap : 0 }
 
     /// Every loose tab is the same width, so the cross is always in the same
     /// place. Past a dozen or so they start giving ground; too narrow for a

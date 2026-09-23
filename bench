@@ -32,11 +32,17 @@
     ./bench ext-answer yes|no|ask      test run: answer extensions' questions without asking; lists what was asked
     ./bench ext-enable ID on|off       switch an extension on or off
     ./bench ext-remove ID
+    ./bench strip PATH [WIDTH]         the row of tabs across the top, drawn off screen to a PNG
+    ./bench column PATH [HEIGHT]       the column of tabs, drawn off screen to a PNG
+    ./bench space [new NAME|go N|delete|swipe DX|move N]
+                                       test run: the spaces, a new one, switch to the Nth, delete this one,
+                                       two fingers DX points sideways over the column, move this one to Nth
     ./bench hit X Y [double]           what a press at X Y (points from the window's top left) lands on,
                                        and whether a drag from there would move the window;
                                        double: test run, a double-click there (start the probe hidden)
+    ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
-                                       look light|dark|system, sidebar on|off, inspector on|off, folded on|off, peek on|off
+                                       look light|dark|system, sidebar on|off, inspector on|off, spaces on|off, folded on|off, peek on|off
 
 Needs Settings › General › "Let a script drive Search" switched on in the
 running app. IDs are the first characters of a tab's id, as `tabs` prints
@@ -159,10 +165,31 @@ def main(argv):
         if len(args) not in (2, 3): sys.exit("usage: bench resize WIDTH HEIGHT [STEPS]")
         request["width"], request["height"] = float(args[0]), float(args[1])
         if len(args) == 3: request["steps"] = int(args[2])
+    elif verb == "strip":
+        if not 1 <= len(args) <= 2: sys.exit("usage: bench strip PATH [WIDTH]")
+        request["path"] = os.path.abspath(args[0])
+        if len(args) == 2: request["width"] = float(args[1])
+    elif verb == "column":
+        if not 1 <= len(args) <= 2: sys.exit("usage: bench column PATH [HEIGHT]")
+        request["path"] = os.path.abspath(args[0])
+        if len(args) == 2: request["height"] = float(args[1])
+    elif verb == "space":
+        if args and args[0] == "new": request["action"], request["name"] = "new", " ".join(args[1:]) or "Test"
+        elif args and args[0] == "go" and len(args) == 2: request["action"], request["index"] = "go", int(args[1])
+        elif args and args[0] == "delete": request["action"] = "delete"
+        elif args and args[0] == "swipe" and len(args) == 2: request["action"], request["dx"] = "swipe", float(args[1])
+        elif args and args[0] == "move" and len(args) == 2: request["action"], request["index"] = "move", int(args[1])
+        elif args: sys.exit("usage: bench space [new NAME | go N | delete | swipe DX | move N]")
     elif verb == "hit":
         if len(args) not in (2, 3) or (len(args) == 3 and args[2] != "double"): sys.exit("usage: bench hit X Y [double]")
         request["x"], request["y"] = float(args[0]), float(args[1])
         if len(args) == 3: request["double"] = True
+    elif verb == "film":
+        if len(args) not in (2, 3, 4) or args[0] not in ("peek", "unpeek", "fold", "none"):
+            sys.exit("usage: bench film peek|unpeek|fold|none PATH [FRAMES] [EVERY]")
+        request["action"], request["path"] = args[0], os.path.abspath(args[1])
+        if len(args) > 2: request["frames"] = int(args[2])
+        if len(args) > 3: request["every"] = float(args[3])
     elif verb not in ("tabs", "probe", "extensions"):
         sys.exit(f"unknown command “{verb}” — see bench help")
 

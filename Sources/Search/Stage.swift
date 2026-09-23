@@ -247,6 +247,8 @@ struct DragStrip: NSViewRepresentable {
     var below: CGFloat = 0
     /// The run at the trailing end that belongs to a button.
     var trailing: CGFloat = 0
+    /// How much of the bottom belongs to whatever is drawn there.
+    var footer: CGFloat = 0
 
     func makeNSView(context: Context) -> NSView { Strip() }
 
@@ -254,12 +256,14 @@ struct DragStrip: NSViewRepresentable {
         (view as? Strip)?.reserved = reserved
         (view as? Strip)?.below = below
         (view as? Strip)?.trailing = trailing
+        (view as? Strip)?.footer = footer
     }
 
     private final class Strip: NSView {
         var reserved: CGFloat = 0
         var below: CGFloat = 0
         var trailing: CGFloat = 0
+        var footer: CGFloat = 0
 
         private var pressed: NSEvent?
         private var moved = false
@@ -274,7 +278,7 @@ struct DragStrip: NSViewRepresentable {
             let inside = convert(point, from: superview)
             guard inside.x >= reserved, inside.x <= bounds.width - trailing else { return nil }
             // AppKit measures up from the bottom; the reservation is from the top.
-            guard bounds.height - inside.y >= below else { return nil }
+            guard bounds.height - inside.y >= below, inside.y >= footer else { return nil }
             return super.hitTest(point)
         }
 

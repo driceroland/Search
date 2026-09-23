@@ -208,6 +208,10 @@ struct SettingsPanel: View {
             Line("Sleep tabs you aren't using", "After half an hour away they come back where you left them. Pinned tabs, sound, calls and anything typed stay awake.") {
                 Switch(on: $prefs.sleepsTabs)
             }
+            Rule()
+            Line("Spaces", "Separate sets of tabs, each with its own sign-ins, switched with ⌃1–⌃9 or the dot beside the tabs. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
+                Switch(on: $prefs.usesSpaces)
+            }
         }
     }
 

@@ -107,6 +107,11 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// Separate sets of tabs, each with its own sign-ins (see Spaces.swift).
+    /// Off unless asked for.
+    @Published var usesSpaces: Bool {
+        didSet { store.set(usesSpaces, forKey: "spaces") }
+    }
     /// Inspect Element in a page's right-click menu, the Web Inspector
     /// Safari shows once its Develop menu is on. Off unless asked for.
     @Published var inspects: Bool {
@@ -163,6 +168,7 @@ final class Preferences: ObservableObject {
         // Anyone who already has a session was here before the welcome
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
+        usesSpaces = store.bool(forKey: "spaces")
         let inspecting = store.bool(forKey: "inspector")
         inspects = inspecting
         Web.inspects = inspecting

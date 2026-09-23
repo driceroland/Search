@@ -12,7 +12,6 @@ don't build it twice.
 ## Now — fixes for the next update
 
 - [ ] **Bitwarden goes blank after signing in** (and for one person doesn't load). Before signing in it works — popup, WebAssembly, background — so this needs an account to reproduce. *(X, several)*
-- [ ] **A double-click on the title bar fills the screen** from anywhere along the top, in both layouts. *(X)* (in progress)
 - [ ] **Search quits as it opens on macOS 14.8.3.** Nothing in the build points to it yet; waiting on the crash report. *(X)*
 - [ ] **Vimium C doesn't start**: WebKit fails to load its background (Vimium itself works). *(X)*
 
@@ -27,7 +26,6 @@ don't build it twice.
 
 ## Later — bigger pieces of work
 
-- [ ] **Spaces**: separate sets of tabs, each with its own cookies, sign-ins and downloads folder, switched from the sidebar or a shortcut; sites that always open in a given space. The most asked-for feature. *([#4](https://github.com/driceroland/Search/issues/4), X, many)*
 - [ ] **More of the extension APIs**: the side panel, and the proxy API VPN and proxy extensions rely on. *([#12](https://github.com/driceroland/Search/issues/12), X)*
 - [ ] **An address bar that stays visible** above the page, as an option. *([#15](https://github.com/driceroland/Search/issues/15))*
 - [ ] **A tab switcher with previews** (⌃Tab held down). *(X)*

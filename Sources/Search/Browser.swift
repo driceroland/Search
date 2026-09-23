@@ -411,15 +411,15 @@ final class Browser: NSObject, ObservableObject {
     @Published var hoarding = false
     @Published var recallHunt = ""
 
-    /// Cookies, caches, local storage — everything a site left on this Mac.
-    /// Clearing it signs you out of everything, which is the point.
+    /// Cookies, caches, local storage — everything a site left on this Mac,
+    /// in every space. Clearing it signs you out of everything, which is
+    /// the point.
     func clearSites() {
         let types = WKWebsiteDataStore.allWebsiteDataTypes()
-        Store.websites.removeData(
-            ofTypes: types, modifiedSince: .distantPast
-        ) { [weak self] in
-            MainActor.assumeIsolated { self?.announce("Signed out of everything") }
+        for space in spaces {
+            Spaces.store(for: space.id).removeData(ofTypes: types, modifiedSince: .distantPast) {}
         }
+        announce("Signed out of everything")
     }
 
     /// Only what was fetched to draw pages, not what identifies you.
@@ -429,11 +429,10 @@ final class Browser: NSObject, ObservableObject {
             WKWebsiteDataTypeMemoryCache,
             WKWebsiteDataTypeOfflineWebApplicationCache,
         ]
-        Store.websites.removeData(
-            ofTypes: types, modifiedSince: .distantPast
-        ) { [weak self] in
-            MainActor.assumeIsolated { self?.announce("Cache cleared") }
+        for space in spaces {
+            Spaces.store(for: space.id).removeData(ofTypes: types, modifiedSince: .distantPast) {}
         }
+        announce("Cache cleared")
     }
 
     func clearHistory() {
@@ -630,6 +629,15 @@ final class Browser: NSObject, ObservableObject {
     private var hush: DispatchWorkItem?
     private var zoomShown = 100
     private var remembering = false
+    /// Spaces (see Spaces.swift): every one, the one on screen, and the
+    /// rows of tabs of the others.
+    @Published var spaces = Spaces.read()
+    @Published var spaceID = Space.firstID
+    var parked: [UUID: Parked] = [:]
+    /// How far the column's rows have followed two fingers sideways, and
+    /// whether the card for a new space stands in for them (see SpaceSwipe).
+    @Published var spaceSwipe: CGFloat = 0
+    @Published var makingSpace = false
 
     // MARK: - beginning and ending
 
@@ -714,7 +722,20 @@ final class Browser: NSObject, ObservableObject {
             watchForSleep()
         }
 
-        let saved = Session.read()
+        // What a deleted space left behind, if WebKit wouldn't let it go then.
+        Spaces.sweep()
+        // The space you were in, when there are spaces (see Spaces.swift).
+        if prefs.usesSpaces, let last = Store.settings.string(forKey: "space.current").flatMap(UUID.init),
+           spaces.contains(where: { $0.id == last }) {
+            spaceID = last
+            Spaces.current = last
+        }
+        restoreSession()
+    }
+
+    /// The row of tabs the space on screen had last time, or one empty tab.
+    func restoreSession() {
+        let saved = Session.read(space: spaceID)
         guard !saved.tabs.isEmpty else {
             // A blank tab costs nothing until it is asked for its page. Its
             // web view — and with it WebKit's helper processes — is built a
@@ -751,6 +772,12 @@ final class Browser: NSObject, ObservableObject {
     /// read where they are used.
     private func follow() {
         followStore()
+        // Spaces turned off: back to the first, whose tabs are the ones there
+        // were before (see Spaces.swift).
+        prefs.$usesSpaces
+            .dropFirst()
+            .sink { [weak self] on in if !on { self?.leaveSpaces() } }
+            .store(in: &bag)
         prefs.$shielded
             .dropFirst()
             .sink { [weak self] on in
@@ -832,9 +859,10 @@ final class Browser: NSObject, ObservableObject {
         Favicons.shared.relook(tabs.filter { !$0.asleep })
     }
 
-    private func writeSession(now: Bool = false) {
+    func writeSession(now: Bool = false) {
         Session.write(
             now: now,
+            space: spaceID,
             .init(
                 tabs: tabs.compactMap { tab in
                     guard !tab.shy, !tab.bench else { return nil }
@@ -1209,6 +1237,13 @@ final class Browser: NSObject, ObservableObject {
         let job = tab.web.printOperation(with: info)
         job.view?.frame = tab.web.bounds
         job.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+
+    /// Another space's row put on screen in place of this one (see
+    /// Spaces.swift) — empty, for one that restores its own.
+    func showRow(_ row: [Tab], active: Tab.ID?) {
+        tabs = row
+        activeID = active ?? row.first?.id
     }
 
     private func adopt(_ tab: Tab) {
@@ -1860,7 +1895,7 @@ extension Browser: WKDownloadDelegate {
         guard !prefs.asksWhereToSave else {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = name
-            panel.directoryURL = prefs.downloads
+            panel.directoryURL = downloadsFolder
             panel.canCreateDirectories = true
             guard panel.runModal() == .OK, let url = panel.url else {
                 completionHandler(nil)
@@ -1871,7 +1906,7 @@ extension Browser: WKDownloadDelegate {
             return
         }
 
-        completionHandler(Browser.free(name, in: prefs.downloads))
+        completionHandler(Browser.free(name, in: downloadsFolder))
         announce("Downloading \(name)")
     }
 
