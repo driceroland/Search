@@ -93,7 +93,7 @@ struct Shelf: View {
     var body: some View {
         let lines = Shelf.lines(bookmarks.roots, open: browser.shelfOpen)
         let carried = Shelf.carried(dragging, in: lines)
-        let open = Set(browser.tabs.compactMap { browser.shelfTabs[$0.id] })
+        let open = Set(browser.tabs.filter(browser.onShelf).compactMap { browser.shelfTabs[$0.id] })
         let folded = browser.prefs.sideBookmarksFolded
         VStack(alignment: .leading, spacing: Shelf.gap) {
             Top(folded: folded, lit: folded && aim != nil, holdsOpen: folded && Shelf.holds(any: open, bookmarks.roots)) {
@@ -508,14 +508,15 @@ extension Browser {
 
     /// A bookmark's own tab, in the space on screen, while it is open.
     func shelfTab(for id: Bookmark.ID) -> Tab? {
-        tabs.first { shelfTabs[$0.id] == id }
+        tabs.first { shelfTabs[$0.id] == id && onShelf($0) }
     }
 
     /// A tab that is a bookmark's own, and so shown under it rather than
-    /// among the tabs — while the bookmarks are in the column and that
-    /// bookmark is still kept.
+    /// among the tabs — while the bookmarks are in the column, that bookmark
+    /// is still kept, and the tab hasn't been pinned. Anywhere else it is
+    /// drawn as a tab, and so it is saved as one.
     func onShelf(_ tab: Tab) -> Bool {
-        guard prefs.sideBookmarks, let id = shelfTabs[tab.id] else { return false }
+        guard prefs.sidebar, prefs.sideBookmarks, tab.pin == nil, let id = shelfTabs[tab.id] else { return false }
         return Shelf.holds(id, bookmarks.roots)
     }
 
@@ -526,6 +527,8 @@ extension Browser {
             return
         }
         guard let url = node.url.flatMap(URL.init(string:)) else { return }
+        // A tab it had before, since pinned, stays pinned: this one is its tab now.
+        shelfTabs = shelfTabs.filter { $0.value != node.id }
         let tab = open(url, foreground: true)
         shelfTabs[tab.id] = node.id
     }
