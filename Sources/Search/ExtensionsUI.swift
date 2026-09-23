@@ -122,6 +122,9 @@ struct ExtensionsPage: View {
                 }
                 Spacer(minLength: 8)
                 if hovering {
+                    Quick(item.pinned == true ? "Unpin" : "Pin to Toolbar") {
+                        extensions.setPinned(item.id, !(item.pinned ?? false))
+                    }
                     if context?.overrideNewTabPageURL != nil {
                         let on = Store.settings.object(forKey: "extensions.newtab.\(item.id)") as? Bool == true
                         Quick(on ? "Stop in New Tabs" : "Show in New Tabs") {

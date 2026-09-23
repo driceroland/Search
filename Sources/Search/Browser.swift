@@ -81,6 +81,14 @@ final class Browser: NSObject, ObservableObject {
         withAnimation(Motion.glide) { prefs.sidebar.toggle() }
     }
 
+    func searchURL(for text: String) -> URL? {
+        Engine.url(for: text, template: prefs.engine.template(custom: prefs.customEngine))
+    }
+
+    func destination(for typed: String) -> URL? {
+        Address.url(from: typed) ?? searchURL(for: typed)
+    }
+
     /// ⌘S: the column folded away, and slid out over the page for a look
     /// while it is (see Fold.swift).
     @Published var folded = false
@@ -411,15 +419,15 @@ final class Browser: NSObject, ObservableObject {
     @Published var hoarding = false
     @Published var recallHunt = ""
 
-    /// Cookies, caches, local storage — everything a site left on this Mac.
-    /// Clearing it signs you out of everything, which is the point.
+    /// Cookies, caches, local storage — everything a site left on this Mac,
+    /// in every space. Clearing it signs you out of everything, which is
+    /// the point.
     func clearSites() {
         let types = WKWebsiteDataStore.allWebsiteDataTypes()
-        Store.websites.removeData(
-            ofTypes: types, modifiedSince: .distantPast
-        ) { [weak self] in
-            MainActor.assumeIsolated { self?.announce("Signed out of everything") }
+        for space in spaces {
+            Spaces.store(for: space.id).removeData(ofTypes: types, modifiedSince: .distantPast) {}
         }
+        announce("Signed out of everything")
     }
 
     /// Only what was fetched to draw pages, not what identifies you.
@@ -429,11 +437,10 @@ final class Browser: NSObject, ObservableObject {
             WKWebsiteDataTypeMemoryCache,
             WKWebsiteDataTypeOfflineWebApplicationCache,
         ]
-        Store.websites.removeData(
-            ofTypes: types, modifiedSince: .distantPast
-        ) { [weak self] in
-            MainActor.assumeIsolated { self?.announce("Cache cleared") }
+        for space in spaces {
+            Spaces.store(for: space.id).removeData(ofTypes: types, modifiedSince: .distantPast) {}
         }
+        announce("Cache cleared")
     }
 
     func clearHistory() {
@@ -555,19 +562,38 @@ final class Browser: NSObject, ObservableObject {
     /// form, ready to be changed.
     @Published private(set) var editingTab: Tab.ID?
     @Published var tabDraft = ""
+    /// Set while that field is being used to name the tab rather than to go
+    /// somewhere: the same field, the same keys, a different thing at the end.
+    @Published private(set) var renamingTab = false
 
     func beginTabEdit(_ tab: Tab) {
         guard let url = tab.address else {
             edit()
             return
         }
+        renamingTab = false
         tabDraft = Address.pretty(url)
+        editingTab = tab.id
+    }
+
+    /// Rename. The name the tab is wearing arrives selected, so typing
+    /// replaces it; emptying the field gives the page its own title back.
+    func beginTabRename(_ tab: Tab) {
+        renamingTab = true
+        tabDraft = tab.label
         editingTab = tab.id
     }
 
     func commitTabEdit() {
         guard let id = editingTab, let tab = tabs.first(where: { $0.id == id }) else { return }
-        guard let url = Google.destination(for: tabDraft) else {
+        if renamingTab {
+            let typed = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            tab.name = typed.isEmpty ? nil : typed
+            cancelTabEdit()
+            writeSession(now: true)
+            return
+        }
+        guard let url = destination(for: tabDraft) else {
             // Stay put and say so, rather than quietly throwing the edit away.
             refusals += 1
             return
@@ -578,7 +604,27 @@ final class Browser: NSObject, ObservableObject {
 
     func cancelTabEdit() {
         editingTab = nil
+        renamingTab = false
         tabDraft = ""
+    }
+
+    /// A click somewhere else — the page, the column below, the rest of the
+    /// strip — while a tab's address or name is being edited in the tab: what
+    /// was typed is kept, as Return keeps it. An address left as it was loads
+    /// nothing again, and a field left empty is let go.
+    func finishTabEdit() {
+        guard let id = editingTab, let tab = tabs.first(where: { $0.id == id }) else { return }
+        if renamingTab {
+            commitTabEdit()
+            return
+        }
+        let draft = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if draft.isEmpty || tab.address.map({ Address.pretty($0) == draft }) == true
+            || destination(for: draft) == nil {
+            cancelTabEdit()
+            return
+        }
+        commitTabEdit()
     }
 
     // MARK: - saying so
@@ -630,6 +676,19 @@ final class Browser: NSObject, ObservableObject {
     private var hush: DispatchWorkItem?
     private var zoomShown = 100
     private var remembering = false
+    /// Spaces (see Spaces.swift): every one, the one on screen, and the
+    /// rows of tabs of the others.
+    @Published var spaces = Spaces.read() {
+        didSet { Spaces.sharing = Set(spaces.filter { $0.sharesSignIns == true }.map(\.id)) }
+    }
+    @Published var spaceID = Space.firstID
+    var parked: [UUID: Parked] = [:]
+    /// How far the column's rows have followed two fingers sideways, and
+    /// whether the card for a new space stands in for them (see SpaceSwipe).
+    @Published var spaceSwipe: CGFloat = 0
+    @Published var makingSpace = false
+    /// Which way the last change of space went: 1 to the next, -1 back.
+    @Published var spaceStep = 1
 
     // MARK: - beginning and ending
 
@@ -640,6 +699,8 @@ final class Browser: NSObject, ObservableObject {
         if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
         if prefs.bench { Bench.shared.start(for: self) }
         welcoming = !prefs.welcomed
+        // Asked to stay out of the way: it starts that way (see Fold.swift).
+        folded = prefs.sidebar && prefs.sideHides
         // Once a day, quietly: is there a newer one?
         Updater.shared.checkIfDue { [weak self] line in self?.announce(line) }
         FormRelay.passkeysOffered = prefs.passkeys
@@ -714,7 +775,22 @@ final class Browser: NSObject, ObservableObject {
             watchForSleep()
         }
 
-        let saved = Session.read()
+        // What a deleted space left behind, if WebKit wouldn't let it go then.
+        Spaces.sweep()
+        Spaces.sharing = Set(spaces.filter { $0.sharesSignIns == true }.map(\.id))
+        // The space you were in, when there are spaces (see Spaces.swift).
+        if prefs.usesSpaces, let last = Store.settings.string(forKey: "space.current").flatMap(UUID.init),
+           spaces.contains(where: { $0.id == last }) {
+            spaceID = last
+            Spaces.current = last
+        }
+        restoreSession()
+        if prefs.usesSpaces { preloadSpaces() }
+    }
+
+    /// The row of tabs the space on screen had last time, or one empty tab.
+    func restoreSession() {
+        let saved = Session.read(space: spaceID)
         guard !saved.tabs.isEmpty else {
             // A blank tab costs nothing until it is asked for its page. Its
             // web view — and with it WebKit's helper processes — is built a
@@ -733,7 +809,7 @@ final class Browser: NSObject, ObservableObject {
             guard let url = URL(string: entry.url) else { continue }
             let tab = Tab()
             prepare(tab)
-            tab.restore(url: url, title: entry.title)
+            tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
             tabs.append(tab)
         }
@@ -751,6 +827,12 @@ final class Browser: NSObject, ObservableObject {
     /// read where they are used.
     private func follow() {
         followStore()
+        // Spaces turned off: back to the first, whose tabs are the ones there
+        // were before (see Spaces.swift).
+        prefs.$usesSpaces
+            .dropFirst()
+            .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
+            .store(in: &bag)
         prefs.$shielded
             .dropFirst()
             .sink { [weak self] on in
@@ -832,9 +914,10 @@ final class Browser: NSObject, ObservableObject {
         Favicons.shared.relook(tabs.filter { !$0.asleep })
     }
 
-    private func writeSession(now: Bool = false) {
+    func writeSession(now: Bool = false) {
         Session.write(
             now: now,
+            space: spaceID,
             .init(
                 tabs: tabs.compactMap { tab in
                     guard !tab.shy, !tab.bench else { return nil }
@@ -844,7 +927,9 @@ final class Browser: NSObject, ObservableObject {
                     guard let url = tab.pending ?? tab.address,
                           url.scheme?.hasPrefix("http") == true
                     else { return nil }
-                    return Session.Entry(url: url.absoluteString, title: tab.title, pin: tab.pin)
+                    return Session.Entry(
+                        url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name
+                    )
                 },
                 active: tabs.firstIndex { $0.id == activeID } ?? 0
             )
@@ -870,8 +955,6 @@ final class Browser: NSObject, ObservableObject {
 
     // MARK: - tabs
 
-    /// ⌘T. On a tab that is already blank this just puts the cursor back in the
-    /// field — otherwise holding ⌘T leaves a row of identical empty tabs.
     func newTab() {
         // An extension's new tab page, if one asked and you said yes.
         if #available(macOS 15.4, *), let page = Extensions.shared.newTabPage {
@@ -880,11 +963,21 @@ final class Browser: NSObject, ObservableObject {
             rememberSession()
             return
         }
-        if let active, active.isBlank {
+        // Never two empty tabs. One already open anywhere in the row comes to
+        // its end and is the one opened, with whatever was typed into it and
+        // never gone to cleared away — a row of identical empty tabs is what
+        // pressing ⌘T twice, or holding it, used to leave.
+        if let blank = tabs.last(where: { $0.isBlank && !$0.bench && !$0.shy }) {
+            if let end = tabs.indices.last, tabs.firstIndex(where: { $0.id == blank.id }) != end {
+                move(blank, to: end)
+            }
+            if activeID != blank.id { leaving() }
+            activeID = blank.id
             summoning = false
-            editing = true
             typed = ""
+            editing = false
             focusRequest += 1
+            rememberSession()
             return
         }
         let tab = Tab()
@@ -1097,6 +1190,24 @@ final class Browser: NSObject, ObservableObject {
         return tab
     }
 
+    /// An extension's page sending its own tab to a website — 1Password's
+    /// "Sign in" does, when its Mac app isn't connected. The page's view was
+    /// built from the extension's configuration, which WebKit keeps to that
+    /// extension's own pages, so the load went nowhere and the button did
+    /// nothing. The tab is swapped where it stands for an ordinary one on
+    /// the site: to the eye, the page went there.
+    func replace(_ tab: Tab, going url: URL) {
+        guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        let fresh = Tab(bench: tab.bench, configuration: Browser.extensionConfiguration(for: url))
+        prepare(fresh)
+        let wasActive = activeID == tab.id
+        tabs[index] = fresh
+        fresh.go(to: url)
+        if wasActive { activeID = fresh.id }
+        tab.close()
+        rememberSession()
+    }
+
     /// An address from before extensions moved to chrome-extension://, as
     /// it is now; any other, as it is.
     static func page(_ url: URL) -> URL {
@@ -1173,7 +1284,7 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘⇧V. What is in the clipboard, if it is a place — or a search.
     func pasteAndGo() {
         guard let text = NSPasteboard.general.string(forType: .string),
-              let url = Google.destination(for: text.trimmingCharacters(in: .whitespacesAndNewlines))
+              let url = destination(for: text.trimmingCharacters(in: .whitespacesAndNewlines))
         else {
             refusals += 1
             return
@@ -1192,6 +1303,31 @@ final class Browser: NSObject, ObservableObject {
         let job = tab.web.printOperation(with: info)
         job.view?.frame = tab.web.bounds
         job.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+
+    /// A space's row as its session left it, made without touching the one
+    /// on screen: tabs with an address and no page yet, which cost next to
+    /// nothing until one is looked at (see Spaces.swift).
+    func loadRow(_ space: UUID) -> Parked {
+        let saved = Session.read(space: space)
+        var row: [Tab] = []
+        for entry in saved.tabs {
+            guard let url = URL(string: entry.url) else { continue }
+            let tab = Tab(configuration: Web.configuration(space: space))
+            prepare(tab)
+            tab.restore(url: url, title: entry.title, name: entry.name)
+            tab.pin = entry.pin
+            row.append(tab)
+        }
+        let active = row.indices.contains(saved.active) ? row[saved.active].id : row.first?.id
+        return Parked(tabs: row, active: active)
+    }
+
+    /// Another space's row put on screen in place of this one (see
+    /// Spaces.swift) — empty, for one that restores its own.
+    func showRow(_ row: [Tab], active: Tab.ID?) {
+        tabs = row
+        activeID = active ?? row.first?.id
     }
 
     private func adopt(_ tab: Tab) {
@@ -1394,9 +1530,9 @@ final class Browser: NSObject, ObservableObject {
         // Last in the list, and only when what was typed cannot be a place.
         if !typed.isEmpty,
            Address.url(from: typed) == nil,
-           let asked = Google.url(for: typed) {
+           let asked = searchURL(for: typed) {
             list.append(
-                Suggestion(key: typed, title: Google.name, url: asked, kind: .search)
+                Suggestion(key: typed, title: prefs.engine.name(custom: prefs.customEngine), url: asked, kind: .search)
             )
         }
         offers = list
@@ -1524,7 +1660,7 @@ final class Browser: NSObject, ObservableObject {
         } else if ending != nil {
             target = Address.url(from: completed)
         } else {
-            target = Google.destination(for: typed)
+            target = destination(for: typed)
         }
 
         guard let url = target else {
@@ -1586,6 +1722,17 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // answer, handed to the extension, and never loaded.
         if ExtensionAuth.intercept(url, browser: self) {
             decisionHandler(.cancel)
+            return
+        }
+
+        // An extension's page sending its own tab to a website (see
+        // replace(_:going:)).
+        if #available(macOS 15.4, *), ["http", "https"].contains(scheme),
+           action.targetFrame?.isMainFrame ?? true,
+           webView.url?.scheme == Extensions.scheme,
+           let tab = tab(for: webView) {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { [weak self] in self?.replace(tab, going: url) }
             return
         }
 
@@ -1833,7 +1980,7 @@ extension Browser: WKDownloadDelegate {
         guard !prefs.asksWhereToSave else {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = name
-            panel.directoryURL = prefs.downloads
+            panel.directoryURL = downloadsFolder
             panel.canCreateDirectories = true
             guard panel.runModal() == .OK, let url = panel.url else {
                 completionHandler(nil)
@@ -1844,7 +1991,7 @@ extension Browser: WKDownloadDelegate {
             return
         }
 
-        completionHandler(Browser.free(name, in: prefs.downloads))
+        completionHandler(Browser.free(name, in: downloadsFolder))
         announce("Downloading \(name)")
     }
 

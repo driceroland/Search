@@ -10,6 +10,11 @@ struct Omnibox: View {
     /// Raised over a page by ⌘L, rather than standing on an empty tab.
     let over: Bool
 
+    /// The field's own height — the 22 of text and 14 of air above and below it
+    /// that `field` lays out — so the list can sit below it without being
+    /// stacked with it.
+    private static let fieldHeight: CGFloat = 22 + 14 * 2
+
     @State private var shake: CGFloat = 0
     @State private var refused = false
     @State private var breathing = false
@@ -25,16 +30,30 @@ struct Omnibox: View {
                     .transition(.opacity)
             }
 
-            VStack(spacing: 8) {
-                field
-                if !browser.offers.isEmpty { list }
-            }
-            .frame(width: Metrics.fieldWidth)
-            // Lifted a little above centre: dead centre reads as low, because
-            // the strip at the top isn't part of what the eye is measuring.
-            .padding(.bottom, 60)
-            .animation(Motion.settle, value: browser.offers)
-            .animation(Motion.settle, value: refused)
+            field
+                .frame(width: Metrics.fieldWidth)
+                // The list hangs below the field rather than stacking with it,
+                // so a list that grows never lifts the field out from under
+                // what is being typed.
+                .overlay(alignment: .top) {
+                    // Present or gone, not always-on-and-hidden: the list keeps
+                    // the appear and disappear it had, and the overlay is what
+                    // keeps that from moving the field.
+                    if !browser.offers.isEmpty {
+                        list
+                            .frame(width: Metrics.fieldWidth)
+                            .offset(y: Self.fieldHeight + 8)
+                    }
+                }
+                // Lifted a little above centre: dead centre reads as low,
+                // because the strip at the top isn't part of what the eye is
+                // measuring.
+                .padding(.bottom, 60)
+                // The list's arrival, its rows sliding between keystrokes and
+                // its leaving are all animated from here: nothing that changes
+                // the suggestions does it inside an animation of its own.
+                .animation(Motion.settle, value: browser.offers)
+                .animation(Motion.settle, value: refused)
         }
     }
 
@@ -87,6 +106,10 @@ struct Omnibox: View {
     /// What it thinks you mean. Places you have been come with their titles;
     /// the handful of well-known addresses it starts life knowing come without
     /// the weight of one.
+    ///
+    /// It lives below the field, in an overlay, so arriving or leaving never
+    /// moves the field — and the transition that carried it in and out before
+    /// is kept, only anchored to its own top edge.
     private var list: some View {
         VStack(spacing: 0) {
             ForEach(Array(browser.offers.enumerated()), id: \.element.id) { index, offer in

@@ -57,10 +57,12 @@ struct SearchApp: App {
                     set: { _ in browser.toggleSidebar() }
                 ))
                 .keyboardShortcut("s", modifiers: [.command, .shift])
-                // Folded away, not moved (see Fold.swift).
-                Button(browser.folded ? "Show Sidebar" : "Hide Sidebar") { browser.toggleFold() }
+                // Folded away, not moved (see Fold.swift) — the column, or the
+                // strip across the top.
+                Button(browser.prefs.sidebar
+                       ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
+                       : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
                     .keyboardShortcut("s")
-                    .disabled(!browser.prefs.sidebar)
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
                     set: { browser.prefs.glyph = $0 }
@@ -88,6 +90,14 @@ struct SearchApp: App {
                     .keyboardShortcut("-")
                 Button("Actual Size") { browser.resetZoom() }
                     .keyboardShortcut("0")
+                Divider()
+                // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
+                Button("Web Inspector") { browser.toggleInspector() }
+                    .keyboardShortcut("i", modifiers: [.command, .option])
+                Button("JavaScript Console") { browser.showConsole() }
+                    .keyboardShortcut("j", modifiers: [.command, .option])
+                Button("Inspect Element") { browser.inspectElement() }
+                    .keyboardShortcut("c", modifiers: [.command, .option])
             }
             CommandMenu("Tabs") {
                 Button("Back") { browser.back() }
@@ -113,6 +123,8 @@ struct SearchApp: App {
                         Button("Unpin Tab") { browser.unpin(tab) }
                     }
                 }
+                Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
+                    .disabled(browser.active == nil)
                 Button("Duplicate Tab") { browser.duplicate() }
                     .keyboardShortcut("d")
                     .disabled(browser.active?.isBlank ?? true)
@@ -280,7 +292,7 @@ struct ContentView: View {
                 }
             }
 
-            if !browser.prefs.sidebar, browser.active?.immersed != true {
+            if !browser.prefs.sidebar, !browser.folded, browser.active?.immersed != true {
                 if let tab = browser.active {
                     TintedTabBar(tab: tab, browser: browser, prefs: browser.prefs)
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -573,7 +585,8 @@ struct ContentView: View {
     /// starts at the very top; the strip needs a band.
     private var band: CGFloat {
         guard browser.active?.immersed != true else { return 0 }
-        return browser.prefs.sidebar ? 0 : Metrics.strip
+        // Folded, the strip is out of the window and the page has its height.
+        return browser.prefs.sidebar || browser.folded ? 0 : Metrics.strip
     }
 
     /// Put the resting circles in the title bar, exactly over the buttons.
@@ -606,11 +619,16 @@ struct ContentView: View {
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
+        // Nor by its title bar, which the strip is all the way down: AppKit
+        // would move the window on any drag there, a tab picked up to take
+        // it elsewhere in the row included. DragStrip moves it instead.
+        window.isMovable = false
         // Where you left it, at the size you left it. A test run keeps its
         // own: the name lives in the app's standard defaults, which every
         // copy shares, and a probe resized for a test once changed the size
         // the real window came back at.
         window.setFrameAutosaveName(Store.world.map { "search (\($0))" } ?? "search")
+
         // The traffic lights set in from the corner and centred in the strip's
         // height, in both modes, without a toolbar's rounder corners — see
         // Lights.swift. The column's first row is the strip's height too, so
@@ -669,6 +687,10 @@ struct ContentView: View {
                 browser.cancelTabEdit()
                 return true
             }
+            if browser.makingSpace {
+                withAnimation(Motion.glide) { browser.makingSpace = false }
+                return true
+            }
             if browser.tuning {
                 browser.tuning = false
                 return true
@@ -679,6 +701,10 @@ struct ContentView: View {
             }
             if browser.managing {
                 browser.managing = false
+                return true
+            }
+            if browser.recalling {
+                browser.recalling = false
                 return true
             }
             if browser.suggesting != nil {
@@ -726,6 +752,15 @@ struct ContentView: View {
                 return true
             }
             return false
+        }
+
+        // ⌃1–⌃9 go to that space, when there are spaces — by the key, as
+        // ⌘1–⌘9 are below, so the top row works on every layout.
+        if browser.prefs.usesSpaces, flags.contains(.control),
+           flags.isDisjoint(with: [.command, .option, .shift]),
+           let number = ContentView.digits[event.keyCode], number > 0 {
+            browser.switchSpace(index: number - 1)
+            return true
         }
 
         // A shortcut an extension registered — ⌥⇧D, ⌃⇧Y — before ours, since
@@ -793,8 +828,7 @@ struct ContentView: View {
         case "s" where shifted:
             browser.toggleSidebar()
         case "s" where !shifted:
-            // The strip has nothing to fold; ⌘S stays the page's (see Fold.swift).
-            guard browser.prefs.sidebar else { return false }
+            // The column or the strip, folded away (see Fold.swift).
             browser.toggleFold()
         case "b" where shifted:
             browser.bookmarkCurrent()
@@ -828,6 +862,11 @@ struct ContentView: View {
         case "]":
             shifted ? browser.step(1) : browser.forward()
         default:
+            // Moving or selecting text belongs to the editor, not the page's
+            // history — in web forms and in the browser's own fields alike.
+            guard !shifted, browser.active?.typing != true,
+                  !(event.window?.firstResponder is NSTextView)
+            else { return false }
             // ⌘← and ⌘→, for hands that never learned the brackets.
             if event.keyCode == 123 { browser.back(); return true }
             if event.keyCode == 124 { browser.forward(); return true }

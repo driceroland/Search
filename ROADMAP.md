@@ -11,35 +11,29 @@ don't build it twice.
 
 ## Now — fixes for the next update
 
-- [ ] **Password managers**: Bitwarden goes blank after signing in, and 1Password won't sign in. *(X, several)*
-- [ ] **Dragging tabs to reorder them** in the row across the top. *(X)*
-- [ ] **A double-click on the title bar fills the screen** from anywhere along the top, in both layouts. *(X)*
-- [ ] **Passkeys on some sign-ins** (Google's "Use your passkey"). They work on a fresh install of 1.0; waiting on details. *([#10](https://github.com/driceroland/Search/issues/10), X)*
-- [ ] **Google sign-in reloads in a loop** with the iCloud Passwords extension installed. *([#2](https://github.com/driceroland/Search/issues/2))*
-- [ ] README: the size reads 2 MB in one place and 5 MB in another; 1.0 is 2.9 MB.
+- [ ] **Bitwarden goes blank after signing in** (and for one person doesn't load). Before signing in it works — popup, WebAssembly, background — so this needs an account to reproduce. *(X, several)*
+- [ ] **Vimium C doesn't start**: WebKit fails to load its background (Vimium itself works). *(X)*
+- [ ] **Passkeys, for some people.** A site's own passkey button works; what may be missing is the suggestion Safari shows as you click into a sign-in field. Waiting on details. *(X, [#17](https://github.com/driceroland/Search/issues/17))*
+- [ ] **Extension fixes held until 1.0.1 is out:** the field on an extension's new tab page ([#42](https://github.com/driceroland/Search/pull/42)), popups at their own size ([#48](https://github.com/driceroland/Search/pull/48)), pinning extensions from Settings ([#50](https://github.com/driceroland/Search/pull/50)).
 
 ## Next — small additions people asked for
 
-- [ ] **Web Inspector**: right-click › Inspect Element. *([#13](https://github.com/driceroland/Search/issues/13), X)*
-- [ ] **Middle-click closes a tab.** *(X)*
-- [ ] **The sidebar hides by itself** until the pointer reaches the edge, as an option on top of ⌘S. *(X, several)*
-- [ ] **The address field holds still** on a new tab while its suggestions unroll under it. *(X, and [#11](https://github.com/driceroland/Search/pull/11), withdrawn by its author)*
-- [ ] **A setting to turn off the reading-progress fill** in the tab you are on. *(X)*
+- [ ] **Where a link goes, shown on hover**, as an option. *([#29](https://github.com/driceroland/Search/pull/29))*
 - [ ] **Import from Comet**, alongside Chrome, Arc, Brave, Edge and Dia. *(X)*
 - [ ] **Homebrew**: `brew install --cask search`. *(X)*
 - [ ] **Intel Macs.** *(X)*
 
 ## Later — bigger pieces of work
 
-- [ ] **Spaces**: separate sets of tabs, each with its own cookies, sign-ins and downloads folder, switched from the sidebar or a shortcut; sites that always open in a given space. The most asked-for feature. *([#4](https://github.com/driceroland/Search/issues/4), X, many)*
 - [ ] **More of the extension APIs**: the side panel, and the proxy API VPN and proxy extensions rely on. *([#12](https://github.com/driceroland/Search/issues/12), X)*
 - [ ] **An address bar that stays visible** above the page, as an option. *([#15](https://github.com/driceroland/Search/issues/15))*
-- [ ] **A tab switcher with previews** (⌃Tab held down). *(X)*
-- [ ] **Your own keyboard shortcuts.** *(X)*
+- [ ] **A tab switcher with previews** (⌃Tab held down). *(X, [#24](https://github.com/driceroland/Search/pull/24))*
+- [ ] **Your own keyboard shortcuts.** *(X, [#36](https://github.com/driceroland/Search/pull/36))*
 - [ ] **Driving Search from an agent** (an MCP server over the bench), for automation and testing. *(X, [#14](https://github.com/driceroland/Search/pull/14))*
 - [ ] **Web push notifications**, as far as WebKit lets an app other than Safari have them. *(X)*
 - [ ] **Smoother scrolling with a mouse wheel.** To look into. *(X)*
-- [ ] **Tab groups.** To weigh against keeping the sidebar quiet. *(X)*
+- [ ] **Tab groups.** To weigh against keeping the sidebar quiet, now that there are Spaces. *(X, [#31](https://github.com/driceroland/Search/pull/31))*
+- [ ] **A title bar in the page's colour**, as an option, without bringing back the toolbar. *([#25](https://github.com/driceroland/Search/pull/25))*
 
 ## Not on the list, for now
 

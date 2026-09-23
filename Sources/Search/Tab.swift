@@ -19,13 +19,16 @@ enum Web {
     /// — web tabs and extension views alike (see Extensions.init).
     static let userAgentName = "Version/26.5 Safari/605.1.15"
 
-    static func configuration(shy: Bool = false) -> WKWebViewConfiguration {
+    /// `space`: the space the tab belongs to, when it is not the one on
+    /// screen — a parked row made ahead of time (see Spaces.swift).
+    static func configuration(shy: Bool = false, space: UUID? = nil) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         // The real store, not the ephemeral one: staying signed in between
         // launches is the difference between a browser and a preview pane. A
         // shy tab gets its own store, which exists only while it does — its own
         // cookies, its own sign-ins, and nothing left behind when it closes.
-        config.websiteDataStore = shy ? .nonPersistent() : Store.websites
+        // With spaces on, each space's tabs share a store of that space's.
+        config.websiteDataStore = shy ? .nonPersistent() : MainActor.assumeIsolated { Spaces.store(for: space ?? Spaces.current) }
         // Chrome extensions see every page but a private one. The controller
         // has to be there when the view is made; it can't be added after.
         if #available(macOS 15.4, *), !shy { MainActor.assumeIsolated { Extensions.attach(config) } }
@@ -42,7 +45,22 @@ enum Web {
         config.preferences.isElementFullscreenEnabled = true
         config.mediaTypesRequiringUserActionForPlayback = .audio
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
+        inspector(config.preferences)
         return config
+    }
+
+    /// Every page view there is, for the bench.
+    @MainActor static let pages = NSHashTable<PageView>.weakObjects()
+
+    /// WebKit's "developer extras": Inspect Element in a page's right-click
+    /// menu, and the Web Inspector the View menu opens (see Inspector.swift).
+    /// isInspectable alone only lets Safari's Develop menu reach the page.
+    /// The name is outside the public framework, so it is asked first.
+    static func inspector(_ preferences: WKPreferences, on: Bool = true) {
+        let set = NSSelectorFromString("_setDeveloperExtrasEnabled:")
+        guard preferences.responds(to: set) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, on)
     }
 }
 
@@ -219,6 +237,11 @@ final class Tab: ObservableObject, Identifiable {
     /// is all you need for the five or six pages you keep open all day.
     @Published var pin: String?
 
+    /// A name you gave it, in place of whatever the page calls itself. It
+    /// stays through navigation: a tab you named is a tab you are keeping for
+    /// a job, not for a page.
+    @Published var name: String?
+
     /// When you last looked at it. The summon lists pages by this, because
     /// what you were just reading is what you are most likely to want back.
     private(set) var touched = Date()
@@ -286,6 +309,7 @@ final class Tab: ObservableObject, Identifiable {
     /// that says nothing at all for the first second of every load is a tab you
     /// can't find your way back to.
     var label: String {
+        if let name, !name.isEmpty { return name }
         if !title.isEmpty { return title }
         if let address { return Address.pretty(address) }
         return "New Tab"
@@ -314,8 +338,11 @@ final class Tab: ObservableObject, Identifiable {
         // Pages follow the appearance of the window they are drawn in, and the
         // window follows Settings › Appearance — so a site that honours
         // prefers-color-scheme goes dark with the frame, and not otherwise.
-        // Right-click, Inspect Element. The public way to say so since 13.3.
+        // Safari's Develop menu can reach it, and so can the page's own
+        // Inspect Element — a configuration handed over by an opener included.
         if #available(macOS 13.3, *) { web.isInspectable = true }
+        Web.pages.add(web)
+        Web.inspector(web.configuration.preferences)
         web.navigationDelegate = delegate
         web.uiDelegate = delegate
 
@@ -606,9 +633,10 @@ final class Tab: ObservableObject, Identifiable {
 
     /// Brought back from the last session: everything the row needs to draw it,
     /// and nothing fetched.
-    func restore(url: URL, title: String) {
+    func restore(url: URL, title: String, name: String? = nil) {
         address = url
         self.title = title
+        self.name = name
         pending = url
         adoptIcon()
     }
