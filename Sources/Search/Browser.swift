@@ -1471,7 +1471,7 @@ final class Browser: NSObject, ObservableObject {
     /// and Escape puts it back.
     func edit() {
         summoning = false
-        typed = active?.address.map { Address.pretty($0) } ?? ""
+        typed = active?.address?.absoluteString ?? ""
         editing = true
         focusRequest += 1
     }
