@@ -12,12 +12,12 @@ don't build it twice.
 ## Now — fixes for the next update
 
 - [ ] **Bitwarden goes blank after signing in** (and for one person doesn't load). Before signing in it works — popup, WebAssembly, background — so this needs an account to reproduce. *(X, several)*
-- [ ] **Search quits as it opens on macOS 14.8.3.** Nothing in the build points to it yet; waiting on the crash report. *(X)*
 - [ ] **Vimium C doesn't start**: WebKit fails to load its background (Vimium itself works). *(X)*
 
 ## Next — small additions people asked for
 
 - [ ] **Middle-click closes a tab.** *(X)*
+- [ ] **The sidebar hides by itself** until the pointer reaches the edge, as an option on top of ⌘S. *(X, several)*
 - [ ] **A setting to turn off the reading-progress fill** in the tab you are on. *(X)*
 - [ ] **Import from Comet**, alongside Chrome, Arc, Brave, Edge and Dia. *(X)*
 - [ ] **Homebrew**: `brew install --cask search`. *(X)*

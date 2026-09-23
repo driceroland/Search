@@ -117,26 +117,20 @@ final class Preferences: ObservableObject {
     @Published var usesSpaces: Bool {
         didSet { store.set(usesSpaces, forKey: "spaces") }
     }
-    /// Inspect Element in a page's right-click menu, the Web Inspector
-    /// Safari shows once its Develop menu is on. Off unless asked for.
-    @Published var inspects: Bool {
-        didSet {
-            store.set(inspects, forKey: "inspector")
-            Web.inspects = inspects
-        }
-    }
 
     init() {
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
-        // Light unless asked otherwise — the browser was only ever light
-        // before this was a choice.
+        // The Mac's own unless asked otherwise — a Mac in dark mode expects
+        // a dark browser, pages included.
         bench = store.bool(forKey: "bench")
-        let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .light
+        let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .system
         look = chosen
         // Before the first window, and not deferred: the window that is about
-        // to be made should be made in the right appearance.
-        NSApp.appearance = chosen.appearance
+        // to be made should be made in the right appearance. Through `shared`
+        // rather than `NSApp`: on macOS 14 SwiftUI builds this before it has
+        // made the application, and `NSApp` is still nil here.
+        NSApplication.shared.appearance = chosen.appearance
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
         sideHides = store.bool(forKey: "sidebar.hides")
@@ -175,9 +169,9 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
-        let inspecting = store.bool(forKey: "inspector")
-        inspects = inspecting
-        Web.inspects = inspecting
+        // Left behind by the Web Inspector's switch, from before it was
+        // always there.
+        store.removeObject(forKey: "inspector")
         let corrects = store.bool(forKey: "autocorrect")
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.
