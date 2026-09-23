@@ -419,6 +419,7 @@ struct BookmarksDropdown: View {
                     .padding(6)
                 }
                 .frame(maxHeight: 360)
+                .fixedSize(horizontal: false, vertical: true)
             }
             Divider().overlay(Palette.hairline)
             VStack(spacing: 1) {
