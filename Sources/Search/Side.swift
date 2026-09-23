@@ -30,6 +30,10 @@ struct SideBar: View {
     @State private var pinDragging: Tab.ID?
     @State private var pinFrom = 0
     @State private var pinTravel: CGSize = .zero
+    @State private var creatingFolder = false
+    @State private var editingFolder: UUID?
+    @State private var folderDraft = ""
+    @FocusState private var folderFocused: Bool
 
     private static let row: CGFloat = 28
     private static let gap: CGFloat = 2
@@ -96,6 +100,14 @@ struct SideBar: View {
         .overlay(alignment: .trailing) { edge }
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
             browser.take(providers)
+        }
+        .contextMenu {
+            if prefs.tabFolders {
+                Button("New Folder") { beginFolder() }
+            }
+        }
+        .onChange(of: folderFocused) { wasFocused, isFocused in
+            if wasFocused && !isFocused { finishFolder() }
         }
         .animation(Motion.quick, value: landing)
         .animation(Motion.glide, value: browser.activeID)
@@ -182,6 +194,9 @@ struct SideBar: View {
                         pinned
                             .padding(.bottom, 10)
                     }
+                    if prefs.tabFolders {
+                        folderRows
+                    }
                     // A row too long for the window scrolls between the pins
                     // and the foot, rather than running under the lights at one
                     // end and the foot at the other. While it fits it stays a
@@ -252,14 +267,115 @@ struct SideBar: View {
         let pinRows = pins == 0 ? 0 : (pins + cols - 1) / cols
         let pinBlock = pinRows == 0 ? 0
             : CGFloat(pinRows) * pinHeight + CGFloat(pinRows - 1) * SideBar.pinGap + 10
-        let loose = CGFloat(browser.tabs.count - pins) * (SideBar.row + SideBar.gap)
+        let folderCount = prefs.tabFolders ? browser.folders.count + (creatingFolder ? 1 : 0) : 0
+        let shownInFolders = prefs.tabFolders ? browser.tabs.filter { tab in
+            tab.pin == nil && browser.folders.contains {
+                $0.id == browser.folder(for: tab) && ($0.isOpen || tab.id == browser.activeID)
+            }
+        }.count : 0
+        let loose = CGFloat(looseTabs.count + shownInFolders + folderCount) * (SideBar.row + SideBar.gap)
         return Metrics.strip + pinBlock + loose + SideBar.row + 8
     }
 
     // MARK: - the pinned squares
 
     private var pinnedTabs: [Tab] { browser.tabs.filter { $0.pin != nil } }
-    private var looseTabs: [Tab] { browser.tabs.filter { $0.pin == nil } }
+    private var looseTabs: [Tab] {
+        browser.tabs.filter { $0.pin == nil && (!prefs.tabFolders || browser.folder(for: $0) == nil) }
+    }
+
+    private var folderRows: some View {
+        VStack(alignment: .leading, spacing: SideBar.gap) {
+            if creatingFolder { folderField }
+            ForEach(browser.folders) { folder in
+                Group {
+                    if editingFolder == folder.id {
+                        folderField
+                    } else {
+                        FolderRow(folder: folder, toggle: { browser.toggleFolder(folder.id) }) { providers in
+                            dropTab(providers, into: folder.id)
+                        }
+                    }
+                }
+                    .contextMenu {
+                        Button("Rename Folder") { beginFolder(rename: folder) }
+                        Button("Delete Folder", role: .destructive) { browser.removeFolder(folder.id) }
+                    }
+                let tabs = browser.tabs.filter { browser.folder(for: $0) == folder.id && $0.pin == nil }
+                if folder.isOpen || tabs.contains(where: { $0.id == browser.activeID }) {
+                    ForEach(folder.isOpen ? tabs : tabs.filter { $0.id == browser.activeID }) { tab in
+                        SideRow(
+                            browser: browser, prefs: prefs, tab: tab,
+                            live: tab.id == browser.activeID, pill: pill,
+                            close: { browser.close(tab) }
+                        )
+                        .padding(.leading, 12)
+                        .onDrag {
+                            NSItemProvider(object: tab.id.uuidString as NSString)
+                        } preview: {
+                            dragPreview(tab)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.bottom, browser.folders.isEmpty && !creatingFolder ? 0 : 8)
+    }
+
+    private var folderField: some View {
+        TextField("Folder name", text: $folderDraft)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12.5, weight: .medium))
+            .foregroundStyle(Palette.ink)
+            .padding(.horizontal, 10)
+            .frame(height: SideBar.row)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .focused($folderFocused)
+            .onAppear { DispatchQueue.main.async { folderFocused = true } }
+            .onSubmit(finishFolder)
+            .onExitCommand(perform: cancelFolder)
+    }
+
+    private func beginFolder(rename folder: Session.Folder? = nil) {
+        folderDraft = folder?.name ?? ""
+        editingFolder = folder?.id
+        creatingFolder = folder == nil
+        DispatchQueue.main.async { folderFocused = true }
+    }
+
+    private func finishFolder() {
+        guard creatingFolder || editingFolder != nil else { return }
+        if creatingFolder {
+            browser.makeFolder(named: folderDraft)
+        } else if let id = editingFolder {
+            browser.renameFolder(id, to: folderDraft)
+        }
+        cancelFolder()
+    }
+
+    private func cancelFolder() {
+        creatingFolder = false
+        editingFolder = nil
+        folderFocused = false
+    }
+
+    private func dropTab(_ providers: [NSItemProvider], into folder: UUID?) -> Bool {
+        guard let provider = providers.first(where: { $0.canLoadObject(ofClass: String.self) }) else { return false }
+        _ = provider.loadObject(ofClass: String.self) { text, _ in
+            guard let text, let id = UUID(uuidString: text) else { return }
+            DispatchQueue.main.async {
+                guard let tab = browser.tabs.first(where: { $0.id == id }) else { return }
+                withAnimation(Motion.settle) {
+                    browser.file(tab, in: folder)
+                    if let folder, browser.folders.first(where: { $0.id == folder })?.isOpen == false {
+                        browser.toggleFolder(folder)
+                    }
+                }
+            }
+        }
+        return true
+    }
 
     /// Three columns is the block's own shape — up to six pins, that's two
     /// full rows, and one or two is just those same three places with a
@@ -394,27 +510,41 @@ struct SideBar: View {
             ForEach(Array(looseTabs.enumerated()), id: \.element.id) { index, tab in
                 let step = SideBar.row + SideBar.gap
                 let held = dragging == tab.id
-                SideRow(
-                    browser: browser,
-                    prefs: prefs,
-                    tab: tab,
-                    live: tab.id == browser.activeID,
-                    pill: pill,
-                    close: { browser.close(tab) }
-                )
-                .offset(y: held ? travel - CGFloat(index - from) * step : 0)
-                // Under the hand exactly. Its place in the row springs when it
-                // passes another tab, and the offset springs back the same way —
-                // until the next move of the hand cuts the offset's spring short
-                // and leaves the place's running: the tab jumped a whole slot and
-                // drifted back each time it passed one. Only the others glide.
-                .transaction { if held { $0.animation = nil } }
-                .zIndex(held ? 1 : 0)
-                .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
-                .gesture(reorder(tab: tab, index: index, step: step))
+                if prefs.tabFolders {
+                    sideRow(tab)
+                        .onDrag {
+                            NSItemProvider(object: tab.id.uuidString as NSString)
+                        } preview: {
+                            dragPreview(tab)
+                        }
+                } else {
+                    sideRow(tab)
+                        .offset(y: held ? travel - CGFloat(index - from) * step : 0)
+                        // Only the other rows glide while the held row follows the hand.
+                        .transaction { if held { $0.animation = nil } }
+                        .zIndex(held ? 1 : 0)
+                        .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
+                        .gesture(reorder(tab: tab, index: index, step: step))
+                }
             }
         }
         .coordinateSpace(name: "rows")
+    }
+
+    private func sideRow(_ tab: Tab) -> some View {
+        SideRow(browser: browser, prefs: prefs, tab: tab,
+                live: tab.id == browser.activeID, pill: pill,
+                close: { browser.close(tab) })
+    }
+
+    private func dragPreview(_ tab: Tab) -> some View {
+        Text(tab.label)
+            .font(.system(size: 12.5, weight: .medium))
+            .lineLimit(1)
+            .foregroundStyle(Palette.ink)
+            .padding(.horizontal, 12)
+            .frame(height: SideBar.row)
+            .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
     /// Pick a row up and the others make way as it passes them.
@@ -450,6 +580,7 @@ struct SideBar: View {
             loose
             newTab
         }
+        .onDrop(of: [.text], isTargeted: nil) { providers in dropTab(providers, into: nil) }
     }
 
     /// The foot's door and its margin beneath.
@@ -686,6 +817,52 @@ private struct SideRow: View {
     private var colour: Color {
         if live { return Palette.ink }
         return hovering ? Palette.ink.opacity(0.7) : Palette.muted
+    }
+}
+
+/// A folder's quiet heading; the disclosure mark turns over when its tabs
+/// come in or go away.
+private struct FolderRow: View {
+    let folder: Session.Folder
+    let toggle: () -> Void
+    let drop: ([NSItemProvider]) -> Bool
+
+    @State private var targeted = false
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(folder.name)
+                .font(.system(size: 12.5, weight: .medium))
+                .lineLimit(1)
+                .foregroundStyle(targeted || hovering ? Palette.ink : Palette.muted)
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(targeted || hovering ? Palette.muted : Palette.faint)
+                .rotationEffect(.degrees(folder.isOpen ? 0 : 180))
+                .frame(width: 15)
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 7)
+        .frame(height: 28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(targeted ? Palette.wash : hovering ? Palette.hover : .clear)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Palette.ink.opacity(targeted ? 0.16 : 0), lineWidth: 1)
+                .allowsHitTesting(false)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .onTapGesture(perform: toggle)
+        .onHover { hovering = $0 }
+        .onDrop(of: [.text], isTargeted: $targeted, perform: drop)
+        .animation(Motion.quick, value: folder.isOpen)
+        .animation(Motion.quick, value: targeted)
+        .animation(Motion.quick, value: hovering)
     }
 }
 

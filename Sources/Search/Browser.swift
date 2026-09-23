@@ -9,6 +9,8 @@ import Combine
 @MainActor
 final class Browser: NSObject, ObservableObject {
     @Published private(set) var tabs: [Tab] = []
+    @Published private(set) var folders: [Session.Folder] = []
+    @Published private var tabFolders: [Tab.ID: UUID] = [:]
     @Published var activeID: Tab.ID? {
         didSet {
             // The tab just left is the tab just looked at. Whether a tab has
@@ -791,6 +793,7 @@ final class Browser: NSObject, ObservableObject {
     /// The row of tabs the space on screen had last time, or one empty tab.
     func restoreSession() {
         let saved = Session.read(space: spaceID)
+        folders = saved.folders ?? []
         guard !saved.tabs.isEmpty else {
             // A blank tab costs nothing until it is asked for its page. Its
             // web view — and with it WebKit's helper processes — is built a
@@ -811,6 +814,7 @@ final class Browser: NSObject, ObservableObject {
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
+            if let folder = entry.folder { tabFolders[tab.id] = folder }
             tabs.append(tab)
         }
         guard !tabs.isEmpty else {
@@ -928,10 +932,12 @@ final class Browser: NSObject, ObservableObject {
                           url.scheme?.hasPrefix("http") == true
                     else { return nil }
                     return Session.Entry(
-                        url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name
+                        url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name,
+                        folder: tabFolders[tab.id]
                     )
                 },
-                active: tabs.firstIndex { $0.id == activeID } ?? 0
+                active: tabs.firstIndex { $0.id == activeID } ?? 0,
+                folders: folders
             )
         )
     }
@@ -1156,6 +1162,40 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
+    func folder(for tab: Tab) -> UUID? { tabFolders[tab.id] }
+
+    func makeFolder(named name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        folders.append(Session.Folder(id: UUID(), name: name, isOpen: true))
+        writeSession(now: true)
+    }
+
+    func renameFolder(_ id: UUID, to name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let index = folders.firstIndex(where: { $0.id == id }) else { return }
+        folders[index].name = name
+        writeSession(now: true)
+    }
+
+    func toggleFolder(_ id: UUID) {
+        guard let index = folders.firstIndex(where: { $0.id == id }) else { return }
+        folders[index].isOpen.toggle()
+        writeSession(now: true)
+    }
+
+    func removeFolder(_ id: UUID) {
+        folders.removeAll { $0.id == id }
+        tabFolders = tabFolders.filter { $0.value != id }
+        writeSession(now: true)
+    }
+
+    func file(_ tab: Tab, in folder: UUID?) {
+        guard tab.pin == nil, folders.contains(where: { $0.id == folder }) || folder == nil else { return }
+        tabFolders[tab.id] = folder
+        writeSession(now: true)
+    }
+
     func step(_ direction: Int) {
         guard tabs.count > 1, let here = tabs.firstIndex(where: { $0.id == activeID }) else { return }
         let next = (here + direction + tabs.count) % tabs.count
@@ -1316,15 +1356,17 @@ final class Browser: NSObject, ObservableObject {
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
+            if let folder = entry.folder { tabFolders[tab.id] = folder }
             row.append(tab)
         }
         let active = row.indices.contains(saved.active) ? row[saved.active].id : row.first?.id
-        return Parked(tabs: row, active: active)
+        return Parked(tabs: row, active: active, folders: saved.folders ?? [])
     }
 
     /// Another space's row put on screen in place of this one (see
     /// Spaces.swift) — empty, for one that restores its own.
-    func showRow(_ row: [Tab], active: Tab.ID?) {
+    func showRow(_ row: [Tab], active: Tab.ID?, folders: [Session.Folder] = []) {
+        self.folders = folders
         tabs = row
         activeID = active ?? row.first?.id
     }
@@ -2034,9 +2076,4 @@ extension Browser: WKDownloadDelegate {
         return candidate
     }
 }
-
-
-
-
-
 

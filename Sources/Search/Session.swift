@@ -11,11 +11,19 @@ enum Session {
         var pin: String?
         /// The name you gave the tab, when you gave it one.
         var name: String?
+        var folder: UUID?
+    }
+
+    struct Folder: Codable, Identifiable {
+        var id: UUID
+        var name: String
+        var isOpen: Bool
     }
 
     struct Shape: Codable {
         var tabs: [Entry]
         var active: Int
+        var folders: [Folder]?
     }
 
     /// The first space's is the session there always was; each other space
@@ -31,13 +39,13 @@ enum Session {
 
     static func read(space: UUID = Space.firstID) -> Shape {
         let file = file(space)
-        guard let data = try? Data(contentsOf: file) else { return Shape(tabs: [], active: 0) }
+        guard let data = try? Data(contentsOf: file) else { return Shape(tabs: [], active: 0, folders: nil) }
         guard let shape = try? JSONDecoder().decode(Shape.self, from: data) else {
             // A file that's there but won't decode is not the same as no
             // file: something wrote it, and overwriting it on the next save
             // without a trace is how yesterday's tabs actually disappear.
             Store.quarantine(file)
-            return Shape(tabs: [], active: 0)
+            return Shape(tabs: [], active: 0, folders: nil)
         }
         return shape
     }

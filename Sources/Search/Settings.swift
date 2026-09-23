@@ -237,6 +237,10 @@ struct SettingsPanel: View {
                 Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its left edge for the tabs. ⌘S keeps them out.") {
                     Switch(on: $prefs.sideHides)
                 }
+                Rule()
+                Line("Tab folders", "Group tabs in named, collapsible folders at the top of the sidebar.") {
+                    Switch(on: $prefs.tabFolders)
+                }
             }
             Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {
