@@ -592,6 +592,175 @@ final class Bench {
             browser.move(tab, to: to)
             answer(["at": browser.tabs.firstIndex { $0.id == tab.id } ?? -1])
 
+        case "window":
+            // The browser's window, when a probe started hidden came up
+            // without one: the Window menu's own item for it.
+            guard Store.testing else { answer(["error": "window only works on a --test run"]); return }
+            if Links.window?.contentView != nil, NSApp.windows.contains(where: { $0 === Links.window }) {
+                answer(["window": "there"])
+                return
+            }
+            let items = NSApp.mainMenu?.items.first { $0.submenu?.title == "Window" }?.submenu?.items ?? []
+            guard let item = items.first(where: { $0.title == "Search" }), let action = item.action else {
+                answer(["error": "no Search item in the Window menu", "items": items.map(\.title)])
+                return
+            }
+            NSApp.sendAction(action, to: item.target, from: item)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                answer(["window": NSApp.windows.map { "\(type(of: $0))" }, "hidden": NSApp.isHidden])
+            }
+
+        case "pages":
+            // Pages that WebKit will paint, for `picture`, from a probe started
+            // hidden: the app shown again without coming forward, but only
+            // once its windows are all off the screen — the browser's own put
+            // away, the bench's room far off every screen. Anything of the
+            // app's that would show on a screen and the app is hidden again.
+            guard Store.testing, let window = Links.window else { answer(["error": "pages only works on a --test run"]); return }
+            func onScreen(_ w: NSWindow) -> Bool { NSScreen.screens.contains { $0.frame.intersects(w.frame) } }
+            if request["on"] as? Bool == true {
+                _ = room ?? makeRoom()
+                window.orderOut(nil)
+                for other in NSApp.windows where other !== room && onScreen(other) { other.orderOut(nil) }
+                NSApp.unhideWithoutActivation()
+                let showing = NSApp.windows.filter { $0.isVisible && onScreen($0) }
+                if !showing.isEmpty {
+                    NSApp.hide(nil)
+                    answer(["error": "a window would have shown: \(showing.map { "\(type(of: $0))" })"])
+                    return
+                }
+                answer(["pages": true])
+            } else {
+                NSApp.hide(nil)
+                window.orderFront(nil)
+                answer(["pages": false])
+            }
+
+        case "picture":
+            // The whole window as a picture — the app's own drawing, with each
+            // page on screen put in as WebKit pictures it — from a probe
+            // started hidden, so nothing shows on anybody's screen. For the
+            // images on the site.
+            guard Store.testing else { answer(["error": "picture only works on a --test run"]); return }
+            guard let window = Links.window, let frame = window.contentView?.superview,
+                  let path = request["path"] as? String, !path.isEmpty
+            else { answer(["error": "picture needs a path"]); return }
+            func pages(in view: NSView) -> [WKWebView] {
+                if let web = view as? WKWebView { return [web] }
+                return view.subviews.flatMap(pages)
+            }
+            // The page, when WebKit paints (see `pages`): the tab's address
+            // loaded afresh in a view of its own in the bench's room, sized
+            // as the page is, and pictured there.
+            if !NSApp.isHidden, request["page"] as? Bool != false, let tab = browser.active, let address = tab.address,
+               let live = tab.built, live.window === window {
+                let rect = live.convert(live.bounds, to: nil)
+                guard let chrome = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { answer(["error": "nothing drawn"]); return }
+                frame.cacheDisplay(in: frame.bounds, to: chrome)
+                let stand = room ?? makeRoom()
+                // The tab's own page by default — as it is, reader view or
+                // things hidden included — lent to the room for the picture
+                // and handed back; or, with `fresh`, the address loaded anew.
+                let fresh = request["fresh"] as? Bool == true
+                let home = live.superview
+                let homeFrame = live.frame
+                let page = fresh ? WKWebView(frame: NSRect(origin: .zero, size: rect.size), configuration: Web.configuration()) : live
+                if !fresh {
+                    live.removeFromSuperview()
+                    live.frame = NSRect(origin: .zero, size: rect.size)
+                    live.alphaValue = 1
+                }
+                func giveBack() {
+                    guard !fresh else { page.removeFromSuperview(); return }
+                    live.removeFromSuperview()
+                    live.frame = homeFrame
+                    home?.addSubview(live)
+                }
+                // A window off every screen counts as covered, and WebKit
+                // paints nothing it thinks nobody sees; this one is told to
+                // paint regardless.
+                let occlusion = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+                if page.responds(to: occlusion) {
+                    typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+                    unsafeBitCast(page.method(for: occlusion), to: Setter.self)(page, occlusion, false)
+                }
+                stand.contentView?.addSubview(page)
+                if fresh { page.load(URLRequest(url: address)) }
+                let settle = request["settle"] as? Double ?? 3
+                func whenLoaded(_ tries: Int) {
+                    guard page.isLoading, tries > 0 else {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + settle) {
+                            page.takeSnapshot(with: nil) { image, _ in
+                                MainActor.assumeIsolated {
+                                    giveBack()
+                                    let drawn = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: chrome.pixelsWide, pixelsHigh: chrome.pixelsHigh,
+                                                                 bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                                                 colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+                                    guard let drawn else { answer(["error": "nothing drawn"]); return }
+                                    drawn.size = frame.bounds.size
+                                    NSGraphicsContext.saveGraphicsState()
+                                    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: drawn)
+                                    chrome.draw(in: frame.bounds)
+                                    image?.draw(in: rect)
+                                    NSGraphicsContext.restoreGraphicsState()
+                                    do {
+                                        try drawn.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                                        answer(["saved": path, "pixels": [drawn.pixelsWide, drawn.pixelsHigh], "page": [Int(rect.minX), Int(frame.bounds.height - rect.maxY), Int(rect.width), Int(rect.height)],
+                                                "points": [Int(frame.bounds.width), Int(frame.bounds.height)], "lights": Bench.lights(of: window)])
+                                    } catch { answer(["error": error.localizedDescription]) }
+                                }
+                            }
+                        }
+                        return
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { whenLoaded(tries - 1) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { whenLoaded(80) }
+                return
+            }
+            let shown = pages(in: frame).filter { !$0.isHidden && $0.alphaValue > 0 && !$0.frame.isEmpty }
+            var taken: [(WKWebView, NSImage)] = []
+            var left = shown.count
+            func draw() {
+                // Each page's picture where the page is, the page itself put
+                // aside for the one drawing.
+                var covers: [NSImageView] = []
+                for (web, image) in taken {
+                    let cover = NSImageView(frame: web.frame)
+                    cover.image = image
+                    cover.imageScaling = .scaleAxesIndependently
+                    cover.autoresizingMask = web.autoresizingMask
+                    web.superview?.addSubview(cover, positioned: .above, relativeTo: web)
+                    web.isHidden = true
+                    covers.append(cover)
+                }
+                frame.layoutSubtreeIfNeeded()
+                defer {
+                    covers.forEach { $0.removeFromSuperview() }
+                    taken.forEach { $0.0.isHidden = false }
+                }
+                guard let picture = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else {
+                    answer(["error": "nothing drawn"])
+                    return
+                }
+                frame.cacheDisplay(in: frame.bounds, to: picture)
+                do {
+                    try picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                    answer(["saved": path, "pixels": [picture.pixelsWide, picture.pixelsHigh],
+                            "points": [Int(frame.bounds.width), Int(frame.bounds.height)], "lights": Bench.lights(of: window)])
+                } catch { answer(["error": error.localizedDescription]) }
+            }
+            guard left > 0 else { draw(); return }
+            for web in shown {
+                web.takeSnapshot(with: nil) { image, _ in
+                    MainActor.assumeIsolated {
+                        if let image { taken.append((web, image)) }
+                        left -= 1
+                        if left == 0 { draw() }
+                    }
+                }
+            }
+
         case "film":
             // The whole window, title bar and lights included, drawn every few
             // hundredths of a second while something animates — what a person
@@ -635,7 +804,9 @@ final class Bench {
                 }
                 if let bar = Fold.titlebar {
                     let moved = bar.layer?.presentation()?.value(forKeyPath: "transform.translation.x") as? CGFloat ?? 0
-                    shot["lights"] = ["hidden": bar.isHidden, "x": Int(moved.rounded())]
+                    let lifted = bar.layer?.presentation()?.value(forKeyPath: "transform.translation.y") as? CGFloat ?? 0
+                    shot["lights"] = ["hidden": bar.isHidden, "x": Int(moved.rounded()), "y": Int(lifted.rounded()),
+                                      "flipped": bar.superview?.isFlipped ?? false]
                 }
                 shots.append(shot)
                 DispatchQueue.main.asyncAfter(deadline: .now() + every) { take(index + 1) }
@@ -823,7 +994,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "place", "space", "strip", "column", "bar", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "space", "strip", "column", "bar", "ui",
             ]])
         }
     }
