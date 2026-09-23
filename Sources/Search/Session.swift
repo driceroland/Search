@@ -9,6 +9,8 @@ enum Session {
         var url: String
         var title: String
         var pin: String?
+        /// The name you gave the tab, when you gave it one.
+        var name: String?
     }
 
     struct Shape: Codable {

@@ -554,18 +554,37 @@ final class Browser: NSObject, ObservableObject {
     /// form, ready to be changed.
     @Published private(set) var editingTab: Tab.ID?
     @Published var tabDraft = ""
+    /// Set while that field is being used to name the tab rather than to go
+    /// somewhere: the same field, the same keys, a different thing at the end.
+    @Published private(set) var renamingTab = false
 
     func beginTabEdit(_ tab: Tab) {
         guard let url = tab.address else {
             edit()
             return
         }
+        renamingTab = false
         tabDraft = Address.pretty(url)
+        editingTab = tab.id
+    }
+
+    /// Rename. The name the tab is wearing arrives selected, so typing
+    /// replaces it; emptying the field gives the page its own title back.
+    func beginTabRename(_ tab: Tab) {
+        renamingTab = true
+        tabDraft = tab.label
         editingTab = tab.id
     }
 
     func commitTabEdit() {
         guard let id = editingTab, let tab = tabs.first(where: { $0.id == id }) else { return }
+        if renamingTab {
+            let typed = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            tab.name = typed.isEmpty ? nil : typed
+            cancelTabEdit()
+            writeSession(now: true)
+            return
+        }
         guard let url = Google.destination(for: tabDraft) else {
             // Stay put and say so, rather than quietly throwing the edit away.
             refusals += 1
@@ -577,6 +596,7 @@ final class Browser: NSObject, ObservableObject {
 
     func cancelTabEdit() {
         editingTab = nil
+        renamingTab = false
         tabDraft = ""
     }
 
@@ -631,9 +651,17 @@ final class Browser: NSObject, ObservableObject {
     private var remembering = false
     /// Spaces (see Spaces.swift): every one, the one on screen, and the
     /// rows of tabs of the others.
-    @Published var spaces = Spaces.read()
+    @Published var spaces = Spaces.read() {
+        didSet { Spaces.sharing = Set(spaces.filter { $0.sharesSignIns == true }.map(\.id)) }
+    }
     @Published var spaceID = Space.firstID
     var parked: [UUID: Parked] = [:]
+    /// How far the column's rows have followed two fingers sideways, and
+    /// whether the card for a new space stands in for them (see SpaceSwipe).
+    @Published var spaceSwipe: CGFloat = 0
+    @Published var makingSpace = false
+    /// Which way the last change of space went: 1 to the next, -1 back.
+    @Published var spaceStep = 1
 
     // MARK: - beginning and ending
 
@@ -644,6 +672,8 @@ final class Browser: NSObject, ObservableObject {
         if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
         if prefs.bench { Bench.shared.start(for: self) }
         welcoming = !prefs.welcomed
+        // Asked to stay out of the way: it starts that way (see Fold.swift).
+        folded = prefs.sideHides
         // Once a day, quietly: is there a newer one?
         Updater.shared.checkIfDue { [weak self] line in self?.announce(line) }
         FormRelay.passkeysOffered = prefs.passkeys
@@ -720,6 +750,7 @@ final class Browser: NSObject, ObservableObject {
 
         // What a deleted space left behind, if WebKit wouldn't let it go then.
         Spaces.sweep()
+        Spaces.sharing = Set(spaces.filter { $0.sharesSignIns == true }.map(\.id))
         // The space you were in, when there are spaces (see Spaces.swift).
         if prefs.usesSpaces, let last = Store.settings.string(forKey: "space.current").flatMap(UUID.init),
            spaces.contains(where: { $0.id == last }) {
@@ -727,6 +758,7 @@ final class Browser: NSObject, ObservableObject {
             Spaces.current = last
         }
         restoreSession()
+        if prefs.usesSpaces { preloadSpaces() }
     }
 
     /// The row of tabs the space on screen had last time, or one empty tab.
@@ -750,7 +782,7 @@ final class Browser: NSObject, ObservableObject {
             guard let url = URL(string: entry.url) else { continue }
             let tab = Tab()
             prepare(tab)
-            tab.restore(url: url, title: entry.title)
+            tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
             tabs.append(tab)
         }
@@ -772,7 +804,7 @@ final class Browser: NSObject, ObservableObject {
         // were before (see Spaces.swift).
         prefs.$usesSpaces
             .dropFirst()
-            .sink { [weak self] on in if !on { self?.leaveSpaces() } }
+            .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
             .store(in: &bag)
         prefs.$shielded
             .dropFirst()
@@ -868,7 +900,9 @@ final class Browser: NSObject, ObservableObject {
                     guard let url = tab.pending ?? tab.address,
                           url.scheme?.hasPrefix("http") == true
                     else { return nil }
-                    return Session.Entry(url: url.absoluteString, title: tab.title, pin: tab.pin)
+                    return Session.Entry(
+                        url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name
+                    )
                 },
                 active: tabs.firstIndex { $0.id == activeID } ?? 0
             )
@@ -894,21 +928,18 @@ final class Browser: NSObject, ObservableObject {
 
     // MARK: - tabs
 
-    /// ⌘T. On a tab that is already blank this just puts the cursor back in the
-    /// field — otherwise holding ⌘T leaves a row of identical empty tabs.
     func newTab() {
+        // ⌘T held down repeats. Each press is a new tab, even beside an empty
+        // one, but a key left down is one press, not a row of empty tabs for
+        // as long as it stays there.
+        if let event = NSApp.currentEvent, event.type == .keyDown, event.isARepeat, active?.isBlank == true {
+            return
+        }
         // An extension's new tab page, if one asked and you said yes.
         if #available(macOS 15.4, *), let page = Extensions.shared.newTabPage {
             open(page, foreground: true)
             summoning = false
             rememberSession()
-            return
-        }
-        if let active, active.isBlank {
-            summoning = false
-            editing = true
-            typed = ""
-            focusRequest += 1
             return
         }
         let tab = Tab()
@@ -1233,6 +1264,24 @@ final class Browser: NSObject, ObservableObject {
         let job = tab.web.printOperation(with: info)
         job.view?.frame = tab.web.bounds
         job.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+
+    /// A space's row as its session left it, made without touching the one
+    /// on screen: tabs with an address and no page yet, which cost next to
+    /// nothing until one is looked at (see Spaces.swift).
+    func loadRow(_ space: UUID) -> Parked {
+        let saved = Session.read(space: space)
+        var row: [Tab] = []
+        for entry in saved.tabs {
+            guard let url = URL(string: entry.url) else { continue }
+            let tab = Tab(configuration: Web.configuration(space: space))
+            prepare(tab)
+            tab.restore(url: url, title: entry.title, name: entry.name)
+            tab.pin = entry.pin
+            row.append(tab)
+        }
+        let active = row.indices.contains(saved.active) ? row[saved.active].id : row.first?.id
+        return Parked(tabs: row, active: active)
     }
 
     /// Another space's row put on screen in place of this one (see
