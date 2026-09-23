@@ -6,13 +6,20 @@ import SwiftUI
 //
 // A site is a row of a tab's size, 28 points with 2 between, and opens where
 // a bookmark always has (see Browser.visit). A folder opens in place, its
-// sites 14 points further in. Nothing here is dragged: filing things away is
-// the manager's job, one right-click off.
+// sites 14 points further in.
+//
+// A row is picked up the way a tab is, with the same gesture rather than the
+// system's drag: a system drag carries text, and the column takes any text
+// dropped on it as an address to open. A folder is carried with what is open
+// under it. Nothing moves in the list until the row is let go — a line shows
+// where it will land, or the folder it will go into lights up — so the list
+// keeps its shape under the pointer while it is being aimed.
 //
 // Every piece has a fixed height, on purpose. The column works out where its
 // rows stop by adding up what it drew (SideBar.rowsEnd) — the window's drag
 // area under them is a real view, and it would take their clicks otherwise —
-// so `Shelf.height` adds the shelf up the same way, from the same numbers.
+// so `Shelf.height` adds the shelf up the same way, from the same numbers,
+// and `Shelf.drop` finds the row under the pointer with them too.
 //
 // Which folders are open is kept on the browser (Browser.shelfOpen), not in
 // the view. The column is drawn twice, once plain and once scrolling, and
@@ -24,24 +31,30 @@ struct Shelf: View {
     @ObservedObject var browser: Browser
     @ObservedObject var bookmarks: Bookmarks
 
+    @State private var dragging: Bookmark.ID?
+    @State private var travel: CGFloat = 0
+    @State private var landing: Drop?
+
     static let row: CGFloat = 28
     static let gap: CGFloat = 2
     static let heading: CGFloat = 26
     static let indent: CGFloat = 14
 
-    /// One row as it is drawn: a site or a folder, and how deep it sits.
+    /// One row as it is drawn: a site or a folder, the folder it is in, and
+    /// how deep that is.
     struct Line {
         let node: Bookmark
+        let parent: Bookmark.ID?
         let depth: Int
     }
 
     /// The tree as rows, top to bottom — an open folder's sites under it,
     /// a shut folder's nowhere.
-    static func lines(_ nodes: [Bookmark], open: Set<Bookmark.ID>, depth: Int = 0) -> [Line] {
+    static func lines(_ nodes: [Bookmark], open: Set<Bookmark.ID>, parent: Bookmark.ID? = nil, depth: Int = 0) -> [Line] {
         nodes.flatMap { node -> [Line] in
-            let line = Line(node: node, depth: depth)
+            let line = Line(node: node, parent: parent, depth: depth)
             guard node.isFolder, open.contains(node.id) else { return [line] }
-            return [line] + lines(node.children ?? [], open: open, depth: depth + 1)
+            return [line] + lines(node.children ?? [], open: open, parent: node.id, depth: depth + 1)
         }
     }
 
@@ -55,11 +68,21 @@ struct Shelf: View {
 
     var body: some View {
         if !bookmarks.isEmpty {
+            let lines = Shelf.lines(bookmarks.roots, open: browser.shelfOpen)
+            let carried = Shelf.carried(dragging, in: lines)
             VStack(alignment: .leading, spacing: Shelf.gap) {
                 Heading(title: "Bookmarks")
-                ForEach(Shelf.lines(bookmarks.roots, open: browser.shelfOpen), id: \.node.id) { line in
+                ForEach(Array(lines.enumerated()), id: \.element.node.id) { index, line in
+                    let held = carried.contains(index)
                     ShelfRow(browser: browser, node: line.node, depth: line.depth,
-                             isOpen: browser.shelfOpen.contains(line.node.id))
+                             isOpen: browser.shelfOpen.contains(line.node.id),
+                             target: landing?.into == line.node.id)
+                        .offset(y: held ? travel : 0)
+                        // Under the hand exactly, as a tab is (see SideBar.loose).
+                        .transaction { if held { $0.animation = nil } }
+                        .zIndex(held ? 1 : 0)
+                        .shadow(color: .black.opacity(held && index == carried.lowerBound ? 0.14 : 0), radius: 12, y: 4)
+                        .gesture(pick(line, lines: lines))
                 }
                 // The tabs' own heading, so the two lists read as two.
                 Heading(title: "Tabs")
@@ -67,7 +90,99 @@ struct Shelf: View {
                         Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 10)
                     }
             }
+            .overlay(alignment: .topLeading) { mark }
+            .coordinateSpace(name: "shelf")
         }
+    }
+
+    /// The line between two rows where the one held will land.
+    @ViewBuilder
+    private var mark: some View {
+        if let landing, landing.into == nil {
+            Capsule()
+                .fill(Palette.muted)
+                .frame(height: 2)
+                .padding(.leading, 10 + CGFloat(landing.depth) * Shelf.indent)
+                .padding(.trailing, 10)
+                // Across the gap above that row, which is the line's own height.
+                .offset(y: Shelf.heading + CGFloat(landing.line) * (Shelf.row + Shelf.gap))
+                .allowsHitTesting(false)
+        }
+    }
+
+    private func pick(_ line: Line, lines: [Line]) -> some Gesture {
+        DragGesture(minimumDistance: 5, coordinateSpace: .named("shelf"))
+            .onChanged { value in
+                if dragging != line.node.id { dragging = line.node.id }
+                travel = value.translation.height
+                landing = Shelf.drop(at: value.location.y, lines: lines, carrying: line.node.id)
+            }
+            .onEnded { _ in
+                if let landing {
+                    bookmarks.move(line.node.id, into: landing.parent, before: landing.before)
+                }
+                withAnimation(Motion.settle) {
+                    dragging = nil
+                    travel = 0
+                    landing = nil
+                }
+            }
+    }
+
+    // MARK: - where a row lands
+
+    /// Where a row let go lands: in a folder (`parent`, nil for the top),
+    /// just before one of its rows or at its end; and where to draw that.
+    struct Drop: Equatable {
+        var parent: Bookmark.ID?
+        var before: Bookmark.ID?
+        /// A folder the row goes into, lit rather than marked with a line.
+        var into: Bookmark.ID?
+        /// The row the line is drawn above, and how far in.
+        var line = 0
+        var depth = 0
+    }
+
+    /// The rows a held one takes along: itself, and what is open under it.
+    static func carried(_ id: Bookmark.ID?, in lines: [Line]) -> Range<Int> {
+        guard let id, let first = lines.firstIndex(where: { $0.node.id == id }) else { return 0..<0 }
+        var end = first + 1
+        while end < lines.count, lines[end].depth > lines[first].depth { end += 1 }
+        return first..<end
+    }
+
+    /// The pointer at `y`, in the shelf's own space: the middle half of a
+    /// folder is that folder, the top half of any other row is just above
+    /// it, the bottom half just below it. Past the last row is the end of
+    /// the list. Nil over the rows being carried, which can't go inside
+    /// themselves.
+    static func drop(at y: CGFloat, lines: [Line], carrying id: Bookmark.ID) -> Drop? {
+        let slot = row + gap
+        let span = carried(id, in: lines)
+        let at = y - heading - gap
+        guard !lines.isEmpty else { return nil }
+        if at >= CGFloat(lines.count) * slot {
+            return Drop(parent: nil, before: nil, line: lines.count, depth: 0)
+        }
+        let index = max(0, Int(at / slot))
+        guard !span.contains(index) else { return nil }
+        let line = lines[index]
+        let part = (at - CGFloat(index) * slot) / row
+        if line.node.isFolder, part > 0.25, part < 0.75 {
+            return Drop(parent: line.node.id, into: line.node.id, line: index, depth: line.depth + 1)
+        }
+        if part < 0.5 {
+            return Drop(parent: line.parent, before: line.node.id, line: index, depth: line.depth)
+        }
+        // Below an open folder is the top of what is in it.
+        if index + 1 < lines.count, lines[index + 1].parent == line.node.id {
+            let first = lines[index + 1].node.id
+            return first == id ? nil
+                : Drop(parent: line.node.id, before: first, line: index + 1, depth: line.depth + 1)
+        }
+        let next = lines[(index + 1)...].first { $0.depth <= line.depth }
+        let sibling = next?.parent == line.parent ? next?.node.id : nil
+        return Drop(parent: line.parent, before: sibling, line: index + 1, depth: line.depth)
     }
 
     private struct Heading: View {
@@ -91,6 +206,8 @@ private struct ShelfRow: View {
     let node: Bookmark
     let depth: Int
     let isOpen: Bool
+    /// A row being carried will go into this folder if let go now.
+    let target: Bool
 
     @State private var hovering = false
 
@@ -127,7 +244,7 @@ private struct ShelfRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(hovering ? Palette.hover : .clear)
+                .fill(target ? Palette.wash : (hovering ? Palette.hover : .clear))
         )
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onTapGesture(perform: press)
@@ -143,6 +260,7 @@ private struct ShelfRow: View {
         }
         .help(node.url ?? node.title)
         .animation(Motion.quick, value: hovering)
+        .animation(Motion.quick, value: target)
     }
 
     private func press() {
@@ -158,8 +276,9 @@ private struct ShelfRow: View {
 
 extension Shelf {
     /// `./bench shelf`: the rows as drawn, after filling the list with a few
-    /// sites and a folder (`seed`, test runs only) or opening or shutting a
-    /// folder by its title.
+    /// sites and a folder (`seed`, test runs only), opening or shutting a
+    /// folder by its title, or letting a row go at a height in the shelf
+    /// (`drop`, the same reckoning as a drag's).
     static func bench(_ request: [String: Any], browser: Browser) -> [String: Any] {
         if request["seed"] as? Bool == true {
             guard Store.testing else { return ["error": "shelf seed only works on a --test run"] }
@@ -182,10 +301,22 @@ extension Shelf {
         if let title = request["close"] as? String, let folder = folders.first(where: { $0.title == title }) {
             browser.shelfOpen.remove(folder.id)
         }
+        var landed: [String: Any] = [:]
+        if let title = request["drop"] as? String, let y = request["y"] as? Double {
+            guard Store.testing else { return ["error": "shelf drop only works on a --test run"] }
+            let before = lines(browser.bookmarks.roots, open: browser.shelfOpen)
+            guard let line = before.first(where: { $0.node.title == title }) else { return ["error": "no row called \(title)"] }
+            if let drop = drop(at: y, lines: before, carrying: line.node.id) {
+                browser.bookmarks.move(line.node.id, into: drop.parent, before: drop.before)
+                landed = ["line": drop.line, "depth": drop.depth, "into": drop.into != nil]
+            } else {
+                landed = ["nowhere": true]
+            }
+        }
         let rows = lines(browser.bookmarks.roots, open: browser.shelfOpen).map { line -> [String: Any] in
             ["title": line.node.title, "depth": line.depth, "folder": line.node.isFolder,
              "open": browser.shelfOpen.contains(line.node.id)]
         }
-        return ["on": browser.prefs.sideBookmarks, "rows": rows, "height": Double(height(for: browser))]
+        return ["on": browser.prefs.sideBookmarks, "rows": rows, "height": Double(height(for: browser)), "landed": landed]
     }
 }

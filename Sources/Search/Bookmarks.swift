@@ -97,15 +97,17 @@ final class Bookmarks: ObservableObject {
     /// top level when `folderID` is nil. Moving a folder into its own
     /// children is refused rather than allowed to erase it by looping it
     /// inside itself; moving it onto itself is simply nothing to do.
-    func move(_ id: Bookmark.ID, into folderID: Bookmark.ID?) {
+    /// `sibling` puts it just before that one instead of at the end, for a
+    /// drag in the column (see Shelf.swift).
+    func move(_ id: Bookmark.ID, into folderID: Bookmark.ID?, before sibling: Bookmark.ID? = nil) {
         guard id != folderID else { return }
         var working = roots
         guard let node = Bookmarks.detach(id, from: &working) else { return }
         if let folderID {
             guard !Bookmarks.holds(folderID, node) else { return }
-            guard Bookmarks.insert(node, into: folderID, nodes: &working) else { return }
+            guard Bookmarks.insert(node, into: folderID, before: sibling, nodes: &working) else { return }
         } else {
-            working.append(node)
+            working.insert(node, at: Bookmarks.place(of: sibling, in: working))
         }
         roots = working
         save()
@@ -125,20 +127,27 @@ final class Bookmarks: ObservableObject {
     }
 
     @discardableResult
-    private static func insert(_ node: Bookmark, into id: Bookmark.ID, nodes: inout [Bookmark]) -> Bool {
+    private static func insert(_ node: Bookmark, into id: Bookmark.ID, before sibling: Bookmark.ID? = nil, nodes: inout [Bookmark]) -> Bool {
         for i in nodes.indices {
             if nodes[i].id == id, nodes[i].isFolder {
-                nodes[i].children = (nodes[i].children ?? []) + [node]
+                var kids = nodes[i].children ?? []
+                kids.insert(node, at: place(of: sibling, in: kids))
+                nodes[i].children = kids
                 return true
             }
             guard nodes[i].children != nil else { continue }
             var kids = nodes[i].children!
-            if insert(node, into: id, nodes: &kids) {
+            if insert(node, into: id, before: sibling, nodes: &kids) {
                 nodes[i].children = kids
                 return true
             }
         }
         return false
+    }
+
+    /// Where `sibling` sits among `nodes`, or their end when it isn't one of them.
+    private static func place(of sibling: Bookmark.ID?, in nodes: [Bookmark]) -> Int {
+        sibling.flatMap { id in nodes.firstIndex { $0.id == id } } ?? nodes.count
     }
 
     /// `id` is `node` itself, or somewhere inside it — also used by the
