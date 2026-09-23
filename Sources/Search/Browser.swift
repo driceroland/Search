@@ -1435,6 +1435,9 @@ final class Browser: NSObject, ObservableObject {
         tab.onPickEnd = { [weak self] _ in self?.veiling = false }
         tab.onImageMenu = { [weak self] tab, url in self?.showImageMenu(for: tab, at: url) }
         tab.onStoreAdd = { [weak self] tab in self?.addFromStore(tab) }
+        // The middle button on a link opens it beside the tab you are on, as
+        // it does in every other browser (see MiddleRelay).
+        tab.onMiddleClick = { [weak self] _, url in self?.open(url, foreground: false) }
 
         // The caret in a sign-in box: the accounts kept for this site hang
         // from the box, and go when the caret does. Nothing is filled on
@@ -1772,16 +1775,20 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         }
 
         // ⌘-click opens beside this tab and leaves you where you are; ⌘⇧-click
-        // takes you with it. Middle-click does what ⌘-click does, for hands
-        // that learned it that way.
+        // takes you with it.
+        //
+        // The middle button is not judged here. WebKit hands the browser a
+        // navigation action for a ⌘-click and none at all for a middle one,
+        // and where it does report a button it answers with a mask — 1 left,
+        // 2 right, 4 middle — so a check for 2 here would have meant the right
+        // button, not the middle (see MiddleRelay, which is where the middle
+        // button is answered).
         if action.navigationType == .linkActivated,
-           ["http", "https"].contains(scheme) {
-            let flags = action.modifierFlags
-            if flags.contains(.command) || action.buttonNumber == 2 {
-                open(url, foreground: flags.contains(.shift))
-                decisionHandler(.cancel)
-                return
-            }
+           ["http", "https"].contains(scheme),
+           action.modifierFlags.contains(.command) {
+            open(url, foreground: action.modifierFlags.contains(.shift))
+            decisionHandler(.cancel)
+            return
         }
 
         // The next document gets this site's stylesheet of hidden things,
