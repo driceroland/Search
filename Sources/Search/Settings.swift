@@ -12,14 +12,16 @@ struct SettingsPanel: View {
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shield = Shield.shared
     @State private var isDefault = Links.isDefault
+    @State private var searchMenuOpen = false
     @State private var page: Page = Page(rawValue: Store.settings.string(forKey: "settings.page") ?? "") ?? .general
 
     enum Page: String, CaseIterable, Identifiable {
-        case general, tabs, extensions, passwords, downloads, privacy, about
+        case general, search, tabs, extensions, passwords, downloads, privacy, about
         var id: String { rawValue }
         var title: String {
             switch self {
             case .general: return "General"
+            case .search: return "Search"
             case .tabs: return "Tabs"
             case .extensions: return "Extensions"
             case .passwords: return "Passwords"
@@ -31,6 +33,7 @@ struct SettingsPanel: View {
         var icon: String {
             switch self {
             case .general: return "macwindow"
+            case .search: return "magnifyingglass"
             case .tabs: return "rectangle.split.3x1"
             case .extensions: return "puzzlepiece.extension"
             case .passwords: return "key"
@@ -132,6 +135,7 @@ struct SettingsPanel: View {
                 VStack(alignment: .leading, spacing: 18) {
                     switch page {
                     case .general: general
+                    case .search: search
                     case .tabs: tabs
                     case .extensions: ExtensionsPage(browser: browser)
                     case .passwords: passwords
@@ -172,15 +176,64 @@ struct SettingsPanel: View {
                 }
             }
             Rule()
+            Line("Appearance", "Light, dark, or whatever the Mac is doing — pages follow it too") {
+                Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
+            }
+            Rule()
+            Line("Correct spelling as you type", "macOS's autocorrect inside pages — the one that capitalises for you") {
+                Switch(on: $prefs.autocorrect)
+            }
+            Rule()
+            Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
+                Switch(on: $prefs.bench)
+            }
+        }
+    }
+
+    // MARK: - search
+
+    private var search: some View {
+        Card {
             Line("Search with", searchDetail) {
-                Picker("", selection: $prefs.engine) {
-                    ForEach(Engine.allCases) { engine in
-                        Text(engine.title).tag(engine)
+                Button { searchMenuOpen.toggle() } label: {
+                    HStack(spacing: 10) {
+                        Text(prefs.engine.title)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(Palette.muted)
                     }
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Palette.ink)
+                    .frame(width: 150)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Palette.ground)
+                            .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
+                    )
+                    .padding(2)
+                    .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .fixedSize()
+                .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
+                .accessibilityLabel("Search engine")
+                .popover(isPresented: $searchMenuOpen, arrowEdge: .bottom) {
+                    VStack(spacing: 2) {
+                        ForEach(Engine.allCases) { engine in
+                            EngineOption(engine: engine, selected: prefs.engine == engine) {
+                                prefs.engine = engine
+                                searchMenuOpen = false
+                            }
+                        }
+                    }
+                    .padding(6)
+                    .frame(width: 190)
+                    .background(Palette.ground)
+                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                }
             }
             if prefs.engine == .custom {
                 ZStack(alignment: .leading) {
@@ -198,18 +251,6 @@ struct SettingsPanel: View {
                 .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .padding(.horizontal, 14)
                 .padding(.bottom, 11)
-            }
-            Rule()
-            Line("Appearance", "Light, dark, or whatever the Mac is doing — pages follow it too") {
-                Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
-            }
-            Rule()
-            Line("Correct spelling as you type", "macOS's autocorrect inside pages — the one that capitalises for you") {
-                Switch(on: $prefs.autocorrect)
-            }
-            Rule()
-            Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
-                Switch(on: $prefs.bench)
             }
         }
     }
@@ -502,6 +543,40 @@ struct SettingsPanel: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
         }
+    }
+}
+
+private struct EngineOption: View {
+    let engine: Engine
+    let selected: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .opacity(selected ? 1 : 0)
+                    .frame(width: 14)
+                Text(engine.title)
+                    .font(.system(size: 12.5, weight: selected ? .medium : .regular))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Palette.ink)
+            .padding(.horizontal, 9)
+            .frame(height: 30)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(hovering ? Palette.hover : (selected ? Palette.wash : .clear))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
     }
 }
 

@@ -13,13 +13,14 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Settings › Search now has the engine choices in the browser's own style; Brave Search and Qwant join the list.
 - A middle-click on a tab closes it, in the row across the top and in the column. A pinned tab is put down, as with ⌘W. Thanks [@lusqua](https://github.com/lusqua) ([#27](https://github.com/driceroland/Search/pull/27))
 - Rename a tab: Rename in a tab's right-click menu, or Tabs › Rename Tab, types a name over the title in place. The name stays with the tab wherever it goes, and survives a quit; emptying the field gives the page's own title back. Thanks [@theosementa](https://github.com/theosementa) ([#32](https://github.com/driceroland/Search/pull/32))
 - The sidebar can hide by itself until the pointer reaches the left edge: Settings › Tabs › Hide the sidebar until the pointer reaches the edge. ⌘S still brings it out to stay. Thanks [@lusqua](https://github.com/lusqua) ([#30](https://github.com/driceroland/Search/pull/30))
 - Spaces: separate sets of tabs in the one window, each with its own icon and, if you like, its own downloads folder — signed in wherever your other spaces are, or starting afresh with cookies and sign-ins of its own, as you choose when you make it. Turn them on in Settings › Tabs, then switch with ⌃1–⌃9, the space's icon, or two fingers sideways over the column of tabs, where the next space slides in beside this one; past the last, the column offers to make a new one. ([#4](https://github.com/driceroland/Search/issues/4))
 - Web Inspector: Inspect Element in a page's right-click menu, and in the View menu the inspector (⌥⌘I), the JavaScript console (⌥⌘J) and picking an element (⌥⌘C), the keys Chrome and Arc use. ([#13](https://github.com/driceroland/Search/issues/13))
 - ⌘S folds the sidebar away and the page takes the whole window; the left edge brings the tabs back out. Thanks [@kndpt](https://github.com/kndpt) ([#7](https://github.com/driceroland/Search/pull/7))
-- Search with something other than Google: Settings › General › Search with offers DuckDuckGo, Bing, Ecosia, Startpage and Kagi, or any address with `%s` where the words go. Google stays the default. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#43](https://github.com/driceroland/Search/issues/43))
+- Search with something other than Google: Settings › Search offers DuckDuckGo, Bing, Ecosia, Startpage and Kagi, or any address with `%s` where the words go. Google stays the default. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#43](https://github.com/driceroland/Search/issues/43))
 - A skill that teaches coding agents to drive Search with `./bench`. Thanks [@jasonkneen](https://github.com/jasonkneen) ([#14](https://github.com/driceroland/Search/pull/14))
 
 ### Fixed
