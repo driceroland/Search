@@ -23,6 +23,7 @@
     ./bench ext-add ID|LINK [--yes]    install from the Chrome Web Store (--yes only in a --test run)
     ./bench ext-folder PATH [--yes]    install an unpacked extension
     ./bench ext-press ID               press its button
+    ./bench ext-tap ID                 click its button as a hand would, press then release — --test runs only
     ./bench ext-page ID [PATH]         one of its pages in a bench tab → tab id, for eval
     ./bench ext-popup ID JS            run JavaScript in its popup while it is open
     ./bench ext-reload ID              take it up again (a folder one is copied in afresh)
@@ -123,7 +124,7 @@ def main(argv):
         if len(args) != 2: sys.exit("usage: bench ui KEY VALUE")
         key, value = args
         request[key] = value if key == "look" else value in ("on", "true", "1", "yes")
-    elif verb in ("ext-add", "ext-press", "ext-remove", "ext-reload"):
+    elif verb in ("ext-add", "ext-press", "ext-tap", "ext-remove", "ext-reload"):
         if len(args) != 1: sys.exit(f"usage: bench {verb} ID")
         request["id"] = args[0]
         request["yes"] = yes
