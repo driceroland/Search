@@ -14,7 +14,10 @@ import SwiftUI
 // cross that shuts it. A tab dragged here becomes a bookmark the same way:
 // it leaves the tabs and stays open, under the bookmark it now is, at the
 // place it was let go. With nothing kept yet the section still stands, one
-// quiet row inviting a tab.
+// quiet row inviting a tab. The other way, a bookmark dragged down among the
+// tabs stops being one: its tab, or a new one when it was shut, joins the
+// tabs where it is let go. A shut folder with an open bookmark somewhere in
+// it wears the same dot, so no open tab is ever out of sight.
 //
 // That tab is still one of the browser's tabs, so everything a tab does —
 // sleep, ⌘W, spaces — it does. The browser only remembers which bookmark it
@@ -85,6 +88,7 @@ struct Shelf: View {
     var body: some View {
         let lines = Shelf.lines(bookmarks.roots, open: browser.shelfOpen)
         let carried = Shelf.carried(dragging, in: lines)
+        let open = Set(browser.tabs.compactMap { browser.shelfTabs[$0.id] })
         VStack(alignment: .leading, spacing: Shelf.gap) {
             Heading(title: "Bookmarks")
             if lines.isEmpty { Empty(lit: aim != nil) }
@@ -94,7 +98,9 @@ struct Shelf: View {
                 ShelfRow(browser: browser, node: line.node, depth: line.depth,
                          isOpen: browser.shelfOpen.contains(line.node.id),
                          target: aim?.into == line.node.id,
-                         tab: tab, live: tab != nil && tab?.id == browser.activeID)
+                         tab: tab, live: tab != nil && tab?.id == browser.activeID,
+                         hides: line.node.isFolder && !browser.shelfOpen.contains(line.node.id)
+                            && Shelf.holds(any: open, line.node.children ?? []))
                     .offset(y: held ? travel : 0)
                     // Under the hand exactly, as a tab is (see SideBar.loose).
                     .transaction { if held { $0.animation = nil } }
@@ -108,21 +114,25 @@ struct Shelf: View {
                     Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 10)
                 }
         }
-        .overlay(alignment: .topLeading) { if !lines.isEmpty { mark } }
+        .overlay(alignment: .topLeading) { if !lines.isEmpty { mark(rows: lines.count) } }
         .coordinateSpace(name: "shelf")
     }
 
-    /// The line between two rows where the one held will land.
+    /// The line between two rows where the one held will land — the
+    /// bookmarks' rows, or the tabs' under them.
     @ViewBuilder
-    private var mark: some View {
+    private func mark(rows: Int) -> some View {
         if let landing = aim, landing.into == nil {
+            let slot = Shelf.row + Shelf.gap
+            let y = landing.tabs.map { Shelf.heading * 2 + Shelf.gap + CGFloat(rows + $0) * slot - 1 }
+                ?? Shelf.heading + CGFloat(landing.line) * slot
             Capsule()
                 .fill(Palette.muted)
                 .frame(height: 2)
                 .padding(.leading, 10 + CGFloat(landing.depth) * Shelf.indent)
                 .padding(.trailing, 10)
                 // Across the gap above that row, which is the line's own height.
-                .offset(y: Shelf.heading + CGFloat(landing.line) * (Shelf.row + Shelf.gap))
+                .offset(y: y)
                 .allowsHitTesting(false)
         }
     }
@@ -137,7 +147,7 @@ struct Shelf: View {
             .onEnded { value in
                 // Where it is let go, which may be past the last move.
                 if let landing = Shelf.drop(at: value.location.y, lines: lines, carrying: line.node.id) {
-                    bookmarks.move(line.node.id, into: landing.parent, before: landing.before)
+                    browser.land(line.node, landing)
                 }
                 withAnimation(Motion.settle) {
                     dragging = nil
@@ -159,11 +169,18 @@ struct Shelf: View {
         /// The row the line is drawn above, and how far in.
         var line = 0
         var depth = 0
+        /// Down among the tabs instead, before the one at this place.
+        var tabs: Int?
     }
 
     /// `id` is somewhere in `nodes`, however deep.
     static func holds(_ id: Bookmark.ID, _ nodes: [Bookmark]) -> Bool {
         nodes.contains { $0.id == id || holds(id, $0.children ?? []) }
+    }
+
+    /// One of `ids` is somewhere in `nodes`, however deep.
+    static func holds(any ids: Set<Bookmark.ID>, _ nodes: [Bookmark]) -> Bool {
+        nodes.contains { ids.contains($0.id) || holds(any: ids, $0.children ?? []) }
     }
 
     /// The rows a held one takes along: itself, and what is open under it.
@@ -184,6 +201,14 @@ struct Shelf: View {
         let span = carried(id, in: lines)
         let at = y - heading - gap
         guard !lines.isEmpty else { return Drop() }
+        // Past the tabs' heading is the tabs: a site dropped there leaves the
+        // bookmarks, a folder has nowhere to go. The tabs' rows are a tab's
+        // size, the same as a bookmark's (see SideBar.row).
+        let tabsTop = heading + CGFloat(lines.count) * slot + heading + gap
+        if y >= tabsTop {
+            guard let id, let held = lines.first(where: { $0.node.id == id }), !held.node.isFolder else { return nil }
+            return Drop(tabs: max(0, Int(((y - tabsTop) / slot).rounded())))
+        }
         if at >= CGFloat(lines.count) * slot {
             return Drop(parent: nil, before: nil, line: lines.count, depth: 0)
         }
@@ -259,6 +284,8 @@ private struct ShelfRow: View {
     /// The bookmark's own tab, while it is open; `live` while it is on screen.
     let tab: Tab?
     let live: Bool
+    /// A shut folder with an open bookmark somewhere in it.
+    let hides: Bool
 
     @State private var hovering = false
 
@@ -280,6 +307,12 @@ private struct ShelfRow: View {
                 .foregroundStyle(live ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
             Spacer(minLength: 2)
             if let tab { dot(tab) }
+            if hides {
+                Circle()
+                    .fill(Palette.muted)
+                    .frame(width: 5, height: 5)
+                    .frame(width: 15, height: 15)
+            }
             if node.isFolder {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
@@ -381,6 +414,34 @@ extension Browser {
         shelfTabs[tab.id] = node.id
     }
 
+    /// A bookmark let go where it was aimed: somewhere else among the
+    /// bookmarks, or down among the tabs, where it stops being one.
+    func land(_ node: Bookmark, _ drop: Shelf.Drop) {
+        guard let place = drop.tabs else {
+            bookmarks.move(node.id, into: drop.parent, before: drop.before)
+            return
+        }
+        // The tabs as the column shows them, before this one joins them.
+        let loose = tabs.filter { $0.pin == nil && !onShelf($0) }
+        let tab: Tab
+        if let open = shelfTab(for: node.id) {
+            tab = open
+        } else if let url = node.url.flatMap(URL.init(string:)) {
+            tab = open(url, foreground: true)
+        } else {
+            return
+        }
+        shelfTabs[tab.id] = nil
+        bookmarks.remove(node.id)
+        // Before the tab at that place, or after the last; `move` wants the
+        // index the tab ends up at, counted with the tab still where it is.
+        guard let here = tabs.firstIndex(where: { $0.id == tab.id }), let last = loose.last,
+              let anchor = tabs.firstIndex(where: { $0.id == (place < loose.count ? loose[place] : last).id })
+        else { return }
+        let after = place >= loose.count
+        move(tab, to: here < anchor ? (after ? anchor : anchor - 1) : (after ? anchor + 1 : anchor))
+    }
+
     /// A bookmark's own tab, in the space on screen, while it is open.
     func shelfTab(for id: Bookmark.ID) -> Tab? {
         tabs.first { shelfTabs[$0.id] == id }
@@ -447,8 +508,8 @@ extension Shelf {
             let before = lines(browser.bookmarks.roots, open: browser.shelfOpen)
             guard let line = before.first(where: { $0.node.title == title }) else { return ["error": "no row called \(title)"] }
             if let drop = drop(at: y, lines: before, carrying: line.node.id) {
-                browser.bookmarks.move(line.node.id, into: drop.parent, before: drop.before)
-                landed = ["line": drop.line, "depth": drop.depth, "into": drop.into != nil]
+                browser.land(line.node, drop)
+                landed = ["line": drop.line, "depth": drop.depth, "into": drop.into != nil, "tabs": drop.tabs ?? -1]
             } else {
                 landed = ["nowhere": true]
             }
