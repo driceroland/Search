@@ -30,6 +30,8 @@ struct SideBar: View {
     @State private var pinDragging: Tab.ID?
     @State private var pinFrom = 0
     @State private var pinTravel: CGSize = .zero
+    /// The share door's own spot, for the picker to open under.
+    @State private var shareDoor: NSView?
 
     private static let row: CGFloat = 28
     private static let gap: CGFloat = 2
@@ -465,6 +467,10 @@ struct SideBar: View {
         HStack(spacing: 2) {
             if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
             ExtensionSlot(edge: .trailing)
+            if browser.prefs.showsShare {
+                Door(icon: "square.and.arrow.up", help: "Share…", size: 9.5, nudge: -1) { browser.share(from: shareDoor) }
+                    .background(DoorAnchor(view: $shareDoor))
+            }
             Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
                 .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .trailing) {
                     BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
@@ -729,6 +735,13 @@ struct Door: View {
     let icon: String
     var on = false
     var help = ""
+    /// A few glyphs (square.and.arrow.up among them) draw noticeably bigger
+    /// than the rest of the set at the same point size; this brings one back
+    /// in line with its neighbours without changing how every other door reads.
+    var size: CGFloat = 11
+    /// And the same glyph sits low in its own bounding box — nudged up
+    /// rather than redrawn, so the door around it never moves.
+    var nudge: CGFloat = 0
     let act: () -> Void
 
     @State private var hovering = false
@@ -736,8 +749,9 @@ struct Door: View {
     var body: some View {
         Button(action: act) {
             Image(systemName: icon)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: size, weight: .medium))
                 .foregroundStyle(on ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
+                .offset(y: nudge)
                 .frame(width: 26, height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
