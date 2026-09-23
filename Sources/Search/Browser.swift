@@ -620,7 +620,7 @@ final class Browser: NSObject, ObservableObject {
         }
         let draft = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         if draft.isEmpty || tab.address.map({ Address.pretty($0) == draft }) == true
-            || Google.destination(for: draft) == nil {
+            || destination(for: draft) == nil {
             cancelTabEdit()
             return
         }
