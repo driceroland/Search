@@ -2296,7 +2296,7 @@ enum ExtensionShims {
         // MARK: search
         case "search.query":
             let spec = first as? [String: Any] ?? [:]
-            guard let url = Google.destination(for: spec["text"] as? String ?? "") else { return nil }
+            guard let url = browser.destination(for: spec["text"] as? String ?? "") else { return nil }
             switch spec["disposition"] as? String {
             case "NEW_TAB", "NEW_WINDOW": browser.open(url, foreground: true)
             default: browser.visit(url)

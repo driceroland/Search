@@ -172,6 +172,34 @@ struct SettingsPanel: View {
                 }
             }
             Rule()
+            Line("Search with", searchDetail) {
+                Picker("", selection: $prefs.engine) {
+                    ForEach(Engine.allCases) { engine in
+                        Text(engine.title).tag(engine)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+            if prefs.engine == .custom {
+                ZStack(alignment: .leading) {
+                    if prefs.customEngine.isEmpty {
+                        Text("https://example.com/search?q=%s")
+                            .foregroundStyle(Palette.muted.opacity(0.8))
+                    }
+                    TextField("", text: $prefs.customEngine)
+                        .textFieldStyle(.plain)
+                        .foregroundStyle(Palette.ink)
+                }
+                .font(.system(size: 12.5))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .padding(.horizontal, 14)
+                .padding(.bottom, 11)
+            }
+            Rule()
             Line("Appearance", "Light, dark, or whatever the Mac is doing — pages follow it too") {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
@@ -184,6 +212,14 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.bench)
             }
         }
+    }
+
+    private var searchDetail: String {
+        guard prefs.engine == .custom else { return "Where words that aren't an address go" }
+        guard Engine.accepts(prefs.customEngine) else {
+            return "An http or https address with %s where the words go. Until then, Google"
+        }
+        return "Words go to \(prefs.engine.name(custom: prefs.customEngine))"
     }
 
     // MARK: - tabs

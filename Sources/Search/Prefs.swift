@@ -55,6 +55,12 @@ final class Preferences: ObservableObject {
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
     }
+    @Published var engine: Engine {
+        didSet { store.set(engine.rawValue, forKey: "search.engine") }
+    }
+    @Published var customEngine: String {
+        didSet { store.set(customEngine, forKey: "search.custom") }
+    }
     /// Tabs nobody has looked at for half an hour give their page back and
     /// keep where they were. On unless turned off.
     @Published var sleepsTabs: Bool {
@@ -137,6 +143,8 @@ final class Preferences: ObservableObject {
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
+        engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
+        customEngine = store.string(forKey: "search.custom") ?? ""
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         shielded = store.object(forKey: "shield") as? Bool ?? true
         // Offered by default only in a build that can actually do them —
