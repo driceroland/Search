@@ -43,6 +43,9 @@
                                        and whether a drag from there would move the window;
                                        double: test run, a double-click there (start the probe hidden)
     ./bench place ID INDEX             put a tab at another place in the row
+    ./bench window                     test run: open the browser's window if a hidden probe came up without it
+    ./bench pages on|off               test run: let a hidden probe's pages be painted, off every screen (for picture)
+    ./bench picture PATH               test run: the whole window, pages included, drawn to a PNG (start the probe hidden)
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
@@ -195,6 +198,14 @@ def main(argv):
     elif verb == "place":
         if len(args) != 2: sys.exit("usage: bench place ID INDEX")
         request["id"], request["to"] = args[0], int(args[1])
+    elif verb == "window":
+        pass
+    elif verb == "pages":
+        if len(args) != 1 or args[0] not in ("on", "off"): sys.exit("usage: bench pages on|off")
+        request["on"] = args[0] == "on"
+    elif verb == "picture":
+        if len(args) != 1: sys.exit("usage: bench picture PATH")
+        request["path"] = os.path.abspath(args[0])
     elif verb == "film":
         if len(args) not in (2, 3, 4) or args[0] not in ("peek", "unpeek", "fold", "none"):
             sys.exit("usage: bench film peek|unpeek|fold|none PATH [FRAMES] [EVERY]")
