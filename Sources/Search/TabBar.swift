@@ -736,6 +736,11 @@ struct TabMenu: View {
             browser.copyAddress()
         }
         .disabled(tab.isBlank)
+        Button("Site Information…") {
+            browser.select(tab)
+            browser.showingSiteInfo = true
+        }
+        .disabled(tab.isBlank)
         Divider()
         Button("Close Tab", action: close)
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }

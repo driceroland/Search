@@ -365,6 +365,9 @@ struct ContentView: View {
         if browser.managing {
             sheet { PasswordsPanel(browser: browser) } close: { browser.managing = false }
         }
+        if browser.showingSiteInfo, let tab = browser.active {
+            sheet { SiteInfoPanel(browser: browser, tab: tab) } close: { browser.showingSiteInfo = false }
+        }
         if browser.reviewing {
             // No dimming for this one: the whole point is to keep looking at
             // the page while the list offers to put things back on it.
@@ -693,6 +696,10 @@ struct ContentView: View {
             }
             if browser.recalling {
                 browser.recalling = false
+                return true
+            }
+            if browser.showingSiteInfo {
+                browser.showingSiteInfo = false
                 return true
             }
             if browser.suggesting != nil {

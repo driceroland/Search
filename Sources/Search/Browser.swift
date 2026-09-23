@@ -417,6 +417,9 @@ final class Browser: NSObject, ObservableObject {
 
     @Published var recalling = false
     @Published var hoarding = false
+    /// The front tab's connection: secure or not, and whose certificate it
+    /// is, from a right-click's Site Information…
+    @Published var showingSiteInfo = false
     @Published var recallHunt = ""
 
     /// Cookies, caches, local storage — everything a site left on this Mac,
