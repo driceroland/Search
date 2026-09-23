@@ -57,6 +57,10 @@ struct SearchApp: App {
                     set: { _ in browser.toggleSidebar() }
                 ))
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+                // Folded away, not moved (see Fold.swift).
+                Button(browser.folded ? "Show Sidebar" : "Hide Sidebar") { browser.toggleFold() }
+                    .keyboardShortcut("s")
+                    .disabled(!browser.prefs.sidebar)
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
                     set: { browser.prefs.glyph = $0 }
@@ -368,6 +372,8 @@ struct ContentView: View {
 
     var body: some View {
         window_
+            // The column folded away, and out again at the edge (see Fold.swift).
+            .overlay(alignment: .leading) { Fold(browser: browser, prefs: browser.prefs) }
             .overlay(alignment: .bottom) { bars }
             .overlay { field }
             .overlay { panels }
@@ -546,9 +552,9 @@ struct ContentView: View {
         .transition(.opacity)
     }
 
-    /// True while the tabs are down the left.
+    /// True while the tabs are down the left, and not folded away (see Fold.swift).
     private var sidebar: Bool {
-        browser.prefs.sidebar && browser.active?.immersed != true
+        browser.prefs.sidebar && !browser.folded && browser.active?.immersed != true
     }
 
     /// The column has its own corner for the lights, so the page beside it
@@ -755,6 +761,10 @@ struct ContentView: View {
             }
         case "s" where shifted:
             browser.toggleSidebar()
+        case "s" where !shifted:
+            // The strip has nothing to fold; ⌘S stays the page's (see Fold.swift).
+            guard browser.prefs.sidebar else { return false }
+            browser.toggleFold()
         case "b" where shifted:
             browser.bookmarkCurrent()
         case "," where !shifted:

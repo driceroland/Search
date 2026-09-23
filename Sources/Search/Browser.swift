@@ -81,6 +81,11 @@ final class Browser: NSObject, ObservableObject {
         withAnimation(Motion.glide) { prefs.sidebar.toggle() }
     }
 
+    /// ⌘S: the column folded away, and slid out over the page for a look
+    /// while it is (see Fold.swift).
+    @Published var folded = false
+    @Published var peeking = false
+
     /// The address field, raised over a page by ⌘L. A blank tab shows it
     /// without being asked — there is nothing else for that tab to show.
     @Published var editing = false

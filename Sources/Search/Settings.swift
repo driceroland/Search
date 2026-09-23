@@ -362,6 +362,8 @@ struct SettingsPanel: View {
                 Rule()
                 Shortcut("⇧⌘S", "Tabs in a sidebar")
                 Rule()
+                Shortcut("⌘S", "Fold the sidebar away")
+                Rule()
                 Shortcut("⇧⌘R", "Reading mode")
                 Rule()
                 Shortcut("⇧⌘H", "Hide something on this site")

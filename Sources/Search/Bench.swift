@@ -367,6 +367,10 @@ final class Bench {
             }
             if let window = Links.window { out["lights"] = Bench.lights(of: window) }
             out["keysQuieted"] = PageView.quieted
+            // The column folded away, out for a look, and the lights with it (see Fold.swift).
+            out["folded"] = browser.folded
+            out["peeking"] = browser.peeking
+            out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
             answer(out)
 
         case "key":
@@ -447,6 +451,8 @@ final class Bench {
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
+            if let on = request["folded"] as? Bool { browser.folded = on }
+            if let on = request["peek"] as? Bool { browser.peeking = on }
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }
             answer(["ok": true])
 
