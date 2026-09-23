@@ -399,6 +399,12 @@ final class Bench {
             }
             if let window = Links.window { out["lights"] = Bench.lights(of: window) }
             out["keysQuieted"] = PageView.quieted
+            // Settings › General › Web Inspector, as each page's WebKit has it.
+            let asked = NSSelectorFromString("_developerExtrasEnabled")
+            out["inspector"] = browser.tabs.compactMap { tab -> Bool? in
+                guard let preferences = tab.built?.configuration.preferences, preferences.responds(to: asked) else { return nil }
+                return preferences.value(forKey: "developerExtrasEnabled") as? Bool
+            }
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
             out["folded"] = browser.folded
             out["peeking"] = browser.peeking
@@ -555,6 +561,7 @@ final class Bench {
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
+            if let on = request["inspector"] as? Bool { browser.prefs.inspects = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
             if let on = request["peek"] as? Bool { browser.peeking = on }
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }

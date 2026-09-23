@@ -107,6 +107,15 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// Inspect Element in a page's right-click menu, the Web Inspector
+    /// Safari shows once its Develop menu is on. Off unless asked for.
+    @Published var inspects: Bool {
+        didSet {
+            store.set(inspects, forKey: "inspector")
+            Web.inspects = inspects
+        }
+    }
+
     init() {
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
@@ -154,6 +163,9 @@ final class Preferences: ObservableObject {
         // Anyone who already has a session was here before the welcome
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
+        let inspecting = store.bool(forKey: "inspector")
+        inspects = inspecting
+        Web.inspects = inspecting
         let corrects = store.bool(forKey: "autocorrect")
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.

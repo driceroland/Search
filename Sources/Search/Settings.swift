@@ -180,6 +180,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autocorrect)
             }
             Rule()
+            Line("Web Inspector", "Inspect Element in a page's right-click menu, to look at its code, styles and network") {
+                Switch(on: $prefs.inspects)
+            }
+            Rule()
             Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
                 Switch(on: $prefs.bench)
             }

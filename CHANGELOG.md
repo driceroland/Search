@@ -13,12 +13,14 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Web Inspector: turn it on in Settings › General, and Inspect Element is in a page's right-click menu. ([#13](https://github.com/driceroland/Search/issues/13))
 - ⌘S folds the sidebar away and the page takes the whole window; the left edge brings the tabs back out. Thanks [@kndpt](https://github.com/kndpt) ([#7](https://github.com/driceroland/Search/pull/7))
 - A skill that teaches coding agents to drive Search with `./bench`. Thanks [@jasonkneen](https://github.com/jasonkneen) ([#14](https://github.com/driceroland/Search/pull/14))
 
 ### Fixed
 
 - ⌘← and ⌘→ move through text while editing; adding Shift selects text instead of navigating away from the page.
+- Extensions that open something inside a page no longer make it reload: signing in to Google with iCloud Passwords installed reloaded the page over and over, and every Vimium key that opens its bar or its link hints reloaded the page. Such a panel now gets the same answers from the browser as in Chrome. ([#2](https://github.com/driceroland/Search/issues/2))
 - Dragging a tab to put it elsewhere in the row across the top moves the tab, not the whole window, and a tab being dragged stays under the pointer as it passes the others, in the column too.
 - The address field on a new tab holds still while its suggestions appear under it, instead of jumping up. Thanks [@fschrhunt](https://github.com/fschrhunt) ([#16](https://github.com/driceroland/Search/pull/16))
 - 1Password's Sign in button works: an extension's page can send its tab to a website again, where it used to do nothing.
