@@ -50,18 +50,14 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         }
     }
 
-    /// Whether to keep claiming passkeys are possible here.
+    /// Whether sites are offered passkeys here (Settings › Passwords).
     ///
-    /// They are not, and it isn't a matter of code: Apple gates Touch ID and
-    /// iCloud passkeys inside a third-party WKWebView behind a managed
-    /// entitlement, and the cross-device route over Bluetooth behind the same
-    /// one. Measured on this machine, WebKit answers
-    /// isUserVerifyingPlatformAuthenticatorAvailable() with false.
-    ///
-    /// Meanwhile the API object exists, so sites feature-detect it, offer the
-    /// passkey path, and strand you there. Taking the object away is what sends
-    /// them straight to the password — the one that works. Turn this back on
-    /// from Settings the day the app is signed with the entitlement.
+    /// A build without Apple's browser entitlement can't do them: WebKit then
+    /// answers isUserVerifyingPlatformAuthenticatorAvailable() with false,
+    /// yet the API object exists, so sites offer the passkey path and strand
+    /// you there. Taken away, they go straight to the password. Signed with
+    /// the entitlement, as releases are, this is on, and Search carries out
+    /// the sites' requests itself (see Passkeys.swift).
     static var passkeysOffered: Bool {
         get { Store.settings.bool(forKey: "passkeys") }
         set { Store.settings.set(newValue, forKey: "passkeys") }

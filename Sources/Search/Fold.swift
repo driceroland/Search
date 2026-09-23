@@ -28,13 +28,14 @@ import SwiftUI
 // While a tab's address is being typed into its row, the column stays out:
 // the pointer drifting off it is no reason to take the field away.
 //
-// Only in the column's mode: the strip across the top is already thin, and
-// there ⌘S is left to the page, which often has a use for it.
+// The strip across the top folds the same way: up out of the window, the
+// page taking the full height, and back down over the page when the pointer
+// rests against the top edge. There the edge is crossed on every trip to the
+// menu bar just above, so the strip always waits for the pointer to settle.
 
 extension Browser {
-    /// ⌘S. The column out of the way, or back.
+    /// ⌘S. The column, or the strip across the top, out of the way, or back.
     func toggleFold() {
-        guard prefs.sidebar else { return }
         peeking = false
         withAnimation(Motion.glide) { folded.toggle() }
     }
@@ -45,8 +46,9 @@ extension Browser {
     }
 }
 
-/// Over the window's left edge while the column is folded: the strip of edge
-/// that brings it out, and the column itself while it is out.
+/// Over the window's left edge while the column is folded, or its top edge
+/// while the strip is: the band of edge that brings it out, and the column or
+/// the strip itself while it is out.
 struct Fold: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
@@ -84,16 +86,32 @@ struct Fold: View {
                     .frame(height: Fold.top)
                     .frame(maxWidth: .infinity)
             }
+            if folding, !prefs.sidebar {
+                Color.clear
+                    .frame(height: Fold.edge)
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                    .onHover { over in if over { arrive() } else { pass() } }
+                if browser.peeking {
+                    TabBar(browser: browser)
+                        .shadow(color: .black.opacity(0.14), radius: 20, y: 4)
+                        .onHover { over in
+                            inside = over
+                            peek(over)
+                        }
+                        .transition(.move(edge: .top))
+                }
+            }
             ZStack(alignment: .leading) {
                 Color.clear.frame(width: 0)
-                if folding {
+                if folding, prefs.sidebar {
                     Color.clear
                         .frame(width: Fold.edge)
                         .frame(maxHeight: .infinity)
                         .contentShape(Rectangle())
                         .onHover { over in if over { arrive() } else { pass() } }
                 }
-                if folding, browser.peeking {
+                if folding, prefs.sidebar, browser.peeking {
                     SideBar(browser: browser, prefs: prefs)
                         .shadow(color: .black.opacity(0.14), radius: 20, x: 4)
                         .onHover { over in
@@ -118,10 +136,11 @@ struct Fold: View {
         // back as it rests — whole, not folded from a time nobody remembers,
         // unless Settings says it rests folded.
         .onChange(of: prefs.sidebar) { _, _ in
-            browser.folded = prefs.sideHides
+            browser.folded = prefs.sidebar && prefs.sideHides
             browser.peeking = false
         }
         .onChange(of: prefs.sideHides) { _, hides in
+            guard prefs.sidebar else { return }
             browser.peeking = false
             withAnimation(Motion.glide) { browser.folded = hides }
         }
@@ -134,17 +153,18 @@ struct Fold: View {
 
     /// Folded, and not taken over by a page filling the screen.
     private var folding: Bool {
-        prefs.sidebar && browser.folded && browser.active?.immersed != true
+        browser.folded && browser.active?.immersed != true
     }
 
     private var lightsOff: Bool {
-        prefs.sidebar && browser.folded && !browser.peeking
+        browser.folded && !browser.peeking
     }
 
     /// The pointer on the edge: out at once, or after the dwell when the
-    /// column is folded for good.
+    /// column is folded for good, and always for the strip, whose edge is
+    /// the way to the menu bar.
     private func arrive() {
-        guard prefs.sideHides else { return peek(true) }
+        guard !prefs.sidebar || prefs.sideHides else { return peek(true) }
         pass()
         let coming = DispatchWorkItem { peek(true) }
         arriving = coming
@@ -179,7 +199,11 @@ struct Fold: View {
     /// so hiding it hides both, and hidden buttons take no clicks.
     private func hideLights() {
         guard let bar = Fold.titlebar else { return }
-        Fold.slide(bar, off: lightsOff, by: prefs.sideWidth)
+        if prefs.sidebar {
+            Fold.slide(bar, off: lightsOff, by: prefs.sideWidth)
+        } else {
+            Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true)
+        }
     }
 
     static var titlebar: NSView? {
@@ -195,25 +219,36 @@ struct Fold: View {
     /// column was still sliding in under them, and vanished before it had
     /// gone. So they come in from the left edge and go back off it, on the
     /// column's own spring (Motion.glide, in Core Animation's terms) — from
-    /// wherever they are, when the pointer turns back halfway.
-    static func slide(_ bar: NSView, off: Bool, by width: CGFloat) {
+    /// wherever they are, when the pointer turns back halfway. `up`: off the
+    /// top edge with the strip rather than off the left edge with the column.
+    static func slide(_ bar: NSView, off: Bool, by width: CGFloat, up: Bool = false) {
         slides += 1
         let turn = slides
         guard let layer = bar.layer else {
             bar.isHidden = off
             return
         }
+        // Up is +y in a superview that isn't flipped, -y in one that is.
+        let path = up ? "transform.translation.y" : "transform.translation.x"
+        let gone: CGFloat = up ? ((bar.superview?.isFlipped ?? false) ? -width : width) : -width
+        let other = up ? "transform.translation.x" : "transform.translation.y"
         let moving = layer.animation(forKey: "fold") != nil
-        let from = moving
-            ? (layer.presentation()?.value(forKeyPath: "transform.translation.x") as? CGFloat ?? 0)
-            : (bar.isHidden ? -width : 0)
-        let to: CGFloat = off ? -width : 0
+        // A slide still running on the other axis — the layout was switched
+        // halfway — is simply let go.
+        if moving, (layer.animation(forKey: "fold") as? CABasicAnimation)?.keyPath == other {
+            layer.removeAnimation(forKey: "fold")
+        }
+        let still = layer.animation(forKey: "fold") != nil
+        let from = still
+            ? (layer.presentation()?.value(forKeyPath: path) as? CGFloat ?? 0)
+            : (bar.isHidden ? gone : 0)
+        let to: CGFloat = off ? gone : 0
         guard from != to else {
             layer.removeAnimation(forKey: "fold")
             bar.isHidden = off
             return
         }
-        let spring = CASpringAnimation(keyPath: "transform.translation.x")
+        let spring = CASpringAnimation(keyPath: path)
         spring.mass = 1
         spring.stiffness = pow(2 * .pi / 0.34, 2)
         spring.damping = 4 * .pi * 0.82 / 0.34

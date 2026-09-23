@@ -59,6 +59,21 @@ final class Links: NSObject, NSApplicationDelegate {
         )
     }
 
+    /// A launch macOS doesn't call a plain one — started hidden, as `open -j`
+    /// or anything asking for a hidden launch does — SwiftUI treats like the
+    /// launch a link makes below: it leaves its window to whatever the launch
+    /// came for, and nothing comes. The app ran with no window at all. The
+    /// window is asked for here instead; started hidden, it stays hidden
+    /// with the app until the app is shown.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let plain = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
+        guard !plain else { return }
+        DispatchQueue.main.async {
+            guard !NSApp.windows.contains(where: { $0.contentView != nil && !($0 is NSPanel) }) else { return }
+            Links.summon()
+        }
+    }
+
     @objc private func handle(getURL event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let text = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: text), url.scheme?.lowercased().hasPrefix("http") == true

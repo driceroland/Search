@@ -66,6 +66,15 @@ struct ExtensionsPage: View {
                     .padding(14)
                 }
 
+                Card {
+                    Line("Allow on private tabs", "Off by default - a private tab keeps nothing, extensions included") {
+                        Switch(on: Binding(
+                            get: { browser.prefs.extensionsInPrivate },
+                            set: { browser.prefs.extensionsInPrivate = $0 }
+                        ))
+                    }
+                }
+
                 if extensions.installed.isEmpty {
                     Card { Nothing("No extensions yet.") }
                 } else {
@@ -122,6 +131,9 @@ struct ExtensionsPage: View {
                 }
                 Spacer(minLength: 8)
                 if hovering {
+                    Quick(item.pinned == true ? "Unpin" : "Pin to Toolbar") {
+                        extensions.setPinned(item.id, !(item.pinned ?? false))
+                    }
                     if context?.overrideNewTabPageURL != nil {
                         let on = Store.settings.object(forKey: "extensions.newtab.\(item.id)") as? Bool == true
                         Quick(on ? "Stop in New Tabs" : "Show in New Tabs") {

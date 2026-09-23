@@ -414,8 +414,7 @@ struct BookmarksDropdown: View {
             } else {
                 ScrollView {
                     BookmarkOutline(bookmarks: bookmarks) { url in
-                        browser.bookmarking = false
-                        browser.visit(url)
+                        browser.pickBookmark(url)
                     }
                     .padding(6)
                 }
@@ -479,8 +478,7 @@ struct BookmarksPanel: View {
                 ScrollView(showsIndicators: false) {
                     Card {
                         BookmarkOutline(bookmarks: bookmarks) { url in
-                            browser.bookmarking = false
-                            browser.visit(url)
+                            browser.pickBookmark(url)
                         }
                         .padding(.horizontal, 6)
                         .padding(.vertical, 6)
