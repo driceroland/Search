@@ -6,17 +6,21 @@ struct TintedTabBar: View {
     @ObservedObject var tab: Tab
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
+    @Environment(\.colorScheme) private var normalScheme
+    @State private var shownTab: Tab.ID?
 
-    @ViewBuilder
     var body: some View {
-        if prefs.pageTint, let tint = tab.tint {
-            TabBar(browser: browser)
-                .background(Color(nsColor: tint).animation(fade, value: tint))
-                .environment(\.colorScheme, scheme(for: tint))
-        } else {
-            TabBar(browser: browser)
-                .background(Palette.ground)
-        }
+        let tint = prefs.pageTint ? tab.tint : nil
+        let color = tint ?? Palette.NS.ground
+        return TabBar(browser: browser)
+            .background(Color(nsColor: color).animation(shownTab == tab.id ? fade : nil, value: color))
+            .environment(\.colorScheme, tint.map(scheme(for:)) ?? normalScheme)
+            .onAppear { shownTab = tab.id }
+            // On a tab switch the background changes at once. Only a later
+            // change within that page may borrow the page's CSS transition.
+            .onChange(of: tab.id) { _, id in
+                DispatchQueue.main.async { shownTab = id }
+            }
     }
 
     private func scheme(for tint: NSColor) -> ColorScheme {
@@ -28,14 +32,14 @@ struct TintedTabBar: View {
     /// Use the header's own CSS transition when it has one; instant page
     /// changes stay instant instead of trailing the web view.
     private var fade: Animation? {
-        guard tab.pageTint.isFromStyles, let fade = tab.pageTint.fade else { return nil }
+        guard prefs.pageTint, tab.pageTint.isFromStyles, let fade = tab.pageTint.fade else { return nil }
         var first = [Swift.Float](repeating: 0, count: 2)
         var second = first
         fade.curve.getControlPoint(at: 1, values: &first)
         fade.curve.getControlPoint(at: 2, values: &second)
         return .timingCurve(
             Double(first[0]), Double(first[1]), Double(second[0]), Double(second[1]),
-            duration: min(fade.duration, 1)
+            duration: fade.duration
         )
     }
 }
