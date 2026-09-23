@@ -200,6 +200,12 @@ struct SettingsPanel: View {
                     set: { on in withAnimation(Motion.glide) { prefs.sidebar = on } }
                 ))
             }
+            if prefs.sidebar {
+                Rule()
+                Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its left edge for the tabs. ⌘S keeps them out.") {
+                    Switch(on: $prefs.sideHides)
+                }
+            }
             Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)

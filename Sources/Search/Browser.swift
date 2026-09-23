@@ -644,6 +644,8 @@ final class Browser: NSObject, ObservableObject {
         if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
         if prefs.bench { Bench.shared.start(for: self) }
         welcoming = !prefs.welcomed
+        // Asked to stay out of the way: it starts that way (see Fold.swift).
+        folded = prefs.sideHides
         // Once a day, quietly: is there a newer one?
         Updater.shared.checkIfDue { [weak self] line in self?.announce(line) }
         FormRelay.passkeysOffered = prefs.passkeys

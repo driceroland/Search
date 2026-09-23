@@ -409,6 +409,7 @@ final class Bench {
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
             out["folded"] = browser.folded
             out["peeking"] = browser.peeking
+            out["sideHides"] = browser.prefs.sideHides
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
             answer(out)
 
@@ -684,6 +685,7 @@ final class Bench {
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             if let on = request["inspector"] as? Bool { browser.prefs.inspects = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
+            if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
             if let on = request["peek"] as? Bool { browser.peeking = on }
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }

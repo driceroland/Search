@@ -15,6 +15,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Spaces: separate sets of tabs in the one window, each with its own cookies and sign-ins and, if you like, its own downloads folder. Turn them on in Settings › Tabs, then switch with ⌃1–⌃9 or the dot beside the tabs. ([#4](https://github.com/driceroland/Search/issues/4))
 - Web Inspector: turn it on in Settings › General, and Inspect Element is in a page's right-click menu. ([#13](https://github.com/driceroland/Search/issues/13))
+- The sidebar can hide by itself until the pointer reaches the left edge: Settings › Tabs › Hide the sidebar until the pointer reaches the edge. ⌘S still brings it out to stay.
 - ⌘S folds the sidebar away and the page takes the whole window; the left edge brings the tabs back out. Thanks [@kndpt](https://github.com/kndpt) ([#7](https://github.com/driceroland/Search/pull/7))
 - A skill that teaches coding agents to drive Search with `./bench`. Thanks [@jasonkneen](https://github.com/jasonkneen) ([#14](https://github.com/driceroland/Search/pull/14))
 

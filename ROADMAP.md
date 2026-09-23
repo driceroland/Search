@@ -18,7 +18,6 @@ don't build it twice.
 ## Next — small additions people asked for
 
 - [ ] **Middle-click closes a tab.** *(X)*
-- [ ] **The sidebar hides by itself** until the pointer reaches the edge, as an option on top of ⌘S. *(X, several)*
 - [ ] **A setting to turn off the reading-progress fill** in the tab you are on. *(X)*
 - [ ] **Import from Comet**, alongside Chrome, Arc, Brave, Edge and Dia. *(X)*
 - [ ] **Homebrew**: `brew install --cask search`. *(X)*
