@@ -13,6 +13,16 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- ⌘S folds the tab bar away in its layout across the top too, as it folds the column: the page takes the whole height, and the bar comes back down over it when the pointer rests against the top edge. The View menu says Hide Tab Bar there.
+
+### Fixed
+
+- A new space's choice of sign-ins reads in full in the column ("Signed in" / "Signed out"), where it was cut short.
+
+## 1.0.1 — 23 September 2026
+
+### Added
+
 - A middle-click on a tab closes it, in the row across the top and in the column. A pinned tab is put down, as with ⌘W. Thanks [@lusqua](https://github.com/lusqua) ([#27](https://github.com/driceroland/Search/pull/27))
 - Rename a tab: Rename in a tab's right-click menu, or Tabs › Rename Tab, types a name over the title in place. The name stays with the tab wherever it goes, and survives a quit; emptying the field gives the page's own title back. Thanks [@theosementa](https://github.com/theosementa) ([#32](https://github.com/driceroland/Search/pull/32))
 - The sidebar can hide by itself until the pointer reaches the left edge: Settings › Tabs › Hide the sidebar until the pointer reaches the edge. ⌘S still brings it out to stay. Thanks [@lusqua](https://github.com/lusqua) ([#30](https://github.com/driceroland/Search/pull/30))
@@ -22,6 +32,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Search with something other than Google: Settings › General › Search with offers DuckDuckGo, Bing, Ecosia, Startpage and Kagi, or any address with `%s` where the words go. Google stays the default. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#43](https://github.com/driceroland/Search/issues/43))
 - The grey that fills the tab you're on as you read down the page can be turned off: Settings › Tabs › Show how far you've read. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#57](https://github.com/driceroland/Search/pull/57))
 - A skill that teaches coding agents to drive Search with `./bench`. Thanks [@jasonkneen](https://github.com/jasonkneen) ([#14](https://github.com/driceroland/Search/pull/14))
+- Extensions can be pinned to the toolbar from Settings › Extensions, not just from the puzzle-piece menu.
 
 ### Fixed
 
