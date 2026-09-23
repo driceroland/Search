@@ -49,12 +49,14 @@ struct SideBar: View {
             HStack(spacing: 0) {
                 DragStrip()
                     .frame(width: 10 + Metrics.sideLights)
+                // No doors here while the bar over the page has them, and the
+                // corner the bar's height (see Bar.swift).
                 Color.clear
-                    .frame(width: Metrics.helm)
+                    .frame(width: browser.showsBar ? 0 : Metrics.helm)
                     .allowsHitTesting(false)
                 DragStrip()
             }
-            .frame(height: Metrics.strip)
+            .frame(height: browser.corner)
 
             VStack(alignment: .leading, spacing: 0) {
                 // The traffic lights' corner, with back, forward and reload
@@ -63,10 +65,10 @@ struct SideBar: View {
                 // row to put them at in this mode.
                 HStack(spacing: 0) {
                     Color.clear.frame(width: Metrics.sideLights)
-                    Helm(browser: browser)
+                    if !browser.showsBar { Helm(browser: browser) }
                     Spacer(minLength: 0)
                 }
-                .frame(height: Metrics.strip)
+                .frame(height: browser.corner)
 
                 // The spaces side by side, as pages: two fingers sideways move
                 // the one on screen and the next one together, the next one
@@ -253,7 +255,7 @@ struct SideBar: View {
         let pinBlock = pinRows == 0 ? 0
             : CGFloat(pinRows) * pinHeight + CGFloat(pinRows - 1) * SideBar.pinGap + 10
         let loose = CGFloat(browser.tabs.count - pins) * (SideBar.row + SideBar.gap)
-        return Metrics.strip + pinBlock + loose + SideBar.row + 8
+        return browser.corner + pinBlock + loose + SideBar.row + 8
     }
 
     // MARK: - the pinned squares

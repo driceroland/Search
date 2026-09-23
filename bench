@@ -34,19 +34,22 @@
     ./bench ext-remove ID
     ./bench strip PATH [WIDTH]         the row of tabs across the top, drawn off screen to a PNG
     ./bench column PATH [HEIGHT]       the column of tabs, drawn off screen to a PNG
+    ./bench bar PATH [WIDTH|card|security]  the address bar over the page, the card its site opens,
+                                       or that card's security page, to a PNG
     ./bench space [new NAME [fresh]|go N|delete|swipe DX|hold DX|release|move N]
                                        test run: the spaces, a new one (signed in with the others, or fresh),
                                        switch to the Nth, delete this one,
                                        two fingers DX points sideways over the column (hold: not let go yet),
                                        move this one to Nth
-    ./bench hit X Y [double|middle]    what a press at X Y (points from the window's top left) lands on,
+    ./bench hit X Y [double|middle|click]  what a press at X Y (points from the window's top left) lands on,
                                        and whether a drag from there would move the window;
-                                       double: test run, a double-click there (start the probe hidden)
+                                       double: test run, a double-click there (start the probe hidden);
+                                       click: test run, a single click there
     ./bench place ID INDEX             put a tab at another place in the row
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
-                                       folded on|off, peek on|off
+                                       bar on|off, folded on|off, peek on|off
 
 Needs Settings › General › "Let a script drive Search" switched on in the
 running app. IDs are the first characters of a tab's id, as `tabs` prints
@@ -177,6 +180,12 @@ def main(argv):
         if not 1 <= len(args) <= 2: sys.exit("usage: bench column PATH [HEIGHT]")
         request["path"] = os.path.abspath(args[0])
         if len(args) == 2: request["height"] = float(args[1])
+    elif verb == "bar":
+        if not 1 <= len(args) <= 2: sys.exit("usage: bench bar PATH [WIDTH|card|security]")
+        request["path"] = os.path.abspath(args[0])
+        if len(args) == 2:
+            if args[1] in ("card", "security"): request[args[1]] = True
+            else: request["width"] = float(args[1])
     elif verb == "space":
         if args and args[0] == "new":
             fresh = args[-1] == "fresh"
@@ -189,7 +198,7 @@ def main(argv):
         elif args and args[0] == "move" and len(args) == 2: request["action"], request["index"] = "move", int(args[1])
         elif args: sys.exit("usage: bench space [new NAME | go N | delete | swipe DX | hold DX | release | move N]")
     elif verb == "hit":
-        if len(args) not in (2, 3) or (len(args) == 3 and args[2] not in ("double", "middle")): sys.exit("usage: bench hit X Y [double|middle]")
+        if len(args) not in (2, 3) or (len(args) == 3 and args[2] not in ("double", "middle", "click")): sys.exit("usage: bench hit X Y [double|middle|click]")
         request["x"], request["y"] = float(args[0]), float(args[1])
         if len(args) == 3: request[args[2]] = True
     elif verb == "place":

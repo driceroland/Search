@@ -66,6 +66,11 @@ final class Lights: NSObject {
         place()
     }
 
+    /// Put back at once, after the line they sit on has moved (see Bar.swift).
+    static func again(_ window: NSWindow) {
+        kept[ObjectIdentifier(window)]?.place()
+    }
+
     private var buttons: [NSButton] {
         [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { window?.standardWindowButton($0) }
     }
@@ -92,7 +97,8 @@ final class Lights: NSObject {
             let size = button.frame.size
             let origin = NSPoint(
                 x: Lights.centre.x - size.width / 2 + CGFloat(index) * spacing,
-                y: bar.bounds.height - Lights.centre.y - size.height / 2
+                // Lights.line: up to the address bar's line when there is one (see Bar.swift).
+                y: bar.bounds.height - Lights.line - size.height / 2
             )
             if button.frame.origin != origin { button.setFrameOrigin(origin) }
         }

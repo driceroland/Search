@@ -268,6 +268,13 @@ struct ContentView: View {
                     // and it costs a compositing pass.
                     Color.clear.frame(height: band)
 
+                    // The address over the page, in the column's mode, when
+                    // Settings asks for it (see Bar.swift).
+                    if browser.showsBar {
+                        AddressBar(browser: browser)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+
                     // One stage, always.
                     if let tab = browser.active {
                         Page(tab: tab)
@@ -392,6 +399,8 @@ struct ContentView: View {
             .onChange(of: browser.prefs.sidebar) { _, _ in
                 DispatchQueue.main.async { measureLights() }
             }
+            // The lights up to the address bar's line, and back (see Bar.swift).
+            .onChange(of: browser.showsBar, initial: true) { _, _ in Lights.follow(browser) }
             // Stepping away to another app: macOS draws its own resting
             // buttons, and on a light window they come out nearly white. Ours
             // go on in their place until the app comes back.

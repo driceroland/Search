@@ -237,6 +237,14 @@ struct SettingsPanel: View {
                 Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its left edge for the tabs. ⌘S keeps them out.") {
                     Switch(on: $prefs.sideHides)
                 }
+                Rule()
+                // See Bar.swift.
+                Line("Address bar above the page", "Back, forward, reload, the site and the page's title across the top, as in Arc's developer mode. Click the site for its details, the title to go somewhere else.") {
+                    Switch(on: Binding(
+                        get: { prefs.addressBar },
+                        set: { on in withAnimation(Motion.glide) { prefs.addressBar = on } }
+                    ))
+                }
             }
             Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {

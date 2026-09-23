@@ -410,6 +410,9 @@ final class Bench {
             out["folded"] = browser.folded
             out["peeking"] = browser.peeking
             out["sideHides"] = browser.prefs.sideHides
+            // The bar over the page, and what it says (see Bar.swift).
+            out["bar"] = browser.showsBar
+            if browser.showsBar, let url = browser.active?.address { out["barSite"] = AddressBar.site(url) }
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
             answer(out)
 
@@ -548,19 +551,21 @@ final class Bench {
                 }
                 return
             }
-            if request["double"] as? Bool == true {
+            let double = request["double"] as? Bool == true
+            // A single click, for a door in the bar over the page (see Bar.swift).
+            if double || request["click"] as? Bool == true {
                 // A double-click there, handed to the view under it — through
                 // the window it would never arrive, the probe being in the
                 // back. On a test run only, and meant for a probe started
                 // hidden, where the window changing size shows on no screen.
-                guard Store.testing else { answer(["error": "hit … double only works on a --test run"]); return }
+                guard Store.testing else { answer(["error": "hit … double|click only works on a --test run"]); return }
                 let before = window.frame
                 func event(_ type: NSEvent.EventType, _ clicks: Int) -> NSEvent? {
                     NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks,
                                        pressure: type == .leftMouseUp ? 0 : 1)
                 }
-                for clicks in [1, 2] {
+                for clicks in double ? [1, 2] : [1] {
                     if let down = event(.leftMouseDown, clicks) { hit?.mouseDown(with: down) }
                     if let up = event(.leftMouseUp, clicks) { hit?.mouseUp(with: up) }
                 }
@@ -687,6 +692,38 @@ final class Bench {
                 window.contentView = nil
             }
 
+        case "bar":
+            // The bar over the page, the card its site opens, or the card a
+            // step in on the connection, drawn off screen with the tab on
+            // screen now (see Bar.swift).
+            guard let path = request["path"] as? String else { answer(["error": "bar needs a path"]); return }
+            let deeper = request["security"] as? Bool == true
+            let card = deeper || request["card"] as? Bool == true
+            let width = card ? 270 : request["width"] as? Double ?? 900
+            let view: AnyView
+            if card {
+                guard let tab = browser.active, !tab.isBlank else { answer(["error": "no page on screen"]); return }
+                // On the ground: off screen there is no glass to stand on.
+                view = AnyView(SiteCard(browser: browser, tab: tab, deeper: deeper) {}.fixedSize().background(Palette.ground))
+            } else {
+                view = AnyView(AddressBar(browser: browser).frame(width: width))
+            }
+            let host = NSHostingView(rootView: view)
+            host.frame = NSRect(origin: .zero, size: host.fittingSize)
+            let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.appearance = NSApp.effectiveAppearance
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                guard let picture = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { answer(["error": "nothing drawn"]); return }
+                host.cacheDisplay(in: host.bounds, to: picture)
+                do {
+                    try picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                    answer(["saved": path])
+                } catch { answer(["error": error.localizedDescription]) }
+                window.contentView = nil
+            }
+
         case "space":
             // The spaces, and switching between them, for a test of what a
             // space keeps apart. Test runs only: it moves your tabs about.
@@ -764,6 +801,7 @@ final class Bench {
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
+            if let on = request["bar"] as? Bool { browser.prefs.addressBar = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
             if let on = request["peek"] as? Bool { browser.peeking = on }
             // The address of the tab on screen being edited in the tab, with
@@ -785,7 +823,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "place", "space", "strip", "column", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "place", "space", "strip", "column", "bar", "ui",
             ]])
         }
     }
