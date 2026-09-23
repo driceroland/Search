@@ -252,7 +252,7 @@ final class Tab: ObservableObject, Identifiable {
             request.rect = CGRect(x: 0, y: 0, width: web.bounds.width, height: 2)
             request.afterScreenUpdates = false
             web.takeSnapshot(with: request) { image, _ in
-                done(image?.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap(DominantColor.of))
+                done(image?.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap(PageTint.sample))
             }
         },
         onChange: { [weak self] in self?.updateTint() }
@@ -266,7 +266,7 @@ final class Tab: ObservableObject, Identifiable {
     /// A new document must report its own header before the old tint is released.
     func resetTint(for url: URL?) {
         let host = url?.host()
-        pageTint.reset(holding: host != nil && host == tintedHost ? 2 : 0.25)
+        pageTint.reset(holding: host != nil && host == tintedHost ? 0.6 : 0.15)
         tintedHost = host
         updateTint()
     }

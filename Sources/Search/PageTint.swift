@@ -73,7 +73,7 @@ final class PageTint {
     /// `snapshot` supplies the dominant color along the top edge, or nil if it could not be read.
     /// `isShown` is whether the page is on screen; a hidden page can't be snapshotted.
     init(
-        delay: TimeInterval = 0.5, isLoading: @escaping () -> Bool, isShown: @escaping () -> Bool,
+        delay: TimeInterval = 0.2, isLoading: @escaping () -> Bool, isShown: @escaping () -> Bool,
         snapshot: @escaping (@escaping (NSColor?) -> Void) -> Void, onChange: @escaping () -> Void
     ) {
         (self.delay, self.isLoading, self.isShown, self.snapshot, self.onChange) = (delay, isLoading, isShown, snapshot, onChange)
@@ -146,17 +146,19 @@ final class PageTint {
         pending = nil
     }
 
-    private func schedule() {
+    private func schedule(after wait: TimeInterval? = nil) {
         cancelPending()
         let work = DispatchWorkItem { [weak self] in self?.takeSnapshot() }
         pending = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (wait ?? delay), execute: work)
     }
 
     private func takeSnapshot() {
         pending = nil
         guard let element = undecided, isShown() else { return }
-        if isLoading() { return schedule() }
+        // A slow page should not poll five times a second just because its
+        // snapshot's quiet period is short once it has finished loading.
+        if isLoading() { return schedule(after: 0.5) }
         snapshotted.insert(element)
         let current = generation
         snapshot { [weak self] color in
@@ -165,6 +167,35 @@ final class PageTint {
             // Only shown if that element still decides the edge; otherwise it waits for its return.
             if element == undecided { show(color) }
         }
+    }
+
+    /// Reduces a snapshot of the page's top edge to its prevailing color,
+    /// ignoring minority pixels such as a logo or navigation text.
+    static func sample(_ image: CGImage) -> NSColor? {
+        let samples = 32
+        var pixels = [UInt8](repeating: 0, count: samples * 4)
+        guard
+            let space = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(
+                data: &pixels, width: samples, height: 1, bitsPerComponent: 8, bytesPerRow: samples * 4,
+                space: space,
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { return nil }
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: samples, height: 1))
+
+        var groups: [Int: (count: Int, red: Int, green: Int, blue: Int)] = [:]
+        for index in 0..<samples {
+            let (red, green, blue) = (Int(pixels[index * 4]), Int(pixels[index * 4 + 1]), Int(pixels[index * 4 + 2]))
+            let key = (red >> 4) << 8 | (green >> 4) << 4 | blue >> 4
+            let group = groups[key] ?? (0, 0, 0, 0)
+            groups[key] = (group.count + 1, group.red + red, group.green + green, group.blue + blue)
+        }
+        guard let winner = groups.values.max(by: { $0.count < $1.count }) else { return nil }
+        let scale = 255 * CGFloat(winner.count)
+        return NSColor(
+            srgbRed: CGFloat(winner.red) / scale, green: CGFloat(winner.green) / scale,
+            blue: CGFloat(winner.blue) / scale, alpha: 1)
     }
 }
 
@@ -207,7 +238,7 @@ final class TintRouter: NSObject, WKScriptMessageHandler {
     // never counts, since a snapshot could not tell its part of the edge from the rest.
     //
     // Asking where elements are makes the page bring its layout up to date, which is real work on a
-    // busy page, so a full read is kept rare. Load, resize and scroll read at most ten times a second,
+    // busy page, so a full read is kept rare. Load, resize and scroll read at most twenty times a second,
     // and once more shortly after the last of them to catch a header that was still fading. Around
     // the moments a page can change, each frame also takes a glance, one hit test and a few style
     // reads, and a full read follows at once if it differs, so a header restyled by the page's scroll
@@ -532,7 +563,7 @@ final class TintRouter: NSObject, WKScriptMessageHandler {
 
         function request(settle) {
             if (!enabled) return;
-            if (!readTimer) readTimer = setTimeout(read, Math.max(0, 100 - (performance.now() - readAt)));
+            if (!readTimer) readTimer = setTimeout(read, Math.max(0, 50 - (performance.now() - readAt)));
             if (!settle) return;
             clearTimeout(settleTimer);
             settleTimer = setTimeout(read, 400);
