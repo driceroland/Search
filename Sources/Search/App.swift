@@ -261,6 +261,7 @@ struct ContentView: View {
                     // One stage, always.
                     if let tab = browser.active {
                         Page(tab: tab)
+                            .overlay { LinkBubble(status: browser.linkStatus) }
                             .overlay(alignment: .topTrailing) {
                                 if browser.finding {
                                     FindBar(browser: browser)
@@ -594,6 +595,8 @@ struct ContentView: View {
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
+        // The link bubble swaps corners when the pointer approaches it.
+        window.acceptsMouseMovedEvents = true
         // Where you left it, at the size you left it. A test run keeps its
         // own: the name lives in the app's standard defaults, which every
         // copy shares, and a probe resized for a test once changed the size

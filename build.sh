@@ -10,7 +10,7 @@
 #   ./build.sh release ship    + both notarised, the DMG stapled
 #
 # Same shape as the one next door: SwiftPM builds the executable, and a macOS
-# app bundle is just a folder with a plist and the binary in the right place.
+# app bundle holds the plist, binary and SwiftPM resources in their expected places.
 #
 # The three files keep the same names from release to release, so the site
 # links to them once and the updater reads one address forever. ./publish.sh
@@ -52,6 +52,11 @@ BINARY=".build/$CONFIG/Search"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/$NAME"
+# SwiftPM's injected link detector lives in a resource bundle. Its generated
+# accessor looks for that bundle inside the app's Resources directory.
+if [ -d ".build/$CONFIG/Search_Search.bundle" ]; then
+  cp -R ".build/$CONFIG/Search_Search.bundle" "$APP/Contents/Resources/"
+fi
 
 # Symbols stay out of the app. The linker leaves every function's name and a
 # map back to the source in the binary — 15,000 entries, more than half of
