@@ -217,7 +217,8 @@ struct SideBar: View {
     /// it is the one on screen.
     private func preview(_ row: Parked, pill: Namespace.ID) -> some View {
         let pins = row.tabs.filter { $0.pin != nil }
-        let rest = row.tabs.filter { $0.pin == nil }
+        // A bookmark's own tab is under its bookmark (see Shelf.swift).
+        let rest = row.tabs.filter { $0.pin == nil && !browser.onShelf($0) }
         let cols = SideBar.pinColumns(pins.count)
         let width = pinWidth(for: pins.count)
         let height = min(SideBar.square, width)
@@ -254,7 +255,7 @@ struct SideBar: View {
         let pinRows = pins == 0 ? 0 : (pins + cols - 1) / cols
         let pinBlock = pinRows == 0 ? 0
             : CGFloat(pinRows) * pinHeight + CGFloat(pinRows - 1) * SideBar.pinGap + 10
-        let loose = CGFloat(browser.tabs.count - pins) * (SideBar.row + SideBar.gap)
+        let loose = CGFloat(looseTabs.count) * (SideBar.row + SideBar.gap)
         // The bookmarks above the rows, added up the same way (see Shelf.swift).
         let shelf = prefs.sideBookmarks ? Shelf.height(for: browser) : 0
         return Metrics.strip + pinBlock + shelf + loose + SideBar.row + 8
@@ -263,7 +264,8 @@ struct SideBar: View {
     // MARK: - the pinned squares
 
     private var pinnedTabs: [Tab] { browser.tabs.filter { $0.pin != nil } }
-    private var looseTabs: [Tab] { browser.tabs.filter { $0.pin == nil } }
+    /// Not a bookmark's own tab, which is under its bookmark (see Shelf.swift).
+    private var looseTabs: [Tab] { browser.tabs.filter { $0.pin == nil && !browser.onShelf($0) } }
 
     /// Three columns is the block's own shape — up to six pins, that's two
     /// full rows, and one or two is just those same three places with a
@@ -434,16 +436,17 @@ struct SideBar: View {
                 // a place in the row, and the row keeps it where it was (see
                 // Shelf.swift).
                 if browser.aimShelf(at: value.location.y) {
-                    if index != from { withAnimation(Motion.settle) { browser.move(tab, to: from + browser.pinnedCount) } }
+                    if index != from { withAnimation(Motion.settle) { browser.move(tab, to: browser.place(of: from, among: looseTabs)) } }
                     return
                 }
                 let moved = Int((travel / step).rounded())
                 let target = min(max(0, from + moved), looseTabs.count - 1)
                 if target != index {
                     // Positions here are among the loose rows; the pinned
-                    // block sits in front of them in the real list.
+                    // block sits in front of them in the real list, and
+                    // bookmarks' tabs among them (see Shelf.swift).
                     withAnimation(Motion.settle) {
-                        browser.move(tab, to: target + browser.pinnedCount)
+                        browser.move(tab, to: browser.place(of: target, among: looseTabs))
                     }
                 }
             }

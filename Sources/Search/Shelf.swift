@@ -4,11 +4,23 @@ import SwiftUI
 // asked for in Settings › Tabs; the button at the column's foot stays either
 // way, for adding a page and for the full list.
 //
-// A site is a row of a tab's size, 28 points with 2 between, and opens where
-// a bookmark always has (see Browser.visit). A folder opens in place, its
-// sites 14 points further in. With nothing kept yet the section still
-// stands, one quiet row inviting a tab: it is where a tab is dragged to
-// become a bookmark, at the place it is let go, and the tab stays open.
+// A site is a row of a tab's size, 28 points with 2 between. A folder opens
+// in place, its sites 14 points further in.
+//
+// A bookmark is a tab that has a place of its own, as in Arc: shut, it is
+// only its address; opened with a click, it has a tab of its own, which is
+// under the bookmark rather than among the tabs, and a second click comes
+// back to it. A small dot says it is open; under the pointer the dot is a
+// cross that shuts it. A tab dragged here becomes a bookmark the same way:
+// it leaves the tabs and stays open, under the bookmark it now is, at the
+// place it was let go. With nothing kept yet the section still stands, one
+// quiet row inviting a tab.
+//
+// That tab is still one of the browser's tabs, so everything a tab does —
+// sleep, ⌘W, spaces — it does. The browser only remembers which bookmark it
+// belongs to (Browser.shelfTabs); the column leaves it out of the tabs and
+// the session leaves it out of tomorrow, when the bookmark is there, shut,
+// in its place. A bookmark taken away gives its tab back to the tabs.
 //
 // A row is picked up the way a tab is, with the same gesture rather than the
 // system's drag: a system drag carries text, and the column takes any text
@@ -78,9 +90,11 @@ struct Shelf: View {
             if lines.isEmpty { Empty(lit: aim != nil) }
             ForEach(Array(lines.enumerated()), id: \.element.node.id) { index, line in
                 let held = carried.contains(index)
+                let tab = browser.shelfTab(for: line.node.id)
                 ShelfRow(browser: browser, node: line.node, depth: line.depth,
                          isOpen: browser.shelfOpen.contains(line.node.id),
-                         target: aim?.into == line.node.id)
+                         target: aim?.into == line.node.id,
+                         tab: tab, live: tab != nil && tab?.id == browser.activeID)
                     .offset(y: held ? travel : 0)
                     // Under the hand exactly, as a tab is (see SideBar.loose).
                     .transaction { if held { $0.animation = nil } }
@@ -145,6 +159,11 @@ struct Shelf: View {
         /// The row the line is drawn above, and how far in.
         var line = 0
         var depth = 0
+    }
+
+    /// `id` is somewhere in `nodes`, however deep.
+    static func holds(_ id: Bookmark.ID, _ nodes: [Bookmark]) -> Bool {
+        nodes.contains { $0.id == id || holds(id, $0.children ?? []) }
     }
 
     /// The rows a held one takes along: itself, and what is open under it.
@@ -237,10 +256,11 @@ private struct ShelfRow: View {
     let isOpen: Bool
     /// A row being carried will go into this folder if let go now.
     let target: Bool
+    /// The bookmark's own tab, while it is open; `live` while it is on screen.
+    let tab: Tab?
+    let live: Bool
 
     @State private var hovering = false
-
-    private var url: URL? { node.url.flatMap(URL.init(string:)) }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -257,8 +277,9 @@ private struct ShelfRow: View {
                 .font(.system(size: 12.5))
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
+                .foregroundStyle(live ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
             Spacer(minLength: 2)
+            if let tab { dot(tab) }
             if node.isFolder {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
@@ -273,14 +294,14 @@ private struct ShelfRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(target ? Palette.wash : (hovering ? Palette.hover : .clear))
+                .fill(target || live ? Palette.wash : (hovering ? Palette.hover : .clear))
         )
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onTapGesture(perform: press)
         .onHover { hovering = $0 }
         .contextMenu {
-            if let url {
-                Button("Open in New Tab") { _ = browser.open(url, foreground: true) }
+            if let tab {
+                Button("Close Tab") { browser.close(tab) }
                 Divider()
             }
             Button("Manage Bookmarks…") { browser.bookmarking = true }
@@ -297,8 +318,34 @@ private struct ShelfRow: View {
             withAnimation(Motion.settle) {
                 if isOpen { browser.shelfOpen.remove(node.id) } else { browser.shelfOpen.insert(node.id) }
             }
-        } else if let url {
-            browser.visit(url)
+        } else {
+            browser.openShelf(node)
+        }
+    }
+
+    /// The dot of an open bookmark, a cross under the pointer that shuts it.
+    private func dot(_ tab: Tab) -> some View {
+        ZStack {
+            if hovering {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 15, height: 15)
+                    .background(Palette.ink.opacity(0.07), in: Circle())
+                    .transition(.opacity)
+            } else {
+                Circle()
+                    .fill(Palette.muted)
+                    .frame(width: 5, height: 5)
+                    .transition(.opacity)
+            }
+        }
+        .frame(width: 15, height: 15)
+        .overlay {
+            Color.clear
+                .frame(width: 30, height: Shelf.row)
+                .contentShape(Rectangle())
+                .onTapGesture { if hovering { browser.close(tab) } else { press() } }
         }
     }
 }
@@ -321,19 +368,49 @@ extension Browser {
         return true
     }
 
-    /// The tab let go: kept where it was aimed, if it was aimed here. The
-    /// tab itself stays open where it was.
+    /// The tab let go: if it was aimed here, a bookmark where it was aimed,
+    /// and that bookmark's own tab from now on. A new bookmark every time,
+    /// even for an address kept already: each tab has a row of its own to
+    /// be found under, never one it would share and be lost behind.
     func dropOnShelf(_ tab: Tab) {
         guard let aim = shelfAim else { return }
         shelfAim = nil
         guard let url = tab.address else { return }
-        guard !bookmarks.contains(url) else {
-            announce("Already a bookmark")
-            return
-        }
         let node = bookmarks.insert(.site(tab.title, url), into: aim.parent)
         bookmarks.move(node.id, into: aim.parent, before: aim.before)
-        announce("Bookmarked")
+        shelfTabs[tab.id] = node.id
+    }
+
+    /// A bookmark's own tab, in the space on screen, while it is open.
+    func shelfTab(for id: Bookmark.ID) -> Tab? {
+        tabs.first { shelfTabs[$0.id] == id }
+    }
+
+    /// A tab that is a bookmark's own, and so shown under it rather than
+    /// among the tabs — while the bookmarks are in the column and that
+    /// bookmark is still kept.
+    func onShelf(_ tab: Tab) -> Bool {
+        guard prefs.sideBookmarks, let id = shelfTabs[tab.id] else { return false }
+        return Shelf.holds(id, bookmarks.roots)
+    }
+
+    /// A click on a bookmark: back to its tab, or into a new one of its own.
+    func openShelf(_ node: Bookmark) {
+        if let tab = shelfTab(for: node.id) {
+            select(tab)
+            return
+        }
+        guard let url = node.url.flatMap(URL.init(string:)) else { return }
+        let tab = open(url, foreground: true)
+        shelfTabs[tab.id] = node.id
+    }
+
+    /// Where the `index`th of the tabs shown in the column sits in `tabs`,
+    /// with the pinned ones before them and bookmarks' own among them.
+    func place(of index: Int, among loose: [Tab]) -> Int {
+        guard loose.indices.contains(index), let at = tabs.firstIndex(where: { $0.id == loose[index].id })
+        else { return pinnedCount + index }
+        return at
     }
 }
 
@@ -378,7 +455,9 @@ extension Shelf {
         }
         let rows = lines(browser.bookmarks.roots, open: browser.shelfOpen).map { line -> [String: Any] in
             ["title": line.node.title, "depth": line.depth, "folder": line.node.isFolder,
-             "open": browser.shelfOpen.contains(line.node.id)]
+             "open": browser.shelfOpen.contains(line.node.id),
+             "tab": browser.shelfTab(for: line.node.id) != nil,
+             "live": browser.shelfTab(for: line.node.id)?.id == browser.activeID]
         }
         return ["on": browser.prefs.sideBookmarks, "rows": rows, "height": Double(height(for: browser)), "landed": landed]
     }

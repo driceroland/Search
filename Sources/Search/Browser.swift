@@ -48,6 +48,8 @@ final class Browser: NSObject, ObservableObject {
     @Published var shelfOpen: Set<Bookmark.ID> = []
     /// Where a tab held over the column's bookmarks would land (see Shelf.swift).
     @Published var shelfAim: Shelf.Drop?
+    /// The tabs that are bookmarks' own, and whose (see Shelf.swift).
+    @Published var shelfTabs: [Tab.ID: Bookmark.ID] = [:]
 
     /// ⇧⌘B. The page you are on, at the end of the list.
     func bookmarkCurrent() {
@@ -924,7 +926,8 @@ final class Browser: NSObject, ObservableObject {
             space: spaceID,
             .init(
                 tabs: tabs.compactMap { tab in
-                    guard !tab.shy, !tab.bench else { return nil }
+                    // A bookmark's own tab comes back as its bookmark (see Shelf.swift).
+                    guard !tab.shy, !tab.bench, !onShelf(tab) else { return nil }
                     // A sleeping tab holds its address in `pending`; asking for
                     // it there too means a pin can never be written out of
                     // existence by whatever its web view happens to be showing.
