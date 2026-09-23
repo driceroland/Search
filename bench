@@ -42,6 +42,7 @@
     ./bench hit X Y [double|middle]    what a press at X Y (points from the window's top left) lands on,
                                        and whether a drag from there would move the window;
                                        double: test run, a double-click there (start the probe hidden)
+    ./bench place ID INDEX             put a tab at another place in the row
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
@@ -124,7 +125,7 @@ def main(argv):
     elif verb == "ui":
         if len(args) != 2: sys.exit("usage: bench ui KEY VALUE")
         key, value = args
-        request[key] = value if key == "look" else value in ("on", "true", "1", "yes")
+        request[key] = value if key in ("look", "edittab") else value in ("on", "true", "1", "yes")
     elif verb in ("ext-add", "ext-press", "ext-remove", "ext-reload"):
         if len(args) != 1: sys.exit(f"usage: bench {verb} ID")
         request["id"] = args[0]
@@ -191,6 +192,9 @@ def main(argv):
         if len(args) not in (2, 3) or (len(args) == 3 and args[2] not in ("double", "middle")): sys.exit("usage: bench hit X Y [double|middle]")
         request["x"], request["y"] = float(args[0]), float(args[1])
         if len(args) == 3: request[args[2]] = True
+    elif verb == "place":
+        if len(args) != 2: sys.exit("usage: bench place ID INDEX")
+        request["id"], request["to"] = args[0], int(args[1])
     elif verb == "film":
         if len(args) not in (2, 3, 4) or args[0] not in ("peek", "unpeek", "fold", "none"):
             sys.exit("usage: bench film peek|unpeek|fold|none PATH [FRAMES] [EVERY]")

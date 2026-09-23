@@ -579,6 +579,14 @@ final class Bench {
                 "titleBar": y <= Double(window.frame.height - window.contentLayoutRect.height),
             ])
 
+        case "place":
+            // A tab put at another place in the row, as a drag would.
+            guard let id = request["id"] as? String, let to = request["to"] as? Int,
+                  let tab = browser.tabs.first(where: { Bench.short($0) == id })
+            else { answer(["error": "place needs a tab id and an index"]); return }
+            browser.move(tab, to: to)
+            answer(["at": browser.tabs.firstIndex { $0.id == tab.id } ?? -1])
+
         case "film":
             // The whole window, title bar and lights included, drawn every few
             // hundredths of a second while something animates — what a person
@@ -758,6 +766,13 @@ final class Bench {
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
             if let on = request["peek"] as? Bool { browser.peeking = on }
+            // The address of the tab on screen being edited in the tab, with
+            // this typed, and that edit let go of by a click elsewhere.
+            if let text = request["edittab"] as? String, let tab = browser.active {
+                browser.beginTabEdit(tab)
+                browser.tabDraft = text
+            }
+            if request["finishedit"] as? Bool == true { browser.finishTabEdit() }
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }
             answer(["ok": true])
 
@@ -770,7 +785,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "space", "strip", "column", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "place", "space", "strip", "column", "ui",
             ]])
         }
     }

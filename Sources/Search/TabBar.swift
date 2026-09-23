@@ -543,7 +543,12 @@ struct TabAddressField: NSViewRepresentable {
         field.cell?.usesSingleLineMode = true
         field.cell?.wraps = false
         field.stringValue = browser.tabDraft
+        context.coordinator.watch(field)
         return field
+    }
+
+    static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
+        coordinator.unwatch()
     }
 
     func updateNSView(_ field: NSTextField, context: Context) {
@@ -598,10 +603,34 @@ struct TabAddressField: NSViewRepresentable {
             }
         }
 
-        /// Clicking anywhere else is a way of saying never mind.
+        /// Clicking anywhere else keeps what was typed, as Return does.
         func controlTextDidEndEditing(_ note: Notification) {
             let browser = browser
-            DispatchQueue.main.async { browser.cancelTabEdit() }
+            DispatchQueue.main.async { browser.finishTabEdit() }
+        }
+
+        /// A press on something that takes no focus — the strip's empty
+        /// stretch, the column below the rows — leaves the field focused and
+        /// editing, so presses are watched for while it is there: one anywhere
+        /// but in the field ends the edit the same way. The press itself goes
+        /// on to what it was for.
+        private var watcher: Any?
+
+        func watch(_ field: NSTextField) {
+            guard watcher == nil else { return }
+            watcher = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self, weak field] event in
+                guard let self, let field, event.window === field.window,
+                      !field.bounds.contains(field.convert(event.locationInWindow, from: nil))
+                else { return event }
+                let browser = self.browser
+                DispatchQueue.main.async { browser.finishTabEdit() }
+                return event
+            }
+        }
+
+        func unwatch() {
+            if let watcher { NSEvent.removeMonitor(watcher) }
+            watcher = nil
         }
     }
 }

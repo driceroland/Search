@@ -608,6 +608,25 @@ final class Browser: NSObject, ObservableObject {
         tabDraft = ""
     }
 
+    /// A click somewhere else — the page, the column below, the rest of the
+    /// strip — while a tab's address or name is being edited in the tab: what
+    /// was typed is kept, as Return keeps it. An address left as it was loads
+    /// nothing again, and a field left empty is let go.
+    func finishTabEdit() {
+        guard let id = editingTab, let tab = tabs.first(where: { $0.id == id }) else { return }
+        if renamingTab {
+            commitTabEdit()
+            return
+        }
+        let draft = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if draft.isEmpty || tab.address.map({ Address.pretty($0) == draft }) == true
+            || Google.destination(for: draft) == nil {
+            cancelTabEdit()
+            return
+        }
+        commitTabEdit()
+    }
+
     // MARK: - saying so
 
     /// A line that rises from the bottom, says one thing, and leaves.
@@ -937,16 +956,27 @@ final class Browser: NSObject, ObservableObject {
     // MARK: - tabs
 
     func newTab() {
-        // ⌘T held down repeats. Each press is a new tab, even beside an empty
-        // one, but a key left down is one press, not a row of empty tabs for
-        // as long as it stays there.
-        if let event = NSApp.currentEvent, event.type == .keyDown, event.isARepeat, active?.isBlank == true {
-            return
-        }
         // An extension's new tab page, if one asked and you said yes.
         if #available(macOS 15.4, *), let page = Extensions.shared.newTabPage {
             open(page, foreground: true)
             summoning = false
+            rememberSession()
+            return
+        }
+        // Never two empty tabs. One already open anywhere in the row comes to
+        // its end and is the one opened, with whatever was typed into it and
+        // never gone to cleared away — a row of identical empty tabs is what
+        // pressing ⌘T twice, or holding it, used to leave.
+        if let blank = tabs.last(where: { $0.isBlank && !$0.bench && !$0.shy }) {
+            if let end = tabs.indices.last, tabs.firstIndex(where: { $0.id == blank.id }) != end {
+                move(blank, to: end)
+            }
+            if activeID != blank.id { leaving() }
+            activeID = blank.id
+            summoning = false
+            typed = ""
+            editing = false
+            focusRequest += 1
             rememberSession()
             return
         }

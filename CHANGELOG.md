@@ -26,7 +26,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- New Tab makes a new empty tab each time, even when the current tab is empty. ([#35](https://github.com/driceroland/Search/issues/35))
+- ⌘T never leaves two empty tabs: an empty tab already open elsewhere in the row comes to its end and opens, with whatever was typed in it and not gone to cleared. ([#35](https://github.com/driceroland/Search/issues/35))
+- While a tab's address or name is being edited in the tab itself, a click anywhere else — the page, the column below, the rest of the strip — keeps what was typed, as Return does, instead of throwing it away. An address left as it was loads nothing again.
 - Search opens on macOS 14 again: it quit as it opened, before its window, setting the look chosen in Settings on an application that didn't exist yet.
 - Folded away with ⌘S and brought out at the edge, the column arrives whole: the traffic lights and the pinned tabs come in with it instead of standing there before it.
 - A double-click along the top of the window fills the screen, as a title bar's does: it was answered twice and ended where it started. In the column's mode the page's top edge takes it too, folded away with ⌘S included, where nothing did.
