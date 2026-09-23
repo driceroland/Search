@@ -101,6 +101,27 @@ enum Web {
     }
 }
 
+/// WKWebView can pause a page's media, but not mute it and let it keep
+/// playing — the one thing a tab's own speaker icon does everywhere else.
+/// So the page does it to itself: every <audio> and <video> element, present
+/// now or added later, gets its muted property set and kept set.
+enum Muter {
+    static func script(muted: Bool) -> String {
+        """
+        (function () {
+          var muted = \(muted);
+          function apply() {
+            var els = document.querySelectorAll('audio, video');
+            for (var i = 0; i < els.length; i++) els[i].muted = muted;
+          }
+          window.__officeMuter = { set: function (on) { muted = on; apply(); } };
+          new MutationObserver(apply).observe(document.documentElement, { childList: true, subtree: true });
+          apply();
+        })();
+        """
+    }
+}
+
 @MainActor
 final class Tab: ObservableObject, Identifiable {
     let id = UUID()
@@ -235,6 +256,18 @@ final class Tab: ObservableObject, Identifiable {
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
     @Published var noisy = false
+    /// Silenced by hand, the way a tab's speaker icon does it everywhere
+    /// else: the page keeps playing, it is just not heard. WKWebView has no
+    /// call for that, so Muter.script does it in the page's own JavaScript —
+    /// every <audio> and <video> element, including ones a page adds after
+    /// the fact. Re-armed on every navigation (see arm(hiding:)), so a tab
+    /// muted before it went somewhere else is still muted once it gets there.
+    @Published var muted = false
+
+    func toggleMute() {
+        muted.toggle()
+        web.evaluateJavaScript("window.__officeMuter && window.__officeMuter.set(\(muted))")
+    }
 
     /// What the page hands back when you point at something and click it.
     var onPick: ((Tab, String, String, String) -> Void)?
@@ -479,6 +512,12 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeAllUserScripts()
         controller.addUserScript(
             WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
+        // Every frame: an embedded video is muted the same as the page around
+        // it. Carries the tab's current muted state in, so a tab muted before
+        // it navigated somewhere else is muted the moment the new page starts.
+        controller.addUserScript(
+            WKUserScript(source: Muter.script(muted: muted), injectionTime: .atDocumentStart, forMainFrameOnly: false)
         )
         controller.addUserScript(
             WKUserScript(source: Veiling.picker, injectionTime: .atDocumentStart, forMainFrameOnly: true)

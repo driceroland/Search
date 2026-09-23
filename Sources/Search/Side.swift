@@ -590,10 +590,10 @@ private struct SideRow: View {
 
     private var editing: Bool { browser.editingTab == tab.id }
 
-    /// The ring or the speaker, which stay for as long as the page loads or
-    /// plays and so keep a place of their own at the end of the row. The
-    /// cross is only there under the pointer, and takes none.
-    private var status: Bool { !editing && (tab.loading || tab.noisy) }
+    /// The ring, which stays for as long as the page loads and so keeps a
+    /// place of its own at the end of the row. The cross is only there
+    /// under the pointer, and takes none.
+    private var status: Bool { !editing && tab.loading }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -625,19 +625,11 @@ private struct SideRow: View {
             if status {
                 Spacer(minLength: 2)
 
-                ZStack {
-                    if tab.loading {
-                        Ring().transition(.opacity)
-                    } else {
-                        Image(systemName: "speaker.wave.2.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(Palette.muted)
-                            .transition(.opacity)
-                    }
-                }
-                .frame(width: 15, height: 15)
-                // The cross takes this place while the pointer is here.
-                .opacity(hovering ? 0 : 1)
+                Ring()
+                    .transition(.opacity)
+                    .frame(width: 15, height: 15)
+                    // The cross takes this place while the pointer is here.
+                    .opacity(hovering ? 0 : 1)
             }
         }
         .padding(.leading, 10)
@@ -681,7 +673,6 @@ private struct SideRow: View {
             }
         }
         .animation(Motion.quick, value: tab.loading)
-        .animation(Motion.quick, value: tab.noisy)
         .background { ground }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
