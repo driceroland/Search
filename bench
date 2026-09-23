@@ -43,10 +43,12 @@
                                        and whether a drag from there would move the window;
                                        double: test run, a double-click there (start the probe hidden)
     ./bench place ID INDEX             put a tab at another place in the row
+    ./bench shelf [seed|open NAME|close NAME]  the bookmarks in the column, row by row;
+                                       seed: test run, a few sites and a folder; open/close a folder by title
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
-                                       folded on|off, peek on|off
+                                       shelf on|off, folded on|off, peek on|off
 
 Needs Settings › General › "Let a script drive Search" switched on in the
 running app. IDs are the first characters of a tab's id, as `tabs` prints
@@ -192,6 +194,10 @@ def main(argv):
         if len(args) not in (2, 3) or (len(args) == 3 and args[2] not in ("double", "middle")): sys.exit("usage: bench hit X Y [double|middle]")
         request["x"], request["y"] = float(args[0]), float(args[1])
         if len(args) == 3: request[args[2]] = True
+    elif verb == "shelf":
+        if args == ["seed"]: request["seed"] = True
+        elif len(args) >= 2 and args[0] in ("open", "close"): request[args[0]] = " ".join(args[1:])
+        elif args: sys.exit("usage: bench shelf [seed | open NAME | close NAME]")
     elif verb == "place":
         if len(args) != 2: sys.exit("usage: bench place ID INDEX")
         request["id"], request["to"] = args[0], int(args[1])

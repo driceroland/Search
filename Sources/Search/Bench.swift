@@ -687,6 +687,10 @@ final class Bench {
                 window.contentView = nil
             }
 
+        case "shelf":
+            // The bookmarks in the column (see Shelf.swift).
+            answer(Shelf.bench(request, browser: browser))
+
         case "space":
             // The spaces, and switching between them, for a test of what a
             // space keeps apart. Test runs only: it moves your tabs about.
@@ -764,6 +768,7 @@ final class Bench {
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
+            if let on = request["shelf"] as? Bool { browser.prefs.sideBookmarks = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
             if let on = request["peek"] as? Bool { browser.peeking = on }
             // The address of the tab on screen being edited in the tab, with
@@ -785,7 +790,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "place", "space", "strip", "column", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "place", "space", "shelf", "strip", "column", "ui",
             ]])
         }
     }

@@ -48,6 +48,11 @@ final class Preferences: ObservableObject {
     @Published var sideHides: Bool {
         didSet { store.set(sideHides, forKey: "sidebar.hides") }
     }
+    /// The bookmarks in the column, above the tabs (see Shelf.swift). Off
+    /// unless asked for.
+    @Published var sideBookmarks: Bool {
+        didSet { store.set(sideBookmarks, forKey: "sidebar.bookmarks") }
+    }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
@@ -140,6 +145,7 @@ final class Preferences: ObservableObject {
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
         sideHides = store.bool(forKey: "sidebar.hides")
+        sideBookmarks = store.bool(forKey: "sidebar.bookmarks")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters

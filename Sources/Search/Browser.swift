@@ -44,6 +44,8 @@ final class Browser: NSObject, ObservableObject {
     @Published var bookmarking = false
     /// The dropdown off the button.
     @Published var bookmarksOpen = false
+    /// The folders open in the column's bookmarks (see Shelf.swift).
+    @Published var shelfOpen: Set<Bookmark.ID> = []
 
     /// ⇧⌘B. The page you are on, at the end of the list.
     func bookmarkCurrent() {

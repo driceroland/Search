@@ -233,6 +233,8 @@ struct SideBar: View {
                 }
                 .padding(.bottom, 10)
             }
+            // The same bookmarks in every space (see Shelf.swift).
+            if prefs.sideBookmarks { Shelf(browser: browser, bookmarks: browser.bookmarks) }
             VStack(spacing: SideBar.gap) {
                 ForEach(rest) { tab in
                     SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active, pill: pill, close: {})
@@ -253,7 +255,9 @@ struct SideBar: View {
         let pinBlock = pinRows == 0 ? 0
             : CGFloat(pinRows) * pinHeight + CGFloat(pinRows - 1) * SideBar.pinGap + 10
         let loose = CGFloat(browser.tabs.count - pins) * (SideBar.row + SideBar.gap)
-        return Metrics.strip + pinBlock + loose + SideBar.row + 8
+        // The bookmarks above the rows, added up the same way (see Shelf.swift).
+        let shelf = prefs.sideBookmarks ? Shelf.height(for: browser) : 0
+        return Metrics.strip + pinBlock + shelf + loose + SideBar.row + 8
     }
 
     // MARK: - the pinned squares
@@ -447,6 +451,8 @@ struct SideBar: View {
     /// The loose tabs and the row that makes another, which scroll as one.
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // The bookmarks above them, when asked for (see Shelf.swift).
+            if prefs.sideBookmarks { Shelf(browser: browser, bookmarks: browser.bookmarks) }
             loose
             newTab
         }
