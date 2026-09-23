@@ -289,6 +289,25 @@ struct SettingsPanel: View {
                 ) {
                     Switch(on: $prefs.passkeys)
                 }
+                if #available(macOS 15.4, *) {
+                    Rule()
+                    let installed = Extensions.shared.installed.contains { $0.id == "pejdijmoenmkgeppbflobdenhhabjlaj" }
+                    Line(
+                        "Apple Passwords",
+                        installed
+                            ? "iCloud Passwords extension is active and connected to Apple Passwords"
+                            : "Autofill and save passwords in sync with Apple Passwords and iCloud Keychain"
+                    ) {
+                        if installed {
+                            Pill("Active") {}
+                                .disabled(true)
+                        } else {
+                            Pill("Add…") {
+                                Extensions.shared.install(from: "pejdijmoenmkgeppbflobdenhhabjlaj")
+                            }
+                        }
+                    }
+                }
                 if !Vault.never.isEmpty {
                     Rule()
                     Line("Sites never asked", "\(Vault.never.count) sites told to stop offering") {
@@ -300,7 +319,7 @@ struct SettingsPanel: View {
                 }
             }
             Card {
-                Line("Bring yours in", "From Dia, Chrome, Arc, Brave or Edge on this Mac — nothing leaves it") {
+                Line("Bring yours in", "From Apple Passwords, Dia, Chrome, Arc, Brave or Edge on this Mac — nothing leaves it") {
                     Pill("Import…") {
                         browser.tuning = false
                         browser.managing = true

@@ -21,7 +21,8 @@ enum ExtensionNative {
         var errorDescription: String? { why }
     }
 
-    /// Where Chromium browsers look, per user and for the whole Mac.
+    /// Where Chromium and system browsers look, per user and for the whole Mac,
+    /// including macOS system cryptex and Mozilla locations.
     private static var folders: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let support = home.appendingPathComponent("Library/Application Support")
@@ -31,9 +32,16 @@ enum ExtensionNative {
             support.appendingPathComponent("Microsoft Edge/NativeMessagingHosts"),
             support.appendingPathComponent("BraveSoftware/Brave-Browser/NativeMessagingHosts"),
             support.appendingPathComponent("Arc/User Data/NativeMessagingHosts"),
+            support.appendingPathComponent("Mozilla/NativeMessagingHosts"),
             URL(fileURLWithPath: "/Library/Google/Chrome/NativeMessagingHosts"),
             URL(fileURLWithPath: "/Library/Application Support/Chromium/NativeMessagingHosts"),
             URL(fileURLWithPath: "/Library/Microsoft/Edge/NativeMessagingHosts"),
+            URL(fileURLWithPath: "/Library/Application Support/Mozilla/NativeMessagingHosts"),
+            URL(fileURLWithPath: "/System/Volumes/Preboot/Cryptexes/App/Library/Google/Chrome/NativeMessagingHosts"),
+            URL(fileURLWithPath: "/System/Volumes/Preboot/Cryptexes/App/Library/Application Support/Mozilla/NativeMessagingHosts"),
+            URL(fileURLWithPath: "/System/Cryptexes/App/Library/Google/Chrome/NativeMessagingHosts"),
+            URL(fileURLWithPath: "/System/Cryptexes/App/Library/Application Support/Mozilla/NativeMessagingHosts"),
+            URL(fileURLWithPath: "/Library/Apple/System/Library/CoreServices/NativeMessagingHosts"),
         ]
     }
 
@@ -49,8 +57,9 @@ enum ExtensionNative {
                   let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let path = manifest["path"] as? String
             else { continue }
-            let allowed = manifest["allowed_origins"] as? [String] ?? []
-            guard allowed.contains(origin) else {
+            let allowed = (manifest["allowed_origins"] as? [String])
+                ?? (manifest["allowed_extensions"] as? [String]) ?? []
+            guard allowed.contains(origin) || allowed.contains(extensionID) else {
                 throw Refused(why: "Access to the specified native messaging host is forbidden.")
             }
             let program = path.hasPrefix("/") ? URL(fileURLWithPath: path) : folder.appendingPathComponent(path)
@@ -59,6 +68,29 @@ enum ExtensionNative {
             }
             return program
         }
+
+        // Apple Passwords helper fallback if no manifest file was found on disk
+        // (for example, on a Mac where Chrome or Edge was never installed).
+        if name == "com.apple.passwordmanager" {
+            let appleAllowed = [
+                "pejdijmoenmkgeppbflobdenhhabjlaj", // Chrome Web Store
+                "mfbcdcnpokpoajjciilocoachedjkima", // Edge Add-ons
+            ]
+            guard appleAllowed.contains(extensionID) else {
+                throw Refused(why: "Access to the specified native messaging host is forbidden.")
+            }
+            let candidates = [
+                "/System/Cryptexes/App/System/Library/CoreServices/PasswordManagerBrowserExtensionHelper.app/Contents/MacOS/PasswordManagerBrowserExtensionHelper",
+                "/System/Volumes/Preboot/Cryptexes/App/System/Library/CoreServices/PasswordManagerBrowserExtensionHelper.app/Contents/MacOS/PasswordManagerBrowserExtensionHelper",
+                "/System/Library/CoreServices/PasswordManagerBrowserExtensionHelper.app/Contents/MacOS/PasswordManagerBrowserExtensionHelper",
+            ]
+            for candidate in candidates {
+                if FileManager.default.isExecutableFile(atPath: candidate) {
+                    return URL(fileURLWithPath: candidate)
+                }
+            }
+        }
+
         throw Refused(why: "Specified native messaging host not found.")
     }
 

@@ -72,6 +72,8 @@ struct PasswordsPanel: View {
                         }
                         .disabled(importing != nil)
                     }
+                    Pill("Apple Passwords…") { browser.importApplePasswords() }
+                        .disabled(importing != nil)
                     Pill("CSV file…") { browser.importPasswords() }
                         .disabled(importing != nil)
                     Spacer(minLength: 0)

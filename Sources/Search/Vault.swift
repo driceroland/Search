@@ -203,9 +203,10 @@ enum Vault {
 
     // MARK: - taking in an export
 
-    /// A CSV as Google Password Manager, Chrome or Dia write it: name, url,
-    /// username, password, note. Read once, put in the keychain, and the file
-    /// is yours to delete — this never keeps a copy of it.
+    /// A CSV as Apple Passwords, Google Password Manager, Chrome or Dia write
+    /// it: title/name, url, username, password, note, otpauth. Read once, put
+    /// in the keychain, and the file is yours to delete — this never keeps a
+    /// copy of it.
     static func take(csv text: String) -> (kept: Int, skipped: Int) {
         var rows = parse(csv: text)
         guard !rows.isEmpty else { return (0, 0) }
@@ -214,10 +215,12 @@ enum Vault {
         func column(_ names: [String]) -> Int? {
             header.firstIndex { names.contains($0) }
         }
-        guard let urlAt = column(["url", "login_uri", "website", "site"]),
+        guard let urlAt = column(["url", "login_uri", "website", "site"]) ?? column(["title", "name"]),
               let userAt = column(["username", "login_username", "user", "email"]),
               let passAt = column(["password", "login_password"])
         else { return (0, rows.count) }
+
+        let titleAt = column(["title", "name"])
 
         var kept = 0, skipped = 0
         for row in rows {
@@ -225,7 +228,10 @@ enum Vault {
                 skipped += 1
                 continue
             }
-            let host = self.host(of: row[urlAt])
+            var host = self.host(of: row[urlAt])
+            if host.isEmpty, let titleAt, titleAt < row.count {
+                host = self.host(of: row[titleAt])
+            }
             let password = row[passAt]
             guard !host.isEmpty, !password.isEmpty else {
                 skipped += 1

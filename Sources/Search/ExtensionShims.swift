@@ -408,6 +408,22 @@ enum ExtensionShims {
       // WebKit lets a content script call too. Namespaces the shim adds
       // itself further down answer through the browser, which is allowed.
       if (embedded) {
+        // connect and connectNative in a frame kill the WebContent process
+        // in WebKit. Return a port that closes at once, as Chrome does.
+        const closedPort = (args) => {
+          const port = { name: (args.find((a) => a && typeof a === "object") || {}).name || "", sender: undefined,
+            postMessage: () => {}, disconnect: () => {}, onMessage: event(), onDisconnect: event() };
+          setTimeout(() => {
+            put(runtime, "lastError", { message: "Could not establish connection. Receiving end does not exist." });
+            try { for (const f of [...port.onDisconnect.listeners]) f(port); } finally { try { delete runtime.lastError; } catch (e) {} }
+          });
+          return port;
+        };
+        if (runtime) {
+          put(runtime, "connect", (...args) => closedPort(args));
+          put(runtime, "connectNative", (...args) => closedPort(args));
+        }
+
         const direct = new Set(["runtime", "storage", "i18n", "extension", "permissions", "dom", "test"]);
         const ask = (space, method, args) => {
           while (args.length && args[args.length - 1] === undefined) args.pop();
@@ -527,7 +543,7 @@ enum ExtensionShims {
           return replied(p, callback, "Could not establish connection. Receiving end does not exist.");
         });
       }
-      if (typeof document !== "undefined" && runtime && typeof runtime.connect === "function") {
+      if (!embedded && typeof document !== "undefined" && runtime && typeof runtime.connect === "function") {
         const connect = runtime.connect.bind(runtime);
         put(runtime, "connect", (...args) => {
           checkWorker();

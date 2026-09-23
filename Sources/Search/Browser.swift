@@ -391,14 +391,35 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
-    /// Takes in a CSV as Google Password Manager exports one. The file is read
-    /// once and never copied.
+    /// Takes in a CSV as Apple Passwords, Google Password Manager, Chrome or
+    /// Dia exports one. The file is read once and never copied.
     func importPasswords() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.commaSeparatedText, .plainText]
         panel.allowsMultipleSelection = false
         panel.prompt = "Import"
-        panel.message = "A passwords export, as Chrome, Dia or Google Password Manager write it."
+        panel.message = "A passwords export from Apple Passwords, Chrome, Dia or Google Password Manager."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+            announce("Couldn't read that file as text")
+            return
+        }
+        let result = Vault.take(csv: text)
+        relist()
+        announce(
+            result.skipped == 0
+                ? "\(result.kept) passwords in the keychain"
+                : "\(result.kept) in the keychain, \(result.skipped) skipped"
+        )
+    }
+
+    /// Takes in an export from Apple Passwords (File › Export All Passwords…).
+    func importApplePasswords() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.commaSeparatedText, .plainText]
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Import"
+        panel.message = "Export from Apple Passwords (File › Export All Passwords…) and select the CSV file."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let text = try? String(contentsOf: url, encoding: .utf8) else {
             announce("Couldn't read that file as text")
