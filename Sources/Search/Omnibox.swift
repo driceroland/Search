@@ -10,6 +10,11 @@ struct Omnibox: View {
     /// Raised over a page by ⌘L, rather than standing on an empty tab.
     let over: Bool
 
+    /// The field's own height — the 22 of text and 14 of air above and below it
+    /// that `field` lays out — so the list can sit below it without being
+    /// stacked with it.
+    private static let fieldHeight: CGFloat = 22 + 14 * 2
+
     @State private var shake: CGFloat = 0
     @State private var refused = false
     @State private var breathing = false
@@ -25,16 +30,22 @@ struct Omnibox: View {
                     .transition(.opacity)
             }
 
-            VStack(spacing: 8) {
-                field
-                if !browser.offers.isEmpty { list }
-            }
-            .frame(width: Metrics.fieldWidth)
-            // Lifted a little above centre: dead centre reads as low, because
-            // the strip at the top isn't part of what the eye is measuring.
-            .padding(.bottom, 60)
-            .animation(Motion.settle, value: browser.offers)
-            .animation(Motion.settle, value: refused)
+            field
+                .frame(width: Metrics.fieldWidth)
+                // The list hangs below the field rather than stacking with it,
+                // so a list that grows never lifts the field out from under
+                // what is being typed.
+                .overlay(alignment: .top) {
+                    list
+                        .frame(width: Metrics.fieldWidth)
+                        .offset(y: Self.fieldHeight + 8)
+                        .animation(Motion.settle, value: browser.offers)
+                }
+                // Lifted a little above centre: dead centre reads as low,
+                // because the strip at the top isn't part of what the eye is
+                // measuring.
+                .padding(.bottom, 60)
+                .animation(Motion.settle, value: refused)
         }
     }
 
@@ -87,8 +98,14 @@ struct Omnibox: View {
     /// What it thinks you mean. Places you have been come with their titles;
     /// the handful of well-known addresses it starts life knowing come without
     /// the weight of one.
+    ///
+    /// The card unrolls from under the field: it is drawn only as far as it has
+    /// come out, so a list that appears grows down out of the field and one
+    /// that empties rolls back up into it. Rows keep their own motion, holding
+    /// their place and sliding when a keystroke leaves them in the list.
     private var list: some View {
-        VStack(spacing: 0) {
+        let unrolled: CGFloat = browser.offers.isEmpty ? 0 : 1
+        return VStack(spacing: 0) {
             ForEach(Array(browser.offers.enumerated()), id: \.element.id) { index, offer in
                 Row(offer: offer, picked: browser.picked == index)
                     .contentShape(Rectangle())
@@ -96,13 +113,16 @@ struct Omnibox: View {
             }
         }
         .padding(6)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .clipShape(Unroll(unrolled: unrolled))
+        .background {
+            Unroll(unrolled: unrolled)
+                .fill(Palette.ground)
+                .shadow(color: .black.opacity(0.07), radius: 20, y: 6)
+        }
+        .overlay {
+            Unroll(unrolled: unrolled)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.07), radius: 20, y: 6)
-        .transition(.scale(scale: 0.98, anchor: .top).combined(with: .opacity))
+        }
     }
 
     private struct Row: View {
@@ -158,6 +178,41 @@ struct Omnibox: View {
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
         }
+    }
+}
+
+/// The list's card, drawn only as far as it has unrolled. Shrinking the shape
+/// itself — rather than clipping a full card — keeps the card's rounded bottom
+/// and its shadow through the whole animation.
+private struct Unroll: InsettableShape {
+    /// 1 when the list is fully out, 0 when it has rolled away under the field.
+    var unrolled: CGFloat
+    private var inset: CGFloat = 0
+
+    init(unrolled: CGFloat) {
+        self.unrolled = unrolled
+    }
+
+    var animatableData: CGFloat {
+        get { unrolled }
+        set { unrolled = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let shown = rect.height * min(max(unrolled, 0), 1)
+        let box = CGRect(
+            x: rect.minX + inset,
+            y: rect.minY + inset,
+            width: max(0, rect.width - inset * 2),
+            height: max(0, shown - inset * 2)
+        )
+        return Path(roundedRect: box, cornerRadius: 14, style: .continuous)
+    }
+
+    func inset(by amount: CGFloat) -> Unroll {
+        var copy = self
+        copy.inset += amount
+        return copy
     }
 }
 
