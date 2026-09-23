@@ -46,6 +46,8 @@ final class Browser: NSObject, ObservableObject {
     @Published var bookmarksOpen = false
     /// The folders open in the column's bookmarks (see Shelf.swift).
     @Published var shelfOpen: Set<Bookmark.ID> = []
+    /// Where a tab held over the column's bookmarks would land (see Shelf.swift).
+    @Published var shelfAim: Shelf.Drop?
 
     /// ⇧⌘B. The page you are on, at the end of the list.
     func bookmarkCurrent() {

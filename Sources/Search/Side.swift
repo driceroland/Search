@@ -430,6 +430,13 @@ struct SideBar: View {
                     from = index
                 }
                 travel = value.translation.height
+                // Held over the bookmarks, it is aimed at them rather than at
+                // a place in the row, and the row keeps it where it was (see
+                // Shelf.swift).
+                if browser.aimShelf(at: value.location.y) {
+                    if index != from { withAnimation(Motion.settle) { browser.move(tab, to: from + browser.pinnedCount) } }
+                    return
+                }
                 let moved = Int((travel / step).rounded())
                 let target = min(max(0, from + moved), looseTabs.count - 1)
                 if target != index {
@@ -441,6 +448,8 @@ struct SideBar: View {
                 }
             }
             .onEnded { _ in
+                // Let go over the bookmarks, it becomes one (see Shelf.swift).
+                browser.dropOnShelf(tab)
                 withAnimation(Motion.settle) {
                     dragging = nil
                     travel = 0

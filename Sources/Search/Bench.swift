@@ -579,6 +579,43 @@ final class Bench {
                 "titleBar": y <= Double(window.frame.height - window.contentLayoutRect.height),
             ])
 
+        case "drag":
+            // A press at one point of the window, carried to another in small
+            // steps and let go there — what a hand does to a row it picks up.
+            // Handed to the view under the press, as `hit … double` does: a
+            // probe's window takes no events through the app.
+            guard Store.testing else { answer(["error": "drag only works on a --test run"]); return }
+            guard let window = Links.window, let frame = window.contentView?.superview,
+                  let x = request["x"] as? Double, let y = request["y"] as? Double,
+                  let toX = request["toX"] as? Double, let toY = request["toY"] as? Double
+            else { answer(["error": "drag needs two points"]); return }
+            func point(_ x: Double, _ y: Double) -> NSPoint { NSPoint(x: x, y: Double(window.frame.height) - y) }
+            func event(_ type: NSEvent.EventType, _ at: NSPoint) -> NSEvent? {
+                NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                   windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                   pressure: type == .leftMouseUp ? 0 : 1)
+            }
+            let start = point(x, y)
+            guard let target = frame.hitTest(frame.convert(start, from: nil)) else { answer(["error": "nothing there"]); return }
+            if let down = event(.leftMouseDown, start) { target.mouseDown(with: down) }
+            let steps = 16
+            func step(_ n: Int) {
+                let along = Double(n) / Double(steps)
+                let at = point(x + (toX - x) * along, y + (toY - y) * along)
+                if n < steps {
+                    if let moved = event(.leftMouseDragged, at) { target.mouseDragged(with: moved) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { step(n + 1) }
+                } else {
+                    // Moved onto the point, then let go there, as a hand does.
+                    if let moved = event(.leftMouseDragged, at) { target.mouseDragged(with: moved) }
+                    if let up = event(.leftMouseUp, at) { target.mouseUp(with: up) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        answer(["view": String("\(type(of: target))".prefix(60))])
+                    }
+                }
+            }
+            step(1)
+
         case "place":
             // A tab put at another place in the row, as a drag would.
             guard let id = request["id"] as? String, let to = request["to"] as? Int,
@@ -790,7 +827,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "place", "space", "shelf", "strip", "column", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "drag", "film", "place", "space", "shelf", "strip", "column", "ui",
             ]])
         }
     }

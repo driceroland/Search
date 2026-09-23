@@ -6,7 +6,9 @@ import SwiftUI
 //
 // A site is a row of a tab's size, 28 points with 2 between, and opens where
 // a bookmark always has (see Browser.visit). A folder opens in place, its
-// sites 14 points further in.
+// sites 14 points further in. With nothing kept yet the section still
+// stands, one quiet row inviting a tab: it is where a tab is dragged to
+// become a bookmark, at the place it is let go, and the tab stays open.
 //
 // A row is picked up the way a tab is, with the same gesture rather than the
 // system's drag: a system drag carries text, and the column takes any text
@@ -58,47 +60,48 @@ struct Shelf: View {
         }
     }
 
-    /// What the shelf takes of the column: nothing without a bookmark, and
-    /// otherwise its two headings and its rows, with a gap under each.
+    /// What the shelf takes of the column: its two headings and its rows,
+    /// with a gap under each — one row when empty, the one inviting a tab.
     static func height(for browser: Browser) -> CGFloat {
-        guard !browser.bookmarks.isEmpty else { return 0 }
-        let rows = CGFloat(lines(browser.bookmarks.roots, open: browser.shelfOpen).count)
+        let rows = CGFloat(max(1, lines(browser.bookmarks.roots, open: browser.shelfOpen).count))
         return 2 * heading + rows * row + (rows + 1) * gap
     }
 
+    /// Where the row or tab being held would land.
+    private var aim: Drop? { landing ?? browser.shelfAim }
+
     var body: some View {
-        if !bookmarks.isEmpty {
-            let lines = Shelf.lines(bookmarks.roots, open: browser.shelfOpen)
-            let carried = Shelf.carried(dragging, in: lines)
-            VStack(alignment: .leading, spacing: Shelf.gap) {
-                Heading(title: "Bookmarks")
-                ForEach(Array(lines.enumerated()), id: \.element.node.id) { index, line in
-                    let held = carried.contains(index)
-                    ShelfRow(browser: browser, node: line.node, depth: line.depth,
-                             isOpen: browser.shelfOpen.contains(line.node.id),
-                             target: landing?.into == line.node.id)
-                        .offset(y: held ? travel : 0)
-                        // Under the hand exactly, as a tab is (see SideBar.loose).
-                        .transaction { if held { $0.animation = nil } }
-                        .zIndex(held ? 1 : 0)
-                        .shadow(color: .black.opacity(held && index == carried.lowerBound ? 0.14 : 0), radius: 12, y: 4)
-                        .gesture(pick(line, lines: lines))
-                }
-                // The tabs' own heading, so the two lists read as two.
-                Heading(title: "Tabs")
-                    .overlay(alignment: .top) {
-                        Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 10)
-                    }
+        let lines = Shelf.lines(bookmarks.roots, open: browser.shelfOpen)
+        let carried = Shelf.carried(dragging, in: lines)
+        VStack(alignment: .leading, spacing: Shelf.gap) {
+            Heading(title: "Bookmarks")
+            if lines.isEmpty { Empty(lit: aim != nil) }
+            ForEach(Array(lines.enumerated()), id: \.element.node.id) { index, line in
+                let held = carried.contains(index)
+                ShelfRow(browser: browser, node: line.node, depth: line.depth,
+                         isOpen: browser.shelfOpen.contains(line.node.id),
+                         target: aim?.into == line.node.id)
+                    .offset(y: held ? travel : 0)
+                    // Under the hand exactly, as a tab is (see SideBar.loose).
+                    .transaction { if held { $0.animation = nil } }
+                    .zIndex(held ? 1 : 0)
+                    .shadow(color: .black.opacity(held && index == carried.lowerBound ? 0.14 : 0), radius: 12, y: 4)
+                    .gesture(pick(line, lines: lines))
             }
-            .overlay(alignment: .topLeading) { mark }
-            .coordinateSpace(name: "shelf")
+            // The tabs' own heading, so the two lists read as two.
+            Heading(title: "Tabs")
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 10)
+                }
         }
+        .overlay(alignment: .topLeading) { if !lines.isEmpty { mark } }
+        .coordinateSpace(name: "shelf")
     }
 
     /// The line between two rows where the one held will land.
     @ViewBuilder
     private var mark: some View {
-        if let landing, landing.into == nil {
+        if let landing = aim, landing.into == nil {
             Capsule()
                 .fill(Palette.muted)
                 .frame(height: 2)
@@ -117,8 +120,9 @@ struct Shelf: View {
                 travel = value.translation.height
                 landing = Shelf.drop(at: value.location.y, lines: lines, carrying: line.node.id)
             }
-            .onEnded { _ in
-                if let landing {
+            .onEnded { value in
+                // Where it is let go, which may be past the last move.
+                if let landing = Shelf.drop(at: value.location.y, lines: lines, carrying: line.node.id) {
                     bookmarks.move(line.node.id, into: landing.parent, before: landing.before)
                 }
                 withAnimation(Motion.settle) {
@@ -156,11 +160,11 @@ struct Shelf: View {
     /// it, the bottom half just below it. Past the last row is the end of
     /// the list. Nil over the rows being carried, which can't go inside
     /// themselves.
-    static func drop(at y: CGFloat, lines: [Line], carrying id: Bookmark.ID) -> Drop? {
+    static func drop(at y: CGFloat, lines: [Line], carrying id: Bookmark.ID?) -> Drop? {
         let slot = row + gap
         let span = carried(id, in: lines)
         let at = y - heading - gap
-        guard !lines.isEmpty else { return nil }
+        guard !lines.isEmpty else { return Drop() }
         if at >= CGFloat(lines.count) * slot {
             return Drop(parent: nil, before: nil, line: lines.count, depth: 0)
         }
@@ -183,6 +187,31 @@ struct Shelf: View {
         let next = lines[(index + 1)...].first { $0.depth <= line.depth }
         let sibling = next?.parent == line.parent ? next?.node.id : nil
         return Drop(parent: line.parent, before: sibling, line: index + 1, depth: line.depth)
+    }
+
+    /// The one row of an empty shelf, lit while a tab is held over it.
+    private struct Empty: View {
+        let lit: Bool
+
+        var body: some View {
+            HStack(spacing: 8) {
+                Image(systemName: "bookmark")
+                    .font(.system(size: 10, weight: .medium))
+                    .frame(width: 15)
+                Text("Drag a tab here")
+                    .font(.system(size: 12.5))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Palette.faint)
+            .padding(.leading, 10)
+            .frame(height: Shelf.row)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(lit ? Palette.wash : .clear)
+            )
+            .animation(Motion.quick, value: lit)
+        }
     }
 
     private struct Heading: View {
@@ -271,6 +300,40 @@ private struct ShelfRow: View {
         } else if let url {
             browser.visit(url)
         }
+    }
+}
+
+extension Browser {
+    /// A tab held `y` points down the column's rows, negative above them
+    /// (see SideBar.reorder). Over the bookmarks it is aimed at them, and
+    /// this says so; anywhere else it is aimed at nothing here.
+    func aimShelf(at y: CGFloat) -> Bool {
+        let lines = Shelf.lines(bookmarks.roots, open: shelfOpen)
+        // The shelf sits right above the rows, so its bottom is their top.
+        let at = Shelf.height(for: self) + y
+        let bottom = Shelf.heading + CGFloat(max(1, lines.count)) * (Shelf.row + Shelf.gap)
+        guard prefs.sideBookmarks, at < bottom else {
+            if shelfAim != nil { shelfAim = nil }
+            return false
+        }
+        let aim = Shelf.drop(at: at, lines: lines, carrying: nil)
+        if shelfAim != aim { shelfAim = aim }
+        return true
+    }
+
+    /// The tab let go: kept where it was aimed, if it was aimed here. The
+    /// tab itself stays open where it was.
+    func dropOnShelf(_ tab: Tab) {
+        guard let aim = shelfAim else { return }
+        shelfAim = nil
+        guard let url = tab.address else { return }
+        guard !bookmarks.contains(url) else {
+            announce("Already a bookmark")
+            return
+        }
+        let node = bookmarks.insert(.site(tab.title, url), into: aim.parent)
+        bookmarks.move(node.id, into: aim.parent, before: aim.before)
+        announce("Bookmarked")
     }
 }
 

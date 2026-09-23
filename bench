@@ -42,6 +42,7 @@
     ./bench hit X Y [double|middle]    what a press at X Y (points from the window's top left) lands on,
                                        and whether a drag from there would move the window;
                                        double: test run, a double-click there (start the probe hidden)
+    ./bench drag X Y TOX TOY           test run: press at X Y, move to TOX TOY in steps and let go there
     ./bench place ID INDEX             put a tab at another place in the row
     ./bench shelf [seed|open NAME|close NAME|drop NAME Y]  the bookmarks in the column, row by row;
                                        seed: test run, a few sites and a folder; open/close a folder by title;
@@ -200,6 +201,9 @@ def main(argv):
         elif len(args) >= 3 and args[0] == "drop": request["drop"], request["y"] = " ".join(args[1:-1]), float(args[-1])
         elif len(args) >= 2 and args[0] in ("open", "close"): request[args[0]] = " ".join(args[1:])
         elif args: sys.exit("usage: bench shelf [seed | open NAME | close NAME | drop NAME Y]")
+    elif verb == "drag":
+        if len(args) != 4: sys.exit("usage: bench drag X Y TOX TOY")
+        request["x"], request["y"], request["toX"], request["toY"] = map(float, args)
     elif verb == "place":
         if len(args) != 2: sys.exit("usage: bench place ID INDEX")
         request["id"], request["to"] = args[0], int(args[1])
