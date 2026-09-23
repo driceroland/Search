@@ -398,7 +398,7 @@ enum SpaceMenu {
         if !here.isFirst {
             menu.addItem(.separator())
             menu.addItem(item("Delete “\(here.name)”…") {
-                Ask.sure("Delete “\(here.name)”?", detail: "Its tabs close, and its cookies and sign-ins are erased from this Mac. History and bookmarks stay.", confirm: "Delete") {
+                Ask.sure("Delete “\(here.name)”?", detail: "Its tabs close, its bookmarks are deleted, and its cookies and sign-ins are erased from this Mac. History stays.", confirm: "Delete") {
                     browser.deleteSpace(here.id)
                 }
             })
