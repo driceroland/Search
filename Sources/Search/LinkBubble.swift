@@ -6,8 +6,42 @@ import WebKit
 /// WebKit retains this relay; the tab is weak so closing it releases the page.
 final class HoveredLink: NSObject, WKScriptMessageHandler {
     static let name = "link"
-    static let script = (Bundle.module.url(forResource: "HoveredLink", withExtension: "js")
-        .flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? ""
+    // One passive listener in every frame reports the resolved link address
+    // only when it changes. The isolated client world keeps it out of the page's reach.
+    static let script = """
+    (() => {
+        let shown = '';
+
+        function report(address) {
+            if (address === shown) return;
+            shown = address;
+            webkit.messageHandlers.link.postMessage(address);
+        }
+
+        // The composed path reaches links inside open shadow trees, where `target` stops at the host.
+        function linkIn(path) {
+            for (const node of path) {
+                if (node.nodeType !== 1 || (node.localName !== 'a' && node.localName !== 'area')) continue;
+                // An SVG link's href is an object, and its address may be relative.
+                const href = typeof node.href === 'string' ? node.href : node.href && node.href.baseVal;
+                if (!href) continue;
+                try {
+                    const address = new URL(href, node.baseURI).href;
+                    // A script link goes nowhere worth showing.
+                    return address.startsWith('javascript:') ? '' : address.slice(0, 600);
+                } catch {
+                    return '';
+                }
+            }
+            return '';
+        }
+
+        addEventListener('mouseover', event => report(linkIn(event.composedPath())), { passive: true, capture: true });
+        // Leaving the frame altogether: there is no next element to enter.
+        addEventListener('mouseout', event => { if (!event.relatedTarget) report(''); }, { passive: true, capture: true });
+        addEventListener('pagehide', () => report(''));
+    })();
+    """
 
     weak var tab: Tab?
 

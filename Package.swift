@@ -8,7 +8,6 @@ let package = Package(
         .executableTarget(
             name: "Search",
             path: "Sources/Search",
-            resources: [.process("HoveredLink.js")],
             // Same reasoning as the canvas app next door: the whole interface is
             // main-thread by nature, and Swift 6's strict isolation buys nothing
             // here but ceremony.
