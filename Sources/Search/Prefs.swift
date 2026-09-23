@@ -130,8 +130,10 @@ final class Preferences: ObservableObject {
         let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .light
         look = chosen
         // Before the first window, and not deferred: the window that is about
-        // to be made should be made in the right appearance.
-        NSApp.appearance = chosen.appearance
+        // to be made should be made in the right appearance. Through `shared`
+        // rather than `NSApp`: on macOS 14 SwiftUI builds this before it has
+        // made the application, and `NSApp` is still nil here.
+        NSApplication.shared.appearance = chosen.appearance
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)

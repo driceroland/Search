@@ -12,7 +12,6 @@ don't build it twice.
 ## Now — fixes for the next update
 
 - [ ] **Bitwarden goes blank after signing in** (and for one person doesn't load). Before signing in it works — popup, WebAssembly, background — so this needs an account to reproduce. *(X, several)*
-- [ ] **Search quits as it opens on macOS 14.8.3.** Nothing in the build points to it yet; waiting on the crash report. *(X)*
 - [ ] **Vimium C doesn't start**: WebKit fails to load its background (Vimium itself works). *(X)*
 
 ## Next — small additions people asked for
