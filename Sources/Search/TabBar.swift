@@ -495,7 +495,7 @@ private struct TabPill: View {
                 // points of grey filling from the left behind a single letter
                 // says nothing about anything — it needs the width of a title
                 // to read as progress at all.
-                if !pinned && !compact {
+                if !pinned && !compact && prefs.showsReading {
                     Rectangle()
                         .fill(Palette.ink.opacity(0.055))
                         .frame(width: span * tab.reading)
