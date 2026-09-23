@@ -16,7 +16,12 @@ struct Page: View {
         ZStack {
             // A tab put down with ⌘W has no view, and asking for one here
             // would build an empty one a frame before the stage moves on.
-            WebStage(page: tab.isBlank || tab.asleep ? nil : tab.web)
+            //
+            // Nor is a floating page asked for. Handing the same view over
+            // before and after the float changes nothing SwiftUI can see, so
+            // the stage was never told to take it back when it landed, and
+            // the tab stayed empty. Nothing, then the page, is a change.
+            WebStage(page: tab.isBlank || tab.asleep || tab.floating ? nil : tab.web)
 
             if let cover = tab.cover {
                 // The page as it was left, while it is rebuilt underneath —
