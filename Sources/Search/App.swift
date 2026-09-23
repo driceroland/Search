@@ -817,6 +817,11 @@ struct ContentView: View {
         case "]":
             shifted ? browser.step(1) : browser.forward()
         default:
+            // Moving or selecting text belongs to the editor, not the page's
+            // history — in web forms and in the browser's own fields alike.
+            guard !shifted, browser.active?.typing != true,
+                  !(event.window?.firstResponder is NSTextView)
+            else { return false }
             // ⌘← and ⌘→, for hands that never learned the brackets.
             if event.keyCode == 123 { browser.back(); return true }
             if event.keyCode == 124 { browser.forward(); return true }
