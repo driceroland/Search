@@ -178,12 +178,11 @@ struct SideBar: View {
         let cols = SideBar.pinColumns(tabs.count)
         let width = pinWidth
         let height = pinHeight
-        let columns = Array(repeating: GridItem(.fixed(width), spacing: SideBar.pinGap), count: cols)
         // Measured in the grid's own space, not the square's: a square that
         // has just been moved to a new cell would otherwise report the drag
         // from where it now is, the target would jump back, and the square
         // would shuttle between two cells for as long as the finger stayed.
-        return VStack(spacing: 0) { LazyVGrid(columns: columns, alignment: .leading, spacing: SideBar.pinGap) {
+        return VStack(spacing: 0) { PinGrid(columns: cols, width: width, height: height, spacing: SideBar.pinGap) {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
                 let held = pinDragging == tab.id
                 PinSquare(
@@ -196,6 +195,8 @@ struct SideBar: View {
                     height: height
                 )
                 .offset(pinOffset(held: held, index: index, columns: cols))
+                // Under the hand exactly, as a row is (see the rows below).
+                .transaction { if held { $0.animation = nil } }
                 .zIndex(held ? 1 : 0)
                 .shadow(color: .black.opacity(held ? 0.16 : 0), radius: 10, y: 3)
                 .gesture(pinReorder(tab: tab, index: index, columns: cols, width: width, height: height))
@@ -281,6 +282,12 @@ struct SideBar: View {
                     close: { browser.close(tab) }
                 )
                 .offset(y: held ? travel - CGFloat(index - from) * step : 0)
+                // Under the hand exactly. Its place in the row springs when it
+                // passes another tab, and the offset springs back the same way —
+                // until the next move of the hand cuts the offset's spring short
+                // and leaves the place's running: the tab jumped a whole slot and
+                // drifted back each time it passed one. Only the others glide.
+                .transaction { if held { $0.animation = nil } }
                 .zIndex(held ? 1 : 0)
                 .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
                 .gesture(reorder(tab: tab, index: index, step: step))
@@ -324,6 +331,7 @@ struct SideBar: View {
     /// One small door at the bottom: the settings.
     private var foot: some View {
         HStack(spacing: 2) {
+            if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
             ExtensionSlot(edge: .trailing)
             Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
                 .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .trailing) {
@@ -335,6 +343,38 @@ struct SideBar: View {
         .padding(.bottom, 10)
     }
 
+}
+
+/// The pinned squares' grid, every cell laid out at once. A lazy grid makes
+/// its cells only once the column is on screen, where the column's slide
+/// can't take them along: folded with ⌘S and brought back, the squares stood
+/// in place while the column came in beneath them. A dozen squares need no
+/// laziness.
+private struct PinGrid: Layout {
+    let columns: Int
+    let width: CGFloat
+    let height: CGFloat
+    let spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = (subviews.count + columns - 1) / columns
+        return CGSize(
+            width: CGFloat(columns) * width + CGFloat(max(0, columns - 1)) * spacing,
+            height: CGFloat(rows) * height + CGFloat(max(0, rows - 1)) * spacing
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (index, subview) in subviews.enumerated() {
+            subview.place(
+                at: CGPoint(
+                    x: bounds.minX + CGFloat(index % columns) * (width + spacing),
+                    y: bounds.minY + CGFloat(index / columns) * (height + spacing)
+                ),
+                proposal: ProposedViewSize(width: width, height: height)
+            )
+        }
+    }
 }
 
 /// A pinned tab as a cell in the block at the top of the column — as wide as

@@ -27,6 +27,11 @@ extension Browser {
         peeking = false
         withAnimation(Motion.glide) { folded.toggle() }
     }
+
+    /// The folded column out over the page, or back in.
+    func peek(_ out: Bool) {
+        withAnimation(Motion.glide) { peeking = out }
+    }
 }
 
 /// Over the window's left edge while the column is folded: the strip of edge
@@ -43,25 +48,42 @@ struct Fold: View {
     private static let edge: CGFloat = 6
     /// The grace before the column goes back in.
     private static let grace: TimeInterval = 0.3
+    /// The band along the top that is the title bar over the page.
+    private static let top: CGFloat = 8
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            Color.clear.frame(width: 0)
-            if folding {
-                Color.clear
-                    .frame(width: Fold.edge)
-                    .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .onHover { over in if over { peek(true) } }
+        ZStack(alignment: .topLeading) {
+            // In the column's mode the page reaches the window's top edge —
+            // beside the column, and everywhere once it is folded away — and
+            // there was nowhere there to drag the window from, or to
+            // double-click to fill the screen: only the column's own corner,
+            // gone when folded. A band too thin to be in a page's way stands
+            // in for the title bar along the whole top; the column lies over
+            // it with its own.
+            if prefs.sidebar, browser.active?.immersed != true {
+                DragStrip()
+                    .frame(height: Fold.top)
+                    .frame(maxWidth: .infinity)
             }
-            if folding, browser.peeking {
-                SideBar(browser: browser, prefs: prefs)
-                    .shadow(color: .black.opacity(0.14), radius: 20, x: 4)
-                    .onHover { over in peek(over) }
-                    .transition(.move(edge: .leading))
+            ZStack(alignment: .leading) {
+                Color.clear.frame(width: 0)
+                if folding {
+                    Color.clear
+                        .frame(width: Fold.edge)
+                        .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .onHover { over in if over { peek(true) } }
+                }
+                if folding, browser.peeking {
+                    SideBar(browser: browser, prefs: prefs)
+                        .shadow(color: .black.opacity(0.14), radius: 20, x: 4)
+                        .onHover { over in peek(over) }
+                        .transition(.move(edge: .leading))
+                }
             }
+            .frame(maxHeight: .infinity)
         }
-        .frame(maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
         .onAppear { hideLights() }
         .onChange(of: lightsOff) { _, _ in hideLights() }
@@ -88,11 +110,9 @@ struct Fold: View {
         leaving = nil
         if out {
             guard !browser.peeking else { return }
-            withAnimation(Motion.glide) { browser.peeking = true }
+            browser.peek(true)
         } else {
-            let going = DispatchWorkItem {
-                withAnimation(Motion.glide) { browser.peeking = false }
-            }
+            let going = DispatchWorkItem { browser.peek(false) }
             leaving = going
             DispatchQueue.main.asyncAfter(deadline: .now() + Fold.grace, execute: going)
         }
@@ -102,10 +122,60 @@ struct Fold: View {
     /// circles drawn over them while the app is behind (see RestingLights),
     /// so hiding it hides both, and hidden buttons take no clicks.
     private func hideLights() {
-        Fold.titlebar?.isHidden = lightsOff
+        guard let bar = Fold.titlebar else { return }
+        Fold.slide(bar, off: lightsOff, by: prefs.sideWidth)
     }
 
     static var titlebar: NSView? {
         Links.window?.standardWindowButton(.closeButton)?.superview
+    }
+
+    /// Bumped by every slide, so one that was overtaken doesn't hide the
+    /// lights on its way out.
+    private static var slides = 0
+
+    /// The lights ride with the column, as everything else in its corner
+    /// does. Shown or hidden at once, they stood in their place while the
+    /// column was still sliding in under them, and vanished before it had
+    /// gone. So they come in from the left edge and go back off it, on the
+    /// column's own spring (Motion.glide, in Core Animation's terms) — from
+    /// wherever they are, when the pointer turns back halfway.
+    static func slide(_ bar: NSView, off: Bool, by width: CGFloat) {
+        slides += 1
+        let turn = slides
+        guard let layer = bar.layer else {
+            bar.isHidden = off
+            return
+        }
+        let moving = layer.animation(forKey: "fold") != nil
+        let from = moving
+            ? (layer.presentation()?.value(forKeyPath: "transform.translation.x") as? CGFloat ?? 0)
+            : (bar.isHidden ? -width : 0)
+        let to: CGFloat = off ? -width : 0
+        guard from != to else {
+            layer.removeAnimation(forKey: "fold")
+            bar.isHidden = off
+            return
+        }
+        let spring = CASpringAnimation(keyPath: "transform.translation.x")
+        spring.mass = 1
+        spring.stiffness = pow(2 * .pi / 0.34, 2)
+        spring.damping = 4 * .pi * 0.82 / 0.34
+        spring.fromValue = from
+        spring.toValue = to
+        spring.duration = spring.settlingDuration
+        spring.fillMode = .forwards
+        spring.isRemovedOnCompletion = false
+        bar.isHidden = false
+        CATransaction.begin()
+        CATransaction.setCompletionBlock {
+            MainActor.assumeIsolated {
+                guard turn == slides else { return }
+                layer.removeAnimation(forKey: "fold")
+                bar.isHidden = off
+            }
+        }
+        layer.add(spring, forKey: "fold")
+        CATransaction.commit()
     }
 }

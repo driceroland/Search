@@ -597,6 +597,10 @@ struct ContentView: View {
         window.isMovableByWindowBackground = false
         // The link bubble swaps corners when the pointer approaches it.
         window.acceptsMouseMovedEvents = true
+        // Nor by its title bar, which the strip is all the way down: AppKit
+        // would move the window on any drag there, a tab picked up to take
+        // it elsewhere in the row included. DragStrip moves it instead.
+        window.isMovable = false
         // Where you left it, at the size you left it. A test run keeps its
         // own: the name lives in the app's standard defaults, which every
         // copy shares, and a probe resized for a test once changed the size
@@ -718,6 +722,15 @@ struct ContentView: View {
                 return true
             }
             return false
+        }
+
+        // ⌃1–⌃9 go to that space, when there are spaces — by the key, as
+        // ⌘1–⌘9 are below, so the top row works on every layout.
+        if browser.prefs.usesSpaces, flags.contains(.control),
+           flags.isDisjoint(with: [.command, .option, .shift]),
+           let number = ContentView.digits[event.keyCode], number > 0 {
+            browser.switchSpace(index: number - 1)
+            return true
         }
 
         // A shortcut an extension registered — ⌥⇧D, ⌃⇧Y — before ours, since

@@ -25,7 +25,8 @@ enum Web {
         // launches is the difference between a browser and a preview pane. A
         // shy tab gets its own store, which exists only while it does — its own
         // cookies, its own sign-ins, and nothing left behind when it closes.
-        config.websiteDataStore = shy ? .nonPersistent() : Store.websites
+        // With spaces on, each space's tabs share a store of that space's.
+        config.websiteDataStore = shy ? .nonPersistent() : MainActor.assumeIsolated { Spaces.store(for: Spaces.current) }
         // Chrome extensions see every page but a private one. The controller
         // has to be there when the view is made; it can't be added after.
         if #available(macOS 15.4, *), !shy { MainActor.assumeIsolated { Extensions.attach(config) } }
@@ -42,7 +43,30 @@ enum Web {
         config.preferences.isElementFullscreenEnabled = true
         config.mediaTypesRequiringUserActionForPlayback = .audio
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
+        MainActor.assumeIsolated { inspector(config.preferences, on: inspects) }
         return config
+    }
+
+    /// Settings › General › Web Inspector. Every tab's view is told when it
+    /// changes, not only the ones made after: the menu is WebKit's, built
+    /// from the preferences the page has at the moment you right-click.
+    @MainActor static var inspects = false {
+        didSet {
+            guard inspects != oldValue else { return }
+            for page in pages.allObjects { inspector(page.configuration.preferences, on: inspects) }
+        }
+    }
+    /// Every page view there is, to be told.
+    @MainActor static let pages = NSHashTable<PageView>.weakObjects()
+
+    /// WebKit's "developer extras", which put Inspect Element in the menu.
+    /// isInspectable alone only lets Safari's Develop menu reach the page.
+    /// The name is outside the public framework, so it is asked first.
+    static func inspector(_ preferences: WKPreferences, on: Bool) {
+        let set = NSSelectorFromString("_setDeveloperExtrasEnabled:")
+        guard preferences.responds(to: set) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, on)
     }
 }
 
@@ -280,8 +304,11 @@ final class Tab: ObservableObject, Identifiable {
         // Pages follow the appearance of the window they are drawn in, and the
         // window follows Settings › Appearance — so a site that honours
         // prefers-color-scheme goes dark with the frame, and not otherwise.
-        // Right-click, Inspect Element. The public way to say so since 13.3.
+        // Safari's Develop menu can reach it. Inspect Element in the page's
+        // own menu is the setting's (see Web.inspects).
         if #available(macOS 13.3, *) { web.isInspectable = true }
+        Web.pages.add(web)
+        Web.inspector(web.configuration.preferences, on: Web.inspects)
         web.navigationDelegate = delegate
         web.uiDelegate = delegate
 

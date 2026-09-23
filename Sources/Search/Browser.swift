@@ -413,15 +413,15 @@ final class Browser: NSObject, ObservableObject {
     @Published var hoarding = false
     @Published var recallHunt = ""
 
-    /// Cookies, caches, local storage — everything a site left on this Mac.
-    /// Clearing it signs you out of everything, which is the point.
+    /// Cookies, caches, local storage — everything a site left on this Mac,
+    /// in every space. Clearing it signs you out of everything, which is
+    /// the point.
     func clearSites() {
         let types = WKWebsiteDataStore.allWebsiteDataTypes()
-        Store.websites.removeData(
-            ofTypes: types, modifiedSince: .distantPast
-        ) { [weak self] in
-            MainActor.assumeIsolated { self?.announce("Signed out of everything") }
+        for space in spaces {
+            Spaces.store(for: space.id).removeData(ofTypes: types, modifiedSince: .distantPast) {}
         }
+        announce("Signed out of everything")
     }
 
     /// Only what was fetched to draw pages, not what identifies you.
@@ -431,11 +431,10 @@ final class Browser: NSObject, ObservableObject {
             WKWebsiteDataTypeMemoryCache,
             WKWebsiteDataTypeOfflineWebApplicationCache,
         ]
-        Store.websites.removeData(
-            ofTypes: types, modifiedSince: .distantPast
-        ) { [weak self] in
-            MainActor.assumeIsolated { self?.announce("Cache cleared") }
+        for space in spaces {
+            Spaces.store(for: space.id).removeData(ofTypes: types, modifiedSince: .distantPast) {}
         }
+        announce("Cache cleared")
     }
 
     func clearHistory() {
@@ -632,6 +631,11 @@ final class Browser: NSObject, ObservableObject {
     private var hush: DispatchWorkItem?
     private var zoomShown = 100
     private var remembering = false
+    /// Spaces (see Spaces.swift): every one, the one on screen, and the
+    /// rows of tabs of the others.
+    @Published var spaces = Spaces.read()
+    @Published var spaceID = Space.firstID
+    var parked: [UUID: Parked] = [:]
 
     // MARK: - beginning and ending
 
@@ -716,7 +720,20 @@ final class Browser: NSObject, ObservableObject {
             watchForSleep()
         }
 
-        let saved = Session.read()
+        // What a deleted space left behind, if WebKit wouldn't let it go then.
+        Spaces.sweep()
+        // The space you were in, when there are spaces (see Spaces.swift).
+        if prefs.usesSpaces, let last = Store.settings.string(forKey: "space.current").flatMap(UUID.init),
+           spaces.contains(where: { $0.id == last }) {
+            spaceID = last
+            Spaces.current = last
+        }
+        restoreSession()
+    }
+
+    /// The row of tabs the space on screen had last time, or one empty tab.
+    func restoreSession() {
+        let saved = Session.read(space: spaceID)
         guard !saved.tabs.isEmpty else {
             // A blank tab costs nothing until it is asked for its page. Its
             // web view — and with it WebKit's helper processes — is built a
@@ -753,6 +770,12 @@ final class Browser: NSObject, ObservableObject {
     /// read where they are used.
     private func follow() {
         followStore()
+        // Spaces turned off: back to the first, whose tabs are the ones there
+        // were before (see Spaces.swift).
+        prefs.$usesSpaces
+            .dropFirst()
+            .sink { [weak self] on in if !on { self?.leaveSpaces() } }
+            .store(in: &bag)
         prefs.$shielded
             .dropFirst()
             .sink { [weak self] on in
@@ -834,9 +857,10 @@ final class Browser: NSObject, ObservableObject {
         Favicons.shared.relook(tabs.filter { !$0.asleep })
     }
 
-    private func writeSession(now: Bool = false) {
+    func writeSession(now: Bool = false) {
         Session.write(
             now: now,
+            space: spaceID,
             .init(
                 tabs: tabs.compactMap { tab in
                     guard !tab.shy, !tab.bench else { return nil }
@@ -1098,6 +1122,24 @@ final class Browser: NSObject, ObservableObject {
         return tab
     }
 
+    /// An extension's page sending its own tab to a website — 1Password's
+    /// "Sign in" does, when its Mac app isn't connected. The page's view was
+    /// built from the extension's configuration, which WebKit keeps to that
+    /// extension's own pages, so the load went nowhere and the button did
+    /// nothing. The tab is swapped where it stands for an ordinary one on
+    /// the site: to the eye, the page went there.
+    func replace(_ tab: Tab, going url: URL) {
+        guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        let fresh = Tab(bench: tab.bench, configuration: Browser.extensionConfiguration(for: url))
+        prepare(fresh)
+        let wasActive = activeID == tab.id
+        tabs[index] = fresh
+        fresh.go(to: url)
+        if wasActive { activeID = fresh.id }
+        tab.close()
+        rememberSession()
+    }
+
     /// An address from before extensions moved to chrome-extension://, as
     /// it is now; any other, as it is.
     static func page(_ url: URL) -> URL {
@@ -1193,6 +1235,13 @@ final class Browser: NSObject, ObservableObject {
         let job = tab.web.printOperation(with: info)
         job.view?.frame = tab.web.bounds
         job.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+
+    /// Another space's row put on screen in place of this one (see
+    /// Spaces.swift) — empty, for one that restores its own.
+    func showRow(_ row: [Tab], active: Tab.ID?) {
+        tabs = row
+        activeID = active ?? row.first?.id
     }
 
     private func adopt(_ tab: Tab) {
@@ -1594,6 +1643,17 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             return
         }
 
+        // An extension's page sending its own tab to a website (see
+        // replace(_:going:)).
+        if #available(macOS 15.4, *), ["http", "https"].contains(scheme),
+           action.targetFrame?.isMainFrame ?? true,
+           webView.url?.scheme == Extensions.scheme,
+           let tab = tab(for: webView) {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { [weak self] in self?.replace(tab, going: url) }
+            return
+        }
+
         // ⌘-click opens beside this tab and leaves you where you are; ⌘⇧-click
         // takes you with it. Middle-click does what ⌘-click does, for hands
         // that learned it that way.
@@ -1838,7 +1898,7 @@ extension Browser: WKDownloadDelegate {
         guard !prefs.asksWhereToSave else {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = name
-            panel.directoryURL = prefs.downloads
+            panel.directoryURL = downloadsFolder
             panel.canCreateDirectories = true
             guard panel.runModal() == .OK, let url = panel.url else {
                 completionHandler(nil)
@@ -1849,7 +1909,7 @@ extension Browser: WKDownloadDelegate {
             return
         }
 
-        completionHandler(Browser.free(name, in: prefs.downloads))
+        completionHandler(Browser.free(name, in: downloadsFolder))
         announce("Downloading \(name)")
     }
 
