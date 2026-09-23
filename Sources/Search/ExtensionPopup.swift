@@ -13,6 +13,13 @@ import WebKit
 // Chrome sizes a popup to its content, between 25 and 800 points wide and
 // up to 600 tall; the page is measured after it loads and again as it
 // changes, and the popover follows. window.close() closes it.
+//
+// The popover is seen only once the page has settled on a size. Most popups
+// fill themselves in from a script a moment after the document is built, so
+// the first measure is a sliver: shown then, the popover came in narrow and
+// short and stretched down and then across as the measures caught up. It
+// stands unseen instead — up, so the page runs and paints as it would — is
+// measured again quickly until two measures agree, and then fades in.
 
 @available(macOS 15.4, *)
 @MainActor
@@ -52,11 +59,16 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         stage.addSubview(web)
         let host = NSViewController()
         host.view = stage
+        // The popover takes its size from its view controller: left at zero,
+        // it stands as a sliver whatever it was told.
+        host.preferredContentSize = stage.frame.size
         let popover = NSPopover()
         popover.contentViewController = host
         popover.contentSize = stage.frame.size
         popover.behavior = .transient
-        popover.animates = true
+        // Nothing animates while it is unseen: a resize still under way when
+        // it fades in would be seen finishing.
+        popover.animates = false
         popover.delegate = self
 
         self.web = web
@@ -67,17 +79,24 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         Extensions.shared.controller.didOpenTab(page)
 
         shown = false
+        presented = false
+        opened = Date()
+        button = anchor.flatMap { $0 === Extensions.shared.anchors[context.uniqueIdentifier]?.view ? $0 : nil }
         if let anchor, anchor.window != nil {
             popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
         } else if let content = (NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain && $0.frame.minX > -10_000 }))?.contentView {
             let spot = NSRect(x: content.bounds.maxX - 60, y: content.bounds.maxY - 40, width: 1, height: 1)
             popover.show(relativeTo: spot, of: content, preferredEdge: .minY)
         }
-        // Sized once loaded — or after a moment regardless, for a page that
-        // never finishes loading.
-        // Measured when the document is built (see below) or has loaded;
-        // a page slow to do either is measured anyway after a moment, and
-        // shown regardless a little later.
+        stage.window?.alphaValue = 0
+        // Measured when the document is built (see below) or has loaded, and
+        // seen once the size holds (see settle); a page slow to get that far
+        // is seen anyway after a moment, at the size it had last time, is
+        // measured regardless a little later, and shown regardless after that.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self, weak popover] in
+            guard let self, let popover, popover === self.popover else { return }
+            self.present()
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self, weak popover] in
             guard let self, let popover, popover === self.popover else { return }
             self.firstMeasure()
@@ -92,6 +111,23 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
     /// Each extension's popup size, so the next opening starts there.
     private static var lastSize: [String: NSSize] = [:]
     private var shown = false
+
+    /// Whether the popover has been let be seen, rather than still standing
+    /// unseen while its page is measured.
+    private var presented = false
+    private var opened = Date()
+
+    /// The popover faded in, and from then on animating as popovers do.
+    private func present() {
+        guard !presented, let popover, let window = popover.contentViewController?.view.window else { return }
+        presented = true
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.15
+            window.animator().alphaValue = 1
+        }, completionHandler: { [weak popover] in
+            MainActor.assumeIsolated { popover?.animates = true }
+        })
+    }
 
     /// The page, at the popover's size, in view.
     private func reveal() {
@@ -201,6 +237,30 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
                 guard let self, web === self.web, !self.shown else { return }
                 guard let pair = value as? [Double], pair.count == 2 else { return }
                 self.apply(NSSize(width: pair[0], height: pair[1]))
+                self.settle(last: nil)
+            }
+        }
+    }
+
+    /// Measured again, quickly, while the popover is unseen, and let be
+    /// seen once two measures agree and the page has loaded — or, for one
+    /// that keeps changing, after a moment regardless.
+    private func settle(last: NSSize?) {
+        guard !presented, let web, let popover else { return }
+        web.evaluateJavaScript("(\(ExtensionPopup.preferred))()") { [weak self] value, _ in
+            MainActor.assumeIsolated {
+                guard let self, web === self.web, !self.presented else { return }
+                var size = popover.contentSize
+                if let pair = value as? [Double], pair.count == 2 {
+                    size = NSSize(width: pair[0], height: pair[1])
+                    if abs(size.width - popover.contentSize.width) > 2 || abs(size.height - popover.contentSize.height) > 2 { self.apply(size) }
+                }
+                let holds = last.map { abs($0.width - size.width) <= 2 && abs($0.height - size.height) <= 2 } ?? false
+                if (holds && !web.isLoading) || Date().timeIntervalSince(self.opened) > 0.6 {
+                    self.present()
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { self.settle(last: size) }
+                }
             }
         }
     }
@@ -281,6 +341,41 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         if let url = action.request.url { Extensions.shared.browser?.open(url, foreground: true) }
         close()
         return nil
+    }
+
+    /// A popover that closes on a click outside it closes on the press —
+    /// and a press on its own button is outside it. The button's release
+    /// then comes to press(), which would open it straight back up: the
+    /// popup could never be closed from the button that opened it, as it
+    /// can in Chrome. So the press that closed it is noted when it lands on
+    /// that button, and the release that follows opens nothing.
+    private var closedFromButton: (id: String, at: TimeInterval)?
+    /// The extension's own button, when the popover hangs from it — not the
+    /// puzzle button, whose click opens the list instead.
+    private weak var button: NSView?
+
+    func popoverWillClose(_ notification: Notification) {
+        guard let popover = notification.object as? NSPopover, popover === self.popover, let extensionID,
+              let event = NSApp.currentEvent, event.type == .leftMouseDown,
+              let anchor = button, let window = anchor.window, event.window === window,
+              anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil))
+        else { return }
+        closedFromButton = (extensionID, event.timestamp)
+    }
+
+    /// Whether a press on an extension's button is only there to close its
+    /// popup: the one up now, or one this same click has just closed. A
+    /// press that never came up again on the button — dragged off it — is
+    /// forgotten after a moment, so it doesn't swallow the next one.
+    func pressCloses(_ id: String) -> Bool {
+        defer { closedFromButton = nil }
+        if extensionID == id, popover != nil {
+            close()
+            return true
+        }
+        guard let closed = closedFromButton, closed.id == id else { return false }
+        let now = NSApp.currentEvent?.timestamp ?? ProcessInfo.processInfo.systemUptime
+        return now - closed.at < 1
     }
 
     /// Only for the popover that is up: closing the last one animates, and

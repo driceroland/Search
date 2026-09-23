@@ -735,6 +735,8 @@ final class Extensions: NSObject, ObservableObject {
 
     func press(_ id: String) {
         guard let context = contexts[id] else { return }
+        // Its popup up, the button closes it, as in Chrome.
+        if ExtensionPopup.shared.pressCloses(id) { return }
         if let tab = activeAdapter { context.userGesturePerformed(in: tab) }
         // An extension that asked for its button to open its side panel.
         if ExtensionShims.panelOnClick.contains(id), context.action(for: activeAdapter)?.presentsPopup != true {
