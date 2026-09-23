@@ -651,9 +651,17 @@ final class Browser: NSObject, ObservableObject {
     private var remembering = false
     /// Spaces (see Spaces.swift): every one, the one on screen, and the
     /// rows of tabs of the others.
-    @Published var spaces = Spaces.read()
+    @Published var spaces = Spaces.read() {
+        didSet { Spaces.sharing = Set(spaces.filter { $0.sharesSignIns == true }.map(\.id)) }
+    }
     @Published var spaceID = Space.firstID
     var parked: [UUID: Parked] = [:]
+    /// How far the column's rows have followed two fingers sideways, and
+    /// whether the card for a new space stands in for them (see SpaceSwipe).
+    @Published var spaceSwipe: CGFloat = 0
+    @Published var makingSpace = false
+    /// Which way the last change of space went: 1 to the next, -1 back.
+    @Published var spaceStep = 1
 
     // MARK: - beginning and ending
 
@@ -664,6 +672,8 @@ final class Browser: NSObject, ObservableObject {
         if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
         if prefs.bench { Bench.shared.start(for: self) }
         welcoming = !prefs.welcomed
+        // Asked to stay out of the way: it starts that way (see Fold.swift).
+        folded = prefs.sideHides
         // Once a day, quietly: is there a newer one?
         Updater.shared.checkIfDue { [weak self] line in self?.announce(line) }
         FormRelay.passkeysOffered = prefs.passkeys
@@ -740,6 +750,7 @@ final class Browser: NSObject, ObservableObject {
 
         // What a deleted space left behind, if WebKit wouldn't let it go then.
         Spaces.sweep()
+        Spaces.sharing = Set(spaces.filter { $0.sharesSignIns == true }.map(\.id))
         // The space you were in, when there are spaces (see Spaces.swift).
         if prefs.usesSpaces, let last = Store.settings.string(forKey: "space.current").flatMap(UUID.init),
            spaces.contains(where: { $0.id == last }) {
@@ -747,6 +758,7 @@ final class Browser: NSObject, ObservableObject {
             Spaces.current = last
         }
         restoreSession()
+        if prefs.usesSpaces { preloadSpaces() }
     }
 
     /// The row of tabs the space on screen had last time, or one empty tab.
@@ -792,7 +804,7 @@ final class Browser: NSObject, ObservableObject {
         // were before (see Spaces.swift).
         prefs.$usesSpaces
             .dropFirst()
-            .sink { [weak self] on in if !on { self?.leaveSpaces() } }
+            .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
             .store(in: &bag)
         prefs.$shielded
             .dropFirst()
@@ -1255,6 +1267,24 @@ final class Browser: NSObject, ObservableObject {
         let job = tab.web.printOperation(with: info)
         job.view?.frame = tab.web.bounds
         job.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+
+    /// A space's row as its session left it, made without touching the one
+    /// on screen: tabs with an address and no page yet, which cost next to
+    /// nothing until one is looked at (see Spaces.swift).
+    func loadRow(_ space: UUID) -> Parked {
+        let saved = Session.read(space: space)
+        var row: [Tab] = []
+        for entry in saved.tabs {
+            guard let url = URL(string: entry.url) else { continue }
+            let tab = Tab(configuration: Web.configuration(space: space))
+            prepare(tab)
+            tab.restore(url: url, title: entry.title)
+            tab.pin = entry.pin
+            row.append(tab)
+        }
+        let active = row.indices.contains(saved.active) ? row[saved.active].id : row.first?.id
+        return Parked(tabs: row, active: active)
     }
 
     /// Another space's row put on screen in place of this one (see

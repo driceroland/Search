@@ -65,7 +65,12 @@ final class Float {
         panel.isMovableByWindowBackground = true
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = true
+        // No shadow. A window with one is composited by WindowServer on every
+        // frame of the video; without it the video can go straight to the
+        // display, as it does in a tab. Measured on 1080p and 4K YouTube:
+        // WindowServer's GPU time 28% with the shadow, 16–20% without, 22%
+        // playing in the tab.
+        panel.hasShadow = false
         panel.isReleasedWhenClosed = false
         panel.aspectRatio = size
         panel.minSize = NSSize(width: 260, height: 146)

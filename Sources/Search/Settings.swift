@@ -180,10 +180,6 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autocorrect)
             }
             Rule()
-            Line("Web Inspector", "Inspect Element in a page's right-click menu, to look at its code, styles and network") {
-                Switch(on: $prefs.inspects)
-            }
-            Rule()
             Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
                 Switch(on: $prefs.bench)
             }
@@ -200,6 +196,12 @@ struct SettingsPanel: View {
                     set: { on in withAnimation(Motion.glide) { prefs.sidebar = on } }
                 ))
             }
+            if prefs.sidebar {
+                Rule()
+                Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its left edge for the tabs. ⌘S keeps them out.") {
+                    Switch(on: $prefs.sideHides)
+                }
+            }
             Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
@@ -209,7 +211,7 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.sleepsTabs)
             }
             Rule()
-            Line("Spaces", "Separate sets of tabs, each with its own sign-ins, switched with ⌃1–⌃9 or the dot beside the tabs. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
+            Line("Spaces", "Separate sets of tabs, signed in where the others are or starting afresh, switched with ⌃1–⌃9, two fingers sideways over the column, or the space's icon. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
                 Switch(on: $prefs.usesSpaces)
             }
         }

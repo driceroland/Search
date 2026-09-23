@@ -88,6 +88,14 @@ struct SearchApp: App {
                     .keyboardShortcut("-")
                 Button("Actual Size") { browser.resetZoom() }
                     .keyboardShortcut("0")
+                Divider()
+                // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
+                Button("Web Inspector") { browser.toggleInspector() }
+                    .keyboardShortcut("i", modifiers: [.command, .option])
+                Button("JavaScript Console") { browser.showConsole() }
+                    .keyboardShortcut("j", modifiers: [.command, .option])
+                Button("Inspect Element") { browser.inspectElement() }
+                    .keyboardShortcut("c", modifiers: [.command, .option])
             }
             CommandMenu("Tabs") {
                 Button("Back") { browser.back() }
@@ -664,6 +672,10 @@ struct ContentView: View {
                 browser.cancelTabEdit()
                 return true
             }
+            if browser.makingSpace {
+                withAnimation(Motion.glide) { browser.makingSpace = false }
+                return true
+            }
             if browser.tuning {
                 browser.tuning = false
                 return true
@@ -832,6 +844,11 @@ struct ContentView: View {
         case "]":
             shifted ? browser.step(1) : browser.forward()
         default:
+            // Moving or selecting text belongs to the editor, not the page's
+            // history — in web forms and in the browser's own fields alike.
+            guard !shifted, browser.active?.typing != true,
+                  !(event.window?.firstResponder is NSTextView)
+            else { return false }
             // ⌘← and ⌘→, for hands that never learned the brackets.
             if event.keyCode == 123 { browser.back(); return true }
             if event.keyCode == 124 { browser.forward(); return true }
