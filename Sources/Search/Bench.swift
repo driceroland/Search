@@ -630,7 +630,9 @@ final class Bench {
                 }
                 if let bar = Fold.titlebar {
                     let moved = bar.layer?.presentation()?.value(forKeyPath: "transform.translation.x") as? CGFloat ?? 0
-                    shot["lights"] = ["hidden": bar.isHidden, "x": Int(moved.rounded())]
+                    let lifted = bar.layer?.presentation()?.value(forKeyPath: "transform.translation.y") as? CGFloat ?? 0
+                    shot["lights"] = ["hidden": bar.isHidden, "x": Int(moved.rounded()), "y": Int(lifted.rounded()),
+                                      "flipped": bar.superview?.isFlipped ?? false]
                 }
                 shots.append(shot)
                 DispatchQueue.main.asyncAfter(deadline: .now() + every) { take(index + 1) }
