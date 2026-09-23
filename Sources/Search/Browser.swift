@@ -1171,11 +1171,11 @@ final class Browser: NSObject, ObservableObject {
     /// the far end of the row — unless it is one of a batch, which keeps the
     /// order it came in.
     @discardableResult
-    func open(_ url: URL, foreground: Bool, atEnd: Bool = false) -> Tab {
+    func open(_ url: URL, foreground: Bool, atEnd: Bool = false, shy: Bool = false) -> Tab {
         // An extension's own page is served only to a view built from that
         // extension's configuration.
         let url = Browser.page(url)
-        let tab = Tab(configuration: Browser.extensionConfiguration(for: url))
+        let tab = Tab(shy: shy, configuration: Browser.extensionConfiguration(for: url))
         prepare(tab)
         let here = atEnd ? nil : tabs.firstIndex { $0.id == activeID }
         tabs.insert(tab, at: here.map { $0 + 1 } ?? tabs.count)
@@ -1398,6 +1398,11 @@ final class Browser: NSObject, ObservableObject {
         }
         tab.onPickEnd = { [weak self] _ in self?.veiling = false }
         tab.onImageMenu = { [weak self] tab, url in self?.showImageMenu(for: tab, at: url) }
+        tab.searchName = { [weak self] in self.map { $0.prefs.engine.name(custom: $0.prefs.customEngine) } }
+        tab.onSearch = { [weak self] tab, text in
+            guard let self, let url = self.searchURL(for: text) else { return }
+            self.open(url, foreground: true, shy: tab.shy)
+        }
         tab.onStoreAdd = { [weak self] tab in self?.addFromStore(tab) }
 
         // The caret in a sign-in box: the accounts kept for this site hang

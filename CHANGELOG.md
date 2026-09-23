@@ -18,6 +18,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Fixed
 
 - A new space's choice of sign-ins reads in full in the column ("Signed in" / "Signed out"), where it was cut short.
+- Search with… on selected text opens the search in a new tab in Search, with the engine chosen in Settings › General, instead of handing it to the Mac's default browser. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#66](https://github.com/driceroland/Search/issues/66))
 
 ## 1.0.1 — 23 September 2026
 

@@ -205,6 +205,8 @@ final class Tab: ObservableObject, Identifiable {
     /// download it and then, on at least some sites, does neither — see
     /// ImageMenu.swift for why this is built rather than patched.
     var onImageMenu: ((Tab, URL) -> Void)?
+    var searchName: (() -> String?)?
+    var onSearch: ((Tab, String) -> Void)?
     /// "Add to Search" was pressed on the Chrome Web Store page this tab shows.
     var onStoreAdd: ((Tab) -> Void)?
     /// The extension whose store page has its own "Add to Search" button in
@@ -297,6 +299,11 @@ final class Tab: ObservableObject, Identifiable {
         web.allowsBackForwardNavigationGestures = false
         web.onPull = { [weak self] pull in self?.pull = pull }
         web.onTouch = { [weak self] in self?.uncover() }
+        web.searchName = { [weak self] in self?.searchName?() }
+        web.onSearch = { [weak self] text in
+            guard let self else { return }
+            self.onSearch?(self, text)
+        }
         web.holdForFirstFrame()
         // Pages follow the appearance of the window they are drawn in, and the
         // window follows Settings › Appearance — so a site that honours
@@ -885,6 +892,8 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeAllUserScripts()
         web.onPull = nil
         web.onTouch = nil
+        web.searchName = nil
+        web.onSearch = nil
         web.stopLoading()
         web.navigationDelegate = nil
         web.uiDelegate = nil
@@ -937,6 +946,18 @@ final class PageView: WKWebView {
     /// What extensions added to the right-click menu, at the end of it.
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
+        if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierSearchWeb" }),
+           let name = searchName?() {
+            webSearch = (item.target, item.action)
+            selection = nil
+            let read = "/^(IFRAME|FRAME)$/.test(document.activeElement && document.activeElement.tagName) ? '' : window.getSelection().toString()"
+            evaluateJavaScript(read, in: nil, in: .defaultClient) { [weak self] result in
+                self?.selection = (try? result.get()) as? String ?? ""
+            }
+            item.title = "Search with \(name)"
+            item.target = self
+            item.action = #selector(searchSelection(_:))
+        }
         guard #available(macOS 15.4, *),
               let tab = Extensions.shared.browser?.tabs.first(where: { $0.built === self })
         else { return }
@@ -944,6 +965,21 @@ final class PageView: WKWebView {
         guard !items.isEmpty else { return }
         menu.addItem(.separator())
         items.forEach { menu.addItem($0) }
+    }
+
+    var searchName: (() -> String?)?
+    var onSearch: ((String) -> Void)?
+    private var selection: String?
+    private var webSearch: (target: AnyObject?, action: Selector?) = (nil, nil)
+
+    @objc private func searchSelection(_ item: NSMenuItem) {
+        defer { selection = nil }
+        guard let selection, !selection.isEmpty else {
+            if let action = webSearch.action { NSApp.sendAction(action, to: webSearch.target, from: item) }
+            return
+        }
+        let words = selection.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !words.isEmpty { onSearch?(words) }
     }
 
     /// Told where a sideways swipe has got to, and nil when there is none.
