@@ -29,9 +29,12 @@ enum Web {
         // cookies, its own sign-ins, and nothing left behind when it closes.
         // With spaces on, each space's tabs share a store of that space's.
         config.websiteDataStore = shy ? .nonPersistent() : MainActor.assumeIsolated { Spaces.store(for: space ?? Spaces.current) }
-        // Chrome extensions see every page but a private one. The controller
-        // has to be there when the view is made; it can't be added after.
-        if #available(macOS 15.4, *), !shy { MainActor.assumeIsolated { Extensions.attach(config) } }
+        // Chrome extensions see every page but a private one, unless Settings
+        // › Extensions says they may. The controller has to be there when the
+        // view is made; it can't be added after.
+        if #available(macOS 15.4, *), !shy || Store.settings.bool(forKey: "extensions.private") {
+            MainActor.assumeIsolated { Extensions.attach(config) }
+        }
         // Left alone, WKWebView says only "AppleWebKit … (KHTML, like Gecko)" —
         // no browser, no version. Google reads that as something it doesn't
         // recognise and serves the stripped-back page from a decade ago:

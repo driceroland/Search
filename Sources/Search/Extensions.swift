@@ -161,16 +161,18 @@ final class Extensions: NSObject, ObservableObject {
         return made
     }
 
-    /// Private tabs keep nothing and see no extensions.
-    var visibleTabs: [Tab] { browser?.tabs.filter { !$0.shy } ?? [] }
+    /// Private tabs keep nothing and see no extensions, unless Settings ›
+    /// Extensions says they may.
+    private var allowsPrivate: Bool { Store.settings.bool(forKey: "extensions.private") }
+    var visibleTabs: [Tab] { browser?.tabs.filter { !$0.shy || allowsPrivate } ?? [] }
 
     var activeAdapter: ExtensionTab? {
-        guard let tab = browser?.active, !tab.shy else { return nil }
+        guard let tab = browser?.active, !tab.shy || allowsPrivate else { return nil }
         return adapter(for: tab)
     }
 
     private func follow(_ tabs: [Tab]) {
-        let now = tabs.filter { !$0.shy }
+        let now = tabs.filter { !$0.shy || allowsPrivate }
         let ids = now.map(\.id)
         let gone = order.filter { !ids.contains($0) }
         for id in gone {
@@ -206,7 +208,7 @@ final class Extensions: NSObject, ObservableObject {
     }
 
     private func activated(from old: Tab.ID?, to new: Tab.ID?) {
-        guard let new, let tab = browser?.tabs.first(where: { $0.id == new }), !tab.shy else { return }
+        guard let new, let tab = browser?.tabs.first(where: { $0.id == new }), !tab.shy || allowsPrivate else { return }
         let previous = old.flatMap { id in browser?.tabs.first(where: { $0.id == id }) }.map(adapter(for:))
         controller.didActivateTab(adapter(for: tab), previousActiveTab: previous)
         actionsChanged += 1
@@ -772,7 +774,7 @@ final class Extensions: NSObject, ObservableObject {
 
     /// Right-click items an extension added, for the page's menu.
     func menuItems(for tab: Tab) -> [NSMenuItem] {
-        guard !tab.shy else { return [] }
+        guard !tab.shy || allowsPrivate else { return [] }
         let adapter = adapter(for: tab)
         return contexts.values.flatMap { $0.menuItems(for: adapter) }
     }
