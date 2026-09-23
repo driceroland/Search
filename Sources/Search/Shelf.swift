@@ -240,6 +240,8 @@ struct Shelf: View {
         }
         let next = lines[(index + 1)...].first { $0.depth <= line.depth }
         let sibling = next?.parent == line.parent ? next?.node.id : nil
+        // Just before itself is where it already is.
+        if let sibling, sibling == id { return nil }
         return Drop(parent: line.parent, before: sibling, line: index + 1, depth: line.depth)
     }
 
