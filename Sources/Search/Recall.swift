@@ -217,7 +217,7 @@ struct DownloadsPanel: View {
             }
         } foot: {
             HStack {
-                Text(loot.kept.isEmpty ? "Files land in \(browser.prefs.downloads.lastPathComponent)"
+                Text(loot.kept.isEmpty ? "Files land in \(browser.downloadsFolder.lastPathComponent)"
                      : "Clearing the list leaves the files where they are")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)

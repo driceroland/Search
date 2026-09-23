@@ -43,12 +43,23 @@ final class Preferences: ObservableObject {
     @Published var sidebar: Bool {
         didSet { store.set(sidebar, forKey: "sidebar") }
     }
+    /// The column folded away whenever the pointer isn't at the left edge,
+    /// rather than only after ⌘S (see Fold.swift). Off unless asked for.
+    @Published var sideHides: Bool {
+        didSet { store.set(sideHides, forKey: "sidebar.hides") }
+    }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
     }
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
+    }
+    @Published var engine: Engine {
+        didSet { store.set(engine.rawValue, forKey: "search.engine") }
+    }
+    @Published var customEngine: String {
+        didSet { store.set(customEngine, forKey: "search.custom") }
     }
     /// Tabs nobody has looked at for half an hour give their page back and
     /// keep where they were. On unless turned off.
@@ -107,22 +118,33 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// Separate sets of tabs, each with its own sign-ins (see Spaces.swift).
+    /// Off unless asked for.
+    @Published var usesSpaces: Bool {
+        didSet { store.set(usesSpaces, forKey: "spaces") }
+    }
+
     init() {
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
-        // Light unless asked otherwise — the browser was only ever light
-        // before this was a choice.
+        // The Mac's own unless asked otherwise — a Mac in dark mode expects
+        // a dark browser, pages included.
         bench = store.bool(forKey: "bench")
-        let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .light
+        let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .system
         look = chosen
         // Before the first window, and not deferred: the window that is about
-        // to be made should be made in the right appearance.
-        NSApp.appearance = chosen.appearance
+        // to be made should be made in the right appearance. Through `shared`
+        // rather than `NSApp`: on macOS 14 SwiftUI builds this before it has
+        // made the application, and `NSApp` is still nil here.
+        NSApplication.shared.appearance = chosen.appearance
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
+        sideHides = store.bool(forKey: "sidebar.hides")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
+        engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
+        customEngine = store.string(forKey: "search.custom") ?? ""
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         shielded = store.object(forKey: "shield") as? Bool ?? true
         // Offered by default only in a build that can actually do them —
@@ -154,6 +176,10 @@ final class Preferences: ObservableObject {
         // Anyone who already has a session was here before the welcome
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
+        usesSpaces = store.bool(forKey: "spaces")
+        // Left behind by the Web Inspector's switch, from before it was
+        // always there.
+        store.removeObject(forKey: "inspector")
         let corrects = store.bool(forKey: "autocorrect")
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.

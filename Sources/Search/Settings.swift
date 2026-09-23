@@ -172,6 +172,34 @@ struct SettingsPanel: View {
                 }
             }
             Rule()
+            Line("Search with", searchDetail) {
+                Picker("", selection: $prefs.engine) {
+                    ForEach(Engine.allCases) { engine in
+                        Text(engine.title).tag(engine)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+            if prefs.engine == .custom {
+                ZStack(alignment: .leading) {
+                    if prefs.customEngine.isEmpty {
+                        Text("https://example.com/search?q=%s")
+                            .foregroundStyle(Palette.muted.opacity(0.8))
+                    }
+                    TextField("", text: $prefs.customEngine)
+                        .textFieldStyle(.plain)
+                        .foregroundStyle(Palette.ink)
+                }
+                .font(.system(size: 12.5))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .padding(.horizontal, 14)
+                .padding(.bottom, 11)
+            }
+            Rule()
             Line("Appearance", "Light, dark, or whatever the Mac is doing — pages follow it too") {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
@@ -186,6 +214,14 @@ struct SettingsPanel: View {
         }
     }
 
+    private var searchDetail: String {
+        guard prefs.engine == .custom else { return "Where words that aren't an address go" }
+        guard Engine.accepts(prefs.customEngine) else {
+            return "An http or https address with %s where the words go. Until then, Google"
+        }
+        return "Words go to \(prefs.engine.name(custom: prefs.customEngine))"
+    }
+
     // MARK: - tabs
 
     private var tabs: some View {
@@ -196,6 +232,12 @@ struct SettingsPanel: View {
                     set: { on in withAnimation(Motion.glide) { prefs.sidebar = on } }
                 ))
             }
+            if prefs.sidebar {
+                Rule()
+                Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its left edge for the tabs. ⌘S keeps them out.") {
+                    Switch(on: $prefs.sideHides)
+                }
+            }
             Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
@@ -203,6 +245,10 @@ struct SettingsPanel: View {
             Rule()
             Line("Sleep tabs you aren't using", "After half an hour away they come back where you left them. Pinned tabs, sound, calls and anything typed stay awake.") {
                 Switch(on: $prefs.sleepsTabs)
+            }
+            Rule()
+            Line("Spaces", "Separate sets of tabs, signed in where the others are or starting afresh, switched with ⌃1–⌃9, two fingers sideways over the column, or the space's icon. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
+                Switch(on: $prefs.usesSpaces)
             }
         }
     }

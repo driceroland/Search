@@ -29,13 +29,16 @@ struct TabBar: View {
             ZStack(alignment: .leading) {
                 // The empty half of the strip is what you grab to move the
                 // window; the tabs keep the run they sit on.
-                DragStrip(reserved: Metrics.lights + run(in: geo.size.width) + Metrics.tabGap + Metrics.plusWidth, trailing: Metrics.helm + 26 + 24)
+                DragStrip(reserved: Metrics.lights + dot + run(in: geo.size.width) + Metrics.tabGap + Metrics.plusWidth, trailing: Metrics.helm + 26 + 24)
                 // And the corner the lights sit in, which is title bar too —
                 // the one stretch left to take hold of when tabs fill the row.
                 DragStrip()
                     .frame(width: Metrics.lights)
 
                 HStack(spacing: Metrics.tabGap) {
+                    // The space on screen, first, when there are spaces.
+                    if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
+
                     // The tabs, in a run of their own. While they fit, it is
                     // exactly as wide as they are and nothing about the row
                     // changes. Past what the window holds at their narrowest
@@ -64,6 +67,12 @@ struct TabBar: View {
                                     // up with the hand: what it has travelled, less the
                                     // ground its new place has already given it.
                                     .offset(x: held ? travel - CGFloat(index - from) * step : 0)
+                                    // Under the hand exactly. Its place in the row springs when it
+                                    // passes another tab, and the offset springs back the same way —
+                                    // until the next move of the hand cuts the offset's spring short
+                                    // and leaves the place's running: the tab jumped a whole slot and
+                                    // drifted back each time it passed one. Only the others glide.
+                                    .transaction { if held { $0.animation = nil } }
                                     .zIndex(held ? 1 : 0)
                                     .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
                                     .gesture(reorder(tab: tab, index: index, step: step))
@@ -215,8 +224,11 @@ struct TabBar: View {
     /// the three of the helm and the bookmarks stand in for them.
     private func room(in strip: CGFloat) -> CGFloat {
         let far = doors > 0 ? doors : Metrics.helm + 26
-        return max(0, strip - Metrics.lights - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
+        return max(0, strip - Metrics.lights - dot - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
     }
+
+    /// What the space's dot takes before the tabs, when there are spaces.
+    private var dot: CGFloat { browser.prefs.usesSpaces ? SpaceDot.width + Metrics.tabGap : 0 }
 
     /// Every loose tab is the same width, so the cross is always in the same
     /// place. Past a dozen or so they start giving ground; too narrow for a
@@ -362,6 +374,7 @@ private struct TabPill: View {
                 browser.select(tab)
             }
         })
+        .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
         .help(pinned || compact ? tab.label : "")
@@ -530,7 +543,12 @@ struct TabAddressField: NSViewRepresentable {
         field.cell?.usesSingleLineMode = true
         field.cell?.wraps = false
         field.stringValue = browser.tabDraft
+        context.coordinator.watch(field)
         return field
+    }
+
+    static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
+        coordinator.unwatch()
     }
 
     func updateNSView(_ field: NSTextField, context: Context) {
@@ -585,10 +603,34 @@ struct TabAddressField: NSViewRepresentable {
             }
         }
 
-        /// Clicking anywhere else is a way of saying never mind.
+        /// Clicking anywhere else keeps what was typed, as Return does.
         func controlTextDidEndEditing(_ note: Notification) {
             let browser = browser
-            DispatchQueue.main.async { browser.cancelTabEdit() }
+            DispatchQueue.main.async { browser.finishTabEdit() }
+        }
+
+        /// A press on something that takes no focus — the strip's empty
+        /// stretch, the column below the rows — leaves the field focused and
+        /// editing, so presses are watched for while it is there: one anywhere
+        /// but in the field ends the edit the same way. The press itself goes
+        /// on to what it was for.
+        private var watcher: Any?
+
+        func watch(_ field: NSTextField) {
+            guard watcher == nil else { return }
+            watcher = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self, weak field] event in
+                guard let self, let field, event.window === field.window,
+                      !field.bounds.contains(field.convert(event.locationInWindow, from: nil))
+                else { return event }
+                let browser = self.browser
+                DispatchQueue.main.async { browser.finishTabEdit() }
+                return event
+            }
+        }
+
+        func unwatch() {
+            if let watcher { NSEvent.removeMonitor(watcher) }
+            watcher = nil
         }
     }
 }
@@ -608,6 +650,7 @@ struct TabMenu: View {
             Button("Unpin") { browser.unpin(tab) }
         }
         Divider()
+        Button("Rename") { browser.beginTabRename(tab) }
         Button("Duplicate") {
             browser.select(tab)
             browser.duplicate()
@@ -635,6 +678,50 @@ struct OneClick: ViewModifier {
             content.onTapGesture(count: 2, perform: act)
         } else {
             content.onTapGesture(perform: act)
+        }
+    }
+}
+
+/// The middle button on a tab closes it, as it does in every other browser.
+///
+/// SwiftUI has no gesture for that button, so this is a real view laid over
+/// the tab — and a real view is asked first (see DragStrip). It says yes for
+/// the middle button and nothing else: to a left click, a drag or a right
+/// click it isn't there, and the tab's own gestures and menu go on as before.
+struct MiddleClick: NSViewRepresentable {
+    let act: () -> Void
+
+    func makeNSView(context: Context) -> NSView { Catch() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        (view as? Catch)?.act = act
+    }
+
+    private final class Catch: NSView {
+        var act: () -> Void = {}
+        private var pressed = false
+
+        /// Asked about every event that lands on the tab, the pointer moving
+        /// over it included; the one being delivered is the one to judge by.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent,
+                  event.type == .otherMouseDown || event.type == .otherMouseUp,
+                  event.buttonNumber == 2
+            else { return nil }
+            return super.hitTest(point)
+        }
+
+        override func otherMouseDown(with event: NSEvent) {
+            pressed = true
+        }
+
+        /// On the release, not the press, and only if it is still over the
+        /// tab: a middle button pressed by mistake can be taken back the way
+        /// a click on the cross can, by moving off before letting go.
+        override func otherMouseUp(with event: NSEvent) {
+            guard pressed else { return }
+            pressed = false
+            if bounds.contains(convert(event.locationInWindow, from: nil)) { act() }
         }
     }
 }
