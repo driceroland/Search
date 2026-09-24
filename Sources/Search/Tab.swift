@@ -250,11 +250,17 @@ final class Tab: ObservableObject, Identifiable {
     /// A sideways swipe in progress, for the disc that shows it.
     @Published var pull: Pull?
 
+    /// What a site opens at until you zoom it yourself: Settings › General ›
+    /// Default page zoom.
+    static var defaultZoom: CGFloat {
+        CGFloat(Store.settings.object(forKey: "pageZoom") as? Double ?? 1)
+    }
+
     /// Remembered for the site, not for the tab: setting a paper's type to
     /// 125% once should be the last time you think about it.
     func rememberZoom() {
         guard let host = address?.host(), !shy else { return }
-        if abs(zoom - 1) < 0.01 {
+        if abs(zoom - Tab.defaultZoom) < 0.01 {
             Store.settings.removeObject(forKey: "zoom." + host)
         } else {
             Store.settings.set(Double(zoom), forKey: "zoom." + host)
@@ -263,7 +269,7 @@ final class Tab: ObservableObject, Identifiable {
 
     func applyRememberedZoom() {
         guard let host = address?.host() else { return }
-        let kept = Store.settings.object(forKey: "zoom." + host) as? Double ?? 1
+        let kept = Store.settings.object(forKey: "zoom." + host) as? Double ?? Double(Tab.defaultZoom)
         guard abs(CGFloat(kept) - web.pageZoom) > 0.004 else { return }
         web.pageZoom = CGFloat(kept)
         zoom = CGFloat(kept)
@@ -517,9 +523,10 @@ final class Tab: ObservableObject, Identifiable {
 
     func magnify(by factor: CGFloat) { magnify(to: web.pageZoom * factor) }
 
-    /// ⌘0 undoes both kinds of zoom at once — whichever one you reached for.
+    /// ⌘0 undoes both kinds of zoom at once — whichever one you reached for —
+    /// back to the page zoom in Settings.
     func resetZoom() {
-        magnify(to: 1)
+        magnify(to: Tab.defaultZoom)
         guard web.magnification != 1 else { return }
         web.magnification = 1
         onZoom?(self, 1)

@@ -942,6 +942,17 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // Open pages follow a new page zoom at once, except on sites zoomed
+        // on their own. A sleeping tab picks it up when it wakes.
+        prefs.$pageZoom
+            .dropFirst()
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    for tab in self?.tabs ?? [] where tab.built != nil { tab.applyRememberedZoom() }
+                }
+            }
+            .store(in: &bag)
+
         prefs.$passkeys
             .dropFirst()
             .sink { [weak self] on in

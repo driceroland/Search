@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- A page zoom for every site: Settings › General › Default page zoom, from 75% to 200%. A site you zoom yourself keeps its own, and ⌘0 goes back to this rather than to 100%.
+
 ### Fixed
 
 ## 1.0.3 — 24 September 2026

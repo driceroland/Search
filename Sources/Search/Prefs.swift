@@ -127,6 +127,11 @@ final class Preferences: ObservableObject {
     }
     /// macOS's own autocorrect, inside web pages: the little "Not ×" that
     /// capitalises what you meant to leave lower-case. Off unless asked for.
+    /// What a site opens at until you zoom it yourself. 100% unless asked
+    /// otherwise.
+    @Published var pageZoom: Double {
+        didSet { store.set(pageZoom, forKey: "pageZoom") }
+    }
     @Published var autocorrect: Bool {
         didSet {
             store.set(autocorrect, forKey: "autocorrect")
@@ -284,6 +289,7 @@ final class Preferences: ObservableObject {
         // Left behind by the Web Inspector's switch, from before it was
         // always there.
         store.removeObject(forKey: "inspector")
+        pageZoom = store.object(forKey: "pageZoom") as? Double ?? 1
         let corrects = store.bool(forKey: "autocorrect")
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.

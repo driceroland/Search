@@ -204,6 +204,17 @@ struct SettingsPanel: View {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
             Rule()
+            Line("Default page zoom", "What sites open at. A site you zoom with ⌘+ or ⌘− keeps its own; ⌘0 brings it back to this") {
+                Picker("", selection: $prefs.pageZoom) {
+                    ForEach([0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2], id: \.self) { zoom in
+                        Text("\(Int((zoom * 100).rounded()))%").tag(zoom)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+            Rule()
             Line("Correct spelling as you type", "macOS's autocorrect inside pages — the one that capitalises for you") {
                 Switch(on: $prefs.autocorrect)
             }
