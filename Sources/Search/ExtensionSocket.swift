@@ -59,6 +59,12 @@ enum ExtensionSocket {
         private func take(_ message: Any?) {
             guard let message = message as? [String: Any] else { return }
             if let address = message["open"] as? String {
+                // Said again now that the worker is surely listening: the
+                // first one, sent as the port opened, is often lost. The
+                // worker says "open" until it hears back, so a repeat is
+                // only answered.
+                post(["ready": true])
+                guard task == nil else { return }
                 start(address, protocols: message["protocols"] as? [String] ?? [], userAgent: message["userAgent"] as? String)
             } else if let text = message["send"] as? String {
                 task?.send(.string(text)) { _ in }

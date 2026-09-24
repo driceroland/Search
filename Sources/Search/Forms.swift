@@ -109,8 +109,9 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
               if (name === 'get' && options.mediation === 'conditional') {
                 return new Promise(function (resolve, reject) {
                   if (!signal) return;
-                  if (signal.aborted) return reject(signal.reason);
-                  signal.addEventListener('abort', function () { reject(signal.reason); }, { once: true });
+                  var aborted = function () { return signal.reason || new DOMException('The operation was aborted.', 'AbortError'); };
+                  if (signal.aborted) return reject(aborted());
+                  signal.addEventListener('abort', function () { reject(aborted()); }, { once: true });
                 });
               }
               return Promise.reject(new DOMException('The operation either timed out or was not allowed.', 'NotAllowedError'));

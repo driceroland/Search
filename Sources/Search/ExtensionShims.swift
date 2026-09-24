@@ -324,33 +324,32 @@ enum ExtensionShims {
             this.protocol = ""; this.extensions = ""; this.binaryType = "blob"; this.bufferedAmount = 0;
             this.onopen = null; this.onmessage = null; this.onerror = null; this.onclose = null;
             this.#hello = { open: this.url, protocols: list, userAgent: navigator.userAgent };
-            this.#connect(0);
+            this.#connect();
           }
-          // WebKit drops a port a worker opens as it starts, without a word
-          // either way: the browser says it's there, and a port that hasn't
-          // said so soon is let go and opened again.
-          #connect(tries) {
+          // WebKit drops what a worker posts on a port it has only just
+          // opened, without a word either way. So the opening is said again,
+          // on the same port, until the browser answers anything at all.
+          #connect() {
             const port = connectNative("search.socket");
-            let ready = false;
+            let ready = false, tries = 0;
             this.#port = port;
-            const retry = setTimeout(() => {
-              if (ready || this.#port !== port || this.#state === 3) return;
-              try { port.disconnect(); } catch (e) {}
-              if (tries < 12) return this.#connect(tries + 1);
-              this.#fire("error");
-              this.#closed(1006, "", false);
-            }, 250 * Math.min(tries + 1, 4));
+            const again = () => {
+              if (ready || this.#state === 3) return;
+              if (tries++ >= 20) { this.#fire("error"); this.#closed(1006, "", false); return; }
+              try { port.postMessage(this.#hello); } catch (e) {}
+              setTimeout(again, 100 * Math.min(tries, 5));
+            };
             port.onMessage.addListener((m) => {
-              if (this.#port !== port) return;
-              if (m && m.ready === true) { ready = true; clearTimeout(retry); return; }
+              if (!ready) ready = true;
+              if (m && m.ready === true) return;
               this.#take(m);
             });
             port.onDisconnect.addListener(() => {
-              if (this.#port !== port || !ready || this.#state === 3) return;
+              if (this.#state === 3) return;
               this.#fire("error");
               this.#closed(1006, "", false);
             });
-            port.postMessage(this.#hello);
+            again();
           }
           get readyState() { return this.#state; }
           #fire(type, init) {
