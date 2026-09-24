@@ -77,7 +77,7 @@ struct TabBar: View {
                                             .id(tab.id)
                                         }
                                     }
-                                    .frame(height: Metrics.strip)
+                                    .frame(height: browser.prefs.topBarHeight)
                                 }
                                 .scrollDisabled(!overflowing(in: geo.size.width))
                                 .frame(width: run(in: geo.size.width))
@@ -89,16 +89,16 @@ struct TabBar: View {
                         }
                         if browser.spaceSwipe > 0, spaceAt > 0 {
                             page(spaceAt - 1, in: geo.size.width, pill: above)
-                                .offset(y: browser.spaceSwipe - Metrics.strip)
+                                .offset(y: browser.spaceSwipe - browser.prefs.topBarHeight)
                         }
                         if browser.spaceSwipe < 0, spaceAt < browser.spaces.count {
                             page(spaceAt + 1, in: geo.size.width, pill: below)
-                                .offset(y: browser.spaceSwipe + Metrics.strip)
+                                .offset(y: browser.spaceSwipe + browser.prefs.topBarHeight)
                         }
                     }
-                    .frame(width: making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width), height: Metrics.strip, alignment: .leading)
+                    .frame(width: making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width), height: browser.prefs.topBarHeight, alignment: .leading)
                     // Only up and down: a neighbour's row may run wider than this one.
-                    .mask(Rectangle().frame(width: 4000, height: Metrics.strip))
+                    .mask(Rectangle().frame(width: 4000, height: browser.prefs.topBarHeight))
 
                     // The way to a new page, right after the tabs rather than
                     // at the end of their run, so it is there however far the
@@ -153,7 +153,7 @@ struct TabBar: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
-        .frame(height: Metrics.strip)
+        .frame(height: browser.prefs.topBarHeight)
         .onHover { nearby = $0 }
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         // A link dragged onto the row opens there.
@@ -161,6 +161,7 @@ struct TabBar: View {
             browser.take(providers)
         }
         .background(landing ? Palette.hover : .clear)
+        .background { ChromeBackground(prefs: browser.prefs) }
         .animation(Motion.quick, value: landing)
         .animation(Motion.glide, value: browser.activeID)
         // The row makes room for the field on the same spring as everything
@@ -209,7 +210,7 @@ struct TabBar: View {
                     )
                 }
             }
-            .frame(height: Metrics.strip)
+            .frame(height: browser.prefs.topBarHeight)
             .allowsHitTesting(false)
         }
     }
@@ -535,7 +536,7 @@ private struct TabPill: View {
             // the one thing in the window that says how far in you are, and
             // it says it without adding anything to the window.
             ZStack(alignment: .leading) {
-                Rectangle().fill(Palette.wash)
+                Rectangle().fill(prefs.chromeAccent.selection(for: tab.pageAccent))
                 // Not on a pinned square, nor a tab down to its mark. Thirty
                 // points of grey filling from the left behind a single letter
                 // says nothing about anything — it needs the width of a title

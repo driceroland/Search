@@ -23,13 +23,18 @@ final class Lights: NSObject {
 
     /// Starts looking after a window's lights, once. `moved` hears each time
     /// they have been put in place.
-    static func keep(_ window: NSWindow, moved: @escaping () -> Void) {
-        guard kept[ObjectIdentifier(window)] == nil else { return }
-        kept[ObjectIdentifier(window)] = Lights(window, moved: moved)
+    static func keep(_ window: NSWindow, height: CGFloat = Metrics.strip, moved: @escaping () -> Void) {
+        if let lights = kept[ObjectIdentifier(window)] {
+            lights.height = height
+            lights.place()
+            return
+        }
+        kept[ObjectIdentifier(window)] = Lights(window, height: height, moved: moved)
     }
 
     private weak var window: NSWindow?
     private let moved: () -> Void
+    private var height: CGFloat
     private var placing = false
     /// AppKit's own spacing between the three, read once from its first
     /// layout and kept. Read again on every pass, it was caught while AppKit
@@ -39,8 +44,9 @@ final class Lights: NSObject {
     /// from the one before. Reproduced with ./bench resize, 23 Sep 2026.
     private let spacing: CGFloat
 
-    private init(_ window: NSWindow, moved: @escaping () -> Void) {
+    private init(_ window: NSWindow, height: CGFloat, moved: @escaping () -> Void) {
         self.window = window
+        self.height = height
         self.moved = moved
         let row = [NSWindow.ButtonType.closeButton, .miniaturizeButton].compactMap { window.standardWindowButton($0) }
         let measured = row.count == 2 ? row[1].frame.minX - row[0].frame.minX : 0
@@ -80,7 +86,6 @@ final class Lights: NSObject {
         defer { placing = false }
 
         // A title bar as tall as the strip, so the buttons can sit lower in it.
-        let height = Metrics.strip
         var frame = container.frame
         if frame.height != height || frame.maxY != window.frame.height {
             frame.size.height = height
@@ -92,7 +97,7 @@ final class Lights: NSObject {
             let size = button.frame.size
             let origin = NSPoint(
                 x: Lights.centre.x - size.width / 2 + CGFloat(index) * spacing,
-                y: bar.bounds.height - Lights.centre.y - size.height / 2
+                y: bar.bounds.height - height / 2 - size.height / 2
             )
             if button.frame.origin != origin { button.setFrameOrigin(origin) }
         }

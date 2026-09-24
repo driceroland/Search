@@ -277,6 +277,11 @@ final class Bench {
         let verb = request["do"] as? String ?? ""
 
         switch verb {
+        #if DEBUG
+        case "native":
+            answer(NativeProbe.run(request, browser: browser))
+        #endif
+
         case "tabs":
             answer(["tabs": browser.tabs.map(describe)])
 

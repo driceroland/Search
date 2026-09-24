@@ -267,6 +267,7 @@ struct ContentView: View {
     /// animation (see `make(room:after:)`); nil only before the window is up.
     @State private var room: CGSize?
     @State private var roomTicket = 0
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
 
     /// The window: room at the top, one stage for the page, and the row when
@@ -278,17 +279,17 @@ struct ContentView: View {
             (browser.active?.immersed == true ? Color.black : Palette.ground)
 
             // One stage, always. It starts beside the column and under the
-            // strip, not behind them — a page sliding beneath floating chrome
-            // is a browser showing off, and it costs a compositing pass.
+            // strip by default. Transparency lets the page extend beneath them.
             //
             // When the column or the strip comes or goes, the page slides with
             // it and is resized once, not on every frame of the slide: laid out
             // again thirty times a second, the page juddered along its right
             // edge and overshot the window with the spring (see `room`).
             stage
-                .padding(.leading, roomed.width)
-                .padding(.top, roomed.height)
-                .offset(x: chrome.width - roomed.width, y: chrome.height - roomed.height)
+                .padding(.leading, overlayChrome ? 0 : roomed.width)
+                .padding(.top, overlayChrome ? 0 : roomed.height)
+                .offset(x: overlayChrome ? 0 : chrome.width - roomed.width,
+                        y: overlayChrome ? 0 : chrome.height - roomed.height)
 
             // The column of tabs, in the way that has one. It takes the full
             // height, so the traffic lights sit in its own corner rather than
@@ -313,7 +314,7 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
-        .animation(Motion.glide, value: browser.prefs.sidebar)
+        .animation(overlayChrome ? nil : Motion.glide, value: browser.prefs.sidebar)
         .animation(.easeOut(duration: 0.12), value: browser.active?.immersed)
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
@@ -322,19 +323,26 @@ struct ContentView: View {
     @ViewBuilder
     private var stage: some View {
         if let tab = browser.active {
-            Page(tab: tab)
+            Page(tab: tab, chrome: PageChrome(
+                top: overlayChrome && !browser.prefs.sidebar ? visibleTop : 0,
+                side: overlayChrome && browser.prefs.sidebar && (sidebar || browser.peeking) ? browser.prefs.sideWidth : 0,
+                radius: browser.prefs.chromeBlur * 30
+            ))
                 .overlay {
                     if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
                 }
                 .overlay(alignment: .topTrailing) {
                     if browser.finding {
                         FindBar(browser: browser)
+                            .padding(.top, overlayChrome ? chrome.height : 0)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
                 .overlay(alignment: .topLeading) {
                     if let asked = browser.suggesting, asked.tab == tab.id {
                         AccountList(browser: browser, asked: asked)
+                            .padding(.top, overlayChrome ? chrome.height : 0)
+                            .padding(.leading, overlayChrome ? chrome.width : 0)
                             .transition(.opacity)
                     }
                 }
@@ -344,8 +352,16 @@ struct ContentView: View {
         }
     }
 
-    /// What the column and the strip take from the page right now: animated
-    /// as they come and go.
+    private var overlayChrome: Bool {
+        browser.prefs.chromeTransparency > 0 && !reduceTransparency
+    }
+
+    private var visibleTop: CGFloat {
+        guard browser.active?.immersed != true else { return 0 }
+        return browser.folded && browser.peeking ? browser.prefs.topBarHeight : chrome.height
+    }
+
+    /// The footprint of the visible chrome, whether reserved or overlaid.
     private var chrome: CGSize {
         CGSize(width: sidebar ? browser.prefs.sideWidth : 0, height: band + (barShown ? BookmarksBar.height : 0))
     }
@@ -453,7 +469,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { browser.reviewing = false }
                 HiddenPanel(browser: browser)
-                    .padding(.top, Metrics.strip + 8)
+                    .padding(.top, browser.prefs.topBarHeight + 8)
                     .padding(.trailing, 14)
                     .transition(.scale(scale: 0.97, anchor: .topTrailing).combined(with: .opacity))
             }
@@ -484,6 +500,10 @@ struct ContentView: View {
             // there is to watch.
             .animation(browser.fieldShowing ? Motion.settle : Motion.quick, value: browser.fieldShowing)
             .background(WindowSetup { window = $0; dress($0) })
+            .onChange(of: browser.prefs.topBarHeight) { _, _ in
+                guard let window else { return }
+                Lights.keep(window, height: browser.prefs.topBarHeight) { measureLights() }
+            }
             .onChange(of: browser.prefs.sidebar) { _, _ in
                 DispatchQueue.main.async { measureLights() }
             }
@@ -678,7 +698,7 @@ struct ContentView: View {
     private var band: CGFloat {
         guard browser.active?.immersed != true else { return 0 }
         // Folded, the strip is out of the window and the page has its height.
-        return browser.prefs.sidebar || browser.folded ? 0 : Metrics.strip
+        return browser.prefs.sidebar || browser.folded ? 0 : browser.prefs.topBarHeight
     }
 
     /// Put the resting circles in the title bar, exactly over the buttons.
@@ -725,7 +745,7 @@ struct ContentView: View {
         // height, in both modes, without a toolbar's rounder corners — see
         // Lights.swift. The column's first row is the strip's height too, so
         // its three doors sit on the lights' line.
-        Lights.keep(window) { measureLights() }
+        Lights.keep(window, height: browser.prefs.topBarHeight) { measureLights() }
         DispatchQueue.main.async { measureLights() }
 
         // The traffic lights are drawn — measured, they paint themselves — but

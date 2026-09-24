@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Settings › Appearance adds adjustable bar height (30–52 points), page-backed transparency, independent blur strength, and selected-tab accent colors, including Match page. The default stays opaque and full-height; macOS Reduce Transparency is respected.
+
 - Updates can wait for you: Settings › About › Install updates on its own, on as before. Switched off, Search still looks once a day and says when a newer version is out, and fetches, checks and installs it only when you press Install.
 ### Fixed
 

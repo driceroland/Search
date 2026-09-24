@@ -243,6 +243,8 @@ final class Tab: ObservableObject, Identifiable {
     @Published var typing = false
     /// True while the page has taken over the screen.
     @Published var immersed = false
+    /// WebKit follows theme-color metadata, falling back to the page background.
+    @Published private(set) var pageAccent: NSColor?
 
     /// True while this tab's page is out in the little window.
     @Published var floating = false
@@ -462,6 +464,12 @@ final class Tab: ObservableObject, Identifiable {
         arm(hiding: veils)
 
         watch = [
+            web.observe(\.themeColor, options: [.initial, .new]) { [weak self] web, _ in
+                MainActor.assumeIsolated { self?.pageAccent = web.themeColor ?? web.underPageBackgroundColor }
+            },
+            web.observe(\.underPageBackgroundColor, options: [.new]) { [weak self] web, _ in
+                MainActor.assumeIsolated { self?.pageAccent = web.themeColor ?? web.underPageBackgroundColor }
+            },
             web.observe(\.title, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.title = self?.built?.title ?? "" }
             },

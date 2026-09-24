@@ -11,6 +11,7 @@ import WebKit
 /// what turns that into a redraw.
 struct Page: View {
     @ObservedObject var tab: Tab
+    var chrome = PageChrome()
 
     var body: some View {
         ZStack {
@@ -21,7 +22,7 @@ struct Page: View {
             // before and after the float changes nothing SwiftUI can see, so
             // the stage was never told to take it back when it landed, and
             // the tab stayed empty. Nothing, then the page, is a change.
-            WebStage(page: tab.isBlank || tab.asleep || tab.floating ? nil : tab.web)
+            WebStage(page: tab.isBlank || tab.asleep || tab.floating ? nil : tab.web, chrome: chrome)
 
             if let cover = tab.cover {
                 // The page as it was left, while it is rebuilt underneath —
@@ -124,11 +125,12 @@ private struct Disc: View {
 /// reload, no lost scroll position, no forgotten form.
 struct WebStage: NSViewRepresentable {
     let page: NSView?
+    var chrome = PageChrome()
 
     func makeNSView(context: Context) -> StageView { StageView() }
 
     func updateNSView(_ view: StageView, context: Context) {
-        view.show(page)
+        view.show(page, chrome: chrome)
     }
 }
 
@@ -145,13 +147,16 @@ final class StageView: NSView {
     /// Now there is one fact and one rule: show `wanted`, and put that right on
     /// every layout. Nothing to fall out of step with.
     private weak var wanted: NSView?
+    private var chrome = PageChrome()
+    private let blur = BackgroundBlurView(frame: .zero)
 
     override func layout() {
         super.layout()
         settle()
     }
 
-    func show(_ page: NSView?) {
+    func show(_ page: NSView?, chrome: PageChrome = PageChrome()) {
+        self.chrome = chrome
         wanted = page
         settle()
     }
@@ -170,11 +175,11 @@ final class StageView: NSView {
         // web view, and shrinks the page to make room. Taken out on the next
         // resize, it left the page shrunk beside nothing (#91).
         let docked = inspecting
-        for view in subviews where view !== wanted && !(docked && Self.isInspector(view)) {
+        for view in subviews where view !== wanted && view !== blur && !(docked && Self.isInspector(view)) {
             view.removeFromSuperview()
         }
 
-        guard let wanted, window != nil else { return }
+        guard let wanted, window != nil else { blur.removeFromSuperview(); return }
         if wanted.superview !== self {
             // A web view can have only one superview, so taking it back is how
             // it is taken back.
@@ -194,6 +199,15 @@ final class StageView: NSView {
         // cover the inspector.
         if !(docked && subviews.contains(where: Self.isInspector)) {
             wanted.frame = bounds
+        }
+        if chrome.radius > 0, chrome.top > 0 || chrome.side > 0 {
+            if subviews.last !== blur { addSubview(blur, positioned: .above, relativeTo: wanted) }
+            blur.frame = chrome.side > 0
+                ? NSRect(x: 0, y: 0, width: min(bounds.width, chrome.side), height: bounds.height)
+                : NSRect(x: 0, y: bounds.height - chrome.top, width: bounds.width, height: chrome.top)
+            blur.setRadius(chrome.radius)
+        } else {
+            blur.removeFromSuperview()
         }
     }
 

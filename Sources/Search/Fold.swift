@@ -87,16 +87,9 @@ struct Fold: View {
                     .frame(maxWidth: .infinity)
             }
             if folding, !prefs.sidebar, browser.peeking {
-                // The row has no ground of its own: in the window it lies on
-                // the window's. Out over the page it brings that ground along,
-                // as the column does, or the page showed through between the
-                // tabs, and the shadow fell from every title and icon rather
-                // than from the row's edge.
+                // The row brings the same background it uses while unfolded.
                 TabBar(browser: browser)
-                    .background {
-                        Palette.ground
-                            .shadow(color: .black.opacity(0.14), radius: 20, y: 4)
-                    }
+                    .shadow(color: .black.opacity(0.14), radius: 20, y: 4)
                     .transition(.move(edge: .top))
             }
             ZStack(alignment: .leading) {
@@ -184,7 +177,7 @@ struct Fold: View {
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
             let onWindow = top == window.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
-            let reach = prefs.sidebar ? prefs.sideWidth : Metrics.strip
+            let reach = prefs.sidebar ? prefs.sideWidth : prefs.topBarHeight
             let over = onOwnPanel || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
@@ -250,7 +243,7 @@ struct Fold: View {
         if prefs.sidebar {
             Fold.slide(bar, off: lightsOff, by: prefs.sideWidth)
         } else {
-            Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true)
+            Fold.slide(bar, off: lightsOff, by: prefs.topBarHeight, up: true)
         }
     }
 

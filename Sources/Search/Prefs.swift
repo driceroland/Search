@@ -55,6 +55,19 @@ final class Preferences: ObservableObject {
     @Published var sideHides: Bool {
         didSet { store.set(sideHides, forKey: "sidebar.hides") }
     }
+    /// Less vertical space around the top controls, in either tab layout.
+    @Published var topBarHeight: CGFloat {
+        didSet { store.set(Double(topBarHeight), forKey: "bars.height") }
+    }
+    @Published var chromeTransparency: Double {
+        didSet { store.set(chromeTransparency, forKey: "chrome.transparency") }
+    }
+    @Published var chromeBlur: Double {
+        didSet { store.set(chromeBlur, forKey: "chrome.blur") }
+    }
+    @Published var chromeAccent: ChromeAccent {
+        didSet { store.set(chromeAccent.rawValue, forKey: "chrome.accent") }
+    }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
@@ -225,6 +238,12 @@ final class Preferences: ObservableObject {
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
         sideHides = store.bool(forKey: "sidebar.hides")
+        let barHeight = store.object(forKey: "bars.height") as? Double
+            ?? (store.bool(forKey: "bars.compact") ? 30 : Double(Metrics.strip))
+        topBarHeight = CGFloat(min(Double(Metrics.strip), max(30, barHeight)).rounded())
+        chromeTransparency = (min(1, max(0, store.double(forKey: "chrome.transparency"))) * 100).rounded() / 100
+        chromeBlur = (min(1, max(0, store.object(forKey: "chrome.blur") as? Double ?? 0.65)) * 100).rounded() / 100
+        chromeAccent = store.string(forKey: "chrome.accent").flatMap(ChromeAccent.init) ?? .graphite
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters

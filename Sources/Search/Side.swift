@@ -51,7 +51,7 @@ struct SideBar: View {
                     .allowsHitTesting(false)
                 DragStrip()
             }
-            .frame(height: Metrics.strip)
+            .frame(height: prefs.topBarHeight)
 
             VStack(alignment: .leading, spacing: 0) {
                 // The traffic lights' corner, with back, forward and reload
@@ -63,7 +63,7 @@ struct SideBar: View {
                     Helm(browser: browser)
                     Spacer(minLength: 0)
                 }
-                .frame(height: Metrics.strip)
+                .frame(height: prefs.topBarHeight)
 
                 // The spaces side by side, as pages: two fingers sideways move
                 // the one on screen and the next one together, the next one
@@ -86,7 +86,8 @@ struct SideBar: View {
         // Rows on their way to or from another space stay in the column.
         .clipped()
         .onAppear { SpaceSwipe.shared.start(for: browser) }
-        .background(landing ? Palette.hover : Palette.ground)
+        .background(landing ? Palette.hover : .clear)
+        .background { ChromeBackground(prefs: prefs) }
         .overlay(alignment: .trailing) {
             Rectangle().fill(Palette.hairline).frame(width: 1)
         }
@@ -260,7 +261,7 @@ struct SideBar: View {
         let pinBlock = pinRows == 0 ? 0
             : CGFloat(pinRows) * pinHeight + CGFloat(pinRows - 1) * SideBar.pinGap + 10
         let loose = CGFloat(browser.tabs.count - pins) * (SideBar.row + SideBar.gap)
-        return Metrics.strip + pinBlock + loose + SideBar.row + 8
+        return prefs.topBarHeight + pinBlock + loose + SideBar.row + 8
     }
 
     // MARK: - the pinned squares
@@ -519,7 +520,7 @@ private struct PinSquare: View {
         .background {
             if live {
                 RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
-                    .fill(Palette.wash)
+                    .fill(prefs.chromeAccent.selection(for: tab.pageAccent))
                     .matchedGeometryEffect(id: "live", in: pill)
             } else {
                 RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
@@ -671,7 +672,7 @@ private struct SideRow: View {
     private var ground: some View {
         if live {
             ZStack(alignment: .leading) {
-                Rectangle().fill(Palette.wash)
+                Rectangle().fill(prefs.chromeAccent.selection(for: tab.pageAccent))
                 if prefs.showsReading {
                     GeometryReader { geo in
                         Rectangle()

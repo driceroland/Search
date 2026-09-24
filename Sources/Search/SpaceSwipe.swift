@@ -40,7 +40,7 @@ final class SpaceSwipe {
     /// points in the column; in a bar only 52 tall, most of its height, so
     /// that scrolling the page with the pointer a little high doesn't.
     static func enough(for browser: Browser) -> CGFloat {
-        browser.prefs.sidebar ? 50 : Metrics.strip * 0.6
+        browser.prefs.sidebar ? 50 : browser.prefs.topBarHeight * 0.6
     }
 
     func start(for browser: Browser) {
@@ -55,7 +55,7 @@ final class SpaceSwipe {
     private func overTabs(_ event: NSEvent, in browser: Browser) -> Bool {
         guard event.window === Links.window, let window = event.window else { return false }
         if browser.prefs.sidebar { return event.locationInWindow.x < browser.prefs.sideWidth }
-        return event.locationInWindow.y > window.frame.height - Metrics.strip
+        return event.locationInWindow.y > window.frame.height - browser.prefs.topBarHeight
     }
 
     /// True for an event the swipe keeps for itself.
@@ -167,7 +167,7 @@ final class SpaceSwipe {
     /// the last space is the card for a new one.
     func slide(_ browser: Browser, to target: Int, from here: Int) {
         // A page is the column's width, or the bar's height.
-        let width = browser.prefs.sidebar ? browser.prefs.sideWidth : Metrics.strip
+        let width = browser.prefs.sidebar ? browser.prefs.sideWidth : browser.prefs.topBarHeight
         let away: CGFloat = target > here ? -1 : 1
         browser.spaceStep = target > here ? 1 : -1
         resting = Date().addingTimeInterval(SpaceSwipe.rest)
@@ -223,7 +223,7 @@ struct NewSpaceCard: View {
                     Pill("Cancel") { cancel() }
                     Pill("Create", filled: true) { create() }
                 }
-                .frame(height: Metrics.strip)
+                .frame(height: browser.prefs.topBarHeight)
             } else {
                 VStack(spacing: 12) {
                     pick(size: 20, box: CGSize(width: 44, height: 40))

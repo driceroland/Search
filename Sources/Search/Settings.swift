@@ -9,17 +9,19 @@ struct SettingsPanel: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
 
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shield = Shield.shared
     @State private var isDefault = Links.isDefault
     @State private var page: Page = Page(rawValue: Store.settings.string(forKey: "settings.page") ?? "") ?? .general
 
     enum Page: String, CaseIterable, Identifiable {
-        case general, tabs, extensions, passwords, downloads, privacy, about
+        case general, appearance, tabs, extensions, passwords, downloads, privacy, about
         var id: String { rawValue }
         var title: String {
             switch self {
             case .general: return "General"
+            case .appearance: return "Appearance"
             case .tabs: return "Tabs"
             case .extensions: return "Extensions"
             case .passwords: return "Passwords"
@@ -31,6 +33,7 @@ struct SettingsPanel: View {
         var icon: String {
             switch self {
             case .general: return "macwindow"
+            case .appearance: return "paintpalette"
             case .tabs: return "rectangle.split.3x1"
             case .extensions: return "puzzlepiece.extension"
             case .passwords: return "key"
@@ -132,6 +135,7 @@ struct SettingsPanel: View {
                 VStack(alignment: .leading, spacing: 18) {
                     switch page {
                     case .general: general
+                    case .appearance: appearance
                     case .tabs: tabs
                     case .extensions: ExtensionsPage(browser: browser)
                     case .passwords: passwords
@@ -200,10 +204,6 @@ struct SettingsPanel: View {
                 .padding(.bottom, 11)
             }
             Rule()
-            Line("Appearance", "Light, dark, or whatever the Mac is doing — pages follow it too") {
-                Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
-            }
-            Rule()
             Line("Correct spelling as you type", "macOS's autocorrect inside pages — the one that capitalises for you") {
                 Switch(on: $prefs.autocorrect)
             }
@@ -248,6 +248,96 @@ struct SettingsPanel: View {
             return "An http or https address with %s where the words go. Until then, Google"
         }
         return "Words go to \(prefs.engine.name(custom: prefs.customEngine))"
+    }
+
+    // MARK: - appearance
+
+    private var appearance: some View {
+        Card {
+            Line("Theme", "Light, dark, or follow your Mac") {
+                Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
+            }
+            Rule()
+            Line("Bar height", "From almost no padding to extra breathing room.") {
+                HStack(spacing: 6) {
+                    Slider(value: Binding(
+                        get: { Double(prefs.topBarHeight) },
+                        set: { prefs.topBarHeight = CGFloat($0.rounded()) }
+                    ), in: 30...Double(Metrics.strip)) { Text("Bar height") }
+                        .labelsHidden()
+                        .frame(width: 100)
+                        .tint(prefs.chromeAccent.color)
+                    Text("\(Int(prefs.topBarHeight)) pt")
+                        .font(.system(size: 11.5).monospacedDigit())
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 34, alignment: .trailing)
+                }
+            }
+
+            Rule()
+            Line("Transparency", "Show the webpage under the top bars and sidebar.") {
+                chromeSlider("Transparency", value: $prefs.chromeTransparency)
+                    .disabled(reduceTransparency)
+            }
+            Rule()
+            Line("Blur strength", "Soften the page showing through the bars.") {
+                chromeSlider("Blur strength", value: $prefs.chromeBlur)
+                    .disabled(reduceTransparency || prefs.chromeTransparency == 0)
+            }
+            Rule()
+            Line("Accent color", "Choose a color, or match the page.") {
+                HStack(spacing: 4) {
+                    ForEach(ChromeAccent.allCases) { accent in
+                        Button { prefs.chromeAccent = accent } label: {
+                            Circle().fill(accent.color)
+                                .frame(width: 16, height: 16)
+                                .overlay {
+                                    if accent == .page {
+                                        Image(systemName: "globe")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Palette.ground)
+                                    }
+                                }
+                                .padding(3)
+                                .overlay {
+                                    if prefs.chromeAccent == accent {
+                                        Circle().strokeBorder(Palette.ink, lineWidth: 1)
+                                    }
+                                }
+                                .frame(width: 24, height: 24)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Accent: \(accent.title)")
+                        .accessibilityAddTraits(prefs.chromeAccent == accent ? .isSelected : [])
+                        .help(accent.title)
+                    }
+                }
+            }
+            if reduceTransparency {
+                Rule()
+                Text("Reduce Transparency is enabled in macOS Accessibility settings.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.muted)
+                    .padding(14)
+            }
+        }
+    }
+
+    private func chromeSlider(_ title: String, value: Binding<Double>) -> some View {
+        HStack(spacing: 6) {
+            Slider(value: Binding(
+                get: { value.wrappedValue },
+                set: { value.wrappedValue = ($0 * 100).rounded() / 100 }
+            ), in: 0...1) { Text(title) }
+                .labelsHidden()
+                .frame(width: 100)
+                .tint(prefs.chromeAccent.color)
+            Text(value.wrappedValue, format: .percent.precision(.fractionLength(0)))
+                .font(.system(size: 11.5).monospacedDigit())
+                .foregroundStyle(Palette.muted)
+                .frame(width: 34, alignment: .trailing)
+        }
     }
 
     // MARK: - tabs
