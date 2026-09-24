@@ -66,6 +66,15 @@ struct ExtensionsPage: View {
                     .padding(14)
                 }
 
+                Card {
+                    Line("Allow on private tabs", "Off by default - a private tab keeps nothing, extensions included") {
+                        Switch(on: Binding(
+                            get: { browser.prefs.extensionsInPrivate },
+                            set: { browser.prefs.extensionsInPrivate = $0 }
+                        ))
+                    }
+                }
+
                 if extensions.installed.isEmpty {
                     Card { Nothing("No extensions yet.") }
                 } else {

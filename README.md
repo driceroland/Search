@@ -6,6 +6,8 @@ A small, fast, quiet web browser for the Mac, by [Office Commun](https://officec
 
 **[Download for macOS →](https://officecommun.com/search)** · macOS 14 or later · free · about 3 MB
 
+Or with [Homebrew](https://brew.sh): `brew install --cask driceroland/tap/search`
+
 ---
 
 ## What it is
