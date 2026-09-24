@@ -52,7 +52,14 @@ struct Page: View {
                     .transition(.opacity)
             }
 
-            if let pull = tab.pull {
+            if let pull = tab.pull, pull.stops != nil {
+                HistoryList(pull: pull)
+                    .id(pull.back)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.92)),
+                        removal: .opacity.combined(with: .scale(scale: 0.96))
+                    ))
+            } else if let pull = tab.pull {
                 Disc(pull: pull)
                     // A disc for each edge, never one that changes edges: a
                     // view whose alignment flips is a view that glides the
@@ -116,6 +123,67 @@ private struct Disc: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pull.back ? .leading : .trailing)
         .allowsHitTesting(false)
         .animation(.easeOut(duration: 0.22), value: pull.going)
+    }
+}
+
+/// A swipe held once armed: the pages that way, in place of the disc, at
+/// the same edge. The one letting go would open is lit, and stays where the
+/// disc was while the list slides under it with the fingers (see
+/// PageView.climb). Let go, it fades where it is.
+private struct HistoryList: View {
+    let pull: Pull
+
+    /// A row and the gap under it.
+    private static let pitch: CGFloat = 30
+
+    var body: some View {
+        let reach = 150 * (1 - exp(-pull.travel / 110))
+        let count = pull.stops?.count ?? 0
+        // The lit row's middle on the disc's line, the list around it.
+        let slide = -(CGFloat(pull.picked) - CGFloat(count - 1) / 2) * HistoryList.pitch
+        VStack(spacing: 2) {
+            ForEach(Array((pull.stops ?? []).enumerated()), id: \.offset) { index, stop in
+                HStack(spacing: 8) {
+                    icon(stop.url)
+                        .frame(width: 14, height: 14)
+                    Text(stop.title.isEmpty ? (stop.url.host() ?? stop.url.absoluteString) : stop.title)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(index == pull.picked ? Palette.ink : Palette.ink.opacity(0.75))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 9)
+                .frame(height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Palette.ink.opacity(index == pull.picked ? 0.10 : 0))
+                )
+            }
+        }
+        .padding(5)
+        .frame(width: 240)
+        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+        .shadow(color: .black.opacity(0.16), radius: 18, y: 6)
+        .scaleEffect(pull.going ? 0.96 : 1)
+        .opacity(pull.going ? 0 : 1)
+        .offset(x: (pull.back ? 1 : -1) * (10 + reach * 0.2), y: slide)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pull.back ? .leading : .trailing)
+        .allowsHitTesting(false)
+        .animation(.spring(response: 0.22, dampingFraction: 0.9), value: pull.picked)
+        .animation(.easeOut(duration: 0.26), value: pull.going)
+    }
+
+    @ViewBuilder
+    private func icon(_ url: URL) -> some View {
+        if let host = url.host(), let image = Favicons.shared.cached(host) {
+            Image(nsImage: image).resizable().interpolation(.high)
+        } else {
+            Image(systemName: "globe")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.muted)
+        }
     }
 }
 

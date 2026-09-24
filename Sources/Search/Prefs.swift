@@ -151,6 +151,14 @@ final class Preferences: ObservableObject {
             HoveredLink.on = showsLinks
         }
     }
+    /// A back or forward swipe held once armed shows the pages that way to
+    /// pick from (see PageView.openList). Off unless asked for.
+    @Published var holdsHistory: Bool {
+        didSet {
+            store.set(holdsHistory, forKey: "swipe.history")
+            PageView.holdsHistory = holdsHistory
+        }
+    }
     /// Two fingers flick the floating video to a corner (see Float.swift).
     /// Off unless asked for.
     @Published var floatFlicks: Bool {
@@ -225,6 +233,9 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
+        let history = store.bool(forKey: "swipe.history")
+        holdsHistory = history
+        PageView.holdsHistory = history
         let flicks = store.bool(forKey: "float.flicks")
         floatFlicks = flicks
         Float.flicks = flicks
