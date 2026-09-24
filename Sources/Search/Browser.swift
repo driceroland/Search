@@ -1436,6 +1436,7 @@ final class Browser: NSObject, ObservableObject {
     /// Stepping away from a tab. A video you were watching does not stop
     /// existing because you went to look something up.
     private func leaving() {
+        guard prefs.floatsOnSwitch else { return }
         lift(active, quietly: true)
     }
 
@@ -1449,7 +1450,7 @@ final class Browser: NSObject, ObservableObject {
     static weak var front: Browser?
 
     func appLeft() {
-        guard prefs.floatsAway, Browser.front == nil || Browser.front === self else { return }
+        guard prefs.floatsOnSwitch, Browser.front == nil || Browser.front === self else { return }
         liftedAway = !floater.showing
         lift(active, quietly: true)
     }

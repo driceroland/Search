@@ -159,10 +159,11 @@ final class Preferences: ObservableObject {
             Float.flicks = floatFlicks
         }
     }
-    /// A video playing floats out when another app comes to the front, and
-    /// back when Search does (see Browser.appLeft). Off unless asked for.
-    @Published var floatsAway: Bool {
-        didSet { store.set(floatsAway, forKey: "float.away") }
+    /// A video playing floats out as you go to another tab or another app,
+    /// and back when you return (see Browser.leaving and Browser.appLeft).
+    /// On unless turned off.
+    @Published var floatsOnSwitch: Bool {
+        didSet { store.set(floatsOnSwitch, forKey: "float.auto") }
     }
     /// Separate sets of tabs, each with its own sign-ins (see Spaces.swift).
     /// Off unless asked for.
@@ -228,7 +229,7 @@ final class Preferences: ObservableObject {
         let flicks = store.bool(forKey: "float.flicks")
         floatFlicks = flicks
         Float.flicks = flicks
-        floatsAway = store.bool(forKey: "float.away")
+        floatsOnSwitch = store.object(forKey: "float.auto") as? Bool ?? true
         let links = store.bool(forKey: "links.show")
         showsLinks = links
         HoveredLink.on = links

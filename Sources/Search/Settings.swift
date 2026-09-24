@@ -224,8 +224,8 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.floatFlicks)
             }
             Rule()
-            Line("Float the video when you switch apps", "A video playing on the site you're on comes out into its floating window as another app comes to the front, and goes back into its tab when you return") {
-                Switch(on: $prefs.floatsAway)
+            Line("Auto Picture-in-Picture", "Automatically float videos when switching tabs or apps.") {
+                Switch(on: $prefs.floatsOnSwitch)
             }
             Rule()
             Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
