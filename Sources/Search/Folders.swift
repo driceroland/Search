@@ -8,6 +8,17 @@ import SwiftUI
 // outlives its tabs need folders of their own in the session.
 
 extension Browser {
+    private func folderKey(_ folder: String) -> String { "\(spaceID.uuidString)/\(folder)" }
+
+    func isFolderShut(_ folder: String) -> Bool {
+        shutFolders.contains(folderKey(folder))
+    }
+
+    func openFolder(containing tab: Tab) {
+        guard let folder = tab.folder else { return }
+        shutFolders.remove(folderKey(folder))
+    }
+
     /// The folders in this space, in the order their first tabs come.
     var folders: [String] {
         var seen: [String] = []
@@ -31,10 +42,11 @@ extension Browser {
     /// Asks for a name, then puts the tab in a new folder by it.
     func fileInNewFolder(_ tab: Tab) {
         Ask.name("New Folder", placeholder: "Name", confirm: "Create") { [weak self] name in
+            guard let self else { return }
             let name = name.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { return }
-            self?.shutFolders.remove(name)
-            self?.file(tab, in: name)
+            shutFolders.remove(folderKey(name))
+            file(tab, in: name)
         }
     }
 
@@ -44,7 +56,7 @@ extension Browser {
             let name = name.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty, name != folder else { return }
             for tab in tabs(in: folder) { tab.folder = name }
-            if shutFolders.remove(folder) != nil { shutFolders.insert(name) }
+            if shutFolders.remove(folderKey(folder)) != nil { shutFolders.insert(folderKey(name)) }
             objectWillChange.send()
             writeSession()
         }
@@ -53,13 +65,14 @@ extension Browser {
     /// The folder goes; its tabs stay, loose.
     func ungroup(_ folder: String) {
         for tab in tabs(in: folder) { tab.folder = nil }
-        shutFolders.remove(folder)
+        shutFolders.remove(folderKey(folder))
         objectWillChange.send()
         writeSession()
     }
 
     func toggleFolder(_ folder: String) {
-        if shutFolders.contains(folder) { shutFolders.remove(folder) } else { shutFolders.insert(folder) }
+        let key = folderKey(folder)
+        if shutFolders.contains(key) { shutFolders.remove(key) } else { shutFolders.insert(key) }
     }
 }
 
@@ -69,12 +82,13 @@ struct FolderMenu: View {
     @ObservedObject var tab: Tab
 
     var body: some View {
-        if tab.pin == nil {
+        let otherFolders = browser.folders.filter { $0 != tab.folder }
+        if tab.pin == nil, !tab.shy {
             Menu("Add to Folder") {
-                ForEach(browser.folders.filter { $0 != tab.folder }, id: \.self) { name in
+                ForEach(otherFolders, id: \.self) { name in
                     Button(name) { browser.file(tab, in: name) }
                 }
-                if !browser.folders.filter({ $0 != tab.folder }).isEmpty { Divider() }
+                if !otherFolders.isEmpty { Divider() }
                 Button("New Folder…") { browser.fileInNewFolder(tab) }
             }
             if tab.folder != nil {
@@ -93,7 +107,7 @@ struct FolderRow: View {
     @State private var hovering = false
 
     private var themed: Bool { browser.space.theme != nil }
-    private var open: Bool { !browser.shutFolders.contains(name) }
+    private var open: Bool { !browser.isFolderShut(name) }
 
     var body: some View {
         HStack(spacing: themed ? 10 : 8) {

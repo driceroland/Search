@@ -14,9 +14,12 @@ final class Browser: NSObject, ObservableObject {
             // The tab just left is the tab just looked at. Whether a tab has
             // gone unwatched long enough to sleep is counted from here, not
             // from when it was first picked.
-            guard oldValue != activeID, let old = oldValue else { return }
-            linkStatus.dismiss()
-            tabs.first { $0.id == old }?.touch()
+            guard oldValue != activeID else { return }
+            if let old = oldValue {
+                linkStatus.dismiss()
+                tabs.first { $0.id == old }?.touch()
+            }
+            if let active { openFolder(containing: active) }
         }
     }
 
@@ -190,10 +193,8 @@ final class Browser: NSObject, ObservableObject {
     }
     /// The colour picker for the frame (see Theme.swift).
     @Published var theming = false
-    /// Folders in the column that are shut (see Folders.swift), by name.
-    @Published var shutFolders = Set(Store.settings.stringArray(forKey: "folders.shut") ?? []) {
-        didSet { Store.settings.set(Array(shutFolders).sorted(), forKey: "folders.shut") }
-    }
+    /// Folders in the column that are shut (see Folders.swift), by space and name.
+    @Published var shutFolders: Set<String> = []
 
     var hereHost: String? { curtain.host(of: active?.address) }
     var hereVeils: [Veil] { curtain.veils(on: hereHost) }

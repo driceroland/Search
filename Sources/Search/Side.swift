@@ -272,7 +272,7 @@ struct SideBar: View {
         let pinBlock = pinRows == 0 ? 0
             : CGFloat(pinRows) * pinHeight + CGFloat(pinRows - 1) * SideBar.pinGap + 10
         let folders = browser.folders
-        let open = folders.filter { !browser.shutFolders.contains($0) }.map { browser.tabs(in: $0).count }.reduce(0, +)
+        let open = folders.filter { !browser.isFolderShut($0) }.map { browser.tabs(in: $0).count }.reduce(0, +)
         let lines = looseTabs.count + folders.count + open
         // The address well, the heading over the folders and the rule
         // under them, where there are those.
@@ -454,7 +454,7 @@ struct SideBar: View {
                 VStack(spacing: SideBar.gap) {
                     ForEach(folders, id: \.self) { name in
                         FolderRow(browser: browser, name: name, height: rowHeight)
-                        if !browser.shutFolders.contains(name) {
+                        if !browser.isFolderShut(name) {
                             ForEach(browser.tabs(in: name)) { tab in
                                 SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == browser.activeID,
                                         pill: pill, close: { browser.close(tab) })

@@ -26,14 +26,8 @@ struct Theme: Codable, Equatable {
     var strength: Double
     var grain: Double
     /// How much of the desktop shows through, sharp rather than frosted: 0
-    /// is frosted glass, 1 clear. Nil in themes saved before it existed.
-    var clarity: Double? = nil
-
-    /// `clarity`, for the slider.
-    var seeThrough: Double {
-        get { clarity ?? 0 }
-        set { clarity = newValue }
-    }
+    /// is frosted glass, 1 clear.
+    var clarity: Double = 0
 
     var colors: [Color] {
         let all = dots.map(\.color)
@@ -72,11 +66,11 @@ struct ThemeGround: View {
                 // Never quite nothing: a pixel with no colour at all lets
                 // clicks fall through the window to whatever is behind it.
                 Color.white.opacity(0.02)
-                Frost().opacity(1 - theme.seeThrough)
+                Frost().opacity(1 - theme.clarity)
                 LinearGradient(colors: theme.colors, startPoint: .topLeading, endPoint: .bottom)
                     .opacity(theme.strength)
-                if theme.grain > 0 {
-                    Image(decorative: Grain.tile, scale: 2)
+                if theme.grain > 0, let tile = Grain.tile {
+                    Image(decorative: tile, scale: 2)
                         .resizable(resizingMode: .tile)
                         .blendMode(.overlay)
                         .opacity(theme.grain * 0.5)
@@ -127,15 +121,15 @@ private struct Frost: NSViewRepresentable {
 
 /// Grey noise, drawn once, tiled.
 private enum Grain {
-    static let tile: CGImage = {
+    static let tile: CGImage? = {
         let side = 128
         var bytes = [UInt8](repeating: 0, count: side * side)
         for i in bytes.indices { bytes[i] = UInt8.random(in: 0...255) }
-        let context = CGContext(
+        guard let context = CGContext(
             data: &bytes, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side,
             space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
-        )!
-        return context.makeImage()!
+        ) else { return nil }
+        return context.makeImage()
     }()
 }
 
@@ -177,7 +171,7 @@ struct ThemePanel: View {
 
                 dial("Strength", \.strength)
                 dial("Grain", \.grain)
-                dial("Clear", \.seeThrough)
+                dial("Clear", \.clarity)
 
                 HStack(spacing: 8) {
                     ForEach(Array(Theme.presets.enumerated()), id: \.offset) { _, preset in
