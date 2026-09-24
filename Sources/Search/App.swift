@@ -378,9 +378,15 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
                 measureLights()
                 resting?.isHidden = false
+                // Only the window you were in, or every window's video would come.
+                browser.appLeft()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+                if let window, (note.object as? NSWindow) === window { Browser.front = browser }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
+                browser.appBack()
             }
             .onChange(of: browser.fieldShowing) { _, showing in
                 if showing {
@@ -672,6 +678,10 @@ struct ContentView: View {
             }
             if browser.recalling {
                 browser.recalling = false
+                return true
+            }
+            if browser.hoarding {
+                browser.hoarding = false
                 return true
             }
             if browser.suggesting != nil {

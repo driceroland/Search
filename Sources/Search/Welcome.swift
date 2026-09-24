@@ -11,8 +11,11 @@ struct WelcomePanel: View {
     @State private var page = 0
     @State private var forward = true
 
-    // Bringing things over.
-    @State private var source: Chromium.Source? = Chromium.installed().first
+    // Bringing things over. Nil until one is picked, which means the first:
+    // finding them looks through each browser's folders, and as an initial
+    // value that ran every time the panel was made, the first window's
+    // included, for a page that isn't showing yet.
+    @State private var source: Chromium.Source?
     @State private var wantsPasswords = true
     @State private var wantsHistory = true
     @State private var wantsBookmarks = true
@@ -211,7 +214,7 @@ struct WelcomePanel: View {
     // MARK: - doing
 
     private func bringAll() {
-        guard let source else { return }
+        guard let source = source ?? Chromium.installed().first else { return }
         bringing = true
         var lines: [String] = []
         let group = DispatchGroup()
