@@ -208,6 +208,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autocorrect)
             }
             Rule()
+            Line("Peek at a link with a shift-click", "Its page opens in a panel over the one you're reading. Escape puts it away; the other button keeps it as a tab") {
+                Switch(on: $prefs.peeksLinks)
+            }
+            Rule()
             Line("Show where links go", "Point at a link and its address shows at the bottom of the page") {
                 Switch(on: $prefs.showsLinks)
             }
@@ -222,6 +226,10 @@ struct SettingsPanel: View {
             Rule()
             Line("Flick the floating video to a corner", "Two fingers on it send it to the corner or edge they point at, instead of pushing it along. Dragging still puts it anywhere") {
                 Switch(on: $prefs.floatFlicks)
+            }
+            Rule()
+            Line("Float the video when you switch tabs", "A video playing on YouTube and the like comes out into its floating window when you go to another tab, and back when you return. ⇧⌘P still floats one by hand") {
+                Switch(on: $prefs.floatsOnLeave)
             }
             Rule()
             Line("Float the video when you switch apps", "A video playing on the site you're on comes out into its floating window as another app comes to the front, and goes back into its tab when you return") {

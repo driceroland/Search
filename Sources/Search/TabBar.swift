@@ -12,9 +12,6 @@ struct TabBar: View {
     @Namespace private var below
 
     /// Which tab is under the hand, where it started, and how far it has come.
-    @State private var dragging: Tab.ID?
-    @State private var from = 0
-    @State private var travel: CGFloat = 0
     @State private var landing = false
     /// The plus only comes out when the pointer is in the row.
     @State private var nearby = false
@@ -64,7 +61,6 @@ struct TabBar: View {
                                             // A pinned square moves among pinned squares, a title
                                             // among titles: each has its own stride.
                                             let step = (tab.pin != nil ? Metrics.pinWidth : width(in: geo.size.width)) + Metrics.tabGap
-                                            let held = dragging == tab.id
                                             TabPill(
                                                 browser: browser,
                                                 prefs: browser.prefs,
@@ -75,19 +71,9 @@ struct TabBar: View {
                                                 pill: pill,
                                                 close: { browser.close(tab) }
                                             )
-                                            // The row reflows around it while the pill itself keeps
-                                            // up with the hand: what it has travelled, less the
-                                            // ground its new place has already given it.
-                                            .offset(x: held ? travel - CGFloat(index - from) * step : 0)
-                                            // Under the hand exactly. Its place in the row springs when it
-                                            // passes another tab, and the offset springs back the same way —
-                                            // until the next move of the hand cuts the offset's spring short
-                                            // and leaves the place's running: the tab jumped a whole slot and
-                                            // drifted back each time it passed one. Only the others glide.
-                                            .transaction { if held { $0.animation = nil } }
-                                            .zIndex(held ? 1 : 0)
-                                            .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
-                                            .gesture(reorder(tab: tab, index: index, step: step))
+                                            .modifier(Carried(index: index, count: browser.tabs.count, step: step, vertical: false, space: "strip") {
+                                                browser.move(tab, to: $0)
+                                            })
                                             .id(tab.id)
                                         }
                                     }
@@ -226,30 +212,6 @@ struct TabBar: View {
             .frame(height: Metrics.strip)
             .allowsHitTesting(false)
         }
-    }
-
-    /// Pick a tab up and the others get out of its way as it passes them.
-    private func reorder(tab: Tab, index: Int, step: CGFloat) -> some Gesture {
-        // In the row's space, not the pill's — see the sidebar's grid for why.
-        DragGesture(minimumDistance: 5, coordinateSpace: .named("strip"))
-            .onChanged { value in
-                if dragging != tab.id {
-                    dragging = tab.id
-                    from = index
-                }
-                travel = value.translation.width
-                let moved = Int((travel / step).rounded())
-                let target = min(max(0, from + moved), browser.tabs.count - 1)
-                if target != index {
-                    withAnimation(Motion.settle) { browser.move(tab, to: target) }
-                }
-            }
-            .onEnded { _ in
-                withAnimation(Motion.settle) {
-                    dragging = nil
-                    travel = 0
-                }
-            }
     }
 
     /// Brings the tab you are on into view once the run scrolls: at once
@@ -394,6 +356,9 @@ private struct TabPill: View {
     /// tooltip, and ⌘W or the menu to close it — a cross on something this
     /// small would be what a click to pick the tab lands on.
     private var compact: Bool { !editing && !pinned && width < Metrics.tabTitled }
+    /// A speaker to press at the end of the pill: the page plays sound, or
+    /// was muted. The ring, while the page is still coming, goes first.
+    private var speaker: Bool { !editing && !tab.loading && (tab.noisy || tab.muted) }
 
     /// A pinned tab is a square, an edited one is a field, everything else is
     /// its share of what is left.
@@ -513,49 +478,54 @@ private struct TabPill: View {
 
             Spacer(minLength: 2)
 
-            // Pinned to the right-hand end of the pill, not trailing the title.
-            // One slot doing two jobs: the cross when the pointer is here, the
-            // ring while the page is still coming, never both.
-            ZStack {
-                if hovering {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(Palette.muted)
-                        .frame(width: 15, height: 15)
-                        .background(Palette.ink.opacity(0.07), in: Circle())
-                        .transition(.opacity)
-                } else if tab.loading {
-                    Ring().transition(.opacity)
-                } else if tab.noisy {
-                    // Which tab the noise is coming from. ⌘⇧M stops it.
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(Palette.muted)
+            // The speaker, which can be pressed, is at the end of the pill on
+            // its own, and one place in under the pointer, beside the cross
+            // and clear of its reach.
+            HStack(spacing: 0) {
+                if speaker {
+                    Speaker(tab: tab)
+                        .padding(.trailing, hovering ? 8 : 0)
                         .transition(.opacity)
                 }
-            }
-            .frame(width: editing ? 0 : 15, height: 15)
-            .opacity(editing ? 0 : 1)
-            // The cross is 15 points across because that is how big it should
-            // look. What you have to hit is the whole right-hand end of the
-            // tab: an overlay is not laid out, so it can reach past its own
-            // frame without moving anything that is.
-            .overlay {
-                if !editing {
-                    Color.clear
-                        .frame(width: 30, height: 28)
-                        .contentShape(Rectangle())
-                        .onTapGesture { if hovering { close() } }
+
+                // Pinned to the right-hand end of the pill, not trailing the title.
+                // One slot doing two jobs: the cross when the pointer is here, the
+                // ring while the page is still coming, never both.
+                ZStack {
+                    if hovering {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Palette.muted)
+                            .frame(width: 15, height: 15)
+                            .background(Palette.ink.opacity(0.07), in: Circle())
+                            .transition(.opacity)
+                    } else if tab.loading {
+                        Ring().transition(.opacity)
+                    }
                 }
+                .frame(width: editing || (speaker && !hovering) ? 0 : 15, height: 15)
+                .opacity(editing ? 0 : 1)
+                // The cross is 15 points across because that is how big it should
+                // look. What you have to hit is the whole right-hand end of the
+                // tab: an overlay is not laid out, so it can reach past its own
+                // frame without moving anything that is.
+                .overlay {
+                    if !editing {
+                        Color.clear
+                            .frame(width: 30, height: 28)
+                            .contentShape(Rectangle())
+                            .onTapGesture { if hovering { close() } }
+                    }
+                }
+                .animation(Motion.quick, value: hovering)
+                .animation(Motion.quick, value: tab.loading)
             }
-            .animation(Motion.quick, value: hovering)
-            .animation(Motion.quick, value: tab.loading)
-            .animation(Motion.quick, value: tab.noisy)
         }
         .padding(.leading, 11)
         .padding(.trailing, editing ? 11 : 7)
         .padding(.vertical, 6)
         .frame(width: span, alignment: .leading)
+        .animation(Motion.quick, value: speaker)
     }
 
     @ViewBuilder
@@ -602,6 +572,66 @@ private struct TabPill: View {
 /// A field of its own rather than SwiftUI's, for one reason: the system paints
 /// selected text as a solid block of accent colour, which over a pale grey pill
 /// this size is the loudest thing in the window. Here it is a tenth of the ink.
+/// A tab picked up and carried along its row, the others making way as it
+/// passes them — across the top or down the column alike.
+///
+/// The hand's travel is the tab's own: every move of the pointer redraws the
+/// one tab being carried, not the whole column or bar around it (with the
+/// neighbouring spaces drawn beside it, that was every row and every square
+/// of three spaces, each frame, and the tab trailed behind the hand). The row
+/// only redraws when the tab actually changes place.
+struct Carried: ViewModifier {
+    let index: Int
+    let count: Int
+    /// One place in the row: the tab's length and the gap after it.
+    let step: CGFloat
+    let vertical: Bool
+    /// The row's coordinate space, not the tab's: a tab that has just moved
+    /// keeps its bearings (see the sidebar's grid).
+    let space: String
+    let move: (Int) -> Void
+
+    @State private var held = false
+    @State private var from = 0
+    @State private var travel: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        // What it has travelled, less the ground its new place has already
+        // given it.
+        let shift = held ? travel - CGFloat(index - from) * step : 0
+        return content
+            .offset(x: vertical ? 0 : shift, y: vertical ? shift : 0)
+            // Under the hand exactly. Its place in the row springs when it
+            // passes another tab, and the offset springs back the same way —
+            // until the next move of the hand cuts the offset's spring short
+            // and leaves the place's running: the tab jumped a whole slot and
+            // drifted back each time it passed one. Only the others glide.
+            .transaction { if held { $0.animation = nil } }
+            .zIndex(held ? 1 : 0)
+            .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
+            .gesture(
+                DragGesture(minimumDistance: 5, coordinateSpace: .named(space))
+                    .onChanged { value in
+                        if !held {
+                            held = true
+                            from = index
+                        }
+                        travel = vertical ? value.translation.height : value.translation.width
+                        let target = min(max(0, from + Int((travel / step).rounded())), count - 1)
+                        if target != index {
+                            withAnimation(Motion.settle) { move(target) }
+                        }
+                    }
+                    .onEnded { _ in
+                        withAnimation(Motion.settle) {
+                            held = false
+                            travel = 0
+                        }
+                    }
+            )
+    }
+}
+
 struct TabAddressField: NSViewRepresentable {
     @ObservedObject var browser: Browser
 
@@ -619,6 +649,8 @@ struct TabAddressField: NSViewRepresentable {
         field.cell?.wraps = false
         field.stringValue = browser.tabDraft
         context.coordinator.watch(field)
+        // The site card stands under whichever field the address is in.
+        SiteCardPanel.follow(browser, anchor: field)
         return field
     }
 
@@ -691,7 +723,7 @@ struct TabAddressField: NSViewRepresentable {
         /// on to what it was for.
         private var watcher: Any?
 
-        func watch(_ field: NSTextField) {
+        @MainActor func watch(_ field: NSTextField) {
             guard watcher == nil else { return }
             watcher = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self, weak field] event in
                 guard let self, let field, event.window === field.window,
@@ -703,7 +735,7 @@ struct TabAddressField: NSViewRepresentable {
             }
         }
 
-        func unwatch() {
+        @MainActor func unwatch() {
             if let watcher { NSEvent.removeMonitor(watcher) }
             watcher = nil
         }
@@ -731,6 +763,12 @@ struct TabMenu: View {
             browser.duplicate()
         }
         .disabled(tab.isBlank)
+        // The card a click on the tab you are on shows under its address.
+        Button("Site Information…") {
+            if browser.activeID != tab.id { browser.select(tab) }
+            browser.beginTabEdit(tab)
+        }
+        .disabled(tab.isBlank || tab.address == nil || tab.pin != nil)
         Button("Copy Address") {
             browser.select(tab)
             browser.copyAddress()
@@ -741,6 +779,7 @@ struct TabMenu: View {
             browser.copyMarkdownLink()
         }
         .disabled(tab.isBlank)
+        Button(tab.muted ? "Unmute Tab" : "Mute Tab") { tab.toggleMute() }
         Divider()
         Button("Close Tab", action: close)
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }
