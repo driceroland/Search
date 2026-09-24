@@ -13,15 +13,13 @@ don't build it twice.
 
 - [ ] **Bitwarden goes blank after signing in** (and for one person doesn't load). Before signing in it works — popup, WebAssembly, background — so this needs an account to reproduce. *(X, several)*
 - [ ] **Vimium C doesn't start**: WebKit fails to load its background (Vimium itself works). *(X)*
-- [ ] **Passkeys, for some people.** A site's own passkey button works; what may be missing is the suggestion Safari shows as you click into a sign-in field. Waiting on details. *(X, [#17](https://github.com/driceroland/Search/issues/17))*
+- [ ] **Passkeys under the sign-in field.** A site's passkey button brings up the Mac's passkey sheet now; next is the suggestion Safari shows as you click into a sign-in field. *(X, [#17](https://github.com/driceroland/Search/issues/17))*
 - [ ] **Extension fixes held until 1.0.1 is out:** the field on an extension's new tab page ([#42](https://github.com/driceroland/Search/pull/42)), popups at their own size ([#48](https://github.com/driceroland/Search/pull/48)), pinning extensions from Settings ([#50](https://github.com/driceroland/Search/pull/50)).
 
 ## Next — small additions people asked for
 
-- [ ] **A setting to turn off the reading-progress fill** in the tab you are on. *(X)*
 - [ ] **Where a link goes, shown on hover**, as an option. *([#29](https://github.com/driceroland/Search/pull/29))*
 - [ ] **Import from Comet**, alongside Chrome, Arc, Brave, Edge and Dia. *(X)*
-- [ ] **Homebrew**: `brew install --cask search`. *(X)*
 - [ ] **Intel Macs.** *(X)*
 
 ## Later — bigger pieces of work

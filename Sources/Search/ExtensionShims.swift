@@ -25,22 +25,22 @@ import CryptoKit
 enum ExtensionShims {
     /// The name native messages to the browser itself go to.
     static let application = "search"
-    static let file = "search-shim.js"
+    nonisolated static let file = "search-shim.js"
     /// The first line of a worker that already carries the shim.
-    static let marker = "/* Search: Chrome APIs WebKit lacks, filled in (ExtensionShims.swift) */"
-    static let ender = "/* Search: end of shim */"
+    nonisolated static let marker = "/* Search: Chrome APIs WebKit lacks, filled in (ExtensionShims.swift) */"
+    nonisolated static let ender = "/* Search: end of shim */"
 
     // MARK: - at install
 
     /// Written beside a prepared extension: which shim it carries. The same
     /// one needs nothing redone, which matters at launch — preparing reads
     /// every script and page an extension ships.
-    static let stamp = ".search-shim"
-    static let version: String = {
+    nonisolated static let stamp = ".search-shim"
+    nonisolated static let version: String = {
         SHA256.hash(data: Data(script.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
 
-    static func prepare(_ folder: URL) throws {
+    nonisolated static func prepare(_ folder: URL) throws {
         let files = FileManager.default
         let stampURL = folder.appendingPathComponent(stamp)
         if (try? String(contentsOf: stampURL, encoding: .utf8)) == version { return }
@@ -134,7 +134,7 @@ enum ExtensionShims {
     /// The shim as this extension gets it: with the events its code mentions
     /// — `chrome.tabs.onUpdated`, `e.runtime.onInstalled` — so its worker
     /// can take their listeners late (see the end of the script).
-    static func shim(for folder: URL) -> String {
+    nonisolated static func shim(for folder: URL) -> String {
         var found = Set<String>()
         let pattern = try! NSRegularExpression(pattern: #"\.([a-zA-Z]+)\.(on[A-Z][A-Za-z]+)\b"#)
         let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil)
@@ -170,7 +170,7 @@ enum ExtensionShims {
 
     /// Defines only what is missing, so the day WebKit implements an API,
     /// WebKit's is the one used.
-    static let script = #"""
+    nonisolated static let script = #"""
     (() => {
       const root = globalThis;
       // Taken now, not looked up at each use: a sandbox that later locks

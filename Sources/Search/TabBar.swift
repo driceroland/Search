@@ -7,6 +7,9 @@ struct TabBar: View {
     @ObservedObject var browser: Browser
 
     @Namespace private var pill
+    /// The neighbouring spaces' own grey, apart from this one's.
+    @Namespace private var above
+    @Namespace private var below
 
     /// Which tab is under the hand, where it started, and how far it has come.
     @State private var dragging: Tab.ID?
@@ -30,7 +33,7 @@ struct TabBar: View {
             ZStack(alignment: .leading) {
                 // The empty half of the strip is what you grab to move the
                 // window; the tabs keep the run they sit on.
-                DragStrip(reserved: Metrics.lights + (profileWidth > 0 ? profileWidth + 4 : 0) + run(in: geo.size.width) + Metrics.tabGap + Metrics.plusWidth, trailing: Metrics.helm + 26 + 24)
+                DragStrip(reserved: Metrics.lights + (profileWidth > 0 ? profileWidth + 4 : 0) + dot + (making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width)) + Metrics.tabGap + Metrics.plusWidth, trailing: Metrics.helm + 26 + 24)
                 // And the corner the lights sit in, which is title bar too —
                 // the one stretch left to take hold of when tabs fill the row.
                 DragStrip()
@@ -53,42 +56,71 @@ struct TabBar: View {
                     // it takes the room there is and scrolls inside its own
                     // edges — never under the lights, never over the doors —
                     // keeping the tab you are on in view.
-                    ScrollViewReader { reader in
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: Metrics.tabGap) {
-                                ForEach(Array(browser.tabs.enumerated()), id: \.element.id) { index, tab in
-                                    // A pinned square moves among pinned squares, a title
-                                    // among titles: each has its own stride.
-                                    let step = (tab.pin != nil ? Metrics.pinWidth : width(in: geo.size.width)) + Metrics.tabGap
-                                    let held = dragging == tab.id
-                                    TabPill(
-                                        browser: browser,
-                                        prefs: browser.prefs,
-                                        tab: tab,
-                                        live: tab.id == browser.activeID,
-                                        width: width(in: geo.size.width),
-                                        room: geo.size.width - Metrics.lights - 12,
-                                        pill: pill,
-                                        close: { browser.close(tab) }
-                                    )
-                                    // The row reflows around it while the pill itself keeps
-                                    // up with the hand: what it has travelled, less the
-                                    // ground its new place has already given it.
-                                    .offset(x: held ? travel - CGFloat(index - from) * step : 0)
-                                    .zIndex(held ? 1 : 0)
-                                    .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
-                                    .gesture(reorder(tab: tab, index: index, step: step))
-                                    .id(tab.id)
+                    // The spaces, one above the other: up or down over the bar
+                    // and the next one's tabs come in as these go, with nothing
+                    // between them (see SpaceSwipe). Past the last, a new one.
+                    ZStack(alignment: .leading) {
+                        if making {
+                            NewSpaceCard(browser: browser, inline: true)
+                                .fixedSize()
+                                .offset(y: browser.spaceSwipe)
+                        } else {
+                            ScrollViewReader { reader in
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: Metrics.tabGap) {
+                                        ForEach(Array(browser.tabs.enumerated()), id: \.element.id) { index, tab in
+                                            // A pinned square moves among pinned squares, a title
+                                            // among titles: each has its own stride.
+                                            let step = (tab.pin != nil ? Metrics.pinWidth : width(in: geo.size.width)) + Metrics.tabGap
+                                            let held = dragging == tab.id
+                                            TabPill(
+                                                browser: browser,
+                                                prefs: browser.prefs,
+                                                tab: tab,
+                                                live: tab.id == browser.activeID,
+                                                width: width(in: geo.size.width),
+                                                room: geo.size.width - Metrics.lights - 12,
+                                                pill: pill,
+                                                close: { browser.close(tab) }
+                                            )
+                                            // The row reflows around it while the pill itself keeps
+                                            // up with the hand: what it has travelled, less the
+                                            // ground its new place has already given it.
+                                            .offset(x: held ? travel - CGFloat(index - from) * step : 0)
+                                            // Under the hand exactly. Its place in the row springs when it
+                                            // passes another tab, and the offset springs back the same way —
+                                            // until the next move of the hand cuts the offset's spring short
+                                            // and leaves the place's running: the tab jumped a whole slot and
+                                            // drifted back each time it passed one. Only the others glide.
+                                            .transaction { if held { $0.animation = nil } }
+                                            .zIndex(held ? 1 : 0)
+                                            .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
+                                            .gesture(reorder(tab: tab, index: index, step: step))
+                                            .id(tab.id)
+                                        }
+                                    }
+                                    .frame(height: Metrics.strip)
                                 }
+                                .scrollDisabled(!overflowing(in: geo.size.width))
+                                .frame(width: run(in: geo.size.width))
+                                .onAppear { reveal(reader, in: geo.size.width) }
+                                .onChange(of: overflowing(in: geo.size.width)) { _, _ in reveal(reader, in: geo.size.width) }
+                                .onChange(of: browser.activeID) { _, _ in reveal(reader, in: geo.size.width, gliding: true) }
                             }
-                            .frame(height: Metrics.strip)
+                                .offset(y: browser.spaceSwipe)
                         }
-                        .scrollDisabled(!overflowing(in: geo.size.width))
-                        .frame(width: run(in: geo.size.width))
-                        .onAppear { reveal(reader, in: geo.size.width) }
-                        .onChange(of: overflowing(in: geo.size.width)) { _, _ in reveal(reader, in: geo.size.width) }
-                        .onChange(of: browser.activeID) { _, _ in reveal(reader, in: geo.size.width, gliding: true) }
+                        if browser.spaceSwipe > 0, spaceAt > 0 {
+                            page(spaceAt - 1, in: geo.size.width, pill: above)
+                                .offset(y: browser.spaceSwipe - Metrics.strip)
+                        }
+                        if browser.spaceSwipe < 0, spaceAt < browser.spaces.count {
+                            page(spaceAt + 1, in: geo.size.width, pill: below)
+                                .offset(y: browser.spaceSwipe + Metrics.strip)
+                        }
                     }
+                    .frame(width: making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width), height: Metrics.strip, alignment: .leading)
+                    // Only up and down: a neighbour's row may run wider than this one.
+                    .mask(Rectangle().frame(width: 4000, height: Metrics.strip))
 
                     // The way to a new page, right after the tabs rather than
                     // at the end of their run, so it is there however far the
@@ -145,6 +177,7 @@ struct TabBar: View {
         }
         .frame(height: Metrics.strip)
         .onHover { nearby = $0 }
+        .onAppear { SpaceSwipe.shared.start(for: browser) }
         // A link dragged onto the row opens there.
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
             browser.take(providers)
@@ -161,6 +194,50 @@ struct TabBar: View {
         // and the tabs appeared to jump aside.
         .animation(Motion.glide, value: browser.editingTab)
         .animation(Motion.settle, value: browser.tabs.map(\.id))
+    }
+
+    // MARK: - the spaces, one above the other
+
+    private var making: Bool { browser.prefs.usesSpaces && browser.makingSpace }
+
+    /// Where the space on screen sits among them: one past the last while
+    /// the row for a new one is up.
+    private var spaceAt: Int {
+        browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
+    }
+
+    /// Another space's row, drawn with the same pills as this one's so the
+    /// two read as one bar while they pass — nothing to press until it is
+    /// the one on screen. Past the last, the row for a new space.
+    @ViewBuilder
+    private func page(_ index: Int, in strip: CGFloat, pill: Namespace.ID) -> some View {
+        if index == browser.spaces.count {
+            NewSpaceCard(browser: browser, inline: true)
+                .fixedSize()
+                .allowsHitTesting(false)
+        } else {
+            let space = browser.spaces[index]
+            let row = space.id == browser.spaceID
+                ? Parked(tabs: browser.tabs, active: browser.activeID)
+                : browser.parked[space.id] ?? Parked(tabs: [], active: nil)
+            let each = width(in: strip, pinned: row.tabs.filter { $0.pin != nil }.count, count: row.tabs.count)
+            HStack(spacing: Metrics.tabGap) {
+                ForEach(row.tabs) { tab in
+                    TabPill(
+                        browser: browser,
+                        prefs: browser.prefs,
+                        tab: tab,
+                        live: tab.id == row.active,
+                        width: each,
+                        room: strip - Metrics.lights - 12,
+                        pill: pill,
+                        close: {}
+                    )
+                }
+            }
+            .frame(height: Metrics.strip)
+            .allowsHitTesting(false)
+        }
     }
 
     /// Pick a tab up and the others get out of its way as it passes them.
@@ -240,11 +317,15 @@ struct TabBar: View {
     /// mark and its air. Past that, the run scrolls. The pinned squares take
     /// their room off the top.
     private func width(in strip: CGFloat) -> CGFloat {
-        let pinned = CGFloat(browser.pinnedCount)
-        let loose = CGFloat(browser.tabs.count) - pinned
+        width(in: strip, pinned: browser.pinnedCount, count: browser.tabs.count)
+    }
+
+    private func width(in strip: CGFloat, pinned pins: Int, count: Int) -> CGFloat {
+        let pinned = CGFloat(pins)
+        let loose = CGFloat(count) - pinned
         guard loose > 0 else { return Metrics.tabWidth }
         let spent = pinned * Metrics.pinWidth
-            + CGFloat(max(0, browser.tabs.count - 1)) * Metrics.tabGap
+            + CGFloat(max(0, count - 1)) * Metrics.tabGap
         return max(Metrics.tabMinWidth, min(Metrics.tabWidth, (room(in: strip) - spent) / loose))
     }
 }
@@ -512,7 +593,7 @@ private struct TabPill: View {
                 // points of grey filling from the left behind a single letter
                 // says nothing about anything — it needs the width of a title
                 // to read as progress at all.
-                if !pinned && !compact {
+                if !pinned && !compact && prefs.showsReading {
                     Rectangle()
                         .fill(Palette.ink.opacity(0.055))
                         .frame(width: span * tab.reading)
@@ -661,6 +742,10 @@ struct TabMenu: View {
         Button("Close Tab", action: close)
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }
             .disabled(browser.tabs.count < 2)
+        // ⌘⇧T, and the History menu's Recently Closed, where few think to
+        // look for it: here too, where tabs are closed.
+        Button("Reopen Closed Tab") { browser.reopen() }
+            .disabled(browser.ghosts.isEmpty)
     }
 }
 

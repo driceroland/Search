@@ -57,6 +57,12 @@ struct SearchApp: App {
                     set: { _ in browser.toggleSidebar() }
                 ))
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+                // Folded away, not moved (see Fold.swift) — the column, or the
+                // strip across the top.
+                Button(browser.prefs.sidebar
+                       ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
+                       : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
+                    .keyboardShortcut("s")
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
                     set: { browser.prefs.glyph = $0 }
@@ -165,8 +171,8 @@ struct SearchApp: App {
                     .keyboardShortcut("b", modifiers: [.command, .shift])
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Show Bookmarks…") { browser.bookmarking = true }
-                Divider()
-                BookmarkTree(nodes: browser.bookmarks.roots) { browser.visit($0) }
+                // The bookmarks themselves follow, put in by AppKit (see
+                // BookmarkMenu in Bookmarks.swift).
             }
             CommandMenu("History") {
                 Section("Recently Visited") {
@@ -206,28 +212,6 @@ struct SearchApp: App {
             }
             CommandGroup(replacing: .help) {
                 Button("Send Feedback…") { Links.writeFeedback() }
-            }
-        }
-    }
-}
-
-/// The bookmarks, as menus within menus, for the menu bar.
-private struct BookmarkTree: View {
-    let nodes: [Bookmark]
-    let open: (URL) -> Void
-
-    var body: some View {
-        ForEach(nodes) { node in
-            if node.isFolder {
-                Menu(node.title) {
-                    if let kids = node.children, !kids.isEmpty {
-                        BookmarkTree(nodes: kids, open: open)
-                    } else {
-                        Text("Empty")
-                    }
-                }
-            } else if let text = node.url, let url = URL(string: text) {
-                Button(node.title) { open(url) }
             }
         }
     }
@@ -312,7 +296,7 @@ struct ContentView: View {
                 }
             }
 
-            if !browser.prefs.sidebar, browser.active?.immersed != true {
+            if !browser.prefs.sidebar, !browser.folded, browser.active?.immersed != true {
                 TabBar(browser: browser)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -455,6 +439,7 @@ struct ContentView: View {
             browser.askFocus()
             // Addresses from other apps have somewhere to go from here on.
             Links.hand(to: browser)
+            BookmarkMenu.shared.start(for: browser)
         }
     }
 
@@ -608,7 +593,8 @@ struct ContentView: View {
     /// beneath the strip.
     private var band: CGFloat {
         guard browser.active?.immersed != true else { return 0 }
-        return browser.prefs.sidebar ? 0 : Metrics.strip
+        // Folded, the strip is out of the window and the page has its height.
+        return browser.prefs.sidebar || browser.folded ? 0 : Metrics.strip
     }
 
     /// Put the resting circles in the title bar, exactly over the buttons.
@@ -765,6 +751,10 @@ struct ContentView: View {
                 browser.managing = false
                 return true
             }
+            if browser.recalling {
+                browser.recalling = false
+                return true
+            }
             if browser.suggesting != nil {
                 browser.dropChoice()
                 return true
@@ -887,6 +877,9 @@ struct ContentView: View {
             }
         case "s" where shifted:
             browser.toggleSidebar()
+        case "s" where !shifted:
+            // The column or the strip, folded away (see Fold.swift).
+            browser.toggleFold()
         case "b" where shifted:
             browser.bookmarkCurrent()
         case "," where !shifted:

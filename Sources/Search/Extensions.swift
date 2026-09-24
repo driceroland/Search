@@ -139,16 +139,22 @@ final class Extensions: NSObject, ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] pair in self?.activated(from: pair.0, to: pair.1) }
             .store(in: &bag)
-        Task {
-            // One after another, a moment apart: started all at once, WebKit
-            // fails some of their workers and never tries them again.
-            for item in installed where item.enabled {
-                await load(item)
-                if contexts[item.id]?.webExtension.hasBackgroundContent == true {
-                    try? await Task.sleep(for: .milliseconds(400))
+        // Once the window is up: loading one takes the main thread for tens
+        // of milliseconds (uBlock Origin Lite, 45), and the first frame
+        // waited behind it.
+        Links.onceShown { [weak self] in
+            Task { [weak self] in
+                guard let self else { return }
+                // One after another, a moment apart: started all at once, WebKit
+                // fails some of their workers and never tries them again.
+                for item in installed where item.enabled {
+                    await load(item)
+                    if contexts[item.id]?.webExtension.hasBackgroundContent == true {
+                        try? await Task.sleep(for: .milliseconds(400))
+                    }
                 }
+                checkForUpdates()
             }
-            checkForUpdates()
         }
     }
 
@@ -161,16 +167,20 @@ final class Extensions: NSObject, ObservableObject {
         return made
     }
 
-    /// Private tabs keep nothing and see no extensions.
-    var visibleTabs: [Tab] { browser?.tabs.filter { !$0.shy } ?? [] }
+    /// Private tabs keep nothing and see no extensions, unless Settings ›
+    /// Extensions says they may — and then only the ones made since, which
+    /// carry the controller; one made before the switch has no page an
+    /// extension could reach.
+    private func seen(_ tab: Tab) -> Bool { !tab.shy || tab.carriesExtensions }
+    var visibleTabs: [Tab] { browser?.tabs.filter(seen) ?? [] }
 
     var activeAdapter: ExtensionTab? {
-        guard let tab = browser?.active, !tab.shy else { return nil }
+        guard let tab = browser?.active, seen(tab) else { return nil }
         return adapter(for: tab)
     }
 
     private func follow(_ tabs: [Tab]) {
-        let now = tabs.filter { !$0.shy }
+        let now = tabs.filter(seen)
         let ids = now.map(\.id)
         let gone = order.filter { !ids.contains($0) }
         for id in gone {
@@ -206,7 +216,7 @@ final class Extensions: NSObject, ObservableObject {
     }
 
     private func activated(from old: Tab.ID?, to new: Tab.ID?) {
-        guard let new, let tab = browser?.tabs.first(where: { $0.id == new }), !tab.shy else { return }
+        guard let new, let tab = browser?.tabs.first(where: { $0.id == new }), seen(tab) else { return }
         let previous = old.flatMap { id in browser?.tabs.first(where: { $0.id == id }) }.map(adapter(for:))
         controller.didActivateTab(adapter(for: tab), previousActiveTab: previous)
         actionsChanged += 1
@@ -217,8 +227,11 @@ final class Extensions: NSObject, ObservableObject {
     @discardableResult
     private func load(_ item: Installed) async -> Bool {
         // The shim this build of Search carries, in place of whatever the
-        // build that installed it carried.
-        try? ExtensionShims.prepare(Extensions.folder(for: item.id))
+        // build that installed it carried — away from the main thread: the
+        // first launch after an update reads and rewrites every script and
+        // page each extension ships (Grammarly: 450 ms).
+        let folder = Extensions.folder(for: item.id)
+        try? await Task.detached(priority: .userInitiated) { try ExtensionShims.prepare(folder) }.value
         do {
             let found = try await WKWebExtension(resourceBaseURL: Extensions.folder(for: item.id))
             let context = WKWebExtensionContext(for: found)
@@ -772,7 +785,7 @@ final class Extensions: NSObject, ObservableObject {
 
     /// Right-click items an extension added, for the page's menu.
     func menuItems(for tab: Tab) -> [NSMenuItem] {
-        guard !tab.shy else { return [] }
+        guard seen(tab) else { return [] }
         let adapter = adapter(for: tab)
         return contexts.values.flatMap { $0.menuItems(for: adapter) }
     }
