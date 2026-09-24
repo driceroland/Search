@@ -265,6 +265,13 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         var tag = (el.tagName || '').toLowerCase();
         if (tag === 'textarea') return true;
         if (el.isContentEditable === true) return true;
+        if (el.getAttribute && el.getAttribute('role') === 'textbox') return true;
+        // A document that types into a frame of its own — Google Docs keeps
+        // the caret there. ⌘⇧V is that document's paste, so the frame counts.
+        if (tag === 'iframe') {
+          try { return editable(el.contentDocument && el.contentDocument.activeElement); }
+          catch (e) { return false; }
+        }
         if (tag !== 'input') return false;
         var kind = (el.type || 'text').toLowerCase();
         return ['text', 'search', 'email', 'url', 'tel', 'password', 'number',

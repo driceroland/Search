@@ -131,6 +131,8 @@ struct SearchApp: App {
                 Button("Copy Address") { browser.copyAddress() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
                     .disabled(browser.active?.isBlank ?? true)
+                Button("Copy as Markdown Link") { browser.copyMarkdownLink() }
+                    .disabled(browser.active?.isBlank ?? true)
                 Button("Paste and Go") { browser.pasteAndGo() }
                     .keyboardShortcut("v", modifiers: [.command, .shift])
                 Divider()
@@ -216,6 +218,39 @@ private struct MenuLine: View {
     }
 }
 
+/// The base a sheet draws on, and the reason a panel is legible over a page
+/// that has hidden its own cursor.
+///
+/// WebKit turns `cursor: none` into an AppKit cursor rect over the whole web
+/// view. SwiftUI panels layered on top add no rect of their own, so when the
+/// pointer crosses from the page into a sheet the invisible rect still wins,
+/// and the sheet reads as empty air. This gives the sheet one arrow-sized
+/// rect to win with, frontmost because its NSView sits above the web view
+/// (a sheet is drawn by `.overlay { panels }` on `ContentView.body`).
+private struct CursorGround: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { CursorGroundView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private final class CursorGroundView: NSView {
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .arrow)
+    }
+
+    // Re-arm the rect each time this view joins a window or changes size, so
+    // AppKit notices it even if the pointer has not moved since the sheet
+    // appeared. Without this the arrow only shows after a twitch.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.invalidateCursorRects(for: self)
+    }
+
+    override func layout() {
+        super.layout()
+        window?.invalidateCursorRects(for: self)
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var browser: Browser
 
@@ -251,6 +286,9 @@ struct ContentView: View {
                     // One stage, always.
                     if let tab = browser.active {
                         Page(tab: tab)
+                            .overlay {
+                                if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
+                            }
                             .overlay(alignment: .topTrailing) {
                                 if browser.finding {
                                     FindBar(browser: browser)
@@ -540,6 +578,10 @@ struct ContentView: View {
         close: @escaping () -> Void
     ) -> some View {
         ZStack {
+            // The floor owns the cursor; see CursorGround.
+            CursorGround()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
             Color.black.opacity(0.10)
                 .ignoresSafeArea()
                 .onTapGesture(perform: close)
@@ -783,7 +825,20 @@ struct ContentView: View {
         case "j" where shifted:
             browser.hoarding.toggle()
         case "v" where shifted:
-            browser.pasteAndGo()
+            // In a text field this key is paste without formatting — a Google
+            // Doc, a form, the address field. It only means Paste and Go when
+            // nothing is being typed. Passing the key on is not enough: WebKit
+            // has no use for ⌘⇧V, hands it back, and the menu's Paste and Go
+            // takes it. So the plain paste is done here, as Chrome does.
+            // A web view has an input context only while the caret is in
+            // something editable, in any frame — including frames the page's
+            // own script can't look into, like the one a Google Doc types in.
+            if browser.active?.typing == true || browser.active?.built?.inputContext != nil
+                || browser.editing || event.window?.firstResponder is NSTextView {
+                _ = event.window?.firstResponder?.tryToPerform(#selector(NSTextView.pasteAsPlainText(_:)), with: nil)
+            } else {
+                browser.pasteAndGo()
+            }
         case "p" where !shifted:
             browser.printPage()
         case "f" where !shifted:
