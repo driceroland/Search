@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Tabs can wait to load until you first see them: Settings › Tabs › Load tabs when you first see them, off by default. Fifty YouTube tabs opened at once load one page instead of fifty, 1.5 GB instead of 18.
+
 ### Fixed
 
 - The tab bar folded away with ⌘S comes back over the page on a ground of its own, as the column does: the page no longer shows through between the tabs, and its shadow falls along the bar's edge instead of from every title and icon.
