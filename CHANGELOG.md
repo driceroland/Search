@@ -15,6 +15,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Clicking a pinned extension's button closes its popup even when macOS dismisses it on mouse-up, instead of immediately opening it again.
+
 ## 1.0.3 — 24 September 2026
 
 ### Added
