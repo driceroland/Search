@@ -229,10 +229,15 @@ struct TabBar: View {
     }
 
     /// Pick a tab up and the others get out of its way as it passes them.
+    /// Pulled clear of the row, the tab leaves it for a window of its own.
     private func reorder(tab: Tab, index: Int, step: CGFloat) -> some Gesture {
         // In the row's space, not the pill's — see the sidebar's grid for why.
         DragGesture(minimumDistance: 5, coordinateSpace: .named("strip"))
             .onChanged { value in
+                if abs(value.translation.height) > 40 {
+                    browser.detach(tab)
+                    return
+                }
                 if dragging != tab.id {
                     dragging = tab.id
                     from = index
@@ -455,6 +460,10 @@ private struct TabPill: View {
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
+        .onDrag {
+            guard !tab.isBlank, !tab.asleep, !tab.bench, let url = tab.address else { return nil }
+            return NSItemProvider(object: url as NSURL)
+        }
         .help(pinned || compact ? tab.label : "")
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)
@@ -750,6 +759,10 @@ struct TabMenu: View {
         }
         .disabled(tab.isBlank)
         Button(tab.muted ? "Unmute Tab" : "Mute Tab") { tab.toggleMute() }
+        Button(tab.detached ? "Attach Tab" : "Detach Tab") {
+            tab.detached ? browser.attach() : browser.detach(tab)
+        }
+        .disabled(tab.isBlank || tab.asleep)
         Divider()
         Button("Close Tab", action: close)
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }

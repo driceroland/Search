@@ -427,10 +427,16 @@ struct SideBar: View {
         .coordinateSpace(name: "rows")
     }
 
-    /// Pick a row up and the others make way as it passes them.
+    /// Pick a row up and the others make way as it passes them. Pulled clear
+    /// of the column, the tab leaves it for a window of its own — sideways,
+    /// the way out of a column, since up and down is the reorder itself.
     private func reorder(tab: Tab, index: Int, step: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 5, coordinateSpace: .named("rows"))
             .onChanged { value in
+                if abs(value.translation.width) > 40 {
+                    browser.detach(tab)
+                    return
+                }
                 if dragging != tab.id {
                     dragging = tab.id
                     from = index
@@ -570,6 +576,10 @@ private struct PinSquare: View {
         .overlay { MiddleClick { browser.close(tab) } }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
+        .onDrag {
+            guard !tab.isBlank, !tab.asleep, !tab.bench, let url = tab.address else { return nil }
+            return NSItemProvider(object: url as NSURL)
+        }
         .help(tab.label)
         .animation(Motion.quick, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -693,6 +703,10 @@ private struct SideRow: View {
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
+        .onDrag {
+            guard !tab.isBlank, !tab.asleep, !tab.bench, let url = tab.address else { return nil }
+            return NSItemProvider(object: url as NSURL)
+        }
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)
         .onChange(of: browser.refusals) { _, _ in

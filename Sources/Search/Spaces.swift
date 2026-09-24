@@ -171,6 +171,7 @@ extension Browser {
         if !makingSpace { spaceStep = to > (spaces.firstIndex { $0.id == spaceID } ?? 0) ? 1 : -1 }
         cancelTabEdit()
         if floater.showing { land() }
+        if detacher.showing { attach() }
         writeSession(now: true)
 
         // The row on screen is parked as it is. Its sound stops: a space
