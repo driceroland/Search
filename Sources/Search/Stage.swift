@@ -253,6 +253,11 @@ struct DragStrip: NSViewRepresentable {
     var below: CGFloat = 0
     /// The run at the trailing end that belongs to a button.
     var trailing: CGFloat = 0
+    /// Stands in for the title bar's own double-click, in a strip that is
+    /// empty tab-row rather than title bar: the empty space below or after
+    /// the tabs, where a double-click opens a new tab instead of zooming the
+    /// window.
+    var onDoubleClick: (() -> Void)? = nil
 
     func makeNSView(context: Context) -> NSView { Strip() }
 
@@ -260,12 +265,14 @@ struct DragStrip: NSViewRepresentable {
         (view as? Strip)?.reserved = reserved
         (view as? Strip)?.below = below
         (view as? Strip)?.trailing = trailing
+        (view as? Strip)?.onDoubleClick = onDoubleClick
     }
 
     private final class Strip: NSView {
         var reserved: CGFloat = 0
         var below: CGFloat = 0
         var trailing: CGFloat = 0
+        var onDoubleClick: (() -> Void)?
 
         private var pressed: NSEvent?
         private var moved = false
@@ -305,12 +312,18 @@ struct DragStrip: NSViewRepresentable {
             window.isMovable = false
         }
 
-        /// A double-click does what a title bar's does. It answered every
-        /// click before — so a double-click filled the screen on the first
-        /// click and put the window back on the second, and looked like
-        /// nothing at all.
+        /// A double-click does what a title bar's does, unless this strip
+        /// stands for empty tab row instead, in which case it opens a new
+        /// tab, the same as the button it is standing in for. It answered
+        /// every click before, so a double-click filled the screen on the
+        /// first click and put the window back on the second, and looked
+        /// like nothing at all.
         override func mouseUp(with event: NSEvent) {
             guard let window, !moved, event.clickCount == 2 else { return }
+            if let onDoubleClick {
+                onDoubleClick()
+                return
+            }
             // System Settings › Desktop & Dock: what double-clicking a title
             // bar should do. Unset means the default, which fills the screen.
             switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
