@@ -851,24 +851,68 @@ struct MiddleClick: NSViewRepresentable {
 
 /// An almost-closed ring, turning — the same one the canvas app uses, small
 /// enough to sit inside a tab without becoming the loudest thing in it.
-struct Ring: View {
+///
+/// Turned by Core Animation rather than SwiftUI. A SwiftUI animation that
+/// never ends has the whole window's view tree laid out and redrawn every
+/// frame for as long as it runs — a fifth of a core, all the while a page
+/// in some tab behind was still loading. A layer's own animation is played
+/// by the render server and costs this process nothing.
+struct Ring: NSViewRepresentable {
     var size: CGFloat = 10
-    @State private var angle: Double = 0
 
-    var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.78)
-            .stroke(
-                Palette.muted.opacity(0.7),
-                style: StrokeStyle(lineWidth: 1.4, lineCap: .round)
-            )
-            .frame(width: size, height: size)
-            .rotationEffect(.degrees(angle))
-            .onAppear {
-                withAnimation(.linear(duration: 0.85).repeatForever(autoreverses: false)) {
-                    angle = 360
-                }
+    func makeNSView(context: Context) -> RingView { RingView() }
+    func updateNSView(_ view: RingView, context: Context) {}
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: RingView, context: Context) -> CGSize? {
+        CGSize(width: size, height: size)
+    }
+
+    final class RingView: NSView {
+        private let ring = CAShapeLayer()
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            ring.fillColor = nil
+            ring.lineWidth = 1.4
+            ring.lineCap = .round
+            ring.strokeEnd = 0.78
+            layer?.addSublayer(ring)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func layout() {
+            super.layout()
+            let inset = ring.lineWidth / 2
+            ring.frame = bounds
+            ring.path = CGPath(ellipseIn: bounds.insetBy(dx: inset, dy: inset), transform: nil)
+        }
+
+        /// The colour is resolved against the window's appearance, so it is
+        /// set again whenever that changes.
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                ring.strokeColor = Palette.NS.muted.withAlphaComponent(0.7).cgColor
             }
+        }
+
+        /// Turning only while it is in a window: a layer animation is dropped
+        /// when the view leaves one, so it is added each time it arrives.
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            viewDidChangeEffectiveAppearance()
+            ring.removeAnimation(forKey: "turn")
+            guard window != nil else { return }
+            let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+            // Clockwise, as the SwiftUI one turned: a layer's positive angle
+            // is anticlockwise in a view that isn't flipped.
+            turn.fromValue = 0
+            turn.toValue = -2 * Double.pi
+            turn.duration = 0.85
+            turn.repeatCount = .infinity
+            ring.add(turn, forKey: "turn")
+        }
     }
 }
 
