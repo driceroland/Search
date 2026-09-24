@@ -86,9 +86,17 @@ struct SideBar: View {
         // Rows on their way to or from another space stay in the column.
         .clipped()
         .onAppear { SpaceSwipe.shared.start(for: browser) }
-        .background(landing ? Palette.hover : Palette.ground)
+        // With a colour, a docked column is the window's own gradient showing
+        // through, one piece with the rest of the frame; folded out over a
+        // page it needs a ground of its own.
+        .background {
+            if landing { Palette.hover }
+            else if browser.space.theme != nil, !browser.folded { Color.clear }
+            else { ThemeGround(theme: browser.space.theme) }
+        }
         .overlay(alignment: .trailing) {
             Rectangle().fill(Palette.hairline).frame(width: 1)
+                .opacity(browser.space.theme != nil && !browser.folded ? 0 : 1)
         }
         .overlay(alignment: .trailing) { edge }
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
@@ -175,6 +183,10 @@ struct SideBar: View {
                 .frame(maxHeight: .infinity)
             } else if browser.spaces[index].id == browser.spaceID {
                 VStack(alignment: .leading, spacing: 0) {
+                    if themed {
+                        AddressWell(browser: browser)
+                            .padding(.bottom, 10)
+                    }
                     if browser.pinnedCount > 0 {
                         pinned
                             .padding(.bottom, 10)
@@ -259,14 +271,26 @@ struct SideBar: View {
         let pinRows = pins == 0 ? 0 : (pins + cols - 1) / cols
         let pinBlock = pinRows == 0 ? 0
             : CGFloat(pinRows) * pinHeight + CGFloat(pinRows - 1) * SideBar.pinGap + 10
-        let loose = CGFloat(browser.tabs.count - pins) * (SideBar.row + SideBar.gap)
-        return Metrics.strip + pinBlock + loose + SideBar.row + 8
+        let folders = browser.folders
+        let open = folders.filter { !browser.shutFolders.contains($0) }.map { browser.tabs(in: $0).count }.reduce(0, +)
+        let lines = looseTabs.count + folders.count + open
+        // The address well, the heading over the folders and the rule
+        // under them, where there are those.
+        let extras: CGFloat = (themed ? 46 : 0) + (folders.isEmpty ? 0 : (themed ? 28 : 0) + 17)
+        return Metrics.strip + pinBlock + extras + CGFloat(lines) * (rowHeight + SideBar.gap) + rowHeight + 8
     }
+
+    /// A row is taller on a coloured frame (see SideRow).
+    private var rowHeight: CGFloat { themed ? 42 : SideBar.row }
+
+    /// A coloured frame (see Theme.swift): the column dresses as Arc's.
+    private var themed: Bool { browser.space.theme != nil }
 
     // MARK: - the pinned squares
 
     private var pinnedTabs: [Tab] { browser.tabs.filter { $0.pin != nil } }
-    private var looseTabs: [Tab] { browser.tabs.filter { $0.pin == nil } }
+    /// Neither pinned nor in a folder.
+    private var looseTabs: [Tab] { browser.tabs.filter { $0.pin == nil && $0.folder == nil } }
 
     /// Three columns is the block's own shape — up to six pins, that's two
     /// full rows, and one or two is just those same three places with a
@@ -296,7 +320,8 @@ struct SideBar: View {
     /// everywhere else in this app. It only shrinks below 34 alongside the
     /// width, once a narrow column leaves no other choice.
     private var pinHeight: CGFloat {
-        min(SideBar.square, pinWidth)
+        // On a colour, Arc's taller tiles.
+        min(browser.space.theme != nil ? 46 : SideBar.square, pinWidth)
     }
 
     /// The grid itself: fixed-size cells, left-aligned, so a half-empty last
@@ -399,7 +424,7 @@ struct SideBar: View {
             // See the grid: the drag is measured in the column's space, not
             // the row's, so a row that has just moved keeps its bearings.
             ForEach(Array(looseTabs.enumerated()), id: \.element.id) { index, tab in
-                let step = SideBar.row + SideBar.gap
+                let step = rowHeight + SideBar.gap
                 SideRow(
                     browser: browser,
                     prefs: prefs,
@@ -409,9 +434,11 @@ struct SideBar: View {
                     close: { browser.close(tab) }
                 )
                 // Positions here are among the loose rows; the pinned block
-                // sits in front of them in the real list.
-                .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true, space: "rows") {
-                    browser.move(tab, to: $0 + browser.pinnedCount)
+                // and the tabs in folders sit among them in the real list.
+                .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true, space: "rows") { target in
+                    guard looseTabs.indices.contains(target),
+                          let place = browser.tabs.firstIndex(where: { $0.id == looseTabs[target].id }) else { return }
+                    browser.move(tab, to: place)
                 })
             }
         }
@@ -421,16 +448,45 @@ struct SideBar: View {
     /// The loose tabs and the row that makes another, which scroll as one.
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
-            loose
-            newTab
+            let folders = browser.folders
+            if !folders.isEmpty {
+                if themed { ColumnHeading(title: browser.space.name) }
+                VStack(spacing: SideBar.gap) {
+                    ForEach(folders, id: \.self) { name in
+                        FolderRow(browser: browser, name: name, height: rowHeight)
+                        if !browser.shutFolders.contains(name) {
+                            ForEach(browser.tabs(in: name)) { tab in
+                                SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == browser.activeID,
+                                        pill: pill, close: { browser.close(tab) })
+                                    .padding(.leading, 16)
+                            }
+                        }
+                    }
+                }
+                Rectangle()
+                    .fill(Palette.ink.opacity(0.1))
+                    .frame(height: 1)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            }
+            // Arc's order on a colour: the row that makes a tab, then the tabs.
+            if themed {
+                newTab
+                loose.padding(.top, SideBar.gap)
+            } else {
+                loose
+                newTab
+            }
         }
+        .animation(Motion.settle, value: browser.shutFolders)
+        .animation(Motion.settle, value: browser.tabs.map(\.folder))
     }
 
     /// The foot's door and its margin beneath.
     private static let footHeight: CGFloat = 26 + 10
 
     private var newTab: some View {
-        Quiet(icon: "plus", title: "New tab", height: SideBar.row) { browser.newTab() }
+        Quiet(icon: "plus", title: themed ? "New Tab" : "New tab", height: rowHeight, large: themed) { browser.newTab() }
             .padding(.top, SideBar.gap)
     }
 
@@ -517,13 +573,15 @@ private struct PinSquare: View {
         .frame(width: scale * 16 / 34, height: scale * 16 / 34)
         .frame(width: width, height: height)
         .background {
+            // On a colour, the tiles are white over it, as in Arc.
+            let themed = browser.space.theme != nil
             if live {
                 RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
-                    .fill(Palette.wash)
+                    .fill(themed ? Tint.live : Palette.wash)
                     .matchedGeometryEffect(id: "live", in: pill)
             } else {
                 RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
-                    .fill(hovering ? Palette.hover : Palette.wash.opacity(0.55))
+                    .fill(themed ? (hovering ? Tint.hover : Tint.tile) : (hovering ? Palette.hover : Palette.wash.opacity(0.55)))
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
@@ -563,13 +621,13 @@ private struct SideRow: View {
     private var speaker: Bool { !tab.loading && (tab.noisy || tab.muted) }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: themed ? 10 : 8) {
             if editing {
                 TabAddressField(browser: browser)
                     .frame(height: 16)
             } else {
                 if prefs.glyph == .icons, !tab.isBlank {
-                    Mark(icon: tab.icon, letter: tab.monogram, size: 15)
+                    Mark(icon: tab.icon, letter: tab.monogram, size: themed ? 18 : 15)
                 }
                 if tab.bench {
                     // A script's tab, not yours.
@@ -583,7 +641,7 @@ private struct SideRow: View {
                         .foregroundStyle(colour.opacity(0.7))
                 }
                 Text(tab.label)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: themed ? 14.5 : 12.5, weight: themed ? .medium : .regular))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundStyle(colour)
@@ -606,9 +664,9 @@ private struct SideRow: View {
                 .padding(.trailing, hovering && speaker ? 23 : 0)
             }
         }
-        .padding(.leading, 10)
+        .padding(.leading, themed ? 12 : 10)
         .padding(.trailing, status ? 7 : 10)
-        .frame(height: 28)
+        .frame(height: themed ? 42 : 28)
         .frame(maxWidth: .infinity, alignment: .leading)
         // The title keeps its length under the pointer and fades out
         // beneath the cross, rather than being cut shorter, so its end
@@ -650,7 +708,7 @@ private struct SideRow: View {
         .animation(Motion.quick, value: speaker)
         .background { ground }
         .modifier(Shake(travel: shake))
-        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: themed ? 10 : 9, style: .continuous))
         .modifier(OneClick(double: false) {
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })
@@ -671,7 +729,7 @@ private struct SideRow: View {
     private var ground: some View {
         if live {
             ZStack(alignment: .leading) {
-                Rectangle().fill(Palette.wash)
+                Rectangle().fill(themed ? Tint.live : Palette.wash)
                 if prefs.showsReading {
                     GeometryReader { geo in
                         Rectangle()
@@ -681,16 +739,23 @@ private struct SideRow: View {
                     }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: themed ? 10 : 9, style: .continuous))
+            // Arc's live tab lifts off the colour a little.
+            .shadow(color: .black.opacity(themed ? 0.08 : 0), radius: 2, y: 1)
             .matchedGeometryEffect(id: "live", in: pill)
         } else if hovering {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Palette.hover)
+            RoundedRectangle(cornerRadius: themed ? 10 : 9, style: .continuous)
+                .fill(themed ? Tint.hover : Palette.hover)
         }
     }
 
+    /// A coloured frame (see Theme.swift): rows a little larger and darker,
+    /// as in Arc, so they read on the colour rather than fade into it.
+    private var themed: Bool { browser.space.theme != nil }
+
     private var colour: Color {
         if live { return Palette.ink }
+        if themed { return Palette.ink.opacity(hovering ? 0.9 : 0.78) }
         return hovering ? Palette.ink.opacity(0.7) : Palette.muted
     }
 }
@@ -700,6 +765,8 @@ struct Quiet: View {
     let icon: String
     let title: String
     var height: CGFloat = 28
+    /// Arc's size, on a coloured frame.
+    var large = false
     let act: () -> Void
 
     @State private var hovering = false
@@ -708,14 +775,14 @@ struct Quiet: View {
         Button(action: act) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 10, weight: .medium))
-                    .frame(width: 15)
+                    .font(.system(size: large ? 14 : 10, weight: .medium))
+                    .frame(width: large ? 18 : 15)
                 Text(title)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: large ? 14.5 : 12.5, weight: large ? .medium : .regular))
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.faint)
-            .padding(.leading, 10)
+            .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : (large ? Palette.ink.opacity(0.45) : Palette.faint))
+            .padding(.leading, large ? 12 : 10)
             .frame(height: height)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(

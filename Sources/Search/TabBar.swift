@@ -756,6 +756,8 @@ struct TabMenu: View {
             Button("Change Letter") { browser.editLetter(tab) }
             Button("Unpin") { browser.unpin(tab) }
         }
+        // Folders are the column's; the strip has nowhere to show them.
+        if browser.prefs.sidebar { FolderMenu(browser: browser, tab: tab) }
         Divider()
         Button("Rename") { browser.beginTabRename(tab) }
         Button("Duplicate") {
