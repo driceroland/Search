@@ -407,6 +407,12 @@ final class Bench {
                 guard let preferences = tab.built?.configuration.preferences, preferences.responds(to: asked) else { return nil }
                 return preferences.value(forKey: "developerExtrasEnabled") as? Bool
             }
+            // Settings › General › Pages at 120 Hz, as each page's WebKit has
+            // it: true is held near 60, WebKit's own default.
+            out["prefersNear60FPS"] = browser.tabs.compactMap { tab -> Bool? in
+                guard let preferences = tab.built?.configuration.preferences else { return nil }
+                return FrameRate.prefersNear60(preferences)
+            }
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
             out["folded"] = browser.folded
             out["peeking"] = browser.peeking
@@ -686,6 +692,40 @@ final class Bench {
                     "titles": menu.items.prefix(8).map { $0.isSeparatorItem ? "—" : $0.title },
                     "firstFolder": folder?.items.prefix(4).map(\.title) ?? [],
                     "active": browser.active?.address?.absoluteString ?? ""])
+
+        case "keyeq":
+            // A ⌘ shortcut pressed while the page has the keyboard, put
+            // through the app's key handling and then to the page's view, as
+            // AppKit does with a key window — which a hidden probe hasn't.
+            // Reports what Search did and what the page saw. Only on a
+            // SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "keyeq only works on a --test run"]); return }
+            guard let tab = browser.active, let web = tab.built, let window = web.window,
+                  let chars = request["chars"] as? String, let code = request["code"] as? Int
+            else { answer(["error": "keyeq needs a loaded tab, the characters and the key code"]); return }
+            var flags: NSEvent.ModifierFlags = [.command]
+            if (request["mods"] as? [String] ?? []).contains("shift") { flags.insert(.shift) }
+            window.makeFirstResponder(web)
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: flags,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: UInt16(code)
+            ) else { answer(["error": "no event"]); return }
+            let before = (finding: browser.finding, summoning: browser.editing, folded: browser.folded)
+            var firstPass = "search"
+            if ContentView.keyHook?(event) != nil {
+                firstPass = "page"
+                _ = web.performKeyEquivalent(with: event)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                web.evaluateJavaScript("JSON.stringify(window.__keys || [])") { seen, _ in
+                    MainActor.assumeIsolated {
+                        answer(["firstPass": firstPass, "pageSaw": seen as? String ?? "",
+                                "finding": [before.finding, browser.finding], "fieldUp": [before.summoning, browser.editing],
+                                "folded": [before.folded, browser.folded]])
+                    }
+                }
+            }
 
         case "place":
             // A tab put at another place in the row, as a drag would.
@@ -1040,6 +1080,7 @@ final class Bench {
             if let on = request["bookmarks"] as? Bool { browser.bookmarking = on }
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
+            if let on = request["pages120"] as? Bool { browser.prefs.fastPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
@@ -1064,7 +1105,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "space", "strip", "column", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "keyeq", "space", "strip", "column", "ui",
             ]])
         }
     }
@@ -1174,9 +1215,16 @@ final class Bench {
         }
     }
 
+    /// The tab a request names, among the ones the bench opened itself. The
+    /// bench is how this browser is driven while somebody is using it, and
+    /// reading, clicking or sleeping in one of their tabs is not part of
+    /// that: a script here is meant for tabs marked with the flask. A
+    /// SEARCH_PROBE run has nobody's tabs in it, so there any tab answers,
+    /// as for `tap` and `select`: a popup a bench page opened with
+    /// `window.open` carries no flask and would be out of reach otherwise.
     private func find(_ request: [String: Any], in browser: Browser) -> Tab? {
         guard let ref = (request["id"] as? String)?.lowercased(), !ref.isEmpty else { return nil }
-        return browser.tabs.first { $0.id.uuidString.lowercased().hasPrefix(ref) }
+        return browser.tabs.first { (Store.testing || $0.bench) && $0.id.uuidString.lowercased().hasPrefix(ref) }
     }
 
     private func missing(_ request: [String: Any]) -> [String: Any] {
@@ -1196,6 +1244,8 @@ final class Bench {
             "active": tab.id == browser?.activeID,
             "asleep": tab.asleep,
             "shy": tab.shy,
+            "noisy": tab.noisy,
+            "muted": tab.muted,
             "extensions": { if #available(macOS 15.4, *) { return tab.carriesExtensions } else { return false } }(),
         ]
     }

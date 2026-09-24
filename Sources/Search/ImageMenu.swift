@@ -37,6 +37,9 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
         var el = e.target;
         while (el && el.tagName !== 'IMG') el = el.parentElement;
         if (!el || !el.currentSrc || el.naturalWidth < 2) return;
+        // Only an address this menu will act on takes WebKit's own menu
+        // away; any other scheme keeps it, rather than getting nothing.
+        if (!/^(https?|data|blob):/i.test(el.currentSrc)) return;
         e.preventDefault();
         window.webkit.messageHandlers.officeImages.postMessage({ src: el.currentSrc });
       }, true);
@@ -49,7 +52,12 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
     ) {
         guard let body = message.body as? [String: Any],
               let src = body["src"] as? String,
-              let url = URL(string: src)
+              let url = URL(string: src),
+              // The page names this address and the menu carries it into the
+              // app's own opening, copying and downloading: only the schemes
+              // a picture arrives by are let through. The script above
+              // already checks, but any page can post to this handler.
+              ["http", "https", "data", "blob"].contains(url.scheme?.lowercased() ?? "")
         else { return }
         MainActor.assumeIsolated { [weak self] in
             guard let self, let tab else { return }
