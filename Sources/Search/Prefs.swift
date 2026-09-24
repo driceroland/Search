@@ -66,9 +66,18 @@ final class Preferences: ObservableObject {
     @Published var sleepsTabs: Bool {
         didSet { store.set(sleepsTabs, forKey: "tabs.sleep") }
     }
+    @Published var showsReading: Bool {
+        didSet { store.set(showsReading, forKey: "tabs.reading") }
+    }
     /// The ad blocker. On unless turned off; there is nothing else to it.
     @Published var shielded: Bool {
         didSet { store.set(shielded, forKey: "shield") }
+    }
+    /// A private tab gets extensions too, not just every other page. Off
+    /// unless asked for - a private tab keeps nothing by default, extensions
+    /// included, and some watch what a page does.
+    @Published var extensionsInPrivate: Bool {
+        didSet { store.set(extensionsInPrivate, forKey: "extensions.private") }
     }
     /// Whether sites may ask for a passkey here. Off sends them to the
     /// password instead — the only thing that works in a build without
@@ -118,6 +127,27 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// A click of the wheel scrolls the page as on Windows (see AutoScroll.swift).
+    /// Off unless asked for.
+    @Published var autoScroll: Bool {
+        didSet {
+            store.set(autoScroll, forKey: "autoscroll")
+            AutoScroll.on = autoScroll
+        }
+    }
+    /// Two fingers flick the floating video to a corner (see Float.swift).
+    /// Off unless asked for.
+    @Published var floatFlicks: Bool {
+        didSet {
+            store.set(floatFlicks, forKey: "float.flicks")
+            Float.flicks = floatFlicks
+        }
+    }
+    /// A video playing floats out when another app comes to the front, and
+    /// back when Search does (see Browser.appLeft). Off unless asked for.
+    @Published var floatsAway: Bool {
+        didSet { store.set(floatsAway, forKey: "float.away") }
+    }
     /// Separate sets of tabs, each with its own sign-ins (see Spaces.swift).
     /// Off unless asked for.
     @Published var usesSpaces: Bool {
@@ -146,7 +176,9 @@ final class Preferences: ObservableObject {
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
+        showsReading = store.object(forKey: "tabs.reading") as? Bool ?? true
         shielded = store.object(forKey: "shield") as? Bool ?? true
+        extensionsInPrivate = store.bool(forKey: "extensions.private")
         // Offered by default only in a build that can actually do them —
         // one with Apple's browser entitlement and its profile embedded. A
         // choice made while they couldn't work is not a choice about them:
@@ -177,6 +209,13 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
+        let flicks = store.bool(forKey: "float.flicks")
+        floatFlicks = flicks
+        Float.flicks = flicks
+        floatsAway = store.bool(forKey: "float.away")
+        let scrolls = store.bool(forKey: "autoscroll")
+        autoScroll = scrolls
+        AutoScroll.on = scrolls
         // Left behind by the Web Inspector's switch, from before it was
         // always there.
         store.removeObject(forKey: "inspector")

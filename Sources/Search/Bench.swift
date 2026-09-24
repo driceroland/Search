@@ -1,4 +1,5 @@
 import AppKit
+import AuthenticationServices
 import SwiftUI
 import WebKit
 
@@ -411,6 +412,15 @@ final class Bench {
             out["peeking"] = browser.peeking
             out["sideHides"] = browser.prefs.sideHides
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
+            // Whether this Mac lets the browser use its passkeys at all — the
+            // one-time permission macOS asks a browser other than Safari for.
+            switch ASAuthorizationWebBrowserPublicKeyCredentialManager().authorizationStateForPlatformCredentials {
+            case .authorized: out["passkeyAccess"] = "authorized"
+            case .denied: out["passkeyAccess"] = "denied"
+            default: out["passkeyAccess"] = "notDetermined"
+            }
+            out["passkeyAsks"] = Passkeys.asked
+            out["passkeyLast"] = Passkeys.last
             answer(out)
 
         case "press":
@@ -579,6 +589,104 @@ final class Bench {
                 "titleBar": y <= Double(window.frame.height - window.contentLayoutRect.height),
             ])
 
+        case "field":
+            // Text put into the address field the way a paste puts it — the
+            // whole of it replacing what is selected — or typed a character
+            // at a time, each timed from the moment it goes in to the moment
+            // the run loop next rests: the list worked out, SwiftUI's update
+            // and Core Animation's commit included. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "field only works on a --test run — it would type into your browser"]); return }
+            guard let text = request["text"] as? String, !text.isEmpty else { answer(["error": "field needs some text"]); return }
+            let pieces = request["type"] as? Bool == true ? text.map(String.init) : [text]
+            if browser.fieldShowing { browser.askFocus() } else { browser.edit() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                guard let field = Bench.addressField(in: Links.window?.contentView),
+                      let editor = field.currentEditor() as? NSTextView
+                else { answer(["error": "the address field has no editor"]); return }
+                var times: [[Double]] = []
+                @MainActor func next(_ index: Int) {
+                    guard index < pieces.count else {
+                        var out: [String: Any] = ["field": field.stringValue, "typed": browser.typed, "offers": browser.offers.map(\.key), "ms": times]
+                        guard request["go"] as? Bool == true, let tab = browser.active else { answer(out); return }
+                        // Then Return, as the field's own delegate takes it:
+                        // how long until WebKit is loading the page.
+                        out["viewWasBuilt"] = tab.built != nil
+                        let start = CACurrentMediaTime()
+                        var loading: Double?
+                        let watch = tab.$loading.first(where: { $0 }).sink { _ in loading = (CACurrentMediaTime() - start) * 1000 }
+                        browser.submit()
+                        out["returned"] = (CACurrentMediaTime() - start) * 1000
+                        Bench.whenResting(since: start) { rested in
+                            out["rested"] = rested
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                                watch.cancel()
+                                out["loading"] = loading ?? -1
+                                answer(out)
+                            }
+                        }
+                        return
+                    }
+                    let start = CACurrentMediaTime()
+                    editor.insertText(pieces[index], replacementRange: NSRange(location: NSNotFound, length: 0))
+                    let inserted = (CACurrentMediaTime() - start) * 1000
+                    Bench.whenResting(since: start) { rested in
+                        times.append([inserted, rested])
+                        DispatchQueue.main.async { next(index + 1) }
+                    }
+                }
+                next(0)
+            }
+
+        case "bookmark":
+            // A bookmark picked from the button's list, through the same
+            // call the list makes: how long until WebKit is loading it, and
+            // until the run loop rests. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "bookmark only works on a --test run — it would load a page in your tab"]); return }
+            guard let url = (request["url"] as? String).flatMap(Address.url(from:)) else { answer(["error": "bookmark needs a url"]); return }
+            // "new": into a new tab, whose page has yet to be built.
+            if request["new"] as? Bool == true { browser.newTab() }
+            guard let tab = browser.active else { answer(["error": "no tab to open it in"]); return }
+            browser.bookmarksOpen = true
+            let built = tab.built != nil
+            var loading: Double?
+            let start = CACurrentMediaTime()
+            let watch = tab.$loading.first(where: { $0 }).sink { _ in loading = (CACurrentMediaTime() - start) * 1000 }
+            browser.pickBookmark(url)
+            let returned = (CACurrentMediaTime() - start) * 1000
+            Bench.whenResting(since: start) { rested in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    watch.cancel()
+                    answer(["returned": returned, "loading": loading ?? -1, "rested": rested,
+                            "viewWasBuilt": built, "listStillOpen": browser.bookmarksOpen, "sameTab": browser.active?.id == tab.id])
+                }
+            }
+
+        case "menu":
+            // The Bookmarks menu as it is about to open: the menu bar
+            // told it is being tracked, SwiftUI's own update run on it, its
+            // first folder opened — then what each holds. Only on a
+            // SEARCH_PROBE run; nothing is drawn.
+            guard Store.testing else { answer(["error": "menu only works on a --test run"]); return }
+            guard let main = NSApp.mainMenu, let menu = main.items.first(where: { $0.title == "Bookmarks" })?.submenu
+            else { answer(["error": "no Bookmarks menu"]); return }
+            let before = menu.items.count
+            let wrapped = menu.delegate.map { "\(type(of: $0))" } ?? "none"
+            let start = CACurrentMediaTime()
+            NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: main)
+            let filled = (CACurrentMediaTime() - start) * 1000
+            menu.delegate?.menuNeedsUpdate?(menu)
+            let folder = menu.items.first { $0.submenu != nil && $0.tag != 0 }?.submenu
+            if let folder { folder.delegate?.menuNeedsUpdate?(folder) }
+            // "open": the first bookmark in that folder picked, as a click would.
+            if request["open"] as? Bool == true, let folder,
+               let index = folder.items.firstIndex(where: { $0.representedObject is URL }) {
+                folder.performActionForItem(at: index)
+            }
+            answer(["delegate": wrapped, "before": before, "after": menu.items.count, "ours": BookmarkMenu.shared.count, "fillMs": filled,
+                    "titles": menu.items.prefix(8).map { $0.isSeparatorItem ? "—" : $0.title },
+                    "firstFolder": folder?.items.prefix(4).map(\.title) ?? [],
+                    "active": browser.active?.address?.absoluteString ?? ""])
+
         case "place":
             // A tab put at another place in the row, as a drag would.
             guard let id = request["id"] as? String, let to = request["to"] as? Int,
@@ -586,6 +694,175 @@ final class Bench {
             else { answer(["error": "place needs a tab id and an index"]); return }
             browser.move(tab, to: to)
             answer(["at": browser.tabs.firstIndex { $0.id == tab.id } ?? -1])
+
+        case "window":
+            // The browser's window, when a probe started hidden came up
+            // without one: the Window menu's own item for it.
+            guard Store.testing else { answer(["error": "window only works on a --test run"]); return }
+            if Links.window?.contentView != nil, NSApp.windows.contains(where: { $0 === Links.window }) {
+                answer(["window": "there"])
+                return
+            }
+            let items = NSApp.mainMenu?.items.first { $0.submenu?.title == "Window" }?.submenu?.items ?? []
+            guard let item = items.first(where: { $0.title == "Search" }), let action = item.action else {
+                answer(["error": "no Search item in the Window menu", "items": items.map(\.title)])
+                return
+            }
+            NSApp.sendAction(action, to: item.target, from: item)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                answer(["window": NSApp.windows.map { "\(type(of: $0))" }, "hidden": NSApp.isHidden])
+            }
+
+        case "pages":
+            // Pages that WebKit will paint, for `picture`, from a probe started
+            // hidden: the app shown again without coming forward, but only
+            // once its windows are all off the screen — the browser's own put
+            // away, the bench's room far off every screen. Anything of the
+            // app's that would show on a screen and the app is hidden again.
+            guard Store.testing, let window = Links.window else { answer(["error": "pages only works on a --test run"]); return }
+            func onScreen(_ w: NSWindow) -> Bool { NSScreen.screens.contains { $0.frame.intersects(w.frame) } }
+            if request["on"] as? Bool == true {
+                _ = room ?? makeRoom()
+                window.orderOut(nil)
+                for other in NSApp.windows where other !== room && onScreen(other) { other.orderOut(nil) }
+                NSApp.unhideWithoutActivation()
+                let showing = NSApp.windows.filter { $0.isVisible && onScreen($0) }
+                if !showing.isEmpty {
+                    NSApp.hide(nil)
+                    answer(["error": "a window would have shown: \(showing.map { "\(type(of: $0))" })"])
+                    return
+                }
+                answer(["pages": true])
+            } else {
+                NSApp.hide(nil)
+                window.orderFront(nil)
+                answer(["pages": false])
+            }
+
+        case "picture":
+            // The whole window as a picture — the app's own drawing, with each
+            // page on screen put in as WebKit pictures it — from a probe
+            // started hidden, so nothing shows on anybody's screen. For the
+            // images on the site.
+            guard Store.testing else { answer(["error": "picture only works on a --test run"]); return }
+            guard let window = Links.window, let frame = window.contentView?.superview,
+                  let path = request["path"] as? String, !path.isEmpty
+            else { answer(["error": "picture needs a path"]); return }
+            func pages(in view: NSView) -> [WKWebView] {
+                if let web = view as? WKWebView { return [web] }
+                return view.subviews.flatMap(pages)
+            }
+            // The page, when WebKit paints (see `pages`): the tab's address
+            // loaded afresh in a view of its own in the bench's room, sized
+            // as the page is, and pictured there.
+            if !NSApp.isHidden, request["page"] as? Bool != false, let tab = browser.active, let address = tab.address,
+               let live = tab.built, live.window === window {
+                let rect = live.convert(live.bounds, to: nil)
+                guard let chrome = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { answer(["error": "nothing drawn"]); return }
+                frame.cacheDisplay(in: frame.bounds, to: chrome)
+                let stand = room ?? makeRoom()
+                // The tab's own page by default — as it is, reader view or
+                // things hidden included — lent to the room for the picture
+                // and handed back; or, with `fresh`, the address loaded anew.
+                let fresh = request["fresh"] as? Bool == true
+                let home = live.superview
+                let homeFrame = live.frame
+                let page = fresh ? WKWebView(frame: NSRect(origin: .zero, size: rect.size), configuration: Web.configuration()) : live
+                if !fresh {
+                    live.removeFromSuperview()
+                    live.frame = NSRect(origin: .zero, size: rect.size)
+                    live.alphaValue = 1
+                }
+                func giveBack() {
+                    guard !fresh else { page.removeFromSuperview(); return }
+                    live.removeFromSuperview()
+                    live.frame = homeFrame
+                    home?.addSubview(live)
+                }
+                // A window off every screen counts as covered, and WebKit
+                // paints nothing it thinks nobody sees; this one is told to
+                // paint regardless.
+                let occlusion = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+                if page.responds(to: occlusion) {
+                    typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+                    unsafeBitCast(page.method(for: occlusion), to: Setter.self)(page, occlusion, false)
+                }
+                stand.contentView?.addSubview(page)
+                if fresh { page.load(URLRequest(url: address)) }
+                let settle = request["settle"] as? Double ?? 3
+                func whenLoaded(_ tries: Int) {
+                    guard page.isLoading, tries > 0 else {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + settle) {
+                            page.takeSnapshot(with: nil) { image, _ in
+                                MainActor.assumeIsolated {
+                                    giveBack()
+                                    let drawn = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: chrome.pixelsWide, pixelsHigh: chrome.pixelsHigh,
+                                                                 bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                                                 colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+                                    guard let drawn else { answer(["error": "nothing drawn"]); return }
+                                    drawn.size = frame.bounds.size
+                                    NSGraphicsContext.saveGraphicsState()
+                                    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: drawn)
+                                    chrome.draw(in: frame.bounds)
+                                    image?.draw(in: rect)
+                                    NSGraphicsContext.restoreGraphicsState()
+                                    do {
+                                        try drawn.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                                        answer(["saved": path, "pixels": [drawn.pixelsWide, drawn.pixelsHigh], "page": [Int(rect.minX), Int(frame.bounds.height - rect.maxY), Int(rect.width), Int(rect.height)],
+                                                "points": [Int(frame.bounds.width), Int(frame.bounds.height)], "lights": Bench.lights(of: window)])
+                                    } catch { answer(["error": error.localizedDescription]) }
+                                }
+                            }
+                        }
+                        return
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { whenLoaded(tries - 1) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { whenLoaded(80) }
+                return
+            }
+            let shown = pages(in: frame).filter { !$0.isHidden && $0.alphaValue > 0 && !$0.frame.isEmpty }
+            var taken: [(WKWebView, NSImage)] = []
+            var left = shown.count
+            func draw() {
+                // Each page's picture where the page is, the page itself put
+                // aside for the one drawing.
+                var covers: [NSImageView] = []
+                for (web, image) in taken {
+                    let cover = NSImageView(frame: web.frame)
+                    cover.image = image
+                    cover.imageScaling = .scaleAxesIndependently
+                    cover.autoresizingMask = web.autoresizingMask
+                    web.superview?.addSubview(cover, positioned: .above, relativeTo: web)
+                    web.isHidden = true
+                    covers.append(cover)
+                }
+                frame.layoutSubtreeIfNeeded()
+                defer {
+                    covers.forEach { $0.removeFromSuperview() }
+                    taken.forEach { $0.0.isHidden = false }
+                }
+                guard let picture = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else {
+                    answer(["error": "nothing drawn"])
+                    return
+                }
+                frame.cacheDisplay(in: frame.bounds, to: picture)
+                do {
+                    try picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                    answer(["saved": path, "pixels": [picture.pixelsWide, picture.pixelsHigh],
+                            "points": [Int(frame.bounds.width), Int(frame.bounds.height)], "lights": Bench.lights(of: window)])
+                } catch { answer(["error": error.localizedDescription]) }
+            }
+            guard left > 0 else { draw(); return }
+            for web in shown {
+                web.takeSnapshot(with: nil) { image, _ in
+                    MainActor.assumeIsolated {
+                        if let image { taken.append((web, image)) }
+                        left -= 1
+                        if left == 0 { draw() }
+                    }
+                }
+            }
 
         case "film":
             // The whole window, title bar and lights included, drawn every few
@@ -703,7 +980,7 @@ final class Bench {
                 let dx = request["dx"] as? Double ?? -120
                 SpaceSwipe.shared.start(for: browser)
                 SpaceSwipe.shared.began()
-                for _ in 0..<12 { SpaceSwipe.shared.moved(dx: dx / 12, dy: 0) }
+                for _ in 0..<12 { SpaceSwipe.shared.moved(along: dx / 12) }
                 SpaceSwipe.shared.ended()
             case "hold":
                 // The fingers down and DX along, not yet let go — for a look
@@ -711,7 +988,7 @@ final class Bench {
                 let dx = request["dx"] as? Double ?? -120
                 SpaceSwipe.shared.start(for: browser)
                 SpaceSwipe.shared.began()
-                for _ in 0..<12 { SpaceSwipe.shared.moved(dx: dx / 12, dy: 0) }
+                for _ in 0..<12 { SpaceSwipe.shared.moved(along: dx / 12) }
             case "release":
                 SpaceSwipe.shared.ended()
             case "move":
@@ -787,7 +1064,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "place", "space", "strip", "column", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "space", "strip", "column", "ui",
             ]])
         }
     }
@@ -918,11 +1195,33 @@ final class Bench {
             "bench": tab.bench,
             "active": tab.id == browser?.activeID,
             "asleep": tab.asleep,
+            "shy": tab.shy,
+            "extensions": { if #available(macOS 15.4, *) { return tab.carriesExtensions } else { return false } }(),
         ]
     }
 
     static func short(_ tab: Tab) -> String {
         String(tab.id.uuidString.prefix(8)).lowercased()
+    }
+
+    /// The address field, wherever it is in the window.
+    static func addressField(in view: NSView?) -> NSTextField? {
+        guard let view else { return nil }
+        if let field = view as? NSTextField, field.delegate is AddressField.Coordinator { return field }
+        for sub in view.subviews { if let found = addressField(in: sub) { return found } }
+        return nil
+    }
+
+    /// Milliseconds from `start` to the run loop's next rest — after every
+    /// observer that runs before it sleeps, Core Animation's commit included.
+    static func whenResting(since start: CFTimeInterval, _ then: @escaping @MainActor (Double) -> Void) {
+        var observer: CFRunLoopObserver?
+        observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, false, CFIndex.max) { _, _ in
+            CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes)
+            let rested = (CACurrentMediaTime() - start) * 1000
+            MainActor.assumeIsolated { then(rested) }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
     }
 
     /// Once the page has stopped loading, or the time is up.

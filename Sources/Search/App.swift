@@ -144,8 +144,8 @@ struct SearchApp: App {
                     .keyboardShortcut("b", modifiers: [.command, .shift])
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Show Bookmarks…") { browser.bookmarking = true }
-                Divider()
-                BookmarkTree(nodes: browser.bookmarks.roots) { browser.visit($0) }
+                // The bookmarks themselves follow, put in by AppKit (see
+                // BookmarkMenu in Bookmarks.swift).
             }
             CommandMenu("History") {
                 Section("Recently Visited") {
@@ -185,28 +185,6 @@ struct SearchApp: App {
             }
             CommandGroup(replacing: .help) {
                 Button("Send Feedback…") { Links.writeFeedback() }
-            }
-        }
-    }
-}
-
-/// The bookmarks, as menus within menus, for the menu bar.
-private struct BookmarkTree: View {
-    let nodes: [Bookmark]
-    let open: (URL) -> Void
-
-    var body: some View {
-        ForEach(nodes) { node in
-            if node.isFolder {
-                Menu(node.title) {
-                    if let kids = node.children, !kids.isEmpty {
-                        BookmarkTree(nodes: kids, open: open)
-                    } else {
-                        Text("Empty")
-                    }
-                }
-            } else if let text = node.url, let url = URL(string: text) {
-                Button(node.title) { open(url) }
             }
         }
     }
@@ -400,9 +378,15 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
                 measureLights()
                 resting?.isHidden = false
+                // Only the window you were in, or every window's video would come.
+                browser.appLeft()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+                if let window, (note.object as? NSWindow) === window { Browser.front = browser }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
+                browser.appBack()
             }
             .onChange(of: browser.fieldShowing) { _, showing in
                 if showing {
@@ -424,6 +408,7 @@ struct ContentView: View {
             browser.askFocus()
             // Addresses from other apps have somewhere to go from here on.
             Links.hand(to: browser)
+            BookmarkMenu.shared.start(for: browser)
         }
     }
 
@@ -689,6 +674,14 @@ struct ContentView: View {
             }
             if browser.managing {
                 browser.managing = false
+                return true
+            }
+            if browser.recalling {
+                browser.recalling = false
+                return true
+            }
+            if browser.hoarding {
+                browser.hoarding = false
                 return true
             }
             if browser.suggesting != nil {
