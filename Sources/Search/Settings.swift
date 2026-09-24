@@ -208,6 +208,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autocorrect)
             }
             Rule()
+            Line("Show where links go", "Point at a link and its address shows at the bottom of the page") {
+                Switch(on: $prefs.showsLinks)
+            }
+            Rule()
             Line("Scroll with the middle button", "Click the wheel on a page, then move the mouse up or down to scroll, as on Windows. Click again to stop") {
                 Switch(on: $prefs.autoScroll)
             }

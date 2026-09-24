@@ -251,7 +251,9 @@ struct ContentView: View {
                     // One stage, always.
                     if let tab = browser.active {
                         Page(tab: tab)
-                            .overlay { LinkBubble(status: browser.linkStatus) }
+                            .overlay {
+                                if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
+                            }
                             .overlay(alignment: .topTrailing) {
                                 if browser.finding {
                                     FindBar(browser: browser)
@@ -593,8 +595,6 @@ struct ContentView: View {
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
-        // The link bubble swaps corners when the pointer approaches it.
-        window.acceptsMouseMovedEvents = true
         // Nor by its title bar, which the strip is all the way down: AppKit
         // would move the window on any drag there, a tab picked up to take
         // it elsewhere in the row included. DragStrip moves it instead.

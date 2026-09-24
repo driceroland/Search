@@ -487,10 +487,13 @@ final class Tab: ObservableObject, Identifiable {
                 WKUserScript(source: StoreRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
             )
         }
-        controller.addUserScript(WKUserScript(
-            source: HoveredLink.script, injectionTime: .atDocumentStart,
-            forMainFrameOnly: false, in: .defaultClient
-        ))
+        // Only while Settings says so: off, pages get nothing at all.
+        if HoveredLink.on {
+            controller.addUserScript(WKUserScript(
+                source: HoveredLink.script, injectionTime: .atDocumentStart,
+                forMainFrameOnly: false, in: .defaultClient
+            ))
+        }
         if !FormRelay.passkeysOffered {
             controller.addUserScript(
                 WKUserScript(

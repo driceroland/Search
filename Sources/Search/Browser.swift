@@ -883,6 +883,19 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // Every tab's next page, and the page each is showing now.
+        prefs.$showsLinks
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self else { return }
+                if !on { linkStatus.dismiss() }
+                for tab in tabs + parkedTabs {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.built?.evaluateJavaScript(on ? HoveredLink.script : HoveredLink.off, in: nil, in: .defaultClient)
+                }
+            }
+            .store(in: &bag)
+
         prefs.$passkeys
             .dropFirst()
             .sink { [weak self] on in
@@ -1463,8 +1476,8 @@ final class Browser: NSObject, ObservableObject {
     private func prepare(_ tab: Tab) {
         tab.delegate = self
         tab.onLink = { [weak self] tab, address in
-            guard let self, tab.id == activeID else { return }
-            linkStatus.show(address)
+            guard let self, prefs.showsLinks, tab.id == activeID else { return }
+            linkStatus.show(address, over: tab.built)
         }
         tab.onPick = { [weak self] tab, selector, label, note in
             guard let self, let host = curtain.host(of: tab.address) else { return }
