@@ -88,8 +88,9 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Extension popups miss messages** Extension popups and extension pages don't receive messages from the extension's background in a test run (the offscreen document does). To check in a window on screen; would matter for popups waiting on the background.
 - [ ] **Dragging a pin redraws the column** Dragging a pin redraws the whole column each frame, as dragging a tab did before 1.0.2.
 - [ ] **Bookmarks popover closes on fold** The bookmarks popover closes when the hidden sidebar folds (it counts as leaving the sidebar). A fix is waiting in [#89](https://github.com/driceroland/Search/pull/89). *([#88](https://github.com/driceroland/Search/issues/88), [#89](https://github.com/driceroland/Search/pull/89))*
-- [ ] **Settings sidebar corners** The Settings sidebar has rounded inner corners. A fix is waiting in [#222](https://github.com/driceroland/Search/pull/222). *([#221](https://github.com/driceroland/Search/issues/221), [#222](https://github.com/driceroland/Search/pull/222))*
+- [ ] **Settings sidebar corners** The Settings sidebar has rounded inner corners. A fix is waiting in [#222](https://github.com/driceroland/Search/pull/222). *([#221](https://github.com/driceroland/Search/issues/221), [#222](https://github.com/driceroland/Search/pull/222), [#226](https://github.com/driceroland/Search/issues/226))*
 - [ ] **⇧⌘C copies without a word** ⇧⌘C copies the address, but nothing in the app says so. A fix is waiting in [#182](https://github.com/driceroland/Search/pull/182). *([#176](https://github.com/driceroland/Search/issues/176), [#182](https://github.com/driceroland/Search/pull/182))*
+- [ ] **⌥⌫ with an inline completion** With the rest of an address offered inline, Option-Backspace does nothing; it should drop the offer and delete the last word typed. *([#228](https://github.com/driceroland/Search/issues/228))*
 
 ## Next — small additions people asked for
 
@@ -134,12 +135,14 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Tab bar in the page's colour** The tab bar or title bar in the page's own colour. *([#158](https://github.com/driceroland/Search/issues/158), [#168](https://github.com/driceroland/Search/pull/168), [#25](https://github.com/driceroland/Search/pull/25))*
 - [ ] **Pins go back to their page** A pin goes back to the page it was pinned at when you put it down. *([#141](https://github.com/driceroland/Search/issues/141))*
 - [ ] **Dark mode for the Search site** A dark mode for the site's Search page. *([#51](https://github.com/driceroland/Search/issues/51))*
-- [ ] **Detach a tab into a window** Detach a tab into its own window. Search has one window, like [#72](https://github.com/driceroland/Search/issues/72). *([#184](https://github.com/driceroland/Search/pull/184), [#72](https://github.com/driceroland/Search/issues/72))*
+- [ ] **Detach a tab into a window** Detach a tab into its own window. Search has one window, like [#72](https://github.com/driceroland/Search/issues/72). *([#184](https://github.com/driceroland/Search/pull/184), [#72](https://github.com/driceroland/Search/issues/72), [#230](https://github.com/driceroland/Search/issues/230))*
 - [ ] **Home page or home button** A home page or home button. *(email)*
 - [ ] **Sidebar on the right** The sidebar on the right. *(email)*
 - [ ] **Toolbar buttons on the left** Back, forward and reload on the left with the tabs across the top. *(email)*
 - [ ] **Autocomplete in a new tab** What exactly was asked, to find out. *(X)*
-- [ ] **Little window for outside links** A little window for links opened from other apps, and a shortcut to open it from anywhere. *(X)*
+- [ ] **Little window for outside links** A little window for links opened from other apps, and a shortcut to open it from anywhere. *(X, [#227](https://github.com/driceroland/Search/pull/227))*
+- [ ] **⌃Tab in recent-use order** ⌃Tab goes to the tab used last in this space, not the neighbour in the row; holding it walks back through them. Also asks for its own shortcut recorders in Settings › Tabs. *([#225](https://github.com/driceroland/Search/pull/225))*
+- [ ] **Dock the floating video at the side** Swipe the floating video into the side of the screen and it tucks away, leaving a sliver to bring it back by, as in Dia. *([#229](https://github.com/driceroland/Search/pull/229))*
 
 ## Asked to try again on the latest version
 
@@ -153,7 +156,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - **Address bar above the page** The card behind a tab's icon — the site, whether its connection is secure, copy, print, zoom — does that part without a bar. *([#15](https://github.com/driceroland/Search/issues/15), [#56](https://github.com/driceroland/Search/pull/56))*
 - **Tab groups and folders** Spaces keep sets of tabs apart, and the column stays quiet. *([#23](https://github.com/driceroland/Search/issues/23), [#68](https://github.com/driceroland/Search/issues/68), [#31](https://github.com/driceroland/Search/pull/31), [#54](https://github.com/driceroland/Search/pull/54), [#76](https://github.com/driceroland/Search/pull/76))*
 - **Bookmarks in the column** The bookmarks bar, off unless turned on, and the Bookmarks menu are where they live. *([#58](https://github.com/driceroland/Search/issues/58), [#69](https://github.com/driceroland/Search/pull/69))*
-- **Customization page** Settings stays short. *([#101](https://github.com/driceroland/Search/issues/101), [#105](https://github.com/driceroland/Search/pull/105), [#106](https://github.com/driceroland/Search/pull/106), [#107](https://github.com/driceroland/Search/pull/107), [#108](https://github.com/driceroland/Search/pull/108), [#143](https://github.com/driceroland/Search/pull/143))*
+- **Customization page** Settings stays short. *([#101](https://github.com/driceroland/Search/issues/101), [#105](https://github.com/driceroland/Search/pull/105), [#106](https://github.com/driceroland/Search/pull/106), [#107](https://github.com/driceroland/Search/pull/107), [#108](https://github.com/driceroland/Search/pull/108), [#143](https://github.com/driceroland/Search/pull/143), [#231](https://github.com/driceroland/Search/pull/231))*
 - **Hidden sidebar delay setting** The default is what changes instead. *([#118](https://github.com/driceroland/Search/issues/118))*
 - **Floating launcher** ⌘S and a folded column already give the page the whole window. *([#18](https://github.com/driceroland/Search/issues/18))*
 - **Proxy extensions** WebKit doesn't give it to extensions. *([#12](https://github.com/driceroland/Search/issues/12))*
