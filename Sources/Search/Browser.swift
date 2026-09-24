@@ -1346,7 +1346,10 @@ final class Browser: NSObject, ObservableObject {
             active.go(to: url)
             editing = false
         } else {
-            open(url, foreground: true)
+            // Not a link followed from a page you were reading, so it has no
+            // place beside the tab you were on - least of all a pinned one,
+            // which the row keeps at its head on purpose.
+            open(url, foreground: true, atEnd: true)
         }
     }
 
