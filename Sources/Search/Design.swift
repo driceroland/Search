@@ -108,6 +108,8 @@ enum Metrics {
     /// Back, forward and reload, at the far end of the row beside the
     /// bookmarks: three doors and the air before the next one.
     static let helm: CGFloat = 3 * 26 + 2 * 2 + 8
+    /// Speed Dial's grid door beside them, when it's on, and its air.
+    static let dialDoor: CGFloat = 26 + 4
     /// The same three doors again, in the sidebar, where they sit right of
     /// the lights instead. The column already has 10 of horizontal padding
     /// of its own before this even starts, so this is the lights' own edge

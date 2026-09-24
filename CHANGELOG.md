@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Speed Dial: your bookmarked sites as tiles, each with a preview from the last time you visited it. Open it from a grid button beside reload, or have every new tab open it; both are off unless turned on, in Settings › Tabs. Add a site from your bookmarks, by typing its address, or from a tab's right-click menu; put the tiles in order from a tile's right-click menu or with ⌥⌘← and ⌥⌘→. Settings › Privacy › Speed Dial clears it, leaving your bookmarks.
 - The toolbar, your way: back, forward and reload can sit before the tabs, by the window's buttons, instead of after them; and the Bookmarks and Extensions buttons can be hidden if you don't use them. The Bookmarks menu and pinned extensions stay either way. Off unless turned on, in Settings › Tabs.
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 

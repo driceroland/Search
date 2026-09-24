@@ -135,6 +135,7 @@ struct SettingsPanel: View {
                     case .tabs:
                         tabs
                         toolbar
+                        speedDial
                     case .extensions: ExtensionsPage(browser: browser)
                     case .passwords: passwords
                     case .downloads: downloads
@@ -274,6 +275,19 @@ struct SettingsPanel: View {
             Rule()
             Line("Show the Extensions button", "Pinned extensions stay where they are") {
                 Switch(on: $prefs.extensionButton)
+            }
+        }
+    }
+
+    /// Speed Dial: a button for it, and whether new tabs open on it.
+    private var speedDial: some View {
+        Card {
+            Line("Show the Speed Dial button", "Beside reload: your bookmarked sites as tiles, in the tab you're on") {
+                Switch(on: $prefs.dialButton)
+            }
+            Rule()
+            Line("New tabs open Speed Dial", "Instead of the address field. This takes the place of an extension's new tab page") {
+                Switch(on: $prefs.newTabDial)
             }
         }
     }
@@ -422,6 +436,15 @@ struct SettingsPanel: View {
             Card {
                 Line("History", "Every address you have been to") {
                     Pill("Clear") { browser.clearHistory() }
+                }
+                if prefs.usesDial {
+                    Rule()
+                    Line("Speed Dial", "Its tiles and previews; the bookmarks stay") {
+                        Pill("Clear") {
+                            browser.speedDial.reset()
+                            browser.announce(browser.speedDial.error ?? "Speed Dial cleared")
+                        }
+                    }
                 }
                 Rule()
                 Line("Cookies and sign-ins", "Signs you out of every site") {

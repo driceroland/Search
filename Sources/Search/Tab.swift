@@ -235,7 +235,9 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     private func adoptIcon() {
-        guard let host = address?.host()?.lowercased() else { return }
+        // Somewhere with no site, Speed Dial among them, wears no site's icon:
+        // the one before it would stay on the tab otherwise.
+        guard let host = address?.host()?.lowercased() else { icon = nil; return }
         icon = Favicons.shared.cached(host)
     }
 
@@ -395,12 +397,21 @@ final class Tab: ObservableObject, Identifiable {
     /// A tab that has never been anywhere shows the address field instead of a
     /// page. It still owns a web view — built now, warm by the time it's needed.
     var isBlank: Bool { address == nil }
+    /// Showing Speed Dial, which is drawn natively rather than by the web view.
+    var onDial: Bool { address.map(SpeedDial.at) == true }
+    /// A page of the web's in the tab: something to copy the address of,
+    /// bookmark, find in, print or pin. Speed Dial's marker is none of those.
+    var showsPage: Bool { !isBlank && !onDial }
+    /// Set when the browser itself sends this tab to Speed Dial, and taken
+    /// by the navigation policy: a page's own way there has no ticket.
+    var dialing = false
 
     /// The title if the page has offered one, the address until it does. A tab
     /// that says nothing at all for the first second of every load is a tab you
     /// can't find your way back to.
     var label: String {
         if let name, !name.isEmpty { return name }
+        if onDial { return "Speed Dial" }
         if popup, let host = address?.host(), !host.isEmpty {
             return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         }
@@ -763,7 +774,11 @@ final class Tab: ObservableObject, Identifiable {
         picture = nil
         cover = nil
         adoptIcon()
-        web.open(url)
+        // Speed Dial is drawn natively and needs no web view. In an existing web
+        // view the local marker becomes a real back/forward history entry.
+        // The one navigation to it a page didn't start: see Browser's policy.
+        if SpeedDial.at(url) { dialing = true }
+        if !SpeedDial.at(url) || built != nil { web.open(url) }
     }
 
     /// Brought back from the last session: everything the row needs to draw it,
@@ -772,7 +787,7 @@ final class Tab: ObservableObject, Identifiable {
         address = url
         self.title = title
         self.name = name
-        pending = url
+        pending = SpeedDial.at(url) ? nil : url
         adoptIcon()
     }
 
@@ -952,6 +967,7 @@ final class Tab: ObservableObject, Identifiable {
     /// Asked anything at all, the page answers with one particular error, and
     /// the answer to that is to load it again.
     func revive() {
+        guard !onDial else { return }
         if stale {
             stale = false
             recoverFromCrash()
@@ -984,6 +1000,7 @@ final class Tab: ObservableObject, Identifiable {
     func wake() -> Bool {
         guard let url = pending else { return false }
         pending = nil
+        if SpeedDial.at(url) { return true }
         failure = nil
         reading = 0
         lastY = 0
@@ -1024,6 +1041,7 @@ final class Tab: ObservableObject, Identifiable {
     /// Again from the network. A view that has lost its document is given
     /// the address back instead: there is nothing else for it to reload.
     func reload() {
+        guard !onDial else { return }
         // A pin put down with ⌘W has no view left to reload; waking it is
         // the reload.
         guard !wake() else { return }

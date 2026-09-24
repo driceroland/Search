@@ -40,6 +40,24 @@ final class Preferences: ObservableObject {
     @Published var extensionButton: Bool {
         didSet { store.set(extensionButton, forKey: "toolbar.extensions") }
     }
+    /// A door beside reload that opens Speed Dial in the tab you're on.
+    /// Off unless asked for.
+    @Published var dialButton: Bool {
+        didSet { store.set(dialButton, forKey: "dial.button"); fit() }
+    }
+    /// Every new tab opens on Speed Dial rather than the address field.
+    /// Off unless asked for.
+    @Published var newTabDial: Bool {
+        didSet { store.set(newTabDial, forKey: "dial.newtab") }
+    }
+    /// Speed Dial is turned on one way or the other; until it is, nothing of
+    /// it shows anywhere — no menu item, no Privacy row.
+    var usesDial: Bool { dialButton || newTabDial }
+    /// The narrowest the column goes. With the grid door beside the lights,
+    /// that is the column's padding either side, the lights and four doors.
+    var sideFloor: CGFloat { dialButton ? Self.dialFloor : Metrics.sideMin }
+    private static let dialFloor = max(Metrics.sideMin, 10 + Metrics.sideLights + 4 * 26 + 3 * 4 + 10)
+    private func fit() { if sideWidth < sideFloor { sideWidth = sideFloor } }
 
     /// A local socket a script can drive the browser through, in tabs of its
     /// own. Off unless asked for — in Settings, which is also what leaves
@@ -226,6 +244,8 @@ final class Preferences: ObservableObject {
         navigationLeft = store.bool(forKey: "toolbar.left")
         bookmarkButton = store.object(forKey: "toolbar.bookmarks") as? Bool ?? true
         extensionButton = store.object(forKey: "toolbar.extensions") as? Bool ?? true
+        dialButton = store.bool(forKey: "dial.button")
+        newTabDial = store.bool(forKey: "dial.newtab")
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
         // The Mac's own unless asked otherwise — a Mac in dark mode expects
@@ -248,7 +268,7 @@ final class Preferences: ObservableObject {
             ?? (store.string(forKey: "manner") == "side")
         sideHides = store.bool(forKey: "sidebar.hides")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
-        sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
+        sideWidth = min(Metrics.sideMax, max(store.bool(forKey: "dial.button") ? Self.dialFloor : Metrics.sideMin, CGFloat(width)))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""

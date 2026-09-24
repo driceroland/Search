@@ -47,7 +47,7 @@ struct SideBar: View {
                 DragStrip()
                     .frame(width: 10 + Metrics.sideLights)
                 Color.clear
-                    .frame(width: Metrics.helm)
+                    .frame(width: Metrics.helm + (prefs.dialButton ? Metrics.dialDoor : 0))
                     .allowsHitTesting(false)
                 DragStrip()
             }
@@ -119,7 +119,7 @@ struct SideBar: View {
                     .onChanged { value in
                         if grabbed == nil { grabbed = prefs.sideWidth }
                         let wanted = (grabbed ?? prefs.sideWidth) + value.translation.width
-                        prefs.sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, wanted))
+                        prefs.sideWidth = min(Metrics.sideMax, max(prefs.sideFloor, wanted))
                     }
                     .onEnded { _ in grabbed = nil }
             )

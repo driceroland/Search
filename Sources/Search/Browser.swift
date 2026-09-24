@@ -42,6 +42,7 @@ final class Browser: NSObject, ObservableObject {
     // MARK: - bookmarks
 
     let bookmarks = Bookmarks()
+    lazy var speedDial = SpeedDial(bookmarks: bookmarks)
     /// The full list, for taking things out.
     @Published var bookmarking = false
     /// The dropdown off the button.
@@ -49,7 +50,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⇧⌘B. The page you are on, at the end of the list.
     func bookmarkCurrent() {
-        guard let tab = active, let url = tab.address else { return }
+        guard let tab = active, tab.showsPage, let url = tab.address else { return }
         guard !bookmarks.contains(url) else {
             announce("Already a bookmark")
             return
@@ -124,7 +125,7 @@ final class Browser: NSObject, ObservableObject {
     var cycling = false
 
     var active: Tab? { tabs.first { $0.id == activeID } }
-    var fieldShowing: Bool { editing || active?.isBlank ?? true }
+    var fieldShowing: Bool { editing || (active?.isBlank ?? true) || active?.onDial == true }
 
     /// Typed plus whatever the field is quietly finishing for you.
     var completed: String {
@@ -141,7 +142,7 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var findFocus = 0
 
     func openFind() {
-        guard active?.isBlank == false else { return }
+        guard active?.showsPage == true else { return }
         finding = true
         findFocus += 1
     }
@@ -194,7 +195,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘⇧H. Point at anything on the page and it goes, for good, on this site.
     func toggleHiding() {
-        guard let tab = active, !tab.isBlank else { return }
+        guard let tab = active, tab.showsPage else { return }
         if veiling {
             veiling = false
             tab.stopPicking()
@@ -472,6 +473,11 @@ final class Browser: NSObject, ObservableObject {
 
     func clearHistory() {
         history.forget()
+        // A tile's preview is a picture of where you have been: it goes with
+        // the history, though the tiles stay.
+        if prefs.usesDial || FileManager.default.fileExists(atPath: SpeedDial.folder.path) {
+            speedDial.forgetPreviews()
+        }
         announce("History cleared")
     }
 
@@ -594,7 +600,7 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var renamingTab = false
 
     func beginTabEdit(_ tab: Tab) {
-        guard let url = tab.address else {
+        guard !tab.onDial, let url = tab.address else {
             edit()
             return
         }
@@ -661,7 +667,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘⇧C. The address, in the clipboard, and a line that says as much.
     func copyAddress() {
-        guard let url = active?.address else { return }
+        guard active?.showsPage == true, let url = active?.address else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.absoluteString, forType: .string)
         announce("Address copied")
@@ -670,7 +676,7 @@ final class Browser: NSObject, ObservableObject {
     /// For pasting into notes and messages that read Markdown: a title that
     /// links, not a bare address to explain in your own words.
     func copyMarkdownLink() {
-        guard let tab = active, let url = tab.address else { return }
+        guard let tab = active, tab.showsPage, let url = tab.address else { return }
         // A backslash first, so the ones added next aren't doubled; then both
         // brackets, either of which would end or break the link's text.
         let title = tab.label
@@ -847,6 +853,7 @@ final class Browser: NSObject, ObservableObject {
             // had to share the CPU with it.
             let tab = Tab()
             adopt(tab)
+            start(tab)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak tab] in
                 guard let tab, tab.isBlank else { return }
                 _ = tab.web
@@ -998,7 +1005,7 @@ final class Browser: NSObject, ObservableObject {
                     // it there too means a pin can never be written out of
                     // existence by whatever its web view happens to be showing.
                     guard let url = tab.pending ?? tab.address,
-                          url.scheme?.hasPrefix("http") == true
+                          (url.scheme?.hasPrefix("http") == true || SpeedDial.at(url))
                     else { return nil }
                     return Session.Entry(
                         url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name
@@ -1028,6 +1035,38 @@ final class Browser: NSObject, ObservableObject {
 
     // MARK: - tabs
 
+    func dialCurrent(_ tab: Tab? = nil) {
+        speedDial.addCurrent(tab ?? active)
+        announce(speedDial.error ?? "Added to Speed Dial")
+    }
+
+    /// Speed Dial in the tab you're on, as a page of its own in its history:
+    /// Back returns to where you were.
+    func showDial() {
+        let tab: Tab
+        if let active { tab = active } else {
+            tab = Tab()
+            adopt(tab)
+        }
+        dial(tab)
+        editing = false
+        typed = ""
+        focusRequest += 1
+        rememberSession()
+    }
+
+    /// A new tab's Speed Dial, when that is what new tabs open.
+    private func start(_ tab: Tab) {
+        if prefs.newTabDial { dial(tab) }
+    }
+
+    private func dial(_ tab: Tab) {
+        // Extension pages have a restricted WebKit configuration.
+        if #available(macOS 15.4, *), tab.address?.scheme == Extensions.scheme {
+            replace(tab, going: SpeedDial.address)
+        } else { tab.go(to: SpeedDial.address) }
+    }
+
     func newTab() {
         // On a private tab, a new one is private too: ⌘T from a page that
         // keeps nothing and landing on one that keeps everything is how a
@@ -1054,6 +1093,7 @@ final class Browser: NSObject, ObservableObject {
             if activeID != blank.id { leaving() }
             activeID = blank.id
             summoning = false
+            start(blank)
             typed = ""
             editing = false
             focusRequest += 1
@@ -1064,12 +1104,13 @@ final class Browser: NSObject, ObservableObject {
         adopt(tab)
         leaving()
         activeID = tab.id
+        start(tab)
         summoning = false
         typed = ""
         editing = false
         focusRequest += 1
         rememberSession()
-        if #available(macOS 15.4, *) { Extensions.shared.offerNewTabPage(into: tab) }
+        if #available(macOS 15.4, *), !prefs.newTabDial { Extensions.shared.offerNewTabPage(into: tab) }
     }
 
     /// A blank tab given an extension's new tab page: the page needs a view
@@ -1138,7 +1179,7 @@ final class Browser: NSObject, ObservableObject {
         }
 
         if tabs.count == 1 {
-            if tab.isBlank {
+            if tab.isBlank || tab.onDial {
                 NSApp.keyWindow?.performClose(nil)
             } else {
                 let fresh = Tab()
@@ -1147,6 +1188,7 @@ final class Browser: NSObject, ObservableObject {
                 adopt(fresh)
                 tabs = [fresh]
                 activeID = fresh.id
+                start(fresh)
                 typed = ""
             }
             return
@@ -1217,7 +1259,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     private func remember(_ tab: Tab, at index: Int) {
-        guard !tab.shy, let url = tab.address else { return }
+        guard !tab.shy, !tab.onDial, let url = tab.address else { return }
         ghosts.append(Ghost(url: url, title: tab.title, index: index))
         if ghosts.count > 12 { ghosts.removeFirst() }
     }
@@ -1295,6 +1337,8 @@ final class Browser: NSObject, ObservableObject {
         } else {
             Tab(bench: tab.bench, configuration: page)
         }
+        // A pinned extension page that goes to Speed Dial stays pinned.
+        fresh.pin = tab.pin
         prepare(fresh)
         let wasActive = activeID == tab.id
         tabs[index] = fresh
@@ -1394,6 +1438,7 @@ final class Browser: NSObject, ObservableObject {
         adopt(tab)
         leaving()
         activeID = tab.id
+        start(tab)
         summoning = false
         typed = ""
         editing = false
@@ -1403,7 +1448,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘D. The same page, beside itself.
     func duplicate() {
-        guard let url = active?.address else { return }
+        guard active?.showsPage == true, let url = active?.address else { return }
         open(url, foreground: true, from: active)
     }
 
@@ -1423,7 +1468,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘P. The system's own sheet, which is also where "save as PDF" lives.
     func printPage() {
-        guard let tab = active, !tab.isBlank, let window = NSApp.keyWindow else { return }
+        guard let tab = active, tab.showsPage, let window = NSApp.keyWindow else { return }
         let info = NSPrintInfo.shared
         info.horizontalPagination = .fit
         info.isHorizontallyCentered = false
@@ -1651,13 +1696,21 @@ final class Browser: NSObject, ObservableObject {
         // Anywhere a tab lands is worth remembering for next launch.
         tab.$address
             .dropFirst()
-            .sink { [weak self] _ in self?.rememberSession() }
+            .sink { [weak self, weak tab] address in
+                self?.rememberSession()
+                // The window shows the field or Speed Dial by the tab you're
+                // on; it has to hear when that tab arrives at the dial or
+                // leaves it. Nothing else about an address redraws it.
+                guard let self, let tab, tab.id == self.activeID,
+                      address.map(SpeedDial.at) == true || tab.onDial else { return }
+                self.objectWillChange.send()
+            }
             .store(in: &bag)
 
         tab.$title
             .dropFirst()
             .sink { [weak self, weak tab] title in
-                guard let tab, !tab.shy, let url = tab.address else { return }
+                guard let tab, !tab.shy, !tab.onDial, let url = tab.address else { return }
                 self?.history.retitle(url, title)
             }
             .store(in: &bag)
@@ -1799,7 +1852,7 @@ final class Browser: NSObject, ObservableObject {
     /// and Escape puts it back.
     func edit() {
         summoning = false
-        typed = active?.address?.absoluteString ?? ""
+        typed = active?.onDial == true ? "" : active?.address?.absoluteString ?? ""
         editing = true
         focusRequest += 1
     }
@@ -1860,12 +1913,12 @@ final class Browser: NSObject, ObservableObject {
 
     // MARK: - the page
 
-    func zoom(by factor: CGFloat) { active?.magnify(by: factor) }
-    func resetZoom() { active?.resetZoom() }
+    func zoom(by factor: CGFloat) { if active?.showsPage == true { active?.magnify(by: factor) } }
+    func resetZoom() { if active?.showsPage == true { active?.resetZoom() } }
 
     /// ⌘⇧R. The article, and nothing that was arranged around it.
     func toggleReader() {
-        guard let tab = active else { return }
+        guard let tab = active, tab.showsPage else { return }
         tab.toggleReader { [weak self] worked in
             guard !worked else { return }
             self?.announce("Nothing to read on this page")
@@ -1902,6 +1955,20 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         guard let url = action.request.url, let scheme = url.scheme?.lowercased() else {
             decisionHandler(.allow)
             return
+        }
+        // Speed Dial is the browser's to open, never a page's: a link, a
+        // script or a window.open to its marker would show the dial over a
+        // live document the page still holds. WebKit gives a load of ours
+        // and a page's the same source frame, so ours carries a ticket (see
+        // Tab.dialing); Back and Forward are the tab's own history.
+        if SpeedDial.at(url), action.navigationType != .backForward {
+            let tab = tab(for: webView)
+            let ours = tab?.dialing == true
+            tab?.dialing = false
+            guard ours else {
+                decisionHandler(.cancel)
+                return
+            }
         }
 
         // An extension's OAuth sign-in coming back: the address is the
@@ -2011,6 +2078,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         for action: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
+        // A page can't open a window onto Speed Dial either (see above).
+        if let url = action.request.url, SpeedDial.at(url) { return nil }
         let from = tab(for: webView)?.id ?? activeID
         // WebKit's copy of the opener's configuration still holds the
         // opener's user content controller — its scripts and its message
@@ -2177,6 +2246,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         (webView as? PageView)?.showFirstFrame()
         guard let tab = tab(for: webView), let url = tab.address else { return }
         tab.uncover()
+        guard !tab.onDial else { return }
         tellStore(tab)
         // A page that arrived after a password went out: did the sign-in take?
         tab.settleSignIn()
@@ -2186,6 +2256,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         Favicons.shared.fetch(for: tab)
         guard !tab.shy, !tab.bench else { return }
         history.record(url, title: tab.title)
+        if prefs.newTabDial || prefs.dialButton {
+            speedDial.captureMissing(from: tab)
+        }
     }
 
     private func fail(_ webView: WKWebView, _ error: Error) {
@@ -2297,7 +2370,6 @@ extension Browser: WKDownloadDelegate {
         return candidate
     }
 }
-
 
 
 

@@ -17,7 +17,7 @@ struct TabBar: View {
     @State private var nearby = false
     @State private var plussed = false
     /// The helm's width when it stands before the tabs rather than after them.
-    private var leading: CGFloat { browser.prefs.navigationLeft ? Metrics.helm - 8 + Metrics.tabGap : 0 }
+    private var leading: CGFloat { browser.prefs.navigationLeft ? Metrics.helm - 8 + (browser.prefs.dialButton ? Metrics.dialDoor : 0) + Metrics.tabGap : 0 }
     /// How wide the doors at the far end are, extension buttons included.
     @State private var doors: CGFloat = 0
 
@@ -295,18 +295,24 @@ struct Helm: View {
     @ObservedObject var browser: Browser
 
     var body: some View {
-        if let tab = browser.active {
-            Wheel(browser: browser, tab: tab)
-        } else {
-            // Nowhere to go and nothing to reload: the doors stay in place,
-            // greyed, so the row doesn't shift when a tab arrives.
-            HStack(spacing: 4) {
-                Door(icon: "chevron.left") {}
-                Door(icon: "chevron.right") {}
-                Door(icon: "arrow.clockwise") {}
+        HStack(spacing: 4) {
+            if let tab = browser.active {
+                Wheel(browser: browser, tab: tab)
+            } else {
+                // Nowhere to go and nothing to reload: the doors stay in place,
+                // greyed, so the row doesn't shift when a tab arrives.
+                HStack(spacing: 4) {
+                    Door(icon: "chevron.left") {}
+                    Door(icon: "chevron.right") {}
+                    Door(icon: "arrow.clockwise") {}
+                }
+                .opacity(0.3)
+                .allowsHitTesting(false)
             }
-            .opacity(0.3)
-            .allowsHitTesting(false)
+            // Speed Dial rides with the helm wherever it stands.
+            if browser.prefs.dialButton {
+                Door(icon: "square.grid.2x2", on: browser.active?.onDial == true, help: "Speed Dial") { browser.showDial() }
+            }
         }
     }
 
@@ -331,8 +337,8 @@ struct Helm: View {
                 ) {
                     if tab.loading { tab.stop() } else { browser.reload() }
                 }
-                .disabled(tab.isBlank)
-                .opacity(tab.isBlank ? 0.3 : 1)
+                .disabled(tab.isBlank || tab.onDial)
+                .opacity(tab.isBlank || tab.onDial ? 0.3 : 1)
             }
             .animation(Motion.quick, value: back)
             .animation(Motion.quick, value: forward)
@@ -756,7 +762,7 @@ struct TabMenu: View {
     var body: some View {
         if tab.pin == nil {
             Button("Pin") { browser.pin(tab) }
-                .disabled(tab.isBlank)
+                .disabled(!tab.showsPage)
         } else {
             Button("Change Letter") { browser.editLetter(tab) }
             Button("Unpin") { browser.unpin(tab) }
@@ -767,23 +773,27 @@ struct TabMenu: View {
             browser.select(tab)
             browser.duplicate()
         }
-        .disabled(tab.isBlank)
+        .disabled(!tab.showsPage)
         // The card a click on the tab you are on shows under its address.
         Button("Site Information…") {
             if browser.activeID != tab.id { browser.select(tab) }
             browser.beginTabEdit(tab)
         }
-        .disabled(tab.isBlank || tab.address == nil || tab.pin != nil)
+        .disabled(!tab.showsPage || tab.pin != nil)
         Button("Copy Address") {
             browser.select(tab)
             browser.copyAddress()
         }
-        .disabled(tab.isBlank)
+        .disabled(!tab.showsPage)
         Button("Copy as Markdown Link") {
             browser.select(tab)
             browser.copyMarkdownLink()
         }
-        .disabled(tab.isBlank)
+        .disabled(!tab.showsPage)
+        if browser.prefs.usesDial {
+            Button("Add to Speed Dial") { browser.dialCurrent(tab) }
+                .disabled(!SpeedDial.canCapture(tab))
+        }
         Button(tab.muted ? "Unmute Tab" : "Mute Tab") { tab.toggleMute() }
         Divider()
         Button("Close Tab", action: close)
