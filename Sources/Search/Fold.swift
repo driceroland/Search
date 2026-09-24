@@ -175,9 +175,20 @@ struct Fold: View {
             // column, counts as the column.
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
             let onWindow = top == window.windowNumber
-            let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
+            // A popover sits at a window level `windowNumber(at:)` never
+            // resolves to the top, even with the pointer right over it, so
+            // its own frame is checked directly, not gated on `!onWindow`:
+            // `top` stays the column's window number the whole time a
+            // popover opened from it is in front.
+            let onOwnPanel = NSApp.windows.contains { panel in
+                panel !== window && panel.isVisible && panel.frame.contains(screen)
+            }
             let reach = prefs.sidebar ? prefs.sideWidth : Metrics.strip
-            let over = onOwnPanel || (onWindow && inWindow && distance < reach)
+            // A bookmark's link opens in the tab the popover sits over, or
+            // clicking one just moves the pointer off toward the page: the
+            // column would otherwise fold away under a popover that is
+            // still open and still wants somewhere to sit.
+            let over = Fold.ownPopoverOpen(browser) || onOwnPanel || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
         } else if inWindow, distance < Fold.edge {
@@ -226,12 +237,21 @@ struct Fold: View {
             guard leaving == nil else { return }
             let going = DispatchWorkItem {
                 leaving = nil
-                guard browser.editingTab == nil else { return }
+                guard browser.editingTab == nil, !Fold.ownPopoverOpen(browser) else { return }
                 browser.peek(false)
             }
             leaving = going
             DispatchQueue.main.asyncAfter(deadline: .now() + Fold.grace, execute: going)
         }
+    }
+
+    /// A popover opened from a Door in the column, still open: closing the
+    /// column would take it along, so it holds the column out no matter
+    /// where the pointer has wandered off to meanwhile.
+    private static func ownPopoverOpen(_ browser: Browser) -> Bool {
+        if browser.bookmarksOpen { return true }
+        if #available(macOS 15.4, *), Extensions.shared.menuOpen { return true }
+        return false
     }
 
     /// The title bar's own view holds the three buttons and the resting
