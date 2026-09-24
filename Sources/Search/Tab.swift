@@ -1210,6 +1210,14 @@ final class PageView: WKWebView {
         }
     }
 
+    /// Logi Options+ sends its Back/Forward buttons as a swipe, not buttons
+    /// 3 and 4 — deltaX 1 for back, -1 for forward, as Safari reads it.
+    override func swipe(with event: NSEvent) {
+        if event.deltaX > 0, canGoBack { goBack() }
+        else if event.deltaX < 0, canGoForward { goForward() }
+        else { super.swipe(with: event) }
+    }
+
     // MARK: - keys the page didn't use
 
     /// The last key handed to the page. WebKit sends a key the page didn't
