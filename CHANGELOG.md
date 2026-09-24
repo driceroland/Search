@@ -34,6 +34,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- The Back, Forward, and Reload buttons have breathing room between them. Thanks @olllayor ([#185](https://github.com/driceroland/Search/issues/185))
 - Going back or forward with two fingers on the trackpad takes a shorter swipe (70 points instead of 110), and a quick flick is enough, as in Safari. Thanks [@mihsanbudiman](https://x.com/mihsanbudiman) for the report
 - Scrolling is smoother: while a page scrolled, the fill that shows how far you have read in its tab was redrawn at every frame — up to 120 times a second, taking a third of a core from the thread that puts the scrolled page on screen. It now moves in hundredths, only when that changes. Thanks [@e30klip](https://x.com/e30klip) and [@mihsanbudiman](https://x.com/mihsanbudiman) for the reports
 - A tab you drag to another place keeps up with the pointer: each move of the hand used to redraw the whole column or bar, the neighbouring spaces' tabs included, and the tab trailed behind. Now only the tab being carried moves until it changes place. Thanks [@e30klip](https://x.com/e30klip) for the report
