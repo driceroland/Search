@@ -693,6 +693,40 @@ final class Bench {
                     "firstFolder": folder?.items.prefix(4).map(\.title) ?? [],
                     "active": browser.active?.address?.absoluteString ?? ""])
 
+        case "keyeq":
+            // A ⌘ shortcut pressed while the page has the keyboard, put
+            // through the app's key handling and then to the page's view, as
+            // AppKit does with a key window — which a hidden probe hasn't.
+            // Reports what Search did and what the page saw. Only on a
+            // SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "keyeq only works on a --test run"]); return }
+            guard let tab = browser.active, let web = tab.built, let window = web.window,
+                  let chars = request["chars"] as? String, let code = request["code"] as? Int
+            else { answer(["error": "keyeq needs a loaded tab, the characters and the key code"]); return }
+            var flags: NSEvent.ModifierFlags = [.command]
+            if (request["mods"] as? [String] ?? []).contains("shift") { flags.insert(.shift) }
+            window.makeFirstResponder(web)
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: flags,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: UInt16(code)
+            ) else { answer(["error": "no event"]); return }
+            let before = (finding: browser.finding, summoning: browser.editing, folded: browser.folded)
+            var firstPass = "search"
+            if ContentView.keyHook?(event) != nil {
+                firstPass = "page"
+                _ = web.performKeyEquivalent(with: event)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                web.evaluateJavaScript("JSON.stringify(window.__keys || [])") { seen, _ in
+                    MainActor.assumeIsolated {
+                        answer(["firstPass": firstPass, "pageSaw": seen as? String ?? "",
+                                "finding": [before.finding, browser.finding], "fieldUp": [before.summoning, browser.editing],
+                                "folded": [before.folded, browser.folded]])
+                    }
+                }
+            }
+
         case "place":
             // A tab put at another place in the row, as a drag would.
             guard let id = request["id"] as? String, let to = request["to"] as? Int,
@@ -1071,7 +1105,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "space", "strip", "column", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "keyeq", "space", "strip", "column", "ui",
             ]])
         }
     }
@@ -1210,6 +1244,8 @@ final class Bench {
             "active": tab.id == browser?.activeID,
             "asleep": tab.asleep,
             "shy": tab.shy,
+            "noisy": tab.noisy,
+            "muted": tab.muted,
             "extensions": { if #available(macOS 15.4, *) { return tab.carriesExtensions } else { return false } }(),
         ]
     }

@@ -591,9 +591,12 @@ private struct SideRow: View {
     private var editing: Bool { browser.editingTab == tab.id }
 
     /// The ring or the speaker, which stay for as long as the page loads or
-    /// plays and so keep a place of their own at the end of the row. The
-    /// cross is only there under the pointer, and takes none.
-    private var status: Bool { !editing && (tab.loading || tab.noisy) }
+    /// plays (or is muted) and so keep a place of their own at the end of the
+    /// row. The cross is only there under the pointer, and takes none.
+    private var status: Bool { !editing && (tab.loading || speaker) }
+    /// The speaker, which can be pressed, and so steps in beside the cross
+    /// under the pointer rather than hiding beneath it as the ring does.
+    private var speaker: Bool { !tab.loading && (tab.noisy || tab.muted) }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -629,15 +632,14 @@ private struct SideRow: View {
                     if tab.loading {
                         Ring().transition(.opacity)
                     } else {
-                        Image(systemName: "speaker.wave.2.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(Palette.muted)
-                            .transition(.opacity)
+                        Speaker(tab: tab).transition(.opacity)
                     }
                 }
                 .frame(width: 15, height: 15)
-                // The cross takes this place while the pointer is here.
-                .opacity(hovering ? 0 : 1)
+                // The cross takes this place while the pointer is here; the
+                // speaker moves one place in, clear of the cross's reach.
+                .opacity(hovering && !speaker ? 0 : 1)
+                .padding(.trailing, hovering && speaker ? 23 : 0)
             }
         }
         .padding(.leading, 10)
@@ -681,7 +683,7 @@ private struct SideRow: View {
             }
         }
         .animation(Motion.quick, value: tab.loading)
-        .animation(Motion.quick, value: tab.noisy)
+        .animation(Motion.quick, value: speaker)
         .background { ground }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -760,6 +762,31 @@ struct Quiet: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
+    }
+}
+
+/// The speaker at the end of a tab that plays sound, or that was muted and
+/// so says it is: a press mutes the tab or lets it be heard again. Drawn as
+/// it was before it could be pressed, with the cross's faint disc behind
+/// it only while the pointer is on it.
+struct Speaker: View {
+    @ObservedObject var tab: Tab
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: tab.toggleMute) {
+            Image(systemName: tab.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(Palette.muted)
+                .frame(width: 15, height: 15)
+                .background(Palette.ink.opacity(hovering ? 0.07 : 0), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(tab.muted ? "Unmute Tab" : "Mute Tab")
         .animation(Motion.quick, value: hovering)
     }
 }

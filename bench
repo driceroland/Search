@@ -46,6 +46,7 @@
     ./bench field TEXT [type] [go]     test run: TEXT pasted into the address field (type: a key at a time),
                                        each timed until the window has caught up; go: then Return, timed
                                        until the page is loading
+    ./bench keyeq CHARS CODE [shift]   test run: ⌘CHARS pressed while the page has the keyboard — who took it
     ./bench menu [open]                test run: the Bookmarks menu as it is about to open, and its first
                                        folder (open: its first bookmark picked)
     ./bench bookmark URL [new]         test run: a bookmark picked from the list, timed until it loads
@@ -217,6 +218,9 @@ def main(argv):
     elif verb == "menu":
         if args not in ([], ["open"]): sys.exit("usage: bench menu [open]")
         request["open"] = args == ["open"]
+    elif verb == "keyeq":
+        if len(args) < 2 or any(a != "shift" for a in args[2:]): sys.exit("usage: bench keyeq CHARS CODE [shift]")
+        request["chars"], request["code"], request["mods"] = args[0], int(args[1]), args[2:]
     elif verb == "window":
         pass
     elif verb == "pages":

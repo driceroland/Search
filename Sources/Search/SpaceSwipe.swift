@@ -23,13 +23,24 @@ final class SpaceSwipe {
     /// The glide after a swipe that was taken, which is taken too.
     private var gliding = false
     private var gathered = CGSize.zero
-    /// When a mouse wheel last went to another space, so one notch is one space.
+    /// When the wheel last turned over the bar, whether a space came of it
+    /// or not. A spin of the wheel is a run of notches close together, and
+    /// it brings one space: the next waits for the wheel to have rested.
     private var notched = Date.distantPast
+    /// Until when a new gesture is let go by: the hand that just brought a
+    /// space is often still moving, and its next stroke would take one more.
+    private var resting = Date.distantPast
+    /// A gesture let go by while resting, kept whole, glide included.
+    private var ignoring = false
+
+    /// How long after a space comes before another can.
+    static let rest: TimeInterval = 0.4
 
     /// How far the fingers have to go for the next space to come: 50
-    /// points in the column, less in a bar only 52 tall.
+    /// points in the column; in a bar only 52 tall, most of its height, so
+    /// that scrolling the page with the pointer a little high doesn't.
     static func enough(for browser: Browser) -> CGFloat {
-        browser.prefs.sidebar ? 50 : Metrics.strip * 0.4
+        browser.prefs.sidebar ? 50 : Metrics.strip * 0.6
     }
 
     func start(for browser: Browser) {
@@ -50,11 +61,13 @@ final class SpaceSwipe {
     /// True for an event the swipe keeps for itself.
     private func takes(_ event: NSEvent) -> Bool {
         guard let browser, browser.prefs.usesSpaces, !browser.folded || browser.peeking else { return false }
-        // A mouse wheel over the bar: a notch, a space.
+        // A mouse wheel over the bar: a spin, a space.
         if !event.hasPreciseScrollingDeltas {
             guard !browser.prefs.sidebar, event.scrollingDeltaY != 0, overTabs(event, in: browser) else { return false }
-            guard Date().timeIntervalSince(notched) > 0.3 else { return true }
-            notched = Date()
+            let now = Date()
+            let rested = now.timeIntervalSince(notched) > 0.3 && now > resting
+            notched = now
+            guard rested else { return true }
             let here = browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
             let target = here + (event.scrollingDeltaY < 0 ? 1 : -1)
             if target >= 0, target <= browser.spaces.count { slide(browser, to: target, from: here) }
@@ -64,17 +77,25 @@ final class SpaceSwipe {
         switch event.phase {
         case .began:
             gliding = false
+            ignoring = false
             // Only a gesture that starts over the tabs.
             guard overTabs(event, in: browser) else {
                 tracking = false
                 return false
             }
             began()
+            if ignoring { return true }
             return moved(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY)
         case .changed:
+            if ignoring { return true }
             guard tracking else { return false }
             return moved(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY)
         case .ended, .cancelled:
+            if ignoring {
+                ignoring = false
+                gliding = true
+                return true
+            }
             guard tracking else { return false }
             let taken = axis == .across
             ended(cancelled: event.phase == .cancelled)
@@ -88,9 +109,11 @@ final class SpaceSwipe {
     // MARK: - the gesture, apart from where its events come from (the bench drives these)
 
     func began() {
-        tracking = true
         axis = .undecided
         gathered = .zero
+        // Just after a space came: the same hand's next stroke is let go by.
+        ignoring = Date() <= resting
+        tracking = !ignoring
     }
 
     /// True while the gesture is this one's to take. The spaces lie
@@ -147,6 +170,7 @@ final class SpaceSwipe {
         let width = browser.prefs.sidebar ? browser.prefs.sideWidth : Metrics.strip
         let away: CGFloat = target > here ? -1 : 1
         browser.spaceStep = target > here ? 1 : -1
+        resting = Date().addingTimeInterval(SpaceSwipe.rest)
         withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
             browser.spaceSwipe = away * width
         } completion: {

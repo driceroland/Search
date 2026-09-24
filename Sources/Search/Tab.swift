@@ -101,6 +101,27 @@ enum Web {
     }
 }
 
+/// WKWebView can pause a page's media, but not mute it and let it keep
+/// playing, the one thing a tab's own speaker does everywhere else. WebKit
+/// has that mute one call down from the public framework: the one Safari's
+/// own tabs use, the page's JavaScript none the wiser. The names are asked
+/// for first, the way `inspector(_:on:)` above asks, and a WebKit without
+/// them leaves the tab heard rather than falling over.
+enum Muter {
+    /// `_mediaMutedState` is a bitmask. Its low bit is the page's own
+    /// sound, the only one a tab's speaker should touch: the others are the
+    /// camera and the microphone, someone else's to turn off.
+    static func set(_ muted: Bool, on web: WKWebView) {
+        let get = NSSelectorFromString("_mediaMutedState")
+        let set = NSSelectorFromString("_setPageMuted:")
+        guard web.responds(to: get), web.responds(to: set) else { return }
+        typealias Read = @convention(c) (AnyObject, Selector) -> UInt
+        typealias Write = @convention(c) (AnyObject, Selector, UInt) -> Void
+        let state = unsafeBitCast(web.method(for: get), to: Read.self)(web, get)
+        unsafeBitCast(web.method(for: set), to: Write.self)(web, set, muted ? state | 1 : state & ~UInt(1))
+    }
+}
+
 @MainActor
 final class Tab: ObservableObject, Identifiable {
     let id = UUID()
@@ -235,6 +256,18 @@ final class Tab: ObservableObject, Identifiable {
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
     @Published var noisy = false
+    /// Silenced by hand from its speaker or its menu: the page plays on and
+    /// is not heard. WebKit keeps the mute on the view from one page to the
+    /// next, so it is only set again on a view built new, as a sleeping tab
+    /// wakes (see build()).
+    @Published var muted = false
+
+    /// Not `web`: a tab asleep is muted without being woken, and hears of
+    /// it when its page is built again.
+    func toggleMute() {
+        muted.toggle()
+        if let built { Muter.set(muted, on: built) }
+    }
 
     /// What the page hands back when you point at something and click it.
     var onPick: ((Tab, String, String, String) -> Void)?
@@ -401,6 +434,8 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(middles, name: MiddleRelay.name)
         Shield.shared.protect(controller)
         built = web
+        // A tab muted before it went to sleep wakes muted.
+        if muted { Muter.set(true, on: web) }
         arm(hiding: veils)
 
         watch = [

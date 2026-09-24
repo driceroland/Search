@@ -394,6 +394,9 @@ private struct TabPill: View {
     /// tooltip, and ⌘W or the menu to close it — a cross on something this
     /// small would be what a click to pick the tab lands on.
     private var compact: Bool { !editing && !pinned && width < Metrics.tabTitled }
+    /// A speaker to press at the end of the pill: the page plays sound, or
+    /// was muted. The ring, while the page is still coming, goes first.
+    private var speaker: Bool { !editing && !tab.loading && (tab.noisy || tab.muted) }
 
     /// A pinned tab is a square, an edited one is a field, everything else is
     /// its share of what is left.
@@ -513,49 +516,54 @@ private struct TabPill: View {
 
             Spacer(minLength: 2)
 
-            // Pinned to the right-hand end of the pill, not trailing the title.
-            // One slot doing two jobs: the cross when the pointer is here, the
-            // ring while the page is still coming, never both.
-            ZStack {
-                if hovering {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(Palette.muted)
-                        .frame(width: 15, height: 15)
-                        .background(Palette.ink.opacity(0.07), in: Circle())
-                        .transition(.opacity)
-                } else if tab.loading {
-                    Ring().transition(.opacity)
-                } else if tab.noisy {
-                    // Which tab the noise is coming from. ⌘⇧M stops it.
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(Palette.muted)
+            // The speaker, which can be pressed, is at the end of the pill on
+            // its own, and one place in under the pointer, beside the cross
+            // and clear of its reach.
+            HStack(spacing: 0) {
+                if speaker {
+                    Speaker(tab: tab)
+                        .padding(.trailing, hovering ? 8 : 0)
                         .transition(.opacity)
                 }
-            }
-            .frame(width: editing ? 0 : 15, height: 15)
-            .opacity(editing ? 0 : 1)
-            // The cross is 15 points across because that is how big it should
-            // look. What you have to hit is the whole right-hand end of the
-            // tab: an overlay is not laid out, so it can reach past its own
-            // frame without moving anything that is.
-            .overlay {
-                if !editing {
-                    Color.clear
-                        .frame(width: 30, height: 28)
-                        .contentShape(Rectangle())
-                        .onTapGesture { if hovering { close() } }
+
+                // Pinned to the right-hand end of the pill, not trailing the title.
+                // One slot doing two jobs: the cross when the pointer is here, the
+                // ring while the page is still coming, never both.
+                ZStack {
+                    if hovering {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Palette.muted)
+                            .frame(width: 15, height: 15)
+                            .background(Palette.ink.opacity(0.07), in: Circle())
+                            .transition(.opacity)
+                    } else if tab.loading {
+                        Ring().transition(.opacity)
+                    }
                 }
+                .frame(width: editing || (speaker && !hovering) ? 0 : 15, height: 15)
+                .opacity(editing ? 0 : 1)
+                // The cross is 15 points across because that is how big it should
+                // look. What you have to hit is the whole right-hand end of the
+                // tab: an overlay is not laid out, so it can reach past its own
+                // frame without moving anything that is.
+                .overlay {
+                    if !editing {
+                        Color.clear
+                            .frame(width: 30, height: 28)
+                            .contentShape(Rectangle())
+                            .onTapGesture { if hovering { close() } }
+                    }
+                }
+                .animation(Motion.quick, value: hovering)
+                .animation(Motion.quick, value: tab.loading)
             }
-            .animation(Motion.quick, value: hovering)
-            .animation(Motion.quick, value: tab.loading)
-            .animation(Motion.quick, value: tab.noisy)
         }
         .padding(.leading, 11)
         .padding(.trailing, editing ? 11 : 7)
         .padding(.vertical, 6)
         .frame(width: span, alignment: .leading)
+        .animation(Motion.quick, value: speaker)
     }
 
     @ViewBuilder
@@ -741,6 +749,7 @@ struct TabMenu: View {
             browser.copyMarkdownLink()
         }
         .disabled(tab.isBlank)
+        Button(tab.muted ? "Unmute Tab" : "Mute Tab") { tab.toggleMute() }
         Divider()
         Button("Close Tab", action: close)
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }
