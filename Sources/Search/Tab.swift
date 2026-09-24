@@ -1015,8 +1015,7 @@ final class PageView: WKWebView {
            let name = searchName?() {
             webSearch = (item.target, item.action)
             selection = nil
-            let read = "/^(IFRAME|FRAME)$/.test(document.activeElement && document.activeElement.tagName) ? '' : window.getSelection().toString()"
-            evaluateJavaScript(read, in: nil, in: .defaultClient) { [weak self] result in
+            evaluateJavaScript(PageView.selected, in: nil, in: .defaultClient) { [weak self] result in
                 self?.selection = (try? result.get()) as? String ?? ""
             }
             item.title = "Search with \(name)"
@@ -1035,6 +1034,30 @@ final class PageView: WKWebView {
     var searchName: (() -> String?)?
     var onSearch: ((String) -> Void)?
     private var selection: String?
+
+    /// The words selected where the right-click was, read when the menu
+    /// opens. The selection of a text field is its own, not the page's, so a
+    /// field with the caret in it is asked first; a frame with the caret in it
+    /// is looked into when it is of the same site. One of another site can't
+    /// be, and gives nothing, so WebKit's own action takes the click, as it
+    /// always did. A password field gives nothing either.
+    static let selected = """
+    (function read(doc) {
+      var el = doc.activeElement;
+      if (el && /^(IFRAME|FRAME)$/.test(el.tagName)) {
+        try { return el.contentDocument ? read(el.contentDocument) : ''; } catch (e) { return ''; }
+      }
+      if (el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type !== 'password'))) {
+        try {
+          var from = el.selectionStart, to = el.selectionEnd;
+          if (typeof from === 'number' && typeof to === 'number' && to > from) return el.value.slice(from, to);
+        } catch (e) {}
+      }
+      if (el && el.tagName === 'INPUT' && el.type === 'password') return '';
+      var s = doc.getSelection();
+      return s ? s.toString() : '';
+    })(document)
+    """
     private var webSearch: (target: AnyObject?, action: Selector?) = (nil, nil)
 
     @objc private func searchSelection(_ item: NSMenuItem) {
