@@ -215,6 +215,12 @@ struct SettingsPanel: View {
             Line("Open links from other apps in a small window", "To read and close, or keep with Open in Search (⌘O)") {
                 Switch(on: $prefs.littleLinks)
             }
+            if #available(macOS 15, *) {
+                Rule()
+                Line("Translate pages and pictures", "⇧⌘L puts a page in your language; right-click a picture to translate its words. Done on this Mac, never sent anywhere") {
+                    Switch(on: $prefs.translates)
+                }
+            }
             Rule()
             Line("Show where links go", "Point at a link and its address shows at the bottom of the page") {
                 Switch(on: $prefs.showsLinks)

@@ -335,6 +335,32 @@ final class Bench {
             browser.select(tab)
             answer(describe(tab))
 
+        case "image-translate", "image-original":
+            // What the picture's own menu does, without the menu: it would
+            // hold the app until someone picked from it. Test runs only.
+            guard Store.testing else {
+                answer(["error": "\(verb) only works on a --test run"])
+                return
+            }
+            guard let tab = find(request, in: browser), let web = tab.built,
+                  let selector = request["selector"] as? String
+            else { answer(missing(request)); return }
+            web.callAsyncJavaScript(
+                "var el = document.querySelector(selector); window.__officeImageLast = el; return el ? el.currentSrc : null",
+                arguments: ["selector": selector], in: nil, in: Web.world
+            ) { result in
+                guard let src = (try? result.get()) as? String, let url = URL(string: src) else {
+                    answer(["error": "no image matches \(selector)"])
+                    return
+                }
+                if verb == "image-translate" {
+                    browser.translateImage(at: url, in: tab, frame: nil)
+                } else {
+                    browser.restoreImage(in: tab, frame: nil)
+                }
+                answer(["ok": true, "src": String(src.prefix(120))])
+            }
+
         case "text":
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             house(tab)
@@ -1302,7 +1328,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "keyeq", "pull", "space", "strip", "column", "fold", "consent", "site", "little", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "keyeq", "pull", "space", "strip", "column", "fold", "consent", "site", "little", "ui", "image-translate", "image-original",
             ]])
         }
     }

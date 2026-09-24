@@ -18,6 +18,8 @@
     ./bench submit ID SELECTOR         the form around SELECTOR
     ./bench shot ID [PATH] [WIDTH]     a PNG of the page → its path
     ./bench close ID | all             only tabs the bench opened
+    ./bench image-translate ID SEL     test run: Translate Image on the picture SEL, as its menu would
+    ./bench image-original ID SEL      test run: Show Original Image on it
     ./bench probe                      the window's own state: panels, modal, windows
     ./bench extensions                 installed extensions, loaded or not, with their warnings
     ./bench little URL|keep|close      a small window for a link (made unseen), kept into the row, or closed
@@ -131,7 +133,7 @@ def main(argv):
         if len(args) not in (2, 3) or (len(args) == 3 and args[2] != "search"): sys.exit("usage: bench eval ID JS [search]")
         request["id"], request["js"] = args[0], args[1]
         if len(args) == 3: request["world"] = "search"
-    elif verb in ("click", "submit", "tap"):
+    elif verb in ("click", "submit", "tap", "image-translate", "image-original"):
         mods = [a for a in args[2:] if a in ("shift", "cmd", "opt")] if verb == "tap" else []
         if len(args) != 2 + len(mods): sys.exit(f"usage: bench {verb} ID SELECTOR" + (" [shift] [cmd] [opt]" if verb == "tap" else ""))
         request["id"], request["selector"] = args[:2]

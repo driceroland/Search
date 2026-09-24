@@ -28,7 +28,7 @@ enum Web {
     /// included, and registering a name twice is a hard crash.
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name,
-                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name] {
+                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, TranslateRelay.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
@@ -202,6 +202,13 @@ final class Tab: ObservableObject, Identifiable {
     /// True while the page has been stripped back to its article.
     @Published private(set) var reader = false
 
+    /// True while the page's words are in your language (see Translate.swift).
+    @Published var translated = false {
+        didSet { if !translated { translatedFrom = nil } }
+    }
+    /// The language they were in.
+    var translatedFrom: Locale.Language?
+
     /// Leaving reading mode reloads rather than putting the old markup back:
     /// restoring the HTML gives you a page that looks right and does nothing,
     /// because every listener the page had was thrown away with it.
@@ -313,7 +320,7 @@ final class Tab: ObservableObject, Identifiable {
     /// Right-click landed on an image. WebKit's own menu offers to copy or
     /// download it and then, on at least some sites, does neither — see
     /// ImageMenu.swift for why this is built rather than patched.
-    var onImageMenu: ((Tab, URL) -> Void)?
+    var onImageMenu: ((Tab, URL, WKFrameInfo, Bool) -> Void)?
     var searchName: (() -> String?)?
     var onSearch: ((Tab, String) -> Void)?
     /// "Add to Search" was pressed on the Chrome Web Store page this tab shows.
@@ -321,6 +328,8 @@ final class Tab: ObservableObject, Identifiable {
     /// The middle button was let go over a link. The browser opens it in a
     /// tab of its own beside this one, without leaving the page you are on.
     var onMiddleClick: ((Tab, URL) -> Void)?
+    /// A translated page added or changed some text (see Translate.swift).
+    var onMoreToTranslate: ((Tab, Translate.Found) -> Void)?
     /// Sent where this tab's view can't go: from an extension's page to the
     /// web or another extension, or from the web to an extension's page.
     /// WebKit keeps each kind of view to its own pages, so the tab has to be
@@ -336,6 +345,7 @@ final class Tab: ObservableObject, Identifiable {
     private let images = ImageRelay()
     private let shop = StoreRelay()
     private let middles = MiddleRelay()
+    private let translations = TranslateRelay()
     private let passkeyRelay = PasskeyRelay()
     private let hovered = HoveredLink()
     private let ears = AudioWatch()
@@ -465,6 +475,7 @@ final class Tab: ObservableObject, Identifiable {
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
+        controller.add(translations, contentWorld: Web.world, name: TranslateRelay.name)
         Shield.shared.protect(controller)
         built = web
         // A tab muted before it went to sleep wakes muted.
@@ -509,6 +520,7 @@ final class Tab: ObservableObject, Identifiable {
         images.tab = self
         shop.tab = self
         middles.tab = self
+        translations.tab = self
         ears.watch(web) { [weak self] on in self?.noisy = on }
         return web
     }
@@ -754,6 +766,7 @@ final class Tab: ObservableObject, Identifiable {
         reading = 0
         lastY = 0
         reader = false
+        translated = false
         typing = false
         immersed = false
         // Sent somewhere new, a sleeping tab is simply awake again — with
@@ -988,6 +1001,7 @@ final class Tab: ObservableObject, Identifiable {
         reading = 0
         lastY = 0
         reader = false
+        translated = false
         typing = false
         immersed = false
         let state = memory

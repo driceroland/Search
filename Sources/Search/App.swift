@@ -78,6 +78,7 @@ struct SearchApp: App {
                     .keyboardShortcut("r")
                 Button("Reading Mode") { browser.toggleReader() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
+                TranslateCommand(browser: browser, prefs: browser.prefs)
                 Button("Float Video") { browser.toggleFloat() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
                 Divider()
@@ -464,6 +465,7 @@ struct ContentView: View {
 
     var body: some View {
         window_
+            .modifier(Translating(browser: browser))
             // The column folded away, and out again at the edge (see Fold.swift).
             .overlay(alignment: .leading) { Fold(browser: browser, prefs: browser.prefs) }
             .overlay(alignment: .bottom) { bars }
@@ -1004,6 +1006,9 @@ struct ContentView: View {
             }
         case "l" where !shifted:
             browser.edit()
+        case "l" where shifted:
+            guard browser.prefs.translates || browser.active?.translated == true else { return false }
+            browser.toggleTranslation()
         case "r" where !shifted:
             browser.reload()
         case "r" where shifted:

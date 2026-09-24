@@ -35,6 +35,10 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
       window.__officeImages = true;
       document.addEventListener('contextmenu', function (e) {
         var el = e.target;
+        // A translation drawn on a canvas stands for its picture (see
+        // ImageTranslate.swift).
+        var drawn = window.__officeImageCanvases;
+        if (drawn && drawn.has(el)) el = drawn.get(el);
         while (el && el.tagName !== 'IMG') el = el.parentElement;
         if (!el || !el.currentSrc || el.naturalWidth < 2) return;
         // Only an address this menu will act on takes WebKit's own menu
@@ -45,7 +49,11 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
         var relay = window.webkit && webkit.messageHandlers && webkit.messageHandlers.officeImages;
         if (!relay) return;
         e.preventDefault();
-        relay.postMessage({ src: el.currentSrc });
+        // Kept in this world for Translate Image, which needs the element
+        // itself, not only its address (see ImageTranslate.swift).
+        window.__officeImageLast = el;
+        var kept = window.__officeImageKept;
+        relay.postMessage({ src: el.currentSrc, translated: !!(kept && kept.has(el)) });
       }, true);
     })();
     """
@@ -63,9 +71,11 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
               // already checks, but any page can post to this handler.
               ["http", "https", "data", "blob"].contains(url.scheme?.lowercased() ?? "")
         else { return }
+        let frame = message.frameInfo
+        let translated = body["translated"] as? Bool ?? false
         MainActor.assumeIsolated { [weak self] in
             guard let self, let tab else { return }
-            tab.onImageMenu?(tab, url)
+            tab.onImageMenu?(tab, url, frame, translated)
         }
     }
 }
@@ -74,7 +84,7 @@ extension Browser {
     /// The menu itself, popped where the pointer already is — the click that
     /// asked for this one happened a moment ago, in JavaScript, with no
     /// native event left to hang an NSMenu off of.
-    func showImageMenu(for tab: Tab, at url: URL) {
+    func showImageMenu(for tab: Tab, at url: URL, in frame: WKFrameInfo, translated: Bool) {
         guard let webView = tab.built else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -88,6 +98,20 @@ extension Browser {
         menu.addItem(ImageMenuItem("Download Image") { [weak self] in
             self?.downloadImage(at: url, from: webView)
         })
+        // Show Original stays for a picture translated before the switch was
+        // turned off.
+        if #available(macOS 15, *), prefs.translates || translated {
+            menu.addItem(.separator())
+            if translated {
+                menu.addItem(ImageMenuItem("Show Original Image") { [weak self] in
+                    self?.restoreImage(in: tab, frame: frame)
+                })
+            } else {
+                menu.addItem(ImageMenuItem("Translate Image") { [weak self] in
+                    self?.translateImage(at: url, in: tab, frame: frame)
+                })
+            }
+        }
         menu.addItem(.separator())
         menu.addItem(ImageMenuItem("Copy Image Address") {
             NSPasteboard.general.clearContents()

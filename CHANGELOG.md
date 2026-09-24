@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Translation, done on the Mac: ⇧⌘L puts a page in your language and back, with its links and emphasis kept, its placeholders, image descriptions and title too, and whatever it adds afterwards translated as it arrives. Right-click a picture › Translate Image reads the words in it and redraws it with the translation in their place; Show Original Image puts it back. Nothing is sent anywhere to be translated: macOS's own Translation and Vision do it, and offer to download a language the first time. Off unless you turn it on in Settings › General › Translate pages and pictures; macOS 15 or later.
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed
