@@ -169,6 +169,14 @@ final class Preferences: ObservableObject {
     @Published var usesSpaces: Bool {
         didSet { store.set(usesSpaces, forKey: "spaces") }
     }
+    /// The strip across the top takes the colour a page declares for itself
+    /// with `theme-color`, and follows it from tab to tab. Only the tab row
+    /// across the top — the sidebar is unaffected, and a page that hasn't
+    /// declared a colour leaves the strip as it always looked. Off unless
+    /// asked for.
+    @Published var themedChrome: Bool {
+        didSet { store.set(themedChrome, forKey: "chrome.theme") }
+    }
 
     init() {
         // Carried over from when there were four ways of holding the browser
@@ -225,6 +233,7 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
+        themedChrome = store.bool(forKey: "chrome.theme")
         let flicks = store.bool(forKey: "float.flicks")
         floatFlicks = flicks
         Float.flicks = flicks

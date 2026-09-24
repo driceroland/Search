@@ -274,6 +274,12 @@ struct SettingsPanel: View {
             Line("Spaces", "Separate sets of tabs, signed in where the others are or starting afresh, switched with ⌃1–⌃9, two fingers sideways over the column, or the space's icon. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
                 Switch(on: $prefs.usesSpaces)
             }
+            if !prefs.sidebar {
+                Rule()
+                Line("Colour the tab bar from the page", "The strip takes the colour a page declares for itself with theme-color, and follows it from tab to tab. A page that hasn't declared one leaves the strip as it looked before.") {
+                    Switch(on: $prefs.themedChrome)
+                }
+            }
         }
     }
 

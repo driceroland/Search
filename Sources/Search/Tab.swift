@@ -143,6 +143,11 @@ final class Tab: ObservableObject, Identifiable {
     @Published private(set) var loading = false
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
+    /// The colour the page has declared for its own chrome, with
+    /// `<meta name="theme-color">` or the CSS `theme-color` media feature —
+    /// straight from WebKit, which already tracks it. Nil for a page that
+    /// hasn't declared one, or hasn't loaded yet.
+    @Published private(set) var themeColor: NSColor?
     /// Set when the page never arrived — no host, no network, a refused
     /// connection. Shown in place of the page rather than in a dialog.
     @Published var failure: String?
@@ -432,6 +437,9 @@ final class Tab: ObservableObject, Identifiable {
             },
             web.observe(\.canGoForward, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.canGoForward = self?.built?.canGoForward ?? false }
+            },
+            web.observe(\.themeColor, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.themeColor = self?.built?.themeColor }
             },
         ]
 

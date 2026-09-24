@@ -23,6 +23,16 @@ struct TabBar: View {
     @State private var doors: CGFloat = 0
 
     var body: some View {
+        // Themed only while there is a tab to read a colour from — a window
+        // caught between tabs draws the row exactly as it always has.
+        if let active = browser.active {
+            row.modifier(ThemedStrip(tab: active, enabled: browser.prefs.themedChrome))
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
         // A GeometryReader is only here to measure the width. Its content is
         // put in a stack of its own and told to fill it: left to itself a
         // reader pins whatever it holds to the top corner, which is the row
@@ -922,5 +932,50 @@ struct PinField: NSViewRepresentable {
             let browser = browser
             DispatchQueue.main.async { browser.endPinEdit() }
         }
+    }
+}
+
+/// The row's own ground: the active tab's declared theme colour in place of
+/// `Palette.ground`, when the setting is on and the page has one — with the
+/// whole row's ink and glass flipped to whichever of light or dark keeps
+/// them legible over it. Its own view, watching the active tab directly, so
+/// it is the one thing in the row that redraws when a page's colour changes
+/// underneath an unchanged tab (an SPA repainting its header, say); nothing
+/// else here has to know.
+private struct ThemedStrip: ViewModifier {
+    @ObservedObject var tab: Tab
+    let enabled: Bool
+
+    private var color: Color? {
+        guard enabled, let themeColor = tab.themeColor else { return nil }
+        return Color(nsColor: themeColor)
+    }
+
+    func body(content: Content) -> some View {
+        Group {
+            if let color, let themeColor = tab.themeColor {
+                content
+                    .background(color)
+                    .colorScheme(themeColor.isDark ? .dark : .light)
+            } else {
+                content.background(Palette.ground)
+            }
+        }
+        .animation(Motion.glide, value: color)
+    }
+}
+
+private extension NSColor {
+    /// WCAG relative luminance in sRGB: under half reads better in white than
+    /// in black.
+    var isDark: Bool {
+        guard let rgb = usingColorSpace(.deviceRGB) else { return false }
+        func linear(_ channel: CGFloat) -> CGFloat {
+            channel <= 0.03928 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(rgb.redComponent)
+            + 0.7152 * linear(rgb.greenComponent)
+            + 0.0722 * linear(rgb.blueComponent)
+        return luminance < 0.5
     }
 }
