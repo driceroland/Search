@@ -147,6 +147,12 @@ enum Motion {
     static let glide = Animation.spring(response: 0.34, dampingFraction: 0.82)
     static let settle = Animation.spring(response: 0.30, dampingFraction: 0.86)
     static let quick = Animation.easeOut(duration: 0.14)
+
+    /// The column coming and going: glide's spring, taking as long as
+    /// Settings › Tabs says. Nil at zero — there and gone at once.
+    static func fold(_ response: Double) -> Animation? {
+        response > 0 ? .spring(response: response, dampingFraction: 0.82) : nil
+    }
 }
 
 /// Search's mark — Drice's Subtract.svg, a pill with an S cut out of it,

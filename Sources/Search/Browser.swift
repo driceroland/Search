@@ -80,7 +80,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⇧⌘S. The same tabs, down the left or across the top.
     func toggleSidebar() {
-        withAnimation(Motion.glide) { prefs.sidebar.toggle() }
+        withAnimation(foldMotion) { prefs.sidebar.toggle() }
     }
 
     func searchURL(for text: String) -> URL? {

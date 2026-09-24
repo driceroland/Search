@@ -59,6 +59,14 @@ final class Preferences: ObservableObject {
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
     }
+    /// How long the column takes to come and go, in seconds: the response of
+    /// its spring (see Motion.fold). Zero is no slide at all.
+    @Published var sideSpeed: Double {
+        didSet { store.set(sideSpeed, forKey: "sidebar.speed") }
+    }
+    static let sideSpeeds: ClosedRange<Double> = 0...0.6
+    /// Motion.glide's own response, which the column always had.
+    static let sideSpeedDefault = 0.34
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
     }
@@ -232,6 +240,8 @@ final class Preferences: ObservableObject {
         sideHides = store.bool(forKey: "sidebar.hides")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
+        let speed = store.object(forKey: "sidebar.speed") as? Double ?? Preferences.sideSpeedDefault
+        sideSpeed = min(Preferences.sideSpeeds.upperBound, max(Preferences.sideSpeeds.lowerBound, speed))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
