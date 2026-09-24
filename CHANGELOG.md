@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- The floating video docks at the side of the screen, as in Dia: with Flick the floating video to a corner on (Settings › General), two fingers at the side the window is against pull it, heavily, and a strong enough swipe slides it off, leaving a sliver of it; not far enough and it springs back. A swipe back, or a click on the sliver, brings it out again.
 - Updates can wait for you: Settings › About › Install updates on its own, on as before. Switched off, Search still looks once a day and says when a newer version is out, and fetches, checks and installs it only when you press Install.
 ### Fixed
 
