@@ -50,18 +50,14 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         }
     }
 
-    /// Whether to keep claiming passkeys are possible here.
+    /// Whether sites are offered passkeys here (Settings › Passwords).
     ///
-    /// They are not, and it isn't a matter of code: Apple gates Touch ID and
-    /// iCloud passkeys inside a third-party WKWebView behind a managed
-    /// entitlement, and the cross-device route over Bluetooth behind the same
-    /// one. Measured on this machine, WebKit answers
-    /// isUserVerifyingPlatformAuthenticatorAvailable() with false.
-    ///
-    /// Meanwhile the API object exists, so sites feature-detect it, offer the
-    /// passkey path, and strand you there. Taking the object away is what sends
-    /// them straight to the password — the one that works. Turn this back on
-    /// from Settings the day the app is signed with the entitlement.
+    /// A build without Apple's browser entitlement can't do them: WebKit then
+    /// answers isUserVerifyingPlatformAuthenticatorAvailable() with false,
+    /// yet the API object exists, so sites offer the passkey path and strand
+    /// you there. Taken away, they go straight to the password. Signed with
+    /// the entitlement, as releases are, this is on, and Search carries out
+    /// the sites' requests itself (see Passkeys.swift).
     static var passkeysOffered: Bool {
         get { Store.settings.bool(forKey: "passkeys") }
         set { Store.settings.set(newValue, forKey: "passkeys") }
@@ -69,15 +65,60 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
 
     /// Only the passkey object goes. navigator.credentials itself stays: sites
     /// use it for stored passwords too, and that half still works.
+    ///
+    /// Unless an extension answers passkey requests itself — a password
+    /// manager with your passkeys in it, as 1Password is. It puts its own get
+    /// and create on navigator.credentials, and reaches for the passkey object
+    /// from its own script as it does; from then on sites see the object, and
+    /// the extension is the one they ask. Whatever it leaves to the browser is
+    /// refused at once, as if you had said no, where WebKit would try and fail.
     static let withoutPasskeys = """
     (function () {
+      var real = window.PublicKeyCredential;
+      if (!real) return;
+      var claimed = false;
+      function answered() {
+        if (claimed) return true;
+        try {
+          if (navigator.credentials && Object.getOwnPropertyDescriptor(navigator.credentials, 'get')) claimed = true;
+          else if ((new Error().stack || '').indexOf('-extension://') >= 0) claimed = true;
+        } catch (e) {}
+        return claimed;
+      }
       try {
         Object.defineProperty(window, 'PublicKeyCredential', {
-          value: undefined, configurable: true, writable: true
+          configurable: true,
+          get: function () { return answered() ? real : undefined; },
+          set: function (value) { real = value; }
         });
       } catch (e) {
         try { delete window.PublicKeyCredential; } catch (ignored) {}
+        return;
       }
+      var proto = CredentialsContainer.prototype;
+      ['get', 'create'].forEach(function (name) {
+        var native = proto[name];
+        try {
+          Object.defineProperty(proto, name, {
+            configurable: true, writable: true,
+            value: function (options) {
+              if (!options || !options.publicKey) return native.apply(this, arguments);
+              var signal = options.signal;
+              // Under the name field: nothing to offer, so it waits, as it
+              // would while nobody picks one, until the page lets it go.
+              if (name === 'get' && options.mediation === 'conditional') {
+                return new Promise(function (resolve, reject) {
+                  if (!signal) return;
+                  var aborted = function () { return signal.reason || new DOMException('The operation was aborted.', 'AbortError'); };
+                  if (signal.aborted) return reject(aborted());
+                  signal.addEventListener('abort', function () { reject(aborted()); }, { once: true });
+                });
+              }
+              return Promise.reject(new DOMException('The operation either timed out or was not allowed.', 'NotAllowedError'));
+            }
+          });
+        } catch (e) {}
+      });
     })();
     """
 

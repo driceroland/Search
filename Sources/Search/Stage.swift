@@ -334,8 +334,10 @@ struct DragStrip: NSViewRepresentable {
 /// It lives inside the title bar rather than in the window's content, because
 /// the title bar draws above everything the app puts on screen.
 final class RestingLights: NSView {
+    /// Set again each time the title bar is laid out — every change of
+    /// screen, key window or size — and redrawn only when they moved.
     var spots: [CGRect] = [] {
-        didSet { needsDisplay = true }
+        didSet { if spots != oldValue { needsDisplay = true } }
     }
 
     override func draw(_ dirty: NSRect) {
