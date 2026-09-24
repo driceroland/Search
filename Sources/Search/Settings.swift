@@ -204,6 +204,13 @@ struct SettingsPanel: View {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
             Rule()
+            Line("Colour", "A gradient for the frame around the page, as faint or strong as you like — each space its own") {
+                Pill("Choose…") {
+                    browser.tuning = false
+                    browser.theming = true
+                }
+            }
+            Rule()
             Line("Correct spelling as you type", "macOS's autocorrect inside pages — the one that capitalises for you") {
                 Switch(on: $prefs.autocorrect)
             }

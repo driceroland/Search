@@ -30,6 +30,8 @@ struct Space: Codable, Identifiable, Equatable {
     var sharesSignIns: Bool?
     /// Where this space's downloads go; nil for the folder in Settings.
     var downloads: String?
+    /// The frame's colour in this space (see Theme.swift); nil for plain.
+    var theme: Theme?
 
     /// The first space: the session and the store there were before spaces.
     static let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000001") ?? UUID()
