@@ -25,22 +25,22 @@ import CryptoKit
 enum ExtensionShims {
     /// The name native messages to the browser itself go to.
     static let application = "search"
-    static let file = "search-shim.js"
+    nonisolated static let file = "search-shim.js"
     /// The first line of a worker that already carries the shim.
-    static let marker = "/* Search: Chrome APIs WebKit lacks, filled in (ExtensionShims.swift) */"
-    static let ender = "/* Search: end of shim */"
+    nonisolated static let marker = "/* Search: Chrome APIs WebKit lacks, filled in (ExtensionShims.swift) */"
+    nonisolated static let ender = "/* Search: end of shim */"
 
     // MARK: - at install
 
     /// Written beside a prepared extension: which shim it carries. The same
     /// one needs nothing redone, which matters at launch — preparing reads
     /// every script and page an extension ships.
-    static let stamp = ".search-shim"
-    static let version: String = {
+    nonisolated static let stamp = ".search-shim"
+    nonisolated static let version: String = {
         SHA256.hash(data: Data(script.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
 
-    static func prepare(_ folder: URL) throws {
+    nonisolated static func prepare(_ folder: URL) throws {
         let files = FileManager.default
         let stampURL = folder.appendingPathComponent(stamp)
         if (try? String(contentsOf: stampURL, encoding: .utf8)) == version { return }
@@ -134,7 +134,7 @@ enum ExtensionShims {
     /// The shim as this extension gets it: with the events its code mentions
     /// — `chrome.tabs.onUpdated`, `e.runtime.onInstalled` — so its worker
     /// can take their listeners late (see the end of the script).
-    static func shim(for folder: URL) -> String {
+    nonisolated static func shim(for folder: URL) -> String {
         var found = Set<String>()
         let pattern = try! NSRegularExpression(pattern: #"\.([a-zA-Z]+)\.(on[A-Z][A-Za-z]+)\b"#)
         let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil)
@@ -170,13 +170,59 @@ enum ExtensionShims {
 
     /// Defines only what is missing, so the day WebKit implements an API,
     /// WebKit's is the one used.
-    static let script = #"""
+    nonisolated static let script = #"""
     (() => {
       const root = globalThis;
       // Taken now, not looked up at each use: a sandbox that later locks
       // the globals away (MetaMask's LavaMoat) would break the shim's own
       // code that needs them — every fetch of a Request, every import.
       const { URL, FileReader, Response, Blob, File, DOMException, HTMLImageElement, HTMLAnchorElement, Element } = root;
+      // WebKit reverted `requestIdleCallback` after a page-load regression
+      // (bug 287681), leaving Proton Pass's form detection without it.
+      const nativeIdle = typeof root.requestIdleCallback === "function"
+        ? root.requestIdleCallback.bind(root) : null;
+      const nativeCancelIdle = typeof root.cancelIdleCallback === "function"
+        ? root.cancelIdleCallback.bind(root) : null;
+      if (!nativeIdle || !nativeCancelIdle) {
+        const idle = new Map();
+        let idleId = 0;
+        root.requestIdleCallback = (callback, options) => {
+          const id = ++idleId;
+          if (nativeIdle) {
+            const nativeId = nativeIdle((deadline) => {
+              if (!idle.delete(id)) return;
+              callback(deadline);
+            }, options);
+            idle.set(id, { nativeId });
+          } else {
+            // Let the requesting script finish first. Chrome's maximum
+            // idle deadline is 50 ms; this fallback uses the full budget.
+            const timer = setTimeout(() => {
+              if (!idle.delete(id)) return;
+              const start = Date.now();
+              callback({ didTimeout: false, timeRemaining: () => Math.max(0, 50 - (Date.now() - start)) });
+            }, 1);
+            idle.set(id, { timer });
+          }
+          return id;
+        };
+        root.cancelIdleCallback = (id) => {
+          const request = idle.get(id);
+          if (request === undefined) {
+            if (nativeCancelIdle) nativeCancelIdle(id);
+            return;
+          }
+          idle.delete(id);
+          if (request.timer !== undefined) clearTimeout(request.timer);
+          else if (nativeCancelIdle) nativeCancelIdle(request.nativeId);
+        };
+      }
+      // Keep the first credentials container alive so extension hooks
+      // survive WebKit replacing an unreferenced container.
+      const credentials = root.navigator && root.navigator.credentials;
+      if (credentials && !Object.prototype.hasOwnProperty.call(root, "__searchCredentials")) {
+        Object.defineProperty(root, "__searchCredentials", { value: credentials });
+      }
       const chrome = root.chrome || root.browser;
       if (!chrome || root.__searchShim) return;
       Object.defineProperty(root, "__searchShim", { value: true });
@@ -298,6 +344,109 @@ enum ExtensionShims {
       if (worker && typeof root.InstallEvent === "function" && !InstallEvent.prototype.addRoutes) {
         InstallEvent.prototype.addRoutes = () => Promise.resolve();
       }
+      // WebKit runs an extension's worker on its web process's main thread,
+      // and a worker's WebSocket waits there for the main thread to set up
+      // its channel — for itself, for ever: the worker and every page of the
+      // extension freeze. 1Password opens one as a sign-in succeeds. So a
+      // worker's socket is made by the browser (ExtensionSocket.swift) and
+      // its frames come and go over a native port.
+      if (worker && typeof root.WebSocket === "function" && runtime && typeof runtime.connectNative === "function") {
+        const connectNative = runtime.connectNative.bind(runtime);
+        const encode = (bytes) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); };
+        const decode = (text) => { const s = atob(text), bytes = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i); return bytes.buffer; };
+        const states = { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 };
+        class WebSocket extends EventTarget {
+          #port; #state = 0; #queue = Promise.resolve(); #origin; #hello;
+          constructor(url, protocols) {
+            super();
+            let parsed;
+            try { parsed = new URL(url, location.href); } catch (e) { throw new DOMException("The URL '" + url + "' is invalid.", "SyntaxError"); }
+            if (parsed.protocol === "http:") parsed.protocol = "ws:";
+            if (parsed.protocol === "https:") parsed.protocol = "wss:";
+            if (!/^wss?:$/.test(parsed.protocol) || parsed.hash) throw new DOMException("The URL '" + url + "' is invalid.", "SyntaxError");
+            const list = protocols === undefined ? [] : (Array.isArray(protocols) ? protocols : [protocols]).map(String);
+            Object.defineProperty(this, "url", { value: parsed.href, enumerable: true });
+            this.#origin = parsed.origin;
+            this.protocol = ""; this.extensions = ""; this.binaryType = "blob"; this.bufferedAmount = 0;
+            this.onopen = null; this.onmessage = null; this.onerror = null; this.onclose = null;
+            this.#hello = { open: this.url, protocols: list, userAgent: navigator.userAgent };
+            this.#connect();
+          }
+          // WebKit drops what a worker posts on a port it has only just
+          // opened, without a word either way. So the opening is said again,
+          // on the same port, until the browser answers anything at all.
+          #connect() {
+            const port = connectNative("search.socket");
+            let ready = false, tries = 0;
+            this.#port = port;
+            const again = () => {
+              if (ready || this.#state === 3) return;
+              if (tries++ >= 20) { this.#fire("error"); this.#closed(1006, "", false); return; }
+              try { port.postMessage(this.#hello); } catch (e) {}
+              setTimeout(again, 100 * Math.min(tries, 5));
+            };
+            port.onMessage.addListener((m) => {
+              if (!ready) ready = true;
+              if (m && m.ready === true) return;
+              this.#take(m);
+            });
+            port.onDisconnect.addListener(() => {
+              if (this.#state === 3) return;
+              this.#fire("error");
+              this.#closed(1006, "", false);
+            });
+            again();
+          }
+          get readyState() { return this.#state; }
+          #fire(type, init) {
+            let event;
+            if (type === "message") event = new MessageEvent("message", init);
+            else if (type === "close" && typeof CloseEvent === "function") event = new CloseEvent("close", init);
+            else { event = new Event(type); if (init) for (const k in init) Object.defineProperty(event, k, { value: init[k] }); }
+            const handler = this["on" + type];
+            if (typeof handler === "function") { try { handler.call(this, event); } catch (e) { setTimeout(() => { throw e; }); } }
+            this.dispatchEvent(event);
+          }
+          #closed(code, reason, wasClean) {
+            this.#state = 3;
+            try { this.#port.disconnect(); } catch (e) {}
+            this.#fire("close", { code, reason, wasClean });
+          }
+          #take(m) {
+            if (!m || this.#state === 3) return;
+            if ("opened" in m) { this.protocol = m.opened; this.#state = 1; this.#fire("open"); }
+            else if ("text" in m) this.#fire("message", { data: m.text, origin: this.#origin });
+            else if ("binary" in m) {
+              const buffer = decode(m.binary);
+              this.#fire("message", { data: this.binaryType === "arraybuffer" ? buffer : new Blob([buffer]), origin: this.#origin });
+            }
+            else if ("failed" in m) this.#fire("error");
+            else if ("closed" in m) this.#closed(m.closed, m.reason || "", !!m.clean);
+          }
+          send(data) {
+            if (this.#state === 0) throw new DOMException("WebSocket is still in CONNECTING state.", "InvalidStateError");
+            if (this.#state !== 1) return;
+            const post = (message) => { try { this.#port.postMessage(message); } catch (e) {} };
+            if (typeof data === "string") { this.#queue = this.#queue.then(() => post({ send: data })); return; }
+            const bytes = data instanceof ArrayBuffer ? Promise.resolve(new Uint8Array(data))
+              : ArrayBuffer.isView(data) ? Promise.resolve(new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
+              : data instanceof Blob ? data.arrayBuffer().then((b) => new Uint8Array(b))
+              : Promise.resolve(null);
+            this.#queue = this.#queue.then(() => bytes).then((b) => b ? post({ sendBinary: encode(b) }) : post({ send: String(data) }));
+          }
+          close(code, reason) {
+            if (code !== undefined && code !== 1000 && !(code >= 3000 && code <= 4999)) {
+              throw new DOMException("The close code must be either 1000, or between 3000 and 4999. " + code + " is neither.", "InvalidAccessError");
+            }
+            if (this.#state >= 2) return;
+            this.#state = 2;
+            const message = { close: code === undefined ? 1000 : code, reason: reason === undefined ? "" : String(reason) };
+            this.#queue = this.#queue.then(() => { try { this.#port.postMessage(message); } catch (e) {} });
+          }
+        }
+        for (const [k, v] of Object.entries(states)) { Object.defineProperty(WebSocket, k, { value: v }); Object.defineProperty(WebSocket.prototype, k, { value: v }); }
+        Object.defineProperty(root, "WebSocket", { value: WebSocket, configurable: true, writable: true });
+      }
       // WebKit gives a worker the user agent of the last web page that set
       // one — Safari's, as Search's tabs send — not the Chrome one the
       // extension's pages have. Code that picks its path by it then takes
@@ -335,7 +484,65 @@ enum ExtensionShims {
           if (wanted.length) return load(...wanted);
         };
       }
-      const gather = (event) => {
+      // The tab an extension's framed page is in, asked once (see __searchToFrame).
+      let ownTab = null;
+      // Who has something to say about a message, told between the
+      // extension's worker and its own pages on a channel they share (one
+      // origin): each says, as soon as its listeners have run, whether it
+      // answers or lets the message pass, and the sender says so of what
+      // it sends. A page with nothing to say can then stay silent only
+      // as long as someone else may still answer (see the end of `dispatch`).
+      // A page in a website's frame is on the website's side of the
+      // channel and takes no part; it waits, as before.
+      const channel = !inContent && !embedded && typeof BroadcastChannel === "function" ? new BroadcastChannel("search-messages") : null;
+      const me = Math.random().toString(36).slice(2);
+      const peers = new Set();
+      const verdicts = new Map();
+      const waiting = new Set();
+      const present = new Set();
+      // Pages that are there but didn't hear the last message sent to all —
+      // WebKit doesn't bring every message to every page. Not waited for
+      // until they say something about one they heard.
+      const deaf = new Set();
+      const keyOf = (message) => { try { const k = JSON.stringify(message); return k && k.length < 4000 ? k : null; } catch (e) { return null; } };
+      const tell = (message, verdict, heard) => {
+        const key = channel && keyOf(message);
+        if (key) channel.postMessage({ key, from: background ? "worker" : me, verdict, heard, at: Date.now() });
+      };
+      if (channel) {
+        channel.onmessage = ({ data }) => {
+          if (!data || data.from === me) return;
+          // The pages that listen, as they come and go.
+          if (!background && data.hello) {
+            const known = peers.has(data.from);
+            peers.add(data.from);
+            if (!known && listening) channel.postMessage({ hello: true, from: me, where: location.pathname });
+            return;
+          }
+          if (data.bye) { peers.delete(data.from); waiting.forEach((check) => check()); return; }
+          // A popup that closes is thrown away without a word; so a page
+          // left waiting asks who is still there.
+          if (data.roll) { if (listening && !background) channel.postMessage({ here: true, from: me, to: data.from }); return; }
+          if (data.here) { if (data.to === me) present.forEach((hear) => hear(data.from)); return; }
+          if (typeof data.key !== "string") return;
+          const now = Date.now();
+          for (const [k, v] of verdicts) { if (now - v.at > 30000) verdicts.delete(k); else break; }
+          const entry = verdicts.get(data.key) || { at: now, worker: null, pages: new Map() };
+          verdicts.delete(data.key);
+          verdicts.set(data.key, entry);
+          entry.at = now;
+          if (data.from === "worker") entry.worker = data;
+          else { peers.add(data.from); if (data.heard) deaf.delete(data.from); entry.pages.set(data.from, data); }
+          waiting.forEach((check) => check());
+        };
+        if (!background) try { root.addEventListener("pagehide", () => leave()); } catch (e) {}
+      }
+      // Only a page that listens for messages is waited for: one that
+      // doesn't never hears them, so never says anything about them.
+      let listening = false;
+      const join = () => { if (channel && !background && !listening) { listening = true; channel.postMessage({ hello: true, from: me, where: location.pathname }); } };
+      const leave = () => { if (channel && !background && listening) { listening = false; channel.postMessage({ bye: true, from: me }); } };
+      const gather = (event, told) => {
         if (!event || typeof event.addListener !== "function") return;
         const add = event.addListener.bind(event);
         const remove = event.removeListener.bind(event);
@@ -352,6 +559,30 @@ enum ExtensionShims {
           if (message && message.__searchUserScript === true) {
             const route = root.__searchUserScriptMessage;
             return route && route(message.message, sender, sendResponse) && !settled ? true : undefined;
+          }
+          // A tab's message, handed on by the worker (see alsoFramed): taken
+          // by the frame it names, in the tab it names; every other page lets
+          // it pass without answering, as it would a message not for it.
+          if (message && message.__searchToFrame) {
+            const to = message.__searchToFrame;
+            if (!embedded || !(to.urls || []).includes(location.href)) {
+              if (!background) setTimeout(() => sendResponse(undefined), 10000);
+              return background ? undefined : true;
+            }
+            if (!ownTab) ownTab = Promise.resolve(runtime.sendMessage({ __searchCall: { space: "tabs", method: "getCurrent", args: [] } }))
+              .then((reply) => reply && reply.value ? reply.value.id : null, () => null);
+            ownTab.then((id) => {
+              if (id !== to.tabId) return setTimeout(() => sendResponse(undefined), 10000);
+              let kept = false;
+              for (const listener of [...listeners]) {
+                let result;
+                try { result = listener(to.message, sender, sendResponse); } catch (e) { setTimeout(() => { throw e; }); continue; }
+                if (result === true) kept = true;
+                else if (result && typeof result.then === "function") { kept = true; result.then(sendResponse, () => sendResponse(undefined)); }
+              }
+              if (!kept) sendResponse(undefined);
+            });
+            return true;
           }
           // A call one of the extension's pages in a website's frame can't
           // make itself (see `embedded`), made here for it — and only for
@@ -375,6 +606,7 @@ enum ExtensionShims {
             if (result === true) keep = true;
             else if (result && typeof result.then === "function") { keep = true; result.then(sendResponse, () => sendResponse(undefined)); }
           }
+          if (!inContent) tell(message, keep || settled ? "answers" : "passes", true);
           if (keep || settled) return keep && !settled ? true : undefined;
           // Nothing here answers it. In Chrome that leaves the question to
           // the extension's other pages and its worker; WebKit takes the
@@ -382,16 +614,64 @@ enum ExtensionShims {
           // only listens for something else — an offscreen document, an
           // options page — would arrive before the worker's real answer. So
           // a page that has nothing to say steps aside, and says nothing
-          // only once everyone else has had ample time.
-          if (!background && !inContent) { setTimeout(() => sendResponse(undefined), 10000); return true; }
+          // only once everyone else has had ample time — or as soon as the
+          // worker and every other open page have said they let it pass too,
+          // or the worker sent it itself. Bitwarden's offscreen document
+          // keeps its storage and answers a save with nothing: ten seconds
+          // on each one got in the way of signing in.
+          if (!background && !inContent) {
+            const received = Date.now();
+            const key = channel && keyOf(message);
+            let check = () => {}, roll = null;
+            const done = () => { waiting.delete(check); clearTimeout(late); clearTimeout(roll); };
+            const late = setTimeout(() => { done(); sendResponse(undefined); }, 10000);
+            if (key) {
+              // Only what was said about this message, not an identical one
+              // a while ago.
+              const fresh = (said) => said && said.at >= received - 2000;
+              check = () => {
+                const entry = verdicts.get(key);
+                if (settled || !entry) return;
+                const worker = entry.worker;
+                if (fresh(worker) && worker.verdict === "answers") { done(); return; }
+                const said = [...peers].filter((id) => !deaf.has(id) || entry.pages.has(id)).map((id) => entry.pages.get(id));
+                if (said.some((p) => fresh(p) && p.verdict === "answers")) { done(); return; }
+                if (!fresh(worker) || said.some((p) => !fresh(p))) return;
+                done();
+                sendResponse(undefined);
+              };
+              waiting.add(check);
+              check();
+              // Still waiting on someone after a moment: those who don't say
+              // they are here within a second are gone, and those who do but
+              // still have said nothing about this message didn't hear it.
+              roll = setTimeout(() => {
+                if (settled) return;
+                const heard = new Set();
+                const hear = (id) => heard.add(id);
+                present.add(hear);
+                channel.postMessage({ roll: true, from: me });
+                setTimeout(() => {
+                  present.delete(hear);
+                  for (const id of [...peers]) if (!heard.has(id)) peers.delete(id);
+                  const entry = verdicts.get(key);
+                  for (const id of peers) { const p = entry && entry.pages.get(id); if (!p || p.at < received - 2000) deaf.add(id); }
+                  check();
+                }, 1000);
+              }, 200);
+            }
+            return true;
+          }
           return undefined;
         };
         put(event, "addListener", (listener) => {
           listeners.add(listener);
+          if (told) join();
           if (!attached) { attached = true; add(dispatch); }
         });
         put(event, "removeListener", (listener) => {
           listeners.delete(listener);
+          if (told && listeners.size === 0) leave();
           if (attached && listeners.size === 0) { attached = false; remove(dispatch); }
         });
         put(event, "hasListener", (listener) => listeners.has(listener));
@@ -514,17 +794,42 @@ enum ExtensionShims {
         checkWorker = page ? check : () => {};
         put(runtime, "sendMessage", (...args) => {
           const callback = typeof args[args.length - 1] === "function" ? args.pop() : null;
+          // Never heard back by the one that sends it, so said for it.
+          if (!inContent) tell(typeof args[0] === "string" && args.length > 1 && typeof args[1] !== "function" ? args[1] : args[0], "passes");
           checkWorker();
           const answer = send(...args).then((r) => { if (r !== undefined) heard = Date.now(); return r; });
           return replied(answer, callback, "The message port closed before a response was received.");
         });
       }
+      // A message for a tab reaches only its content scripts in WebKit. In
+      // Chrome it reaches the extension's own pages framed in that tab too —
+      // 1Password's sign-in banner is one, told this way to offer a passkey
+      // instead of a password, and without it the site's request failed. So
+      // the worker hands it to those frames as well, and the first answer
+      // from either wins.
+      const alsoFramed = (answer, tabId, message, options) => {
+        const nav = chrome.webNavigation;
+        if (!nav || typeof nav.getAllFrames !== "function" || typeof tabId !== "number") return answer;
+        const own = runtime.getURL("");
+        const wanted = options && typeof options.frameId === "number" ? options.frameId : null;
+        const framed = Promise.resolve(nav.getAllFrames({ tabId })).then((frames) => {
+          const urls = (frames || []).filter((f) => f.url && f.url.startsWith(own) && f.frameId !== 0 && (wanted === null || f.frameId === wanted)).map((f) => f.url);
+          if (!urls.length) return undefined;
+          return Object.getPrototypeOf(runtime).sendMessage.call(runtime, { __searchToFrame: { tabId, urls, message } });
+        }, () => undefined);
+        return new Promise((resolve, reject) => {
+          let left = 2, failure = null;
+          const none = () => { if (--left === 0) failure ? reject(failure) : resolve(undefined); };
+          answer.then((v) => v !== undefined ? resolve(v) : none(), (e) => { failure = e; none(); });
+          framed.then((v) => v !== undefined ? resolve(v) : none(), () => none());
+        });
+      };
       if (chrome.tabs && typeof chrome.tabs.sendMessage === "function") {
         const send = chrome.tabs.sendMessage.bind(chrome.tabs);
         put(chrome.tabs, "sendMessage", (tabId, message, options, callback) => {
           if (typeof options === "function") { callback = options; options = undefined; }
           const p = options === undefined ? send(tabId, message) : send(tabId, message, options);
-          return replied(p, callback, "Could not establish connection. Receiving end does not exist.");
+          return replied(background ? alsoFramed(p, tabId, message, options) : p, callback, "Could not establish connection. Receiving end does not exist.");
         });
       }
       if (typeof document !== "undefined" && runtime && typeof runtime.connect === "function") {
@@ -537,7 +842,7 @@ enum ExtensionShims {
         });
       }
 
-      gather(runtime && runtime.onMessage);
+      gather(runtime && runtime.onMessage, true);
       gather(runtime && runtime.onMessageExternal);
 
       // Whole namespaces WebKit lacks, answered by the browser.
@@ -2070,6 +2375,12 @@ enum ExtensionShims {
             let page = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
             page.load(URLRequest(url: context.baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))))
             offscreen[id] = page
+            // Answered once the page has loaded, as Chrome does: the worker's
+            // next line is a message to it, and a page still loading has no
+            // one listening yet.
+            for _ in 0..<250 where page.isLoading || page.url == nil {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
             return nil
         case "offscreen.closeDocument":
             offscreen[id] = nil
@@ -2111,7 +2422,32 @@ enum ExtensionShims {
             return ["isReliable": (guesses.values.max() ?? 0) > 0.6,
                     "languages": guesses.sorted { $0.value > $1.value }.map { ["language": $0.key.rawValue, "percentage": Int($0.value * 100)] }]
         case "runtime.getContexts":
-            return []
+            // The extension's own pages that Chrome would list: its worker,
+            // its popup while it is up, its offscreen document. Bitwarden
+            // asks for these to know where to send its messages.
+            let filter = first as? [String: Any] ?? [:]
+            let types = filter["contextTypes"] as? [String]
+            let urls = filter["documentUrls"] as? [String]
+            var found: [[String: Any]] = []
+            func add(_ type: String, _ url: URL?) {
+                guard types == nil || types!.contains(type) else { return }
+                let address = url?.absoluteString ?? ""
+                guard urls == nil || urls!.contains(address) else { return }
+                found.append([
+                    "contextType": type, "contextId": "\(id)-\(type)", "tabId": -1, "windowId": -1,
+                    "frameId": type == "BACKGROUND" ? -1 : 0, "documentUrl": address,
+                    "documentOrigin": url.map { "\($0.scheme ?? "")://\($0.host ?? "")" } ?? "",
+                    "incognito": false,
+                ])
+            }
+            if context.webExtension.hasBackgroundContent {
+                let manifest = context.webExtension.manifest["background"] as? [String: Any] ?? [:]
+                let script = manifest["service_worker"] as? String ?? manifest["page"] as? String
+                add("BACKGROUND", script.map { context.baseURL.appendingPathComponent($0) })
+            }
+            if ExtensionPopup.shared.extensionID == id { add("POPUP", ExtensionPopup.shared.view?.url) }
+            if let page = offscreen[id] { add("OFFSCREEN_DOCUMENT", page.url) }
+            return found
 
         // MARK: notifications — the Mac's own
         case "notifications.create":
