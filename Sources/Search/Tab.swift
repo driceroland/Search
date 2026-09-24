@@ -12,6 +12,29 @@ import WebKit
 // keeps what it takes to come back exactly where it was.
 
 enum Web {
+    /// Where Search's own page scripts run, and where their messages come
+    /// from: a world of their own beside the page's. They see the same page,
+    /// and the page sees none of them — no variable of theirs, and no
+    /// `window.webkit`, which Safari never shows a page and which sites read
+    /// as an app's embedded web view rather than a browser. Google answered
+    /// that with a CAPTCHA every few searches, and refused sign-ins as "not
+    /// secure" (24 Sep 2026). Only Search's passkey patch has to stand in
+    /// the page's own world, and nothing there leads back to it.
+    @MainActor static let world = WKContentWorld.world(name: "Search")
+
+    /// Every handler of Search's taken off a controller: in its own world,
+    /// and in the page's, where they all were before 24 Sep 2026 — a tab
+    /// opened by a link inherits its opener's configuration, handlers
+    /// included, and registering a name twice is a hard crash.
+    @MainActor static func release(_ controller: WKUserContentController) {
+        for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name,
+                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name] {
+            controller.removeScriptMessageHandler(forName: name, contentWorld: world)
+            controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
+        }
+        controller.removeScriptMessageHandler(forName: HoveredLink.name, contentWorld: .defaultClient)
+    }
+
     /// What every view says it is after "AppleWebKit … (KHTML, like Gecko)"
     /// — web tabs and extension views alike (see Extensions.init).
     ///
@@ -411,27 +434,21 @@ final class Tab: ObservableObject, Identifiable {
         web.navigationDelegate = delegate
         web.uiDelegate = delegate
 
-        // A tab opened by a link inherits its opener's configuration, handlers
-        // included, so each name is cleared before being claimed — registering
-        // one twice is a hard crash rather than an error.
+        // Each name is cleared before being claimed — registering one twice is
+        // a hard crash rather than an error. A tab opened by a link gets a
+        // controller of its own (Browser's createWebViewWith), never its
+        // opener's.
         let controller = web.configuration.userContentController
-        controller.removeScriptMessageHandler(forName: ScrollRelay.name)
-        controller.removeScriptMessageHandler(forName: VeilRelay.name)
-        controller.removeScriptMessageHandler(forName: FormRelay.name)
-        controller.removeScriptMessageHandler(forName: ImageRelay.name)
-        controller.removeScriptMessageHandler(forName: StoreRelay.name)
-        controller.removeScriptMessageHandler(forName: PasskeyRelay.name)
-        controller.removeScriptMessageHandler(forName: HoveredLink.name, contentWorld: .defaultClient)
-        controller.removeScriptMessageHandler(forName: MiddleRelay.name)
-        controller.add(relay, name: ScrollRelay.name)
-        controller.add(veils_, name: VeilRelay.name)
-        controller.add(images, name: ImageRelay.name)
-        controller.add(shop, name: StoreRelay.name)
-        controller.add(forms, name: FormRelay.name)
-        controller.addScriptMessageHandler(passkeyRelay, contentWorld: .page, name: PasskeyRelay.name)
+        Web.release(controller)
+        controller.add(relay, contentWorld: Web.world, name: ScrollRelay.name)
+        controller.add(veils_, contentWorld: Web.world, name: VeilRelay.name)
+        controller.add(images, contentWorld: Web.world, name: ImageRelay.name)
+        controller.add(shop, contentWorld: Web.world, name: StoreRelay.name)
+        controller.add(forms, contentWorld: Web.world, name: FormRelay.name)
+        controller.addScriptMessageHandler(passkeyRelay, contentWorld: Web.world, name: PasskeyRelay.name)
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
-        controller.add(middles, name: MiddleRelay.name)
+        controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
         Shield.shared.protect(controller)
         built = web
         // A tab muted before it went to sleep wakes muted.
@@ -513,36 +530,36 @@ final class Tab: ObservableObject, Identifiable {
         let controller = built.configuration.userContentController
         controller.removeAllUserScripts()
         controller.addUserScript(
-            WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+            WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
         controller.addUserScript(
-            WKUserScript(source: Veiling.picker, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            WKUserScript(source: Veiling.picker, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
         )
         controller.addUserScript(
-            WKUserScript(source: FormRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+            WKUserScript(source: FormRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
         if AutoScroll.on {
             controller.addUserScript(
-                WKUserScript(source: AutoScroll.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+                WKUserScript(source: AutoScroll.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
             )
         }
         controller.addUserScript(
-            WKUserScript(source: Swipe.calm, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            WKUserScript(source: Swipe.calm, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
         )
         // Every frame: a swipe over an embedded map is the map's, and only the
         // map's own document can say so.
         controller.addUserScript(
-            WKUserScript(source: Swipe.watch, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+            WKUserScript(source: Swipe.watch, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
         )
         controller.addUserScript(
-            WKUserScript(source: ImageRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+            WKUserScript(source: ImageRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
         )
         // The store's "Add to Search" only where Search can add extensions.
         // Before macOS 15.4 it was drawn all the same, and pressing it did
         // nothing at all; Settings › Extensions says what they need instead.
         if #available(macOS 15.4, *) {
             controller.addUserScript(
-                WKUserScript(source: StoreRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+                WKUserScript(source: StoreRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
             )
         }
         // Only while Settings says so: off, pages get nothing at all.
@@ -555,36 +572,37 @@ final class Tab: ObservableObject, Identifiable {
         // The main frame only: a middle-click on a link inside an ad iframe is
         // that frame's own business, and its link is not this tab's to open.
         controller.addUserScript(
-            WKUserScript(source: MiddleRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            WKUserScript(source: MiddleRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
         )
+        // Passkeys stand in the page's own world — they replace the page's
+        // functions — and reach Search through a bridge in Search's, off or on:
+        // an extension's page script can carry the patch either way (see
+        // Passkeys.swift and ExtensionShims.passkeys).
         if !FormRelay.passkeysOffered {
             controller.addUserScript(
-                WKUserScript(
-                    source: FormRelay.withoutPasskeys,
-                    injectionTime: .atDocumentStart,
-                    forMainFrameOnly: false
-                )
+                WKUserScript(source: FormRelay.withoutPasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
             )
         } else {
-            // A site's passkey request is carried out by Search itself: WebKit
-            // only does that for an app's own domains (see Passkeys.swift).
             controller.addUserScript(
-                WKUserScript(source: PasskeyRelay.script, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+                WKUserScript(source: PasskeyRelay.page, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
             )
         }
+        controller.addUserScript(
+            WKUserScript(source: PasskeyRelay.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
+        )
         guard !css.isEmpty else { return }
         controller.addUserScript(
-            WKUserScript(source: Veiling.style(css), injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            WKUserScript(source: Veiling.style(css), injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
         )
     }
 
     /// The same stylesheet, for the page that is already up.
     func applyVeils(_ css: String) {
-        built?.evaluateJavaScript(Veiling.style(css))
+        built?.evaluateInSearch(Veiling.style(css))
     }
 
-    func startPicking() { web.evaluateJavaScript("window.__officeVeil && window.__officeVeil.on()") }
-    func stopPicking() { web.evaluateJavaScript("window.__officeVeil && window.__officeVeil.off()") }
+    func startPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on()") }
+    func stopPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.off()") }
 
     func foundSignIn() { onSignIn?(self) }
 
@@ -641,7 +659,7 @@ final class Tab: ObservableObject, Identifiable {
             }
             return
         }
-        web.evaluateJavaScript("!!(window.__officeForms && window.__officeForms.hasPassword())") { [weak self] still, _ in
+        web.evaluateInSearch("!!(window.__officeForms && window.__officeForms.hasPassword())") { [weak self] still in
             MainActor.assumeIsolated {
                 guard let self, let sent = self.sent else { return }
                 // The box is still there: a refused sign-in, or the second
@@ -660,9 +678,9 @@ final class Tab: ObservableObject, Identifiable {
     /// something about: the sign-in fields that were there a moment ago,
     /// when this was offered, are gone by the time it actually runs.
     func fill(user: String, password: String, done: ((Bool) -> Void)? = nil) {
-        web.evaluateJavaScript(
+        web.evaluateInSearch(
             "window.__officeForms && window.__officeForms.fill(`\(escape(user))`, `\(escape(password))`)"
-        ) { result, _ in
+        ) { result in
             done?((result as? Bool) ?? false)
         }
     }
@@ -673,13 +691,13 @@ final class Tab: ObservableObject, Identifiable {
 
     /// Show one hidden thing while the pointer rests on its row in the list.
     func peek(_ selector: String, keeping css: String) {
-        web.evaluateJavaScript(
+        web.evaluateInSearch(
             "window.__officeVeil && window.__officeVeil.peek(`\(escape(css))`, `\(escape(selector))`)"
         )
     }
 
     func unpeek(_ css: String) {
-        web.evaluateJavaScript("window.__officeVeil && window.__officeVeil.unpeek(`\(escape(css))`)")
+        web.evaluateInSearch("window.__officeVeil && window.__officeVeil.unpeek(`\(escape(css))`)")
     }
 
     private func escape(_ text: String) -> String {
@@ -693,7 +711,12 @@ final class Tab: ObservableObject, Identifiable {
     /// Called from the page, a few dozen times a second at most — the script
     /// already waits for a frame before it says anything.
     func scrolled(to y: Double, of ceiling: Double) {
-        reading = ceiling > 0 ? min(1, max(0, y / ceiling)) : 0
+        // In hundredths, and only when that changes. The page reports once a
+        // frame while it scrolls — 120 times a second on a 120 Hz screen — and
+        // each new value had the window redraw the tab's fill, a third of a
+        // core on the thread WebKit needs to put the scrolled page on screen.
+        let fraction = ceiling > 0 ? (min(1, max(0, y / ceiling)) * 100).rounded() / 100 : 0
+        if fraction != reading { reading = fraction }
         let delta = y - lastY
         lastY = y
         onScroll?(self, y, delta)
@@ -727,7 +750,7 @@ final class Tab: ObservableObject, Identifiable {
         picture = nil
         cover = nil
         adoptIcon()
-        web.load(URLRequest(url: url))
+        web.open(url)
     }
 
     /// Brought back from the last session: everything the row needs to draw it,
@@ -787,9 +810,9 @@ final class Tab: ObservableObject, Identifiable {
     /// nothing: a PDF, an image, a page whose process has already gone.
     func unsaved(_ done: @escaping (Bool) -> Void) {
         guard let built else { return done(false) }
-        built.evaluateJavaScript(
+        built.evaluateInSearch(
             "!!(window.__officeForms && window.__officeForms.unsaved && window.__officeForms.unsaved())"
-        ) { value, _ in
+        ) { value in
             MainActor.assumeIsolated { done((value as? Bool) == true) }
         }
     }
@@ -824,7 +847,7 @@ final class Tab: ObservableObject, Identifiable {
               let data = try? JSONSerialization.data(withJSONObject: ["installed": installed, "busy": busy.map { $0 as Any } ?? NSNull()]),
               let json = String(data: data, encoding: .utf8)
         else { return }
-        built.evaluateJavaScript("window.__officeStore && window.__officeStore.state(\(json))")
+        built.evaluateInSearch("window.__officeStore && window.__officeStore.state(\(json))")
     }
 
     /// The picture comes off the moment there is something better under it
@@ -890,12 +913,12 @@ final class Tab: ObservableObject, Identifiable {
         if let state {
             view.interactionState = state
         } else {
-            view.load(URLRequest(url: url))
+            view.open(url)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self else { return }
             guard built?.url?.absoluteString != "about:blank" else {
-                web.load(URLRequest(url: url))
+                web.open(url)
                 return
             }
             web.evaluateJavaScript("document.readyState") { [weak self] _, error in
@@ -904,7 +927,7 @@ final class Tab: ObservableObject, Identifiable {
                     guard error.domain == WKErrorDomain,
                           error.code == WKError.webContentProcessTerminated.rawValue
                     else { return }
-                    self.web.load(URLRequest(url: url))
+                    self.web.open(url)
                 }
             }
         }
@@ -925,7 +948,7 @@ final class Tab: ObservableObject, Identifiable {
         // A view with no document behind an address: whatever emptied it, the
         // address is what to show, and reload alone would have nothing to do.
         if hollow, let address {
-            web.load(URLRequest(url: address))
+            web.open(address)
             return
         }
         web.evaluateJavaScript("document.readyState") { [weak self] _, error in
@@ -993,8 +1016,7 @@ final class Tab: ObservableObject, Identifiable {
         guard !wake() else { return }
         reader = false
         if hollow, let address {
-            let policy: URLRequest.CachePolicy = fromOrigin ? .reloadRevalidatingCacheData : .useProtocolCachePolicy
-            web.load(URLRequest(url: address, cachePolicy: policy))
+            web.open(address)
         } else if fromOrigin {
             web.reloadFromOrigin()
         } else {
@@ -1031,14 +1053,7 @@ final class Tab: ObservableObject, Identifiable {
         guard let web = built else { return }
         built = nil
         let controller = web.configuration.userContentController
-        controller.removeScriptMessageHandler(forName: ScrollRelay.name)
-        controller.removeScriptMessageHandler(forName: VeilRelay.name)
-        controller.removeScriptMessageHandler(forName: FormRelay.name)
-        controller.removeScriptMessageHandler(forName: ImageRelay.name)
-        controller.removeScriptMessageHandler(forName: StoreRelay.name)
-        controller.removeScriptMessageHandler(forName: PasskeyRelay.name)
-        controller.removeScriptMessageHandler(forName: HoveredLink.name, contentWorld: .defaultClient)
-        controller.removeScriptMessageHandler(forName: MiddleRelay.name)
+        Web.release(controller)
         controller.removeAllUserScripts()
         web.onPull = nil
         web.onTouch = nil
@@ -1249,6 +1264,14 @@ final class PageView: WKWebView {
         }
     }
 
+    /// Logi Options+ sends its Back/Forward buttons as a swipe, not buttons
+    /// 3 and 4 — deltaX 1 for back, -1 for forward, as Safari reads it.
+    override func swipe(with event: NSEvent) {
+        if event.deltaX > 0, canGoBack { goBack() }
+        else if event.deltaX < 0, canGoForward { goForward() }
+        else { super.swipe(with: event) }
+    }
+
     // MARK: - keys the page didn't use
 
     /// The last key handed to the page. WebKit sends a key the page didn't
@@ -1335,8 +1358,14 @@ final class PageView: WKWebView {
     private var going = false
     private var pulls = 0
 
-    /// How far the fingers travel before letting go means it.
-    private static let arm: CGFloat = 110
+    /// How far the fingers travel before letting go means it. It was 110,
+    /// and going back took a long reach across the trackpad — "too far",
+    /// people said; Safari goes on less.
+    private static let arm: CGFloat = 70
+    /// A quick flick goes too, short of that, as it does in Safari: at least
+    /// this far, within `flickTime` of setting off.
+    private static let flick: CGFloat = 30
+    private static let flickTime: TimeInterval = 0.25
     /// Less than this and there is nothing to show yet — or nothing left to.
     private static let show: CGFloat = 6
 
@@ -1534,7 +1563,9 @@ final class PageView: WKWebView {
 
     private func release() {
         defer { spent = true }
-        guard !spent, free == true, armedNow else {
+        let flicked = !spent && free == true && travel >= PageView.flick
+            && (asked.map { Date().timeIntervalSince($0) <= PageView.flickTime } ?? false)
+        guard !spent, free == true, armedNow || flicked else {
             settle(nil)
             return
         }
@@ -1603,3 +1634,27 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
     """
 }
 
+
+
+extension WKWebView {
+    /// An address, or a file on this Mac. WebKit reads a file only when told
+    /// which folder the page may read from, and loads nothing at all
+    /// otherwise: an .html double-clicked in the Finder, once Search is the
+    /// Mac's browser, opened a tab that stayed empty.
+    func open(_ url: URL) {
+        if url.isFileURL {
+            loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        } else {
+            load(URLRequest(url: url))
+        }
+    }
+
+    /// JavaScript run in Search's own world (see Web.world), where its page
+    /// scripts are, answered the way `evaluateJavaScript` answers: the value,
+    /// or nil for none or an error.
+    func evaluateInSearch(_ js: String, then: ((Any?) -> Void)? = nil) {
+        evaluateJavaScript(js, in: nil, in: Web.world) { result in
+            then?(try? result.get())
+        }
+    }
+}

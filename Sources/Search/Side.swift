@@ -12,9 +12,6 @@ struct SideBar: View {
 
     @Namespace private var pill
 
-    @State private var dragging: Tab.ID?
-    @State private var from = 0
-    @State private var travel: CGFloat = 0
     @State private var landing = false
     /// The width the column had when the edge was picked up.
     @State private var grabbed: CGFloat?
@@ -403,7 +400,6 @@ struct SideBar: View {
             // the row's, so a row that has just moved keeps its bearings.
             ForEach(Array(looseTabs.enumerated()), id: \.element.id) { index, tab in
                 let step = SideBar.row + SideBar.gap
-                let held = dragging == tab.id
                 SideRow(
                     browser: browser,
                     prefs: prefs,
@@ -412,46 +408,14 @@ struct SideBar: View {
                     pill: pill,
                     close: { browser.close(tab) }
                 )
-                .offset(y: held ? travel - CGFloat(index - from) * step : 0)
-                // Under the hand exactly. Its place in the row springs when it
-                // passes another tab, and the offset springs back the same way —
-                // until the next move of the hand cuts the offset's spring short
-                // and leaves the place's running: the tab jumped a whole slot and
-                // drifted back each time it passed one. Only the others glide.
-                .transaction { if held { $0.animation = nil } }
-                .zIndex(held ? 1 : 0)
-                .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
-                .gesture(reorder(tab: tab, index: index, step: step))
+                // Positions here are among the loose rows; the pinned block
+                // sits in front of them in the real list.
+                .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true, space: "rows") {
+                    browser.move(tab, to: $0 + browser.pinnedCount)
+                })
             }
         }
         .coordinateSpace(name: "rows")
-    }
-
-    /// Pick a row up and the others make way as it passes them.
-    private func reorder(tab: Tab, index: Int, step: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 5, coordinateSpace: .named("rows"))
-            .onChanged { value in
-                if dragging != tab.id {
-                    dragging = tab.id
-                    from = index
-                }
-                travel = value.translation.height
-                let moved = Int((travel / step).rounded())
-                let target = min(max(0, from + moved), looseTabs.count - 1)
-                if target != index {
-                    // Positions here are among the loose rows; the pinned
-                    // block sits in front of them in the real list.
-                    withAnimation(Motion.settle) {
-                        browser.move(tab, to: target + browser.pinnedCount)
-                    }
-                }
-            }
-            .onEnded { _ in
-                withAnimation(Motion.settle) {
-                    dragging = nil
-                    travel = 0
-                }
-            }
     }
 
     /// The loose tabs and the row that makes another, which scroll as one.

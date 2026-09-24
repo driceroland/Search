@@ -242,10 +242,15 @@ final class Updater: ObservableObject {
     }
 
     /// An address from the feed: https, unless the feed itself was pointed
-    /// at a test server.
+    /// at a test server, and on the feed's own host. The ZIP is checked
+    /// again by hash and signature before it is ever run, but the DMG is
+    /// only ever offered, under the app's own "is out" line - so a feed
+    /// that a compromised host or a hijacked DNS answer could redirect must
+    /// not be able to point that line at some other address.
     private static func link(_ value: Any?) -> URL? {
         guard let url = (value as? String).flatMap(URL.init(string:)) else { return nil }
         guard url.scheme == "https" || (overridden && url.scheme == "http") else { return nil }
+        guard url.host == feed.host else { return nil }
         return url
     }
 }
