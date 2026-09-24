@@ -21,6 +21,7 @@ struct WelcomePanel: View {
     @State private var wantsBookmarks = true
     @State private var wantsSignIns = false
     @State private var bringing = false
+    @State private var bringFailed = false
     @State private var brought: String?
 
     // The default browser.
@@ -106,7 +107,7 @@ struct WelcomePanel: View {
 
                 HStack(spacing: 12) {
                     Big(bringing ? "Bringing…" : "Bring them in", filled: true) { bringAll() }
-                        .disabled(bringing || brought != nil || !(wantsPasswords || wantsHistory || wantsBookmarks || wantsSignIns))
+                        .disabled(bringing || (brought != nil && !bringFailed) || !(wantsPasswords || wantsHistory || wantsBookmarks || wantsSignIns))
                     if bringing { Ring(size: 10) }
                     if let brought {
                         Text(brought)
@@ -219,8 +220,39 @@ struct WelcomePanel: View {
     private func bringAll() {
         guard let source = source ?? Chromium.installed().first else { return }
         bringing = true
+        bringFailed = false
         var lines: [String] = []
         let group = DispatchGroup()
+        let importSignIns = {
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let outcome = Result { try Chromium.cookies(in: source) }
+                DispatchQueue.main.async {
+                    switch outcome {
+                    case .success(let imported):
+                        let jar = Store.websites.httpCookieStore
+                        let set = DispatchGroup()
+                        for cookie in imported.cookies {
+                            set.enter()
+                            jar.setCookie(cookie) { set.leave() }
+                        }
+                        set.notify(queue: .main) {
+                            let skipped = imported.skipped == 0 ? "" : ", \(imported.skipped) partitioned cookies left behind"
+                            lines.append("\(imported.cookies.count) sign-in cookies\(skipped)")
+                            group.leave()
+                        }
+                    case .failure(Chromium.Trouble.noPassphrase):
+                        bringFailed = true
+                        lines.append("sign-ins: macOS didn't hand over the key — allow it and try again")
+                        group.leave()
+                    case .failure:
+                        bringFailed = true
+                        lines.append("sign-ins: couldn't read \(source.name)")
+                        group.leave()
+                    }
+                }
+            }
+        }
         if wantsPasswords {
             group.enter()
             DispatchQueue.global(qos: .userInitiated).async {
@@ -237,48 +269,23 @@ struct WelcomePanel: View {
                         found.never.forEach { never.insert($0) }
                         Vault.never = never
                         lines.append("\(kept) passwords")
+                        if wantsSignIns { importSignIns() }
                     case .failure(Chromium.Trouble.noPassphrase):
+                        bringFailed = true
                         lines.append("passwords: macOS didn't hand over the key — allow it and try again")
+                        if wantsSignIns {
+                            lines.append("sign-ins: macOS didn't hand over the key — allow it and try again")
+                        }
                     case .failure:
+                        bringFailed = true
                         lines.append("passwords: nothing readable")
+                        if wantsSignIns { importSignIns() }
                     }
                     group.leave()
                 }
             }
         }
-        if wantsBookmarks {
-            lines.append("\(browser.takeBookmarks(from: source)) bookmarks")
-        }
-        if wantsHistory {
-            group.enter()
-            browser.takePlaces(from: source) { count in
-                lines.append("\(count) places")
-                group.leave()
-            }
-        }
-        if wantsSignIns {
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                let outcome = Result { try Chromium.cookies(in: source) }
-                DispatchQueue.main.async {
-                    guard case .success(let cookies) = outcome else {
-                        lines.append("sign-ins: macOS didn't hand over the key")
-                        group.leave()
-                        return
-                    }
-                    let jar = Store.websites.httpCookieStore
-                    let set = DispatchGroup()
-                    for cookie in cookies {
-                        set.enter()
-                        jar.setCookie(cookie) { set.leave() }
-                    }
-                    set.notify(queue: .main) {
-                        lines.append("\(cookies.count) sign-in cookies")
-                        group.leave()
-                    }
-                }
-            }
-        }
+        if !wantsPasswords && wantsSignIns { importSignIns() }
         group.notify(queue: .main) {
             bringing = false
             brought = lines.joined(separator: " · ")

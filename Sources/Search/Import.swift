@@ -2,6 +2,7 @@ import Foundation
 import Security
 import SQLite3
 import CommonCrypto
+import CryptoKit
 
 // Reading what another browser on this Mac already holds.
 //
@@ -66,6 +67,11 @@ enum Chromium {
         var logins: [Login]
         /// Sites the other browser was told never to ask about.
         var never: [String]
+    }
+
+    struct CookieImport {
+        let cookies: [HTTPCookie]
+        let skipped: Int
     }
 
     static func read(_ source: Source) throws -> Found {
@@ -257,26 +263,36 @@ enum Chromium {
     /// The other browser's cookies, unwrapped with the same key as its
     /// passwords, so the sites you are signed in to there are signed in here.
     /// Expired ones are left behind.
-    static func cookies(in source: Source) throws -> [HTTPCookie] {
+    static func cookies(in source: Source) throws -> CookieImport {
         guard let passphrase = safeStorage(source) else { throw Trouble.noPassphrase }
-        let key = stretch(passphrase)
-        var out: [HTTPCookie] = []
-        for file in source.files {
-            let folder = file.deletingLastPathComponent()
-            // Newer profiles keep them under Network/, older ones beside Login Data.
-            let jar = [folder.appendingPathComponent("Network/Cookies"), folder.appendingPathComponent("Cookies")]
-                .first { FileManager.default.fileExists(atPath: $0.path) }
-            guard let jar else { continue }
-            out += (try? cookieRows(in: jar, key: key)) ?? []
+        let files = source.files
+        guard let file = files.first(where: { $0.deletingLastPathComponent().lastPathComponent == "Default" }) ?? files.first else {
+            throw Trouble.unreadable
         }
-        return out
+        let folder = file.deletingLastPathComponent()
+        // Newer profiles keep them under Network/, older ones beside Login Data.
+        guard let jar = [folder.appendingPathComponent("Network/Cookies"), folder.appendingPathComponent("Cookies")]
+            .first(where: { FileManager.default.fileExists(atPath: $0.path) })
+        else { throw Trouble.unreadable }
+        return try cookieRows(in: jar, key: stretch(passphrase))
     }
 
-    private static func cookieRows(in file: URL, key: [UInt8]) throws -> [HTTPCookie] {
+    private static func cookieRows(in file: URL, key: [UInt8]) throws -> CookieImport {
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("office-import-\(UUID().uuidString).db")
-        try FileManager.default.copyItem(at: file, to: temp)
-        defer { try? FileManager.default.removeItem(at: temp) }
+        let manager = FileManager.default
+        try manager.copyItem(at: file, to: temp)
+        defer {
+            try? manager.removeItem(at: temp)
+            for suffix in ["-wal", "-shm"] {
+                try? manager.removeItem(at: URL(fileURLWithPath: temp.path + suffix))
+            }
+        }
+        for suffix in ["-wal", "-shm"] {
+            let sidecar = URL(fileURLWithPath: file.path + suffix)
+            guard manager.fileExists(atPath: sidecar.path) else { continue }
+            try manager.copyItem(at: sidecar, to: URL(fileURLWithPath: temp.path + suffix))
+        }
 
         var db: OpaquePointer?
         guard sqlite3_open_v2(temp.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
@@ -294,7 +310,7 @@ enum Chromium {
         sqlite3_finalize(meta)
 
         let sql = """
-        SELECT host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly, samesite
+        SELECT host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly, samesite, top_frame_site_key
         FROM cookies
         """
         var statement: OpaquePointer?
@@ -305,19 +321,34 @@ enum Chromium {
 
         let now = Date()
         var out: [HTTPCookie] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var skipped = 0
+        while true {
+            let status = sqlite3_step(statement)
+            guard status != SQLITE_DONE else { break }
+            guard status == SQLITE_ROW else { throw Trouble.unreadable }
             func text(_ i: Int32) -> String { sqlite3_column_text(statement, i).map { String(cString: $0) } ?? "" }
+            guard text(9).isEmpty else {
+                skipped += 1
+                continue
+            }
+            let host = text(0)
             var value = text(2)
             if value.isEmpty, let bytes = sqlite3_column_blob(statement, 3) {
                 let blob = Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 3)))
                 guard var plain = open(blob, key: key) else { continue }
-                if version >= 24, blob.prefix(3) == Data("v10".utf8) { plain = plain.dropFirst(32) }
+                if version >= 24 {
+                    let hash = Data(SHA256.hash(data: Data(host.utf8)))
+                    guard blob.prefix(3) == Data("v10".utf8), plain.count >= hash.count,
+                          plain.prefix(hash.count).elementsEqual(hash)
+                    else { continue }
+                    plain.removeFirst(hash.count)
+                }
                 guard let decoded = String(data: plain, encoding: .utf8) else { continue }
                 value = decoded
             }
             let stamp = sqlite3_column_int64(statement, 5)
             var properties: [HTTPCookiePropertyKey: Any] = [
-                .domain: text(0), .name: text(1), .value: value, .path: text(4).isEmpty ? "/" : text(4),
+                .domain: host, .name: text(1), .value: value, .path: text(4).isEmpty ? "/" : text(4),
             ]
             if stamp > 0 {
                 let expires = Date(timeIntervalSince1970: Double(stamp) / 1_000_000 - 11_644_473_600)
@@ -333,7 +364,7 @@ enum Chromium {
             }
             if let cookie = HTTPCookie(properties: properties) { out.append(cookie) }
         }
-        return out
+        return CookieImport(cookies: out, skipped: skipped)
     }
 
     // MARK: - what they run
@@ -360,15 +391,7 @@ enum Chromium {
 
     // MARK: - the key
 
-    /// Asked for once a run: passwords and cookies read side by side would
-    /// otherwise each put up macOS's dialog.
-    private static let asking = NSLock()
-    nonisolated(unsafe) private static var passphrases: [String: String] = [:]
-
     private static func safeStorage(_ source: Source) -> String? {
-        asking.lock()
-        defer { asking.unlock() }
-        if let known = passphrases[source.service] { return known }
         var out: CFTypeRef?
         let status = SecItemCopyMatching([
             kSecClass as String: kSecClassGenericPassword,
@@ -380,7 +403,6 @@ enum Chromium {
         guard status == errSecSuccess, let data = out as? Data,
               let text = String(data: data, encoding: .utf8), !text.isEmpty
         else { return nil }
-        passphrases[source.service] = text
         return text
     }
 
