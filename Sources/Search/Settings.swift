@@ -104,7 +104,7 @@ struct SettingsPanel: View {
                 .frame(height: 30)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(on ? Palette.ground : (hovering ? Palette.hover : .clear))
+                        .fill(Palette.ground.opacity(on ? 1 : hovering ? 0.5 : 0))
                         .shadow(color: .black.opacity(on ? 0.06 : 0), radius: 3, y: 1)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

@@ -15,6 +15,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- In Settings, the page under the pointer is a paler version of the selected one, rather than a second grey that looked like another selection.
 - The tab bar folded away with ⌘S comes back over the page on a ground of its own, as the column does: the page no longer shows through between the tabs, and its shadow falls along the bar's edge instead of from every title and icon.
 
 ## 1.0.2 — 24 September 2026
