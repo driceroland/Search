@@ -1206,7 +1206,8 @@ final class Browser: NSObject, ObservableObject {
     /// built from the extension's configuration, which WebKit keeps to that
     /// extension's own pages, so the load went nowhere and the button did
     /// nothing. The tab is swapped where it stands for an ordinary one on
-    /// the site: to the eye, the page went there.
+    /// the site: to the eye, the page went there. The other way round too:
+    /// an extension sending a website's tab to one of its own pages.
     func replace(_ tab: Tab, going url: URL) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         let fresh = Tab(bench: tab.bench, configuration: Browser.extensionConfiguration(for: url))
