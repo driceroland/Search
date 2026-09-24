@@ -884,6 +884,11 @@ extension Extensions: WKWebExtensionControllerDelegate {
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, connectUsing port: WKWebExtension.MessagePort, for extensionContext: WKWebExtensionContext) async throws {
+        // A worker's WebSocket, opened here (see ExtensionSocket).
+        if port.applicationIdentifier == ExtensionSocket.application {
+            ExtensionSocket.connect(port, for: extensionContext)
+            return
+        }
         try ExtensionNative.connect(port, from: extensionContext.uniqueIdentifier)
     }
 }

@@ -317,6 +317,142 @@ enum ExtensionShims {
           }
         } catch (e) {}
       }
+      // WebKit runs an extension's worker on its process's main thread, and
+      // its WebSocket, made from a worker, waits on the main thread to set
+      // the connection up: on itself, for ever. The worker stops mid-task
+      // and never answers again — 1Password's, the moment it connects to
+      // its notifier after signing in. So a worker's sockets are opened by
+      // the browser (ExtensionSocket.swift), over a native port, and look
+      // to the extension like the ones it made.
+      if (worker && typeof root.WebSocket === "function" && typeof runtime.connectNative === "function" && typeof EventTarget === "function") {
+        const CONNECTING = 0, OPEN = 1, CLOSING = 2, CLOSED = 3;
+        const encode = (bytes) => {
+          let text = "";
+          for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+          return btoa(text);
+        };
+        const decode = (base64) => {
+          const text = atob(base64), bytes = new Uint8Array(text.length);
+          for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+          return bytes.buffer;
+        };
+        const closeEvent = (init) => {
+          if (typeof CloseEvent === "function") return new CloseEvent("close", init);
+          const event = new Event("close");
+          for (const key of ["code", "reason", "wasClean"]) Object.defineProperty(event, key, { value: init[key] });
+          return event;
+        };
+        class WebSocket extends EventTarget {
+          #url; #protocol = ""; #extensions = ""; #state = CONNECTING; #binaryType = "blob";
+          #buffered = 0; #port = null; #queue = Promise.resolve(); #handlers = {}; #heard = false; #ask = () => {};
+          constructor(url, protocols) {
+            super();
+            let parsed;
+            try { parsed = new URL(String(url), location.href); }
+            catch (e) { throw new DOMException("The URL '" + url + "' is invalid.", "SyntaxError"); }
+            if (parsed.protocol === "http:") parsed.protocol = "ws:";
+            if (parsed.protocol === "https:") parsed.protocol = "wss:";
+            if (!/^wss?:$/.test(parsed.protocol) || parsed.hash) throw new DOMException("The URL '" + url + "' is invalid.", "SyntaxError");
+            const asked = protocols === undefined ? [] : typeof protocols === "string" ? [protocols] : [...protocols].map(String);
+            if (new Set(asked).size !== asked.length) throw new DOMException("The subprotocol names are not unique.", "SyntaxError");
+            this.#url = parsed.href;
+            for (const type of ["open", "message", "error", "close"]) {
+              this.addEventListener(type, (event) => { const f = this.#handlers[type]; if (typeof f === "function") f.call(this, event); });
+            }
+            const port = this.#port = runtime.connectNative("search.websocket");
+            port.onMessage.addListener((m) => this.#take(m, parsed.origin));
+            port.onDisconnect.addListener(() => this.#finish(1006, "", false, true));
+            // WebKit drops what is posted before the browser's end is
+            // listening, and there's no telling when that is: so the request
+            // goes again until the browser says it has it.
+            const open = { op: "open", url: this.#url, protocols: asked, userAgent: navigator.userAgent };
+            const ask = (tries) => {
+              if (this.#heard || this.#state !== CONNECTING) return;
+              if (tries === 0) { this.#finish(1006, "", false, true); return; }
+              try { port.postMessage(open); } catch (e) {}
+              setTimeout(() => ask(tries - 1), 250);
+            };
+            this.#ask = () => { if (!this.#heard && this.#state === CONNECTING) try { port.postMessage(open); } catch (e) {} };
+            ask(40);
+          }
+          get url() { return this.#url; }
+          get readyState() { return this.#state; }
+          get bufferedAmount() { return this.#buffered; }
+          get protocol() { return this.#protocol; }
+          get extensions() { return this.#extensions; }
+          get binaryType() { return this.#binaryType; }
+          set binaryType(value) { if (value === "blob" || value === "arraybuffer") this.#binaryType = value; }
+          get onopen() { return this.#handlers.open ?? null; }
+          set onopen(f) { this.#handlers.open = typeof f === "function" ? f : null; }
+          get onmessage() { return this.#handlers.message ?? null; }
+          set onmessage(f) { this.#handlers.message = typeof f === "function" ? f : null; }
+          get onerror() { return this.#handlers.error ?? null; }
+          set onerror(f) { this.#handlers.error = typeof f === "function" ? f : null; }
+          get onclose() { return this.#handlers.close ?? null; }
+          set onclose(f) { this.#handlers.close = typeof f === "function" ? f : null; }
+          send(data) {
+            if (this.#state === CONNECTING) throw new DOMException("WebSocket is not open.", "InvalidStateError");
+            let size, message;
+            if (typeof data === "string") { size = new TextEncoder().encode(data).length; message = Promise.resolve({ op: "send", text: data }); }
+            else if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+              const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+              size = bytes.length; message = Promise.resolve({ op: "send", binary: encode(bytes) });
+            } else if (data instanceof Blob) { size = data.size; message = data.arrayBuffer().then((b) => ({ op: "send", binary: encode(new Uint8Array(b)) })); }
+            else { const text = String(data); size = new TextEncoder().encode(text).length; message = Promise.resolve({ op: "send", text }); }
+            this.#buffered += size;
+            if (this.#state !== OPEN) return;
+            // Kept in the order sent: a Blob is read before it goes.
+            this.#queue = this.#queue.then(() => message).then((m) => {
+              try { this.#port.postMessage(m); } catch (e) {}
+              this.#buffered = Math.max(0, this.#buffered - size);
+            }, () => {});
+          }
+          close(code, reason) {
+            if (code !== undefined && code !== 1000 && !(code >= 3000 && code <= 4999)) {
+              throw new DOMException("The close code must be either 1000, or between 3000 and 4999. " + code + " is neither.", "InvalidAccessError");
+            }
+            reason = reason === undefined ? "" : String(reason);
+            if (new TextEncoder().encode(reason).length > 123) throw new DOMException("The close reason must not be greater than 123 UTF-8 bytes.", "SyntaxError");
+            if (this.#state === CLOSING || this.#state === CLOSED) return;
+            this.#state = CLOSING;
+            this.#queue.then(() => { try { this.#port.postMessage({ op: "close", code: code ?? 1000, reason }); } catch (e) {} });
+          }
+          #take(m, origin) {
+            if (!m || typeof m !== "object") return;
+            if (m.ev === "ready") { this.#ask(); return; }
+            if (m.ev === "opening") { this.#heard = true; return; }
+            if (m.ev === "open" && this.#state === CONNECTING) {
+              this.#heard = true;
+              this.#state = OPEN;
+              this.#protocol = m.protocol || "";
+              this.#extensions = m.extensions || "";
+              this.dispatchEvent(new Event("open"));
+            } else if (m.ev === "message" && this.#state === OPEN) {
+              let data = m.text;
+              if (typeof m.binary === "string") {
+                data = decode(m.binary);
+                if (this.#binaryType === "blob") data = new Blob([data]);
+              }
+              this.dispatchEvent(new MessageEvent("message", { data, origin }));
+            } else if (m.ev === "close") {
+              this.#finish(m.code ?? 1005, m.reason || "", !!m.clean, !m.clean);
+            }
+          }
+          #finish(code, reason, wasClean, failed) {
+            if (this.#state === CLOSED) return;
+            this.#state = CLOSED;
+            try { this.#port.disconnect(); } catch (e) {}
+            if (failed) this.dispatchEvent(new Event("error"));
+            this.dispatchEvent(closeEvent({ code, reason, wasClean }));
+          }
+        }
+        for (const [name, value] of Object.entries({ CONNECTING, OPEN, CLOSING, CLOSED })) {
+          Object.defineProperty(WebSocket, name, { value, enumerable: true });
+          Object.defineProperty(WebSocket.prototype, name, { value, enumerable: true });
+        }
+        Object.defineProperty(WebSocket.prototype, Symbol.toStringTag, { value: "WebSocket", configurable: true });
+        Object.defineProperty(root, "WebSocket", { value: WebSocket, configurable: true, writable: true, enumerable: false });
+      }
       if (worker && typeof root.importScripts === "function") {
         const shipped = new Set(), empty = new Set();
         for (const p of __SEARCH_SCRIPTS__) p.startsWith("-") ? empty.add(p.slice(1)) : shipped.add(p);
