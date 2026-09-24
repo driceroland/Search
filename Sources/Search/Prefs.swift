@@ -222,6 +222,10 @@ final class Preferences: ObservableObject {
     @Published var usesSpaces: Bool {
         didSet { store.set(usesSpaces, forKey: "spaces") }
     }
+    /// Named, collapsible sections in the sidebar. Off unless asked for.
+    @Published var usesTabGroups: Bool {
+        didSet { store.set(usesTabGroups, forKey: "tabs.groups") }
+    }
 
     init() {
         navigationLeft = store.bool(forKey: "toolbar.left")
@@ -285,6 +289,7 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
+        usesTabGroups = store.bool(forKey: "tabs.groups")
         // On for everyone who never touched these three switches (Drice,
         // 27 Sep 2026); a choice made before stands.
         let flicks = store.object(forKey: "float.flicks") as? Bool ?? true

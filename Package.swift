@@ -12,6 +12,7 @@ let package = Package(
             // main-thread by nature, and Swift 6's strict isolation buys nothing
             // here but ceremony.
             swiftSettings: [.swiftLanguageMode(.v5)]
-        )
+        ),
+        .testTarget(name: "SearchTests", dependencies: ["Search"])
     ]
 )
