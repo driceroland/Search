@@ -24,10 +24,12 @@ import WebKit
 // or a password app, an iPhone nearby over the QR code, or a security key.
 // What comes back goes to the page as the credential WebKit would have made.
 //
-// Not yet: the passkey offered under the name field as a sign-in page loads.
-// Pages are told it isn't there, so they show their own passkey button; a
-// request made that way anyway just waits, as it does while nobody picks one
-// — here, never reaching macOS.
+// Not yet: the Mac's passkeys offered under the name field as a sign-in page
+// loads. Pages are told the field has none to offer, so they show their own
+// passkey button — unless a password manager extension that keeps passkeys
+// is there to offer its own. A request made that way is the extension's to
+// answer; what it leaves to Search just waits, as it does while nobody picks
+// one, never reaching macOS.
 @MainActor
 final class Passkeys: NSObject {
     static let shared = Passkeys()
@@ -696,8 +698,9 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         if (!options || !options.publicKey) return nativeGet.apply(this, arguments);
         var signal = options.signal, pk = options.publicKey, request;
         if (options.mediation === 'conditional') {
-          // Not offered under the field yet: the request waits, as it does
-          // while nobody picks a passkey, until the page lets it go.
+          // Nothing of the Mac's is offered under the field yet: the request
+          // waits, as it does while nobody picks a passkey, until the page
+          // lets it go.
           return new Promise(function (resolve, reject) {
             if (!signal) return;
             if (signal.aborted) return reject(aborted(signal));
@@ -736,20 +739,35 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         return send(request, options.signal, pk.extensions);
       });
 
+      // A password manager that keeps passkeys — 1Password, Bitwarden — puts
+      // its own get and create on navigator.credentials, or asks from its own
+      // script, and offers its passkeys under the name field to the sites that
+      // ask for them that way. Once one is there, pages hear the field can.
+      var claimed = false;
+      function extensionAnswers() {
+        if (claimed) return true;
+        try {
+          if (navigator.credentials && Object.getOwnPropertyDescriptor(navigator.credentials, 'get')) claimed = true;
+          else if ((new Error().stack || '').indexOf('-extension://') >= 0) claimed = true;
+        } catch (e) {}
+        return claimed;
+      }
+
       // What this browser can and can't do, for the pages that ask first:
       // passkeys from the Mac, a phone or a key — not yet under the field,
       // and none of what WebKit would have answered for itself.
       var P = PublicKeyCredential;
       replace(P, 'isUserVerifyingPlatformAuthenticatorAvailable', function () { return Promise.resolve(true); });
-      replace(P, 'isConditionalMediationAvailable', function () { return Promise.resolve(false); });
+      replace(P, 'isConditionalMediationAvailable', function () { return Promise.resolve(extensionAnswers()); });
       var nativeCapabilities = P.getClientCapabilities;
       if (typeof nativeCapabilities === 'function') {
         replace(P, 'getClientCapabilities', function () {
+          var field = extensionAnswers();
           function ours(c) {
             c = Object.assign({}, c);
             Object.keys(c).forEach(function (k) { if (k.indexOf('extension:') === 0 && k !== 'extension:credProps') c[k] = false; });
             return Object.assign(c, {
-              conditionalCreate: false, conditionalGet: false, conditionalMediation: false, relatedOrigins: false,
+              conditionalCreate: false, conditionalGet: field, conditionalMediation: field, relatedOrigins: false,
               signalAllAcceptedCredentials: false, signalCurrentUserDetails: false, signalUnknownCredential: false,
               hybridTransport: true, passkeyPlatformAuthenticator: true, userVerifyingPlatformAuthenticator: true
             });
