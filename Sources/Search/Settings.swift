@@ -80,7 +80,7 @@ struct SettingsPanel: View {
         .padding(8)
         .frame(width: SettingsPanel.rail, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Palette.wash.opacity(0.45))
+        .background(Palette.wash.opacity(0.45), in: Rectangle())
     }
 
     private struct PageRow: View {
