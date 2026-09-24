@@ -66,6 +66,19 @@ struct ExtensionsPage: View {
                     .padding(14)
                 }
 
+                if !Chromium.installed().isEmpty {
+                    Card {
+                        Line("Bring them from another browser", "Every Web Store extension it has, fetched fresh from the store, each asking as it comes in.") {
+                            HStack(spacing: 6) {
+                                ForEach(Chromium.installed()) { source in
+                                    Pill(source.name) { extensions.installAll(from: source) }
+                                        .disabled(extensions.busy != nil)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Card {
                     Line("Allow on private tabs", "Off by default - a private tab keeps nothing, extensions included") {
                         Switch(on: Binding(

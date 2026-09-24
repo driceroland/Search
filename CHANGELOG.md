@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Bring over another browser's sign-ins and extensions: the welcome's import from Chrome, Dia, Arc and the rest can take its cookies too (Sign-ins, off unless ticked), and Settings › Extensions › Bring them from another browser fetches each Web Store extension it has, asking for each as it comes in.
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed

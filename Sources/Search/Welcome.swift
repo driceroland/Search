@@ -19,6 +19,7 @@ struct WelcomePanel: View {
     @State private var wantsPasswords = true
     @State private var wantsHistory = true
     @State private var wantsBookmarks = true
+    @State private var wantsSignIns = false
     @State private var bringing = false
     @State private var brought: String?
 
@@ -100,11 +101,12 @@ struct WelcomePanel: View {
                     Choice("Passwords", "macOS will ask once for that browser's keychain key", on: $wantsPasswords)
                     Choice("Bookmarks", "Folders and all, behind the bookmark button", on: $wantsBookmarks)
                     Choice("History", "The last few thousand places, for finishing addresses", on: $wantsHistory)
+                    Choice("Sign-ins", "Its cookies, so the sites you're signed in to there stay signed in", on: $wantsSignIns)
                 }
 
                 HStack(spacing: 12) {
                     Big(bringing ? "Bringing…" : "Bring them in", filled: true) { bringAll() }
-                        .disabled(bringing || brought != nil || !(wantsPasswords || wantsHistory || wantsBookmarks))
+                        .disabled(bringing || brought != nil || !(wantsPasswords || wantsHistory || wantsBookmarks || wantsSignIns))
                     if bringing { Ring(size: 10) }
                     if let brought {
                         Text(brought)
@@ -252,6 +254,29 @@ struct WelcomePanel: View {
             browser.takePlaces(from: source) { count in
                 lines.append("\(count) places")
                 group.leave()
+            }
+        }
+        if wantsSignIns {
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let outcome = Result { try Chromium.cookies(in: source) }
+                DispatchQueue.main.async {
+                    guard case .success(let cookies) = outcome else {
+                        lines.append("sign-ins: macOS didn't hand over the key")
+                        group.leave()
+                        return
+                    }
+                    let jar = Store.websites.httpCookieStore
+                    let set = DispatchGroup()
+                    for cookie in cookies {
+                        set.enter()
+                        jar.setCookie(cookie) { set.leave() }
+                    }
+                    set.notify(queue: .main) {
+                        lines.append("\(cookies.count) sign-in cookies")
+                        group.leave()
+                    }
+                }
             }
         }
         group.notify(queue: .main) {

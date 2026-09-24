@@ -293,20 +293,33 @@ final class Extensions: NSObject, ObservableObject {
             browser?.announce("Already installed")
             return
         }
+        Task { await add(id, confirm: confirm) }
+    }
+
+    /// Every Web Store extension another browser has that this one doesn't,
+    /// one after the other. Each still asks, as any install does.
+    func installAll(from source: Chromium.Source) {
+        let ids = Chromium.extensions(in: source).filter { id in !installed.contains { $0.id == id } }
+        guard !ids.isEmpty else {
+            browser?.announce("No extensions in \(source.name) that aren't here already")
+            return
+        }
+        Task { for id in ids { await add(id, confirm: true) } }
+    }
+
+    private func add(_ id: String, confirm: Bool) async {
         busy = id
-        Task {
-            defer { busy = nil }
-            do {
-                let crx = try await Crx.fetch(id)
-                let zip = try Crx.verifiedZip(crx, id: id)
-                let target = Extensions.folder(for: id)
-                let staged = Extensions.folder.appendingPathComponent(".staging-\(id)", isDirectory: true)
-                try Crx.unpack(zip, into: staged)
-                try ExtensionShims.prepare(staged, fresh: true)
-                try await admit(staged, as: id, fromStore: true, finalFolder: target, confirm: confirm || !Store.testing)
-            } catch {
-                browser?.announce(error.localizedDescription)
-            }
+        defer { busy = nil }
+        do {
+            let crx = try await Crx.fetch(id)
+            let zip = try Crx.verifiedZip(crx, id: id)
+            let target = Extensions.folder(for: id)
+            let staged = Extensions.folder.appendingPathComponent(".staging-\(id)", isDirectory: true)
+            try Crx.unpack(zip, into: staged)
+            try ExtensionShims.prepare(staged, fresh: true)
+            try await admit(staged, as: id, fromStore: true, finalFolder: target, confirm: confirm || !Store.testing)
+        } catch {
+            browser?.announce(error.localizedDescription)
         }
     }
 
