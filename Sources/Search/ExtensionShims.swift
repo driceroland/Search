@@ -1197,6 +1197,11 @@ enum ExtensionShims {
         });
       }
       fill("windows", {
+        // Chrome's, and not WebKit's: an extension subscribing to it at
+        // start — Session Buddy, inside a try — threw there and never
+        // reached the rest, its button's listener included. Never fired:
+        // a window's bounds are read when they are asked for.
+        onBoundsChanged: event(),
         CreateType: enumOf("normal", "popup", "panel"), WindowType: enumOf("normal", "popup", "panel", "app", "devtools"),
         WindowState: { NORMAL: "normal", MINIMIZED: "minimized", MAXIMIZED: "maximized", FULLSCREEN: "fullscreen", LOCKED_FULLSCREEN: "locked-fullscreen" },
       });
