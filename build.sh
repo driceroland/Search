@@ -158,7 +158,10 @@ if [ -n "$IDENTITY" ]; then
     --sign "$IDENTITY" "$APP"
   echo "signed as: $IDENTITY"
 else
-  codesign --force --deep --sign - "$APP" 2>/dev/null || true
+  # A build that cannot sign at all is not a build: `|| true` here let one
+  # through as though it had finished, leaving a bundle that would not open.
+  # set -e stops it now, with codesign's own words above.
+  codesign --force --deep --sign - "$APP"
   [ "$STEP" != "app" ] && echo "no Developer ID certificate found — the DMG will only open on this Mac" >&2
 fi
 
