@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Tabs can wait to load until you first see them: Settings › Tabs › Load tabs when you first see them, off by default. Fifty YouTube tabs opened at once load one page instead of fifty, 1.5 GB instead of 18.
+
 ### Fixed
 
 ## 1.0.3 — 24 September 2026

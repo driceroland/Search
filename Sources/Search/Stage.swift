@@ -68,6 +68,8 @@ struct Page: View {
         .animation(Motion.quick, value: tab.floating)
         .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
         .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
+        // a lazy tab loads once it's actually drawn. many opened at once only ever draw the last.
+        .task(id: tab.id) { tab.wake() }
     }
 }
 

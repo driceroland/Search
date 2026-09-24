@@ -1267,7 +1267,7 @@ final class Browser: NSObject, ObservableObject {
         prepare(tab)
         let here = atEnd ? nil : tabs.firstIndex { $0.id == activeID }
         tabs.insert(tab, at: here.map { $0 + 1 } ?? tabs.count)
-        tab.go(to: url)
+        if prefs.lazyTabs { tab.restore(url: url, title: "") } else { tab.go(to: url) }
         if foreground {
             leaving()
             activeID = tab.id
