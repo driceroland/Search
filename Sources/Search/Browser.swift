@@ -644,7 +644,12 @@ final class Browser: NSObject, ObservableObject {
     /// links, not a bare address to explain in your own words.
     func copyMarkdownLink() {
         guard let tab = active, let url = tab.address else { return }
-        let title = tab.label.replacingOccurrences(of: "]", with: "\\]")
+        // A backslash first, so the ones added next aren't doubled; then both
+        // brackets, either of which would end or break the link's text.
+        let title = tab.label
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "[", with: "\\[")
+            .replacingOccurrences(of: "]", with: "\\]")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("[\(title)](\(url.absoluteString))", forType: .string)
         announce("Link copied")
