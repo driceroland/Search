@@ -93,14 +93,20 @@ final class Float {
         panel.hasShadow = false
         panel.isReleasedWhenClosed = false
         panel.aspectRatio = size
-        // Kept as it goes, so quitting with it open still comes back to it.
-        keeping = [NSWindow.didMoveNotification, NSWindow.didResizeNotification].map { name in
-            NotificationCenter.default.addObserver(forName: name, object: panel, queue: .main) { [weak panel] _ in
+        // Kept once a move or a resize is over, not on each step of one: at
+        // the end of a resize by its edges, as it closes (see drop), and as
+        // the app quits with it open, which closes nothing.
+        let keep: (Notification.Name, AnyObject) -> NSObjectProtocol = { name, object in
+            NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak panel] _ in
                 MainActor.assumeIsolated {
                     if let panel { Float.remembered = panel.frame }
                 }
             }
         }
+        keeping = [
+            keep(NSWindow.didEndLiveResizeNotification, panel),
+            keep(NSApplication.willTerminateNotification, NSApp),
+        ]
         panel.minSize = NSSize(width: 260, height: 146)
 
         let ground = NSView(frame: NSRect(origin: .zero, size: size))
