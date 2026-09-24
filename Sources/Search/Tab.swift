@@ -229,6 +229,8 @@ final class Tab: ObservableObject, Identifiable {
     /// to follow along.
     var onScroll: ((Tab, Double, Double) -> Void)?
     var onZoom: ((Tab, CGFloat) -> Void)?
+    /// The resolved address under the pointer, or nil when it leaves a link.
+    var onLink: ((Tab, String?) -> Void)?
 
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
@@ -266,6 +268,7 @@ final class Tab: ObservableObject, Identifiable {
     private let shop = StoreRelay()
     private let middles = MiddleRelay()
     private let passkeyRelay = PasskeyRelay()
+    private let hovered = HoveredLink()
     private let ears = AudioWatch()
     private var lastY: Double = 0
 
@@ -335,6 +338,10 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     private func build() -> PageView {
+        // Here rather than in Web.configuration: a tab's configuration is
+        // made with the tab, often long before its page, and a site or an
+        // extension can hand over one of its own.
+        FrameRate.apply(to: configuration.preferences)
         let web = PageView(frame: .zero, configuration: configuration)
         // The trackpad pinch is WebKit's own: it magnifies what is on screen
         // and lets you move around inside it, the way pinching does everywhere
@@ -370,6 +377,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeScriptMessageHandler(forName: StoreRelay.name)
         controller.removeScriptMessageHandler(forName: PasskeyRelay.name)
         controller.removeScriptMessageHandler(forName: MiddleRelay.name)
+        controller.removeScriptMessageHandler(forName: HoveredLink.name, contentWorld: .defaultClient)
         controller.add(relay, name: ScrollRelay.name)
         controller.add(veils_, name: VeilRelay.name)
         controller.add(images, name: ImageRelay.name)
@@ -377,6 +385,8 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(forms, name: FormRelay.name)
         controller.addScriptMessageHandler(passkeyRelay, contentWorld: .page, name: PasskeyRelay.name)
         controller.add(middles, name: MiddleRelay.name)
+        hovered.tab = self
+        controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
         Shield.shared.protect(controller)
         built = web
         arm(hiding: veils)
@@ -493,6 +503,13 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: MiddleRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         )
+        // Only while Settings says so: off, pages get nothing at all.
+        if HoveredLink.on {
+            controller.addUserScript(WKUserScript(
+                source: HoveredLink.script, injectionTime: .atDocumentStart,
+                forMainFrameOnly: false, in: .defaultClient
+            ))
+        }
         if !FormRelay.passkeysOffered {
             controller.addUserScript(
                 WKUserScript(
@@ -935,6 +952,7 @@ final class Tab: ObservableObject, Identifiable {
     func close() {
         onScroll = nil
         onZoom = nil
+        onLink = nil
         onPick = nil
         onPickEnd = nil
         onSignIn = nil
@@ -960,6 +978,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeScriptMessageHandler(forName: StoreRelay.name)
         controller.removeScriptMessageHandler(forName: PasskeyRelay.name)
         controller.removeScriptMessageHandler(forName: MiddleRelay.name)
+        controller.removeScriptMessageHandler(forName: HoveredLink.name, contentWorld: .defaultClient)
         controller.removeAllUserScripts()
         web.onPull = nil
         web.onTouch = nil
@@ -1471,3 +1490,4 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
     })();
     """
 }
+

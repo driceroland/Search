@@ -251,6 +251,9 @@ struct ContentView: View {
                     // One stage, always.
                     if let tab = browser.active {
                         Page(tab: tab)
+                            .overlay {
+                                if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
+                            }
                             .overlay(alignment: .topTrailing) {
                                 if browser.finding {
                                     FindBar(browser: browser)

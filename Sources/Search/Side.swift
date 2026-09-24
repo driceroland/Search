@@ -191,16 +191,26 @@ struct SideBar: View {
                     ViewThatFits(in: .vertical) {
                         rows
                         ScrollViewReader { proxy in
-                            ScrollView(.vertical) { rows }
-                                // The tab you go to is the tab you see — ⌘1–⌘9,
-                                // ⇧⌘], a link opening beside the one on screen.
-                                .onChange(of: browser.activeID) { _, id in
-                                    guard let id else { return }
-                                    withAnimation(Motion.glide) { proxy.scrollTo(id) }
-                                }
-                                .onAppear {
-                                    if let id = browser.activeID { proxy.scrollTo(id, anchor: .center) }
-                                }
+                            // The scroll view reaches into the margin on
+                            // the right and the rows keep it inside, so the
+                            // system's bar lands in the margin beside them
+                            // rather than over the cross on the tab under the
+                            // pointer. The column's edge lies over that margin
+                            // and answers first, so the bar never fights the
+                            // resize; the wheel and the trackpad still scroll.
+                            ScrollView(.vertical) {
+                                rows.padding(.trailing, 10)
+                            }
+                            .padding(.trailing, -10)
+                            // The tab you go to is the tab you see — ⌘1–⌘9,
+                            // ⇧⌘], a link opening beside the one on screen.
+                            .onChange(of: browser.activeID) { _, id in
+                                guard let id else { return }
+                                withAnimation(Motion.glide) { proxy.scrollTo(id) }
+                            }
+                            .onAppear {
+                                if let id = browser.activeID { proxy.scrollTo(id, anchor: .center) }
+                            }
                         }
                     }
                 }
