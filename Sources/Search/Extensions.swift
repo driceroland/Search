@@ -265,6 +265,7 @@ final class Extensions: NSObject, ObservableObject {
     }
 
     private func unload(_ id: String) {
+        ExtensionOffscreen.close(for: id)
         guard let context = contexts[id] else { return }
         try? controller.unload(context)
         contexts[id] = nil
