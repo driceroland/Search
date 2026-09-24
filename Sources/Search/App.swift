@@ -21,34 +21,34 @@ struct SearchApp: App {
             // One window. Tabs are the only kind of "new" there is.
             CommandGroup(replacing: .newItem) {
                 Button("New Tab") { browser.newTab() }
-                    .keyboardShortcut("t")
+                    .shortcut("file.newTab", browser.shortcuts)
                 Button("New Private Tab") { browser.newShyTab() }
-                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                    .shortcut("file.newPrivateTab", browser.shortcuts)
                 Button("Reopen Closed Tab") { browser.reopen() }
-                    .keyboardShortcut("t", modifiers: [.command, .shift])
+                    .shortcut("file.reopen", browser.shortcuts)
                     .disabled(browser.ghosts.isEmpty)
                 Divider()
                 Button("Open Address…") { browser.edit() }
-                    .keyboardShortcut("l")
+                    .shortcut("file.openAddress", browser.shortcuts)
                 Divider()
                 Button("Close Tab") { if let tab = browser.active { browser.close(tab) } }
-                    .keyboardShortcut("w")
+                    .shortcut("file.closeTab", browser.shortcuts)
             }
             CommandGroup(replacing: .printItem) {
                 Button("Print…") { browser.printPage() }
-                    .keyboardShortcut("p")
+                    .shortcut("file.print", browser.shortcuts)
                     .disabled(browser.active?.isBlank ?? true)
             }
             CommandGroup(after: .pasteboard) {
                 Divider()
                 Button("Find on Page…") { browser.openFind() }
-                    .keyboardShortcut("f")
+                    .shortcut("edit.find", browser.shortcuts)
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Find Next") { browser.look(forward: true) }
-                    .keyboardShortcut("g")
+                    .shortcut("edit.findNext", browser.shortcuts)
                     .disabled(!browser.finding)
                 Button("Find Previous") { browser.look(forward: false) }
-                    .keyboardShortcut("g", modifiers: [.command, .shift])
+                    .shortcut("edit.findPrevious", browser.shortcuts)
                     .disabled(!browser.finding)
             }
             CommandGroup(replacing: .toolbar) {
@@ -56,13 +56,13 @@ struct SearchApp: App {
                     get: { browser.prefs.sidebar },
                     set: { _ in browser.toggleSidebar() }
                 ))
-                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .shortcut("view.sidebar", browser.shortcuts)
                 // Folded away, not moved (see Fold.swift) — the column, or the
                 // strip across the top.
                 Button(browser.prefs.sidebar
                        ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
                        : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
-                    .keyboardShortcut("s")
+                    .shortcut("view.fold", browser.shortcuts)
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
                     set: { browser.prefs.glyph = $0 }
@@ -73,46 +73,46 @@ struct SearchApp: App {
                 }
                 Divider()
                 Button("Reload Page") { browser.reload() }
-                    .keyboardShortcut("r")
+                    .shortcut("view.reload", browser.shortcuts)
                 Button("Reading Mode") { browser.toggleReader() }
-                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                    .shortcut("view.reader", browser.shortcuts)
                 Button("Float Video") { browser.toggleFloat() }
-                    .keyboardShortcut("p", modifiers: [.command, .shift])
+                    .shortcut("view.float", browser.shortcuts)
                 Divider()
                 Button("Hide Elements…") { browser.toggleHiding() }
-                    .keyboardShortcut("h", modifiers: [.command, .shift])
+                    .shortcut("view.hide", browser.shortcuts)
                 Button("Hidden on This Site…") { browser.reviewing.toggle() }
-                    .keyboardShortcut("u", modifiers: [.command, .shift])
+                    .shortcut("view.hidden", browser.shortcuts)
                 Divider()
                 Button("Zoom In") { browser.zoom(by: 1.1) }
-                    .keyboardShortcut("+")
+                    .shortcut("view.zoomIn", browser.shortcuts)
                 Button("Zoom Out") { browser.zoom(by: 1 / 1.1) }
-                    .keyboardShortcut("-")
+                    .shortcut("view.zoomOut", browser.shortcuts)
                 Button("Actual Size") { browser.resetZoom() }
-                    .keyboardShortcut("0")
+                    .shortcut("view.actualSize", browser.shortcuts)
                 Divider()
                 // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
                 Button("Web Inspector") { browser.toggleInspector() }
-                    .keyboardShortcut("i", modifiers: [.command, .option])
+                    .shortcut("view.inspector", browser.shortcuts)
                 Button("JavaScript Console") { browser.showConsole() }
-                    .keyboardShortcut("j", modifiers: [.command, .option])
+                    .shortcut("view.console", browser.shortcuts)
                 Button("Inspect Element") { browser.inspectElement() }
-                    .keyboardShortcut("c", modifiers: [.command, .option])
+                    .shortcut("view.inspect", browser.shortcuts)
             }
             CommandMenu("Tabs") {
                 Button("Back") { browser.back() }
-                    .keyboardShortcut("[")
+                    .shortcut("tabs.back", browser.shortcuts)
                     .disabled(browser.active?.canGoBack != true)
                 Button("Forward") { browser.forward() }
-                    .keyboardShortcut("]")
+                    .shortcut("tabs.forward", browser.shortcuts)
                     .disabled(browser.active?.canGoForward != true)
                 Divider()
                 Button("Next Tab") { browser.step(1) }
-                    .keyboardShortcut("]", modifiers: [.command, .shift])
+                    .shortcut("tabs.next", browser.shortcuts)
                 Button("Previous Tab") { browser.step(-1) }
-                    .keyboardShortcut("[", modifiers: [.command, .shift])
+                    .shortcut("tabs.previous", browser.shortcuts)
                 Button("Search Tabs…") { browser.summon() }
-                    .keyboardShortcut("k")
+                    .shortcut("tabs.search", browser.shortcuts)
                 Divider()
                 if let tab = browser.active {
                     if tab.pin == nil {
@@ -124,26 +124,29 @@ struct SearchApp: App {
                     }
                 }
                 Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
+                    .shortcut("tabs.rename", browser.shortcuts)
                     .disabled(browser.active == nil)
                 Button("Duplicate Tab") { browser.duplicate() }
-                    .keyboardShortcut("d")
+                    .shortcut("tabs.duplicate", browser.shortcuts)
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Copy Address") { browser.copyAddress() }
-                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                    .shortcut("tabs.copyAddress", browser.shortcuts)
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Paste and Go") { browser.pasteAndGo() }
-                    .keyboardShortcut("v", modifiers: [.command, .shift])
+                    .shortcut("tabs.pasteAndGo", browser.shortcuts)
                 Divider()
                 Button("Close Other Tabs") { if let tab = browser.active { browser.closeOthers(but: tab) } }
+                    .shortcut("tabs.closeOthers", browser.shortcuts)
                     .disabled(browser.tabs.count < 2)
                 Button("Stop Sound in Tab") { browser.pauseMedia() }
-                    .keyboardShortcut("m", modifiers: [.command, .shift])
+                    .shortcut("tabs.mute", browser.shortcuts)
             }
             CommandMenu("Bookmarks") {
                 Button("Add This Page") { browser.bookmarkCurrent() }
-                    .keyboardShortcut("b", modifiers: [.command, .shift])
+                    .shortcut("bookmarks.add", browser.shortcuts)
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Show Bookmarks…") { browser.bookmarking = true }
+                    .shortcut("bookmarks.show", browser.shortcuts)
                 // The bookmarks themselves follow, put in by AppKit (see
                 // BookmarkMenu in Bookmarks.swift).
             }
@@ -170,18 +173,20 @@ struct SearchApp: App {
                 }
                 Divider()
                 Button("Show History…") { browser.recalling = true }
-                    .keyboardShortcut("y")
+                    .shortcut("history.show", browser.shortcuts)
                 Button("Downloads…") { browser.hoarding = true }
-                    .keyboardShortcut("j", modifiers: [.command, .shift])
+                    .shortcut("history.downloads", browser.shortcuts)
                 Divider()
                 Button("Clear History") { browser.clearHistory() }
+                    .shortcut("history.clear", browser.shortcuts)
             }
             CommandGroup(after: .appSettings) {
                 Button("Settings…") { browser.tuning = true }
-                    .keyboardShortcut(",")
+                    .shortcut("app.settings", browser.shortcuts)
                 Button("Welcome…") { browser.welcoming = true }
+                    .shortcut("app.welcome", browser.shortcuts)
                 Button("Passwords…") { browser.managing = true }
-                    .keyboardShortcut("l", modifiers: [.command, .option])
+                    .shortcut("app.passwords", browser.shortcuts)
             }
             CommandGroup(replacing: .help) {
                 Button("Send Feedback…") { Links.writeFeedback() }
@@ -650,6 +655,8 @@ struct ContentView: View {
     ]
 
     private func take(_ event: NSEvent) -> Bool {
+        // A key being typed into Settings › Shortcuts is for the box.
+        guard !browser.shortcuts.recording else { return false }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
 
@@ -745,6 +752,17 @@ struct ContentView: View {
         if #available(macOS 15.4, *), !flags.intersection([.command, .option, .control]).isEmpty,
            Extensions.shared.take(event) {
             return true
+        }
+
+        // Your own keys (Settings › Shortcuts), before the ones below: a
+        // command you moved runs on its new key, and a key you took off a
+        // command goes on to the page.
+        if let combo = KeyCombo(event: event) {
+            if let command = browser.shortcuts.changedCommand(on: combo) {
+                command.run(browser)
+                return true
+            }
+            if browser.shortcuts.isFreed(combo) { return false }
         }
 
         guard flags.contains(.command) else { return false }

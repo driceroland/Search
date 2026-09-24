@@ -34,6 +34,8 @@ final class Browser: NSObject, ObservableObject {
     let prefs = Preferences()
     /// The settings panel.
     @Published var tuning = false
+    /// Your own keys for the menu commands (see Shortcuts.swift).
+    let shortcuts = ShortcutStore()
     /// The first-launch walk-through, over everything. Also from the menu.
     @Published var welcoming = false
 
@@ -858,6 +860,11 @@ final class Browser: NSObject, ObservableObject {
                 guard self?.prefs.look == .system else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self?.relook() }
             }
+            .store(in: &bag)
+
+        // The menus are drawn from this object's changes, and show the keys.
+        shortcuts.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &bag)
 
         prefs.$bench

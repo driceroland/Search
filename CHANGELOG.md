@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Your own keyboard shortcuts, in Settings › Shortcuts: find a command by name or key, click its key and press another, or right-click to clear it or put the default back. A key another command has is asked for twice before it moves, and a key left with no command goes to the page. The menus show the keys as they are.
 - The video you're watching can float when you switch to another app, as in Arc, and go back into its tab when you return to it. Settings › General › Float the video when you switch apps, off by default. Only from the sites a video floats from on its own when you leave its tab; one floated with ⌘⇧P stays out. Thanks [@farchanrifai](https://github.com/farchanrifai) ([#152](https://github.com/driceroland/Search/pull/152))
 - A mouse's back and forward side buttons navigate the page, the way the trackpad's two-finger swipe already does. Thanks [@reloadedhead](https://github.com/reloadedhead) ([#79](https://github.com/driceroland/Search/pull/79))
 - Flick the floating video to a corner, as in Arc and Dia: two fingers on the window send it to the corner or edge they point at, on a short spring, instead of pushing it along. Settings › General › Flick the floating video to a corner, off by default. Dragging still puts it anywhere. Thanks [@farchanrifai](https://github.com/farchanrifai) ([#151](https://github.com/driceroland/Search/pull/151))
