@@ -33,7 +33,10 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
             case "settled":
                 tab?.settleSignIn(navigated: false)
             case "focus":
-                tab?.typing = body["typing"] as? Bool ?? false
+                // Set only when it changes: every assignment to a published
+                // value redraws whatever watches the tab, same value or not.
+                let typing = body["typing"] as? Bool ?? false
+                if tab?.typing != typing { tab?.typing = typing }
                 // Which sign-in box the caret is in, and where it sits on the
                 // page — so a list of accounts can hang from it.
                 if let rect = body["rect"] as? [String: Double],
@@ -278,7 +281,10 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
                 'date', 'datetime-local', 'month', 'week', 'time'].indexOf(kind) >= 0;
       }
 
-      function caret() {
+      // What was last said, so a scroll can keep quiet when nothing moved
+      // that anyone is listening for.
+      var said = null;
+      function caret(scrolled) {
         var el = document.activeElement;
         var both = pair();
         var rect = null;
@@ -286,20 +292,26 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           var r = el.getBoundingClientRect();
           if (r.width > 0 && r.height > 0) rect = { x: r.left, y: r.top, w: r.width, h: r.height };
         }
+        var typing = editable(el);
+        var now = typing + (rect ? ' ' + rect.x + ' ' + rect.y + ' ' + rect.w + ' ' + rect.h : '');
+        if (scrolled === true && now === said) return;
+        said = now;
         window.webkit.messageHandlers.officeForms.postMessage({
           kind: 'focus',
-          typing: editable(el),
+          typing: typing,
           rect: rect
         });
       }
 
       // The box moves when the page scrolls or the window changes size, and
-      // whatever hangs from it has to move too. Once a frame at most.
+      // whatever hangs from it has to move too. Once a frame at most, and
+      // only when something did change: with the caret nowhere near a sign-in,
+      // every frame of every scroll used to send the same answer again.
       var moving = false;
       function moved() {
         if (moving) return;
         moving = true;
-        requestAnimationFrame(function () { moving = false; caret(); });
+        requestAnimationFrame(function () { moving = false; caret(true); });
       }
       window.addEventListener('scroll', moved, true);
       window.addEventListener('resize', moved);
