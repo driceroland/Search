@@ -6,7 +6,9 @@ import AppKit
 /// shivers and says so, rather than quietly handing your keystrokes to a
 /// search engine.
 struct Omnibox: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
     /// Raised over a page by ⌘L, rather than standing on an empty tab.
     let over: Bool
 
@@ -25,7 +27,7 @@ struct Omnibox: View {
                 Rectangle()
                     .fill(Palette.ground.opacity(0.74))
                     .ignoresSafeArea()
-                    .onTapGesture { browser.dismiss() }
+                    .onTapGesture { window.dismiss() }
                     .transition(.opacity)
             }
 
@@ -38,7 +40,7 @@ struct Omnibox: View {
                     // Present or gone, not always-on-and-hidden: the list keeps
                     // the appear and disappear it had, and the overlay is what
                     // keeps that from moving the field.
-                    if !browser.offers.isEmpty {
+                    if !window.offers.isEmpty {
                         list
                             .frame(width: Metrics.fieldWidth)
                             .offset(y: Self.fieldHeight + 8)
@@ -53,13 +55,13 @@ struct Omnibox: View {
                 // an animation of its own. Its rows follow what was typed or
                 // pasted at once — sliding into place on a spring between
                 // keystrokes, they trailed behind the field.
-                .animation(Motion.quick, value: browser.offers.isEmpty)
+                .animation(Motion.quick, value: window.offers.isEmpty)
                 .animation(Motion.settle, value: refused)
         }
     }
 
     private var field: some View {
-        AddressField(browser: browser)
+        AddressField(window: window)
             .frame(height: 22)
             .padding(.horizontal, 22)
             .padding(.vertical, 14)
@@ -85,12 +87,12 @@ struct Omnibox: View {
             )
             .shadow(color: .black.opacity(0.06), radius: 24, y: 8)
             .modifier(Shake(travel: shake))
-            .onChange(of: browser.refusals) { _, _ in
+            .onChange(of: window.refusals) { _, _ in
                 shake = 0
                 refused = true
                 withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
             }
-            .onChange(of: browser.typed) { _, _ in
+            .onChange(of: window.typed) { _, _ in
                 withAnimation(Motion.quick) { refused = false }
             }
     }
@@ -104,10 +106,10 @@ struct Omnibox: View {
     /// is kept, only anchored to its own top edge.
     private var list: some View {
         VStack(spacing: 0) {
-            ForEach(Array(browser.offers.enumerated()), id: \.element.id) { index, offer in
-                Row(offer: offer, picked: browser.picked == index)
+            ForEach(Array(window.offers.enumerated()), id: \.element.id) { index, offer in
+                Row(offer: offer, picked: window.picked == index)
                     .contentShape(Rectangle())
-                    .onTapGesture { browser.take(offer) }
+                    .onTapGesture { window.take(offer) }
             }
         }
         .padding(6)
@@ -253,9 +255,11 @@ private struct Breath: NSViewRepresentable {
 /// selected, so carrying on typing replaces it and Return accepts it. That
 /// needs a real text field and its delegate.
 struct AddressField: NSViewRepresentable {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
 
-    func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
+    func makeCoordinator() -> Coordinator { Coordinator(window: window) }
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
@@ -282,7 +286,7 @@ struct AddressField: NSViewRepresentable {
 
     func updateNSView(_ field: NSTextField, context: Context) {
         let coordinator = context.coordinator
-        coordinator.browser = browser
+        coordinator.window = window
 
         // Only when something other than typing changed it — ⌘L arriving with
         // an address, a walk through the list, a submit clearing it.
@@ -292,15 +296,15 @@ struct AddressField: NSViewRepresentable {
         // still considers complete, and the next update would helpfully type
         // it back in. That is a field you cannot shorten, and it reads exactly
         // like one that has stopped responding.
-        let want = browser.completed
+        let want = window.completed
         if want != coordinator.synced {
             coordinator.synced = want
             field.stringValue = want
-            coordinator.select(from: browser.typed.count, in: field)
+            coordinator.select(from: window.typed.count, in: field)
         }
 
-        if coordinator.answered != browser.focusRequest {
-            coordinator.answered = browser.focusRequest
+        if coordinator.answered != window.focusRequest {
+            coordinator.answered = window.focusRequest
             DispatchQueue.main.async {
                 field.window?.makeFirstResponder(field)
                 guard let editor = field.currentEditor() as? NSTextView else { return }
@@ -317,7 +321,9 @@ struct AddressField: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
-        var browser: Browser
+        var window: WindowModel
+        /// Profile services this window draws from.
+        var browser: Browser { window.profile }
         var answered = -1
         /// The last value pushed in from the browser side, so an update can
         /// tell a change worth applying from one it made itself.
@@ -328,19 +334,19 @@ struct AddressField: NSViewRepresentable {
         /// and the address can never be shortened.
         private var deleting = false
 
-        init(browser: Browser) {
-            self.browser = browser
+        init(window: WindowModel) {
+            self.window = window
         }
 
         func controlTextDidChange(_ note: Notification) {
             guard let field = note.object as? NSTextField else { return }
             let text = field.stringValue
 
-            browser.typed = text
-            guard !deleting, let ending = browser.ending else {
-                if deleting { browser.stopCompleting() }
+            window.typed = text
+            guard !deleting, let ending = window.ending else {
+                if deleting { window.stopCompleting() }
                 deleting = false
-                synced = browser.completed
+                synced = window.completed
                 return
             }
             deleting = false
@@ -370,13 +376,13 @@ struct AddressField: NSViewRepresentable {
         ) -> Bool {
             switch command {
             case #selector(NSResponder.insertNewline(_:)):
-                browser.submit()
+                window.submit()
                 return true
             case #selector(NSResponder.moveDown(_:)):
-                browser.walk(1)
+                window.walk(1)
                 return true
             case #selector(NSResponder.moveUp(_:)):
-                browser.walk(-1)
+                window.walk(-1)
                 return true
             case #selector(NSResponder.deleteBackward(_:)),
                  #selector(NSResponder.deleteForward(_:)):

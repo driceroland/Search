@@ -2614,7 +2614,7 @@ enum ExtensionShims {
         case "downloads.download":
             let spec = first as? [String: Any] ?? [:]
             guard let url = (spec["url"] as? String).flatMap(URL.init(string:)) else { throw Unsupported(what: "No url to download") }
-            guard let web = browser.active?.built ?? browser.tabs.lazy.compactMap(\.built).first else {
+            guard let web = browser.key?.active?.built ?? (browser.key?.tabs ?? []).lazy.compactMap(\.built).first else {
                 throw Unsupported(what: "No page to download through")
             }
             if let name = spec["filename"] as? String, !name.isEmpty {
@@ -2923,11 +2923,11 @@ enum ExtensionShims {
             case "tabs.move":
                 let wanted = args.dropFirst().first as? Int ?? -1
                 let target = visible[wanted < 0 || wanted >= visible.count ? visible.count - 1 : wanted]
-                if let index = browser.tabs.firstIndex(where: { $0.id == target.id }) { browser.move(tab, to: index) }
+                if let index = (browser.key?.tabs ?? []).firstIndex(where: { $0.id == target.id }) { browser.key!.move(tab, to: index) }
             case "tabs.discard":
-                if tab.id != browser.activeID { browser.sleep(tab) }
+                if tab.id != browser.key?.activeID { browser.sleep(tab) }
             default:
-                browser.select(tab)
+                browser.key!.select(tab)
             }
             return nil
 
@@ -2936,8 +2936,8 @@ enum ExtensionShims {
             let spec = first as? [String: Any] ?? [:]
             guard let url = browser.destination(for: spec["text"] as? String ?? "") else { return nil }
             switch spec["disposition"] as? String {
-            case "NEW_TAB", "NEW_WINDOW": browser.open(url, foreground: true)
-            default: browser.visit(url)
+            case "NEW_TAB", "NEW_WINDOW": browser.key!.open(url, foreground: true)
+            default: browser.key!.visit(url)
             }
             return nil
 
@@ -2990,7 +2990,7 @@ enum ExtensionShims {
         // MARK: sessions — the tabs you closed
         case "sessions.getRecentlyClosed":
             let limit = (first as? [String: Any])?["maxResults"] as? Int ?? 25
-            return browser.ghosts.reversed().prefix(limit).map { ghost in
+            return (browser.key?.ghosts ?? []).reversed().prefix(limit).map { ghost in
                 ["lastModified": Int(Date().timeIntervalSince1970),
                  "tab": ["sessionId": ghost.id.uuidString, "url": ghost.url.absoluteString, "title": ghost.title,
                          "index": ghost.index, "windowId": 1, "active": false, "pinned": false, "highlighted": false,
@@ -2999,9 +2999,9 @@ enum ExtensionShims {
         case "sessions.getDevices":
             return []
         case "sessions.restore":
-            let ghost = (first as? String).flatMap { key in browser.ghosts.first { $0.id.uuidString == key } } ?? browser.ghosts.last
+            let ghost = (first as? String).flatMap { key in (browser.key?.ghosts ?? []).first { $0.id.uuidString == key } } ?? (browser.key?.ghosts ?? []).last
             guard let ghost else { throw Unsupported(what: "Nothing to restore") }
-            browser.reopen(ghost)
+            browser.key!.reopen(ghost)
             return ["lastModified": Int(Date().timeIntervalSince1970),
                     "tab": ["url": ghost.url.absoluteString, "title": ghost.title, "index": ghost.index, "windowId": 1]]
 
@@ -3193,7 +3193,7 @@ enum ExtensionShims {
     static func openPanel(_ context: WKWebExtensionContext, owner: Extensions) {
         guard let path = panelPath[context.uniqueIdentifier] ?? defaultPanel(context) else { return }
         let url = context.baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
-        owner.browser?.open(url, foreground: true)
+        owner.browser?.key?.open(url, foreground: true)
     }
 
     // MARK: - bookmarks, as Chrome shapes them
@@ -3256,10 +3256,10 @@ enum ExtensionAuth {
     static func run(_ url: URL, extension id: String, browser: Browser) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
             waiting[id]?.finish(.failure(Declined()))
-            let tab = browser.open(url, foreground: true)
+            let tab = browser.key!.open(url, foreground: true)
             waiting[id] = (tab.id, { result in continuation.resume(with: result) })
             // Closing the tab is saying no.
-            watch = browser.$tabs.sink { tabs in
+            watch = browser.key?.$tabs.sink { tabs in
                 for (key, entry) in waiting where !tabs.contains(where: { $0.id == entry.tab }) {
                     waiting[key] = nil
                     entry.finish(.failure(Declined()))
@@ -3284,8 +3284,8 @@ enum ExtensionAuth {
         entry.finish(.success(url))
         // The popup, when the answer came in one, goes with the flow's tab:
         // left behind, it would hold a redirect that never loads.
-        if from.id != entry.tab { browser.close(from) }
-        if let tab = browser.tabs.first(where: { $0.id == entry.tab }) { browser.close(tab) }
+        if from.id != entry.tab { browser.closeTab(from) }
+        if let tab = (browser.key?.tabs ?? []).first(where: { $0.id == entry.tab }) { browser.closeTab(tab) }
         return true
     }
 }

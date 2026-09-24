@@ -129,11 +129,11 @@ final class Extensions: NSObject, ObservableObject {
     func start(for browser: Browser) {
         self.browser = browser
         controller.didOpenWindow(window)
-        browser.$tabs
+        browser.key?.$tabs
             .receive(on: DispatchQueue.main)
             .sink { [weak self] tabs in self?.follow(tabs) }
             .store(in: &bag)
-        browser.$activeID
+        browser.key?.$activeID
             .removeDuplicates()
             .scan((nil, nil)) { ($0.1, $1) }
             .receive(on: DispatchQueue.main)
@@ -172,10 +172,10 @@ final class Extensions: NSObject, ObservableObject {
     /// carry the controller; one made before the switch has no page an
     /// extension could reach.
     private func seen(_ tab: Tab) -> Bool { !tab.shy || tab.carriesExtensions }
-    var visibleTabs: [Tab] { browser?.tabs.filter(seen) ?? [] }
+    var visibleTabs: [Tab] { browser?.key?.tabs.filter(seen) ?? [] }
 
     var activeAdapter: ExtensionTab? {
-        guard let tab = browser?.active, seen(tab) else { return nil }
+        guard let tab = browser?.key?.active, seen(tab) else { return nil }
         return adapter(for: tab)
     }
 
@@ -216,8 +216,8 @@ final class Extensions: NSObject, ObservableObject {
     }
 
     private func activated(from old: Tab.ID?, to new: Tab.ID?) {
-        guard let new, let tab = browser?.tabs.first(where: { $0.id == new }), seen(tab) else { return }
-        let previous = old.flatMap { id in browser?.tabs.first(where: { $0.id == id }) }.map(adapter(for:))
+        guard let new, let tab = browser?.key?.tabs.first(where: { $0.id == new }), seen(tab) else { return }
+        let previous = old.flatMap { id in browser?.key?.tabs.first(where: { $0.id == id }) }.map(adapter(for:))
         controller.didActivateTab(adapter(for: tab), previousActiveTab: previous)
         actionsChanged += 1
     }
@@ -544,7 +544,7 @@ final class Extensions: NSObject, ObservableObject {
             let yes = await ask("Show “\(name)” in new tabs?", detail: "It asked to replace the new tab page. You can change this later in Settings › Extensions.",
                                 icon: contexts[id]?.webExtension.icon(for: CGSize(width: 64, height: 64)), yes: "Keep It", no: "Don't Allow")
             Store.settings.set(yes, forKey: "extensions.newtab.\(id)")
-            if yes, tab.isBlank, let browser { browser.replaceBlank(tab, with: url) }
+            if yes, tab.isBlank, let browser { browser.key!.replaceBlank(tab, with: url) }
         }
     }
 
@@ -577,7 +577,7 @@ final class Extensions: NSObject, ObservableObject {
 
     func openOptions(_ id: String) {
         guard let url = contexts[id]?.optionsPageURL else { return }
-        browser?.open(url, foreground: true)
+        browser?.key?.open(url, foreground: true)
     }
 
     // MARK: - updates
@@ -864,7 +864,7 @@ final class Extensions: NSObject, ObservableObject {
     /// tab or for all of them, else its manifest's.
     private func popupURL(for context: WKWebExtensionContext) -> URL? {
         let set = ExtensionShims.popups[context.uniqueIdentifier] ?? [:]
-        let path = browser?.active.flatMap { set[$0.id.uuidString] } ?? set["*"]
+        let path = browser?.key?.active.flatMap { set[$0.id.uuidString] } ?? set["*"]
         guard let path else { return Extensions.popupURL(for: context) }
         guard !path.isEmpty else { return nil }
         return URL(string: path, relativeTo: context.baseURL)?.absoluteURL
@@ -901,8 +901,8 @@ extension Extensions: WKWebExtensionControllerDelegate {
     func webExtensionController(_ controller: WKWebExtensionController, openNewTabUsing configuration: WKWebExtension.TabConfiguration, for extensionContext: WKWebExtensionContext) async throws -> (any WKWebExtensionTab)? {
         guard let browser else { return nil }
         let url = configuration.url ?? URL(string: "about:blank")!
-        let tab = browser.open(url, foreground: configuration.shouldBeActive, atEnd: true)
-        if configuration.shouldBePinned { browser.pin(tab) }
+        let tab = browser.key!.open(url, foreground: configuration.shouldBeActive, atEnd: true)
+        if configuration.shouldBePinned { browser.key!.pin(tab) }
         return adapter(for: tab)
     }
 
@@ -910,14 +910,14 @@ extension Extensions: WKWebExtensionControllerDelegate {
     func webExtensionController(_ controller: WKWebExtensionController, openNewWindowUsing configuration: WKWebExtension.WindowConfiguration, for extensionContext: WKWebExtensionContext) async throws -> (any WKWebExtensionWindow)? {
         guard let browser else { return nil }
         for (index, url) in configuration.tabURLs.enumerated() {
-            browser.open(url, foreground: index == 0 && configuration.shouldBeFocused, atEnd: true)
+            browser.key!.open(url, foreground: index == 0 && configuration.shouldBeFocused, atEnd: true)
         }
         return window
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, openOptionsPageFor extensionContext: WKWebExtensionContext) async throws {
         guard let url = extensionContext.optionsPageURL else { return }
-        browser?.open(url, foreground: true)
+        browser?.key?.open(url, foreground: true)
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, promptForPermissions permissions: Set<WKWebExtension.Permission>, in tab: (any WKWebExtensionTab)?, for extensionContext: WKWebExtensionContext) async -> (Set<WKWebExtension.Permission>, Date?) {
@@ -1022,7 +1022,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
     func title(for context: WKWebExtensionContext) -> String? { tab?.title }
     func url(for context: WKWebExtensionContext) -> URL? { tab?.address }
     func isLoadingComplete(for context: WKWebExtensionContext) -> Bool { !(tab?.loading ?? false) }
-    func isSelected(for context: WKWebExtensionContext) -> Bool { tab?.id == browser?.activeID }
+    func isSelected(for context: WKWebExtensionContext) -> Bool { tab?.id == browser?.key?.activeID }
     func isPinned(for context: WKWebExtensionContext) -> Bool { tab?.pin != nil }
     func isPlayingAudio(for context: WKWebExtensionContext) -> Bool { tab?.noisy ?? false }
     func zoomFactor(for context: WKWebExtensionContext) -> Double { Double(tab?.built?.pageZoom ?? 1) }
@@ -1031,8 +1031,8 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
 
     func setPinned(_ pinned: Bool, for context: WKWebExtensionContext) async throws {
         guard let tab, let browser else { return }
-        if pinned, tab.pin == nil { browser.pin(tab) }
-        if !pinned, tab.pin != nil { browser.unpin(tab) }
+        if pinned, tab.pin == nil { browser.key!.pin(tab) }
+        if !pinned, tab.pin != nil { browser.key!.unpin(tab) }
     }
 
     func setZoomFactor(_ zoomFactor: Double, for context: WKWebExtensionContext) async throws {
@@ -1049,7 +1049,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
         let url = Extensions.current(url)
         let here = tab.built?.url ?? tab.address
         if url.scheme == Extensions.scheme, here?.scheme != Extensions.scheme || here?.host != url.host, let browser {
-            browser.replace(tab, going: url)
+            browser.key?.replace(tab, going: url)
             return
         }
         tab.go(to: url)
@@ -1060,12 +1060,12 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
 
     func activate(for context: WKWebExtensionContext) async throws {
         guard let tab else { return }
-        browser?.select(tab)
+        browser?.key?.select(tab)
     }
 
     func close(for context: WKWebExtensionContext) async throws {
-        guard let tab else { return }
-        browser?.close(tab)
+        guard let tab, let browser else { return }
+        browser.closeTab(tab)
     }
 
     func takeSnapshot(using configuration: WKSnapshotConfiguration, for context: WKWebExtensionContext) async throws -> NSImage? {
@@ -1297,7 +1297,7 @@ private struct ExtensionMenu: View {
             VStack(spacing: 1) {
                 Foot("storefront", "Chrome Web Store…") {
                     extensions.menuOpen = false
-                    extensions.browser?.open(Browser.webStore, foreground: true)
+                    extensions.browser?.key?.open(Browser.webStore, foreground: true)
                 }
                 Foot("folder", "Load Unpacked…") {
                     extensions.menuOpen = false

@@ -183,6 +183,11 @@ final class Tab: ObservableObject, Identifiable {
             built?.uiDelegate = delegate
         }
     }
+    /// The window whose row holds this tab. Set only through `enter(_:)`.
+    private(set) weak var owner: WindowModel?
+
+    /// Called by WindowModel when this tab enters or leaves a row.
+    func enter(_ window: WindowModel?) { owner = window }
     /// The stylesheet a page not yet built is to be armed with.
     private var veils = ""
 
@@ -1203,7 +1208,7 @@ final class PageView: WKWebView {
             item.action = #selector(searchSelection(_:))
         }
         guard #available(macOS 15.4, *),
-              let tab = Extensions.shared.browser?.tabs.first(where: { $0.built === self })
+              let tab = Extensions.shared.browser?.allTabs.first(where: { $0.built === self })
         else { return }
         let items = Extensions.shared.menuItems(for: tab)
         guard !items.isEmpty else { return }

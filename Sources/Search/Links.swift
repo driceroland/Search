@@ -117,7 +117,7 @@ final class Links: NSObject, NSApplicationDelegate {
                 LittleWindow.show(url, for: browser)
                 return
             }
-            browser?.arrive(url)
+            browser?.key?.arrive(url)
             // The window closed with the app still running: the link brings
             // it back, rather than landing in a tab nobody can see. The
             // window is looked for among the app's own too: a reference that
@@ -134,11 +134,11 @@ final class Links: NSObject, NSApplicationDelegate {
         waiting = []
         guard let first = early.first else { return }
         onceShown { [weak browser] in
-            browser?.arrive(first)
+            browser?.key?.arrive(first)
             comeForward()
             for (n, url) in early.dropFirst().enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15 * Double(n + 1)) { [weak browser] in
-                    browser?.open(url, foreground: false, atEnd: true)
+                    browser?.key?.open(url, foreground: false, atEnd: true)
                 }
             }
         }

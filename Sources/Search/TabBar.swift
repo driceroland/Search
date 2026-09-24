@@ -4,7 +4,9 @@ import SwiftUI
 /// slides from the tab you left to the tab you picked rather than blinking out
 /// of one and into the other.
 struct TabBar: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
 
     @Namespace private var pill
     /// The neighbouring spaces' own grey, apart from this one's.
@@ -37,7 +39,7 @@ struct TabBar: View {
 
                 HStack(spacing: Metrics.tabGap) {
                     // The space on screen, first, when there are spaces.
-                    if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
+                    if browser.prefs.usesSpaces { SpaceDot(window: window) }
 
                     // The tabs, in a run of their own. While they fit, it is
                     // exactly as wide as they are and nothing about the row
@@ -50,29 +52,29 @@ struct TabBar: View {
                     // between them (see SpaceSwipe). Past the last, a new one.
                     ZStack(alignment: .leading) {
                         if making {
-                            NewSpaceCard(browser: browser, inline: true)
+                            NewSpaceCard(window: window, inline: true)
                                 .fixedSize()
-                                .offset(y: browser.spaceSwipe)
+                                .offset(y: window.spaceSwipe)
                         } else {
                             ScrollViewReader { reader in
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: Metrics.tabGap) {
-                                        ForEach(Array(browser.tabs.enumerated()), id: \.element.id) { index, tab in
+                                        ForEach(Array(window.tabs.enumerated()), id: \.element.id) { index, tab in
                                             // A pinned square moves among pinned squares, a title
                                             // among titles: each has its own stride.
                                             let step = (tab.pin != nil ? Metrics.pinWidth : width(in: geo.size.width)) + Metrics.tabGap
                                             TabPill(
-                                                browser: browser,
+                                                window: window,
                                                 prefs: browser.prefs,
                                                 tab: tab,
-                                                live: tab.id == browser.activeID,
+                                                live: tab.id == window.activeID,
                                                 width: width(in: geo.size.width),
                                                 room: geo.size.width - Metrics.lights - 12,
                                                 pill: pill,
-                                                close: { browser.close(tab) }
+                                                close: { window.close(tab) }
                                             )
-                                            .modifier(Carried(index: index, count: browser.tabs.count, step: step, vertical: false, space: "strip") {
-                                                browser.move(tab, to: $0)
+                                            .modifier(Carried(index: index, count: window.tabs.count, step: step, vertical: false, space: "strip") {
+                                                window.move(tab, to: $0)
                                             })
                                             .id(tab.id)
                                         }
@@ -83,17 +85,17 @@ struct TabBar: View {
                                 .frame(width: run(in: geo.size.width))
                                 .onAppear { reveal(reader, in: geo.size.width) }
                                 .onChange(of: overflowing(in: geo.size.width)) { _, _ in reveal(reader, in: geo.size.width) }
-                                .onChange(of: browser.activeID) { _, _ in reveal(reader, in: geo.size.width, gliding: true) }
+                                .onChange(of: window.activeID) { _, _ in reveal(reader, in: geo.size.width, gliding: true) }
                             }
-                                .offset(y: browser.spaceSwipe)
+                                .offset(y: window.spaceSwipe)
                         }
-                        if browser.spaceSwipe > 0, spaceAt > 0 {
+                        if window.spaceSwipe > 0, spaceAt > 0 {
                             page(spaceAt - 1, in: geo.size.width, pill: above)
-                                .offset(y: browser.spaceSwipe - Metrics.strip)
+                                .offset(y: window.spaceSwipe - Metrics.strip)
                         }
-                        if browser.spaceSwipe < 0, spaceAt < browser.spaces.count {
+                        if window.spaceSwipe < 0, spaceAt < browser.spaces.count {
                             page(spaceAt + 1, in: geo.size.width, pill: below)
-                                .offset(y: browser.spaceSwipe + Metrics.strip)
+                                .offset(y: window.spaceSwipe + Metrics.strip)
                         }
                     }
                     .frame(width: making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width), height: Metrics.strip, alignment: .leading)
@@ -103,7 +105,7 @@ struct TabBar: View {
                     // The way to a new page, right after the tabs rather than
                     // at the end of their run, so it is there however far the
                     // run has scrolled. Out of sight until the pointer is up here.
-                    Button { browser.newTab() } label: {
+                    Button { window.newTab() } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(Palette.muted)
@@ -129,10 +131,10 @@ struct TabBar: View {
                     // of the row. The dropdown hangs from the last one.
                     HStack(spacing: Metrics.tabGap) {
                         ExtensionSlot()
-                        Helm(browser: browser)
+                        Helm(window: window)
                             .padding(.trailing, 8)
                         Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
-                            .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .bottom) {
+                            .popover(isPresented: Binding(get: { browser.bookmarksOpen }, set: { browser.bookmarksOpen = $0 }), arrowEdge: .bottom) {
                                 BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
                             }
                     }
@@ -158,26 +160,26 @@ struct TabBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         // A link dragged onto the row opens there.
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
-            browser.take(providers)
+            window.take(providers)
         }
         .background(landing ? Palette.hover : .clear)
         .animation(Motion.quick, value: landing)
-        .animation(Motion.glide, value: browser.activeID)
+        .animation(Motion.glide, value: window.activeID)
         // The row makes room for the field on the same spring as everything
         // else. Without this the widths changed between one frame and the next
         // and the tabs appeared to jump aside.
-        .animation(Motion.glide, value: browser.editingTab)
-        .animation(Motion.settle, value: browser.tabs.map(\.id))
+        .animation(Motion.glide, value: window.editingTab)
+        .animation(Motion.settle, value: window.tabs.map(\.id))
     }
 
     // MARK: - the spaces, one above the other
 
-    private var making: Bool { browser.prefs.usesSpaces && browser.makingSpace }
+    private var making: Bool { browser.prefs.usesSpaces && window.makingSpace }
 
     /// Where the space on screen sits among them: one past the last while
     /// the row for a new one is up.
     private var spaceAt: Int {
-        browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
+        window.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == window.spaceID } ?? 0)
     }
 
     /// Another space's row, drawn with the same pills as this one's so the
@@ -186,19 +188,19 @@ struct TabBar: View {
     @ViewBuilder
     private func page(_ index: Int, in strip: CGFloat, pill: Namespace.ID) -> some View {
         if index == browser.spaces.count {
-            NewSpaceCard(browser: browser, inline: true)
+            NewSpaceCard(window: window, inline: true)
                 .fixedSize()
                 .allowsHitTesting(false)
         } else {
             let space = browser.spaces[index]
-            let row = space.id == browser.spaceID
-                ? Parked(tabs: browser.tabs, active: browser.activeID)
-                : browser.parked[space.id] ?? Parked(tabs: [], active: nil)
+            let row = space.id == window.spaceID
+                ? Parked(tabs: window.tabs, active: window.activeID)
+                : window.parked[space.id] ?? Parked(tabs: [], active: nil)
             let each = width(in: strip, pinned: row.tabs.filter { $0.pin != nil }.count, count: row.tabs.count)
             HStack(spacing: Metrics.tabGap) {
                 ForEach(row.tabs) { tab in
                     TabPill(
-                        browser: browser,
+                        window: window,
                         prefs: browser.prefs,
                         tab: tab,
                         live: tab.id == row.active,
@@ -218,7 +220,7 @@ struct TabBar: View {
     /// when the window first shows it, on the strip's spring when you pick
     /// another. A turn of the run loop later, so the run has been laid out.
     private func reveal(_ reader: ScrollViewProxy, in strip: CGFloat, gliding: Bool = false) {
-        guard overflowing(in: strip), let id = browser.activeID else { return }
+        guard overflowing(in: strip), let id = window.activeID else { return }
         DispatchQueue.main.async {
             if gliding {
                 withAnimation(Motion.glide) { reader.scrollTo(id) }
@@ -242,11 +244,11 @@ struct TabBar: View {
     /// field's width for a tab being edited, which grows to take it.
     private func content(in strip: CGFloat) -> CGFloat {
         let each = width(in: strip)
-        let pinned = CGFloat(browser.pinnedCount)
-        let loose = CGFloat(browser.tabs.count) - pinned
+        let pinned = CGFloat(window.pinnedCount)
+        let loose = CGFloat(window.tabs.count) - pinned
         var total = pinned * Metrics.pinWidth + loose * each
-            + CGFloat(max(0, browser.tabs.count - 1)) * Metrics.tabGap
-        if let id = browser.editingTab, let tab = browser.tabs.first(where: { $0.id == id }) {
+            + CGFloat(max(0, window.tabs.count - 1)) * Metrics.tabGap
+        if let id = window.editingTab, let tab = window.tabs.first(where: { $0.id == id }) {
             total += min(340, strip - Metrics.lights - 12) - (tab.pin != nil ? Metrics.pinWidth : each)
         }
         return total
@@ -269,7 +271,7 @@ struct TabBar: View {
     /// mark and its air. Past that, the run scrolls. The pinned squares take
     /// their room off the top.
     private func width(in strip: CGFloat) -> CGFloat {
-        width(in: strip, pinned: browser.pinnedCount, count: browser.tabs.count)
+        width(in: strip, pinned: window.pinnedCount, count: window.tabs.count)
     }
 
     private func width(in strip: CGFloat, pinned pins: Int, count: Int) -> CGFloat {
@@ -287,11 +289,13 @@ struct TabBar: View {
 /// every page. Used here and, beside the traffic lights instead of at the
 /// far end of the row, in the sidebar.
 struct Helm: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
 
     var body: some View {
-        if let tab = browser.active {
-            Wheel(browser: browser, tab: tab)
+        if let tab = window.active {
+            Wheel(window: window, tab: tab)
         } else {
             // Nowhere to go and nothing to reload: the doors stay in place,
             // greyed, so the row doesn't shift when a tab arrives.
@@ -306,17 +310,19 @@ struct Helm: View {
     }
 
     private struct Wheel: View {
-        let browser: Browser
+        let window: WindowModel
+        /// Profile services this window draws from.
+        var browser: Browser { window.profile }
         @ObservedObject var tab: Tab
 
         var body: some View {
             let back = !tab.isBlank && tab.canGoBack
             let forward = !tab.isBlank && tab.canGoForward
             HStack(spacing: 4) {
-                Door(icon: "chevron.left", help: "Back   ⌘[") { browser.back() }
+                Door(icon: "chevron.left", help: "Back   ⌘[") { window.back() }
                     .disabled(!back)
                     .opacity(back ? 1 : 0.3)
-                Door(icon: "chevron.right", help: "Forward   ⌘]") { browser.forward() }
+                Door(icon: "chevron.right", help: "Forward   ⌘]") { window.forward() }
                     .disabled(!forward)
                     .opacity(forward ? 1 : 0.3)
                 // Reload, or stop while it is still coming.
@@ -324,7 +330,7 @@ struct Helm: View {
                     icon: tab.loading ? "xmark" : "arrow.clockwise",
                     help: tab.loading ? "Stop   ⌘." : "Reload   ⌘R"
                 ) {
-                    if tab.loading { tab.stop() } else { browser.reload() }
+                    if tab.loading { tab.stop() } else { window.reload() }
                 }
                 .disabled(tab.isBlank)
                 .opacity(tab.isBlank ? 0.3 : 1)
@@ -337,7 +343,9 @@ struct Helm: View {
 }
 
 private struct TabPill: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
     let live: Bool
@@ -350,7 +358,7 @@ private struct TabPill: View {
     @State private var hovering = false
     @State private var shake: CGFloat = 0
 
-    private var editing: Bool { browser.editingTab == tab.id }
+    private var editing: Bool { window.editingTab == tab.id }
     private var pinned: Bool { tab.pin != nil && !editing }
     /// Too narrow for a title: the site's mark alone, the title in the
     /// tooltip, and ⌘W or the menu to close it — a cross on something this
@@ -371,8 +379,8 @@ private struct TabPill: View {
         Group {
             if pinned {
                 Group {
-                    if browser.editingPin == tab.id {
-                        PinField(browser: browser, tab: tab)
+                    if window.editingPin == tab.id {
+                        PinField(window: window, tab: tab)
                     } else if prefs.glyph == .icons, let icon = tab.icon {
                         Mark(icon: icon, letter: tab.pin ?? "", size: 16, dim: tab.asleep)
                     } else {
@@ -407,21 +415,21 @@ private struct TabPill: View {
         // once. Change Letter in the menu covers the rest.
         .modifier(OneClick(double: live && pinned) {
             if live && pinned {
-                browser.editLetter(tab)
+                window.editLetter(tab)
             } else if live && !pinned {
-                browser.beginTabEdit(tab)
+                window.beginTabEdit(tab)
             } else {
-                browser.select(tab)
+                window.select(tab)
             }
         })
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
-        .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
+        .contextMenu { TabMenu(window: window, tab: tab, close: close) }
         .help(pinned || compact ? tab.label : "")
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)
         .animation(Motion.glide, value: tab.pin)
-        .onChange(of: browser.refusals) { _, _ in
+        .onChange(of: window.refusals) { _, _ in
             guard editing else { return }
             shake = 0
             withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
@@ -451,7 +459,7 @@ private struct TabPill: View {
     private var titled: some View {
         HStack(spacing: 6) {
             if editing {
-                TabAddressField(browser: browser)
+                TabAddressField(window: window)
                     .frame(height: 16)
             } else {
                 if prefs.glyph == .icons, !tab.isBlank {
@@ -633,9 +641,11 @@ struct Carried: ViewModifier {
 }
 
 struct TabAddressField: NSViewRepresentable {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
 
-    func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
+    func makeCoordinator() -> Coordinator { Coordinator(window: window) }
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
@@ -647,10 +657,10 @@ struct TabAddressField: NSViewRepresentable {
         field.textColor = Palette.NS.ink
         field.cell?.usesSingleLineMode = true
         field.cell?.wraps = false
-        field.stringValue = browser.tabDraft
+        field.stringValue = window.tabDraft
         context.coordinator.watch(field)
         // The site card stands under whichever field the address is in.
-        SiteCardPanel.follow(browser, anchor: field)
+        SiteCardPanel.follow(window, anchor: field)
         return field
     }
 
@@ -660,9 +670,9 @@ struct TabAddressField: NSViewRepresentable {
 
     func updateNSView(_ field: NSTextField, context: Context) {
         let coordinator = context.coordinator
-        coordinator.browser = browser
-        if !coordinator.typing, field.stringValue != browser.tabDraft {
-            field.stringValue = browser.tabDraft
+        coordinator.window = window
+        if !coordinator.typing, field.stringValue != window.tabDraft {
+            field.stringValue = window.tabDraft
         }
         guard !coordinator.claimed else { return }
         coordinator.claimed = true
@@ -678,16 +688,18 @@ struct TabAddressField: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
-        var browser: Browser
+        var window: WindowModel
+        /// Profile services this window draws from.
+        var browser: Browser { window.profile }
         var claimed = false
         var typing = false
 
-        init(browser: Browser) { self.browser = browser }
+        init(window: WindowModel) { self.window = window }
 
         func controlTextDidChange(_ note: Notification) {
             guard let field = note.object as? NSTextField else { return }
             typing = true
-            browser.tabDraft = field.stringValue
+            window.tabDraft = field.stringValue
             typing = false
         }
 
@@ -700,10 +712,10 @@ struct TabAddressField: NSViewRepresentable {
             case #selector(NSResponder.insertNewline(_:)):
                 // Returning true keeps the field editing, which is what lets a
                 // refused address stay on screen instead of being thrown away.
-                browser.commitTabEdit()
+                window.commitTabEdit()
                 return true
             case #selector(NSResponder.cancelOperation(_:)):
-                browser.cancelTabEdit()
+                window.cancelTabEdit()
                 return true
             default:
                 return false
@@ -712,8 +724,8 @@ struct TabAddressField: NSViewRepresentable {
 
         /// Clicking anywhere else keeps what was typed, as Return does.
         func controlTextDidEndEditing(_ note: Notification) {
-            let browser = browser
-            DispatchQueue.main.async { browser.finishTabEdit() }
+            let window = self.window
+            DispatchQueue.main.async { window.finishTabEdit() }
         }
 
         /// A press on something that takes no focus — the strip's empty
@@ -729,8 +741,8 @@ struct TabAddressField: NSViewRepresentable {
                 guard let self, let field, event.window === field.window,
                       !field.bounds.contains(field.convert(event.locationInWindow, from: nil))
                 else { return event }
-                let browser = self.browser
-                DispatchQueue.main.async { browser.finishTabEdit() }
+                let window = self.window
+                DispatchQueue.main.async { window.finishTabEdit() }
                 return event
             }
         }
@@ -744,50 +756,52 @@ struct TabAddressField: NSViewRepresentable {
 
 /// What a right-click on any tab offers, wherever the tab is drawn.
 struct TabMenu: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
     @ObservedObject var tab: Tab
     let close: () -> Void
 
     var body: some View {
         if tab.pin == nil {
-            Button("Pin") { browser.pin(tab) }
+            Button("Pin") { window.pin(tab) }
                 .disabled(tab.isBlank)
         } else {
-            Button("Change Letter") { browser.editLetter(tab) }
-            Button("Unpin") { browser.unpin(tab) }
+            Button("Change Letter") { window.editLetter(tab) }
+            Button("Unpin") { window.unpin(tab) }
         }
         Divider()
-        Button("Rename") { browser.beginTabRename(tab) }
+        Button("Rename") { window.beginTabRename(tab) }
         Button("Duplicate") {
-            browser.select(tab)
-            browser.duplicate()
+            window.select(tab)
+            window.duplicate()
         }
         .disabled(tab.isBlank)
         // The card a click on the tab you are on shows under its address.
         Button("Site Information…") {
-            if browser.activeID != tab.id { browser.select(tab) }
-            browser.beginTabEdit(tab)
+            if window.activeID != tab.id { window.select(tab) }
+            window.beginTabEdit(tab)
         }
         .disabled(tab.isBlank || tab.address == nil || tab.pin != nil)
         Button("Copy Address") {
-            browser.select(tab)
-            browser.copyAddress()
+            window.select(tab)
+            window.copyAddress()
         }
         .disabled(tab.isBlank)
         Button("Copy as Markdown Link") {
-            browser.select(tab)
-            browser.copyMarkdownLink()
+            window.select(tab)
+            window.copyMarkdownLink()
         }
         .disabled(tab.isBlank)
         Button(tab.muted ? "Unmute Tab" : "Mute Tab") { tab.toggleMute() }
         Divider()
         Button("Close Tab", action: close)
-        Button("Close Other Tabs") { browser.closeOthers(but: tab) }
-            .disabled(browser.tabs.count < 2)
+        Button("Close Other Tabs") { window.closeOthers(but: tab) }
+            .disabled(window.tabs.count < 2)
         // ⌘⇧T, and the History menu's Recently Closed, where few think to
         // look for it: here too, where tabs are closed.
-        Button("Reopen Closed Tab") { browser.reopen() }
-            .disabled(browser.ghosts.isEmpty)
+        Button("Reopen Closed Tab") { window.reopen() }
+            .disabled(window.ghosts.isEmpty)
     }
 }
 
@@ -879,10 +893,12 @@ struct Ring: View {
 /// in a tab: the system paints selected text as a solid block of accent colour,
 /// and over a thirty-point grey square that is the loudest thing on screen.
 struct PinField: NSViewRepresentable {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
     @ObservedObject var tab: Tab
 
-    func makeCoordinator() -> Coordinator { Coordinator(browser: browser, tab: tab) }
+    func makeCoordinator() -> Coordinator { Coordinator(window: window, tab: tab) }
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
@@ -901,7 +917,7 @@ struct PinField: NSViewRepresentable {
 
     func updateNSView(_ field: NSTextField, context: Context) {
         let coordinator = context.coordinator
-        coordinator.browser = browser
+        coordinator.window = window
         coordinator.tab = tab
         if !coordinator.typing, field.stringValue != tab.pin ?? "" {
             field.stringValue = tab.pin ?? ""
@@ -922,20 +938,22 @@ struct PinField: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
-        var browser: Browser
+        var window: WindowModel
+        /// Profile services this window draws from.
+        var browser: Browser { window.profile }
         var tab: Tab
         var claimed = false
         var typing = false
 
-        init(browser: Browser, tab: Tab) {
-            self.browser = browser
+        init(window: WindowModel, tab: Tab) {
+            self.window = window
             self.tab = tab
         }
 
         func controlTextDidChange(_ note: Notification) {
             guard let field = note.object as? NSTextField else { return }
             typing = true
-            browser.letter(field.stringValue, for: tab)
+            window.letter(field.stringValue, for: tab)
             // One character only, and shown as it will be worn.
             field.stringValue = tab.pin ?? ""
             typing = false
@@ -950,7 +968,7 @@ struct PinField: NSViewRepresentable {
             case #selector(NSResponder.insertNewline(_:)),
                  #selector(NSResponder.cancelOperation(_:)),
                  #selector(NSResponder.insertTab(_:)):
-                browser.endPinEdit()
+                window.endPinEdit()
                 return true
             default:
                 return false
@@ -958,8 +976,8 @@ struct PinField: NSViewRepresentable {
         }
 
         func controlTextDidEndEditing(_ note: Notification) {
-            let browser = browser
-            DispatchQueue.main.async { browser.endPinEdit() }
+            let window = self.window
+            DispatchQueue.main.async { window.endPinEdit() }
         }
     }
 }

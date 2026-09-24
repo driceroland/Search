@@ -12,7 +12,7 @@ struct SearchApp: App {
 
     var body: some Scene {
         Window("Search", id: "browser") {
-            ContentView(browser: browser)
+            ContentView(window: browser.key ?? browser.windows[0])
                 .frame(minWidth: 640, minHeight: 420)
         }
         .windowStyle(.hiddenTitleBar)
@@ -20,38 +20,38 @@ struct SearchApp: App {
         .commands {
             // One window. Tabs are the only kind of "new" there is.
             CommandGroup(replacing: .newItem) {
-                Button("New Tab") { browser.newTab() }
+                Button("New Tab") { browser.key?.newTab() }
                     .keyboardShortcut("t")
-                Button("New Private Tab") { browser.newShyTab() }
+                Button("New Private Tab") { browser.key?.newShyTab() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
-                Button("Reopen Closed Tab") { browser.reopen() }
+                Button("Reopen Closed Tab") { browser.key?.reopen() }
                     .keyboardShortcut("t", modifiers: [.command, .shift])
-                    .disabled(browser.ghosts.isEmpty)
+                    .disabled(browser.key?.ghosts.isEmpty ?? true)
                 Divider()
-                Button("Open Address…") { browser.edit() }
+                Button("Open Address…") { browser.key?.edit() }
                     .keyboardShortcut("l")
                 Divider()
-                Button("Close Tab") { if let tab = browser.active { browser.close(tab) } }
+                Button("Close Tab") { if let tab = browser.key?.active { browser.closeTab(tab) } }
                     .keyboardShortcut("w")
             }
             CommandGroup(replacing: .printItem) {
                 Button("Share…") { browser.share() }
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(browser.key?.active?.isBlank ?? true)
                 Button("Print…") { browser.printPage() }
                     .keyboardShortcut("p")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(browser.key?.active?.isBlank ?? true)
             }
             CommandGroup(after: .pasteboard) {
                 Divider()
-                Button("Find on Page…") { browser.openFind() }
+                Button("Find on Page…") { browser.key?.openFind() }
                     .keyboardShortcut("f")
-                    .disabled(browser.active?.isBlank ?? true)
-                Button("Find Next") { browser.look(forward: true) }
+                    .disabled(browser.key?.active?.isBlank ?? true)
+                Button("Find Next") { browser.key?.look(forward: true) }
                     .keyboardShortcut("g")
-                    .disabled(!browser.finding)
-                Button("Find Previous") { browser.look(forward: false) }
+                    .disabled(!(browser.key?.finding ?? false))
+                Button("Find Previous") { browser.key?.look(forward: false) }
                     .keyboardShortcut("g", modifiers: [.command, .shift])
-                    .disabled(!browser.finding)
+                    .disabled(!(browser.key?.finding ?? false))
             }
             CommandGroup(replacing: .toolbar) {
                 Toggle("Show Tabs in Sidebar", isOn: Binding(
@@ -62,8 +62,8 @@ struct SearchApp: App {
                 // Folded away, not moved (see Fold.swift) — the column, or the
                 // strip across the top.
                 Button(browser.prefs.sidebar
-                       ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
-                       : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
+                       ? ((browser.key?.folded ?? false) ? "Show Sidebar" : "Hide Sidebar")
+                       : ((browser.key?.folded ?? false) ? "Show Tab Bar" : "Hide Tab Bar")) { browser.key?.toggleFold() }
                     .keyboardShortcut("s")
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
@@ -74,9 +74,9 @@ struct SearchApp: App {
                     }
                 }
                 Divider()
-                Button("Reload Page") { browser.reload() }
+                Button("Reload Page") { browser.key?.reload() }
                     .keyboardShortcut("r")
-                Button("Reading Mode") { browser.toggleReader() }
+                Button("Reading Mode") { browser.key?.toggleReader() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button("Float Video") { browser.toggleFloat() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
@@ -86,11 +86,11 @@ struct SearchApp: App {
                 Button("Hidden on This Site…") { browser.reviewing.toggle() }
                     .keyboardShortcut("u", modifiers: [.command, .shift])
                 Divider()
-                Button("Zoom In") { browser.zoom(by: 1.1) }
+                Button("Zoom In") { browser.key?.zoom(by: 1.1) }
                     .keyboardShortcut("+")
-                Button("Zoom Out") { browser.zoom(by: 1 / 1.1) }
+                Button("Zoom Out") { browser.key?.zoom(by: 1 / 1.1) }
                     .keyboardShortcut("-")
-                Button("Actual Size") { browser.resetZoom() }
+                Button("Actual Size") { browser.key?.resetZoom() }
                     .keyboardShortcut("0")
                 Divider()
                 // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
@@ -102,51 +102,51 @@ struct SearchApp: App {
                     .keyboardShortcut("c", modifiers: [.command, .option])
             }
             CommandMenu("Tabs") {
-                Button("Back") { browser.back() }
+                Button("Back") { browser.key?.back() }
                     .keyboardShortcut("[")
-                    .disabled(browser.active?.canGoBack != true)
-                Button("Forward") { browser.forward() }
+                    .disabled(browser.key?.active?.canGoBack != true)
+                Button("Forward") { browser.key?.forward() }
                     .keyboardShortcut("]")
-                    .disabled(browser.active?.canGoForward != true)
+                    .disabled(browser.key?.active?.canGoForward != true)
                 Divider()
-                Button("Next Tab") { browser.step(1) }
+                Button("Next Tab") { browser.key?.step(1) }
                     .keyboardShortcut("]", modifiers: [.command, .shift])
-                Button("Previous Tab") { browser.step(-1) }
+                Button("Previous Tab") { browser.key?.step(-1) }
                     .keyboardShortcut("[", modifiers: [.command, .shift])
-                Button("Search Tabs…") { browser.summon() }
+                Button("Search Tabs…") { browser.key?.summon() }
                     .keyboardShortcut("k")
                 Divider()
-                if let tab = browser.active {
+                if let tab = browser.key?.active {
                     if tab.pin == nil {
-                        Button("Pin Tab") { browser.pin(tab) }
+                        Button("Pin Tab") { browser.key?.pin(tab) }
                             .disabled(tab.isBlank)
                     } else {
-                        Button("Change Letter") { browser.editLetter(tab) }
-                        Button("Unpin Tab") { browser.unpin(tab) }
+                        Button("Change Letter") { browser.key?.editLetter(tab) }
+                        Button("Unpin Tab") { browser.key?.unpin(tab) }
                     }
                 }
-                Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
-                    .disabled(browser.active == nil)
-                Button("Duplicate Tab") { browser.duplicate() }
+                Button("Rename Tab") { if let tab = browser.key?.active { browser.key?.beginTabRename(tab) } }
+                    .disabled(browser.key?.active == nil)
+                Button("Duplicate Tab") { browser.key?.duplicate() }
                     .keyboardShortcut("d")
-                    .disabled(browser.active?.isBlank ?? true)
-                Button("Copy Address") { browser.copyAddress() }
+                    .disabled(browser.key?.active?.isBlank ?? true)
+                Button("Copy Address") { browser.key?.copyAddress() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
-                    .disabled(browser.active?.isBlank ?? true)
-                Button("Copy as Markdown Link") { browser.copyMarkdownLink() }
-                    .disabled(browser.active?.isBlank ?? true)
-                Button("Paste and Go") { browser.pasteAndGo() }
+                    .disabled(browser.key?.active?.isBlank ?? true)
+                Button("Copy as Markdown Link") { browser.key?.copyMarkdownLink() }
+                    .disabled(browser.key?.active?.isBlank ?? true)
+                Button("Paste and Go") { browser.key?.pasteAndGo() }
                     .keyboardShortcut("v", modifiers: [.command, .shift])
                 Divider()
-                Button("Close Other Tabs") { if let tab = browser.active { browser.closeOthers(but: tab) } }
-                    .disabled(browser.tabs.count < 2)
-                Button("Stop Sound in Tab") { browser.pauseMedia() }
+                Button("Close Other Tabs") { if let tab = browser.key?.active { browser.key?.closeOthers(but: tab) } }
+                    .disabled((browser.key?.tabs.count ?? 0) < 2)
+                Button("Stop Sound in Tab") { browser.key?.pauseMedia() }
                     .keyboardShortcut("m", modifiers: [.command, .shift])
             }
             CommandMenu("Bookmarks") {
                 Button("Add This Page") { browser.bookmarkCurrent() }
                     .keyboardShortcut("b", modifiers: [.command, .shift])
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(browser.key?.active?.isBlank ?? true)
                 Button("Show Bookmarks…") { browser.bookmarking = true }
                 Toggle("Show Bookmarks Bar", isOn: Binding(
                     get: { browser.prefs.bookmarksBar },
@@ -159,17 +159,17 @@ struct SearchApp: App {
                 Section("Recently Visited") {
                     ForEach(browser.recentlyVisited) { trace in
                         Button {
-                            browser.open(trace.url, foreground: true)
+                            browser.key?.open(trace.url, foreground: true)
                         } label: {
                             MenuLine(title: trace.title.isEmpty ? trace.key : trace.title, url: trace.url)
                         }
                     }
                 }
-                if !browser.ghosts.isEmpty {
+                if !(browser.key?.ghosts.isEmpty ?? true) {
                     Section("Recently Closed") {
-                        ForEach(browser.ghosts.reversed().prefix(10)) { ghost in
+                        ForEach((browser.key?.ghosts ?? []).reversed().prefix(10)) { ghost in
                             Button {
-                                browser.reopen(ghost)
+                                browser.key?.reopen(ghost)
                             } label: {
                                 MenuLine(title: ghost.label, url: ghost.url)
                             }
@@ -258,10 +258,12 @@ private final class CursorGroundView: NSView {
 }
 
 struct ContentView: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
 
     @State private var keys: Any?
-    @State private var window: NSWindow?
+    @State private var host: NSWindow?
     @State private var resting: RestingLights?
     /// The room the page leaves for the column and the strip, set without
     /// animation (see `make(room:after:)`); nil only before the window is up.
@@ -275,7 +277,7 @@ struct ContentView: View {
         ZStack(alignment: .topLeading) {
             // Black while a page has the screen, so the frame of our own window
             // that survives the transition is not a white band across the top.
-            (browser.active?.immersed == true ? Color.black : Palette.ground)
+            (window.active?.immersed == true ? Color.black : Palette.ground)
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
@@ -294,13 +296,13 @@ struct ContentView: View {
             // height, so the traffic lights sit in its own corner rather than
             // over the page.
             if sidebar {
-                SideBar(browser: browser, prefs: browser.prefs)
+                SideBar(window: window, prefs: browser.prefs)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .transition(.move(edge: .leading))
             }
 
-            if !browser.prefs.sidebar, !browser.folded, browser.active?.immersed != true {
-                TabBar(browser: browser)
+            if !browser.prefs.sidebar, !window.folded, window.active?.immersed != true {
+                TabBar(window: window)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -314,21 +316,21 @@ struct ContentView: View {
         }
         .ignoresSafeArea()
         .animation(Motion.glide, value: browser.prefs.sidebar)
-        .animation(.easeOut(duration: 0.12), value: browser.active?.immersed)
+        .animation(.easeOut(duration: 0.12), value: window.active?.immersed)
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
     }
 
     @ViewBuilder
     private var stage: some View {
-        if let tab = browser.active {
+        if let tab = window.active {
             Page(tab: tab)
                 .overlay {
                     if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
                 }
                 .overlay(alignment: .topTrailing) {
-                    if browser.finding {
-                        FindBar(browser: browser)
+                    if window.finding {
+                        FindBar(window: window)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
@@ -353,8 +355,8 @@ struct ContentView: View {
     /// The bookmarks bar is up: asked for, there are bookmarks, and the tabs
     /// aren't folded away or under a video filling the screen.
     private var barShown: Bool {
-        browser.prefs.bookmarksBar && !browser.bookmarks.isEmpty && !browser.folded
-            && browser.active?.immersed != true
+        browser.prefs.bookmarksBar && !browser.bookmarks.isEmpty && !window.folded
+            && window.active?.immersed != true
     }
 
     /// The room the page is laid out to leave them, which is not animated.
@@ -410,8 +412,8 @@ struct ContentView: View {
     /// own whenever a tab has nowhere to be yet.
     @ViewBuilder
     private var field: some View {
-        if browser.fieldShowing {
-            Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
+        if window.fieldShowing {
+            Omnibox(window: window, over: !(window.active?.isBlank ?? true))
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
                 // with the page says otherwise.
@@ -465,12 +467,12 @@ struct ContentView: View {
     var body: some View {
         window_
             // The column folded away, and out again at the edge (see Fold.swift).
-            .overlay(alignment: .leading) { Fold(browser: browser, prefs: browser.prefs) }
+            .overlay(alignment: .leading) { Fold(window: window, prefs: browser.prefs) }
             .overlay(alignment: .bottom) { bars }
             .overlay {
                 // Over the page only: the column, the strip and the bookmarks
                 // bar stay as they are, uncovered and in reach.
-                PeekLayer(browser: browser)
+                PeekLayer(window: window)
                     .padding(.leading, chrome.width)
                     .padding(.top, chrome.height)
                     // From the window's own top edge, as the page is:
@@ -482,8 +484,8 @@ struct ContentView: View {
             // The field comes on its spring, and goes quickly: once Return
             // is pressed the page is on its way, and the field is not what
             // there is to watch.
-            .animation(browser.fieldShowing ? Motion.settle : Motion.quick, value: browser.fieldShowing)
-            .background(WindowSetup { window = $0; dress($0) })
+            .animation(window.fieldShowing ? Motion.settle : Motion.quick, value: window.fieldShowing)
+            .background(WindowSetup { host = $0; dress($0) })
             .onChange(of: browser.prefs.sidebar) { _, _ in
                 DispatchQueue.main.async { measureLights() }
             }
@@ -497,20 +499,20 @@ struct ContentView: View {
                 browser.appLeft()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { Browser.front = browser }
+                if let host, (note.object as? NSWindow) === host { Browser.front = browser }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
                 browser.appBack()
             }
-            .onChange(of: browser.fieldShowing) { _, showing in
+            .onChange(of: window.fieldShowing) { _, showing in
                 if showing {
-                    DispatchQueue.main.async { browser.askFocus() }
+                    DispatchQueue.main.async { window.askFocus() }
                 } else {
                     handBack()
                 }
             }
-            .onChange(of: browser.activeID) { _, _ in handBack() }
+            .onChange(of: window.activeID) { _, _ in handBack() }
             .animation(Motion.settle, value: browser.recalling)
             .animation(Motion.settle, value: browser.hoarding)
             .animation(Motion.settle, value: browser.tuning)
@@ -520,7 +522,7 @@ struct ContentView: View {
             .animation(Motion.settle, value: browser.reviewing)
         .onAppear {
             watchKeys()
-            browser.askFocus()
+            window.askFocus()
             // Addresses from other apps have somewhere to go from here on.
             Links.hand(to: browser)
             BookmarkMenu.shared.start(for: browser)
@@ -535,9 +537,9 @@ struct ContentView: View {
     /// WebAuthn refuses to run on a document that isn't focused, and so do a
     /// number of paste and shortcut handlers pages install for themselves.
     private func handBack() {
-        guard !browser.fieldShowing, browser.editingTab == nil else { return }
+        guard !window.fieldShowing, window.editingTab == nil else { return }
         DispatchQueue.main.async {
-            guard let web = browser.active?.web, let window = web.window else { return }
+            guard let web = window.active?.web, let window = web.window else { return }
             window.makeFirstResponder(web)
         }
     }
@@ -670,21 +672,21 @@ struct ContentView: View {
 
     /// True while the tabs are down the left, and not folded away (see Fold.swift).
     private var sidebar: Bool {
-        browser.prefs.sidebar && !browser.folded && browser.active?.immersed != true
+        browser.prefs.sidebar && !window.folded && window.active?.immersed != true
     }
 
     /// The column has its own corner for the lights, so the page beside it
     /// starts at the very top; the strip needs a band.
     private var band: CGFloat {
-        guard browser.active?.immersed != true else { return 0 }
+        guard window.active?.immersed != true else { return 0 }
         // Folded, the strip is out of the window and the page has its height.
-        return browser.prefs.sidebar || browser.folded ? 0 : Metrics.strip
+        return browser.prefs.sidebar || window.folded ? 0 : Metrics.strip
     }
 
     /// Put the resting circles in the title bar, exactly over the buttons.
     private func measureLights() {
-        guard let window,
-              let close = window.standardWindowButton(.closeButton),
+        guard let host,
+              let close = host.standardWindowButton(.closeButton),
               let titlebar = close.superview
         else { return }
 
@@ -696,7 +698,7 @@ struct ContentView: View {
             resting = view
         }
         view.spots = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
-            .compactMap { window.standardWindowButton($0) }
+            .compactMap { host.standardWindowButton($0) }
             .map { $0.convert($0.bounds, to: titlebar) }
         view.isHidden = NSApp.isActive
     }
@@ -756,7 +758,7 @@ struct ContentView: View {
         keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
             guard event.type == .keyDown else {
                 // ⌘ let go of ends a ⌘K walk, wherever it stopped.
-                if !event.modifierFlags.contains(.command) { browser.landSummon() }
+                if !event.modifierFlags.contains(.command) { window.landSummon() }
                 return event
             }
             return take(event) ? nil : event
@@ -806,16 +808,16 @@ struct ContentView: View {
         // Escape puts the page back. On a blank tab there is no page to put
         // back, so it belongs to whatever else wants it.
         if event.keyCode == 53 {
-            if browser.editingTab != nil {
-                browser.cancelTabEdit()
+            if window.editingTab != nil {
+                window.cancelTabEdit()
                 return true
             }
-            if browser.peekTab != nil {
-                browser.closePeek()
+            if window.peekTab != nil {
+                window.closePeek()
                 return true
             }
-            if browser.makingSpace {
-                withAnimation(Motion.glide) { browser.makingSpace = false }
+            if window.makingSpace {
+                withAnimation(Motion.glide) { window.makingSpace = false }
                 return true
             }
             if browser.tuning {
@@ -850,17 +852,17 @@ struct ContentView: View {
                 browser.reviewing = false
                 return true
             }
-            if browser.finding {
-                browser.closeFind()
+            if window.finding {
+                window.closeFind()
                 return true
             }
             // One step at a time: the list first, then the field.
-            if browser.picked != nil {
-                browser.picked = nil
+            if window.picked != nil {
+                window.picked = nil
                 return true
             }
-            guard browser.editing, browser.active?.isBlank == false else { return false }
-            browser.dismiss()
+            guard window.editing, window.active?.isBlank == false else { return false }
+            window.dismiss()
             return true
         }
 
@@ -874,12 +876,12 @@ struct ContentView: View {
         // there is to move through, and Return takes whatever the walk landed on.
         if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option) {
             if flags.contains(.control) {
-                browser.step(flags.contains(.shift) ? -1 : 1)
+                window.step(flags.contains(.shift) ? -1 : 1)
                 return true
             }
-            if browser.editingTab != nil { return true }
-            if browser.fieldShowing, !browser.offers.isEmpty {
-                browser.walk(flags.contains(.shift) ? -1 : 1)
+            if window.editingTab != nil { return true }
+            if window.fieldShowing, !window.offers.isEmpty {
+                window.walk(flags.contains(.shift) ? -1 : 1)
                 return true
             }
             return false
@@ -890,7 +892,7 @@ struct ContentView: View {
         if browser.prefs.usesSpaces, flags.contains(.control),
            flags.isDisjoint(with: [.command, .option, .shift]),
            let number = ContentView.digits[event.keyCode], number > 0 {
-            browser.switchSpace(index: number - 1)
+            window.switchSpace(index: number - 1)
             return true
         }
 
@@ -914,9 +916,9 @@ struct ContentView: View {
         // in every other browser. The ninth is the last tab, however many.
         if !shifted, let number = ContentView.digits[event.keyCode] {
             if number == 0 {
-                browser.resetZoom()
+                window.resetZoom()
             } else {
-                browser.select(index: number == 9 ? browser.tabs.count - 1 : number - 1)
+                window.select(index: number == 9 ? window.tabs.count - 1 : number - 1)
             }
             return true
         }
@@ -926,15 +928,15 @@ struct ContentView: View {
 
         switch key {
         case "t" where !shifted:
-            browser.newTab()
+            window.newTab()
         case "t" where shifted:
-            browser.reopen()
+            window.reopen()
         case "c" where shifted:
-            browser.copyAddress()
+            window.copyAddress()
         case "d" where !shifted:
-            browser.duplicate()
+            window.duplicate()
         case "n" where shifted:
-            browser.newShyTab()
+            window.newShyTab()
         case "y" where !shifted:
             browser.recalling.toggle()
         case "j" where shifted:
@@ -948,35 +950,35 @@ struct ContentView: View {
             // A web view has an input context only while the caret is in
             // something editable, in any frame — including frames the page's
             // own script can't look into, like the one a Google Doc types in.
-            if browser.active?.typing == true || browser.active?.built?.inputContext != nil
-                || browser.editing || event.window?.firstResponder is NSTextView {
+            if window.active?.typing == true || window.active?.built?.inputContext != nil
+                || window.editing || event.window?.firstResponder is NSTextView {
                 _ = event.window?.firstResponder?.tryToPerform(#selector(NSTextView.pasteAsPlainText(_:)), with: nil)
             } else {
-                browser.pasteAndGo()
+                window.pasteAndGo()
             }
         case "p" where !shifted:
             browser.printPage()
         case "f" where !shifted:
-            browser.openFind()
+            window.openFind()
         case "g":
-            browser.look(forward: !shifted)
+            window.look(forward: !shifted)
         case "m" where shifted:
-            browser.pauseMedia()
+            window.pauseMedia()
         case "p" where shifted:
             browser.toggleFloat()
         case "k" where !shifted:
             // Held down, ⌘K walks the list a step at a time; letting go of ⌘
             // takes wherever it stopped.
-            if browser.editing, !browser.offers.isEmpty {
-                browser.stepSummon()
+            if window.editing, !window.offers.isEmpty {
+                window.stepSummon()
             } else {
-                browser.summon()
+                window.summon()
             }
         case "s" where shifted:
             browser.toggleSidebar()
         case "s" where !shifted:
             // The column or the strip, folded away (see Fold.swift).
-            browser.toggleFold()
+            window.toggleFold()
         case "b" where shifted:
             browser.bookmarkCurrent()
         case "," where !shifted:
@@ -991,36 +993,36 @@ struct ContentView: View {
             browser.undoHiding()
         // ⌘+ arrives as "=" or "+" depending on the keyboard; both mean bigger.
         case "=", "+":
-            browser.zoom(by: 1.1)
+            window.zoom(by: 1.1)
         case "-":
-            browser.zoom(by: 1 / 1.1)
+            window.zoom(by: 1 / 1.1)
         case "0":
-            browser.resetZoom()
+            window.resetZoom()
         case "w" where !shifted:
-            if browser.peekTab != nil {
-                browser.closePeek()
-            } else if let tab = browser.active {
-                browser.close(tab)
+            if window.peekTab != nil {
+                window.closePeek()
+            } else if let tab = window.active {
+                browser.closeTab(tab)
             }
         case "l" where !shifted:
-            browser.edit()
+            window.edit()
         case "r" where !shifted:
-            browser.reload()
+            window.reload()
         case "r" where shifted:
-            browser.toggleReader()
+            window.toggleReader()
         case "[":
-            shifted ? browser.step(-1) : browser.back()
+            shifted ? window.step(-1) : window.back()
         case "]":
-            shifted ? browser.step(1) : browser.forward()
+            shifted ? window.step(1) : window.forward()
         default:
             // Moving or selecting text belongs to the editor, not the page's
             // history — in web forms and in the browser's own fields alike.
-            guard !shifted, browser.active?.typing != true,
+            guard !shifted, window.active?.typing != true,
                   !(event.window?.firstResponder is NSTextView)
             else { return false }
             // ⌘← and ⌘→, for hands that never learned the brackets.
-            if event.keyCode == 123 { browser.back(); return true }
-            if event.keyCode == 124 { browser.forward(); return true }
+            if event.keyCode == 123 { window.back(); return true }
+            if event.keyCode == 124 { window.forward(); return true }
             return false
         }
         return true

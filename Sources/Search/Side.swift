@@ -7,7 +7,9 @@ import SwiftUI
 /// other way. The traffic lights keep their corner; the column starts under
 /// them and the page takes the whole height beside it.
 struct SideBar: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
     @ObservedObject var prefs: Preferences
 
     @Namespace private var pill
@@ -37,7 +39,7 @@ struct SideBar: View {
         ZStack(alignment: .top) {
             // Not under the card for a new space: it isn't made of views that
             // would take the click first.
-            DragStrip(reserved: 0, below: browser.makingSpace ? .greatestFiniteMagnitude : rowsEnd)
+            DragStrip(reserved: 0, below: window.makingSpace ? .greatestFiniteMagnitude : rowsEnd)
 
             // The band the lights sit in is this mode's title bar: the window
             // is dragged by it and a double-click fills the screen with it,
@@ -60,7 +62,7 @@ struct SideBar: View {
                 // row to put them at in this mode.
                 HStack(spacing: 0) {
                     Color.clear.frame(width: Metrics.sideLights)
-                    Helm(browser: browser)
+                    Helm(window: window)
                     Spacer(minLength: 0)
                 }
                 .frame(height: Metrics.strip)
@@ -92,13 +94,13 @@ struct SideBar: View {
         }
         .overlay(alignment: .trailing) { edge }
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
-            browser.take(providers)
+            window.take(providers)
         }
         .animation(Motion.quick, value: landing)
-        .animation(Motion.glide, value: browser.activeID)
-        .animation(Motion.glide, value: browser.editingTab)
-        .animation(Motion.settle, value: browser.tabs.map(\.id))
-        .animation(Motion.settle, value: browser.pinnedCount)
+        .animation(Motion.glide, value: window.activeID)
+        .animation(Motion.glide, value: window.editingTab)
+        .animation(Motion.settle, value: window.tabs.map(\.id))
+        .animation(Motion.settle, value: window.pinnedCount)
     }
 
     /// The column's edge: pull it to make the column wider or narrower,
@@ -134,12 +136,12 @@ struct SideBar: View {
     /// Where the space on screen sits among them: one past the last while
     /// the card for a new one is up.
     private var spaceAt: Int {
-        browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
+        window.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == window.spaceID } ?? 0)
     }
 
     private var pages: some View {
         let width = prefs.sideWidth
-        let swipe = browser.spaceSwipe
+        let swipe = window.spaceSwipe
         let at = spaceAt
         return ZStack(alignment: .topLeading) {
             page(at, pill: pill)
@@ -168,14 +170,14 @@ struct SideBar: View {
             if index == browser.spaces.count {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    NewSpaceCard(browser: browser)
+                    NewSpaceCard(window: window)
                     Spacer(minLength: 0)
                     Spacer(minLength: 0)
                 }
                 .frame(maxHeight: .infinity)
-            } else if browser.spaces[index].id == browser.spaceID {
+            } else if browser.spaces[index].id == window.spaceID {
                 VStack(alignment: .leading, spacing: 0) {
-                    if browser.pinnedCount > 0 {
+                    if window.pinnedCount > 0 {
                         pinned
                             .padding(.bottom, 10)
                     }
@@ -201,18 +203,18 @@ struct SideBar: View {
                             .padding(.trailing, -10)
                             // The tab you go to is the tab you see — ⌘1–⌘9,
                             // ⇧⌘], a link opening beside the one on screen.
-                            .onChange(of: browser.activeID) { _, id in
+                            .onChange(of: window.activeID) { _, id in
                                 guard let id else { return }
                                 withAnimation(Motion.glide) { proxy.scrollTo(id) }
                             }
                             .onAppear {
-                                if let id = browser.activeID { proxy.scrollTo(id, anchor: .center) }
+                                if let id = window.activeID { proxy.scrollTo(id, anchor: .center) }
                             }
                         }
                     }
                 }
             } else {
-                preview(browser.parked[browser.spaces[index].id] ?? Parked(tabs: [], active: nil), pill: pill)
+                preview(window.parked[browser.spaces[index].id] ?? Parked(tabs: [], active: nil), pill: pill)
             }
         }
         .padding(.horizontal, 10)
@@ -233,7 +235,7 @@ struct SideBar: View {
                 VStack(spacing: 0) {
                     PinGrid(columns: cols, width: width, height: height, spacing: SideBar.pinGap) {
                         ForEach(pins) { tab in
-                            PinSquare(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
+                            PinSquare(window: window, prefs: prefs, tab: tab, live: tab.id == row.active,
                                       pill: pill, width: width, height: height)
                         }
                     }
@@ -242,7 +244,7 @@ struct SideBar: View {
             }
             VStack(spacing: SideBar.gap) {
                 ForEach(rest) { tab in
-                    SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active, pill: pill, close: {})
+                    SideRow(window: window, prefs: prefs, tab: tab, live: tab.id == row.active, pill: pill, close: {})
                 }
             }
             newTab
@@ -254,19 +256,19 @@ struct SideBar: View {
     /// from what was drawn rather than measured: a measurement would arrive a
     /// frame late, and for one frame the whole column would drag the window.
     private var rowsEnd: CGFloat {
-        let pins = browser.pinnedCount
+        let pins = window.pinnedCount
         let cols = SideBar.pinColumns(pins)
         let pinRows = pins == 0 ? 0 : (pins + cols - 1) / cols
         let pinBlock = pinRows == 0 ? 0
             : CGFloat(pinRows) * pinHeight + CGFloat(pinRows - 1) * SideBar.pinGap + 10
-        let loose = CGFloat(browser.tabs.count - pins) * (SideBar.row + SideBar.gap)
+        let loose = CGFloat(window.tabs.count - pins) * (SideBar.row + SideBar.gap)
         return Metrics.strip + pinBlock + loose + SideBar.row + 8
     }
 
     // MARK: - the pinned squares
 
-    private var pinnedTabs: [Tab] { browser.tabs.filter { $0.pin != nil } }
-    private var looseTabs: [Tab] { browser.tabs.filter { $0.pin == nil } }
+    private var pinnedTabs: [Tab] { window.tabs.filter { $0.pin != nil } }
+    private var looseTabs: [Tab] { window.tabs.filter { $0.pin == nil } }
 
     /// Three columns is the block's own shape — up to six pins, that's two
     /// full rows, and one or two is just those same three places with a
@@ -281,7 +283,7 @@ struct SideBar: View {
     /// width between them — the row is what fills edge to edge, not each
     /// cell on its own, so this grows past 34 just as readily as it shrinks
     /// below it.
-    private var pinWidth: CGFloat { pinWidth(for: browser.pinnedCount) }
+    private var pinWidth: CGFloat { pinWidth(for: window.pinnedCount) }
 
     private func pinWidth(for count: Int) -> CGFloat {
         let cols = SideBar.pinColumns(count)
@@ -314,10 +316,10 @@ struct SideBar: View {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
                 let held = pinDragging == tab.id
                 PinSquare(
-                    browser: browser,
+                    window: window,
                     prefs: prefs,
                     tab: tab,
-                    live: tab.id == browser.activeID,
+                    live: tab.id == window.activeID,
                     pill: pill,
                     width: width,
                     height: height
@@ -334,7 +336,7 @@ struct SideBar: View {
     }
 
     /// The one square actually held stays glued to the fingers; every other
-    /// square is already exactly where it belongs, because `browser.move`
+    /// square is already exactly where it belongs, because `window.move`
     /// put it there — this only cancels out the bit of that same movement
     /// the held square already got for free by changing index underneath
     /// its own drag.
@@ -380,7 +382,7 @@ struct SideBar: View {
                 let target = pinTarget(from: pinFrom, moved: pinDelta(columns: columns, stepX: stepX, stepY: stepY))
                 if target != index {
                     withAnimation(Motion.settle) {
-                        browser.move(tab, to: target)
+                        window.move(tab, to: target)
                     }
                 }
             }
@@ -401,17 +403,17 @@ struct SideBar: View {
             ForEach(Array(looseTabs.enumerated()), id: \.element.id) { index, tab in
                 let step = SideBar.row + SideBar.gap
                 SideRow(
-                    browser: browser,
+                    window: window,
                     prefs: prefs,
                     tab: tab,
-                    live: tab.id == browser.activeID,
+                    live: tab.id == window.activeID,
                     pill: pill,
-                    close: { browser.close(tab) }
+                    close: { window.close(tab) }
                 )
                 // Positions here are among the loose rows; the pinned block
                 // sits in front of them in the real list.
                 .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true, space: "rows") {
-                    browser.move(tab, to: $0 + browser.pinnedCount)
+                    window.move(tab, to: $0 + window.pinnedCount)
                 })
             }
         }
@@ -430,17 +432,17 @@ struct SideBar: View {
     private static let footHeight: CGFloat = 26 + 10
 
     private var newTab: some View {
-        Quiet(icon: "plus", title: "New tab", height: SideBar.row) { browser.newTab() }
+        Quiet(icon: "plus", title: "New tab", height: SideBar.row) { window.newTab() }
             .padding(.top, SideBar.gap)
     }
 
     /// One small door at the bottom: the settings.
     private var foot: some View {
         HStack(spacing: 2) {
-            if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
+            if browser.prefs.usesSpaces { SpaceDot(window: window) }
             ExtensionSlot(edge: .trailing)
             Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
-                .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .trailing) {
+                .popover(isPresented: Binding(get: { browser.bookmarksOpen }, set: { browser.bookmarksOpen = $0 }), arrowEdge: .trailing) {
                     BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
                 }
             Spacer(minLength: 0)
@@ -487,7 +489,9 @@ private struct PinGrid: Layout {
 /// its row asks for, but never taller than the classic square, so a row with
 /// room to spare turns into a wide, short button rather than a bigger icon.
 private struct PinSquare: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
     let live: Bool
@@ -504,8 +508,8 @@ private struct PinSquare: View {
 
     var body: some View {
         Group {
-            if browser.editingPin == tab.id {
-                PinField(browser: browser, tab: tab)
+            if window.editingPin == tab.id {
+                PinField(window: window, tab: tab)
             } else if prefs.glyph == .icons, let icon = tab.icon {
                 Mark(icon: icon, letter: tab.pin ?? "", size: scale * 16 / 34, dim: tab.asleep)
             } else {
@@ -528,12 +532,12 @@ private struct PinSquare: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
         .modifier(OneClick(double: live) {
-            if live { browser.editLetter(tab) } else { browser.select(tab) }
+            if live { window.editLetter(tab) } else { window.select(tab) }
         })
         // Put down, like ⌘W: close() is what knows a pin isn't removed.
-        .overlay { MiddleClick { browser.close(tab) } }
+        .overlay { MiddleClick { window.close(tab) } }
         .onHover { hovering = $0 }
-        .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
+        .contextMenu { TabMenu(window: window, tab: tab, close: { window.close(tab) }) }
         .help(tab.label)
         .animation(Motion.quick, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -542,7 +546,9 @@ private struct PinSquare: View {
 
 /// One tab, as a line in the column.
 private struct SideRow: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
     let live: Bool
@@ -552,7 +558,7 @@ private struct SideRow: View {
     @State private var hovering = false
     @State private var shake: CGFloat = 0
 
-    private var editing: Bool { browser.editingTab == tab.id }
+    private var editing: Bool { window.editingTab == tab.id }
 
     /// The ring or the speaker, which stay for as long as the page loads or
     /// plays (or is muted) and so keep a place of their own at the end of the
@@ -565,7 +571,7 @@ private struct SideRow: View {
     var body: some View {
         HStack(spacing: 8) {
             if editing {
-                TabAddressField(browser: browser)
+                TabAddressField(window: window)
                     .frame(height: 16)
             } else {
                 if prefs.glyph == .icons, !tab.isBlank {
@@ -652,14 +658,14 @@ private struct SideRow: View {
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
-            if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
+            if live { window.beginTabEdit(tab) } else { window.select(tab) }
         })
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
-        .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
+        .contextMenu { TabMenu(window: window, tab: tab, close: close) }
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)
-        .onChange(of: browser.refusals) { _, _ in
+        .onChange(of: window.refusals) { _, _ in
             guard editing else { return }
             shake = 0
             withAnimation(.easeOut(duration: 0.5)) { shake = 1 }

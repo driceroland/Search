@@ -33,24 +33,11 @@ import SwiftUI
 // rests against the top edge. There the edge is crossed on every trip to the
 // menu bar just above, so the strip always waits for the pointer to settle.
 
-extension Browser {
-    /// ⌘S. The column, or the strip across the top, out of the way, or back.
-    func toggleFold() {
-        peeking = false
-        withAnimation(Motion.glide) { folded.toggle() }
-    }
-
-    /// The folded column out over the page, or back in.
-    func peek(_ out: Bool) {
-        withAnimation(Motion.glide) { peeking = out }
-    }
-}
-
 /// Over the window while the column or the strip is folded: the column or
 /// the strip itself while it is out, brought out by the pointer at the
 /// window's left edge, or its top edge.
 struct Fold: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
     @ObservedObject var prefs: Preferences
 
     /// The column going back in, a moment after the pointer left it.
@@ -81,18 +68,18 @@ struct Fold: View {
             // gone when folded. A band too thin to be in a page's way stands
             // in for the title bar along the whole top; the column lies over
             // it with its own.
-            if prefs.sidebar, browser.active?.immersed != true {
+            if prefs.sidebar, window.active?.immersed != true {
                 DragStrip()
                     .frame(height: Fold.top)
                     .frame(maxWidth: .infinity)
             }
-            if folding, !prefs.sidebar, browser.peeking {
+            if folding, !prefs.sidebar, window.peeking {
                 // The row has no ground of its own: in the window it lies on
                 // the window's. Out over the page it brings that ground along,
                 // as the column does, or the page showed through between the
                 // tabs, and the shadow fell from every title and icon rather
                 // than from the row's edge.
-                TabBar(browser: browser)
+                TabBar(window: window)
                     .background {
                         Palette.ground
                             .shadow(color: .black.opacity(0.14), radius: 20, y: 4)
@@ -101,8 +88,8 @@ struct Fold: View {
             }
             ZStack(alignment: .leading) {
                 Color.clear.frame(width: 0)
-                if folding, prefs.sidebar, browser.peeking {
-                    SideBar(browser: browser, prefs: prefs)
+                if folding, prefs.sidebar, window.peeking {
+                    SideBar(window: window, prefs: prefs)
                         .shadow(color: .black.opacity(0.14), radius: 20, x: 4)
                         .transition(.move(edge: .leading))
                 }
@@ -129,28 +116,28 @@ struct Fold: View {
         // back as it rests — whole, not folded from a time nobody remembers,
         // unless Settings says it rests folded.
         .onChange(of: prefs.sidebar) { _, _ in
-            browser.folded = prefs.sidebar && prefs.sideHides
-            browser.peeking = false
+            window.folded = prefs.sidebar && prefs.sideHides
+            window.peeking = false
         }
         .onChange(of: prefs.sideHides) { _, hides in
             guard prefs.sidebar else { return }
-            browser.peeking = false
-            withAnimation(Motion.glide) { browser.folded = hides }
+            window.peeking = false
+            withAnimation(Motion.glide) { window.folded = hides }
         }
         // The address typed into a row is done with, and the pointer went
         // elsewhere while it was: the column goes the way it would have.
-        .onChange(of: browser.editingTab) { _, editing in
-            if editing == nil, !inside, browser.peeking { peek(false) }
+        .onChange(of: window.editingTab) { _, editing in
+            if editing == nil, !inside, window.peeking { peek(false) }
         }
     }
 
     /// Folded, and not taken over by a page filling the screen.
     private var folding: Bool {
-        browser.folded && browser.active?.immersed != true
+        window.folded && window.active?.immersed != true
     }
 
     private var lightsOff: Bool {
-        browser.folded && !browser.peeking
+        window.folded && !window.peeking
     }
 
     /// The pointer is watched only while there is something folded for it
@@ -169,20 +156,20 @@ struct Fold: View {
     /// and after a few quick opens and closes the column stayed open, or the
     /// edge stopped opening it.
     private func follow() {
-        guard folding, let window = pointer.window, window.isVisible else { return pass() }
+        guard folding, let host = pointer.window, host.isVisible else { return pass() }
         let screen = NSEvent.mouseLocation
-        let point = window.convertPoint(fromScreen: screen)
-        let size = window.frame.size
+        let point = host.convertPoint(fromScreen: screen)
+        let size = host.frame.size
         let inWindow = point.x >= 0 && point.x < size.width && point.y >= 0 && point.y < size.height
         // Distance from the left edge for the column, from the top for the strip.
         let distance = prefs.sidebar ? point.x : size.height - point.y
-        if browser.peeking {
+        if self.window.peeking {
             pass()
             // Only this window counts, not another app's window over it. One
             // of this app's own windows, such as a popover opened from the
             // column, counts as the column.
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
-            let onWindow = top == window.windowNumber
+            let onWindow = top == host.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
             let reach = prefs.sidebar ? prefs.sideWidth : Metrics.strip
             let over = onOwnPanel || (onWindow && inWindow && distance < reach)
@@ -191,7 +178,7 @@ struct Fold: View {
         } else if inWindow, distance < Fold.edge {
             // Which window is under the pointer is asked only here, at the
             // edge: another app's window over it doesn't bring the column out.
-            guard NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber
+            guard NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == host.windowNumber
             else { return pass() }
             if arriving == nil { arrive() }
         } else {
@@ -228,14 +215,14 @@ struct Fold: View {
                 leaving.cancel()
                 self.leaving = nil
             }
-            guard !browser.peeking else { return }
-            browser.peek(true)
+            guard !window.peeking else { return }
+            window.peek(true)
         } else {
             guard leaving == nil else { return }
             let going = DispatchWorkItem {
                 leaving = nil
-                guard browser.editingTab == nil else { return }
-                browser.peek(false)
+                guard window.editingTab == nil else { return }
+                window.peek(false)
             }
             leaving = going
             DispatchQueue.main.asyncAfter(deadline: .now() + Fold.grace, execute: going)
