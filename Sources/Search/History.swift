@@ -13,7 +13,7 @@ struct Suggestion: Identifiable, Equatable {
     /// Set when this is a page you already have open somewhere.
     var tab: UUID?
 
-    enum Kind {
+    enum Kind: Equatable {
         /// A page that is open right now.
         case open
         /// Somewhere you have actually been.
@@ -22,9 +22,20 @@ struct Suggestion: Identifiable, Equatable {
         case known
         /// Not a place at all — words, and an engine to ask.
         case search
+        /// Not a place either — something the app itself does.
+        case command(Command)
+
+        var isCommand: Bool { if case .command = self { return true }; return false }
     }
 
     var id: String { key }
+
+    /// A command goes nowhere, but the field still needs *a* URL to carry —
+    /// `take` and `submit` read the kind first and never follow this one.
+    @MainActor
+    static func command(_ command: Command) -> Suggestion {
+        Suggestion(key: command.title, title: "", url: URL(string: "about:blank")!, kind: .command(command))
+    }
 }
 
 private struct Visit: Codable {
