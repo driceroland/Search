@@ -1060,8 +1060,6 @@ final class Browser: NSObject, ObservableObject {
             let loose = others.filter { $0.pin == nil }
             if let back = (loose.isEmpty ? others : loose).max(by: { $0.touched < $1.touched }) {
                 select(back)
-            } else if let asleepPin = tabs.first(where: { $0.id != tab.id }) {
-                select(asleepPin)
             } else {
                 newTab()
             }
