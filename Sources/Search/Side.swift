@@ -25,6 +25,7 @@ struct SideBar: View {
     @Namespace private var after
 
     @State private var pinDragging: Tab.ID?
+    @State private var groupFrames: [UUID: CGRect] = [:]
     @State private var pinFrom = 0
     @State private var pinTravel: CGSize = .zero
 
@@ -259,14 +260,19 @@ struct SideBar: View {
         let pinRows = pins == 0 ? 0 : (pins + cols - 1) / cols
         let pinBlock = pinRows == 0 ? 0
             : CGFloat(pinRows) * pinHeight + CGFloat(pinRows - 1) * SideBar.pinGap + 10
-        let loose = CGFloat(browser.tabs.count - pins) * (SideBar.row + SideBar.gap)
+        let count = prefs.usesTabGroups
+            ? browser.tabs(in: nil).count + browser.tabGroups.reduce(0) { $0 + 1 + browser.visibleTabs(in: $1).count }
+            : browser.tabs.count - pins
+        let loose = CGFloat(count) * (SideBar.row + SideBar.gap)
         return Metrics.strip + pinBlock + loose + SideBar.row + 8
     }
 
     // MARK: - the pinned squares
 
     private var pinnedTabs: [Tab] { browser.tabs.filter { $0.pin != nil } }
-    private var looseTabs: [Tab] { browser.tabs.filter { $0.pin == nil } }
+    private var looseTabs: [Tab] {
+        browser.tabs.filter { $0.pin == nil && (!prefs.usesTabGroups || $0.groupID == nil) }
+    }
 
     /// Three columns is the block's own shape — up to six pins, that's two
     /// full rows, and one or two is just those same three places with a
@@ -396,6 +402,14 @@ struct SideBar: View {
 
     private var loose: some View {
         VStack(spacing: SideBar.gap) {
+            if prefs.usesTabGroups {
+                ForEach(browser.tabGroups) { group in
+                    GroupHeading(browser: browser, group: group, dragSpace: "rows")
+                    if !group.collapsed || browser.visibleTabs(in: group).count > 0 {
+                        groupRows(group)
+                    }
+                }
+            }
             // See the grid: the drag is measured in the column's space, not
             // the row's, so a row that has just moved keeps its bearings.
             ForEach(Array(looseTabs.enumerated()), id: \.element.id) { index, tab in
@@ -410,12 +424,42 @@ struct SideBar: View {
                 )
                 // Positions here are among the loose rows; the pinned block
                 // sits in front of them in the real list.
-                .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true, space: "rows") {
-                    browser.move(tab, to: $0 + browser.pinnedCount)
+                .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true,
+                                  space: "rows", onDrop: { point in drop(tab, at: point) }) {
+                    if prefs.usesTabGroups {
+                        browser.move(tab, within: nil, to: $0)
+                    } else {
+                        browser.move(tab, to: $0 + browser.pinnedCount)
+                    }
                 })
             }
         }
         .coordinateSpace(name: "rows")
+        .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
+    }
+
+    private func drop(_ tab: Tab, at point: CGPoint) {
+        guard prefs.usesTabGroups, tab.pin == nil else { return }
+        if let id = groupFrames.first(where: { $0.value.contains(point) })?.key {
+            browser.move(tab, toGroup: id)
+        }
+    }
+
+    private func groupRows(_ group: TabGroup) -> some View {
+        let members = browser.visibleTabs(in: group)
+        return VStack(spacing: SideBar.gap) {
+            ForEach(Array(members.enumerated()), id: \.element.id) { index, tab in
+                SideRow(browser: browser, prefs: prefs, tab: tab,
+                        live: tab.id == browser.activeID, pill: pill,
+                        close: { browser.close(tab) })
+                    .padding(.leading, 14)
+                    .modifier(Carried(index: index, count: members.count,
+                                      step: SideBar.row + SideBar.gap, vertical: true,
+                                      space: "rows", onDrop: { point in drop(tab, at: point) }) {
+                        browser.move(tab, within: group.id, to: $0)
+                    })
+            }
+        }
     }
 
     /// The loose tabs and the row that makes another, which scroll as one.
@@ -432,6 +476,9 @@ struct SideBar: View {
     private var newTab: some View {
         Quiet(icon: "plus", title: "New tab", height: SideBar.row) { browser.newTab() }
             .padding(.top, SideBar.gap)
+            .contextMenu {
+                if prefs.usesTabGroups { Button("New Group") { browser.addTabGroup() } }
+            }
     }
 
     /// One small door at the bottom: the settings.
