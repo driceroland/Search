@@ -207,6 +207,10 @@ final class Preferences: ObservableObject {
     @Published var usesSpaces: Bool {
         didSet { store.set(usesSpaces, forKey: "spaces") }
     }
+    /// Named, collapsible sections in the sidebar. Off unless asked for.
+    @Published var usesTabGroups: Bool {
+        didSet { store.set(usesTabGroups, forKey: "tabs.groups") }
+    }
 
     init() {
         // Carried over from when there were four ways of holding the browser
@@ -269,6 +273,7 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
+        usesTabGroups = store.bool(forKey: "tabs.groups")
         let flicks = store.bool(forKey: "float.flicks")
         floatFlicks = flicks
         Float.flicks = flicks

@@ -13,6 +13,7 @@ struct TabBar: View {
 
     /// Which tab is under the hand, where it started, and how far it has come.
     @State private var landing = false
+    @State private var groupFrames: [UUID: CGRect] = [:]
     /// The plus only comes out when the pointer is in the row.
     @State private var nearby = false
     @State private var plussed = false
@@ -57,27 +58,35 @@ struct TabBar: View {
                             ScrollViewReader { reader in
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: Metrics.tabGap) {
-                                        ForEach(Array(browser.tabs.enumerated()), id: \.element.id) { index, tab in
-                                            // A pinned square moves among pinned squares, a title
-                                            // among titles: each has its own stride.
-                                            let step = (tab.pin != nil ? Metrics.pinWidth : width(in: geo.size.width)) + Metrics.tabGap
-                                            TabPill(
-                                                browser: browser,
-                                                prefs: browser.prefs,
-                                                tab: tab,
-                                                live: tab.id == browser.activeID,
-                                                width: width(in: geo.size.width),
-                                                room: geo.size.width - Metrics.lights - 12,
-                                                pill: pill,
-                                                close: { browser.close(tab) }
-                                            )
-                                            .modifier(Carried(index: index, count: browser.tabs.count, step: step, vertical: false, space: "strip") {
-                                                browser.move(tab, to: $0)
-                                            })
-                                            .id(tab.id)
+                                        if browser.prefs.usesTabGroups {
+                                            let pins = browser.tabs.filter { $0.pin != nil }
+                                            ForEach(Array(pins.enumerated()), id: \.element.id) { index, tab in
+                                                topTab(tab, index: index, count: pins.count,
+                                                       group: nil, strip: geo.size.width)
+                                            }
+                                            ForEach(browser.tabGroups) { group in
+                                                GroupHeading(browser: browser, group: group,
+                                                             horizontal: true, dragSpace: "strip")
+                                                let members = browser.visibleTabs(in: group)
+                                                ForEach(Array(members.enumerated()), id: \.element.id) { index, tab in
+                                                    topTab(tab, index: index, count: members.count,
+                                                           group: group.id, strip: geo.size.width)
+                                                }
+                                            }
+                                            let ungrouped = browser.tabs(in: nil)
+                                            ForEach(Array(ungrouped.enumerated()), id: \.element.id) { index, tab in
+                                                topTab(tab, index: index, count: ungrouped.count,
+                                                       group: nil, strip: geo.size.width)
+                                            }
+                                        } else {
+                                            ForEach(Array(browser.tabs.enumerated()), id: \.element.id) { index, tab in
+                                                topTab(tab, index: index, count: browser.tabs.count,
+                                                       group: nil, strip: geo.size.width)
+                                            }
                                         }
                                     }
                                     .frame(height: Metrics.strip)
+                                    .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
                                 }
                                 .scrollDisabled(!overflowing(in: geo.size.width))
                                 .frame(width: run(in: geo.size.width))
@@ -228,6 +237,30 @@ struct TabBar: View {
         }
     }
 
+    private func topTab(_ tab: Tab, index: Int, count: Int, group: UUID?, strip: CGFloat) -> some View {
+        let step = (tab.pin != nil ? Metrics.pinWidth : width(in: strip)) + Metrics.tabGap
+        return TabPill(browser: browser, prefs: browser.prefs, tab: tab,
+                       live: tab.id == browser.activeID, width: width(in: strip),
+                       room: strip - Metrics.lights - 12, pill: pill,
+                       close: { browser.close(tab) })
+            .modifier(Carried(index: index, count: count, step: step, vertical: false,
+                              space: "strip", onDrop: { point in drop(tab, at: point) }) {
+                if browser.prefs.usesTabGroups && tab.pin == nil {
+                    browser.move(tab, within: group, to: $0)
+                } else {
+                    browser.move(tab, to: $0)
+                }
+            })
+            .id(tab.id)
+    }
+
+    private func drop(_ tab: Tab, at point: CGPoint) {
+        guard browser.prefs.usesTabGroups, tab.pin == nil else { return }
+        if let id = groupFrames.first(where: { $0.value.contains(point) })?.key {
+            browser.move(tab, toGroup: id)
+        }
+    }
+
     /// How wide the run of tabs is: as wide as the tabs while they fit, as
     /// wide as the room there is once they don't.
     private func run(in strip: CGFloat) -> CGFloat {
@@ -243,9 +276,13 @@ struct TabBar: View {
     private func content(in strip: CGFloat) -> CGFloat {
         let each = width(in: strip)
         let pinned = CGFloat(browser.pinnedCount)
-        let loose = CGFloat(browser.tabs.count) - pinned
+        let loose = browser.prefs.usesTabGroups
+            ? CGFloat(browser.tabs(in: nil).count + browser.tabGroups.reduce(0) { $0 + browser.visibleTabs(in: $1).count })
+            : CGFloat(browser.tabs.count) - pinned
+        let headers = browser.prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) : 0
+        let shown = Int(pinned + loose + headers)
         var total = pinned * Metrics.pinWidth + loose * each
-            + CGFloat(max(0, browser.tabs.count - 1)) * Metrics.tabGap
+            + headers * 126 + CGFloat(max(0, shown - 1)) * Metrics.tabGap
         if let id = browser.editingTab, let tab = browser.tabs.first(where: { $0.id == id }) {
             total += min(340, strip - Metrics.lights - 12) - (tab.pin != nil ? Metrics.pinWidth : each)
         }
@@ -269,7 +306,15 @@ struct TabBar: View {
     /// mark and its air. Past that, the run scrolls. The pinned squares take
     /// their room off the top.
     private func width(in strip: CGFloat) -> CGFloat {
-        width(in: strip, pinned: browser.pinnedCount, count: browser.tabs.count)
+        if browser.prefs.usesTabGroups {
+            let count = browser.tabs(in: nil).count + browser.tabGroups.reduce(0) { $0 + browser.visibleTabs(in: $1).count }
+            guard count > 0 else { return Metrics.tabWidth }
+            let spent = CGFloat(browser.pinnedCount) * Metrics.pinWidth
+                + CGFloat(browser.tabGroups.count) * 126
+                + CGFloat(max(0, browser.pinnedCount + count + browser.tabGroups.count - 1)) * Metrics.tabGap
+            return max(Metrics.tabMinWidth, min(Metrics.tabWidth, (room(in: strip) - spent) / CGFloat(count)))
+        }
+        return width(in: strip, pinned: browser.pinnedCount, count: browser.tabs.count)
     }
 
     private func width(in strip: CGFloat, pinned pins: Int, count: Int) -> CGFloat {
@@ -589,6 +634,7 @@ struct Carried: ViewModifier {
     /// The row's coordinate space, not the tab's: a tab that has just moved
     /// keeps its bearings (see the sidebar's grid).
     let space: String
+    var onDrop: ((CGPoint) -> Void)? = nil
     let move: (Int) -> Void
 
     @State private var held = false
@@ -622,7 +668,8 @@ struct Carried: ViewModifier {
                             withAnimation(Motion.settle) { move(target) }
                         }
                     }
-                    .onEnded { _ in
+                    .onEnded { value in
+                        onDrop?(value.location)
                         withAnimation(Motion.settle) {
                             held = false
                             travel = 0
@@ -749,6 +796,20 @@ struct TabMenu: View {
     let close: () -> Void
 
     var body: some View {
+        if browser.prefs.usesTabGroups && tab.pin == nil && !tab.shy && !tab.bench {
+            Menu("Move to Group") {
+                Button("New Group") { browser.addTabGroup(containing: tab) }
+                if !browser.tabGroups.isEmpty { Divider() }
+                ForEach(browser.tabGroups) { group in
+                    Button(group.name) { browser.move(tab, toGroup: group.id) }
+                        .disabled(tab.groupID == group.id)
+                }
+                if tab.groupID != nil {
+                    Divider()
+                    Button("Remove from Group") { browser.move(tab, toGroup: nil) }
+                }
+            }
+        }
         if tab.pin == nil {
             Button("Pin") { browser.pin(tab) }
                 .disabled(tab.isBlank)

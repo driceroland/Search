@@ -179,6 +179,7 @@ extension Browser {
         parked[spaceID] = Parked(tabs: tabs, active: activeID)
 
         spaceID = id
+        tabGroups = Session.read(space: id).groups ?? []
         Spaces.current = id
         Store.settings.set(id.uuidString, forKey: "space.current")
         if let back = parked.removeValue(forKey: id), !back.tabs.isEmpty {
