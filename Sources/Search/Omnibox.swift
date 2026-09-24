@@ -174,31 +174,33 @@ struct Omnibox: View {
     }
 }
 
-/// The breath under the field: the same blurred shape, drawn once, and
-/// moved by Core Animation. Animated by SwiftUI, it was drawn again on the
-/// main thread every frame for as long as an empty tab was showing — 18% of
-/// a core with the window doing nothing (24 Sep 2026). Core Animation plays
-/// it in the render server instead, and the app does nothing at all.
+/// The breath under the field: a soft shape of ink, blurred, moved by Core
+/// Animation. Animated by SwiftUI, it was drawn again on the main thread
+/// every frame for as long as an empty tab was showing — 18% of a core with
+/// the window doing nothing (24 Sep 2026). As a layer's shadow, breathed by
+/// Core Animation, it is played in the render server and costs the app
+/// nothing; and it is a layer, not a second SwiftUI view to build before
+/// the first frame.
 private struct Breath: NSViewRepresentable {
-    /// Room round the shape for its blur, which spreads well past it.
-    private static let spill: CGFloat = 80
+    /// As dark as the shape it replaces, 5% ink blurred by 26: a shadow of
+    /// the same radius comes out at 0.7 of the darkness at equal strength,
+    /// measured on pictures of both (24 Sep 2026), so 7%.
+    static let strength: Swift.Float = 0.07
 
     func makeNSView(context: Context) -> NSView { Lung() }
     func updateNSView(_ view: NSView, context: Context) {}
 
     private final class Lung: NSView {
-        private let glow: NSView = NSHostingView(rootView:
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(Palette.ink.opacity(0.05))
-                .blur(radius: 26)
-                .padding(Breath.spill)
-        )
+        private let glow = CALayer()
         private var breathed: CGSize = .zero
 
         override init(frame: NSRect) {
             super.init(frame: frame)
             wantsLayer = true
-            addSubview(glow)
+            glow.shadowOpacity = Breath.strength
+            glow.shadowOffset = .zero
+            glow.shadowRadius = 26
+            layer?.addSublayer(glow)
         }
 
         @available(*, unavailable)
@@ -206,22 +208,28 @@ private struct Breath: NSViewRepresentable {
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+        /// The ink is the look's: light on a dark window, dark on a light one.
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            effectiveAppearance.performAsCurrentDrawingAppearance { glow.shadowColor = Palette.NS.ink.cgColor }
+        }
+
         override func layout() {
             super.layout()
-            glow.frame = bounds.insetBy(dx: -Breath.spill, dy: -Breath.spill)
-            guard bounds.size != breathed, bounds.width > 0, let layer = glow.layer else { return }
+            guard bounds.size != breathed, bounds.width > 0 else { return }
             breathed = bounds.size
-            // From 0.97 to 1.03 about the middle, from 0.65 to full, 2.6 s
-            // each way, for as long as the field is there.
-            func scaled(_ factor: CGFloat) -> CATransform3D {
-                let middle = CGPoint(x: glow.bounds.midX, y: glow.bounds.midY)
-                var t = CATransform3DMakeTranslation(middle.x, middle.y, 0)
-                t = CATransform3DScale(t, factor, factor, 1)
-                return CATransform3DTranslate(t, -middle.x, -middle.y, 0)
-            }
-            let size = CABasicAnimation(keyPath: "transform")
-            size.fromValue = scaled(0.97)
-            size.toValue = scaled(1.03)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            glow.bounds = bounds
+            glow.position = CGPoint(x: bounds.midX, y: bounds.midY)
+            glow.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 26, cornerHeight: 26, transform: nil)
+            effectiveAppearance.performAsCurrentDrawingAppearance { glow.shadowColor = Palette.NS.ink.cgColor }
+            CATransaction.commit()
+            // From 0.97 to 1.03, from 0.65 to full, 2.6 s each way, for as
+            // long as the field is there.
+            let size = CABasicAnimation(keyPath: "transform.scale")
+            size.fromValue = 0.97
+            size.toValue = 1.03
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = 0.65
             fade.toValue = 1.0
@@ -231,7 +239,7 @@ private struct Breath: NSViewRepresentable {
             both.autoreverses = true
             both.repeatCount = .infinity
             both.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            layer.add(both, forKey: "breath")
+            glow.add(both, forKey: "breath")
         }
     }
 }
