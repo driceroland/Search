@@ -207,6 +207,11 @@ final class Preferences: ObservableObject {
     @Published var usesSpaces: Bool {
         didSet { store.set(usesSpaces, forKey: "spaces") }
     }
+    /// ⌃Tab as pictures of the tabs, most recent first, as in Arc and Dia
+    /// (see Switcher.swift). Off: ⌃Tab walks the row, as it always has.
+    @Published var tabPictures: Bool {
+        didSet { store.set(tabPictures, forKey: "tabs.pictures") }
+    }
 
     init() {
         // Carried over from when there were four ways of holding the browser
@@ -269,6 +274,7 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
+        tabPictures = store.bool(forKey: "tabs.pictures")
         let flicks = store.bool(forKey: "float.flicks")
         floatFlicks = flicks
         Float.flicks = flicks

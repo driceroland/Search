@@ -13,10 +13,13 @@ final class Browser: NSObject, ObservableObject {
         didSet {
             // The tab just left is the tab just looked at. Whether a tab has
             // gone unwatched long enough to sleep is counted from here, not
-            // from when it was first picked.
-            guard oldValue != activeID, let old = oldValue else { return }
+            // from when it was first picked. Its picture for ⌃Tab is taken
+            // now too, while its page is still the one on screen.
+            guard oldValue != activeID, let old = oldValue,
+                  let left = tabs.first(where: { $0.id == old }) else { return }
             linkStatus.dismiss()
-            tabs.first { $0.id == old }?.touch()
+            left.touch()
+            left.capture()
         }
     }
 
@@ -122,6 +125,8 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var summoning = false
     /// True between the first ⌘K and letting go of ⌘.
     var cycling = false
+    /// ⌃Tab's pictures of the tabs, up while ⌃ is held (see Switcher.swift).
+    @Published var switcher: Switcher?
 
     var active: Tab? { tabs.first { $0.id == activeID } }
     var fieldShowing: Bool { editing || active?.isBlank ?? true }

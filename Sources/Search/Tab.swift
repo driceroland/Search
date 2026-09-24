@@ -389,6 +389,10 @@ final class Tab: ObservableObject, Identifiable {
     /// That picture, over the stage while the page is rebuilt underneath it:
     /// coming back to a tab that slept starts from what you left, not white.
     @Published private(set) var cover: NSImage?
+    /// The page as it last looked, small, for the ⌃Tab switcher (see
+    /// Switcher.swift). Kept through sleep, so a tab that gave its view back
+    /// is still pictured.
+    @Published private(set) var thumb: NSImage?
 
     private var watch: [NSKeyValueObservation] = []
 
@@ -842,6 +846,24 @@ final class Tab: ObservableObject, Identifiable {
             DispatchQueue.global(qos: .utility).async {
                 let data = Tab.jpeg(cg)
                 DispatchQueue.main.async { done(data) }
+            }
+        }
+    }
+
+    /// A fresh `thumb`, when there is a page to picture. Drawn by the page's
+    /// own process, off screen or not, at a width a card needs and no more.
+    /// A page opened behind the one on screen has never been laid out and
+    /// pictures as nothing; given the stage's size first, it can be.
+    func capture(stage: CGSize? = nil) {
+        guard let built, !isBlank else { return }
+        if built.window == nil, built.frame.isEmpty, let stage, !stage.equalTo(.zero) {
+            built.frame.size = stage
+        }
+        let small = WKSnapshotConfiguration()
+        small.snapshotWidth = 320
+        built.takeSnapshot(with: small) { [weak self] image, _ in
+            MainActor.assumeIsolated {
+                if let image { self?.thumb = image }
             }
         }
     }
