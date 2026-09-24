@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Tabs opened in the background can wait to load until you first look at them: Settings › Tabs › Load tabs when you first see them, off by default. A tab you open in front loads at once, as before.
 - Three switches are on from now on: Show where links go, Peek at a link with a shift-click, and Flick the floating video to a corner. Correct spelling as you type follows the Mac's own setting rather than starting off. A switch you already turned off stays off.
 - Passkeys can unlock what a site encrypted with them: the WebAuthn PRF extension now reaches the passkey and its result comes back to the page, where it was dropped and sites that derive a key from your passkey said it wasn't supported. macOS 15 or later. ([#312](https://github.com/driceroland/Search/issues/312)) Thanks [@arvakme](https://github.com/arvakme) ([#313](https://github.com/driceroland/Search/pull/313))
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.

@@ -1399,7 +1399,7 @@ final class Browser: NSObject, ObservableObject {
         }
         prepare(tab)
         tabs.insert(tab, at: atEnd ? tabs.count : placeForNew())
-        tab.go(to: url)
+        if prefs.lazyTabs, !foreground { tab.restore(url: url, title: "") } else { tab.go(to: url) }
         if foreground {
             leaving()
             activeID = tab.id
