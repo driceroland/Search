@@ -39,12 +39,18 @@ enum Engine: String, CaseIterable, Identifiable {
 
     func name(custom: String) -> String {
         guard self == .custom else { return title }
-        guard let host = Engine.host(of: custom) else { return Engine.standard.title }
-        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        return Engine.bareHost(of: custom) ?? Engine.standard.title
     }
 
     static func accepts(_ template: String) -> Bool {
         host(of: template) != nil
+    }
+
+    /// A template's host, with any leading "www." dropped - what a person
+    /// would call the site if you asked them.
+    static func bareHost(of template: String) -> String? {
+        guard let host = host(of: template) else { return nil }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
     static func url(for text: String, template: String) -> URL? {

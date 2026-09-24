@@ -200,6 +200,34 @@ struct SettingsPanel: View {
                 .padding(.bottom, 11)
             }
             Rule()
+            Line("Site shortcuts", "A word before your search goes straight to that site, whatever engine you've picked - \"yt cats\" to YouTube") {
+                Pill("Add") { prefs.keywords.append(Keyword()) }
+            }
+            ForEach($prefs.keywords) { $entry in
+                HStack(spacing: 8) {
+                    TextField("yt", text: $entry.keyword)
+                        .textFieldStyle(.plain)
+                        .frame(width: 50)
+                    Text("→").foregroundStyle(Palette.muted)
+                    TextField("https://www.youtube.com/results?search_query=%s", text: $entry.template)
+                        .textFieldStyle(.plain)
+                    Button {
+                        prefs.keywords.removeAll { $0.id == entry.id }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Palette.faint)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .font(.system(size: 12.5))
+                .foregroundStyle(Palette.ink)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .padding(.horizontal, 14)
+                .padding(.bottom, 6)
+            }
+            Rule()
             Line("Appearance", "Light, dark, or whatever the Mac is doing — pages follow it too") {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }

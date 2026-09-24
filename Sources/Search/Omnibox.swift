@@ -132,9 +132,21 @@ struct Omnibox: View {
             HStack(spacing: 10) {
                 switch offer.kind {
                 case .search:
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Palette.muted)
+                    // The site's own icon when it's already known - a search
+                    // typed for a site you've been to before doesn't need to
+                    // say so with a magnifying glass. Nothing is fetched for
+                    // one that isn't; the glass is what a row wears until then.
+                    if let host = offer.url.host()?.lowercased(), let icon = Favicons.shared.cached(host) {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: 14, height: 14)
+                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                    }
                 case .open:
                     // Already open: naming it takes you back to it rather than
                     // opening a second copy.
