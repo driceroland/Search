@@ -1,3 +1,4 @@
+import AppKit
 import Security
 import SwiftUI
 
@@ -117,6 +118,14 @@ final class Preferences: ObservableObject {
     /// stands over the window.
     @Published var welcomed: Bool {
         didSet { store.set(welcomed, forKey: "welcomed") }
+    }
+    /// Make interface transitions immediate without spring jumps.
+    /// Follows macOS Accessibility when on there, or turned on in Settings.
+    @Published var reduceMotion: Bool {
+        didSet {
+            store.set(reduceMotion, forKey: "motion.reduce")
+            Motion.reduceMotion = reduceMotion
+        }
     }
     /// macOS's own autocorrect, inside web pages: the little "Not ×" that
     /// capitalises what you meant to leave lower-case. Off unless asked for.
@@ -252,6 +261,16 @@ final class Preferences: ObservableObject {
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.
         Preferences.tellWebKit(autocorrect: corrects)
+        let reduced = store.bool(forKey: "motion.reduce")
+        reduceMotion = reduced
+        Motion.reduceMotion = reduced
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.objectWillChange.send()
+        }
         // Left behind by an assistant this browser no longer has.
         for key in ["mind.model", "mind.effort", "mind.acting", "mind.width", "mind.open"] {
             store.removeObject(forKey: key)
