@@ -80,9 +80,9 @@ enum ExtensionShims {
         }
 
         // The background, whichever kind it is, gets the shim first. A
-        // service worker gets it written at the top of its own file: that
-        // holds whether WebKit runs it as a worker or as a page, as a classic
-        // script or a module, where a wrapper importing it would not.
+        // classic service worker gets it written at the top of its own file;
+        // a module one imports it first, as its imports run before anything
+        // written above them.
         if var background = manifest["background"] as? [String: Any] {
             // A manifest is not a way out of its own package: a worker path
             // that resolves outside the folder, or is a link, is left alone.
@@ -100,7 +100,10 @@ enum ExtensionShims {
                     while source.hasPrefix(marker), let end = source.range(of: "\n})();\n") {
                         source = String(source[end.upperBound...])
                     }
-                    try (marker + "\n" + script + "\n" + ender + "\n" + source).write(to: path, atomically: true, encoding: .utf8)
+                    let first = "import \"/\(file)\";\n"
+                    while source.hasPrefix(first) { source.removeFirst(first.count) }
+                    let module = (background["type"] as? String) == "module"
+                    try (module ? first + source : marker + "\n" + script + "\n" + ender + "\n" + source).write(to: path, atomically: true, encoding: .utf8)
                 }
             }
             // Scripts, alone or beside a worker — WebKit runs them as a page
@@ -112,7 +115,7 @@ enum ExtensionShims {
             manifest["background"] = background
         }
 
-        // Content scripts too — there only the sendMessage mend applies. One
+        // Content scripts too — there only Chrome's behaviour is mended. One
         // that runs in the page's own world has Search's passkey patch before
         // it: a password manager's there keeps a reference to
         // navigator.credentials as it finds it, and that has to be Search's,
@@ -502,6 +505,20 @@ enum ExtensionShims {
             Object.defineProperty(proto, "userAgent", { get: () => chromeUA, configurable: true });
             Object.defineProperty(proto, "appVersion", { get: () => chromeUA.replace(/^Mozilla\//, ""), configurable: true });
             Object.defineProperty(proto, "vendor", { get: () => "Google Inc.", configurable: true });
+            if (!("userAgentData" in navigator)) {
+              const major = "__SEARCH_CHROME__".split(".")[0];
+              const brands = [{ brand: "Chromium", version: major }, { brand: "Google Chrome", version: major }, { brand: "Not.A/Brand", version: "99" }];
+              const low = { brands, mobile: false, platform: "macOS" };
+              const mac = (chromeUA.match(/Mac OS X (\d+)[_.](\d+)(?:[_.](\d+))?/) || []).slice(1).map((n) => n || "0").join(".") || "10.15.7";
+              const high = {
+                architecture: "arm", bitness: "64", model: "", platformVersion: mac, wow64: false,
+                fullVersionList: brands.map((b) => ({ brand: b.brand, version: b.version === major ? "__SEARCH_CHROME__" : b.version + ".0.0.0" })),
+                uaFullVersion: "__SEARCH_CHROME__",
+              };
+              const pick = (hints) => Object.assign({}, low, ...(Array.isArray(hints) ? hints : []).filter((h) => h in high).map((h) => ({ [h]: high[h] })));
+              const data = Object.assign({}, low, { getHighEntropyValues: (hints) => Promise.resolve(pick(hints)), toJSON: () => low });
+              Object.defineProperty(proto, "userAgentData", { get: () => data, configurable: true });
+            }
           }
         } catch (e) {}
       }
@@ -720,6 +737,15 @@ enum ExtensionShims {
         // WebKit's from the start.
         if (background) { attached = true; add(dispatch); }
       };
+      if (runtime) {
+        const names = new Set();
+        for (let o = runtime; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) Object.getOwnPropertyNames(o).forEach((k) => names.add(k));
+        for (const name of names) {
+          if (name === "constructor" || /^on[A-Z]/.test(name)) continue;
+          let f; try { f = runtime[name]; } catch (e) { continue; }
+          if (typeof f === "function") put(runtime, name, f.bind(runtime));
+        }
+      }
       if (inContent) return;
 
       // In a website's frame, everything WebKit keeps to the extension's own
