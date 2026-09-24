@@ -82,11 +82,14 @@ enum SiteCardPanel {
         let host = FirstClick(rootView: AnyView(card.fixedSize()))
         let size = host.fittingSize
         let glass = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
-        glass.material = .popover
+        glass.material = .menu
         glass.state = .active
         glass.wantsLayer = true
-        glass.layer?.cornerRadius = 12
+        glass.layer?.cornerRadius = MenuMetrics.corner
+        glass.layer?.cornerCurve = .continuous
         glass.layer?.masksToBounds = true
+        glass.layer?.borderWidth = 0.5
+        glass.layer?.borderColor = MenuMetrics.edge.cgColor
         host.frame = glass.bounds
         host.autoresizingMask = [.width, .height]
         glass.addSubview(host)
@@ -177,7 +180,9 @@ struct SiteCard: View {
                 front
             }
         }
-        .frame(width: 300)
+        .padding(.vertical, MenuMetrics.pad)
+        .frame(minWidth: 180)
+        .fixedSize()
         .transition(.opacity)
         .animation(Motion.quick, value: deeper)
         .onAppear(perform: certify)
@@ -193,123 +198,77 @@ struct SiteCard: View {
         return url.scheme ?? url.absoluteString
     }
 
-    // MARK: - the card
+    // MARK: - the card, drawn as the system draws a menu
 
     private var front: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let url = tab.address {
-                Text(SiteCard.site(url))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.muted)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 4)
+                Header(title: SiteCard.site(url))
             }
-            VStack(spacing: 1) {
-                if let safety {
-                    Entry(safety.symbol, safety.title, mark: "chevron.right", tint: safety.tint) {
-                        deeper = true
-                    }
-                }
-                Entry("doc.on.doc", "Copy Address", keys: "⇧⌘C") {
-                    after { browser.copyAddress() }
-                }
+            if let safety {
+                Row(safety.title, submenu: true) { deeper = true }
             }
-            .padding(6)
-            Divider().overlay(Palette.hairline)
-            VStack(spacing: 1) {
-                Entry("printer", "Print…", keys: "⌘P") {
-                    after { browser.printPage() }
-                }
-                zoom
-            }
-            .padding(6)
+            Row("Copy Address", keys: "⇧⌘C") { after { browser.copyAddress() } }
+            Separator()
+            Row("Print…", keys: "⌘P") { after { browser.printPage() } }
+            zoom
         }
     }
 
-    /// The page's size, remembered for the site (see Tab.rememberZoom). The
-    /// number puts it back to 100%.
+    /// The page's size, remembered for the site (see Tab.rememberZoom), as a
+    /// menu puts a control on one of its lines: the name, and the steps at
+    /// its end. The number puts it back to 100%.
     private var zoom: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus.magnifyingglass")
-                .font(.system(size: 11))
-                .foregroundStyle(Palette.muted)
-                .frame(width: 14)
+        HStack(spacing: 0) {
             Text("Zoom")
-                .font(.system(size: 12.5))
-                .foregroundStyle(Palette.ink)
-            Spacer(minLength: 0)
-            Door(icon: "minus", help: "Zoom Out   ⌘-") { browser.zoom(by: 1 / 1.1) }
+                .font(MenuMetrics.font)
+                .foregroundStyle(Color(nsColor: .labelColor))
+            Spacer(minLength: 24)
+            Step(symbol: "minus", help: "Zoom Out   ⌘-") { browser.zoom(by: 1 / 1.1) }
             Button { browser.resetZoom() } label: {
                 Text("\(Int((tab.zoom * 100).rounded()))%")
-                    .font(.system(size: 12))
+                    .font(MenuMetrics.font)
                     .monospacedDigit()
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 40)
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                    .frame(width: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Actual Size   ⌘0")
-            Door(icon: "plus", help: "Zoom In   ⌘+") { browser.zoom(by: 1.1) }
+            Step(symbol: "plus", help: "Zoom In   ⌘+") { browser.zoom(by: 1.1) }
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 2)
-        .frame(height: 30)
+        .padding(.leading, MenuMetrics.text)
+        .padding(.trailing, MenuMetrics.inset + 4)
+        .frame(height: MenuMetrics.row)
     }
 
     // MARK: - one step in
 
     private func security(_ safety: Safety) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Door(icon: "arrow.left", help: "Back") { deeper = false }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Security")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Palette.ink)
-                    if let url = tab.address {
-                        Text(SiteCard.site(url))
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
-                    }
-                }
-                Spacer(minLength: 0)
-                Door(icon: "xmark", help: "Close") { close() }
+            if let url = tab.address {
+                Header(title: SiteCard.site(url))
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
-
-            Divider().overlay(Palette.hairline)
-
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: safety.symbol)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(safety.tint)
-                    .frame(width: 16)
-                    .padding(.top, 1)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(safety.title)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(Palette.ink)
-                    Text(safety.detail)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, safety.trust == nil ? 14 : 6)
-
+            Text(safety.title)
+                .font(MenuMetrics.font)
+                .foregroundStyle(Color(nsColor: .labelColor))
+                .padding(.leading, MenuMetrics.text)
+                .frame(height: MenuMetrics.row, alignment: .leading)
+            Text(safety.detail)
+                .font(.system(size: 11))
+                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 230, alignment: .leading)
+                .padding(.leading, MenuMetrics.text)
+                .padding(.trailing, MenuMetrics.trailing)
+                .padding(.bottom, 6)
+            Separator()
             if let trust = safety.trust {
-                Entry(
-                    certified == false ? "xmark.rectangle" : "checkmark.rectangle",
-                    certified == false ? "Certificate is not valid" : "Certificate is valid",
-                    mark: "arrow.up.forward.square"
-                ) {
+                Row(certified == false ? "Show Certificate (Not Valid)…" : "Show Certificate…") {
                     after { SiteCard.show(trust) }
                 }
-                .padding(6)
             }
+            Row("Back") { deeper = false }
         }
     }
 
@@ -389,62 +348,146 @@ struct SiteCard: View {
         DispatchQueue.main.async(execute: act)
     }
 
-    /// One line of the card. Without an action it only says something; with
-    /// a tint it says it in colour, on a wash of the same. A mark at the end
-    /// says where it leads.
-    private struct Entry: View {
-        let symbol: String
+    /// One line, as a menu item draws it: its title in the menu's font where
+    /// a menu puts its text, a key equivalent at the end, the accent colour
+    /// behind it and white letters under the pointer. A line that opens more
+    /// ends in the submenu's chevron.
+    private struct Row: View {
         let title: String
         var keys = ""
-        var mark: String?
-        var tint: Color?
-        var act: (() -> Void)?
+        var submenu = false
+        let act: () -> Void
 
         @State private var hovering = false
 
-        init(_ symbol: String, _ title: String, keys: String = "", mark: String? = nil, tint: Color? = nil, act: (() -> Void)? = nil) {
-            self.symbol = symbol
+        init(_ title: String, keys: String = "", submenu: Bool = false, act: @escaping () -> Void) {
             self.title = title
             self.keys = keys
-            self.mark = mark
-            self.tint = tint
+            self.submenu = submenu
             self.act = act
         }
 
-        /// Over glass, a shade of the ink rather than an opaque grey, so the
-        /// page still shows through the line under the pointer.
-        private var ground: Color {
-            if let tint { return tint.opacity(hovering ? 0.2 : 0.14) }
-            return hovering && act != nil ? Palette.ink.opacity(0.07) : .clear
-        }
-
         var body: some View {
-            HStack(spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 11))
-                    .foregroundStyle(tint ?? Palette.muted)
-                    .frame(width: 14)
+            HStack(spacing: 0) {
                 Text(title)
-                    .font(.system(size: 12.5, weight: tint == nil ? .regular : .medium))
-                    .foregroundStyle(tint ?? Palette.ink)
-                Spacer(minLength: 0)
+                    .font(MenuMetrics.font)
+                    .foregroundStyle(hovering ? Color.white : Color(nsColor: .labelColor))
+                    .lineLimit(1)
+                    .fixedSize()
+                Spacer(minLength: keys.isEmpty ? 24 : 26)
                 if !keys.isEmpty {
                     Text(keys)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Palette.muted)
+                        .font(MenuMetrics.font)
+                        .foregroundStyle(hovering ? Color.white : Color(nsColor: .secondaryLabelColor))
+                        .fixedSize()
                 }
-                if let mark {
-                    Image(systemName: mark)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(tint ?? Palette.muted)
+                if submenu {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(hovering ? Color.white : Color(nsColor: .secondaryLabelColor))
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(ground))
+            .padding(.leading, MenuMetrics.text - MenuMetrics.inset)
+            .padding(.trailing, MenuMetrics.trailing - MenuMetrics.inset)
+            .frame(height: MenuMetrics.row)
+            .background(
+                RoundedRectangle(cornerRadius: MenuMetrics.highlight, style: .continuous)
+                    .fill(hovering ? MenuMetrics.selection : .clear)
+            )
+            .padding(.horizontal, MenuMetrics.inset)
             .contentShape(Rectangle())
-            .onTapGesture { act?() }
+            .onTapGesture(perform: act)
             .onHover { hovering = $0 }
         }
+    }
+
+    /// The site's name over the lines, as a menu's section header is drawn.
+    private struct Header: View {
+        let title: String
+
+        var body: some View {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                .lineLimit(1)
+                .padding(.leading, MenuMetrics.text)
+                .padding(.trailing, MenuMetrics.trailing)
+                .frame(height: MenuMetrics.row, alignment: .leading)
+        }
+    }
+
+    /// A menu's separator: a hairline in its own band.
+    private struct Separator: View {
+        var body: some View {
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(height: 1)
+                .padding(.horizontal, MenuMetrics.rule)
+                .frame(height: MenuMetrics.separator)
+        }
+    }
+
+    /// A step of the zoom: the symbol alone, on the accent colour under the
+    /// pointer as a menu's line would be.
+    private struct Step: View {
+        let symbol: String
+        let help: String
+        let act: () -> Void
+
+        @State private var hovering = false
+
+        var body: some View {
+            Button(action: act) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(hovering ? Color.white : Color(nsColor: .labelColor))
+                    .frame(width: 22, height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(hovering ? MenuMetrics.selection : .clear)
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(help)
+        }
+    }
+}
+
+/// A menu's measurements, as macOS lays out an NSMenu (measured from one:
+/// NSMenu.size with the same items), so the card sits beside the tab's
+/// right-click menu as one of its own.
+enum MenuMetrics {
+    static let font = Font(NSFont.menuFont(ofSize: 0))
+    /// One item.
+    static let row: CGFloat = 24
+    /// A separator's band.
+    static let separator: CGFloat = 11
+    /// Above the first item and under the last.
+    static let pad: CGFloat = 5
+    /// Where the highlight starts, from the menu's edge.
+    static let inset: CGFloat = 5
+    /// Where an item's text starts, from the menu's edge: a context menu
+    /// without a checkmark column, as the tab's right-click is.
+    static let text: CGFloat = 17
+    /// From the end of the text, or of its key equivalent, to the menu's edge.
+    static let trailing: CGFloat = 17
+    /// A separator's line, in from either edge.
+    static let rule: CGFloat = 16
+    static let highlight: CGFloat = 6
+    static let corner: CGFloat = 12
+    /// The line under the pointer: the accent colour as a menu shows it over
+    /// its glass, lighter than the accent itself (111, 162, 249 for blue).
+    static let selection = Color(nsColor: NSColor(name: nil) { appearance in
+        let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
+        return appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? accent.blended(withFraction: 0.15, of: .black) ?? accent
+            : accent.blended(withFraction: 0.42, of: .white) ?? accent
+    })
+    /// The panel's hairline edge.
+    static let edge = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.18) : NSColor.black.withAlphaComponent(0.26)
     }
 }

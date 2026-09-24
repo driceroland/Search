@@ -81,9 +81,12 @@ final class Links: NSObject, NSApplicationDelegate {
         Links.take(url)
     }
 
-    /// Files and anything else the system opens with the app.
+    /// Files and anything else the system opens with the app: an address, or
+    /// a page on this Mac — an .html or .xhtml double-clicked in the Finder
+    /// once Search is the Mac's browser (it says it can open them, see
+    /// build.sh), which this used to drop without a word.
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls where url.scheme?.lowercased().hasPrefix("http") == true {
+        for url in urls where url.isFileURL || url.scheme?.lowercased().hasPrefix("http") == true {
             Links.take(url)
         }
     }
@@ -111,13 +114,15 @@ final class Links: NSObject, NSApplicationDelegate {
         deliver = { [weak browser] url in
             browser?.arrive(url)
             // The window closed with the app still running: the link brings
-            // it back, rather than landing in a tab nobody can see.
-            if let window {
-                if !window.isVisible { window.makeKeyAndOrderFront(nil) }
+            // it back, rather than landing in a tab nobody can see. The
+            // window is looked for among the app's own too: a reference that
+            // lapsed opened a second, empty window behind the other app.
+            if let window = window ?? browserWindow() {
+                window.makeKeyAndOrderFront(nil)
             } else {
                 _ = NSApp.delegate?.applicationOpenUntitledFile?(NSApp)
             }
-            NSApp.activate(ignoringOtherApps: true)
+            comeForward()
         }
         flush = { [weak browser] in browser?.flushSession() }
         let early = waiting
@@ -125,6 +130,7 @@ final class Links: NSObject, NSApplicationDelegate {
         guard let first = early.first else { return }
         onceShown { [weak browser] in
             browser?.arrive(first)
+            comeForward()
             for (n, url) in early.dropFirst().enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15 * Double(n + 1)) { [weak browser] in
                     browser?.open(url, foreground: false, atEnd: true)
@@ -145,6 +151,28 @@ final class Links: NSObject, NSApplicationDelegate {
         } else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { onceShown(then, tries: tries + 1) }
         }
+    }
+
+    /// In front of the app the link was clicked in, the way a browser comes
+    /// forward for Mail. Since macOS 14 an app is let in front when it is
+    /// asked to open something, and asks with `activate()`; the old call's
+    /// "ignoring other apps" is ignored.
+    @MainActor
+    private static func comeForward() {
+        if #available(macOS 14, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    /// The browser's window, from the app's own list: what `window` points
+    /// at, found again if that reference lapsed.
+    @MainActor
+    private static func browserWindow() -> NSWindow? {
+        let found = NSApp.windows.first { $0.contentView != nil && !($0 is NSPanel) && $0.canBecomeMain }
+        if let found { window = found }
+        return found
     }
 
     private static func take(_ url: URL) {

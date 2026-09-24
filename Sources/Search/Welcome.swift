@@ -227,7 +227,7 @@ struct WelcomePanel: View {
                     case .success(let found):
                         var kept = 0
                         for login in found.logins
-                        where Vault.save(host: login.host, user: login.user, password: login.password, used: login.used) {
+                        where Vault.save(host: login.host, user: login.user, password: login.password, used: login.used, clear: login.clear) {
                             kept += 1
                         }
                         var never = Vault.never

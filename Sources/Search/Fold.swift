@@ -87,8 +87,16 @@ struct Fold: View {
                     .frame(maxWidth: .infinity)
             }
             if folding, !prefs.sidebar, browser.peeking {
+                // The row has no ground of its own: in the window it lies on
+                // the window's. Out over the page it brings that ground along,
+                // as the column does, or the page showed through between the
+                // tabs, and the shadow fell from every title and icon rather
+                // than from the row's edge.
                 TabBar(browser: browser)
-                    .shadow(color: .black.opacity(0.14), radius: 20, y: 4)
+                    .background {
+                        Palette.ground
+                            .shadow(color: .black.opacity(0.14), radius: 20, y: 4)
+                    }
                     .transition(.move(edge: .top))
             }
             ZStack(alignment: .leading) {
