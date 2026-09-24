@@ -1376,6 +1376,27 @@ final class Browser: NSObject, ObservableObject {
         lift(active, quietly: true)
     }
 
+    /// Another app in front: the video comes along, as in Arc (Settings ›
+    /// General). Only one lifted this way goes home on its own when Search
+    /// comes back.
+    private var liftedAway = false
+
+    /// The window last in front. Asked once the app has gone to the back,
+    /// macOS no longer says which window was main.
+    static weak var front: Browser?
+
+    func appLeft() {
+        guard prefs.floatsAway, Browser.front == nil || Browser.front === self else { return }
+        liftedAway = !floater.showing
+        lift(active, quietly: true)
+    }
+
+    /// Back, and still on the tab it came from: into the tab again.
+    func appBack() {
+        defer { liftedAway = false }
+        if liftedAway, let id = floating, id == activeID { land() }
+    }
+
     /// ⌘⇧P, for lifting one out by hand.
     func toggleFloat() {
         if floater.showing {
