@@ -17,7 +17,6 @@ struct Omnibox: View {
 
     @State private var shake: CGFloat = 0
     @State private var refused = false
-    @State private var breathing = false
 
     var body: some View {
         ZStack {
@@ -68,11 +67,7 @@ struct Omnibox: View {
                     // the only thing on an empty tab, and a thing that never
                     // moves at all reads as a picture of an app rather than
                     // an app.
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .fill(Palette.ink.opacity(0.05))
-                        .blur(radius: 26)
-                        .scaleEffect(breathing ? 1.03 : 0.97)
-                        .opacity(breathing ? 1 : 0.65)
+                    Breath()
 
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Palette.ground)
@@ -88,11 +83,6 @@ struct Omnibox: View {
             )
             .shadow(color: .black.opacity(0.06), radius: 24, y: 8)
             .modifier(Shake(travel: shake))
-            .onAppear {
-                withAnimation(.easeInOut(duration: 2.6).repeatForever(autoreverses: true)) {
-                    breathing = true
-                }
-            }
             .onChange(of: browser.refusals) { _, _ in
                 shake = 0
                 refused = true
@@ -180,6 +170,76 @@ struct Omnibox: View {
             }
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
+        }
+    }
+}
+
+/// The breath under the field: a soft shape of ink, blurred, moved by Core
+/// Animation. Animated by SwiftUI, it was drawn again on the main thread
+/// every frame for as long as an empty tab was showing — 18% of a core with
+/// the window doing nothing (24 Sep 2026). As a layer's shadow, breathed by
+/// Core Animation, it is played in the render server and costs the app
+/// nothing; and it is a layer, not a second SwiftUI view to build before
+/// the first frame.
+private struct Breath: NSViewRepresentable {
+    /// As dark as the shape it replaces, 5% ink blurred by 26: a shadow of
+    /// the same radius comes out at 0.7 of the darkness at equal strength,
+    /// measured on pictures of both (24 Sep 2026), so 7%.
+    static let strength: Swift.Float = 0.07
+
+    func makeNSView(context: Context) -> NSView { Lung() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class Lung: NSView {
+        private let glow = CALayer()
+        private var breathed: CGSize = .zero
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            glow.shadowOpacity = Breath.strength
+            glow.shadowOffset = .zero
+            glow.shadowRadius = 26
+            layer?.addSublayer(glow)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        /// The ink is the look's: light on a dark window, dark on a light one.
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            effectiveAppearance.performAsCurrentDrawingAppearance { glow.shadowColor = Palette.NS.ink.cgColor }
+        }
+
+        override func layout() {
+            super.layout()
+            guard bounds.size != breathed, bounds.width > 0 else { return }
+            breathed = bounds.size
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            glow.bounds = bounds
+            glow.position = CGPoint(x: bounds.midX, y: bounds.midY)
+            glow.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 26, cornerHeight: 26, transform: nil)
+            effectiveAppearance.performAsCurrentDrawingAppearance { glow.shadowColor = Palette.NS.ink.cgColor }
+            CATransaction.commit()
+            // From 0.97 to 1.03, from 0.65 to full, 2.6 s each way, for as
+            // long as the field is there.
+            let size = CABasicAnimation(keyPath: "transform.scale")
+            size.fromValue = 0.97
+            size.toValue = 1.03
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0.65
+            fade.toValue = 1.0
+            let both = CAAnimationGroup()
+            both.animations = [size, fade]
+            both.duration = 2.6
+            both.autoreverses = true
+            both.repeatCount = .infinity
+            both.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            glow.add(both, forKey: "breath")
         }
     }
 }

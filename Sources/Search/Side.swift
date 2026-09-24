@@ -76,6 +76,8 @@ struct SideBar: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
+            // Clear of the foot, which sits over the column's bottom edge.
+            .padding(.bottom, SideBar.footHeight)
 
             VStack {
                 Spacer()
@@ -180,8 +182,27 @@ struct SideBar: View {
                         pinned
                             .padding(.bottom, 10)
                     }
-                    loose
-                    newTab
+                    // A row too long for the window scrolls between the pins
+                    // and the foot, rather than running under the lights at one
+                    // end and the foot at the other. While it fits it stays a
+                    // plain stack, and the space under it is still the
+                    // window's to be dragged by. Inside the page: the swipe
+                    // between spaces moves the page, scroll and all.
+                    ViewThatFits(in: .vertical) {
+                        rows
+                        ScrollViewReader { proxy in
+                            ScrollView(.vertical) { rows }
+                                // The tab you go to is the tab you see — ⌘1–⌘9,
+                                // ⇧⌘], a link opening beside the one on screen.
+                                .onChange(of: browser.activeID) { _, id in
+                                    guard let id else { return }
+                                    withAnimation(Motion.glide) { proxy.scrollTo(id) }
+                                }
+                                .onAppear {
+                                    if let id = browser.activeID { proxy.scrollTo(id, anchor: .center) }
+                                }
+                        }
+                    }
                 }
             } else {
                 preview(browser.parked[browser.spaces[index].id] ?? Parked(tabs: [], active: nil), pill: pill)
@@ -423,6 +444,17 @@ struct SideBar: View {
             }
     }
 
+    /// The loose tabs and the row that makes another, which scroll as one.
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            loose
+            newTab
+        }
+    }
+
+    /// The foot's door and its margin beneath.
+    private static let footHeight: CGFloat = 26 + 10
+
     private var newTab: some View {
         Quiet(icon: "plus", title: "New tab", height: SideBar.row) { browser.newTab() }
             .padding(.top, SideBar.gap)
@@ -524,6 +556,8 @@ private struct PinSquare: View {
         .modifier(OneClick(double: live) {
             if live { browser.editLetter(tab) } else { browser.select(tab) }
         })
+        // Put down, like ⌘W: close() is what knows a pin isn't removed.
+        .overlay { MiddleClick { browser.close(tab) } }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
         .help(tab.label)
@@ -545,6 +579,11 @@ private struct SideRow: View {
     @State private var shake: CGFloat = 0
 
     private var editing: Bool { browser.editingTab == tab.id }
+
+    /// The ring or the speaker, which stay for as long as the page loads or
+    /// plays and so keep a place of their own at the end of the row. The
+    /// cross is only there under the pointer, and takes none.
+    private var status: Bool { !editing && (tab.loading || tab.noisy) }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -573,49 +612,73 @@ private struct SideRow: View {
                     .foregroundStyle(colour)
             }
 
-            Spacer(minLength: 2)
+            if status {
+                Spacer(minLength: 2)
 
+                ZStack {
+                    if tab.loading {
+                        Ring().transition(.opacity)
+                    } else {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(Palette.muted)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: 15, height: 15)
+                // The cross takes this place while the pointer is here.
+                .opacity(hovering ? 0 : 1)
+            }
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, status ? 7 : 10)
+        .frame(height: 28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // The title keeps its length under the pointer and fades out
+        // beneath the cross, rather than being cut shorter, so its end
+        // doesn't jump on each row the pointer passes.
+        .mask {
             ZStack {
-                if hovering, !editing {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(Palette.muted)
-                        .frame(width: 15, height: 15)
-                        .background(Palette.ink.opacity(0.07), in: Circle())
-                        .transition(.opacity)
-                } else if tab.loading {
-                    Ring().transition(.opacity)
-                } else if tab.noisy {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(Palette.muted)
-                        .transition(.opacity)
+                Rectangle().opacity(hovering && !editing && !status ? 0 : 1)
+                HStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 16)
+                    Color.clear.frame(width: 26)
                 }
             }
-            .frame(width: editing ? 0 : 15, height: 15)
-            .opacity(editing ? 0 : 1)
-            .overlay {
-                if !editing {
+        }
+        .overlay(alignment: .trailing) {
+            if !editing {
+                ZStack {
+                    if hovering {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Palette.muted)
+                            .frame(width: 15, height: 15)
+                            .background(Palette.ink.opacity(0.07), in: Circle())
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: 15, height: 15)
+                .overlay {
                     Color.clear
                         .frame(width: 30, height: 28)
                         .contentShape(Rectangle())
                         .onTapGesture { if hovering { close() } }
                 }
+                .padding(.trailing, 7)
             }
-            .animation(Motion.quick, value: hovering)
-            .animation(Motion.quick, value: tab.loading)
-            .animation(Motion.quick, value: tab.noisy)
         }
-        .padding(.leading, 10)
-        .padding(.trailing, editing ? 10 : 7)
-        .frame(height: 28)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(Motion.quick, value: tab.loading)
+        .animation(Motion.quick, value: tab.noisy)
         .background { ground }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })
+        .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
         .animation(Motion.quick, value: hovering)
@@ -633,11 +696,13 @@ private struct SideRow: View {
         if live {
             ZStack(alignment: .leading) {
                 Rectangle().fill(Palette.wash)
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(Palette.ink.opacity(0.055))
-                        .frame(width: geo.size.width * tab.reading)
-                        .animation(.easeOut(duration: 0.15), value: tab.reading)
+                if prefs.showsReading {
+                    GeometryReader { geo in
+                        Rectangle()
+                            .fill(Palette.ink.opacity(0.055))
+                            .frame(width: geo.size.width * tab.reading)
+                            .animation(.easeOut(duration: 0.15), value: tab.reading)
+                    }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))

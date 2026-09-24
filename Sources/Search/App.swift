@@ -57,10 +57,12 @@ struct SearchApp: App {
                     set: { _ in browser.toggleSidebar() }
                 ))
                 .keyboardShortcut("s", modifiers: [.command, .shift])
-                // Folded away, not moved (see Fold.swift).
-                Button(browser.folded ? "Show Sidebar" : "Hide Sidebar") { browser.toggleFold() }
+                // Folded away, not moved (see Fold.swift) — the column, or the
+                // strip across the top.
+                Button(browser.prefs.sidebar
+                       ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
+                       : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
                     .keyboardShortcut("s")
-                    .disabled(!browser.prefs.sidebar)
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
                     set: { browser.prefs.glyph = $0 }
@@ -88,6 +90,14 @@ struct SearchApp: App {
                     .keyboardShortcut("-")
                 Button("Actual Size") { browser.resetZoom() }
                     .keyboardShortcut("0")
+                Divider()
+                // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
+                Button("Web Inspector") { browser.toggleInspector() }
+                    .keyboardShortcut("i", modifiers: [.command, .option])
+                Button("JavaScript Console") { browser.showConsole() }
+                    .keyboardShortcut("j", modifiers: [.command, .option])
+                Button("Inspect Element") { browser.inspectElement() }
+                    .keyboardShortcut("c", modifiers: [.command, .option])
             }
             CommandMenu("Tabs") {
                 Button("Back") { browser.back() }
@@ -113,6 +123,8 @@ struct SearchApp: App {
                         Button("Unpin Tab") { browser.unpin(tab) }
                     }
                 }
+                Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
+                    .disabled(browser.active == nil)
                 Button("Duplicate Tab") { browser.duplicate() }
                     .keyboardShortcut("d")
                     .disabled(browser.active?.isBlank ?? true)
@@ -132,8 +144,8 @@ struct SearchApp: App {
                     .keyboardShortcut("b", modifiers: [.command, .shift])
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Show Bookmarks…") { browser.bookmarking = true }
-                Divider()
-                BookmarkTree(nodes: browser.bookmarks.roots) { browser.visit($0) }
+                // The bookmarks themselves follow, put in by AppKit (see
+                // BookmarkMenu in Bookmarks.swift).
             }
             CommandMenu("History") {
                 Section("Recently Visited") {
@@ -173,28 +185,6 @@ struct SearchApp: App {
             }
             CommandGroup(replacing: .help) {
                 Button("Send Feedback…") { Links.writeFeedback() }
-            }
-        }
-    }
-}
-
-/// The bookmarks, as menus within menus, for the menu bar.
-private struct BookmarkTree: View {
-    let nodes: [Bookmark]
-    let open: (URL) -> Void
-
-    var body: some View {
-        ForEach(nodes) { node in
-            if node.isFolder {
-                Menu(node.title) {
-                    if let kids = node.children, !kids.isEmpty {
-                        BookmarkTree(nodes: kids, open: open)
-                    } else {
-                        Text("Empty")
-                    }
-                }
-            } else if let text = node.url, let url = URL(string: text) {
-                Button(node.title) { open(url) }
             }
         }
     }
@@ -280,7 +270,7 @@ struct ContentView: View {
                 }
             }
 
-            if !browser.prefs.sidebar, browser.active?.immersed != true {
+            if !browser.prefs.sidebar, !browser.folded, browser.active?.immersed != true {
                 TabBar(browser: browser)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -388,9 +378,15 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
                 measureLights()
                 resting?.isHidden = false
+                // Only the window you were in, or every window's video would come.
+                browser.appLeft()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+                if let window, (note.object as? NSWindow) === window { Browser.front = browser }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
+                browser.appBack()
             }
             .onChange(of: browser.fieldShowing) { _, showing in
                 if showing {
@@ -412,6 +408,7 @@ struct ContentView: View {
             browser.askFocus()
             // Addresses from other apps have somewhere to go from here on.
             Links.hand(to: browser)
+            BookmarkMenu.shared.start(for: browser)
         }
     }
 
@@ -561,7 +558,8 @@ struct ContentView: View {
     /// starts at the very top; the strip needs a band.
     private var band: CGFloat {
         guard browser.active?.immersed != true else { return 0 }
-        return browser.prefs.sidebar ? 0 : Metrics.strip
+        // Folded, the strip is out of the window and the page has its height.
+        return browser.prefs.sidebar || browser.folded ? 0 : Metrics.strip
     }
 
     /// Put the resting circles in the title bar, exactly over the buttons.
@@ -676,6 +674,14 @@ struct ContentView: View {
             }
             if browser.managing {
                 browser.managing = false
+                return true
+            }
+            if browser.recalling {
+                browser.recalling = false
+                return true
+            }
+            if browser.hoarding {
+                browser.hoarding = false
                 return true
             }
             if browser.suggesting != nil {
@@ -799,8 +805,7 @@ struct ContentView: View {
         case "s" where shifted:
             browser.toggleSidebar()
         case "s" where !shifted:
-            // The strip has nothing to fold; ⌘S stays the page's (see Fold.swift).
-            guard browser.prefs.sidebar else { return false }
+            // The column or the strip, folded away (see Fold.swift).
             browser.toggleFold()
         case "b" where shifted:
             browser.bookmarkCurrent()
@@ -834,6 +839,11 @@ struct ContentView: View {
         case "]":
             shifted ? browser.step(1) : browser.forward()
         default:
+            // Moving or selecting text belongs to the editor, not the page's
+            // history — in web forms and in the browser's own fields alike.
+            guard !shifted, browser.active?.typing != true,
+                  !(event.window?.firstResponder is NSTextView)
+            else { return false }
             // ⌘← and ⌘→, for hands that never learned the brackets.
             if event.keyCode == 123 { browser.back(); return true }
             if event.keyCode == 124 { browser.forward(); return true }

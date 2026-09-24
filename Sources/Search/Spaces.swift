@@ -23,6 +23,11 @@ struct Space: Codable, Identifiable, Equatable {
     var colour: Int
     /// Its icon, one of `Spaces.icons`.
     var icon: String?
+    /// Signed in wherever the first space is — the same cookies and
+    /// sign-ins, only the tabs its own — rather than a store of its own.
+    /// Chosen when it is made; nil, for a space from before the choice, is
+    /// a store of its own.
+    var sharesSignIns: Bool?
     /// Where this space's downloads go; nil for the folder in Settings.
     var downloads: String?
 
@@ -83,9 +88,11 @@ enum Spaces {
     /// Each space's store, made once: WebKit shares processes between views
     /// that ask for the same store object.
     @MainActor private static var stores: [UUID: WKWebsiteDataStore] = [:]
+    /// The spaces signed in wherever the first one is (see Space.sharesSignIns).
+    @MainActor static var sharing: Set<UUID> = []
 
     @MainActor static func store(for id: UUID) -> WKWebsiteDataStore {
-        if id == Space.firstID { return Store.websites }
+        if id == Space.firstID || sharing.contains(id) { return Store.websites }
         if let made = stores[id] { return made }
         let made = WKWebsiteDataStore(forIdentifier: id)
         stores[id] = made
@@ -206,10 +213,11 @@ extension Browser {
         return Spaces.icons.first { !used.contains($0) } ?? "briefcase"
     }
 
-    /// A new space, empty, and on screen.
-    func addSpace(named name: String, icon: String? = nil) {
+    /// A new space, empty, and on screen — signed in where the others are,
+    /// or starting afresh with its own cookies and sign-ins.
+    func addSpace(named name: String, icon: String? = nil, sharesSignIns: Bool = true) {
         makingSpace = false
-        let made = Space(id: UUID(), name: name, colour: 0, icon: icon ?? freeIcon)
+        let made = Space(id: UUID(), name: name, colour: 0, icon: icon ?? freeIcon, sharesSignIns: sharesSignIns)
         spaces.append(made)
         Spaces.write(spaces)
         switchSpace(to: made.id)
@@ -222,13 +230,16 @@ extension Browser {
         Spaces.write(spaces)
     }
 
-    /// "New Space…": the card in the column when the column is there to
-    /// hold it, a question otherwise.
+    /// "New Space…": the card for a new space, in the column or the bar.
     func askForSpace() {
-        if prefs.sidebar, !folded || peeking {
-            withAnimation(Motion.glide) { makingSpace = true }
+        // In place, where the next space would come in, in the column or the
+        // bar alike; a question only while the tabs are folded out of sight.
+        if !folded || peeking {
+            let here = spaces.firstIndex { $0.id == spaceID } ?? 0
+            SpaceSwipe.shared.start(for: self)
+            SpaceSwipe.shared.slide(self, to: spaces.count, from: here)
         } else {
-            Ask.name("New Space", placeholder: "Work", confirm: "Create") { self.addSpace(named: $0) }
+            Ask.newSpace { name, shared in self.addSpace(named: name, sharesSignIns: shared) }
         }
     }
 
@@ -256,10 +267,13 @@ extension Browser {
         guard id != Space.firstID, let at = spaces.firstIndex(where: { $0.id == id }) else { return }
         if spaceID == id { switchSpace(to: Space.firstID) }
         for tab in parked.removeValue(forKey: id)?.tabs ?? [] { tab.close() }
+        let shared = spaces[at].sharesSignIns == true
         spaces.remove(at: at)
         Spaces.write(spaces)
         Session.erase(space: id)
-        Spaces.erase(id)
+        // A space signed in with the others has nothing of its own to erase:
+        // its cookies are theirs.
+        if !shared { Spaces.erase(id) }
     }
 
     /// Spaces turned off: back to the first one. The others are kept, in
@@ -408,6 +422,29 @@ enum Ask {
         show(alert) { ok in
             let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             if ok, !name.isEmpty { then(name) }
+        }
+    }
+
+    /// A new space's name, and whether it keeps the sign-ins the others
+    /// have — for when the column isn't there to hold the card.
+    static func newSpace(then: @escaping (String, Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = "New Space"
+        alert.informativeText = "Its own tabs. Signed in where your other spaces are, unless it starts afresh."
+        let field = NSTextField(frame: NSRect(x: 0, y: 30, width: 260, height: 24))
+        field.placeholderString = "Work"
+        let fresh = NSButton(checkboxWithTitle: "Start signed out, with its own cookies", target: nil, action: nil)
+        fresh.frame = NSRect(x: 0, y: 0, width: 260, height: 22)
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 56))
+        box.addSubview(field)
+        box.addSubview(fresh)
+        alert.accessoryView = box
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        show(alert) { ok in
+            let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if ok, !name.isEmpty { then(name, fresh.state != .on) }
         }
     }
 

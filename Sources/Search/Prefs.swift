@@ -43,6 +43,11 @@ final class Preferences: ObservableObject {
     @Published var sidebar: Bool {
         didSet { store.set(sidebar, forKey: "sidebar") }
     }
+    /// The column folded away whenever the pointer isn't at the left edge,
+    /// rather than only after ⌘S (see Fold.swift). Off unless asked for.
+    @Published var sideHides: Bool {
+        didSet { store.set(sideHides, forKey: "sidebar.hides") }
+    }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
@@ -50,14 +55,29 @@ final class Preferences: ObservableObject {
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
     }
+    @Published var engine: Engine {
+        didSet { store.set(engine.rawValue, forKey: "search.engine") }
+    }
+    @Published var customEngine: String {
+        didSet { store.set(customEngine, forKey: "search.custom") }
+    }
     /// Tabs nobody has looked at for half an hour give their page back and
     /// keep where they were. On unless turned off.
     @Published var sleepsTabs: Bool {
         didSet { store.set(sleepsTabs, forKey: "tabs.sleep") }
     }
+    @Published var showsReading: Bool {
+        didSet { store.set(showsReading, forKey: "tabs.reading") }
+    }
     /// The ad blocker. On unless turned off; there is nothing else to it.
     @Published var shielded: Bool {
         didSet { store.set(shielded, forKey: "shield") }
+    }
+    /// A private tab gets extensions too, not just every other page. Off
+    /// unless asked for - a private tab keeps nothing by default, extensions
+    /// included, and some watch what a page does.
+    @Published var extensionsInPrivate: Bool {
+        didSet { store.set(extensionsInPrivate, forKey: "extensions.private") }
     }
     /// Whether sites may ask for a passkey here. Off sends them to the
     /// password instead — the only thing that works in a build without
@@ -107,38 +127,58 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// A click of the wheel scrolls the page as on Windows (see AutoScroll.swift).
+    /// Off unless asked for.
+    @Published var autoScroll: Bool {
+        didSet {
+            store.set(autoScroll, forKey: "autoscroll")
+            AutoScroll.on = autoScroll
+        }
+    }
+    /// Two fingers flick the floating video to a corner (see Float.swift).
+    /// Off unless asked for.
+    @Published var floatFlicks: Bool {
+        didSet {
+            store.set(floatFlicks, forKey: "float.flicks")
+            Float.flicks = floatFlicks
+        }
+    }
+    /// A video playing floats out when another app comes to the front, and
+    /// back when Search does (see Browser.appLeft). Off unless asked for.
+    @Published var floatsAway: Bool {
+        didSet { store.set(floatsAway, forKey: "float.away") }
+    }
     /// Separate sets of tabs, each with its own sign-ins (see Spaces.swift).
     /// Off unless asked for.
     @Published var usesSpaces: Bool {
         didSet { store.set(usesSpaces, forKey: "spaces") }
     }
-    /// Inspect Element in a page's right-click menu, the Web Inspector
-    /// Safari shows once its Develop menu is on. Off unless asked for.
-    @Published var inspects: Bool {
-        didSet {
-            store.set(inspects, forKey: "inspector")
-            Web.inspects = inspects
-        }
-    }
 
     init() {
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
-        // Light unless asked otherwise — the browser was only ever light
-        // before this was a choice.
+        // The Mac's own unless asked otherwise — a Mac in dark mode expects
+        // a dark browser, pages included.
         bench = store.bool(forKey: "bench")
-        let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .light
+        let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .system
         look = chosen
         // Before the first window, and not deferred: the window that is about
-        // to be made should be made in the right appearance.
-        NSApp.appearance = chosen.appearance
+        // to be made should be made in the right appearance. Through `shared`
+        // rather than `NSApp`: on macOS 14 SwiftUI builds this before it has
+        // made the application, and `NSApp` is still nil here.
+        NSApplication.shared.appearance = chosen.appearance
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
+        sideHides = store.bool(forKey: "sidebar.hides")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
+        engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
+        customEngine = store.string(forKey: "search.custom") ?? ""
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
+        showsReading = store.object(forKey: "tabs.reading") as? Bool ?? true
         shielded = store.object(forKey: "shield") as? Bool ?? true
+        extensionsInPrivate = store.bool(forKey: "extensions.private")
         // Offered by default only in a build that can actually do them —
         // one with Apple's browser entitlement and its profile embedded. A
         // choice made while they couldn't work is not a choice about them:
@@ -169,9 +209,16 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
-        let inspecting = store.bool(forKey: "inspector")
-        inspects = inspecting
-        Web.inspects = inspecting
+        let flicks = store.bool(forKey: "float.flicks")
+        floatFlicks = flicks
+        Float.flicks = flicks
+        floatsAway = store.bool(forKey: "float.away")
+        let scrolls = store.bool(forKey: "autoscroll")
+        autoScroll = scrolls
+        AutoScroll.on = scrolls
+        // Left behind by the Web Inspector's switch, from before it was
+        // always there.
+        store.removeObject(forKey: "inspector")
         let corrects = store.bool(forKey: "autocorrect")
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.
