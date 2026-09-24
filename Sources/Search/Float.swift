@@ -45,7 +45,9 @@ final class Float {
 
         let size = NSSize(width: 440, height: 247)
         let screen = NSScreen.main?.visibleFrame ?? .zero
-        let spot = NSRect(
+        // Where it was last, at the size it was, if a screen still shows it;
+        // otherwise the bottom right of this one.
+        let spot = Float.remembered ?? NSRect(
             x: screen.maxX - size.width - 24,
             y: screen.minY + 24,
             width: size.width,
@@ -73,6 +75,14 @@ final class Float {
         panel.hasShadow = false
         panel.isReleasedWhenClosed = false
         panel.aspectRatio = size
+        // Kept as it goes, so quitting with it open still comes back to it.
+        keeping = [NSWindow.didMoveNotification, NSWindow.didResizeNotification].map { name in
+            NotificationCenter.default.addObserver(forName: name, object: panel, queue: .main) { [weak panel] _ in
+                MainActor.assumeIsolated {
+                    if let panel { Float.remembered = panel.frame }
+                }
+            }
+        }
         panel.minSize = NSSize(width: 260, height: 146)
 
         let ground = NSView(frame: NSRect(origin: .zero, size: size))
@@ -131,10 +141,30 @@ final class Float {
         }
     }
 
+    /// The window's last place and size, kept across closing it and quitting,
+    /// and given back only while a screen still shows most of it.
+    private static var remembered: NSRect? {
+        get {
+            guard let text = Store.settings.string(forKey: "float.frame") else { return nil }
+            let frame = NSRectFromString(text)
+            let shown = NSScreen.screens.contains {
+                let seen = $0.visibleFrame.intersection(frame)
+                return seen.width * seen.height > 0.6 * frame.width * frame.height
+            }
+            return frame.width > 100 && shown ? frame : nil
+        }
+        set { Store.settings.set(newValue.map(NSStringFromRect), forKey: "float.frame") }
+    }
+
+    private var keeping: [NSObjectProtocol] = []
+
     /// Puts the page down and closes. Whoever owns the page takes it back on
     /// their next layout.
     func drop() {
         guard let panel else { return }
+        Float.remembered = panel.frame
+        keeping.forEach(NotificationCenter.default.removeObserver)
+        keeping = []
         ticker?.invalidate()
         ticker = nil
         (page as? WKWebView)?.allowsMagnification = true
