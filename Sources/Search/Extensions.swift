@@ -956,7 +956,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
         }
         tab.go(to: url)
     }
-    func reload(fromOrigin: Bool, for context: WKWebExtensionContext) async throws { tab?.reload() }
+    func reload(fromOrigin: Bool, for context: WKWebExtensionContext) async throws { tab?.reload(fromOrigin: fromOrigin) }
     func goBack(for context: WKWebExtensionContext) async throws { tab?.back() }
     func goForward(for context: WKWebExtensionContext) async throws { tab?.forward() }
 

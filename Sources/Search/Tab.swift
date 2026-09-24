@@ -950,16 +950,19 @@ final class Tab: ObservableObject, Identifiable {
         return there.absoluteString == "about:blank" && pending == nil && address != nil
     }
 
-    /// Again from the network. A view that has lost its document is given
-    /// the address back instead: there is nothing else for it to reload.
-    func reload() {
+    /// A view that has lost its document is given the address back instead:
+    /// there is nothing else for it to reload.
+    func reload(fromOrigin: Bool = false) {
         // A pin put down with ⌘W has no view left to reload; waking it is
         // the reload.
         guard !wake() else { return }
         if hollow, let address {
-            web.load(URLRequest(url: address))
-        } else {
+            let policy: URLRequest.CachePolicy = fromOrigin ? .reloadRevalidatingCacheData : .useProtocolCachePolicy
+            web.load(URLRequest(url: address, cachePolicy: policy))
+        } else if fromOrigin {
             web.reloadFromOrigin()
+        } else {
+            web.reload()
         }
     }
     func stop() { web.stopLoading() }
