@@ -79,6 +79,19 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    func searchURL(for text: String) -> URL? {
+        Engine.url(for: text, template: prefs.engine.template(custom: prefs.customEngine))
+    }
+
+    func destination(for typed: String) -> URL? {
+        Address.url(from: typed) ?? searchURL(for: typed)
+    }
+
+    /// ⌘S: the column folded away, and slid out over the page for a look
+    /// while it is (see Fold.swift).
+    @Published var folded = false
+    @Published var peeking = false
+
     // MARK: - profiles
 
     let profileStore = ProfileStore()
@@ -615,6 +628,77 @@ final class Browser: NSObject, ObservableObject {
         announce("Site permissions reset")
     }
 
+    // MARK: - the address, in the tab itself
+
+    /// Clicking the tab you are already on turns it into the address, short
+    /// form, ready to be changed.
+    @Published private(set) var editingTab: Tab.ID?
+    @Published var tabDraft = ""
+    /// Set while that field is being used to name the tab rather than to go
+    /// somewhere: the same field, the same keys, a different thing at the end.
+    @Published private(set) var renamingTab = false
+
+    func beginTabEdit(_ tab: Tab) {
+        guard let url = tab.address else {
+            edit()
+            return
+        }
+        renamingTab = false
+        tabDraft = Address.pretty(url)
+        editingTab = tab.id
+    }
+
+    /// Rename. The name the tab is wearing arrives selected, so typing
+    /// replaces it; emptying the field gives the page its own title back.
+    func beginTabRename(_ tab: Tab) {
+        renamingTab = true
+        tabDraft = tab.label
+        editingTab = tab.id
+    }
+
+    func commitTabEdit() {
+        guard let id = editingTab, let tab = tabs.first(where: { $0.id == id }) else { return }
+        if renamingTab {
+            let typed = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            tab.name = typed.isEmpty ? nil : typed
+            cancelTabEdit()
+            writeSession(now: true)
+            return
+        }
+        guard let url = destination(for: tabDraft) else {
+            // Stay put and say so, rather than quietly throwing the edit away.
+            refusals += 1
+            return
+        }
+        editingTab = nil
+        tab.go(to: url)
+    }
+
+    func cancelTabEdit() {
+        editingTab = nil
+        renamingTab = false
+        tabDraft = ""
+    }
+
+    /// A click somewhere else — the page, the column below, the rest of the
+    /// strip — while a tab's address or name is being edited in the tab: what
+    /// was typed is kept, as Return keeps it. An address left as it was loads
+    /// nothing again, and a field left empty is let go.
+    func finishTabEdit() {
+        guard let id = editingTab, let tab = tabs.first(where: { $0.id == id }) else { return }
+        if renamingTab {
+            commitTabEdit()
+            return
+        }
+        let draft = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if draft.isEmpty || tab.address.map({ Address.pretty($0) == draft }) == true
+            || destination(for: draft) == nil {
+            cancelTabEdit()
+            return
+        }
+        commitTabEdit()
+    }
+
     // MARK: - pinning
 
     /// The pinned tab whose letter is being typed over, in place. There is no
@@ -682,35 +766,7 @@ final class Browser: NSObject, ObservableObject {
 
     // MARK: - the address, in the tab itself
 
-    /// Clicking the tab you are already on turns it into the address, short
-    /// form, ready to be changed.
-    @Published private(set) var editingTab: Tab.ID?
-    @Published var tabDraft = ""
 
-    func beginTabEdit(_ tab: Tab) {
-        guard let url = tab.address else {
-            edit()
-            return
-        }
-        tabDraft = Address.pretty(url)
-        editingTab = tab.id
-    }
-
-    func commitTabEdit() {
-        guard let id = editingTab, let tab = tabs.first(where: { $0.id == id }) else { return }
-        guard let url = Google.destination(for: tabDraft) else {
-            // Stay put and say so, rather than quietly throwing the edit away.
-            refusals += 1
-            return
-        }
-        editingTab = nil
-        tab.go(to: url)
-    }
-
-    func cancelTabEdit() {
-        editingTab = nil
-        tabDraft = ""
-    }
 
     // MARK: - saying so
 
@@ -761,6 +817,20 @@ final class Browser: NSObject, ObservableObject {
     private var hush: DispatchWorkItem?
     private var zoomShown = 100
     private var remembering = false
+
+    /// Spaces (see Spaces.swift): every one, the one on screen, and the
+    /// rows of tabs of the others.
+    @Published var spaces = Spaces.read() {
+        didSet { Spaces.sharing = Set(spaces.filter { $0.sharesSignIns == true }.map(\.id)) }
+    }
+    @Published var spaceID = Space.firstID
+    var parked: [UUID: Parked] = [:]
+    /// How far the column's rows have followed two fingers sideways, and
+    /// whether the card for a new space stands in for them (see SpaceSwipe).
+    @Published var spaceSwipe: CGFloat = 0
+    @Published var makingSpace = false
+    /// Which way the last change of space went: 1 to the next, -1 back.
+    @Published var spaceStep = 1
 
     // MARK: - beginning and ending
 
@@ -1007,7 +1077,7 @@ final class Browser: NSObject, ObservableObject {
         Favicons.shared.relook(tabs.filter { !$0.asleep })
     }
 
-    private func writeSession(now: Bool = false) {
+    func writeSession(now: Bool = false) {
         tabsByProfile[activeProfileID] = tabs
         activeTabByProfile[activeProfileID] = activeID
 
@@ -1566,6 +1636,52 @@ final class Browser: NSObject, ObservableObject {
         let job = tab.web.printOperation(with: info)
         job.view?.frame = tab.web.bounds
         job.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+
+    /// The row of tabs the space on screen had last time, or one empty tab.
+    func restoreSession() {
+        let currentTabs = tabsByProfile[activeProfileID] ?? []
+        guard !currentTabs.isEmpty else {
+            let tab = makeTab(profileID: activeProfileID)
+            adopt(tab)
+            tabsByProfile[activeProfileID] = [tab]
+            activeTabByProfile[activeProfileID] = tab.id
+            recordMRU(tab.id)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak tab] in
+                guard let tab, tab.isBlank else { return }
+                _ = tab.web
+            }
+            return
+        }
+        tabs = currentTabs
+        let activeChosenID = activeTabByProfile[activeProfileID] ?? tabs.first?.id
+        activeID = activeChosenID
+        active?.wake()
+    }
+
+    /// A space's row as its session left it, made without touching the one
+    /// on screen: tabs with an address and no page yet, which cost next to
+    /// nothing until one is looked at (see Spaces.swift).
+    func loadRow(_ space: UUID) -> Parked {
+        let saved = Session.read()
+        var row: [Tab] = []
+        for entry in saved.tabs {
+            guard let url = URL(string: entry.url) else { continue }
+            let tab = Tab(configuration: Web.configuration(space: space))
+            prepare(tab)
+            tab.restore(url: url, title: entry.title)
+            tab.pin = entry.pin
+            row.append(tab)
+        }
+        let active = row.indices.contains(saved.active) ? row[saved.active].id : row.first?.id
+        return Parked(tabs: row, active: active)
+    }
+
+    /// Another space's row put on screen in place of this one (see
+    /// Spaces.swift) — empty, for one that restores its own.
+    func showRow(_ row: [Tab], active: Tab.ID?) {
+        tabs = row
+        activeID = active ?? row.first?.id
     }
 
     private func adopt(_ tab: Tab) {

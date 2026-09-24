@@ -63,6 +63,9 @@ enum Web {
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
         return config
     }
+
+    /// Every page view there is, for the bench.
+    @MainActor static let pages = NSHashTable<PageView>.weakObjects()
 }
 
 @MainActor
@@ -252,6 +255,11 @@ final class Tab: ObservableObject, Identifiable {
     /// is all you need for the five or six pages you keep open all day.
     @Published var pin: String?
 
+    /// A name you gave it, in place of whatever the page calls itself. It
+    /// stays through navigation: a tab you named is a tab you are keeping for
+    /// a job, not for a page.
+    @Published var name: String?
+
     /// When you last looked at it. The summon lists pages by this, because
     /// what you were just reading is what you are most likely to want back.
     private(set) var touched = Date()
@@ -317,6 +325,7 @@ final class Tab: ObservableObject, Identifiable {
         if #available(macOS 13.3, *) { web.isInspectable = true }
         web.navigationDelegate = delegate
         web.uiDelegate = delegate
+        Web.pages.add(web)
 
         // A tab opened by a link inherits its opener's configuration, handlers
         // included, so each name is cleared before being claimed — registering
@@ -1106,6 +1115,25 @@ final class PageView: WKWebView {
     override func mouseDown(with event: NSEvent) {
         onTouch?()
         super.mouseDown(with: event)
+    }
+
+    // MARK: - keys the page didn't use
+
+    private var handed: NSEvent?
+    static var quieted = 0
+
+    override func keyDown(with event: NSEvent) {
+        if let handed, PageView.same(handed, event) {
+            self.handed = nil
+            PageView.quieted += 1
+            return
+        }
+        handed = event
+        super.keyDown(with: event)
+    }
+
+    static func same(_ one: NSEvent, _ other: NSEvent) -> Bool {
+        one === other || (one.timestamp == other.timestamp && one.keyCode == other.keyCode && one.type == other.type)
     }
 
     // MARK: - two fingers sideways

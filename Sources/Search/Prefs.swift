@@ -43,12 +43,23 @@ final class Preferences: ObservableObject {
     @Published var sidebar: Bool {
         didSet { store.set(sidebar, forKey: "sidebar") }
     }
+    /// The column folded away whenever the pointer isn't at the left edge,
+    /// rather than only after ⌘S (see Fold.swift). Off unless asked for.
+    @Published var sideHides: Bool {
+        didSet { store.set(sideHides, forKey: "sidebar.hides") }
+    }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
     }
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
+    }
+    @Published var engine: Engine {
+        didSet { store.set(engine.rawValue, forKey: "search.engine") }
+    }
+    @Published var customEngine: String {
+        didSet { store.set(customEngine, forKey: "search.custom") }
     }
     /// Tabs nobody has looked at for half an hour give their page back and
     /// keep where they were. On unless turned off.
@@ -142,9 +153,12 @@ final class Preferences: ObservableObject {
         NSApp.appearance = chosen.appearance
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
+        sideHides = store.bool(forKey: "sidebar.hides")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
+        engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
+        customEngine = store.string(forKey: "search.custom") ?? ""
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         showsReading = store.object(forKey: "tabs.reading") as? Bool ?? true
         shielded = store.object(forKey: "shield") as? Bool ?? true

@@ -32,8 +32,10 @@ struct TabBar: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 // The empty half of the strip is what you grab to move the
-                // window; the tabs keep the run they sit on.
-                DragStrip(reserved: Metrics.lights + (profileWidth > 0 ? profileWidth + 4 : 0) + dot + (making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width)) + Metrics.tabGap + Metrics.plusWidth, trailing: Metrics.helm + 26 + 24)
+                let profWidth: CGFloat = (profileWidth > 0 ? profileWidth + 4 : 0)
+                let tabsWidth: CGFloat = (making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width))
+                let reservedWidth: CGFloat = Metrics.lights + profWidth + dot + tabsWidth + Metrics.tabGap + Metrics.plusWidth
+                DragStrip(reserved: reservedWidth, trailing: Metrics.helm + 26 + 24)
                 // And the corner the lights sit in, which is title bar too —
                 // the one stretch left to take hold of when tabs fill the row.
                 DragStrip()
@@ -301,6 +303,9 @@ struct TabBar: View {
         }
         return total
     }
+
+    /// What the space's dot takes before the tabs, when there are spaces.
+    private var dot: CGFloat { browser.prefs.usesSpaces ? SpaceDot.width + Metrics.tabGap : 0 }
 
     /// The strip, less the lights, the plus, the doors at the far end and
     /// the air around them. The doors are measured; until they have been,

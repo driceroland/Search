@@ -32,6 +32,11 @@ enum Session {
 
     private static var file: URL { Store.file("session.json") }
 
+    static func erase(space: UUID) {
+        guard space != Space.firstID else { return }
+        try? FileManager.default.removeItem(at: Store.file("session-\(space.uuidString).json"))
+    }
+
     static func read() -> Shape {
         guard let data = try? Data(contentsOf: file) else { return Shape(tabs: [], active: 0) }
         guard let shape = try? JSONDecoder().decode(Shape.self, from: data) else {
