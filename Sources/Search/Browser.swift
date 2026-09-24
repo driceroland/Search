@@ -78,6 +78,31 @@ final class Browser: NSObject, ObservableObject {
         return count
     }
 
+    @discardableResult
+    func takeBookmarks(from source: Mozilla.Source) -> Int {
+        let found = Mozilla.bookmarks(in: source)
+        bookmarks.take(found, from: source.name)
+        let count = Bookmarks.count(found)
+        announce(count == 0 ? "No bookmarks in \(source.name)" : "\(count) bookmarks from \(source.name)")
+        let urls = Bookmarks.urls(found)
+        DispatchQueue.global(qos: .utility).async {
+            let icons = Mozilla.icons(in: source, for: urls)
+            Task { @MainActor in
+                for (host, data) in icons { await Favicons.shared.adopt(data, for: host) }
+                self.objectWillChange.send()
+            }
+        }
+        return count
+    }
+
+    @discardableResult
+    func takeBookmarks(from source: ImportSource) -> Int {
+        switch source {
+        case .chromium(let c): return takeBookmarks(from: c)
+        case .mozilla(let m): return takeBookmarks(from: m)
+        }
+    }
+
     /// ⇧⌘S. The same tabs, down the left or across the top.
     func toggleSidebar() {
         withAnimation(Motion.glide) { prefs.sidebar.toggle() }
@@ -390,6 +415,26 @@ final class Browser: NSObject, ObservableObject {
                 self.history.settle()
                 done(places.count)
             }
+        }
+    }
+
+    func takePlaces(from source: Mozilla.Source, then done: @escaping (Int) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let places = Mozilla.places(in: source)
+            DispatchQueue.main.async {
+                for place in places {
+                    self.history.take(place.url, title: place.title, count: place.count, last: place.last)
+                }
+                self.history.settle()
+                done(places.count)
+            }
+        }
+    }
+
+    func takePlaces(from source: ImportSource, then done: @escaping (Int) -> Void) {
+        switch source {
+        case .chromium(let c): takePlaces(from: c, then: done)
+        case .mozilla(let m): takePlaces(from: m, then: done)
         }
     }
 

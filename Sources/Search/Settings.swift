@@ -330,7 +330,7 @@ struct SettingsPanel: View {
                 }
             }
             Card {
-                Line("Bring yours in", "From Dia, Chrome, Arc, Brave or Edge on this Mac — nothing leaves it") {
+                Line("Bring yours in", "From Dia, Chrome, Arc, Brave, Edge, Firefox or Zen on this Mac — nothing leaves it") {
                     Pill("Import…") {
                         browser.tuning = false
                         browser.managing = true
@@ -388,6 +388,15 @@ struct SettingsPanel: View {
             Card {
                 Line("History", "Every address you have been to") {
                     Pill("Clear") { browser.clearHistory() }
+                }
+                let sources = ImportSource.installed()
+                if !sources.isEmpty {
+                    Rule()
+                    Line("Bring in from", "History from another browser on this Mac") {
+                        ForEach(sources) { source in
+                            Pill(source.name) { browser.takePlaces(from: source) { _ in } }
+                        }
+                    }
                 }
                 Rule()
                 Line("Cookies and sign-ins", "Signs you out of every site") {
