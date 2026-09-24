@@ -52,54 +52,10 @@ final class Shield: ObservableObject {
         if enabled, !isPaused(on: host) { controller.add(list) }
     }
 
-    /// Third parties whose only job is to watch or to sell. First-party
-    /// requests are untouched: a site's own scripts are the site.
-    private static let unwanted = [
-        "doubleclick.net", "googlesyndication.com", "googleadservices.com",
-        "googletagservices.com", "google-analytics.com", "googletagmanager.com",
-        "adservice.google.com", "amazon-adsystem.com", "adnxs.com", "adsrvr.org",
-        "criteo.com", "criteo.net", "taboola.com", "outbrain.com",
-        "rubiconproject.com", "pubmatic.com", "openx.net", "casalemedia.com",
-        "smartadserver.com", "sharethrough.com", "indexww.com", "bidswitch.net",
-        "33across.com", "teads.tv", "moatads.com", "adroll.com",
-        "scorecardresearch.com", "quantserve.com", "chartbeat.com",
-        "hotjar.com", "mouseflow.com", "fullstory.com", "clarity.ms",
-        "mixpanel.com", "amplitude.com", "segment.com", "segment.io",
-        "branch.io", "appsflyer.com", "adjust.com", "analytics.tiktok.com",
-        "connect.facebook.net", "ads-twitter.com", "analytics.twitter.com",
-    ]
-
-    /// The few slots that are reliably an advertisement and nothing else. Kept
-    /// deliberately short — a generous cosmetic list is how a blocker starts
-    /// eating the page it was meant to clean.
-    private static let slots = [
-        ".adsbygoogle", "ins.adsbygoogle", "[id^=\"google_ads_\"]",
-        "[id^=\"div-gpt-ad\"]", "[id^=\"taboola-\"]", "#taboola-below-article",
-        "iframe[src*=\"doubleclick.net\"]", "iframe[src*=\"googlesyndication\"]",
-        "iframe[src*=\"amazon-adsystem\"]",
-    ]
-
     func compile() {
         guard list == nil else { return }
         trouble = nil
-        var rules: [[String: Any]] = Shield.unwanted.map { domain in
-            let escaped = domain.replacingOccurrences(of: ".", with: "\\.")
-            return [
-                "trigger": [
-                    "url-filter": "^https?://([^/]+\\.)?\(escaped)",
-                    "load-type": ["third-party"],
-                ],
-                "action": ["type": "block"],
-            ]
-        }
-        rules.append([
-            "trigger": ["url-filter": ".*"],
-            "action": ["type": "css-display-none", "selector": Shield.slots.joined(separator: ", ")],
-        ])
-
-        guard let data = try? JSONSerialization.data(withJSONObject: rules),
-              let json = String(data: data, encoding: .utf8)
-        else {
+        guard let json = ShieldRules.json() else {
             trouble = "Couldn't build the block list"
             return
         }
