@@ -389,7 +389,11 @@ struct ContentView: View {
                     handBack()
                 }
             }
-            .onChange(of: browser.activeID) { _, _ in handBack() }
+            .onChange(of: browser.pageCovered) { _, _ in browser.syncPagePointerGuard() }
+            .onChange(of: browser.activeID) { _, _ in
+                handBack()
+                browser.syncPagePointerGuard()
+            }
             .animation(Motion.settle, value: browser.recalling)
             .animation(Motion.settle, value: browser.hoarding)
             .animation(Motion.settle, value: browser.tuning)
@@ -400,6 +404,7 @@ struct ContentView: View {
         .onAppear {
             watchKeys()
             browser.askFocus()
+            browser.syncPagePointerGuard()
             // Addresses from other apps have somewhere to go from here on.
             Links.hand(to: browser)
             BookmarkMenu.shared.start(for: browser)

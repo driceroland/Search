@@ -971,6 +971,23 @@ final class AudioWatch: NSObject {
 
 /// A web view that reads the two-finger swipe for itself.
 final class PageView: WKWebView {
+    /// A native panel does not change WebKit's hovered element. Give the page
+    /// a transparent target of its own until that panel closes, so moving the
+    /// pointer over the panel cannot keep hovering a link beneath it.
+    func coverPointer(_ covered: Bool) {
+        let script = covered ? """
+            (() => {
+                const id = '__search_panel_pointer_guard__';
+                if (!document.documentElement || document.getElementById(id)) return;
+                const guard = document.createElement('search-panel-pointer-guard');
+                guard.id = id;
+                guard.style.cssText = 'all: initial !important; position: fixed !important; inset: 0 !important; z-index: 2147483647 !important; display: block !important; opacity: 0 !important; pointer-events: auto !important';
+                document.documentElement.append(guard);
+            })()
+            """ : "document.querySelector('search-panel-pointer-guard#__search_panel_pointer_guard__')?.remove()"
+        evaluateJavaScript(script)
+    }
+
     /// What extensions added to the right-click menu, at the end of it.
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)

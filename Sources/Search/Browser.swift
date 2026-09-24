@@ -37,6 +37,18 @@ final class Browser: NSObject, ObservableObject {
     /// The first-launch walk-through, over everything. Also from the menu.
     @Published var welcoming = false
 
+    /// WebKit does not see native panels as something covering its page, so
+    /// its last hovered element can stay hovered underneath them.
+    var pageCovered: Bool {
+        tuning || welcoming || bookmarking || managing || recalling || hoarding || reviewing || fieldShowing
+    }
+
+    func syncPagePointerGuard() {
+        for tab in tabs {
+            tab.built?.coverPointer(pageCovered && tab.id == activeID)
+        }
+    }
+
     // MARK: - bookmarks
 
     let bookmarks = Bookmarks()
@@ -1944,6 +1956,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if pageCovered, let tab = tab(for: webView), tab.id == activeID {
+            (webView as? PageView)?.coverPointer(true)
+        }
         // A page with nothing to lay out never has a first frame. Done is
         // done, and it is shown.
         (webView as? PageView)?.showFirstFrame()
