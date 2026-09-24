@@ -956,6 +956,7 @@ final class Tab: ObservableObject, Identifiable {
         // A pin put down with ⌘W has no view left to reload; waking it is
         // the reload.
         guard !wake() else { return }
+        reader = false
         if hollow, let address {
             let policy: URLRequest.CachePolicy = fromOrigin ? .reloadRevalidatingCacheData : .useProtocolCachePolicy
             web.load(URLRequest(url: address, cachePolicy: policy))
