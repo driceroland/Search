@@ -25,6 +25,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With an extension's page as the new tab, the field works again: an address or a search typed there went nowhere and the tab stayed on the extension's page. Bookmarks, history and pasting an address into that tab had the same trouble, as did any tab showing an extension's page, one it opened included. A private tab sent from an extension's page to a website stays private. Thanks [@meta-boy](https://github.com/meta-boy) ([#42](https://github.com/driceroland/Search/pull/42))
 - A new tab opened from a private tab is private too: ⌘T, ⌘-click on a link, ⌘D, Open Image in New Tab, and a bookmark opened with ⌘ used to open an ordinary tab, which kept the page in the history. A link or duplicate stays signed in to what the private tab was ([#121](https://github.com/driceroland/Search/issues/121)) Thanks [@PeterTheMango](https://github.com/PeterTheMango) ([#122](https://github.com/driceroland/Search/pull/122))
 - Pages are told the Safari version this Mac has, not a fixed Safari 26.5: on an older macOS, a site trusting that number could send code its WebKit can't run. Thanks [@peter-bf](https://github.com/peter-bf) ([#110](https://github.com/driceroland/Search/pull/110))
 - Passwords, Bookmarks and the welcome screen find the browsers to bring things over from without walking through their caches: a few milliseconds instead of twenty, each time those lists are drawn. Thanks [@dttdrv](https://github.com/dttdrv) ([#156](https://github.com/driceroland/Search/pull/156))
@@ -50,7 +51,6 @@ in [ROADMAP.md](ROADMAP.md).
 - Passkeys work: a site's "Sign in with a passkey" or "Create a passkey" brings up your Mac's own passkey sheet — Touch ID with your passkeys from iCloud Keychain or a password app, your iPhone over the QR code, or a security key — where it could end in "authentication failed" on every site. Left to WebKit, a sign-in page that offers your passkey under its name field kept a request open with macOS, and if Search quit or crashed while such a page was open, macOS went on refusing all of Search's passkeys until the Mac restarted. Search now carries passkeys out itself, as Chrome does, and never leaves one open; the first time, macOS asks whether Search may use them. **Passkeys still failing after the update? Restart your Mac once.** Not yet: the Mac's passkeys offered under a sign-in field as the page loads — the site's passkey button is the way in for now; a password manager extension that keeps passkeys, such as 1Password, can offer its own there. ([#17](https://github.com/driceroland/Search/issues/17))
 - ⌘⇧N no longer piles up empty private tabs: one already open comes to the end of the row, as with ⌘T.
 - A new space's choice of sign-ins reads in full in the column ("Signed in" / "Signed out"), where it was cut short.
-- With an extension's page as the new tab, the field works again: an address or a search typed there went nowhere and the tab stayed on the extension's page. Bookmarks, history and pasting an address into that tab had the same trouble.
 
 ## 1.0.1 — 23 September 2026
 

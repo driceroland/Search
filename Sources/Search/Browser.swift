@@ -1017,7 +1017,7 @@ final class Browser: NSObject, ObservableObject {
     func replaceBlank(_ tab: Tab, with url: URL) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         let url = Browser.page(url)
-        let page = Tab(for: url)
+        let page = Tab(configuration: Browser.extensionConfiguration(for: url))
         prepare(page)
         tabs[index] = page
         page.go(to: url)
@@ -1201,7 +1201,7 @@ final class Browser: NSObject, ObservableObject {
         let tab = if let source, source.shy, page == nil {
             Tab(shy: true, configuration: Web.configuration(shy: true, store: source.store))
         } else {
-            Tab(for: url)
+            Tab(configuration: page)
         }
         prepare(tab)
         let here = atEnd ? nil : tabs.firstIndex { $0.id == activeID }
@@ -1225,7 +1225,16 @@ final class Browser: NSObject, ObservableObject {
     /// an extension sending a website's tab to one of its own pages.
     func replace(_ tab: Tab, going url: URL) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-        let fresh = Tab(bench: tab.bench, for: url)
+        // A private tab stays private, and keeps its own sign-ins when it
+        // had them; an extension's page it showed was in that extension's
+        // store, so going back to the web takes a new private one.
+        let page = Browser.extensionConfiguration(for: url)
+        let fresh = if tab.shy {
+            Tab(shy: true, bench: tab.bench, configuration: page
+                ?? Web.configuration(shy: true, store: tab.store.isPersistent ? nil : tab.store))
+        } else {
+            Tab(bench: tab.bench, configuration: page)
+        }
         prepare(fresh)
         let wasActive = activeID == tab.id
         tabs[index] = fresh
@@ -1262,7 +1271,7 @@ final class Browser: NSObject, ObservableObject {
     @discardableResult
     func benchOpen(_ url: URL) -> Tab {
         let url = Browser.page(url)
-        let tab = Tab(bench: true, for: url)
+        let tab = Tab(bench: true, configuration: Browser.extensionConfiguration(for: url))
         prepare(tab)
         tabs.append(tab)
         tab.go(to: url)

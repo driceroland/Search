@@ -118,9 +118,6 @@ final class Tab: ObservableObject, Identifiable {
     /// the reason there is.
     private(set) var built: PageView?
     private let configuration: WKWebViewConfiguration
-    /// The extension whose pages this tab's view was built for, nil for the
-    /// web. WebKit keeps each kind of view to its own pages.
-    private let home: String?
 
     /// Whether its page was made with the extension controller in it — every
     /// ordinary tab, and a private one only when extensions were allowed
@@ -255,6 +252,10 @@ final class Tab: ObservableObject, Identifiable {
     var onImageMenu: ((Tab, URL) -> Void)?
     /// "Add to Search" was pressed on the Chrome Web Store page this tab shows.
     var onStoreAdd: ((Tab) -> Void)?
+    /// Sent where this tab's view can't go: from an extension's page to the
+    /// web or another extension, or from the web to an extension's page.
+    /// WebKit keeps each kind of view to its own pages, so the tab has to be
+    /// swapped for one built for the address (see Browser.replace).
     var onCross: ((Tab, URL) -> Void)?
     /// The extension whose store page has its own "Add to Search" button in
     /// place — so the bar at the bottom of the window doesn't offer it twice.
@@ -328,15 +329,10 @@ final class Tab: ObservableObject, Identifiable {
         return "New Tab"
     }
 
-    init(shy: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil, home: String? = nil) {
+    init(shy: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil) {
         self.shy = shy
         self.bench = bench
         self.configuration = configuration ?? Web.configuration(shy: shy)
-        self.home = home
-    }
-
-    convenience init(bench: Bool = false, for url: URL) {
-        self.init(bench: bench, configuration: Browser.extensionConfiguration(for: url), home: Browser.extensionHost(of: url))
     }
 
     private func build() -> PageView {
@@ -633,7 +629,12 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     func go(to url: URL) {
-        if Browser.extensionHost(of: url) != home, let onCross {
+        // Judged by the page it shows, not by how it was made: a tab an
+        // extension's page opened with window.open is built from that
+        // extension's configuration too. A tab with no page yet was just
+        // built for where it is going, so it goes there.
+        if let onCross, let here = built?.url ?? address,
+           Browser.extensionHost(of: here) != Browser.extensionHost(of: url) {
             onCross(self, url)
             return
         }
