@@ -994,6 +994,19 @@ final class PageView: WKWebView {
         super.mouseDown(with: event)
     }
 
+    /// The side buttons a mouse has for back and forward — button 3 and 4.
+    /// No standard hands out that numbering; it's the X11 button order
+    /// (0 left, 1 right, 2 middle, 3 back, 4 forward) that most mouse
+    /// drivers settled on regardless, so it's what a mouse's own firmware
+    /// is tuned to send.
+    override func otherMouseDown(with event: NSEvent) {
+        switch event.buttonNumber {
+        case 3 where canGoBack: goBack()
+        case 4 where canGoForward: goForward()
+        default: super.otherMouseDown(with: event)
+        }
+    }
+
     // MARK: - keys the page didn't use
 
     /// The last key handed to the page. WebKit sends a key the page didn't
