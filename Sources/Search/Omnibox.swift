@@ -379,7 +379,9 @@ struct AddressField: NSViewRepresentable {
                 browser.walk(-1)
                 return true
             case #selector(NSResponder.deleteBackward(_:)),
-                 #selector(NSResponder.deleteForward(_:)):
+                 #selector(NSResponder.deleteForward(_:)),
+                 #selector(NSResponder.deleteWordBackward(_:)),
+                 #selector(NSResponder.deleteWordForward(_:)):
                 deleting = true
                 return false
             default:
