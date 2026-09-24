@@ -29,6 +29,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Homebrew: `brew install --cask driceroland/tap/search`, and `brew upgrade` brings each new version.
 - ⌘S folds the tab bar away in its layout across the top too, as it folds the column: the page takes the whole height, and the bar comes back down over it when the pointer rests against the top edge. The View menu says Hide Tab Bar there.
 - Where a link goes, before you click it: point at it and its address shows at the bottom of the page, in the other corner if the pointer is in that one. Settings › General › Show where links go, off by default. Thanks [@fschrhunt](https://github.com/fschrhunt) ([#29](https://github.com/driceroland/Search/pull/29))
+- Import bookmarks, history and passwords from Helium.
 
 ### Fixed
 
