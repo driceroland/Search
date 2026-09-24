@@ -15,6 +15,7 @@ final class Browser: NSObject, ObservableObject {
             // gone unwatched long enough to sleep is counted from here, not
             // from when it was first picked.
             guard oldValue != activeID, let old = oldValue else { return }
+            linkStatus.dismiss()
             tabs.first { $0.id == old }?.touch()
         }
     }
@@ -32,6 +33,7 @@ final class Browser: NSObject, ObservableObject {
     /// Everything there is to set. Held here so the whole window redraws when
     /// one of them changes.
     let prefs = Preferences()
+    let linkStatus = LinkStatus()
     /// The settings panel.
     @Published var tuning = false
     /// The first-launch walk-through, over everything. Also from the menu.
@@ -881,6 +883,19 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // Every tab's next page, and the page each is showing now.
+        prefs.$showsLinks
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self else { return }
+                if !on { linkStatus.dismiss() }
+                for tab in tabs + parkedTabs {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.built?.evaluateJavaScript(on ? HoveredLink.script : HoveredLink.off, in: nil, in: .defaultClient)
+                }
+            }
+            .store(in: &bag)
+
         prefs.$passkeys
             .dropFirst()
             .sink { [weak self] on in
@@ -1331,7 +1346,8 @@ final class Browser: NSObject, ObservableObject {
         open(url, foreground: true, from: active)
     }
 
-    /// ⌘⇧V. What is in the clipboard, if it is a place — or a search.
+    /// ⌘⇧V, when nothing is being typed. What is in the clipboard, if it is a
+    /// place — or a search — in the tab you're on.
     func pasteAndGo() {
         guard let text = NSPasteboard.general.string(forType: .string),
               let url = destination(for: text.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -1460,6 +1476,10 @@ final class Browser: NSObject, ObservableObject {
 
     private func prepare(_ tab: Tab) {
         tab.delegate = self
+        tab.onLink = { [weak self] tab, address in
+            guard let self, prefs.showsLinks, tab.id == activeID else { return }
+            linkStatus.show(address, over: tab.built)
+        }
         tab.onPick = { [weak self] tab, selector, label, note in
             guard let self, let host = curtain.host(of: tab.address) else { return }
             curtain.hide(selector, label: label, note: note, on: host)
@@ -1477,6 +1497,10 @@ final class Browser: NSObject, ObservableObject {
             self.open(url, foreground: true, from: tab)
         }
         tab.onStoreAdd = { [weak self] tab in self?.addFromStore(tab) }
+        // The middle button on a link opens it beside the tab you are on, as
+        // it does in every other browser (see MiddleRelay).
+        // From a private tab, the new one is private too, as for ⌘-click.
+        tab.onMiddleClick = { [weak self] tab, url in self?.open(url, foreground: false, from: tab) }
 
         // The caret in a sign-in box: the accounts kept for this site hang
         // from the box, and go when the caret does. Nothing is filled on
@@ -1814,16 +1838,28 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         }
 
         // ⌘-click opens beside this tab and leaves you where you are; ⌘⇧-click
-        // takes you with it. Middle-click does what ⌘-click does, for hands
-        // that learned it that way.
+        // takes you with it.
+        //
+        // The middle button is not judged here. WebKit hands the browser a
+        // navigation action for a ⌘-click and none at all for a middle one,
+        // and where it does report a button it answers with a mask — 1 left,
+        // 2 right, 4 middle — so a check for 2 here would have meant the right
+        // button, not the middle (see MiddleRelay, which is where the middle
+        // button is answered).
+        //
+        // Should a WebKit ever hand one over for the middle button after all,
+        // it is cancelled: MiddleRelay has already opened the link in a tab of
+        // its own, and letting this one through would take the page there too.
+        if action.navigationType == .linkActivated, action.buttonNumber == 4 {
+            decisionHandler(.cancel)
+            return
+        }
         if action.navigationType == .linkActivated,
-           ["http", "https"].contains(scheme) {
-            let flags = action.modifierFlags
-            if flags.contains(.command) || action.buttonNumber == 2 {
-                open(url, foreground: flags.contains(.shift), from: tab(for: webView))
-                decisionHandler(.cancel)
-                return
-            }
+           ["http", "https"].contains(scheme),
+           action.modifierFlags.contains(.command) {
+            open(url, foreground: action.modifierFlags.contains(.shift), from: tab(for: webView))
+            decisionHandler(.cancel)
+            return
         }
 
         // The next document gets this site's stylesheet of hidden things,
@@ -1975,6 +2011,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard let tab = tab(for: webView) else { return }
+        if tab.id == activeID { linkStatus.dismiss() }
         tab.failure = nil
         tab.typing = false
         // Whatever you last set this site to, before it draws a single frame
@@ -2120,7 +2157,6 @@ extension Browser: WKDownloadDelegate {
         return candidate
     }
 }
-
 
 
 

@@ -56,7 +56,7 @@
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
-                                       folded on|off, peek on|off
+                                       folded on|off, peek on|off, pages120 on|off
 
 Needs Settings › General › "Let a script drive Search" switched on in the
 running app. IDs are the first characters of a tab's id, as `tabs` prints
