@@ -253,6 +253,9 @@ struct ContentView: View {
                     // One stage, always.
                     if let tab = browser.active {
                         Page(tab: tab)
+                            .overlay {
+                                if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
+                            }
                             .overlay(alignment: .topTrailing) {
                                 if browser.finding {
                                     FindBar(browser: browser)
@@ -785,7 +788,20 @@ struct ContentView: View {
         case "j" where shifted:
             browser.hoarding.toggle()
         case "v" where shifted:
-            browser.pasteAndGo()
+            // In a text field this key is paste without formatting — a Google
+            // Doc, a form, the address field. It only means Paste and Go when
+            // nothing is being typed. Passing the key on is not enough: WebKit
+            // has no use for ⌘⇧V, hands it back, and the menu's Paste and Go
+            // takes it. So the plain paste is done here, as Chrome does.
+            // A web view has an input context only while the caret is in
+            // something editable, in any frame — including frames the page's
+            // own script can't look into, like the one a Google Doc types in.
+            if browser.active?.typing == true || browser.active?.built?.inputContext != nil
+                || browser.editing || event.window?.firstResponder is NSTextView {
+                _ = event.window?.firstResponder?.tryToPerform(#selector(NSTextView.pasteAsPlainText(_:)), with: nil)
+            } else {
+                browser.pasteAndGo()
+            }
         case "p" where !shifted:
             browser.printPage()
         case "f" where !shifted:

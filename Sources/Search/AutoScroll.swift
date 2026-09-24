@@ -20,6 +20,10 @@ enum AutoScroll {
       if (window.__searchAutoScroll) return;
       window.__searchAutoScroll = true;
       let active = null;
+      // The button whose press just stopped the scrolling. Its click is part
+      // of stopping, not a click of its own: landing on a link, it would
+      // follow it, or open it in a new tab for the middle button.
+      let swallow = -1;
 
       const scroller = (el) => {
         for (; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
@@ -69,7 +73,8 @@ enum AutoScroll {
       };
 
       addEventListener('mousedown', (e) => {
-        if (active) { e.preventDefault(); e.stopPropagation(); stop(); return; }
+        swallow = -1;
+        if (active) { e.preventDefault(); e.stopPropagation(); stop(); swallow = e.button; return; }
         if (e.button !== 1 || window.__searchAutoScrollOff) return;
         if (e.target.closest && e.target.closest('a[href], area[href], input, textarea, select, button, video, audio, iframe, [contenteditable=""], [contenteditable="true"]')) return;
         e.preventDefault();
@@ -85,9 +90,14 @@ enum AutoScroll {
       // Held down and dragged: let go, and it stops.
       addEventListener('mouseup', (e) => {
         if (active && e.button === 1 && performance.now() - active.since > 250 &&
-            (Math.abs(active.dx) > 12 || Math.abs(active.dy) > 12)) stop();
+            (Math.abs(active.dx) > 12 || Math.abs(active.dy) > 12)) { stop(); swallow = 1; }
       }, true);
-      addEventListener('auxclick', (e) => { if (e.button === 1 && active) e.preventDefault(); }, true);
+      const eat = (e) => {
+        if (e.button === swallow) { swallow = -1; e.preventDefault(); e.stopPropagation(); }
+        else if (e.button === 1 && active) e.preventDefault();
+      };
+      addEventListener('click', eat, true);
+      addEventListener('auxclick', eat, true);
       addEventListener('keydown', (e) => { if (active && e.key === 'Escape') { e.preventDefault(); stop(); } }, true);
       addEventListener('wheel', stop, { capture: true, passive: true });
       addEventListener('blur', stop);
