@@ -308,6 +308,16 @@ final class Bench {
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             guard let js = request["js"] as? String else { answer(["error": "eval needs js"]); return }
             house(tab)
+            // Search's own world is where its page scripts live (see Web.world).
+            if request["world"] as? String == "search" {
+                tab.web.evaluateJavaScript(js, in: nil, in: Web.world) { result in
+                    switch result {
+                    case .success(let value): answer(["value": Bench.plain(value)])
+                    case .failure(let error): answer(["error": error.localizedDescription])
+                    }
+                }
+                return
+            }
             tab.web.evaluateJavaScript(js) { value, error in
                 MainActor.assumeIsolated {
                     if let error { answer(["error": error.localizedDescription]); return }
@@ -333,9 +343,16 @@ final class Bench {
                     }
                     let local = NSPoint(x: point[0], y: view.isFlipped ? point[1] : view.bounds.height - point[1])
                     let spot = view.convert(local, to: nil)
+                    // Held while clicking: "shift", "cmd", "opt".
+                    var held: NSEvent.ModifierFlags = []
+                    for name in request["mods"] as? [String] ?? [] {
+                        if name == "shift" { held.insert(.shift) }
+                        if name == "cmd" { held.insert(.command) }
+                        if name == "opt" { held.insert(.option) }
+                    }
                     for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                         guard let event = NSEvent.mouseEvent(
-                            with: type, location: spot, modifierFlags: [],
+                            with: type, location: spot, modifierFlags: held,
                             timestamp: ProcessInfo.processInfo.systemUptime,
                             windowNumber: window.windowNumber, context: nil,
                             eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0
@@ -414,10 +431,12 @@ final class Bench {
                 return FrameRate.prefersNear60(preferences)
             }
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
+            out["peek"] = browser.peekTab?.address?.absoluteString ?? ""
             out["folded"] = browser.folded
             out["peeking"] = browser.peeking
             out["sideHides"] = browser.prefs.sideHides
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
+            out["siteCard"] = SiteCardPanel.isShown
             // Whether this Mac lets the browser use its passkeys at all — the
             // one-time permission macOS asks a browser other than Safari for.
             switch ASAuthorizationWebBrowserPublicKeyCredentialManager().authorizationStateForPlatformCredentials {
@@ -693,6 +712,69 @@ final class Bench {
                     "firstFolder": folder?.items.prefix(4).map(\.title) ?? [],
                     "active": browser.active?.address?.absoluteString ?? ""])
 
+        case "keyeq":
+            // A ⌘ shortcut pressed while the page has the keyboard, put
+            // through the app's key handling and then to the page's view, as
+            // AppKit does with a key window — which a hidden probe hasn't.
+            // Reports what Search did and what the page saw. Only on a
+            // SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "keyeq only works on a --test run"]); return }
+            guard let tab = browser.active, let web = tab.built, let window = web.window,
+                  let chars = request["chars"] as? String, let code = request["code"] as? Int
+            else { answer(["error": "keyeq needs a loaded tab, the characters and the key code"]); return }
+            var flags: NSEvent.ModifierFlags = [.command]
+            if (request["mods"] as? [String] ?? []).contains("shift") { flags.insert(.shift) }
+            window.makeFirstResponder(web)
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: flags,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: UInt16(code)
+            ) else { answer(["error": "no event"]); return }
+            let before = (finding: browser.finding, summoning: browser.editing, folded: browser.folded)
+            var firstPass = "search"
+            if ContentView.keyHook?(event) != nil {
+                firstPass = "page"
+                _ = web.performKeyEquivalent(with: event)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                web.evaluateJavaScript("JSON.stringify(window.__keys || [])") { seen, _ in
+                    MainActor.assumeIsolated {
+                        answer(["firstPass": firstPass, "pageSaw": seen as? String ?? "",
+                                "finding": [before.finding, browser.finding], "fieldUp": [before.summoning, browser.editing],
+                                "folded": [before.folded, browser.folded]])
+                    }
+                }
+            }
+
+        case "pull":
+            // Two fingers sideways over the page: DX points in STEPS scroll
+            // events spread over MS milliseconds, with a trackpad's phases,
+            // handed to the page's view — for the swipe back and forward.
+            // Reports where the tab is after. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "pull only works on a --test run"]); return }
+            guard let tab = browser.active, let web = tab.built, let dx = request["dx"] as? Double
+            else { answer(["error": "pull needs a loaded tab and a distance"]); return }
+            let steps = max(2, request["steps"] as? Int ?? 10)
+            let ms = max(1, request["ms"] as? Double ?? 200)
+            let before = tab.address?.absoluteString ?? ""
+            func send(_ phase: Int64, _ delta: Double) {
+                guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: Int32(delta), wheel3: 0) else { return }
+                cg.setIntegerValueField(CGEventField(rawValue: 88)!, value: 1) // kCGScrollWheelEventIsContinuous
+                cg.setIntegerValueField(CGEventField(rawValue: 99)!, value: phase) // kCGScrollWheelEventScrollPhase
+                cg.setIntegerValueField(CGEventField(rawValue: 97)!, value: Int64(delta)) // kCGScrollWheelEventPointDeltaAxis2
+                if let event = NSEvent(cgEvent: cg) { web.scrollWheel(with: event) }
+            }
+            send(1, 0)
+            for n in 1...steps {
+                DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000 * Double(n) / Double(steps)) {
+                    send(2, dx / Double(steps))
+                    if n == steps { send(4, 0) }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000 + 1.2) {
+                answer(["before": before, "after": tab.address?.absoluteString ?? ""])
+            }
+
         case "place":
             // A tab put at another place in the row, as a drag would.
             guard let id = request["id"] as? String, let to = request["to"] as? Int,
@@ -950,6 +1032,30 @@ final class Bench {
                 window.contentView = nil
             }
 
+        case "site":
+            // The site card for the tab on screen, or one step in on its
+            // connection, drawn off screen (see SiteCard.swift).
+            guard let path = request["path"] as? String else { answer(["error": "site needs a path"]); return }
+            guard let tab = browser.active, !tab.isBlank else { answer(["error": "no page on screen"]); return }
+            let deeper = request["security"] as? Bool == true
+            // On the ground: off screen there is no glass to stand on.
+            let host = NSHostingView(rootView: AnyView(SiteCard(browser: browser, tab: tab, deeper: deeper) {}.fixedSize().background(Palette.ground)))
+            host.frame = NSRect(origin: .zero, size: host.fittingSize)
+            let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.appearance = NSApp.effectiveAppearance
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                host.frame = NSRect(origin: .zero, size: host.fittingSize)
+                guard let picture = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { answer(["error": "nothing drawn"]); return }
+                host.cacheDisplay(in: host.bounds, to: picture)
+                do {
+                    try picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                    answer(["saved": path])
+                } catch { answer(["error": error.localizedDescription]) }
+                window.contentView = nil
+            }
+
         case "column":
             // The column of tabs, drawn off screen at its width, with what the
             // browser has now — the rows, the card for a new space, the dots.
@@ -1052,6 +1158,10 @@ final class Bench {
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
             if let on = request["peek"] as? Bool { browser.peeking = on }
+            // A peek at a link (Peek.swift): its two buttons.
+            if let what = request["peeklink"] as? String {
+                if what == "keep" { browser.keepPeek() } else { browser.closePeek() }
+            }
             // The address of the tab on screen being edited in the tab, with
             // this typed, and that edit let go of by a click elsewhere.
             if let text = request["edittab"] as? String, let tab = browser.active {
@@ -1071,7 +1181,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "space", "strip", "column", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "keyeq", "pull", "space", "strip", "column", "site", "ui",
             ]])
         }
     }
@@ -1210,6 +1320,8 @@ final class Bench {
             "active": tab.id == browser?.activeID,
             "asleep": tab.asleep,
             "shy": tab.shy,
+            "noisy": tab.noisy,
+            "muted": tab.muted,
             "extensions": { if #available(macOS 15.4, *) { return tab.carriesExtensions } else { return false } }(),
         ]
     }

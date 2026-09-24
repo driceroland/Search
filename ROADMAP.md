@@ -34,6 +34,7 @@ don't build it twice.
 - [ ] **Smoother scrolling with a mouse wheel.** To look into. *(X)*
 - [ ] **Tab groups.** To weigh against keeping the sidebar quiet, now that there are Spaces. *(X, [#31](https://github.com/driceroland/Search/pull/31))*
 - [ ] **A title bar in the page's colour**, as an option, without bringing back the toolbar. *([#25](https://github.com/driceroland/Search/pull/25))*
+- [ ] **Extensions per space**: each space with the extensions it wants, on and off apart from the others. WebKit has one extension controller for the whole app, so this means one per space. Drice's call, 24 Sep: later. *(X)*
 
 ## Not on the list, for now
 

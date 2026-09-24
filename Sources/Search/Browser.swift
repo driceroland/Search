@@ -704,6 +704,8 @@ final class Browser: NSObject, ObservableObject {
     /// whether the card for a new space stands in for them (see SpaceSwipe).
     @Published var spaceSwipe: CGFloat = 0
     @Published var makingSpace = false
+    /// A link's page, peeked at over this one (see Peek.swift).
+    @Published var peekTab: Tab?
     /// Which way the last change of space went: 1 to the next, -1 back.
     @Published var spaceStep = 1
 
@@ -757,13 +759,13 @@ final class Browser: NSObject, ObservableObject {
             guard let self, let id = self.floating,
                   let tab = self.tabs.first(where: { $0.id == id })
             else { return }
-            tab.web.evaluateJavaScript(Isolate.skip(seconds))
+            tab.web.evaluateInSearch(Isolate.skip(seconds))
         }
         floater.onProgress = { [weak self] answer in
             guard let self, let id = self.floating,
                   let tab = self.tabs.first(where: { $0.id == id })
             else { return }
-            tab.web.evaluateJavaScript(Isolate.where_) { found, _ in
+            tab.web.evaluateInSearch(Isolate.where_) { found in
                 MainActor.assumeIsolated {
                     guard let pair = found as? [Any], pair.count == 2,
                           let through = pair[0] as? Double,
@@ -777,7 +779,7 @@ final class Browser: NSObject, ObservableObject {
             guard let self, let id = self.floating,
                   let tab = self.tabs.first(where: { $0.id == id })
             else { return }
-            tab.web.evaluateJavaScript(Isolate.toggle) { playing, _ in
+            tab.web.evaluateInSearch(Isolate.toggle) { playing in
                 MainActor.assumeIsolated { answer((playing as? Bool) ?? true) }
             }
         }
@@ -893,7 +895,7 @@ final class Browser: NSObject, ObservableObject {
                 guard let self else { return }
                 for tab in tabs + parkedTabs {
                     tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
-                    tab.built?.evaluateJavaScript(on ? AutoScroll.script : AutoScroll.off)
+                    tab.built?.evaluateInSearch(on ? AutoScroll.script : AutoScroll.off)
                 }
             }
             .store(in: &bag)
@@ -1427,6 +1429,12 @@ final class Browser: NSObject, ObservableObject {
         activeID = active ?? row.first?.id
     }
 
+    /// A tab made outside the row — a peek being kept — put in it at `index`.
+    func insert(_ tab: Tab, at index: Int) {
+        tabs.insert(tab, at: min(max(0, index), tabs.count))
+        rememberSession()
+    }
+
     private func adopt(_ tab: Tab) {
         prepare(tab)
         tabs.append(tab)
@@ -1436,6 +1444,7 @@ final class Browser: NSObject, ObservableObject {
     /// Stepping away from a tab. A video you were watching does not stop
     /// existing because you went to look something up.
     private func leaving() {
+        guard prefs.floatsOnLeave else { return }
         lift(active, quietly: true)
     }
 
@@ -1479,7 +1488,7 @@ final class Browser: NSObject, ObservableObject {
         // A hero background on a studio's home page is a video too, and it
         // followed people around the desktop. ⌘⇧P still lifts from anywhere.
         if quietly, !Players.knows(tab.address) { return }
-        tab.web.evaluateJavaScript(Isolate.on) { [weak self] answer, _ in
+        tab.web.evaluateInSearch(Isolate.on) { [weak self] answer in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 guard (answer as? String) == "floating" else {
@@ -1502,10 +1511,10 @@ final class Browser: NSObject, ObservableObject {
         guard let id = floating, let tab = tabs.first(where: { $0.id == id }) else { return }
         floating = nil
         tab.floating = false
-        tab.web.evaluateJavaScript(Isolate.off)
+        tab.web.evaluateInSearch(Isolate.off)
     }
 
-    private func prepare(_ tab: Tab) {
+    func prepare(_ tab: Tab) {
         tab.delegate = self
         tab.onLink = { [weak self] tab, address in
             guard let self, prefs.showsLinks, tab.id == activeID else { return }
@@ -1884,6 +1893,17 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // its own, and letting this one through would take the page there too.
         if action.navigationType == .linkActivated, action.buttonNumber == 4 {
             decisionHandler(.cancel)
+            return
+        }
+        // Shift-click, when Settings says so: a peek at the link, over this
+        // page (see Peek.swift). Only from a tab in the row — within a peek,
+        // a link just goes.
+        if prefs.peeksLinks, action.navigationType == .linkActivated,
+           ["http", "https"].contains(scheme),
+           action.modifierFlags.intersection([.shift, .command, .option, .control]) == .shift,
+           let from = tab(for: webView), peekTab == nil {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { [weak self] in self?.peek(url, from: from) }
             return
         }
         if action.navigationType == .linkActivated,

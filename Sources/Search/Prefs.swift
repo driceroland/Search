@@ -145,6 +145,11 @@ final class Preferences: ObservableObject {
     }
     /// Where a link goes, at the bottom of the page while the pointer is on
     /// it (see StatusLine.swift). Off unless asked for.
+    /// Shift-click on a link opens it in a panel over the page (see
+    /// Peek.swift). Off unless asked for.
+    @Published var peeksLinks: Bool {
+        didSet { store.set(peeksLinks, forKey: "links.peek") }
+    }
     @Published var showsLinks: Bool {
         didSet {
             store.set(showsLinks, forKey: "links.show")
@@ -163,6 +168,12 @@ final class Preferences: ObservableObject {
     /// back when Search does (see Browser.appLeft). Off unless asked for.
     @Published var floatsAway: Bool {
         didSet { store.set(floatsAway, forKey: "float.away") }
+    }
+    /// A video playing on a video site comes out into the floating window
+    /// when you go to another tab (Browser.leaving). On, as it always was;
+    /// the switch is for turning it off.
+    @Published var floatsOnLeave: Bool {
+        didSet { store.set(floatsOnLeave, forKey: "float.leave") }
     }
     /// Separate sets of tabs, each with its own sign-ins (see Spaces.swift).
     /// Off unless asked for.
@@ -229,6 +240,8 @@ final class Preferences: ObservableObject {
         floatFlicks = flicks
         Float.flicks = flicks
         floatsAway = store.bool(forKey: "float.away")
+        floatsOnLeave = store.object(forKey: "float.leave") as? Bool ?? true
+        peeksLinks = store.bool(forKey: "links.peek")
         let links = store.bool(forKey: "links.show")
         showsLinks = links
         HoveredLink.on = links
