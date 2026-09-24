@@ -747,7 +747,7 @@ final class Extensions: NSObject, ObservableObject {
     }
 
     func press(_ id: String) {
-        guard let context = contexts[id] else { return }
+        guard let context = contexts[id], !ExtensionPopup.shared.closes(id) else { return }
         if let tab = activeAdapter { context.userGesturePerformed(in: tab) }
         // An extension that asked for its button to open its side panel.
         if ExtensionShims.panelOnClick.contains(id), context.action(for: activeAdapter)?.presentsPopup != true {
