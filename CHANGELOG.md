@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Added
 
 - Updates can wait for you: Settings › About › Install updates on its own, on as before. Switched off, Search still looks once a day and says when a newer version is out, and fetches, checks and installs it only when you press Install.
+- AppleScript can read the tabs, in Safari's words: `tell application "Search" to return URL of current tab of front window`, and `name`, `tabs` and `count` beside it. Raycast, Alfred and scripts like sesh's can take the page you're on. ([#232](https://github.com/driceroland/Search/issues/232))
 ### Fixed
 
 - A mouse wheel scrolls pages that listen to the wheel themselves, as carousels and x.com do: Search stopped pages bouncing past their top and bottom with a style of its own, and together with such a listener WebKit dropped the wheel's steps. The bounce is now turned off by WebKit itself, the page's styles untouched, and the sideways bounce stays for swiping back and forward. Thanks [@olllayor](https://github.com/olllayor) ([#194](https://github.com/driceroland/Search/pull/194)). Fixes [#180](https://github.com/driceroland/Search/issues/180)
