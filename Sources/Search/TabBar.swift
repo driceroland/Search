@@ -18,6 +18,7 @@ struct TabBar: View {
     @State private var plussed = false
     /// How wide the doors at the far end are, extension buttons included.
     @State private var doors: CGFloat = 0
+    @State private var profileWidth: CGFloat = 0
 
     var body: some View {
         // A GeometryReader is only here to measure the width. Its content is
@@ -29,15 +30,22 @@ struct TabBar: View {
             ZStack(alignment: .leading) {
                 // The empty half of the strip is what you grab to move the
                 // window; the tabs keep the run they sit on.
-                DragStrip(reserved: Metrics.lights + dot + run(in: geo.size.width) + Metrics.tabGap + Metrics.plusWidth, trailing: Metrics.helm + 26 + 24)
+                DragStrip(reserved: Metrics.lights + (profileWidth > 0 ? profileWidth + 4 : 0) + run(in: geo.size.width) + Metrics.tabGap + Metrics.plusWidth, trailing: Metrics.helm + 26 + 24)
                 // And the corner the lights sit in, which is title bar too —
                 // the one stretch left to take hold of when tabs fill the row.
                 DragStrip()
                     .frame(width: Metrics.lights)
 
                 HStack(spacing: Metrics.tabGap) {
-                    // The space on screen, first, when there are spaces.
-                    if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
+                    ProfilePill(browser: browser)
+                        .background {
+                            GeometryReader { box in
+                                Color.clear
+                                    .onAppear { profileWidth = box.size.width }
+                                    .onChange(of: box.size.width) { _, width in profileWidth = width }
+                            }
+                        }
+                        .padding(.trailing, 2)
 
                     // The tabs, in a run of their own. While they fit, it is
                     // exactly as wide as they are and nothing about the row
@@ -67,12 +75,6 @@ struct TabBar: View {
                                     // up with the hand: what it has travelled, less the
                                     // ground its new place has already given it.
                                     .offset(x: held ? travel - CGFloat(index - from) * step : 0)
-                                    // Under the hand exactly. Its place in the row springs when it
-                                    // passes another tab, and the offset springs back the same way —
-                                    // until the next move of the hand cuts the offset's spring short
-                                    // and leaves the place's running: the tab jumped a whole slot and
-                                    // drifted back each time it passed one. Only the others glide.
-                                    .transaction { if held { $0.animation = nil } }
                                     .zIndex(held ? 1 : 0)
                                     .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
                                     .gesture(reorder(tab: tab, index: index, step: step))
@@ -94,14 +96,14 @@ struct TabBar: View {
                     Button { browser.newTab() } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Palette.muted)
+                            .foregroundStyle(browser.topIsDark ? Color.white.opacity(0.85) : Palette.muted)
                             .frame(width: 15, height: 15)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 6)
                             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                             .background(
                                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .fill(plussed ? Palette.hover : .clear)
+                                    .fill(plussed ? (browser.topIsDark ? Color.white.opacity(0.15) : Palette.hover) : .clear)
                             )
                     }
                     .buttonStyle(.plain)
@@ -119,7 +121,7 @@ struct TabBar: View {
                         ExtensionSlot()
                         Helm(browser: browser)
                             .padding(.trailing, 8)
-                        Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
+                        Door(icon: "bookmark", isDark: browser.topIsDark, help: "Bookmarks") { browser.bookmarksOpen.toggle() }
                             .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .bottom) {
                                 BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
                             }
@@ -147,7 +149,11 @@ struct TabBar: View {
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
             browser.take(providers)
         }
-        .background(landing ? Palette.hover : .clear)
+        .background {
+            let containerBg = (browser.active?.isBlank == true ? Palette.ground : browser.topColor)
+            Rectangle().fill(landing ? Palette.hover : containerBg)
+        }
+        .animation(.easeInOut(duration: 0.22), value: browser.topColor)
         .animation(Motion.quick, value: landing)
         .animation(Motion.glide, value: browser.activeID)
         // The row makes room for the field on the same spring as everything
@@ -224,11 +230,9 @@ struct TabBar: View {
     /// the three of the helm and the bookmarks stand in for them.
     private func room(in strip: CGFloat) -> CGFloat {
         let far = doors > 0 ? doors : Metrics.helm + 26
-        return max(0, strip - Metrics.lights - dot - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
+        let prof: CGFloat = profileWidth > 0 ? profileWidth + 4 : 0
+        return max(0, strip - Metrics.lights - 12 - prof - Metrics.plusWidth - far - 3 * Metrics.tabGap)
     }
-
-    /// What the space's dot takes before the tabs, when there are spaces.
-    private var dot: CGFloat { browser.prefs.usesSpaces ? SpaceDot.width + Metrics.tabGap : 0 }
 
     /// Every loose tab is the same width, so the cross is always in the same
     /// place. Past a dozen or so they start giving ground; too narrow for a
@@ -271,26 +275,42 @@ struct Helm: View {
     private struct Wheel: View {
         let browser: Browser
         @ObservedObject var tab: Tab
+        @State private var permissionsOpen = false
 
         var body: some View {
             let back = !tab.isBlank && tab.canGoBack
             let forward = !tab.isBlank && tab.canGoForward
             HStack(spacing: 2) {
-                Door(icon: "chevron.left", help: "Back   ⌘[") { browser.back() }
+                Door(icon: "chevron.left", isDark: browser.topIsDark, help: "Back   ⌘[") { browser.back() }
                     .disabled(!back)
                     .opacity(back ? 1 : 0.3)
-                Door(icon: "chevron.right", help: "Forward   ⌘]") { browser.forward() }
+                Door(icon: "chevron.right", isDark: browser.topIsDark, help: "Forward   ⌘]") { browser.forward() }
                     .disabled(!forward)
                     .opacity(forward ? 1 : 0.3)
                 // Reload, or stop while it is still coming.
                 Door(
                     icon: tab.loading ? "xmark" : "arrow.clockwise",
+                    isDark: browser.topIsDark,
                     help: tab.loading ? "Stop   ⌘." : "Reload   ⌘R"
                 ) {
                     if tab.loading { tab.stop() } else { browser.reload() }
                 }
                 .disabled(tab.isBlank)
                 .opacity(tab.isBlank ? 0.3 : 1)
+
+                if let host = tab.address?.host(), !tab.isBlank {
+                    Door(
+                        icon: "slider.horizontal.3",
+                        on: permissionsOpen,
+                        isDark: browser.topIsDark,
+                        help: "Permisos del sitio: \(host)"
+                    ) {
+                        permissionsOpen.toggle()
+                    }
+                    .popover(isPresented: $permissionsOpen, arrowEdge: .bottom) {
+                        SitePermissionsPopover(browser: browser, host: host, tab: tab)
+                    }
+                }
             }
             .animation(Motion.quick, value: back)
             .animation(Motion.quick, value: forward)
@@ -345,12 +365,12 @@ private struct TabPill: View {
                 }
                 .frame(width: 16, height: 16)
                 .padding(.horizontal, 7)
-                .padding(.vertical, 6)
                 .frame(width: span)
             } else {
                 loose
             }
         }
+        .frame(height: 28)
         .background { ground }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -374,7 +394,6 @@ private struct TabPill: View {
                 browser.select(tab)
             }
         })
-        .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
         .help(pinned || compact ? tab.label : "")
@@ -401,7 +420,6 @@ private struct TabPill: View {
                 }
             }
             .frame(width: 16, height: 16)
-            .padding(.vertical, 6)
             .frame(width: span)
         } else {
             titled
@@ -479,7 +497,6 @@ private struct TabPill: View {
         }
         .padding(.leading, 11)
         .padding(.trailing, editing ? 11 : 7)
-        .padding(.vertical, 6)
         .frame(width: span, alignment: .leading)
     }
 
@@ -518,6 +535,9 @@ private struct TabPill: View {
 
     private var colour: Color {
         if live { return Palette.ink }
+        if browser.topIsDark {
+            return hovering ? Color.white : Color.white.opacity(0.8)
+        }
         return hovering ? Palette.ink.opacity(0.7) : Palette.muted
     }
 }
@@ -543,12 +563,7 @@ struct TabAddressField: NSViewRepresentable {
         field.cell?.usesSingleLineMode = true
         field.cell?.wraps = false
         field.stringValue = browser.tabDraft
-        context.coordinator.watch(field)
         return field
-    }
-
-    static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
-        coordinator.unwatch()
     }
 
     func updateNSView(_ field: NSTextField, context: Context) {
@@ -603,34 +618,10 @@ struct TabAddressField: NSViewRepresentable {
             }
         }
 
-        /// Clicking anywhere else keeps what was typed, as Return does.
+        /// Clicking anywhere else is a way of saying never mind.
         func controlTextDidEndEditing(_ note: Notification) {
             let browser = browser
-            DispatchQueue.main.async { browser.finishTabEdit() }
-        }
-
-        /// A press on something that takes no focus — the strip's empty
-        /// stretch, the column below the rows — leaves the field focused and
-        /// editing, so presses are watched for while it is there: one anywhere
-        /// but in the field ends the edit the same way. The press itself goes
-        /// on to what it was for.
-        private var watcher: Any?
-
-        func watch(_ field: NSTextField) {
-            guard watcher == nil else { return }
-            watcher = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self, weak field] event in
-                guard let self, let field, event.window === field.window,
-                      !field.bounds.contains(field.convert(event.locationInWindow, from: nil))
-                else { return event }
-                let browser = self.browser
-                DispatchQueue.main.async { browser.finishTabEdit() }
-                return event
-            }
-        }
-
-        func unwatch() {
-            if let watcher { NSEvent.removeMonitor(watcher) }
-            watcher = nil
+            DispatchQueue.main.async { browser.cancelTabEdit() }
         }
     }
 }
@@ -650,7 +641,6 @@ struct TabMenu: View {
             Button("Unpin") { browser.unpin(tab) }
         }
         Divider()
-        Button("Rename") { browser.beginTabRename(tab) }
         Button("Duplicate") {
             browser.select(tab)
             browser.duplicate()
@@ -661,6 +651,12 @@ struct TabMenu: View {
             browser.copyAddress()
         }
         .disabled(tab.isBlank)
+        if !tab.isBlank {
+            Button("Site Permissions…") {
+                browser.select(tab)
+                browser.openPrivacySettings()
+            }
+        }
         Divider()
         Button("Close Tab", action: close)
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }
@@ -678,50 +674,6 @@ struct OneClick: ViewModifier {
             content.onTapGesture(count: 2, perform: act)
         } else {
             content.onTapGesture(perform: act)
-        }
-    }
-}
-
-/// The middle button on a tab closes it, as it does in every other browser.
-///
-/// SwiftUI has no gesture for that button, so this is a real view laid over
-/// the tab — and a real view is asked first (see DragStrip). It says yes for
-/// the middle button and nothing else: to a left click, a drag or a right
-/// click it isn't there, and the tab's own gestures and menu go on as before.
-struct MiddleClick: NSViewRepresentable {
-    let act: () -> Void
-
-    func makeNSView(context: Context) -> NSView { Catch() }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        (view as? Catch)?.act = act
-    }
-
-    private final class Catch: NSView {
-        var act: () -> Void = {}
-        private var pressed = false
-
-        /// Asked about every event that lands on the tab, the pointer moving
-        /// over it included; the one being delivered is the one to judge by.
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            guard let event = NSApp.currentEvent,
-                  event.type == .otherMouseDown || event.type == .otherMouseUp,
-                  event.buttonNumber == 2
-            else { return nil }
-            return super.hitTest(point)
-        }
-
-        override func otherMouseDown(with event: NSEvent) {
-            pressed = true
-        }
-
-        /// On the release, not the press, and only if it is still over the
-        /// tab: a middle button pressed by mistake can be taken back the way
-        /// a click on the cross can, by moving off before letting go.
-        override func otherMouseUp(with event: NSEvent) {
-            guard pressed else { return }
-            pressed = false
-            if bounds.contains(convert(event.locationInWindow, from: nil)) { act() }
         }
     }
 }
@@ -840,3 +792,128 @@ struct PinField: NSViewRepresentable {
         }
     }
 }
+
+/// A compact pill showing the active profile in the tab bar.
+/// A compact pill showing the active profile in the tab bar.
+/// Clicking it opens the profile switcher popover.
+struct ProfilePill: View {
+    @ObservedObject var browser: Browser
+    @State private var open = false
+    @State private var hovering = false
+
+    var body: some View {
+        let profile = browser.activeProfile
+        let isDark = browser.topIsDark
+        Button {
+            open.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: profile.symbol)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(profile.color)
+
+                Text(profile.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isDark ? Color.white : Palette.ink)
+                    .lineLimit(1)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(isDark ? Color.white.opacity(0.7) : Palette.muted)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(hovering ? (isDark ? Color.white.opacity(0.15) : Palette.hover) : profile.color.opacity(0.14))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(profile.color.opacity(0.28), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Perfil: \(profile.name)")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            ProfileMenuPopover(browser: browser, open: $open)
+        }
+        .animation(Motion.quick, value: hovering)
+    }
+}
+
+struct ProfileMenuPopover: View {
+    @ObservedObject var browser: Browser
+    @Binding var open: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Perfiles")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Palette.muted)
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+
+            ForEach(browser.profileStore.profiles) { profile in
+                Button {
+                    open = false
+                    browser.switchProfile(to: profile.id)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: profile.symbol)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(profile.color)
+                            .frame(width: 16)
+
+                        Text(profile.name)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Palette.ink)
+
+                        Spacer(minLength: 12)
+
+                        if profile.id == browser.activeProfileID {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Palette.ink)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(profile.id == browser.activeProfileID ? Palette.wash : .clear)
+                )
+            }
+
+            Divider()
+                .padding(.vertical, 4)
+
+            Button {
+                open = false
+                browser.openProfilesSettings()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 11))
+                        .frame(width: 16)
+                    Text("Gestionar perfiles…")
+                        .font(.system(size: 12))
+                    Spacer()
+                }
+                .foregroundStyle(Palette.ink.opacity(0.8))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(6)
+        .frame(width: 200)
+    }
+}
+

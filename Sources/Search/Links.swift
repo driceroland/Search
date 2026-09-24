@@ -59,6 +59,10 @@ final class Links: NSObject, NSApplicationDelegate {
         )
     }
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NotificationManager.shared.setup()
+    }
+
     @objc private func handle(getURL event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let text = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: text), url.scheme?.lowercased().hasPrefix("http") == true

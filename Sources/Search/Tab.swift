@@ -19,16 +19,13 @@ enum Web {
     /// — web tabs and extension views alike (see Extensions.init).
     static let userAgentName = "Version/26.5 Safari/605.1.15"
 
-    /// `space`: the space the tab belongs to, when it is not the one on
-    /// screen — a parked row made ahead of time (see Spaces.swift).
-    static func configuration(shy: Bool = false, space: UUID? = nil) -> WKWebViewConfiguration {
+    static func configuration(shy: Bool = false, dataStore: WKWebsiteDataStore? = nil) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         // The real store, not the ephemeral one: staying signed in between
         // launches is the difference between a browser and a preview pane. A
         // shy tab gets its own store, which exists only while it does — its own
         // cookies, its own sign-ins, and nothing left behind when it closes.
-        // With spaces on, each space's tabs share a store of that space's.
-        config.websiteDataStore = shy ? .nonPersistent() : MainActor.assumeIsolated { Spaces.store(for: space ?? Spaces.current) }
+        config.websiteDataStore = shy ? .nonPersistent() : (dataStore ?? Store.websites)
         // Chrome extensions see every page but a private one. The controller
         // has to be there when the view is made; it can't be added after.
         if #available(macOS 15.4, *), !shy { MainActor.assumeIsolated { Extensions.attach(config) } }
@@ -45,22 +42,7 @@ enum Web {
         config.preferences.isElementFullscreenEnabled = true
         config.mediaTypesRequiringUserActionForPlayback = .audio
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
-        inspector(config.preferences)
         return config
-    }
-
-    /// Every page view there is, for the bench.
-    @MainActor static let pages = NSHashTable<PageView>.weakObjects()
-
-    /// WebKit's "developer extras": Inspect Element in a page's right-click
-    /// menu, and the Web Inspector the View menu opens (see Inspector.swift).
-    /// isInspectable alone only lets Safari's Develop menu reach the page.
-    /// The name is outside the public framework, so it is asked first.
-    static func inspector(_ preferences: WKPreferences, on: Bool = true) {
-        let set = NSSelectorFromString("_setDeveloperExtrasEnabled:")
-        guard preferences.responds(to: set) else { return }
-        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
-        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, on)
     }
 }
 
@@ -87,6 +69,7 @@ final class Tab: ObservableObject, Identifiable {
         didSet {
             built?.navigationDelegate = delegate
             built?.uiDelegate = delegate
+            notifs.browser = delegate as? Browser
         }
     }
     /// The stylesheet a page not yet built is to be armed with.
@@ -153,6 +136,11 @@ final class Tab: ObservableObject, Identifiable {
     /// True while this tab's page is out in the little window.
     @Published var floating = false
 
+    /// The sampled background color of the top part of the webpage, for camouflaging the tab container.
+    @Published var topColor: Color?
+    @Published var topNSColor: NSColor?
+    @Published var topIsDark = false
+
     /// A sideways swipe in progress, for the disc that shows it.
     @Published var pull: Pull?
 
@@ -216,6 +204,7 @@ final class Tab: ObservableObject, Identifiable {
     private let forms = FormRelay()
     private let images = ImageRelay()
     private let shop = StoreRelay()
+    private let notifs = NotificationRelay()
     private let ears = AudioWatch()
     private var lastY: Double = 0
 
@@ -236,11 +225,6 @@ final class Tab: ObservableObject, Identifiable {
     /// at the head of the row and gives up its title for that letter — which
     /// is all you need for the five or six pages you keep open all day.
     @Published var pin: String?
-
-    /// A name you gave it, in place of whatever the page calls itself. It
-    /// stays through navigation: a tab you named is a tab you are keeping for
-    /// a job, not for a page.
-    @Published var name: String?
 
     /// When you last looked at it. The summon lists pages by this, because
     /// what you were just reading is what you are most likely to want back.
@@ -272,15 +256,18 @@ final class Tab: ObservableObject, Identifiable {
     /// that says nothing at all for the first second of every load is a tab you
     /// can't find your way back to.
     var label: String {
-        if let name, !name.isEmpty { return name }
         if !title.isEmpty { return title }
         if let address { return Address.pretty(address) }
         return "New Tab"
     }
 
-    init(shy: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil) {
+    /// Which profile this tab belongs to, if any.
+    var profileID: UUID?
+
+    init(shy: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil, profileID: UUID? = nil) {
         self.shy = shy
         self.bench = bench
+        self.profileID = profileID
         self.configuration = configuration ?? Web.configuration(shy: shy)
     }
 
@@ -297,15 +284,11 @@ final class Tab: ObservableObject, Identifiable {
         web.allowsBackForwardNavigationGestures = false
         web.onPull = { [weak self] pull in self?.pull = pull }
         web.onTouch = { [weak self] in self?.uncover() }
-        web.holdForFirstFrame()
         // Pages follow the appearance of the window they are drawn in, and the
         // window follows Settings › Appearance — so a site that honours
         // prefers-color-scheme goes dark with the frame, and not otherwise.
-        // Safari's Develop menu can reach it, and so can the page's own
-        // Inspect Element — a configuration handed over by an opener included.
+        // Right-click, Inspect Element. The public way to say so since 13.3.
         if #available(macOS 13.3, *) { web.isInspectable = true }
-        Web.pages.add(web)
-        Web.inspector(web.configuration.preferences)
         web.navigationDelegate = delegate
         web.uiDelegate = delegate
 
@@ -318,11 +301,17 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeScriptMessageHandler(forName: FormRelay.name)
         controller.removeScriptMessageHandler(forName: ImageRelay.name)
         controller.removeScriptMessageHandler(forName: StoreRelay.name)
+        controller.removeScriptMessageHandler(forName: NotificationRelay.askName)
+        controller.removeScriptMessageHandler(forName: NotificationRelay.postName)
+        notifs.tab = self
+        notifs.browser = delegate as? Browser
         controller.add(relay, name: ScrollRelay.name)
         controller.add(veils_, name: VeilRelay.name)
         controller.add(images, name: ImageRelay.name)
         controller.add(shop, name: StoreRelay.name)
         controller.add(forms, name: FormRelay.name)
+        controller.add(notifs, name: NotificationRelay.askName)
+        controller.add(notifs, name: NotificationRelay.postName)
         Shield.shared.protect(controller)
         built = web
         arm(hiding: veils)
@@ -349,13 +338,23 @@ final class Tab: ObservableObject, Identifiable {
                 MainActor.assumeIsolated { self?.progress = self?.built?.estimatedProgress ?? 0 }
             },
             web.observe(\.isLoading, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.loading = self?.built?.isLoading ?? false }
+                MainActor.assumeIsolated {
+                    let loading = self?.built?.isLoading ?? false
+                    self?.loading = loading
+                    if !loading { self?.sampleTopColor() }
+                }
             },
             web.observe(\.canGoBack, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.canGoBack = self?.built?.canGoBack ?? false }
             },
             web.observe(\.canGoForward, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.canGoForward = self?.built?.canGoForward ?? false }
+            },
+            web.observe(\.themeColor, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.sampleTopColor() }
+            },
+            web.observe(\.underPageBackgroundColor, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.sampleTopColor() }
             },
         ]
 
@@ -401,6 +400,9 @@ final class Tab: ObservableObject, Identifiable {
         let controller = built.configuration.userContentController
         controller.removeAllUserScripts()
         controller.addUserScript(
+            WKUserScript(source: Permissions.shared.script, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        )
+        controller.addUserScript(
             WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
         controller.addUserScript(
@@ -436,6 +438,11 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: Veiling.style(css), injectionTime: .atDocumentStart, forMainFrameOnly: true)
         )
+    }
+
+    /// Re-arms the tab with the current scripts and veils
+    func rearm() {
+        arm(hiding: veils)
     }
 
     /// The same stylesheet, for the page that is already up.
@@ -583,10 +590,9 @@ final class Tab: ObservableObject, Identifiable {
 
     /// Brought back from the last session: everything the row needs to draw it,
     /// and nothing fetched.
-    func restore(url: URL, title: String, name: String? = nil) {
+    func restore(url: URL, title: String) {
         address = url
         self.title = title
-        self.name = name
         pending = url
         adoptIcon()
     }
@@ -594,6 +600,16 @@ final class Tab: ObservableObject, Identifiable {
     /// True for a tab that has a place and an address but is holding no page —
     /// brought back from the last session, or put down with ⌘W while pinned.
     var asleep: Bool { pending != nil }
+
+    /// True if the tab is considered open by the user:
+    /// - For unpinned tabs: any tab in the active workspace.
+    /// - For pinned tabs: only if it is awake / holding an active page (not asleep or put down with ⌘W).
+    var isOpen: Bool {
+        if pin != nil {
+            return !asleep
+        }
+        return true
+    }
 
     /// ⌘W on a pinned tab. The letter keeps its place in the row and the
     /// address is remembered; everything the page was holding is let go, so a
@@ -826,6 +842,94 @@ final class Tab: ObservableObject, Identifiable {
         adoptIcon()
     }
 
+    // MARK: - top color sampling
+
+    func sampleTopColor() {
+        guard !isBlank, let built else {
+            self.topColor = nil
+            self.topNSColor = nil
+            self.topIsDark = false
+            if let browser = delegate as? Browser, browser.activeID == self.id {
+                browser.updateTopColor(Palette.NS.ground, swiftUIColor: Palette.ground, isDark: false)
+            }
+            return
+        }
+
+        // 1. If WebKit has an explicit themeColor (<meta name="theme-color">), use it directly
+        if let theme = built.themeColor, theme.alphaComponent > 0.05 {
+            applySampledColor(theme)
+        }
+
+        // 2. Sample rendered pixels via WebKit snapshot (bypasses CSP and CSS/DOM quirks)
+        guard built.bounds.width > 20, built.bounds.height > 20 else {
+            if self.topNSColor == nil, let under = built.underPageBackgroundColor, under.alphaComponent > 0.05 {
+                applySampledColor(under)
+            }
+            return
+        }
+
+        let config = WKSnapshotConfiguration()
+        config.rect = CGRect(x: 0, y: 0, width: built.bounds.width, height: 6)
+        built.takeSnapshot(with: config) { [weak self] image, error in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let image = image {
+                    let sampleFracs: [CGFloat] = [0.5, 0.25, 0.75, 0.1, 0.9]
+                    for frac in sampleFracs {
+                        let sampleX = built.bounds.width * frac
+                        if let color = self.samplePixel(from: image, atX: sampleX, atY: 3) {
+                            self.applySampledColor(color)
+                            return
+                        }
+                    }
+                }
+                if self.topNSColor == nil, let under = self.built?.underPageBackgroundColor, under.alphaComponent > 0.05 {
+                    self.applySampledColor(under)
+                }
+            }
+        }
+    }
+
+    private func samplePixel(from image: NSImage, atX x: CGFloat, atY y: CGFloat) -> NSColor? {
+        var rect = CGRect(origin: .zero, size: image.size)
+        guard let cg = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return nil }
+        guard image.size.width > 0, image.size.height > 0 else { return nil }
+        let pixelX = Int(x * CGFloat(cg.width) / image.size.width)
+        let pixelY = Int(y * CGFloat(cg.height) / image.size.height)
+        guard pixelX >= 0, pixelX < cg.width, pixelY >= 0, pixelY < cg.height else { return nil }
+        guard let cropped = cg.cropping(to: CGRect(x: pixelX, y: pixelY, width: 1, height: 1)) else { return nil }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        guard let ctx = CGContext(
+            data: &pixel,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let r = CGFloat(pixel[0]) / 255.0
+        let g = CGFloat(pixel[1]) / 255.0
+        let b = CGFloat(pixel[2]) / 255.0
+        let a = CGFloat(pixel[3]) / 255.0
+        guard a > 0.1 else { return nil }
+        return NSColor(srgbRed: r, green: g, blue: b, alpha: a)
+    }
+
+    private func applySampledColor(_ nsColor: NSColor) {
+        guard let rgb = nsColor.usingColorSpace(.sRGB) ?? nsColor.usingColorSpace(.deviceRGB) else { return }
+        self.topNSColor = nsColor
+        let swiftColor = Color(red: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent, opacity: rgb.alphaComponent)
+        self.topColor = swiftColor
+        let lum = 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
+        self.topIsDark = lum < 0.55
+
+        if let browser = delegate as? Browser, browser.activeID == self.id {
+            browser.updateTopColor(nsColor, swiftUIColor: swiftColor, isDark: self.topIsDark)
+        }
+    }
+
     func touch() { touched = Date() }
 
     /// True when the web view holds nothing — never loaded, or emptied —
@@ -882,6 +986,8 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeScriptMessageHandler(forName: FormRelay.name)
         controller.removeScriptMessageHandler(forName: ImageRelay.name)
         controller.removeScriptMessageHandler(forName: StoreRelay.name)
+        controller.removeScriptMessageHandler(forName: NotificationRelay.askName)
+        controller.removeScriptMessageHandler(forName: NotificationRelay.postName)
         controller.removeAllUserScripts()
         web.onPull = nil
         web.onTouch = nil
@@ -956,71 +1062,6 @@ final class PageView: WKWebView {
         onTouch?()
         super.mouseDown(with: event)
     }
-
-    // MARK: - keys the page didn't use
-
-    /// The last key handed to the page. WebKit sends a key the page didn't
-    /// use back up the responder chain — the same event, a second time —
-    /// where nothing takes it and macOS plays its "can't do that" sound.
-    /// Editors that put the text in themselves (X's reply box, anything built
-    /// on Draft.js) leave WebKit thinking their keys unused, so typing into
-    /// them beeped. Safari keeps those quiet, and so does this view. The
-    /// app's own shortcuts never get this far: its key monitor takes them
-    /// before the page sees the key.
-    private var handed: NSEvent?
-    /// How many came back unused and were kept quiet, for the bench.
-    static var quieted = 0
-
-    override func keyDown(with event: NSEvent) {
-        if let handed, PageView.same(handed, event) {
-            self.handed = nil
-            PageView.quieted += 1
-            return
-        }
-        handed = event
-        super.keyDown(with: event)
-    }
-
-    /// The same key press: the event WebKit sends back is the one it was
-    /// given, and no two presses share a timestamp.
-    static func same(_ one: NSEvent, _ other: NSEvent) -> Bool {
-        one === other || (one.timestamp == other.timestamp && one.keyCode == other.keyCode && one.type == other.type)
-    }
-
-    // MARK: - the first frame
-
-    /// A web view that has never drawn is opaque white. In a dark window that
-    /// is a flash of it between a link that opens a tab and the page arriving,
-    /// so a fresh view starts unseen, over the window's own ground, and comes
-    /// in once WebKit says there is something on it worth seeing.
-    private(set) var unpainted = false
-
-    /// WebKit says when the first frame is only through names outside the
-    /// public framework, so it is asked whether it answers to them first. One
-    /// that doesn't gets a view shown straight away, as before.
-    func holdForFirstFrame() {
-        let observe = NSSelectorFromString("_setObservedRenderingProgressEvents:")
-        guard responds(to: observe) else { return }
-        typealias Setter = @convention(c) (AnyObject, Selector, UInt) -> Void
-        unsafeBitCast(method(for: observe), to: Setter.self)(self, observe, PageView.firstFrame)
-        unpainted = true
-        alphaValue = 0
-    }
-
-    /// In, quickly: the page is there, and the fade only covers the frame
-    /// between WebKit laying it out and putting it on screen.
-    func showFirstFrame() {
-        guard unpainted else { return }
-        unpainted = false
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
-            animator().alphaValue = 1
-        }
-    }
-
-    /// _WKRenderingProgressEventFirstVisuallyNonEmptyLayout — the moment
-    /// Safari takes down the picture it shows while a page comes back.
-    static let firstFrame: UInt = 1 << 1
 
     // MARK: - two fingers sideways
 

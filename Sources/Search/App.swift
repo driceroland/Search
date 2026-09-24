@@ -57,10 +57,6 @@ struct SearchApp: App {
                     set: { _ in browser.toggleSidebar() }
                 ))
                 .keyboardShortcut("s", modifiers: [.command, .shift])
-                // Folded away, not moved (see Fold.swift).
-                Button(browser.folded ? "Show Sidebar" : "Hide Sidebar") { browser.toggleFold() }
-                    .keyboardShortcut("s")
-                    .disabled(!browser.prefs.sidebar)
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
                     set: { browser.prefs.glyph = $0 }
@@ -88,14 +84,6 @@ struct SearchApp: App {
                     .keyboardShortcut("-")
                 Button("Actual Size") { browser.resetZoom() }
                     .keyboardShortcut("0")
-                Divider()
-                // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
-                Button("Web Inspector") { browser.toggleInspector() }
-                    .keyboardShortcut("i", modifiers: [.command, .option])
-                Button("JavaScript Console") { browser.showConsole() }
-                    .keyboardShortcut("j", modifiers: [.command, .option])
-                Button("Inspect Element") { browser.inspectElement() }
-                    .keyboardShortcut("c", modifiers: [.command, .option])
             }
             CommandMenu("Tabs") {
                 Button("Back") { browser.back() }
@@ -121,8 +109,6 @@ struct SearchApp: App {
                         Button("Unpin Tab") { browser.unpin(tab) }
                     }
                 }
-                Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
-                    .disabled(browser.active == nil)
                 Button("Duplicate Tab") { browser.duplicate() }
                     .keyboardShortcut("d")
                     .disabled(browser.active?.isBlank ?? true)
@@ -136,6 +122,43 @@ struct SearchApp: App {
                     .disabled(browser.tabs.count < 2)
                 Button("Stop Sound in Tab") { browser.pauseMedia() }
                     .keyboardShortcut("m", modifiers: [.command, .shift])
+            }
+            CommandMenu("Profiles") {
+                Button("Next Profile") { browser.switchProfile(forward: true) }
+                    .keyboardShortcut("]", modifiers: [.command, .option])
+                Button("Previous Profile") { browser.switchProfile(forward: false) }
+                    .keyboardShortcut("[", modifiers: [.command, .option])
+                Divider()
+                ForEach(Array(browser.profileStore.profiles.enumerated()), id: \.element.id) { index, profile in
+                    if index < 9 {
+                        Button {
+                            browser.switchProfile(to: profile.id)
+                        } label: {
+                            HStack {
+                                Text(profile.name)
+                                if profile.id == browser.activeProfileID {
+                                    Text("✓")
+                                }
+                            }
+                        }
+                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.control])
+                    } else {
+                        Button {
+                            browser.switchProfile(to: profile.id)
+                        } label: {
+                            HStack {
+                                Text(profile.name)
+                                if profile.id == browser.activeProfileID {
+                                    Text("✓")
+                                }
+                            }
+                        }
+                    }
+                }
+                Divider()
+                Button("Manage Profiles…") {
+                    browser.openProfilesSettings()
+                }
             }
             CommandMenu("Bookmarks") {
                 Button("Add This Page") { browser.bookmarkCurrent() }
@@ -240,17 +263,18 @@ struct ContentView: View {
     @ObservedObject var browser: Browser
 
     @State private var keys: Any?
+    @State private var wheels: Any?
+    @State private var swipeDeltaX: CGFloat = 0
+    @State private var swipeSpent = false
     @State private var window: NSWindow?
     @State private var resting: RestingLights?
-
 
     /// The window: room at the top, one stage for the page, and the row when
     /// there is one.
     private var window_: some View {
         ZStack(alignment: .top) {
-            // Black while a page has the screen, so the frame of our own window
-            // that survives the transition is not a white band across the top.
-            (browser.active?.immersed == true ? Color.black : Palette.ground)
+            (browser.active?.immersed == true ? Color.black : (browser.active?.isBlank == true ? Palette.ground : browser.topColor))
+                .animation(.easeInOut(duration: 0.22), value: browser.topColor)
 
             HStack(spacing: 0) {
                 // The column of tabs, in the way that has one. It takes the
@@ -262,10 +286,6 @@ struct ContentView: View {
                 }
 
                 VStack(spacing: 0) {
-                    // Room for the traffic lights, and for the strip when there
-                    // is one. The page starts under it, not behind it — a page
-                    // sliding beneath floating chrome is a browser showing off,
-                    // and it costs a compositing pass.
                     Color.clear.frame(height: band)
 
                     // One stage, always.
@@ -274,12 +294,14 @@ struct ContentView: View {
                             .overlay(alignment: .topTrailing) {
                                 if browser.finding {
                                     FindBar(browser: browser)
+                                        .padding(.top, sidebar ? 8 : Metrics.strip + 8)
                                         .transition(.move(edge: .top).combined(with: .opacity))
                                 }
                             }
                             .overlay(alignment: .topLeading) {
                                 if let asked = browser.suggesting, asked.tab == tab.id {
                                     AccountList(browser: browser, asked: asked)
+                                        .padding(.top, sidebar ? 8 : Metrics.strip + 8)
                                         .transition(.opacity)
                                 }
                             }
@@ -382,12 +404,16 @@ struct ContentView: View {
 
     var body: some View {
         window_
-            // The column folded away, and out again at the edge (see Fold.swift).
-            .overlay(alignment: .leading) { Fold(browser: browser, prefs: browser.prefs) }
             .overlay(alignment: .bottom) { bars }
             .overlay { field }
             .overlay { panels }
+            .overlay {
+                if browser.tabSwitcherShowing {
+                    TabSwitcherModal(browser: browser)
+                }
+            }
             .animation(Motion.settle, value: browser.fieldShowing)
+            .animation(Motion.settle, value: browser.tabSwitcherShowing)
             .background(WindowSetup { window = $0; dress($0) })
             .onChange(of: browser.prefs.sidebar) { _, _ in
                 DispatchQueue.main.async { measureLights() }
@@ -409,7 +435,13 @@ struct ContentView: View {
                     handBack()
                 }
             }
-            .onChange(of: browser.activeID) { _, _ in handBack() }
+            .onChange(of: browser.topColor) { _, _ in
+                window?.backgroundColor = (browser.active?.isBlank == true ? Palette.NS.ground : browser.topNSColor)
+            }
+            .onChange(of: browser.activeID) { _, _ in
+                handBack()
+                window?.backgroundColor = (browser.active?.isBlank == true ? Palette.NS.ground : browser.topNSColor)
+            }
             .animation(Motion.settle, value: browser.recalling)
             .animation(Motion.settle, value: browser.hoarding)
             .animation(Motion.settle, value: browser.tuning)
@@ -419,6 +451,7 @@ struct ContentView: View {
             .animation(Motion.settle, value: browser.reviewing)
         .onAppear {
             watchKeys()
+            watchSwipe()
             browser.askFocus()
             // Addresses from other apps have somewhere to go from here on.
             Links.hand(to: browser)
@@ -459,18 +492,21 @@ struct ContentView: View {
         }
     }
 
-    /// A page asking to see or hear you. Named by the site, in its own words,
+    /// A page asking to see, hear, or notify you. Named by the site, in its own words,
     /// with the answer remembered so it is asked once and not every call.
     private func captureAsking(_ ask: Browser.CaptureAsk) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: ask.wants == "microphone" ? "mic" : "video")
+        let isNotif = ask.wants == "notifications"
+        let icon = isNotif ? "bell.badge" : (ask.wants == "microphone" ? "mic" : "video")
+        let promptText = isNotif ? "\(ask.host) quiere enviarte notificaciones" : "\(ask.host) quiere usar tu \(ask.wants)"
+        return HStack(spacing: 12) {
+            Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Palette.muted)
-            Text("\(ask.host) wants to use your \(ask.wants)")
+            Text(promptText)
                 .font(.system(size: 12.5))
                 .foregroundStyle(Palette.ink)
             Button { browser.allowCapture() } label: {
-                Text("Allow")
+                Text("Permitir")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.ground)
                     .padding(.horizontal, 11)
@@ -479,7 +515,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             Button { browser.denyCapture() } label: {
-                Text("Don't allow")
+                Text("Bloquear")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
             }
@@ -562,13 +598,14 @@ struct ContentView: View {
         .transition(.opacity)
     }
 
-    /// True while the tabs are down the left, and not folded away (see Fold.swift).
+    /// True while the tabs are down the left.
     private var sidebar: Bool {
-        browser.prefs.sidebar && !browser.folded && browser.active?.immersed != true
+        browser.prefs.sidebar && browser.active?.immersed != true
     }
 
     /// The column has its own corner for the lights, so the page beside it
-    /// starts at the very top; the strip needs a band.
+    /// starts at the top edge of the window. In a row, the page starts
+    /// beneath the strip.
     private var band: CGFloat {
         guard browser.active?.immersed != true else { return 0 }
         return browser.prefs.sidebar ? 0 : Metrics.strip
@@ -600,14 +637,10 @@ struct ContentView: View {
         // window only has to be the ground colour that goes with it.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.backgroundColor = Palette.NS.ground
+        window.backgroundColor = (browser.active?.isBlank == true ? Palette.NS.ground : browser.topNSColor)
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
-        // Nor by its title bar, which the strip is all the way down: AppKit
-        // would move the window on any drag there, a tab picked up to take
-        // it elsewhere in the row included. DragStrip moves it instead.
-        window.isMovable = false
         // Where you left it, at the size you left it. A test run keeps its
         // own: the name lives in the app's standard defaults, which every
         // copy shares, and a probe resized for a test once changed the size
@@ -650,16 +683,60 @@ struct ContentView: View {
             guard event.type == .keyDown else {
                 // ⌘ let go of ends a ⌘K walk, wherever it stopped.
                 if !event.modifierFlags.contains(.command) { browser.landSummon() }
+                // ⌃ let go of ends an Arc-style ⌃Tab LRU walk.
+                if !event.modifierFlags.contains(.control) { browser.landLRU() }
                 return event
             }
             return take(event) ? nil : event
         }
     }
 
-    /// The keys of the top row, by where they sit rather than what they type.
-    static let digits: [UInt16: Int] = [
-        18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9, 29: 0,
-    ]
+    /// Two-finger horizontal swipe on the sidebar or top tab bar switches profiles.
+    private func watchSwipe() {
+        guard wheels == nil else { return }
+        wheels = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            guard let window = event.window else { return event }
+
+            let loc = event.locationInWindow
+            let winHeight = window.frame.height
+            let winWidth = window.frame.width
+
+            let inSideBar = browser.prefs.sidebar && loc.x >= 0 && loc.x <= browser.prefs.sideWidth && loc.y >= 0 && loc.y <= winHeight
+            let inTopBar = !browser.prefs.sidebar && loc.y >= winHeight - Metrics.strip && loc.y <= winHeight && loc.x >= 0 && loc.x <= winWidth
+
+            guard inSideBar || inTopBar else { return event }
+            guard event.momentumPhase == [] else { return event }
+
+            switch event.phase {
+            case .mayBegin, .began:
+                swipeDeltaX = 0
+                swipeSpent = false
+            case .changed:
+                guard !swipeSpent else { return event }
+                let dx = event.scrollingDeltaX
+                let dy = event.scrollingDeltaY
+                let absX = abs(dx)
+                let absY = abs(dy)
+
+                if absX > absY * 1.2 || abs(swipeDeltaX) > 10 {
+                    swipeDeltaX += dx
+                    if abs(swipeDeltaX) > 28 {
+                        swipeSpent = true
+                        let forward = swipeDeltaX < 0
+                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                        browser.switchProfile(forward: forward)
+                    }
+                }
+            case .ended, .cancelled:
+                swipeSpent = false
+                swipeDeltaX = 0
+            default:
+                break
+            }
+
+            return event
+        }
+    }
 
     private func take(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -668,12 +745,12 @@ struct ContentView: View {
         // Escape puts the page back. On a blank tab there is no page to put
         // back, so it belongs to whatever else wants it.
         if event.keyCode == 53 {
-            if browser.editingTab != nil {
-                browser.cancelTabEdit()
+            if browser.tabSwitcherShowing {
+                browser.cancelTabSwitcher()
                 return true
             }
-            if browser.makingSpace {
-                withAnimation(Motion.glide) { browser.makingSpace = false }
+            if browser.editingTab != nil {
+                browser.cancelTabEdit()
                 return true
             }
             if browser.tuning {
@@ -714,33 +791,38 @@ struct ContentView: View {
             return true
         }
 
-        // Tab is the page's: it moves between a form's fields and a page's
-        // links, as in every browser. It used to walk the row of tabs, which
-        // took it from anyone filling in a form. ⌃Tab walks the row and comes
-        // round to the first again, ⌃⇧Tab the other way — the keys every
-        // other browser uses for that.
-        //
-        // While an address is being typed, the list under the field is what
-        // there is to move through, and Return takes whatever the walk landed on.
-        if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option) {
-            if flags.contains(.control) {
-                browser.step(flags.contains(.shift) ? -1 : 1)
+        // Control + Tab / Control + Shift + Tab: Arc-style LRU tab switching with floating modal
+        if event.keyCode == 48, flags.contains(.control), !flags.contains(.command), !flags.contains(.option) {
+            if browser.fieldShowing { browser.dismiss() }
+            browser.stepLRU(forward: !flags.contains(.shift))
+            return true
+        }
+
+        // Control + [1..9]: Direct profile switching
+        if flags.contains(.control), !flags.contains(.command), !flags.contains(.option) {
+            if let char = event.charactersIgnoringModifiers?.first, let num = Int(String(char)), (1...9).contains(num) {
+                browser.switchProfile(at: num - 1)
                 return true
             }
+        }
+
+        // Tab walks the row and comes round to the first again; ⇧Tab walks it
+        // the other way. Other browsers give Tab to the page — here the row is
+        // the only thing there is to move between, so it gets the key.
+        //
+        // Except while an address is being typed. Then the list under the field
+        // is what there is to move through, and Return takes whatever the walk
+        // landed on.
+        if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option) {
             if browser.editingTab != nil { return true }
+            // Filling something in on the page: the key belongs to the field,
+            // which may well be offering a completion to take with it.
+            if !browser.fieldShowing, browser.active?.typing == true { return false }
             if browser.fieldShowing, !browser.offers.isEmpty {
                 browser.walk(flags.contains(.shift) ? -1 : 1)
                 return true
             }
-            return false
-        }
-
-        // ⌃1–⌃9 go to that space, when there are spaces — by the key, as
-        // ⌘1–⌘9 are below, so the top row works on every layout.
-        if browser.prefs.usesSpaces, flags.contains(.control),
-           flags.isDisjoint(with: [.command, .option, .shift]),
-           let number = ContentView.digits[event.keyCode], number > 0 {
-            browser.switchSpace(index: number - 1)
+            browser.step(flags.contains(.shift) ? -1 : 1)
             return true
         }
 
@@ -754,22 +836,19 @@ struct ContentView: View {
         guard flags.contains(.command) else { return false }
         let shifted = flags.contains(.shift)
 
+        // Profile shortcuts: ⌥⌘] and ⌥⌘[
+        if flags.contains([.command, .option]) {
+            if key == "]" {
+                browser.switchProfile(forward: true)
+                return true
+            } else if key == "[" {
+                browser.switchProfile(forward: false)
+                return true
+            }
+        }
+
         // Anything with ⌥ or ⌃ on top is somebody else's.
         guard !flags.contains(.option), !flags.contains(.control) else { return false }
-
-        // ⌘1 through ⌘9, and ⌘0, by the key rather than the character it
-        // types. On AZERTY and many other layouts the top row types &, é, "…
-        // unless shift is held, so matching the character left these
-        // shortcuts dead there; the shortcut belongs to the key, as it does
-        // in every other browser. The ninth is the last tab, however many.
-        if !shifted, let number = ContentView.digits[event.keyCode] {
-            if number == 0 {
-                browser.resetZoom()
-            } else {
-                browser.select(index: number == 9 ? browser.tabs.count - 1 : number - 1)
-            }
-            return true
-        }
 
         switch key {
         case "t" where !shifted:
@@ -808,10 +887,6 @@ struct ContentView: View {
             }
         case "s" where shifted:
             browser.toggleSidebar()
-        case "s" where !shifted:
-            // The strip has nothing to fold; ⌘S stays the page's (see Fold.swift).
-            guard browser.prefs.sidebar else { return false }
-            browser.toggleFold()
         case "b" where shifted:
             browser.bookmarkCurrent()
         case "," where !shifted:
@@ -844,11 +919,11 @@ struct ContentView: View {
         case "]":
             shifted ? browser.step(1) : browser.forward()
         default:
-            // Moving or selecting text belongs to the editor, not the page's
-            // history — in web forms and in the browser's own fields alike.
-            guard !shifted, browser.active?.typing != true,
-                  !(event.window?.firstResponder is NSTextView)
-            else { return false }
+            // ⌘1 through ⌘9: the ninth is the last one, however many there are.
+            if let number = Int(key), (1...9).contains(number), !shifted {
+                browser.select(index: number == 9 ? browser.tabs.count - 1 : number - 1)
+                return true
+            }
             // ⌘← and ⌘→, for hands that never learned the brackets.
             if event.keyCode == 123 { browser.back(); return true }
             if event.keyCode == 124 { browser.forward(); return true }

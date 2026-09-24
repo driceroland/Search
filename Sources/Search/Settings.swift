@@ -15,11 +15,12 @@ struct SettingsPanel: View {
     @State private var page: Page = Page(rawValue: Store.settings.string(forKey: "settings.page") ?? "") ?? .general
 
     enum Page: String, CaseIterable, Identifiable {
-        case general, tabs, extensions, passwords, downloads, privacy, about
+        case general, profiles, tabs, extensions, passwords, downloads, privacy, about
         var id: String { rawValue }
         var title: String {
             switch self {
             case .general: return "General"
+            case .profiles: return "Profiles"
             case .tabs: return "Tabs"
             case .extensions: return "Extensions"
             case .passwords: return "Passwords"
@@ -31,6 +32,7 @@ struct SettingsPanel: View {
         var icon: String {
             switch self {
             case .general: return "macwindow"
+            case .profiles: return "person.crop.circle"
             case .tabs: return "rectangle.split.3x1"
             case .extensions: return "puzzlepiece.extension"
             case .passwords: return "key"
@@ -132,6 +134,7 @@ struct SettingsPanel: View {
                 VStack(alignment: .leading, spacing: 18) {
                     switch page {
                     case .general: general
+                    case .profiles: ProfilesPage(browser: browser, profileStore: browser.profileStore)
                     case .tabs: tabs
                     case .extensions: ExtensionsPage(browser: browser)
                     case .passwords: passwords
@@ -172,34 +175,6 @@ struct SettingsPanel: View {
                 }
             }
             Rule()
-            Line("Search with", searchDetail) {
-                Picker("", selection: $prefs.engine) {
-                    ForEach(Engine.allCases) { engine in
-                        Text(engine.title).tag(engine)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .fixedSize()
-            }
-            if prefs.engine == .custom {
-                ZStack(alignment: .leading) {
-                    if prefs.customEngine.isEmpty {
-                        Text("https://example.com/search?q=%s")
-                            .foregroundStyle(Palette.muted.opacity(0.8))
-                    }
-                    TextField("", text: $prefs.customEngine)
-                        .textFieldStyle(.plain)
-                        .foregroundStyle(Palette.ink)
-                }
-                .font(.system(size: 12.5))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .padding(.horizontal, 14)
-                .padding(.bottom, 11)
-            }
-            Rule()
             Line("Appearance", "Light, dark, or whatever the Mac is doing — pages follow it too") {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
@@ -214,14 +189,6 @@ struct SettingsPanel: View {
         }
     }
 
-    private var searchDetail: String {
-        guard prefs.engine == .custom else { return "Where words that aren't an address go" }
-        guard Engine.accepts(prefs.customEngine) else {
-            return "An http or https address with %s where the words go. Until then, Google"
-        }
-        return "Words go to \(prefs.engine.name(custom: prefs.customEngine))"
-    }
-
     // MARK: - tabs
 
     private var tabs: some View {
@@ -232,12 +199,6 @@ struct SettingsPanel: View {
                     set: { on in withAnimation(Motion.glide) { prefs.sidebar = on } }
                 ))
             }
-            if prefs.sidebar {
-                Rule()
-                Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its left edge for the tabs. ⌘S keeps them out.") {
-                    Switch(on: $prefs.sideHides)
-                }
-            }
             Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
@@ -245,10 +206,6 @@ struct SettingsPanel: View {
             Rule()
             Line("Sleep tabs you aren't using", "After half an hour away they come back where you left them. Pinned tabs, sound, calls and anything typed stay awake.") {
                 Switch(on: $prefs.sleepsTabs)
-            }
-            Rule()
-            Line("Spaces", "Separate sets of tabs, signed in where the others are or starting afresh, switched with ⌃1–⌃9, two fingers sideways over the column, or the space's icon. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
-                Switch(on: $prefs.usesSpaces)
             }
         }
     }
@@ -350,10 +307,9 @@ struct SettingsPanel: View {
                         ))
                     }
                 }
-                Rule()
-                Line("Camera and microphone", "What each site was allowed or refused") {
-                    Pill("Forget choices") { browser.forgetCaptureChoices() }
-                }
+            }
+            Card {
+                SitePermissionsSettingsView(browser: browser)
             }
             Card {
                 Line("History", "Every address you have been to") {
@@ -406,11 +362,7 @@ struct SettingsPanel: View {
                 Rule()
                 Shortcut("⌘T  ⌘W  ⇧⌘T", "New, close, reopen tab")
                 Rule()
-                Shortcut("⌃⇥  ⌘1–9", "Next tab, a tab by its place")
-                Rule()
                 Shortcut("⇧⌘S", "Tabs in a sidebar")
-                Rule()
-                Shortcut("⌘S", "Fold the sidebar away")
                 Rule()
                 Shortcut("⇧⌘R", "Reading mode")
                 Rule()
@@ -600,3 +552,288 @@ struct Pill: View {
         .animation(Motion.quick, value: hovering)
     }
 }
+
+/// Safari-style Profiles management page.
+struct ProfilesPage: View {
+    @ObservedObject var browser: Browser
+    @ObservedObject var profileStore: ProfileStore
+
+    @State private var creating = false
+    @State private var newName = ""
+    @State private var newSymbol = "person.fill"
+    @State private var newColor = "blue"
+
+    @State private var editingProfile: Profile?
+    @State private var editName = ""
+    @State private var editSymbol = "person.fill"
+    @State private var editColor = "blue"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Card {
+                ForEach(Array(profileStore.profiles.enumerated()), id: \.element.id) { index, profile in
+                    if index > 0 { Rule() }
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(profile.color.opacity(0.18))
+                                .frame(width: 34, height: 34)
+                            Image(systemName: profile.symbol)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(profile.color)
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(profile.name)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(Palette.ink)
+                                if profile.isDefault {
+                                    Text("Default")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(Palette.muted)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 1.5)
+                                        .background(Palette.wash, in: Capsule())
+                                }
+                                if profile.id == browser.activeProfileID {
+                                    Text("Active")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(profile.color)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 1.5)
+                                        .background(profile.color.opacity(0.14), in: Capsule())
+                                }
+                            }
+                            Text(profile.id == browser.activeProfileID ? "Current active profile" : "Separate cookies, tabs and website data")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.muted)
+                        }
+
+                        Spacer()
+
+                        HStack(spacing: 6) {
+                            if profile.id != browser.activeProfileID {
+                                Pill("Switch") {
+                                    browser.switchProfile(to: profile.id)
+                                }
+                            }
+                            Pill("Edit") {
+                                editingProfile = profile
+                                editName = profile.name
+                                editSymbol = profile.symbol
+                                editColor = profile.colorName
+                                creating = false
+                            }
+                            if !profile.isDefault && profileStore.profiles.count > 1 {
+                                Pill("Delete", tint: .red) {
+                                    browser.deleteProfile(profile.id)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                }
+            }
+
+            if creating {
+                createCard
+            } else if let editing = editingProfile {
+                editCard(for: editing)
+            } else {
+                Button {
+                    newName = ""
+                    newSymbol = ProfileSymbols.all[profileStore.profiles.count % ProfileSymbols.all.count]
+                    newColor = ProfileColor.all[profileStore.profiles.count % ProfileColor.all.count].name
+                    withAnimation(Motion.settle) {
+                        creating = true
+                        editingProfile = nil
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .medium))
+                        Text("New Profile…")
+                            .font(.system(size: 12.5, weight: .medium))
+                    }
+                    .foregroundStyle(Palette.ink)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Palette.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var createCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Create New Profile")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Name")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                    ZStack(alignment: .leading) {
+                        if newName.isEmpty {
+                            Text("e.g. Work, School, Research")
+                                .foregroundStyle(Palette.muted.opacity(0.8))
+                        }
+                        TextField("", text: $newName)
+                            .textFieldStyle(.plain)
+                            .foregroundStyle(Palette.ink)
+                    }
+                    .font(.system(size: 12.5))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Palette.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Symbol")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                    symbolSelector(selected: $newSymbol, colorName: newColor)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Color")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                    colorSelector(selected: $newColor)
+                }
+
+                HStack {
+                    Spacer()
+                    Pill("Cancel") {
+                        withAnimation(Motion.settle) { creating = false }
+                    }
+                    Pill("Create Profile", filled: true) {
+                        let created = profileStore.create(name: newName, symbol: newSymbol, colorName: newColor)
+                        browser.switchProfile(to: created.id)
+                        withAnimation(Motion.settle) { creating = false }
+                    }
+                }
+                .padding(.top, 4)
+            }
+            .padding(14)
+        }
+    }
+
+    private func editCard(for profile: Profile) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Edit Profile: \(profile.name)")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Name")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                    ZStack(alignment: .leading) {
+                        if editName.isEmpty {
+                            Text("Profile Name")
+                                .foregroundStyle(Palette.muted.opacity(0.8))
+                        }
+                        TextField("", text: $editName)
+                            .textFieldStyle(.plain)
+                            .foregroundStyle(Palette.ink)
+                    }
+                    .font(.system(size: 12.5))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Palette.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Symbol")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                    symbolSelector(selected: $editSymbol, colorName: editColor)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Color")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                    colorSelector(selected: $editColor)
+                }
+
+                HStack {
+                    Spacer()
+                    Pill("Cancel") {
+                        withAnimation(Motion.settle) { editingProfile = nil }
+                    }
+                    Pill("Save Changes", filled: true) {
+                        var updated = profile
+                        let trimmed = editName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty { updated.name = trimmed }
+                        updated.symbol = editSymbol
+                        updated.colorName = editColor
+                        profileStore.update(updated)
+                        withAnimation(Motion.settle) { editingProfile = nil }
+                    }
+                }
+                .padding(.top, 4)
+            }
+            .padding(14)
+        }
+    }
+
+    private func symbolSelector(selected: Binding<String>, colorName: String) -> some View {
+        let tint = ProfileColor.color(for: colorName)
+        return HStack(spacing: 8) {
+            ForEach(ProfileSymbols.all, id: \.self) { sym in
+                Button {
+                    selected.wrappedValue = sym
+                } label: {
+                    Image(systemName: sym)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(selected.wrappedValue == sym ? tint : Palette.muted)
+                        .frame(width: 26, height: 26)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(selected.wrappedValue == sym ? tint.opacity(0.18) : Palette.wash)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(selected.wrappedValue == sym ? tint : Color.clear, lineWidth: 1.5)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func colorSelector(selected: Binding<String>) -> some View {
+        HStack(spacing: 8) {
+            ForEach(ProfileColor.all, id: \.name) { item in
+                Button {
+                    selected.wrappedValue = item.name
+                } label: {
+                    Circle()
+                        .fill(item.color)
+                        .frame(width: 18, height: 18)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Palette.ground, lineWidth: 2)
+                        )
+                        .overlay(
+                            Circle()
+                                .strokeBorder(selected.wrappedValue == item.name ? Palette.ink : Color.clear, lineWidth: 2)
+                                .frame(width: 24, height: 24)
+                        )
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain)
+                .help(item.title)
+            }
+        }
+    }
+}
+

@@ -16,12 +16,7 @@ struct Page: View {
         ZStack {
             // A tab put down with ⌘W has no view, and asking for one here
             // would build an empty one a frame before the stage moves on.
-            //
-            // Nor is a floating page asked for. Handing the same view over
-            // before and after the float changes nothing SwiftUI can see, so
-            // the stage was never told to take it back when it landed, and
-            // the tab stayed empty. Nothing, then the page, is a change.
-            WebStage(page: tab.isBlank || tab.asleep || tab.floating ? nil : tab.web)
+            WebStage(page: tab.isBlank || tab.asleep ? nil : tab.web)
 
             if let cover = tab.cover {
                 // The page as it was left, while it is rebuilt underneath —
@@ -168,8 +163,7 @@ final class StageView: NSView {
             // A web view can have only one superview, so taking it back is how
             // it is taken back.
             wanted.removeFromSuperview()
-            // Seen — unless it has yet to draw, and would be seen white.
-            wanted.alphaValue = (wanted as? PageView)?.unpainted == true ? 0 : 1
+            wanted.alphaValue = 1
             addSubview(wanted)
             // A web view coming back into a window sometimes keeps the last
             // picture it had — which, after a while out of one, is nothing.
@@ -222,12 +216,6 @@ struct WindowSetup: NSViewRepresentable {
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError() }
 
-        /// Here only to learn the window, never to be clicked: set behind or
-        /// over something that spans the whole window — Fold's layer does,
-        /// since its band runs along the top — a view that answered would
-        /// take every click meant for the page and the tabs.
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             guard let window else { return }
@@ -267,14 +255,9 @@ struct DragStrip: NSViewRepresentable {
         var below: CGFloat = 0
         var trailing: CGFloat = 0
 
-        private var pressed: NSEvent?
+        private var grab = NSPoint.zero
+        private var origin = NSPoint.zero
         private var moved = false
-
-        /// The strip moves the window and answers the double-click itself.
-        /// Left to say yes, AppKit takes both on too in the title bar the
-        /// strip sits in, and a double-click answered twice — by AppKit on
-        /// the press, here on the release — ends where it started.
-        override var mouseDownCanMoveWindow: Bool { false }
 
         override func hitTest(_ point: NSPoint) -> NSView? {
             let inside = convert(point, from: superview)
@@ -285,24 +268,21 @@ struct DragStrip: NSViewRepresentable {
         }
 
         override func mouseDown(with event: NSEvent) {
-            pressed = event
+            guard let window else { return }
+            grab = NSEvent.mouseLocation
+            origin = window.frame.origin
             moved = false
         }
 
-        /// The window is not movable on its own (see dress in App.swift): a tab
-        /// picked up in the strip would carry the window off with it. Here
-        /// it is let go for the one drag, handed to the system's own window
-        /// drag so it snaps and tiles as any window does.
         override func mouseDragged(with event: NSEvent) {
-            guard let window, let pressed, !moved else { return }
-            let dx = event.locationInWindow.x - pressed.locationInWindow.x
-            let dy = event.locationInWindow.y - pressed.locationInWindow.y
+            guard let window else { return }
+            let now = NSEvent.mouseLocation
+            let dx = now.x - grab.x
+            let dy = now.y - grab.y
             // A little slack, so a shaky click is still a click.
-            if abs(dx) < 3 && abs(dy) < 3 { return }
+            if !moved && abs(dx) < 3 && abs(dy) < 3 { return }
             moved = true
-            window.isMovable = true
-            window.performDrag(with: pressed)
-            window.isMovable = false
+            window.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy))
         }
 
         /// A double-click does what a title bar's does. It answered every

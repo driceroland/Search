@@ -65,12 +65,7 @@ final class Float {
         panel.isMovableByWindowBackground = true
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        // No shadow. A window with one is composited by WindowServer on every
-        // frame of the video; without it the video can go straight to the
-        // display, as it does in a tab. Measured on 1080p and 4K YouTube:
-        // WindowServer's GPU time 28% with the shadow, 16–20% without, 22%
-        // playing in the tab.
-        panel.hasShadow = false
+        panel.hasShadow = true
         panel.isReleasedWhenClosed = false
         panel.aspectRatio = size
         panel.minSize = NSSize(width: 260, height: 146)
@@ -521,12 +516,6 @@ enum Isolate {
         'width:100vw !important; height:100vh !important;',
         'max-width:none !important; max-height:none !important;',
         'object-fit:contain !important; z-index:2147483647 !important}',
-        // Fixed or not, the video is still cut to the box of any ancestor
-        // that clips — YouTube's player does — and in a window this small
-        // that box sits partly or wholly off screen, more so on a page that
-        // was scrolled. That was the black window.
-        'html.office-floating body :has([data-office-float]) {',
-        'overflow:visible !important}',
         // The player's own controls would sit under ours, and two sets of
         // buttons on one small window is one set too many.
         'html.office-floating [data-office-float]::-webkit-media-controls {',

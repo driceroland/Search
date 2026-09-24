@@ -1,36 +1,38 @@
 import Foundation
 
 // What was open last time. A list of addresses and their names, and which one
-// you were looking at — nothing else, because everything else is either on the
-// page or in the history file next door.
+// you were looking at — per profile, or across the session.
 
 enum Session {
     struct Entry: Codable {
         var url: String
         var title: String
         var pin: String?
-        /// The name you gave the tab, when you gave it one.
-        var name: String?
+    }
+
+    struct ProfileSession: Codable {
+        var profileID: UUID
+        var tabs: [Entry]
+        var active: Int
     }
 
     struct Shape: Codable {
         var tabs: [Entry]
         var active: Int
+        var profiles: [ProfileSession]?
+        var activeProfileID: UUID?
+
+        init(tabs: [Entry] = [], active: Int = 0, profiles: [ProfileSession]? = nil, activeProfileID: UUID? = nil) {
+            self.tabs = tabs
+            self.active = active
+            self.profiles = profiles
+            self.activeProfileID = activeProfileID
+        }
     }
 
-    /// The first space's is the session there always was; each other space
-    /// keeps its own beside it.
-    private static func file(_ space: UUID) -> URL {
-        Store.file(space == Space.firstID ? "session.json" : "session-\(space.uuidString).json")
-    }
+    private static var file: URL { Store.file("session.json") }
 
-    static func erase(space: UUID) {
-        guard space != Space.firstID else { return }
-        try? FileManager.default.removeItem(at: file(space))
-    }
-
-    static func read(space: UUID = Space.firstID) -> Shape {
-        let file = file(space)
+    static func read() -> Shape {
         guard let data = try? Data(contentsOf: file) else { return Shape(tabs: [], active: 0) }
         guard let shape = try? JSONDecoder().decode(Shape.self, from: data) else {
             // A file that's there but won't decode is not the same as no
@@ -45,8 +47,8 @@ enum Session {
     /// `now` writes on the calling thread. Quitting doesn't wait for a
     /// background queue, and a session handed to one on the way out is a
     /// session that may never reach the disk.
-    static func write(now: Bool = false, space: UUID = Space.firstID, _ shape: Shape) {
-        let file = file(space)
+    static func write(now: Bool = false, _ shape: Shape) {
+        let file = Session.file
         let put = {
             guard let data = try? JSONEncoder().encode(shape) else { return }
             try? FileManager.default.createDirectory(
