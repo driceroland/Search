@@ -32,8 +32,8 @@ enum Swipe {
     /// later in the cascade wins the way any later, unremarkable rule would.
     static let calm = """
     (function () {
+      // No id: nothing on the page that says it is Search's (see Web.world).
       var sheet = document.createElement('style');
-      sheet.id = 'office-calm';
       sheet.textContent = 'html, body { overscroll-behavior-y: none; }';
       (document.head || document.documentElement).appendChild(sheet);
     })();

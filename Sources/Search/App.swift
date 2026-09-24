@@ -35,6 +35,8 @@ struct SearchApp: App {
                     .keyboardShortcut("w")
             }
             CommandGroup(replacing: .printItem) {
+                Button("Share…") { browser.share() }
+                    .disabled(browser.active?.isBlank ?? true)
                 Button("Print…") { browser.printPage() }
                     .keyboardShortcut("p")
                     .disabled(browser.active?.isBlank ?? true)
@@ -131,6 +133,8 @@ struct SearchApp: App {
                 Button("Copy Address") { browser.copyAddress() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
                     .disabled(browser.active?.isBlank ?? true)
+                Button("Copy as Markdown Link") { browser.copyMarkdownLink() }
+                    .disabled(browser.active?.isBlank ?? true)
                 Button("Paste and Go") { browser.pasteAndGo() }
                     .keyboardShortcut("v", modifiers: [.command, .shift])
                 Divider()
@@ -144,6 +148,10 @@ struct SearchApp: App {
                     .keyboardShortcut("b", modifiers: [.command, .shift])
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Show Bookmarks…") { browser.bookmarking = true }
+                Toggle("Show Bookmarks Bar", isOn: Binding(
+                    get: { browser.prefs.bookmarksBar },
+                    set: { on in withAnimation(Motion.glide) { browser.prefs.bookmarksBar = on } }
+                ))
                 // The bookmarks themselves follow, put in by AppKit (see
                 // BookmarkMenu in Bookmarks.swift).
             }
@@ -216,68 +224,162 @@ private struct MenuLine: View {
     }
 }
 
+/// The base a sheet draws on, and the reason a panel is legible over a page
+/// that has hidden its own cursor.
+///
+/// WebKit turns `cursor: none` into an AppKit cursor rect over the whole web
+/// view. SwiftUI panels layered on top add no rect of their own, so when the
+/// pointer crosses from the page into a sheet the invisible rect still wins,
+/// and the sheet reads as empty air. This gives the sheet one arrow-sized
+/// rect to win with, frontmost because its NSView sits above the web view
+/// (a sheet is drawn by `.overlay { panels }` on `ContentView.body`).
+private struct CursorGround: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { CursorGroundView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private final class CursorGroundView: NSView {
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .arrow)
+    }
+
+    // Re-arm the rect each time this view joins a window or changes size, so
+    // AppKit notices it even if the pointer has not moved since the sheet
+    // appeared. Without this the arrow only shows after a twitch.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.invalidateCursorRects(for: self)
+    }
+
+    override func layout() {
+        super.layout()
+        window?.invalidateCursorRects(for: self)
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var browser: Browser
 
     @State private var keys: Any?
     @State private var window: NSWindow?
     @State private var resting: RestingLights?
+    /// The room the page leaves for the column and the strip, set without
+    /// animation (see `make(room:after:)`); nil only before the window is up.
+    @State private var room: CGSize?
+    @State private var roomTicket = 0
 
 
     /// The window: room at the top, one stage for the page, and the row when
     /// there is one.
     private var window_: some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .topLeading) {
             // Black while a page has the screen, so the frame of our own window
             // that survives the transition is not a white band across the top.
             (browser.active?.immersed == true ? Color.black : Palette.ground)
 
-            HStack(spacing: 0) {
-                // The column of tabs, in the way that has one. It takes the
-                // full height, so the traffic lights sit in its own corner
-                // rather than over the page.
-                if sidebar {
-                    SideBar(browser: browser, prefs: browser.prefs)
-                        .transition(.move(edge: .leading))
-                }
+            // One stage, always. It starts beside the column and under the
+            // strip, not behind them — a page sliding beneath floating chrome
+            // is a browser showing off, and it costs a compositing pass.
+            //
+            // When the column or the strip comes or goes, the page slides with
+            // it and is resized once, not on every frame of the slide: laid out
+            // again thirty times a second, the page juddered along its right
+            // edge and overshot the window with the spring (see `room`).
+            stage
+                .padding(.leading, roomed.width)
+                .padding(.top, roomed.height)
+                .offset(x: chrome.width - roomed.width, y: chrome.height - roomed.height)
 
-                VStack(spacing: 0) {
-                    // Room for the traffic lights, and for the strip when there
-                    // is one. The page starts under it, not behind it — a page
-                    // sliding beneath floating chrome is a browser showing off,
-                    // and it costs a compositing pass.
-                    Color.clear.frame(height: band)
-
-                    // One stage, always.
-                    if let tab = browser.active {
-                        Page(tab: tab)
-                            .overlay(alignment: .topTrailing) {
-                                if browser.finding {
-                                    FindBar(browser: browser)
-                                        .transition(.move(edge: .top).combined(with: .opacity))
-                                }
-                            }
-                            .overlay(alignment: .topLeading) {
-                                if let asked = browser.suggesting, asked.tab == tab.id {
-                                    AccountList(browser: browser, asked: asked)
-                                        .transition(.opacity)
-                                }
-                            }
-                            .animation(Motion.quick, value: browser.suggesting)
-                    } else {
-                        Palette.ground
-                    }
-                }
+            // The column of tabs, in the way that has one. It takes the full
+            // height, so the traffic lights sit in its own corner rather than
+            // over the page.
+            if sidebar {
+                SideBar(browser: browser, prefs: browser.prefs)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .transition(.move(edge: .leading))
             }
 
             if !browser.prefs.sidebar, !browser.folded, browser.active?.immersed != true {
                 TabBar(browser: browser)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+
+            // The bookmarks bar, under the strip or beside the column's top.
+            if barShown {
+                BookmarksBar(browser: browser, bookmarks: browser.bookmarks)
+                    .padding(.leading, chrome.width)
+                    .padding(.top, band)
+                    .transition(.opacity)
+            }
         }
         .ignoresSafeArea()
         .animation(Motion.glide, value: browser.prefs.sidebar)
         .animation(.easeOut(duration: 0.12), value: browser.active?.immersed)
+        .onAppear { if room == nil { room = chrome } }
+        .onChange(of: chrome) { old, new in make(room: new, after: old) }
+    }
+
+    @ViewBuilder
+    private var stage: some View {
+        if let tab = browser.active {
+            Page(tab: tab)
+                .overlay {
+                    if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if browser.finding {
+                        FindBar(browser: browser)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if let asked = browser.suggesting, asked.tab == tab.id {
+                        AccountList(browser: browser, asked: asked)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(Motion.quick, value: browser.suggesting)
+        } else {
+            Palette.ground
+        }
+    }
+
+    /// What the column and the strip take from the page right now: animated
+    /// as they come and go.
+    private var chrome: CGSize {
+        CGSize(width: sidebar ? browser.prefs.sideWidth : 0, height: band + (barShown ? BookmarksBar.height : 0))
+    }
+
+    /// The bookmarks bar is up: asked for, there are bookmarks, and the tabs
+    /// aren't folded away or under a video filling the screen.
+    private var barShown: Bool {
+        browser.prefs.bookmarksBar && !browser.bookmarks.isEmpty && !browser.folded
+            && browser.active?.immersed != true
+    }
+
+    /// The room the page is laid out to leave them, which is not animated.
+    private var roomed: CGSize { room ?? chrome }
+
+    /// Chrome going away gives the page its room at once, the page sliding
+    /// out from under it at its new size. Chrome arriving slides over a page
+    /// still at its old size, which gives up the room once the slide is over.
+    /// A column being dragged wider or narrower is followed as it goes.
+    private func make(room new: CGSize, after old: CGSize) {
+        let now = roomed
+        let arriving = (old.width == 0 && new.width > 0, old.height == 0 && new.height > 0)
+        var at = now
+        if !arriving.0 { at.width = new.width }
+        if !arriving.1 { at.height = new.height }
+        roomTicket += 1
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { room = at }
+        guard arriving.0 || arriving.1 else { return }
+        let ticket = roomTicket
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
+            guard ticket == roomTicket else { return }
+            withTransaction(still) { room = chrome }
+        }
     }
 
     /// Everything that rises from the bottom edge to say one thing.
@@ -365,9 +467,22 @@ struct ContentView: View {
             // The column folded away, and out again at the edge (see Fold.swift).
             .overlay(alignment: .leading) { Fold(browser: browser, prefs: browser.prefs) }
             .overlay(alignment: .bottom) { bars }
+            .overlay {
+                // Over the page only: the column, the strip and the bookmarks
+                // bar stay as they are, uncovered and in reach.
+                PeekLayer(browser: browser)
+                    .padding(.leading, chrome.width)
+                    .padding(.top, chrome.height)
+                    // From the window's own top edge, as the page is:
+                    // the title bar's band is page too.
+                    .ignoresSafeArea()
+            }
             .overlay { field }
             .overlay { panels }
-            .animation(Motion.settle, value: browser.fieldShowing)
+            // The field comes on its spring, and goes quickly: once Return
+            // is pressed the page is on its way, and the field is not what
+            // there is to watch.
+            .animation(browser.fieldShowing ? Motion.settle : Motion.quick, value: browser.fieldShowing)
             .background(WindowSetup { window = $0; dress($0) })
             .onChange(of: browser.prefs.sidebar) { _, _ in
                 DispatchQueue.main.async { measureLights() }
@@ -378,9 +493,15 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
                 measureLights()
                 resting?.isHidden = false
+                // Only the window you were in, or every window's video would come.
+                browser.appLeft()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+                if let window, (note.object as? NSWindow) === window { Browser.front = browser }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
+                browser.appBack()
             }
             .onChange(of: browser.fieldShowing) { _, showing in
                 if showing {
@@ -534,6 +655,10 @@ struct ContentView: View {
         close: @escaping () -> Void
     ) -> some View {
         ZStack {
+            // The floor owns the cursor; see CursorGround.
+            CursorGround()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
             Color.black.opacity(0.10)
                 .ignoresSafeArea()
                 .onTapGesture(perform: close)
@@ -636,6 +761,35 @@ struct ContentView: View {
             }
             return take(event) ? nil : event
         }
+        ContentView.keyHook = { event in take(event) ? nil : event }
+    }
+
+    /// The same handling the key monitor gives an event, for the bench to
+    /// put a key through the app's own path.
+    static var keyHook: ((NSEvent) -> NSEvent?)?
+
+    /// The last key handed to the page before Search acted on it (see
+    /// `pageFirst`): if WebKit sends it back unused, it is Search's.
+    private static var passed: NSEvent?
+
+    /// A key a page may want for itself — ⌘K in Slack, ⌘F in a Google Doc,
+    /// ⌘S in an editor — goes to the page first, as it does in Chrome, and is
+    /// Search's only if the page leaves it unused: WebKit then sends the same
+    /// event back through the app, and it comes here a second time. Only
+    /// while the page has the keyboard; in the address field or a panel,
+    /// Search's keys are Search's. The keys that make and close tabs and move
+    /// between them stay Search's first, as Chrome keeps them its own.
+    private func pageFirst(_ event: NSEvent, key: String, shifted: Bool) -> Bool {
+        let reserved = (key == "t") || (key == "w" && !shifted) || (key == "n" && shifted)
+            || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
+            || (key == "z" && browser.veiling)
+        guard !reserved, event.window?.firstResponder is PageView else { return false }
+        if let passed = ContentView.passed, PageView.same(passed, event) {
+            ContentView.passed = nil
+            return false
+        }
+        ContentView.passed = event
+        return true
     }
 
     /// The keys of the top row, by where they sit rather than what they type.
@@ -652,6 +806,10 @@ struct ContentView: View {
         if event.keyCode == 53 {
             if browser.editingTab != nil {
                 browser.cancelTabEdit()
+                return true
+            }
+            if browser.peekTab != nil {
+                browser.closePeek()
                 return true
             }
             if browser.makingSpace {
@@ -672,6 +830,10 @@ struct ContentView: View {
             }
             if browser.recalling {
                 browser.recalling = false
+                return true
+            }
+            if browser.hoarding {
+                browser.hoarding = false
                 return true
             }
             if browser.suggesting != nil {
@@ -757,6 +919,9 @@ struct ContentView: View {
             return true
         }
 
+        // The page's turn first, for the keys it may want (Refs #147).
+        if pageFirst(event, key: key, shifted: shifted) { return false }
+
         switch key {
         case "t" where !shifted:
             browser.newTab()
@@ -773,7 +938,20 @@ struct ContentView: View {
         case "j" where shifted:
             browser.hoarding.toggle()
         case "v" where shifted:
-            browser.pasteAndGo()
+            // In a text field this key is paste without formatting — a Google
+            // Doc, a form, the address field. It only means Paste and Go when
+            // nothing is being typed. Passing the key on is not enough: WebKit
+            // has no use for ⌘⇧V, hands it back, and the menu's Paste and Go
+            // takes it. So the plain paste is done here, as Chrome does.
+            // A web view has an input context only while the caret is in
+            // something editable, in any frame — including frames the page's
+            // own script can't look into, like the one a Google Doc types in.
+            if browser.active?.typing == true || browser.active?.built?.inputContext != nil
+                || browser.editing || event.window?.firstResponder is NSTextView {
+                _ = event.window?.firstResponder?.tryToPerform(#selector(NSTextView.pasteAsPlainText(_:)), with: nil)
+            } else {
+                browser.pasteAndGo()
+            }
         case "p" where !shifted:
             browser.printPage()
         case "f" where !shifted:
@@ -817,7 +995,11 @@ struct ContentView: View {
         case "0":
             browser.resetZoom()
         case "w" where !shifted:
-            if let tab = browser.active { browser.close(tab) }
+            if browser.peekTab != nil {
+                browser.closePeek()
+            } else if let tab = browser.active {
+                browser.close(tab)
+            }
         case "l" where !shifted:
             browser.edit()
         case "r" where !shifted:

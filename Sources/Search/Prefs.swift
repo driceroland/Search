@@ -28,10 +28,17 @@ final class Preferences: ObservableObject {
     private let store = Store.settings
 
     /// A local socket a script can drive the browser through, in tabs of its
-    /// own. Off unless asked for.
+    /// own. Off unless asked for — in Settings, which is also what leaves
+    /// the mark it needs at launch (see Bench.Consent).
     @Published var bench: Bool {
-        didSet { store.set(bench, forKey: "bench") }
+        didSet {
+            store.set(bench, forKey: "bench")
+            bench ? Bench.Consent.grant() : Bench.Consent.revoke()
+        }
     }
+    /// The setting said on at launch with no mark from the switch behind it,
+    /// and was put back to off.
+    private(set) var benchRefused = false
     /// Light, dark, or the Mac's own.
     @Published var look: Look {
         didSet {
@@ -135,6 +142,61 @@ final class Preferences: ObservableObject {
             AutoScroll.on = autoScroll
         }
     }
+    /// Pages draw at 120 frames a second on a screen that can (see FrameRate.swift).
+    /// Off unless asked for.
+    @Published var fastPages: Bool {
+        didSet {
+            store.set(fastPages, forKey: "pages.120")
+            FrameRate.fast = fastPages
+        }
+    }
+    /// Where a link goes, at the bottom of the page while the pointer is on
+    /// it (see StatusLine.swift). Off unless asked for.
+    /// Shift-click on a link opens it in a panel over the page (see
+    /// Peek.swift). Off unless asked for.
+    @Published var peeksLinks: Bool {
+        didSet { store.set(peeksLinks, forKey: "links.peek") }
+    }
+    /// The bookmarks bar above the page (see BookmarksBar.swift). Off
+    /// unless asked for.
+    @Published var bookmarksBar: Bool {
+        didSet { store.set(bookmarksBar, forKey: "bookmarks.bar") }
+    }
+    @Published var showsLinks: Bool {
+        didSet {
+            store.set(showsLinks, forKey: "links.show")
+            HoveredLink.on = showsLinks
+        }
+    }
+    /// Two fingers flick the floating video to a corner (see Float.swift).
+    /// Off unless asked for.
+    @Published var floatFlicks: Bool {
+        didSet {
+            store.set(floatFlicks, forKey: "float.flicks")
+            Float.flicks = floatFlicks
+        }
+    }
+    /// A video playing floats out when another app comes to the front, and
+    /// back when Search does (see Browser.appLeft). Off unless asked for.
+    @Published var floatsAway: Bool {
+        didSet { store.set(floatsAway, forKey: "float.away") }
+    }
+    /// A video playing on a video site comes out into the floating window
+    /// when you go to another tab (Browser.leaving). On, as it always was;
+    /// the switch is for turning it off.
+    @Published var floatsOnLeave: Bool {
+        didSet { store.set(floatsOnLeave, forKey: "float.leave") }
+    }
+    /// A newer build is fetched, checked and put in place on its own, as it
+    /// always was. Off, Search still looks once a day and says so, and waits
+    /// for Install in Settings (see Updater.installsOnItsOwn).
+    @Published var installsUpdates: Bool {
+        didSet {
+            store.set(installsUpdates, forKey: Updater.installKey)
+            // Switched back on with one waiting: it goes in now.
+            if installsUpdates { Updater.shared.install() }
+        }
+    }
     /// Separate sets of tabs, each with its own sign-ins (see Spaces.swift).
     /// Off unless asked for.
     @Published var usesSpaces: Bool {
@@ -146,7 +208,13 @@ final class Preferences: ObservableObject {
         // and this was one of them.
         // The Mac's own unless asked otherwise — a Mac in dark mode expects
         // a dark browser, pages included.
-        bench = store.bool(forKey: "bench")
+        let scripted = store.bool(forKey: "bench")
+        let allowed = scripted && (Store.testing || Bench.Consent.given)
+        bench = allowed
+        if scripted, !allowed {
+            benchRefused = true
+            store.set(false, forKey: "bench")
+        }
         let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .system
         look = chosen
         // Before the first window, and not deferred: the window that is about
@@ -196,9 +264,23 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
+        let flicks = store.bool(forKey: "float.flicks")
+        floatFlicks = flicks
+        Float.flicks = flicks
+        floatsAway = store.bool(forKey: "float.away")
+        floatsOnLeave = store.object(forKey: "float.leave") as? Bool ?? true
+        installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
+        peeksLinks = store.bool(forKey: "links.peek")
+        bookmarksBar = store.bool(forKey: "bookmarks.bar")
+        let links = store.bool(forKey: "links.show")
+        showsLinks = links
+        HoveredLink.on = links
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls
+        let fast = store.bool(forKey: "pages.120")
+        fastPages = fast
+        FrameRate.fast = fast
         // Left behind by the Web Inspector's switch, from before it was
         // always there.
         store.removeObject(forKey: "inspector")

@@ -24,10 +24,12 @@ import WebKit
 // or a password app, an iPhone nearby over the QR code, or a security key.
 // What comes back goes to the page as the credential WebKit would have made.
 //
-// Not yet: the passkey offered under the name field as a sign-in page loads.
-// Pages are told it isn't there, so they show their own passkey button; a
-// request made that way anyway just waits, as it does while nobody picks one
-// — here, never reaching macOS.
+// Not yet: the Mac's passkeys offered under the name field as a sign-in page
+// loads. Pages are told the field has none to offer, so they show their own
+// passkey button — unless a password manager extension that keeps passkeys
+// is there to offer its own. A request made that way is the extension's to
+// answer; what it leaves to Search just waits, as it does while nobody picks
+// one, never reaching macOS.
 @MainActor
 final class Passkeys: NSObject {
     static let shared = Passkeys()
@@ -96,6 +98,12 @@ final class Passkeys: NSObject {
     }
 
     func perform(_ body: [String: Any], from caller: Caller, answer: @escaping ([String: Any]) -> Void) {
+        // Switched off in Settings: what reaches here came through an
+        // extension's page script, which the patch runs ahead of whatever the
+        // setting — the site hears no, as it would from a browser without them.
+        guard FormRelay.passkeysOffered else {
+            return refuse(answer, "NotAllowedError", "The operation either timed out or was not allowed.")
+        }
         let kind = body["kind"] as? String ?? ""
         let scheme = caller.origin.protocol.lowercased()
         let host = caller.origin.host.lowercased()
@@ -329,7 +337,7 @@ final class Passkeys: NSObject {
     /// WebKit's own test for a public suffix, from the list macOS keeps.
     /// Private to CFNetwork: without it, a page's own host is the only
     /// relying party it gets.
-    private static let publicSuffix: (@convention(c) (CFString) -> Bool)? = {
+    nonisolated static let publicSuffix: (@convention(c) (CFString) -> Bool)? = {
         guard let symbol = dlsym(dlopen("/System/Library/Frameworks/CFNetwork.framework/CFNetwork", RTLD_NOW), "_CFHostIsDomainTopLevel")
         else { return nil }
         return unsafeBitCast(symbol, to: (@convention(c) (CFString) -> Bool).self)
@@ -560,6 +568,9 @@ private struct CBOR {
 /// The page's side: requests handed over, answers handed back.
 final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
     static let name = "officePasskeys"
+    /// The page's word to Search's side, and the answer back (see `bridge`).
+    static let asked = "search-passkeys-ask"
+    static let answered = "search-passkeys-answer"
 
     func userContentController(
         _ controller: WKUserContentController,
@@ -587,13 +598,23 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
     /// asked — a stored password — as it always did. On the prototype: WebKit
     /// makes navigator.credentials anew whenever nothing holds it, and what
     /// was set on the old one goes with it.
-    static let script = """
+    ///
+    /// It has to be in the page's own world to stand in for the page's
+    /// functions, and nothing of Search's is there for a page to find — no
+    /// window.webkit, no global of its own. Requests go to Search's side as
+    /// events on the window (see `bridge`).
+    static let page = """
     (function () {
-      if (window.__officePasskeys || !window.PublicKeyCredential || !window.CredentialsContainer) return;
-      var handler = window.webkit && webkit.messageHandlers && webkit.messageHandlers.\(name);
-      if (!handler) return;
-      Object.defineProperty(window, '__officePasskeys', { value: true });
+      if (!window.PublicKeyCredential || !window.CredentialsContainer) return;
       var proto = CredentialsContainer.prototype;
+      // In once, whichever copy comes first — an extension's (see
+      // ExtensionShims.passkeys) or Search's own — and marked on the prototype
+      // rather than on the window. The mark holds navigator.credentials too:
+      // held, WebKit keeps it, and an extension's own get and create on it
+      // with it.
+      var mark = Symbol.for('search.passkeys');
+      if (proto[mark]) return;
+      try { Object.defineProperty(proto, mark, { value: navigator.credentials }); } catch (e) { return; }
       var nativeGet = proto.get, nativeCreate = proto.create;
       var refused = 'The operation either timed out or was not allowed.';
 
@@ -669,15 +690,31 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         }, true);
       }
 
+      var waiting = {};
+      window.addEventListener('\(answered)', function (event) {
+        var data;
+        try { data = JSON.parse(event.detail); } catch (e) { return; }
+        var done = data && waiting[data.token];
+        if (!done) return;
+        delete waiting[data.token];
+        done(data.reply);
+      });
+      function ask(message) {
+        return new Promise(function (resolve) {
+          if (message.kind === 'cancel') resolve(true); else waiting[message.token] = resolve;
+          window.dispatchEvent(new CustomEvent('\(asked)', { detail: JSON.stringify(message) }));
+        });
+      }
+
       function send(request, signal, extensions) {
         if (signal && signal.aborted) return Promise.reject(aborted(signal));
         request.token = Math.random().toString(36).slice(2);
         return new Promise(function (resolve, reject) {
           if (signal) signal.addEventListener('abort', function () {
-            handler.postMessage({ kind: 'cancel', token: request.token });
+            ask({ kind: 'cancel', token: request.token });
             reject(aborted(signal));
           }, { once: true });
-          handler.postMessage(request).then(function (reply) {
+          ask(request).then(function (reply) {
             if (!reply || reply.error) {
               var name = (reply && reply.error) || 'NotAllowedError';
               var message = (reply && reply.message) || refused;
@@ -696,8 +733,9 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         if (!options || !options.publicKey) return nativeGet.apply(this, arguments);
         var signal = options.signal, pk = options.publicKey, request;
         if (options.mediation === 'conditional') {
-          // Not offered under the field yet: the request waits, as it does
-          // while nobody picks a passkey, until the page lets it go.
+          // Nothing of the Mac's is offered under the field yet: the request
+          // waits, as it does while nobody picks a passkey, until the page
+          // lets it go.
           return new Promise(function (resolve, reject) {
             if (!signal) return;
             if (signal.aborted) return reject(aborted(signal));
@@ -736,20 +774,35 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         return send(request, options.signal, pk.extensions);
       });
 
+      // A password manager that keeps passkeys — 1Password, Bitwarden — puts
+      // its own get and create on navigator.credentials, or asks from its own
+      // script, and offers its passkeys under the name field to the sites that
+      // ask for them that way. Once one is there, pages hear the field can.
+      var claimed = false;
+      function extensionAnswers() {
+        if (claimed) return true;
+        try {
+          if (navigator.credentials && Object.getOwnPropertyDescriptor(navigator.credentials, 'get')) claimed = true;
+          else if ((new Error().stack || '').indexOf('-extension://') >= 0) claimed = true;
+        } catch (e) {}
+        return claimed;
+      }
+
       // What this browser can and can't do, for the pages that ask first:
       // passkeys from the Mac, a phone or a key — not yet under the field,
       // and none of what WebKit would have answered for itself.
       var P = PublicKeyCredential;
       replace(P, 'isUserVerifyingPlatformAuthenticatorAvailable', function () { return Promise.resolve(true); });
-      replace(P, 'isConditionalMediationAvailable', function () { return Promise.resolve(false); });
+      replace(P, 'isConditionalMediationAvailable', function () { return Promise.resolve(extensionAnswers()); });
       var nativeCapabilities = P.getClientCapabilities;
       if (typeof nativeCapabilities === 'function') {
         replace(P, 'getClientCapabilities', function () {
+          var field = extensionAnswers();
           function ours(c) {
             c = Object.assign({}, c);
             Object.keys(c).forEach(function (k) { if (k.indexOf('extension:') === 0 && k !== 'extension:credProps') c[k] = false; });
             return Object.assign(c, {
-              conditionalCreate: false, conditionalGet: false, conditionalMediation: false, relatedOrigins: false,
+              conditionalCreate: false, conditionalGet: field, conditionalMediation: field, relatedOrigins: false,
               signalAllAcceptedCredentials: false, signalCurrentUserDetails: false, signalUnknownCredential: false,
               hybridTransport: true, passkeyPlatformAuthenticator: true, userVerifyingPlatformAuthenticator: true
             });
@@ -757,6 +810,31 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
           return nativeCapabilities.call(P).then(ours, function () { return ours({}); });
         });
       }
+    })();
+    """
+
+    /// Search's side of it, in Search's own world (Web.world), where the
+    /// handler is and a page can't look. A request the page dispatches is
+    /// handed over as it is — the frame it comes from is WebKit's to say, not
+    /// the event's — and the answer dispatched back for the page to pick up.
+    static let bridge = """
+    (function () {
+      var handler = window.webkit && webkit.messageHandlers && webkit.messageHandlers.\(name);
+      if (!handler || window.__bridged) return;
+      window.__bridged = true;
+      window.addEventListener('\(asked)', function (event) {
+        var message;
+        try { message = JSON.parse(event.detail); } catch (e) { return; }
+        if (!message || typeof message !== 'object' || typeof message.token !== 'string') return;
+        function answer(reply) {
+          window.dispatchEvent(new CustomEvent('\(answered)', { detail: JSON.stringify({ token: message.token, reply: reply }) }));
+        }
+        handler.postMessage(message).then(function (reply) {
+          if (message.kind !== 'cancel') answer(reply);
+        }, function () {
+          if (message.kind !== 'cancel') answer(null);
+        });
+      });
     })();
     """
 }

@@ -90,8 +90,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHumanReadableCopyright</key><string>© Office Commun · Search</string>
   <key>NSHighResolutionCapable</key><true/>
-  <!-- Owning http and https is what lets macOS offer this app as the default
-       browser, and what sends a link clicked in Mail here. -->
+  <!-- Owning http and https is what sends a link clicked in Mail here.
+       Appearing in Desktop & Dock → Default web browser also needs the
+       XHTML document type below. -->
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -108,6 +109,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
       <key>LSItemContentTypes</key>
       <array><string>public.html</string><string>com.apple.web-internet-location</string></array>
     </dict>
+    <!-- macOS only lists an app under Desktop & Dock → Default web browser
+         when it claims public.xhtml as well as public.html. http and https
+         alone, which Search already had, are not enough. -->
+    <dict>
+      <key>CFBundleTypeName</key><string>XHTML page</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSItemContentTypes</key>
+      <array><string>public.xhtml</string></array>
+    </dict>
   </array>
   <!-- A browser goes wherever it is pointed, including at http sites and at
        whatever is running on localhost. -->
@@ -117,9 +127,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
        still wants a sentence to put in its own prompt, and touching the APIs
        without one is a crash rather than a refusal. -->
   <key>NSCameraUsageDescription</key>
-  <string>Websites you visit can ask to use your camera. Search asks you first, every time, for each site.</string>
+  <string>Websites you visit can ask to use your camera. Search asks you the first time each site does and keeps your answer; Settings › Privacy forgets them.</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Websites you visit can ask to use your microphone. Search asks you first, every time, for each site.</string>
+  <string>Websites you visit can ask to use your microphone. Search asks you the first time each site does and keeps your answer; Settings › Privacy forgets them.</string>
   <key>NSDownloadsFolderUsageDescription</key>
   <string>Files you download are saved to your Downloads folder.</string>
 </dict>

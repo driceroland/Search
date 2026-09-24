@@ -101,11 +101,11 @@ extension Browser {
 
     /// Every https connection comes through here, not only the broken ones,
     /// so the certificate is checked first and the system is left to it when
-    /// it holds up. When it doesn't: something on this Mac — localhost, a
-    /// .local name, a private address — is taken on trust, because that is
-    /// where self-signed certificates live; anything else is asked about,
-    /// once per site per launch, and only for the page itself, never for
-    /// something a page pulled in.
+    /// it holds up. When it doesn't: this Mac itself — localhost and its
+    /// loopback addresses, which nothing on the network can stand in for —
+    /// is taken on trust; anything else, a .local name or a private address
+    /// on the same Wi-Fi included, is asked about, once per site per launch,
+    /// and only for the page itself, never for something a page pulled in.
     private func trust(
         _ webView: WKWebView,
         _ challenge: URLAuthenticationChallenge,
@@ -120,7 +120,7 @@ extension Browser {
             return
         }
         let host = challenge.protectionSpace.host.lowercased()
-        if Dialogs.isLocal(host) || Dialogs.excused.contains(host) {
+        if Dialogs.isLoopback(host) || Dialogs.excused.contains(host) {
             completionHandler(.useCredential, URLCredential(trust: trust))
             return
         }
@@ -243,15 +243,14 @@ enum Dialogs {
         }
     }
 
-    /// Where a self-signed certificate is an ordinary thing to meet.
-    static func isLocal(_ host: String) -> Bool {
-        if host == "localhost" || host.hasSuffix(".local") || host.hasSuffix(".localhost") { return true }
-        if host == "127.0.0.1" || host == "::1" || host == "0.0.0.0" { return true }
-        let parts = host.split(separator: ".").compactMap { Int($0) }
-        guard parts.count == 4 else { return false }
-        if parts[0] == 10 { return true }
-        if parts[0] == 192, parts[1] == 168 { return true }
-        if parts[0] == 172, (16...31).contains(parts[1]) { return true }
-        return false
+    /// This Mac itself: a certificate here can only have been made here.
+    /// Only the names that can't mean anything else: localhost, and the
+    /// loopback addresses written as addresses — four numbers and nothing
+    /// more, so 127.0.0.1.example.com is a website like any other.
+    static func isLoopback(_ host: String) -> Bool {
+        if host == "localhost" || host == "::1" || host == "[::1]" { return true }
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4, parts.allSatisfy({ UInt8($0) != nil }) else { return false }
+        return parts[0] == "127"
     }
 }
