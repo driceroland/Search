@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Flick the floating video to a corner, as in Arc and Dia: two fingers on the window send it to the corner or edge they point at, on a short spring, instead of pushing it along. Settings › General › Flick the floating video to a corner, off by default. Dragging still puts it anywhere.
 - Spaces with the tabs across the top: two fingers up or down over the bar, or a notch of a mouse wheel, bring the next space's tabs in as these go; past the last, a new space is made right in the bar. "New Space…" makes it in place in the column too.
 - Reopen Closed Tab is in the right-click menu of every tab, in the row and in the column, beside Close Other Tabs; it was only on ⌘⇧T and in the History menu. Thanks [@andupoto](https://x.com/andupoto) for asking
 - Extensions on private tabs, if you allow them: Settings › Extensions › Allow on private tabs, off by default. It applies to private tabs opened after it is turned on. Thanks [@merttopuz](https://github.com/merttopuz) ([#55](https://github.com/driceroland/Search/pull/55))

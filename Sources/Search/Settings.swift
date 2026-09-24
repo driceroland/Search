@@ -212,6 +212,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autoScroll)
             }
             Rule()
+            Line("Flick the floating video to a corner", "Two fingers on it send it to the corner or edge they point at, instead of pushing it along. Dragging still puts it anywhere") {
+                Switch(on: $prefs.floatFlicks)
+            }
+            Rule()
             Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
                 Switch(on: $prefs.bench)
             }
