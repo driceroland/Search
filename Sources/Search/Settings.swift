@@ -208,6 +208,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autocorrect)
             }
             Rule()
+            Line("Scroll with the middle button", "Click the wheel on a page, then move the mouse up or down to scroll, as on Windows. Click again to stop") {
+                Switch(on: $prefs.autoScroll)
+            }
+            Rule()
             Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
                 Switch(on: $prefs.bench)
             }
@@ -291,9 +295,11 @@ struct SettingsPanel: View {
                 Rule()
                 Line(
                     "Offer passkeys",
-                    prefs.passkeysPossible
-                        ? "Touch ID or an iCloud passkey, on sites that offer one"
-                        : "Needs an Apple entitlement this build doesn't have — off keeps sites to the password"
+                    !prefs.passkeysPossible
+                        ? "Needs an Apple entitlement this build doesn't have — off keeps sites to the password"
+                        : Passkeys.access == .denied
+                        ? "macOS was told no — System Settings › Privacy & Security › Passkeys Access for Web Browsers"
+                        : "Touch ID or an iCloud passkey, on sites that offer one"
                 ) {
                     Switch(on: $prefs.passkeys)
                 }

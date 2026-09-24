@@ -1,4 +1,5 @@
 import AppKit
+import AuthenticationServices
 import SwiftUI
 import WebKit
 
@@ -411,6 +412,15 @@ final class Bench {
             out["peeking"] = browser.peeking
             out["sideHides"] = browser.prefs.sideHides
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
+            // Whether this Mac lets the browser use its passkeys at all — the
+            // one-time permission macOS asks a browser other than Safari for.
+            switch ASAuthorizationWebBrowserPublicKeyCredentialManager().authorizationStateForPlatformCredentials {
+            case .authorized: out["passkeyAccess"] = "authorized"
+            case .denied: out["passkeyAccess"] = "denied"
+            default: out["passkeyAccess"] = "notDetermined"
+            }
+            out["passkeyAsks"] = Passkeys.asked
+            out["passkeyLast"] = Passkeys.last
             answer(out)
 
         case "press":
@@ -615,6 +625,104 @@ final class Bench {
                 }
             }
             step(1)
+
+        case "field":
+            // Text put into the address field the way a paste puts it — the
+            // whole of it replacing what is selected — or typed a character
+            // at a time, each timed from the moment it goes in to the moment
+            // the run loop next rests: the list worked out, SwiftUI's update
+            // and Core Animation's commit included. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "field only works on a --test run — it would type into your browser"]); return }
+            guard let text = request["text"] as? String, !text.isEmpty else { answer(["error": "field needs some text"]); return }
+            let pieces = request["type"] as? Bool == true ? text.map(String.init) : [text]
+            if browser.fieldShowing { browser.askFocus() } else { browser.edit() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                guard let field = Bench.addressField(in: Links.window?.contentView),
+                      let editor = field.currentEditor() as? NSTextView
+                else { answer(["error": "the address field has no editor"]); return }
+                var times: [[Double]] = []
+                @MainActor func next(_ index: Int) {
+                    guard index < pieces.count else {
+                        var out: [String: Any] = ["field": field.stringValue, "typed": browser.typed, "offers": browser.offers.map(\.key), "ms": times]
+                        guard request["go"] as? Bool == true, let tab = browser.active else { answer(out); return }
+                        // Then Return, as the field's own delegate takes it:
+                        // how long until WebKit is loading the page.
+                        out["viewWasBuilt"] = tab.built != nil
+                        let start = CACurrentMediaTime()
+                        var loading: Double?
+                        let watch = tab.$loading.first(where: { $0 }).sink { _ in loading = (CACurrentMediaTime() - start) * 1000 }
+                        browser.submit()
+                        out["returned"] = (CACurrentMediaTime() - start) * 1000
+                        Bench.whenResting(since: start) { rested in
+                            out["rested"] = rested
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                                watch.cancel()
+                                out["loading"] = loading ?? -1
+                                answer(out)
+                            }
+                        }
+                        return
+                    }
+                    let start = CACurrentMediaTime()
+                    editor.insertText(pieces[index], replacementRange: NSRange(location: NSNotFound, length: 0))
+                    let inserted = (CACurrentMediaTime() - start) * 1000
+                    Bench.whenResting(since: start) { rested in
+                        times.append([inserted, rested])
+                        DispatchQueue.main.async { next(index + 1) }
+                    }
+                }
+                next(0)
+            }
+
+        case "bookmark":
+            // A bookmark picked from the button's list, through the same
+            // call the list makes: how long until WebKit is loading it, and
+            // until the run loop rests. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "bookmark only works on a --test run — it would load a page in your tab"]); return }
+            guard let url = (request["url"] as? String).flatMap(Address.url(from:)) else { answer(["error": "bookmark needs a url"]); return }
+            // "new": into a new tab, whose page has yet to be built.
+            if request["new"] as? Bool == true { browser.newTab() }
+            guard let tab = browser.active else { answer(["error": "no tab to open it in"]); return }
+            browser.bookmarksOpen = true
+            let built = tab.built != nil
+            var loading: Double?
+            let start = CACurrentMediaTime()
+            let watch = tab.$loading.first(where: { $0 }).sink { _ in loading = (CACurrentMediaTime() - start) * 1000 }
+            browser.pickBookmark(url)
+            let returned = (CACurrentMediaTime() - start) * 1000
+            Bench.whenResting(since: start) { rested in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    watch.cancel()
+                    answer(["returned": returned, "loading": loading ?? -1, "rested": rested,
+                            "viewWasBuilt": built, "listStillOpen": browser.bookmarksOpen, "sameTab": browser.active?.id == tab.id])
+                }
+            }
+
+        case "menu":
+            // The Bookmarks menu as it is about to open: the menu bar
+            // told it is being tracked, SwiftUI's own update run on it, its
+            // first folder opened — then what each holds. Only on a
+            // SEARCH_PROBE run; nothing is drawn.
+            guard Store.testing else { answer(["error": "menu only works on a --test run"]); return }
+            guard let main = NSApp.mainMenu, let menu = main.items.first(where: { $0.title == "Bookmarks" })?.submenu
+            else { answer(["error": "no Bookmarks menu"]); return }
+            let before = menu.items.count
+            let wrapped = menu.delegate.map { "\(type(of: $0))" } ?? "none"
+            let start = CACurrentMediaTime()
+            NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: main)
+            let filled = (CACurrentMediaTime() - start) * 1000
+            menu.delegate?.menuNeedsUpdate?(menu)
+            let folder = menu.items.first { $0.submenu != nil && $0.tag != 0 }?.submenu
+            if let folder { folder.delegate?.menuNeedsUpdate?(folder) }
+            // "open": the first bookmark in that folder picked, as a click would.
+            if request["open"] as? Bool == true, let folder,
+               let index = folder.items.firstIndex(where: { $0.representedObject is URL }) {
+                folder.performActionForItem(at: index)
+            }
+            answer(["delegate": wrapped, "before": before, "after": menu.items.count, "ours": BookmarkMenu.shared.count, "fillMs": filled,
+                    "titles": menu.items.prefix(8).map { $0.isSeparatorItem ? "—" : $0.title },
+                    "firstFolder": folder?.items.prefix(4).map(\.title) ?? [],
+                    "active": browser.active?.address?.absoluteString ?? ""])
 
         case "place":
             // A tab put at another place in the row, as a drag would.
@@ -913,7 +1021,7 @@ final class Bench {
                 let dx = request["dx"] as? Double ?? -120
                 SpaceSwipe.shared.start(for: browser)
                 SpaceSwipe.shared.began()
-                for _ in 0..<12 { SpaceSwipe.shared.moved(dx: dx / 12, dy: 0) }
+                for _ in 0..<12 { SpaceSwipe.shared.moved(along: dx / 12) }
                 SpaceSwipe.shared.ended()
             case "hold":
                 // The fingers down and DX along, not yet let go — for a look
@@ -921,7 +1029,7 @@ final class Bench {
                 let dx = request["dx"] as? Double ?? -120
                 SpaceSwipe.shared.start(for: browser)
                 SpaceSwipe.shared.began()
-                for _ in 0..<12 { SpaceSwipe.shared.moved(dx: dx / 12, dy: 0) }
+                for _ in 0..<12 { SpaceSwipe.shared.moved(along: dx / 12) }
             case "release":
                 SpaceSwipe.shared.ended()
             case "move":
@@ -998,7 +1106,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "drag", "film", "window", "pages", "picture", "place", "space", "shelf", "strip", "column", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "drag", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "space", "shelf", "strip", "column", "ui",
             ]])
         }
     }
@@ -1129,11 +1237,33 @@ final class Bench {
             "bench": tab.bench,
             "active": tab.id == browser?.activeID,
             "asleep": tab.asleep,
+            "shy": tab.shy,
+            "extensions": { if #available(macOS 15.4, *) { return tab.carriesExtensions } else { return false } }(),
         ]
     }
 
     static func short(_ tab: Tab) -> String {
         String(tab.id.uuidString.prefix(8)).lowercased()
+    }
+
+    /// The address field, wherever it is in the window.
+    static func addressField(in view: NSView?) -> NSTextField? {
+        guard let view else { return nil }
+        if let field = view as? NSTextField, field.delegate is AddressField.Coordinator { return field }
+        for sub in view.subviews { if let found = addressField(in: sub) { return found } }
+        return nil
+    }
+
+    /// Milliseconds from `start` to the run loop's next rest — after every
+    /// observer that runs before it sleeps, Core Animation's commit included.
+    static func whenResting(since start: CFTimeInterval, _ then: @escaping @MainActor (Double) -> Void) {
+        var observer: CFRunLoopObserver?
+        observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, false, CFIndex.max) { _, _ in
+            CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes)
+            let rested = (CACurrentMediaTime() - start) * 1000
+            MainActor.assumeIsolated { then(rested) }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
     }
 
     /// Once the page has stopped loading, or the time is up.
