@@ -219,6 +219,9 @@ final class Tab: ObservableObject, Identifiable {
     /// True while this tab's page is out in the little window.
     @Published var floating = false
 
+    /// True while this tab's page is out in its own window.
+    @Published var detached = false
+
     /// A sideways swipe in progress, for the disc that shows it.
     @Published var pull: Pull?
 

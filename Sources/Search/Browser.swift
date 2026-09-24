@@ -30,6 +30,15 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// DetachedTab = this ID plus the tab's own flag. One writer owns both —
+    /// detach/attach/toggleDetached below — and the panel only hosts views.
+    @Published private(set) var detached: Tab.ID? {
+        didSet {
+            guard detached == nil, detacher.showing else { return }
+            detacher.drop()
+        }
+    }
+
     /// Everything there is to set. Held here so the whole window redraws when
     /// one of them changes.
     let prefs = Preferences()
@@ -182,6 +191,7 @@ final class Browser: NSObject, ObservableObject {
     let curtain = Curtain()
     let loot = Loot()
     let floater = Float()
+    let detacher = Detached()
     /// True while the pointer is picking things to hide.
     @Published private(set) var veiling = false
     /// True while the list of what is hidden here is up.
@@ -591,6 +601,7 @@ final class Browser: NSObject, ObservableObject {
         if renamingTab {
             let typed = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
             tab.name = typed.isEmpty ? nil : typed
+            if detached == tab.id { detacher.retitle(tab.label) }
             cancelTabEdit()
             writeSession(now: true)
             return
@@ -782,6 +793,7 @@ final class Browser: NSObject, ObservableObject {
             }
         }
         floater.onClose = { [weak self] in self?.land() }
+        detacher.onClose = { [weak self] in self?.attach() }
 
         // Yesterday's tabs, or one empty one. Either way a web view is built
         // now, which starts a content process while the window is still being
@@ -992,6 +1004,7 @@ final class Browser: NSObject, ObservableObject {
     /// stops waiting: this writes straight to disk, on the thread asking to
     /// quit, before there is a process left to finish the wait on its behalf.
     func flushSession() {
+        attach()
         writeSession(now: true)
     }
 
@@ -1062,6 +1075,7 @@ final class Browser: NSObject, ObservableObject {
         // Coming back to the tab whose video is out brings it home first, so
         // it is never lifted and landed in the same breath.
         if floating == tab.id { land() }
+        if detached == tab.id { attach() }
         leaving()
         activeID = tab.id
         tab.touch()
@@ -1084,6 +1098,7 @@ final class Browser: NSObject, ObservableObject {
         // it. Left alone, the window would go on holding a page belonging to a
         // tab that no longer exists.
         if floating == tab.id { land() }
+        if detached == tab.id { attach() }
 
         // A pinned tab is not closed by ⌘W — it is put down. The letter keeps
         // its place, the page is let go, and you land on whatever you were
@@ -1474,7 +1489,7 @@ final class Browser: NSObject, ObservableObject {
     private func lift(_ tab: Tab?, quietly: Bool) {
         // A tab just put down with ⌘W has no page to lift a video out of, and
         // asking it would only build an empty view to ask.
-        guard let tab, !tab.isBlank, !tab.asleep, !floater.showing else { return }
+        guard let tab, !tab.isBlank, !tab.asleep, !tab.detached, !floater.showing else { return }
         // On its own, only from a site whose video is the point of the site.
         // A hero background on a studio's home page is a video too, and it
         // followed people around the desktop. ⌘⇧P still lifts from anywhere.
@@ -1503,6 +1518,33 @@ final class Browser: NSObject, ObservableObject {
         floating = nil
         tab.floating = false
         tab.web.evaluateJavaScript(Isolate.off)
+    }
+
+    /// Out into its own window, for a second monitor or a reference beside
+    /// the main one. The tab stays in the row; only its page moves.
+    func detach(_ tab: Tab) {
+        guard !tab.isBlank, !tab.asleep, !tab.floating, floating != tab.id else { return }
+        guard let view = tab.built else { return }
+        if detached == tab.id { return }
+        if detached != nil { attach() }
+        detached = tab.id
+        tab.detached = true
+        detacher.detach(view, title: tab.label)
+    }
+
+    /// The page home. The stage takes it back on its next layout.
+    func attach() {
+        if detacher.showing { detacher.drop() }
+        guard let id = detached else { return }
+        detached = nil
+        tabs.first { $0.id == id }?.detached = false
+    }
+
+    /// The tab on screen, out or home.
+    func toggleDetached() {
+        if detacher.showing { attach(); return }
+        guard let active else { return }
+        detach(active)
     }
 
     private func prepare(_ tab: Tab) {
@@ -1606,6 +1648,14 @@ final class Browser: NSObject, ObservableObject {
             .sink { [weak self, weak tab] title in
                 guard let tab, !tab.shy, let url = tab.address else { return }
                 self?.history.retitle(url, title)
+            }
+            .store(in: &bag)
+
+        tab.$title
+            .dropFirst()
+            .sink { [weak self, weak tab] _ in
+                guard let self, let tab, self.detached == tab.id else { return }
+                self.detacher.retitle(tab.label)
             }
             .store(in: &bag)
     }
