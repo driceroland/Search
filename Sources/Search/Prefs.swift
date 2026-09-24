@@ -17,8 +17,8 @@ enum Glyph: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .letters: return "Letters"
-        case .icons: return "Site icons"
+        case .letters: return L("Letters")
+        case .icons: return L("Site icons")
         }
     }
 }

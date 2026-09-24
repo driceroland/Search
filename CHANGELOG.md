@@ -19,6 +19,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Scroll with the middle button, as on Windows: click the wheel on a page, then move the mouse up or down; another click stops it. Settings › General › Scroll with the middle button.
 - Homebrew: `brew install --cask driceroland/tap/search`, and `brew upgrade` brings each new version.
 - ⌘S folds the tab bar away in its layout across the top too, as it folds the column: the page takes the whole height, and the bar comes back down over it when the pointer rests against the top edge. The View menu says Hide Tab Bar there.
+- Brazilian Portuguese. Search follows the language set in System Settings › General › Language & Region; every menu, panel and dialog in the app's own UI is now in `Localization/pt-BR.lproj`, alongside the English source strings in `Localization/en.lproj`.
 
 ### Fixed
 

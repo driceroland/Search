@@ -276,7 +276,7 @@ struct BookmarkOutline: View {
                     // infer its own opaque return type from its own body.
                     AnyView(rows(kids, depth: depth + 1))
                 } else {
-                    Text("Empty")
+                    Text(L("Empty"))
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.faint)
                         .padding(.leading, indent(depth + 1) + 26)
@@ -376,11 +376,11 @@ struct BookmarkOutline: View {
             .onHover { hovering = $0 }
             .contextMenu {
                 if let open {
-                    Button("Open", action: open)
+                    Button(L("Open"), action: open)
                     Divider()
                 }
-                Menu("Move to") {
-                    Button("Top Level", action: { moveTo(nil) })
+                Menu(L("Move to")) {
+                    Button(L("Top Level"), action: { moveTo(nil) })
                     if !moveTargets.isEmpty {
                         Divider()
                         ForEach(moveTargets, id: \.node.id) { target in
@@ -391,7 +391,7 @@ struct BookmarkOutline: View {
                     }
                 }
                 Divider()
-                Button("Remove", role: .destructive, action: remove)
+                Button(L("Remove"), role: .destructive, action: remove)
             }
             .animation(Motion.quick, value: hovering)
             .animation(Motion.quick, value: dragging)
@@ -407,7 +407,7 @@ struct BookmarksDropdown: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if bookmarks.isEmpty {
-                Text("No bookmarks yet")
+                Text(L("No bookmarks yet"))
                     .font(.system(size: 12.5))
                     .foregroundStyle(Palette.muted)
                     .padding(14)
@@ -422,8 +422,8 @@ struct BookmarksDropdown: View {
             }
             Divider().overlay(Palette.hairline)
             VStack(spacing: 1) {
-                Foot("bookmark", "Add This Page") { browser.bookmarkCurrent() }
-                Foot(nil, "Manage Bookmarks…") { browser.bookmarking = true }
+                Foot("bookmark", L("Add This Page")) { browser.bookmarkCurrent() }
+                Foot(nil, L("Manage Bookmarks…")) { browser.bookmarking = true }
             }
             .padding(6)
         }
@@ -471,9 +471,9 @@ struct BookmarksPanel: View {
     @ObservedObject var bookmarks: Bookmarks
 
     var body: some View {
-        Plate("Bookmarks", width: 600, close: { browser.bookmarking = false }) {
+        Plate(L("Bookmarks"), width: 600, close: { browser.bookmarking = false }) {
             if bookmarks.isEmpty {
-                Card { Nothing("Nothing kept yet. Add this page with ⇧⌘B, or bring yours in below.") }
+                Card { Nothing(L("Nothing kept yet. Add this page with ⇧⌘B, or bring yours in below.")) }
             } else {
                 ScrollView(showsIndicators: false) {
                     Card {
@@ -489,14 +489,14 @@ struct BookmarksPanel: View {
             }
         } foot: {
             HStack(spacing: 8) {
-                Text("Bring in from")
+                Text(L("Bring in from"))
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
                 ForEach(Chromium.installed()) { source in
                     Pill(source.name) { browser.takeBookmarks(from: source) }
                 }
                 Spacer()
-                Text(bookmarks.count == 1 ? "1 bookmark" : "\(bookmarks.count) bookmarks")
+                Text(bookmarks.count == 1 ? L("1 bookmark") : L("%@ bookmarks", "\(bookmarks.count)"))
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
             }
@@ -552,7 +552,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
     }
 
     private func wrap() {
-        guard let menu = NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu,
+        guard let menu = NSApp.mainMenu?.items.first(where: { $0.title == L("Bookmarks") })?.submenu,
               menu.delegate !== relay
         else { return }
         relay.inner = menu.delegate
@@ -561,7 +561,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
 
     /// How many items this has put in the menu, for the bench.
     var count: Int {
-        NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu?.items.filter { $0.tag == Self.mark }.count ?? 0
+        NSApp.mainMenu?.items.first(where: { $0.title == L("Bookmarks") })?.submenu?.items.filter { $0.tag == Self.mark }.count ?? 0
     }
 
     /// The top of the list, after SwiftUI's items, in place of any left
@@ -603,7 +603,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         let made = items(for: kids)
         if made.isEmpty {
-            let empty = NSMenuItem(title: "Empty", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: L("Empty"), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
         }

@@ -19,13 +19,13 @@ struct SettingsPanel: View {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .general: return "General"
-            case .tabs: return "Tabs"
-            case .extensions: return "Extensions"
-            case .passwords: return "Passwords"
-            case .downloads: return "Downloads"
-            case .privacy: return "Privacy"
-            case .about: return "About"
+            case .general: return L("General")
+            case .tabs: return L("Tabs")
+            case .extensions: return L("Extensions")
+            case .passwords: return L("Passwords")
+            case .downloads: return L("Downloads")
+            case .privacy: return L("Privacy")
+            case .about: return L("About")
             }
         }
         var icon: String {
@@ -66,7 +66,7 @@ struct SettingsPanel: View {
 
     private var pages: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Settings")
+            Text(L("Settings"))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Palette.ink)
                 .padding(.horizontal, 10)
@@ -124,7 +124,7 @@ struct SettingsPanel: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Palette.ink)
                 Spacer()
-                Door(icon: "xmark", help: "Done   esc") { browser.tuning = false }
+                Door(icon: "xmark", help: L("Done   esc")) { browser.tuning = false }
             }
             .padding(.bottom, 16)
 
@@ -154,8 +154,8 @@ struct SettingsPanel: View {
     private var general: some View {
         Card {
             Line(
-                "Open links from other apps",
-                isDefault ? "Search is the default browser on this Mac" : "Mail, Slack and the rest still send links elsewhere"
+                L("Open links from other apps"),
+                isDefault ? L("Search is the default browser on this Mac") : L("Mail, Slack and the rest still send links elsewhere")
             ) {
                 if isDefault {
                     Image(systemName: "checkmark")
@@ -163,16 +163,16 @@ struct SettingsPanel: View {
                         .foregroundStyle(Palette.ink)
                         .frame(width: 24)
                 } else {
-                    Pill("Make default", filled: true) {
+                    Pill(L("Make default"), filled: true) {
                         Links.becomeDefault { worked in
                             isDefault = Links.isDefault
-                            browser.announce(worked && isDefault ? "Links now open here" : "macOS didn't change it")
+                            browser.announce(worked && isDefault ? L("Links now open here") : L("macOS didn't change it"))
                         }
                     }
                 }
             }
             Rule()
-            Line("Search with", searchDetail) {
+            Line(L("Search with"), searchDetail) {
                 Picker("", selection: $prefs.engine) {
                     ForEach(Engine.allCases) { engine in
                         Text(engine.title).tag(engine)
@@ -200,37 +200,37 @@ struct SettingsPanel: View {
                 .padding(.bottom, 11)
             }
             Rule()
-            Line("Appearance", "Light, dark, or whatever the Mac is doing — pages follow it too") {
+            Line(L("Appearance"), L("Light, dark, or whatever the Mac is doing — pages follow it too")) {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
             Rule()
-            Line("Correct spelling as you type", "macOS's autocorrect inside pages — the one that capitalises for you") {
+            Line(L("Correct spelling as you type"), L("macOS's autocorrect inside pages — the one that capitalises for you")) {
                 Switch(on: $prefs.autocorrect)
             }
             Rule()
-            Line("Scroll with the middle button", "Click the wheel on a page, then move the mouse up or down to scroll, as on Windows. Click again to stop") {
+            Line(L("Scroll with the middle button"), L("Click the wheel on a page, then move the mouse up or down to scroll, as on Windows. Click again to stop")) {
                 Switch(on: $prefs.autoScroll)
             }
             Rule()
-            Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
+            Line(L("Let a script drive Search"), L("A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench")) {
                 Switch(on: $prefs.bench)
             }
         }
     }
 
     private var searchDetail: String {
-        guard prefs.engine == .custom else { return "Where words that aren't an address go" }
+        guard prefs.engine == .custom else { return L("Where words that aren't an address go") }
         guard Engine.accepts(prefs.customEngine) else {
-            return "An http or https address with %s where the words go. Until then, Google"
+            return L("An http or https address with %s where the words go. Until then, Google")
         }
-        return "Words go to \(prefs.engine.name(custom: prefs.customEngine))"
+        return L("Words go to %@", "\(prefs.engine.name(custom: prefs.customEngine))")
     }
 
     // MARK: - tabs
 
     private var tabs: some View {
         Card {
-            Line("Tabs in a sidebar", "Down the left instead of across the top. Pull its edge to make it wider; double-click the edge to reset.") {
+            Line(L("Tabs in a sidebar"), L("Down the left instead of across the top. Pull its edge to make it wider; double-click the edge to reset.")) {
                 Switch(on: Binding(
                     get: { prefs.sidebar },
                     set: { on in withAnimation(Motion.glide) { prefs.sidebar = on } }
@@ -238,24 +238,24 @@ struct SettingsPanel: View {
             }
             if prefs.sidebar {
                 Rule()
-                Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its left edge for the tabs. ⌘S keeps them out.") {
+                Line(L("Hide the sidebar until the pointer reaches the edge"), L("The page takes the whole window; push against its left edge for the tabs. ⌘S keeps them out.")) {
                     Switch(on: $prefs.sideHides)
                 }
             }
             Rule()
-            Line("Tabs show", "Beside the title, and on a pinned square") {
+            Line(L("Tabs show"), L("Beside the title, and on a pinned square")) {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
             }
             Rule()
-            Line("Show how far you've read", "The tab you're on fills with grey as you scroll down the page") {
+            Line(L("Show how far you've read"), L("The tab you're on fills with grey as you scroll down the page")) {
                 Switch(on: $prefs.showsReading)
             }
             Rule()
-            Line("Sleep tabs you aren't using", "After half an hour away they come back where you left them. Pinned tabs, sound, calls and anything typed stay awake.") {
+            Line(L("Sleep tabs you aren't using"), L("After half an hour away they come back where you left them. Pinned tabs, sound, calls and anything typed stay awake.")) {
                 Switch(on: $prefs.sleepsTabs)
             }
             Rule()
-            Line("Spaces", "Separate sets of tabs, signed in where the others are or starting afresh, switched with ⌃1–⌃9, two fingers sideways over the column, or the space's icon. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
+            Line(L("Spaces"), L("Separate sets of tabs, signed in where the others are or starting afresh, switched with ⌃1–⌃9, two fingers sideways over the column, or the space's icon. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.")) {
                 Switch(on: $prefs.usesSpaces)
             }
         }
@@ -266,52 +266,52 @@ struct SettingsPanel: View {
     /// Says so when a password manager extension has taken the saving over.
     private var savingDetail: String {
         if #available(macOS 15.4, *), let name = Extensions.shared.passwordSavingTakenBy {
-            return "\(name) does the saving — it asked Search not to offer"
+            return L("%@ does the saving — it asked Search not to offer", "\(name)")
         }
-        return "Asked once per site, never again for a site you refuse"
+        return L("Asked once per site, never again for a site you refuse")
     }
 
     private var passwords: some View {
         VStack(alignment: .leading, spacing: 18) {
             Card {
-                Line("Your passwords", "In the macOS keychain, shown with Touch ID") {
-                    Pill("Open…") {
+                Line(L("Your passwords"), L("In the macOS keychain, shown with Touch ID")) {
+                    Pill(L("Open…")) {
                         browser.tuning = false
                         browser.managing = true
                     }
                 }
                 Rule()
-                Line("Offer to save passwords", savingDetail) {
+                Line(L("Offer to save passwords"), savingDetail) {
                     Switch(on: $prefs.savesPasswords)
                 }
                 Rule()
-                Line("Fill in sign-ins", "Click a sign-in box and the accounts kept for the site hang from it") {
+                Line(L("Fill in sign-ins"), L("Click a sign-in box and the accounts kept for the site hang from it")) {
                     Switch(on: $prefs.fillsPasswords)
                 }
                 Rule()
                 Line(
-                    "Offer passkeys",
+                    L("Offer passkeys"),
                     !prefs.passkeysPossible
-                        ? "Needs an Apple entitlement this build doesn't have — off keeps sites to the password"
+                        ? L("Needs an Apple entitlement this build doesn't have — off keeps sites to the password")
                         : Passkeys.access == .denied
-                        ? "macOS was told no — System Settings › Privacy & Security › Passkeys Access for Web Browsers"
-                        : "Touch ID or an iCloud passkey, on sites that offer one"
+                        ? L("macOS was told no — System Settings › Privacy & Security › Passkeys Access for Web Browsers")
+                        : L("Touch ID or an iCloud passkey, on sites that offer one")
                 ) {
                     Switch(on: $prefs.passkeys)
                 }
                 if !Vault.never.isEmpty {
                     Rule()
-                    Line("Sites never asked", "\(Vault.never.count) sites told to stop offering") {
-                        Pill("Forget") {
+                    Line(L("Sites never asked"), L("%@ sites told to stop offering", "\(Vault.never.count)")) {
+                        Pill(L("Forget")) {
                             Vault.never = []
-                            browser.announce("Every site can ask again")
+                            browser.announce(L("Every site can ask again"))
                         }
                     }
                 }
             }
             Card {
-                Line("Bring yours in", "From Dia, Chrome, Arc, Brave or Edge on this Mac — nothing leaves it") {
-                    Pill("Import…") {
+                Line(L("Bring yours in"), L("From Dia, Chrome, Arc, Brave or Edge on this Mac — nothing leaves it")) {
+                    Pill(L("Import…")) {
                         browser.tuning = false
                         browser.managing = true
                     }
@@ -324,11 +324,11 @@ struct SettingsPanel: View {
 
     private var downloads: some View {
         Card {
-            Line("Save to", prefs.downloads.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")) {
-                Pill("Change…") { chooseFolder() }
+            Line(L("Save to"), prefs.downloads.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")) {
+                Pill(L("Change…")) { chooseFolder() }
             }
             Rule()
-            Line("Ask where to save each file") {
+            Line(L("Ask where to save each file")) {
                 Switch(on: $prefs.asksWhereToSave)
             }
         }
@@ -339,18 +339,18 @@ struct SettingsPanel: View {
     private var privacy: some View {
         VStack(alignment: .leading, spacing: 18) {
             Card {
-                Line("Block ads and trackers", shield.trouble ?? "Third parties whose only job is to watch") {
+                Line(L("Block ads and trackers"), shield.trouble ?? L("Third parties whose only job is to watch")) {
                     Switch(on: $prefs.shielded)
                 }
                 if let trouble = shield.trouble {
                     Rule()
-                    Line(trouble, "Nothing is being blocked until this clears — try again, or restart Search") {
-                        Pill("Try again") { shield.compile() }
+                    Line(trouble, L("Nothing is being blocked until this clears — try again, or restart Search")) {
+                        Pill(L("Try again")) { shield.compile() }
                     }
                 }
                 if let host = browser.hereHost, prefs.shielded, shield.trouble == nil {
                     Rule()
-                    Line("Block on \(host)", "Turn off here if the site breaks — the page reloads") {
+                    Line(L("Block on %@", "\(host)"), L("Turn off here if the site breaks — the page reloads")) {
                         Switch(on: Binding(
                             get: { !Shield.shared.isPaused(on: host) },
                             set: { on in
@@ -361,21 +361,21 @@ struct SettingsPanel: View {
                     }
                 }
                 Rule()
-                Line("Camera and microphone", "What each site was allowed or refused") {
-                    Pill("Forget choices") { browser.forgetCaptureChoices() }
+                Line(L("Camera and microphone"), L("What each site was allowed or refused")) {
+                    Pill(L("Forget choices")) { browser.forgetCaptureChoices() }
                 }
             }
             Card {
-                Line("History", "Every address you have been to") {
-                    Pill("Clear") { browser.clearHistory() }
+                Line(L("History"), L("Every address you have been to")) {
+                    Pill(L("Clear")) { browser.clearHistory() }
                 }
                 Rule()
-                Line("Cookies and sign-ins", "Signs you out of every site") {
-                    Pill("Sign out of everything") { browser.clearSites() }
+                Line(L("Cookies and sign-ins"), L("Signs you out of every site")) {
+                    Pill(L("Sign out of everything")) { browser.clearSites() }
                 }
                 Rule()
-                Line("Cache", "Only what was fetched to draw pages") {
-                    Pill("Clear") { browser.clearCache() }
+                Line(L("Cache"), L("Only what was fetched to draw pages")) {
+                    Pill(L("Clear")) { browser.clearCache() }
                 }
             }
         }
@@ -394,7 +394,7 @@ struct SettingsPanel: View {
                     Text("Search")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Palette.ink)
-                    Text("by Office Commun · version \(Updater.version)")
+                    Text(L("by Office Commun · version %@", "\(Updater.version)"))
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)
                 }
@@ -404,29 +404,29 @@ struct SettingsPanel: View {
             Card {
                 Line(versionTitle, versionDetail) { versionControl }
                 Rule()
-                Line("Found something wrong?", "Opens a draft with the version already in it") {
-                    Pill("Send Feedback") { Links.writeFeedback() }
+                Line(L("Found something wrong?"), L("Opens a draft with the version already in it")) {
+                    Pill(L("Send Feedback")) { Links.writeFeedback() }
                 }
             }
 
             Card {
-                Shortcut("⌘L", "Address")
+                Shortcut("⌘L", L("Address"))
                 Rule()
-                Shortcut("⌘K", "Switch tab")
+                Shortcut("⌘K", L("Switch tab"))
                 Rule()
-                Shortcut("⌘T  ⌘W  ⇧⌘T", "New, close, reopen tab")
+                Shortcut("⌘T  ⌘W  ⇧⌘T", L("New, close, reopen tab"))
                 Rule()
-                Shortcut("⌃⇥  ⌘1–9", "Next tab, a tab by its place")
+                Shortcut("⌃⇥  ⌘1–9", L("Next tab, a tab by its place"))
                 Rule()
-                Shortcut("⇧⌘S", "Tabs in a sidebar")
+                Shortcut("⇧⌘S", L("Tabs in a sidebar"))
                 Rule()
-                Shortcut("⌘S", "Fold the sidebar away")
+                Shortcut("⌘S", L("Fold the sidebar away"))
                 Rule()
-                Shortcut("⇧⌘R", "Reading mode")
+                Shortcut("⇧⌘R", L("Reading mode"))
                 Rule()
-                Shortcut("⇧⌘H", "Hide something on this site")
+                Shortcut("⇧⌘H", L("Hide something on this site"))
                 Rule()
-                Shortcut("⇧⌘P", "Float the video")
+                Shortcut("⇧⌘P", L("Float the video"))
             }
         }
     }
@@ -435,24 +435,24 @@ struct SettingsPanel: View {
     /// in place; with none, it is simply this one.
     private var versionTitle: String {
         switch updater.stage {
-        case .none: return "Updates"
-        case .fetching(let next): return "Search \(next.version) is downloading…"
-        case .ready(let next): return "Search \(next.version) is ready"
-        case .offered(let next): return "Search \(next.version) is out"
+        case .none: return L("Updates")
+        case .fetching(let next): return L("Search %@ is downloading…", "\(next.version)")
+        case .ready(let next): return L("Search %@ is ready", "\(next.version)")
+        case .offered(let next): return L("Search %@ is out", "\(next.version)")
         }
     }
 
     private var versionDetail: String {
         switch updater.stage {
         case .none:
-            return updater.lastChecked.map { "Checked \($0.formatted(.relative(presentation: .named))) — once a day on its own" }
-                ?? "Checked once a day on its own"
+            return updater.lastChecked.map { L("Checked %@ — once a day on its own", "\($0.formatted(.relative(presentation: .named)))") }
+                ?? L("Checked once a day on its own")
         case .fetching(let next):
-            return next.notes ?? "Quietly, in the background — nothing you have set is touched"
+            return next.notes ?? L("Quietly, in the background — nothing you have set is touched")
         case .ready(let next):
-            return next.notes ?? "It's there the next time you open Search"
+            return next.notes ?? L("It's there the next time you open Search")
         case .offered(let next):
-            return next.notes ?? "Open the disk image, the same as the first time"
+            return next.notes ?? L("Open the disk image, the same as the first time")
         }
     }
 
@@ -460,18 +460,18 @@ struct SettingsPanel: View {
     private var versionControl: some View {
         switch updater.stage {
         case .none:
-            Pill(updater.checking ? "Checking…" : "Check now") {
+            Pill(updater.checking ? L("Checking…") : L("Check now")) {
                 updater.check { found in
-                    if found == nil { browser.announce("This is the latest one") }
+                    if found == nil { browser.announce(L("This is the latest one")) }
                 }
             }
             .disabled(updater.checking)
         case .fetching:
             Ring(size: 12)
         case .ready:
-            Pill("Relaunch now", filled: true) { updater.relaunch() }
+            Pill(L("Relaunch now"), filled: true) { updater.relaunch() }
         case .offered(let next):
-            Pill("Download", filled: true) {
+            Pill(L("Download"), filled: true) {
                 browser.tuning = false
                 browser.open(next.dmg, foreground: true)
             }
@@ -486,7 +486,7 @@ struct SettingsPanel: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.directoryURL = prefs.downloads
-        panel.prompt = "Use this folder"
+        panel.prompt = L("Use this folder")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         prefs.downloads = url
     }

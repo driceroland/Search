@@ -145,7 +145,7 @@ struct TabBar: View {
                         ExtensionSlot()
                         Helm(browser: browser)
                             .padding(.trailing, 8)
-                        Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
+                        Door(icon: "bookmark", help: L("Bookmarks")) { browser.bookmarksOpen.toggle() }
                             .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .bottom) {
                                 BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
                             }
@@ -351,16 +351,16 @@ struct Helm: View {
             let back = !tab.isBlank && tab.canGoBack
             let forward = !tab.isBlank && tab.canGoForward
             HStack(spacing: 2) {
-                Door(icon: "chevron.left", help: "Back   ⌘[") { browser.back() }
+                Door(icon: "chevron.left", help: L("Back   ⌘[")) { browser.back() }
                     .disabled(!back)
                     .opacity(back ? 1 : 0.3)
-                Door(icon: "chevron.right", help: "Forward   ⌘]") { browser.forward() }
+                Door(icon: "chevron.right", help: L("Forward   ⌘]")) { browser.forward() }
                     .disabled(!forward)
                     .opacity(forward ? 1 : 0.3)
                 // Reload, or stop while it is still coming.
                 Door(
                     icon: tab.loading ? "xmark" : "arrow.clockwise",
-                    help: tab.loading ? "Stop   ⌘." : "Reload   ⌘R"
+                    help: tab.loading ? L("Stop   ⌘.") : L("Reload   ⌘R")
                 ) {
                     if tab.loading { tab.stop() } else { browser.reload() }
                 }
@@ -718,31 +718,31 @@ struct TabMenu: View {
 
     var body: some View {
         if tab.pin == nil {
-            Button("Pin") { browser.pin(tab) }
+            Button(L("Pin")) { browser.pin(tab) }
                 .disabled(tab.isBlank)
         } else {
-            Button("Change Letter") { browser.editLetter(tab) }
-            Button("Unpin") { browser.unpin(tab) }
+            Button(L("Change Letter")) { browser.editLetter(tab) }
+            Button(L("Unpin")) { browser.unpin(tab) }
         }
         Divider()
-        Button("Rename") { browser.beginTabRename(tab) }
-        Button("Duplicate") {
+        Button(L("Rename")) { browser.beginTabRename(tab) }
+        Button(L("Duplicate")) {
             browser.select(tab)
             browser.duplicate()
         }
         .disabled(tab.isBlank)
-        Button("Copy Address") {
+        Button(L("Copy Address")) {
             browser.select(tab)
             browser.copyAddress()
         }
         .disabled(tab.isBlank)
         Divider()
-        Button("Close Tab", action: close)
-        Button("Close Other Tabs") { browser.closeOthers(but: tab) }
+        Button(L("Close Tab"), action: close)
+        Button(L("Close Other Tabs")) { browser.closeOthers(but: tab) }
             .disabled(browser.tabs.count < 2)
         // ⌘⇧T, and the History menu's Recently Closed, where few think to
         // look for it: here too, where tabs are closed.
-        Button("Reopen Closed Tab") { browser.reopen() }
+        Button(L("Reopen Closed Tab")) { browser.reopen() }
             .disabled(browser.ghosts.isEmpty)
     }
 }

@@ -11,7 +11,7 @@ struct FindBar: View {
         HStack(spacing: 6) {
             ZStack(alignment: .leading) {
                 if browser.needle.isEmpty {
-                    Text("Find on page")
+                    Text(L("Find on page"))
                         .foregroundStyle(Palette.ink.opacity(0.3))
                 }
                 TextField("", text: $browser.needle)

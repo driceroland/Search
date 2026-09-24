@@ -17,7 +17,7 @@ struct AccountList: View {
             HStack(spacing: 6) {
                 Image(systemName: "key")
                     .font(.system(size: 9, weight: .medium))
-                Text("From your keychain")
+                Text(L("From your keychain"))
                     .font(.system(size: 10.5))
                 Spacer(minLength: 0)
             }
@@ -53,7 +53,7 @@ struct AccountList: View {
                         .frame(width: 22, height: 22)
                         .background(Palette.wash, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(login.user.isEmpty ? "No name" : login.user)
+                        Text(login.user.isEmpty ? L("No name") : login.user)
                             .font(.system(size: 12.5))
                             .foregroundStyle(Palette.ink)
                             .lineLimit(1)

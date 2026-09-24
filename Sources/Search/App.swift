@@ -20,39 +20,39 @@ struct SearchApp: App {
         .commands {
             // One window. Tabs are the only kind of "new" there is.
             CommandGroup(replacing: .newItem) {
-                Button("New Tab") { browser.newTab() }
+                Button(L("New Tab")) { browser.newTab() }
                     .keyboardShortcut("t")
-                Button("New Private Tab") { browser.newShyTab() }
+                Button(L("New Private Tab")) { browser.newShyTab() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
-                Button("Reopen Closed Tab") { browser.reopen() }
+                Button(L("Reopen Closed Tab")) { browser.reopen() }
                     .keyboardShortcut("t", modifiers: [.command, .shift])
                     .disabled(browser.ghosts.isEmpty)
                 Divider()
-                Button("Open Address…") { browser.edit() }
+                Button(L("Open Address…")) { browser.edit() }
                     .keyboardShortcut("l")
                 Divider()
-                Button("Close Tab") { if let tab = browser.active { browser.close(tab) } }
+                Button(L("Close Tab")) { if let tab = browser.active { browser.close(tab) } }
                     .keyboardShortcut("w")
             }
             CommandGroup(replacing: .printItem) {
-                Button("Print…") { browser.printPage() }
+                Button(L("Print…")) { browser.printPage() }
                     .keyboardShortcut("p")
                     .disabled(browser.active?.isBlank ?? true)
             }
             CommandGroup(after: .pasteboard) {
                 Divider()
-                Button("Find on Page…") { browser.openFind() }
+                Button(L("Find on Page…")) { browser.openFind() }
                     .keyboardShortcut("f")
                     .disabled(browser.active?.isBlank ?? true)
-                Button("Find Next") { browser.look(forward: true) }
+                Button(L("Find Next")) { browser.look(forward: true) }
                     .keyboardShortcut("g")
                     .disabled(!browser.finding)
-                Button("Find Previous") { browser.look(forward: false) }
+                Button(L("Find Previous")) { browser.look(forward: false) }
                     .keyboardShortcut("g", modifiers: [.command, .shift])
                     .disabled(!browser.finding)
             }
             CommandGroup(replacing: .toolbar) {
-                Toggle("Show Tabs in Sidebar", isOn: Binding(
+                Toggle(L("Show Tabs in Sidebar"), isOn: Binding(
                     get: { browser.prefs.sidebar },
                     set: { _ in browser.toggleSidebar() }
                 ))
@@ -60,10 +60,10 @@ struct SearchApp: App {
                 // Folded away, not moved (see Fold.swift) — the column, or the
                 // strip across the top.
                 Button(browser.prefs.sidebar
-                       ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
-                       : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
+                       ? (browser.folded ? L("Show Sidebar") : L("Hide Sidebar"))
+                       : (browser.folded ? L("Show Tab Bar") : L("Hide Tab Bar"))) { browser.toggleFold() }
                     .keyboardShortcut("s")
-                Picker("Tabs Wear", selection: Binding(
+                Picker(L("Tabs Wear"), selection: Binding(
                     get: { browser.prefs.glyph },
                     set: { browser.prefs.glyph = $0 }
                 )) {
@@ -72,83 +72,83 @@ struct SearchApp: App {
                     }
                 }
                 Divider()
-                Button("Reload Page") { browser.reload() }
+                Button(L("Reload Page")) { browser.reload() }
                     .keyboardShortcut("r")
-                Button("Reading Mode") { browser.toggleReader() }
+                Button(L("Reading Mode")) { browser.toggleReader() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
-                Button("Float Video") { browser.toggleFloat() }
+                Button(L("Float Video")) { browser.toggleFloat() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
                 Divider()
-                Button("Hide Elements…") { browser.toggleHiding() }
+                Button(L("Hide Elements…")) { browser.toggleHiding() }
                     .keyboardShortcut("h", modifiers: [.command, .shift])
-                Button("Hidden on This Site…") { browser.reviewing.toggle() }
+                Button(L("Hidden on This Site…")) { browser.reviewing.toggle() }
                     .keyboardShortcut("u", modifiers: [.command, .shift])
                 Divider()
-                Button("Zoom In") { browser.zoom(by: 1.1) }
+                Button(L("Zoom In")) { browser.zoom(by: 1.1) }
                     .keyboardShortcut("+")
-                Button("Zoom Out") { browser.zoom(by: 1 / 1.1) }
+                Button(L("Zoom Out")) { browser.zoom(by: 1 / 1.1) }
                     .keyboardShortcut("-")
-                Button("Actual Size") { browser.resetZoom() }
+                Button(L("Actual Size")) { browser.resetZoom() }
                     .keyboardShortcut("0")
                 Divider()
                 // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
-                Button("Web Inspector") { browser.toggleInspector() }
+                Button(L("Web Inspector")) { browser.toggleInspector() }
                     .keyboardShortcut("i", modifiers: [.command, .option])
-                Button("JavaScript Console") { browser.showConsole() }
+                Button(L("JavaScript Console")) { browser.showConsole() }
                     .keyboardShortcut("j", modifiers: [.command, .option])
-                Button("Inspect Element") { browser.inspectElement() }
+                Button(L("Inspect Element")) { browser.inspectElement() }
                     .keyboardShortcut("c", modifiers: [.command, .option])
             }
-            CommandMenu("Tabs") {
-                Button("Back") { browser.back() }
+            CommandMenu(L("Tabs")) {
+                Button(L("Back")) { browser.back() }
                     .keyboardShortcut("[")
                     .disabled(browser.active?.canGoBack != true)
-                Button("Forward") { browser.forward() }
+                Button(L("Forward")) { browser.forward() }
                     .keyboardShortcut("]")
                     .disabled(browser.active?.canGoForward != true)
                 Divider()
-                Button("Next Tab") { browser.step(1) }
+                Button(L("Next Tab")) { browser.step(1) }
                     .keyboardShortcut("]", modifiers: [.command, .shift])
-                Button("Previous Tab") { browser.step(-1) }
+                Button(L("Previous Tab")) { browser.step(-1) }
                     .keyboardShortcut("[", modifiers: [.command, .shift])
-                Button("Search Tabs…") { browser.summon() }
+                Button(L("Search Tabs…")) { browser.summon() }
                     .keyboardShortcut("k")
                 Divider()
                 if let tab = browser.active {
                     if tab.pin == nil {
-                        Button("Pin Tab") { browser.pin(tab) }
+                        Button(L("Pin Tab")) { browser.pin(tab) }
                             .disabled(tab.isBlank)
                     } else {
-                        Button("Change Letter") { browser.editLetter(tab) }
-                        Button("Unpin Tab") { browser.unpin(tab) }
+                        Button(L("Change Letter")) { browser.editLetter(tab) }
+                        Button(L("Unpin Tab")) { browser.unpin(tab) }
                     }
                 }
-                Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
+                Button(L("Rename Tab")) { if let tab = browser.active { browser.beginTabRename(tab) } }
                     .disabled(browser.active == nil)
-                Button("Duplicate Tab") { browser.duplicate() }
+                Button(L("Duplicate Tab")) { browser.duplicate() }
                     .keyboardShortcut("d")
                     .disabled(browser.active?.isBlank ?? true)
-                Button("Copy Address") { browser.copyAddress() }
+                Button(L("Copy Address")) { browser.copyAddress() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
                     .disabled(browser.active?.isBlank ?? true)
-                Button("Paste and Go") { browser.pasteAndGo() }
+                Button(L("Paste and Go")) { browser.pasteAndGo() }
                     .keyboardShortcut("v", modifiers: [.command, .shift])
                 Divider()
-                Button("Close Other Tabs") { if let tab = browser.active { browser.closeOthers(but: tab) } }
+                Button(L("Close Other Tabs")) { if let tab = browser.active { browser.closeOthers(but: tab) } }
                     .disabled(browser.tabs.count < 2)
-                Button("Stop Sound in Tab") { browser.pauseMedia() }
+                Button(L("Stop Sound in Tab")) { browser.pauseMedia() }
                     .keyboardShortcut("m", modifiers: [.command, .shift])
             }
-            CommandMenu("Bookmarks") {
-                Button("Add This Page") { browser.bookmarkCurrent() }
+            CommandMenu(L("Bookmarks")) {
+                Button(L("Add This Page")) { browser.bookmarkCurrent() }
                     .keyboardShortcut("b", modifiers: [.command, .shift])
                     .disabled(browser.active?.isBlank ?? true)
-                Button("Show Bookmarks…") { browser.bookmarking = true }
+                Button(L("Show Bookmarks…")) { browser.bookmarking = true }
                 // The bookmarks themselves follow, put in by AppKit (see
                 // BookmarkMenu in Bookmarks.swift).
             }
-            CommandMenu("History") {
-                Section("Recently Visited") {
+            CommandMenu(L("History")) {
+                Section(L("Recently Visited")) {
                     ForEach(browser.recentlyVisited) { trace in
                         Button {
                             browser.open(trace.url, foreground: true)
@@ -158,7 +158,7 @@ struct SearchApp: App {
                     }
                 }
                 if !browser.ghosts.isEmpty {
-                    Section("Recently Closed") {
+                    Section(L("Recently Closed")) {
                         ForEach(browser.ghosts.reversed().prefix(10)) { ghost in
                             Button {
                                 browser.reopen(ghost)
@@ -169,22 +169,22 @@ struct SearchApp: App {
                     }
                 }
                 Divider()
-                Button("Show History…") { browser.recalling = true }
+                Button(L("Show History…")) { browser.recalling = true }
                     .keyboardShortcut("y")
-                Button("Downloads…") { browser.hoarding = true }
+                Button(L("Downloads…")) { browser.hoarding = true }
                     .keyboardShortcut("j", modifiers: [.command, .shift])
                 Divider()
-                Button("Clear History") { browser.clearHistory() }
+                Button(L("Clear History")) { browser.clearHistory() }
             }
             CommandGroup(after: .appSettings) {
-                Button("Settings…") { browser.tuning = true }
+                Button(L("Settings…")) { browser.tuning = true }
                     .keyboardShortcut(",")
-                Button("Welcome…") { browser.welcoming = true }
-                Button("Passwords…") { browser.managing = true }
+                Button(L("Welcome…")) { browser.welcoming = true }
+                Button(L("Passwords…")) { browser.managing = true }
                     .keyboardShortcut("l", modifiers: [.command, .option])
             }
             CommandGroup(replacing: .help) {
-                Button("Send Feedback…") { Links.writeFeedback() }
+                Button(L("Send Feedback…")) { Links.writeFeedback() }
             }
         }
     }
@@ -294,7 +294,7 @@ struct ContentView: View {
             }
             StoreOffer(browser: browser)
             if browser.veiling {
-                hint("Click anything to hide it   ⌘Z undo   esc done")
+                hint(L("Click anything to hide it   ⌘Z undo   esc done"))
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -447,11 +447,11 @@ struct ContentView: View {
             Image(systemName: ask.wants == "microphone" ? "mic" : "video")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Palette.muted)
-            Text("\(ask.host) wants to use your \(ask.wants)")
+            Text(L("%@ wants to use your %@", "\(ask.host)", "\(ask.wants)"))
                 .font(.system(size: 12.5))
                 .foregroundStyle(Palette.ink)
             Button { browser.allowCapture() } label: {
-                Text("Allow")
+                Text(L("Allow"))
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.ground)
                     .padding(.horizontal, 11)
@@ -460,7 +460,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             Button { browser.denyCapture() } label: {
-                Text("Don't allow")
+                Text(L("Don't allow"))
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
             }
@@ -480,26 +480,26 @@ struct ContentView: View {
         let login = offer.login
         return HStack(spacing: 12) {
             Text(offer.changed
-                 ? "Update the password for \(login.user) on \(login.host)?"
+                 ? L("Update the password for %@ on %@?", "\(login.user)", "\(login.host)")
                  : (login.user.isEmpty
-                    ? "Save this password for \(login.host)?"
-                    : "Save the password for \(login.user) on \(login.host)?"))
+                    ? L("Save this password for %@?", "\(login.host)")
+                    : L("Save the password for %@ on %@?", "\(login.user)", "\(login.host)")))
                 .font(.system(size: 12.5))
                 .foregroundStyle(Palette.ink)
                 .lineLimit(1)
-            Button(offer.changed ? "Update" : "Save") { browser.keepOffer() }
+            Button(offer.changed ? L("Update") : L("Save")) { browser.keepOffer() }
                 .buttonStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.ground)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 5)
                 .background(Palette.ink, in: Capsule())
-            Button("Not now") { browser.dropOffer() }
+            Button(L("Not now")) { browser.dropOffer() }
                 .buttonStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.muted)
             if !offer.changed {
-                Button("Never here") { browser.neverOffer() }
+                Button(L("Never here")) { browser.neverOffer() }
                     .buttonStyle(.plain)
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)

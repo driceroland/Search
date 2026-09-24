@@ -456,7 +456,7 @@ struct SideBar: View {
     private static let footHeight: CGFloat = 26 + 10
 
     private var newTab: some View {
-        Quiet(icon: "plus", title: "New tab", height: SideBar.row) { browser.newTab() }
+        Quiet(icon: "plus", title: L("New tab"), height: SideBar.row) { browser.newTab() }
             .padding(.top, SideBar.gap)
     }
 
@@ -465,7 +465,7 @@ struct SideBar: View {
         HStack(spacing: 2) {
             if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
             ExtensionSlot(edge: .trailing)
-            Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
+            Door(icon: "bookmark", help: L("Bookmarks")) { browser.bookmarksOpen.toggle() }
                 .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .trailing) {
                     BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
                 }

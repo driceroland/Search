@@ -667,7 +667,7 @@ final class Bench {
             // first folder opened — then what each holds. Only on a
             // SEARCH_PROBE run; nothing is drawn.
             guard Store.testing else { answer(["error": "menu only works on a --test run"]); return }
-            guard let main = NSApp.mainMenu, let menu = main.items.first(where: { $0.title == "Bookmarks" })?.submenu
+            guard let main = NSApp.mainMenu, let menu = main.items.first(where: { $0.title == L("Bookmarks") })?.submenu
             else { answer(["error": "no Bookmarks menu"]); return }
             let before = menu.items.count
             let wrapped = menu.delegate.map { "\(type(of: $0))" } ?? "none"

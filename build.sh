@@ -73,6 +73,12 @@ swift Icon/icon.swift "$ICONSET" > /dev/null
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET"
 
+# Every string in the app goes through L() in Localization.swift, which reads
+# NSLocalizedString from Bundle.main — so the two .lproj folders just need to
+# land in Resources, the same hand-assembled way as everything else here.
+cp -R Localization/en.lproj "$APP/Contents/Resources/"
+cp -R Localization/pt-BR.lproj "$APP/Contents/Resources/"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -86,6 +92,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array><string>en</string><string>pt-BR</string></array>
   <key>LSMinimumSystemVersion</key><string>$MINIMUM</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHumanReadableCopyright</key><string>© Office Commun · Search</string>

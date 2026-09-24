@@ -36,7 +36,7 @@ struct Plate<Content: View, Foot: View>: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Palette.ink)
                 Spacer(minLength: 0)
-                Door(icon: "xmark", help: "Done   esc", act: close)
+                Door(icon: "xmark", help: L("Done   esc"), act: close)
             }
             .padding(.horizontal, 22)
             .padding(.top, 18)
@@ -149,7 +149,7 @@ struct Caption: View {
 /// The field for narrowing a list. The wash, the glass, the caret.
 struct Hunt: View {
     @Binding var text: String
-    var prompt = "Search"
+    var prompt = L("Search")
     var focus: FocusState<Bool>.Binding
 
     var body: some View {

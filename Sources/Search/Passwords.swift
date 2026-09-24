@@ -12,11 +12,11 @@ struct PasswordsPanel: View {
     @State private var importing: String?
 
     var body: some View {
-        Plate("Passwords", width: 620, close: { browser.managing = false }) {
+        Plate(L("Passwords"), width: 620, close: { browser.managing = false }) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
-                    Hunt(text: $browser.hunting, prompt: "Search sites and accounts", focus: $hunting)
-                    Pill(adding ? "Cancel" : "Add", filled: !adding) { adding.toggle() }
+                    Hunt(text: $browser.hunting, prompt: L("Search sites and accounts"), focus: $hunting)
+                    Pill(adding ? L("Cancel") : L("Add"), filled: !adding) { adding.toggle() }
                 }
 
                 if adding {
@@ -27,8 +27,8 @@ struct PasswordsPanel: View {
                 if browser.shownSites.isEmpty {
                     Card {
                         Nothing(browser.saved.isEmpty
-                                ? "Nothing kept yet. Sign in somewhere and say yes, or bring yours in below."
-                                : "Nothing matches.")
+                                ? L("Nothing kept yet. Sign in somewhere and say yes, or bring yours in below.")
+                                : L("Nothing matches."))
                     }
                 } else {
                     ScrollView(showsIndicators: false) {
@@ -53,7 +53,7 @@ struct PasswordsPanel: View {
         } foot: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    Text("Bring in from")
+                    Text(L("Bring in from"))
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)
                     // Only the browsers actually on this Mac.
@@ -72,21 +72,21 @@ struct PasswordsPanel: View {
                         }
                         .disabled(importing != nil)
                     }
-                    Pill("CSV file…") { browser.importPasswords() }
+                    Pill(L("CSV file…")) { browser.importPasswords() }
                         .disabled(importing != nil)
                     Spacer(minLength: 0)
                     if let importing {
                         Ring(size: 10)
-                        Text("Reading \(importing)…")
+                        Text(L("Reading %@…", "\(importing)"))
                             .font(.system(size: 11.5))
                             .foregroundStyle(Palette.muted)
                     } else {
-                        Text(browser.saved.count == 1 ? "1 password" : "\(browser.saved.count) passwords")
+                        Text(browser.saved.count == 1 ? L("1 password") : L("%@ passwords", "\(browser.saved.count)"))
                             .font(.system(size: 12))
                             .foregroundStyle(Palette.muted)
                     }
                 }
-                Text("macOS asks once for that browser's keychain key. Nothing is changed there; everything lands in your own keychain, under Search.")
+                Text(L("macOS asks once for that browser's keychain key. Nothing is changed there; everything lands in your own keychain, under Search."))
                     .font(.system(size: 11.5))
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -117,7 +117,7 @@ struct PasswordsPanel: View {
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
                     if logins.count > 1 {
-                        Text("\(logins.count) accounts")
+                        Text(L("%@ accounts", "\(logins.count)"))
                             .font(.system(size: 11.5))
                             .foregroundStyle(Palette.muted)
                     } else if let only = logins.first, !only.user.isEmpty, !open {
@@ -169,7 +169,7 @@ struct PasswordsPanel: View {
 
         var body: some View {
             HStack(spacing: 10) {
-                Text(login.user.isEmpty ? "No username" : login.user)
+                Text(login.user.isEmpty ? L("No username") : login.user)
                     .font(.system(size: 12))
                     .foregroundStyle(login.user.isEmpty ? Palette.faint : Palette.ink)
                     .lineLimit(1)
@@ -185,9 +185,9 @@ struct PasswordsPanel: View {
                 Spacer(minLength: 8)
 
                 if hovering || shown {
-                    Quick(shown ? "Hide" : "Show") { shown ? conceal() : reveal() }
-                    Quick("Copy", act: copy)
-                    Quick("Remove", tint: .red.opacity(0.75), act: forget)
+                    Quick(shown ? L("Hide") : L("Show")) { shown ? conceal() : reveal() }
+                    Quick(L("Copy"), act: copy)
+                    Quick(L("Remove"), tint: .red.opacity(0.75), act: forget)
                 }
             }
             .padding(.horizontal, 10)
@@ -201,7 +201,7 @@ struct PasswordsPanel: View {
         }
 
         private func reveal() {
-            Vault.prove("show the password for \(login.host)") { ok in
+            Vault.prove(L("show the password for %@", "\(login.host)")) { ok in
                 guard ok else { return }
                 shown = true
                 // Long enough to read or type across, and not a minute more.
@@ -231,13 +231,13 @@ struct PasswordsPanel: View {
         var body: some View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    field("Site", text: $site, tag: 0)
-                    field("Username", text: $user, tag: 1)
+                    field(L("Site"), text: $site, tag: 0)
+                    field(L("Username"), text: $user, tag: 1)
                 }
                 HStack(spacing: 8) {
                     ZStack(alignment: .leading) {
                         if password.isEmpty {
-                            Text("Password").foregroundStyle(Palette.ink.opacity(0.3))
+                            Text(L("Password")).foregroundStyle(Palette.ink.opacity(0.3))
                                 .padding(.leading, 10)
                         }
                         SecureField("", text: $password)
@@ -250,7 +250,7 @@ struct PasswordsPanel: View {
                             .padding(.vertical, 7)
                     }
                     .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    Pill("Save", filled: true, action: keep)
+                    Pill(L("Save"), filled: true, action: keep)
                         .disabled(Vault.host(of: site).isEmpty || password.isEmpty)
                 }
             }

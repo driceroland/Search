@@ -49,11 +49,11 @@ final class Browser: NSObject, ObservableObject {
     func bookmarkCurrent() {
         guard let tab = active, let url = tab.address else { return }
         guard !bookmarks.contains(url) else {
-            announce("Already a bookmark")
+            announce(L("Already a bookmark"))
             return
         }
         bookmarks.add(url, title: tab.title)
-        announce("Bookmarked")
+        announce(L("Bookmarked"))
     }
 
     /// Another browser's bookmarks, folders and all — and, behind them, the
@@ -64,7 +64,7 @@ final class Browser: NSObject, ObservableObject {
         let found = Chromium.bookmarks(in: source)
         bookmarks.take(found, from: source.name)
         let count = Bookmarks.count(found)
-        announce(count == 0 ? "No bookmarks in \(source.name)" : "\(count) bookmarks from \(source.name)")
+        announce(count == 0 ? L("No bookmarks in %@", "\(source.name)") : L("%@ bookmarks from %@", "\(count)", "\(source.name)"))
         let urls = Bookmarks.urls(found)
         DispatchQueue.global(qos: .utility).async {
             let icons = Chromium.icons(in: source, for: urls)
@@ -172,7 +172,7 @@ final class Browser: NSObject, ObservableObject {
     func pauseMedia() {
         guard let tab = active else { return }
         tab.web.pauseAllMediaPlayback()
-        announce("Paused")
+        announce(L("Paused"))
     }
 
     // MARK: - taking things off pages
@@ -207,7 +207,7 @@ final class Browser: NSObject, ObservableObject {
     func undoHiding() {
         guard let host = hereHost, let back = curtain.undo(on: host) else { return }
         redress()
-        announce("\(back.label) is back")
+        announce(L("%@ is back", "\(back.label)"))
     }
 
     /// The pointer resting on a row in the list brings that one thing back,
@@ -232,7 +232,7 @@ final class Browser: NSObject, ObservableObject {
         curtain.restoreAll(on: host)
         redress()
         reviewing = false
-        announce("Everything is back")
+        announce(L("Everything is back"))
     }
 
     /// Both the page in front of you and the one that loads next time.
@@ -278,11 +278,11 @@ final class Browser: NSObject, ObservableObject {
         offering = nil
         let login = offer.login
         guard Vault.save(host: login.host, user: login.user, password: login.password, used: Date()) else {
-            announce("The keychain refused it")
+            announce(L("The keychain refused it"))
             return
         }
         relist()
-        announce(offer.changed ? "Password updated for \(login.host)" : "Password saved for \(login.host)")
+        announce(offer.changed ? L("Password updated for %@", "\(login.host)") : L("Password saved for %@", "\(login.host)"))
     }
 
     func dropOffer() { offering = nil }
@@ -293,7 +293,7 @@ final class Browser: NSObject, ObservableObject {
         guard let offer = offering else { return }
         Vault.never(offer.login.host)
         offering = nil
-        announce("Never for \(offer.login.host)")
+        announce(L("Never for %@", "\(offer.login.host)"))
     }
 
     /// One of the accounts in the list, picked by name.
@@ -303,7 +303,7 @@ final class Browser: NSObject, ObservableObject {
         suggesting = nil
         pickedInto = tab.id
         tab.fill(user: login.user, password: login.password) { [weak self] worked in
-            if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
+            if !worked { self?.announce(L("Couldn't find the sign-in fields anymore")) }
         }
         Vault.touch(login)
     }
@@ -337,11 +337,11 @@ final class Browser: NSObject, ObservableObject {
 
     func keep(host: String, user: String, password: String) {
         guard Vault.save(host: host, user: user, password: password) else {
-            announce("The keychain refused it")
+            announce(L("The keychain refused it"))
             return
         }
         relist()
-        announce("Kept for \(host)")
+        announce(L("Kept for %@", "\(host)"))
     }
 
     func forget(_ login: Login) {
@@ -352,7 +352,7 @@ final class Browser: NSObject, ObservableObject {
     func copy(_ login: Login) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(login.password, forType: .string)
-        announce("Password copied")
+        announce(L("Password copied"))
     }
 
     /// What came back from another browser's store, put in the keychain.
@@ -368,11 +368,11 @@ final class Browser: NSObject, ObservableObject {
             found.never.forEach { never.insert($0) }
             Vault.never = never
             relist()
-            announce(kept == 0 ? "Nothing new in \(source.name)" : "\(kept) passwords from \(source.name)")
+            announce(kept == 0 ? L("Nothing new in %@", "\(source.name)") : L("%@ passwords from %@", "\(kept)", "\(source.name)"))
         case .failure(Chromium.Trouble.noPassphrase):
-            announce("\(source.name) didn't give up its keychain key")
+            announce(L("%@ didn't give up its keychain key", "\(source.name)"))
         case .failure:
-            announce("Nothing readable in \(source.name)")
+            announce(L("Nothing readable in %@", "\(source.name)"))
         }
     }
 
@@ -397,19 +397,19 @@ final class Browser: NSObject, ObservableObject {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.commaSeparatedText, .plainText]
         panel.allowsMultipleSelection = false
-        panel.prompt = "Import"
-        panel.message = "A passwords export, as Chrome, Dia or Google Password Manager write it."
+        panel.prompt = L("Import")
+        panel.message = L("A passwords export, as Chrome, Dia or Google Password Manager write it.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-            announce("Couldn't read that file as text")
+            announce(L("Couldn't read that file as text"))
             return
         }
         let result = Vault.take(csv: text)
         relist()
         announce(
             result.skipped == 0
-                ? "\(result.kept) passwords in the keychain"
-                : "\(result.kept) in the keychain, \(result.skipped) skipped"
+                ? L("%@ passwords in the keychain", "\(result.kept)")
+                : L("%@ in the keychain, %@ skipped", "\(result.kept)", "\(result.skipped)")
         )
     }
 
@@ -427,7 +427,7 @@ final class Browser: NSObject, ObservableObject {
         for space in spaces {
             Spaces.store(for: space.id).removeData(ofTypes: types, modifiedSince: .distantPast) {}
         }
-        announce("Signed out of everything")
+        announce(L("Signed out of everything"))
     }
 
     /// Only what was fetched to draw pages, not what identifies you.
@@ -440,12 +440,12 @@ final class Browser: NSObject, ObservableObject {
         for space in spaces {
             Spaces.store(for: space.id).removeData(ofTypes: types, modifiedSince: .distantPast) {}
         }
-        announce("Cache cleared")
+        announce(L("Cache cleared"))
     }
 
     func clearHistory() {
         history.forget()
-        announce("History cleared")
+        announce(L("History cleared"))
     }
 
     /// The last few places, for the History menu.
@@ -488,7 +488,7 @@ final class Browser: NSObject, ObservableObject {
         where key.hasPrefix("capture.") {
             Store.settings.removeObject(forKey: key)
         }
-        announce("Camera and microphone choices forgotten")
+        announce(L("Camera and microphone choices forgotten"))
     }
 
     // MARK: - pinning
@@ -637,7 +637,7 @@ final class Browser: NSObject, ObservableObject {
         guard let url = active?.address else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.absoluteString, forType: .string)
-        announce("Address copied")
+        announce(L("Address copied"))
     }
 
     func announce(_ text: String) {
@@ -839,7 +839,7 @@ final class Browser: NSObject, ObservableObject {
                 guard let self else { return }
                 Shield.shared.enabled = on
                 Shield.shared.apply(to: tabs.compactMap { $0.built?.configuration.userContentController })
-                announce(on ? "Ads and trackers blocked" : "Blocking off — reload to see the difference")
+                announce(on ? L("Ads and trackers blocked") : L("Blocking off — reload to see the difference"))
             }
             .store(in: &bag)
 
@@ -865,7 +865,7 @@ final class Browser: NSObject, ObservableObject {
             .sink { [weak self] on in
                 guard let self else { return }
                 if on { Bench.shared.start(for: self) } else { Bench.shared.stop() }
-                announce(on ? "Scripts can drive Search — see ./bench" : "The bench is closed")
+                announce(on ? L("Scripts can drive Search — see ./bench") : L("The bench is closed"))
             }
             .store(in: &bag)
 
@@ -892,7 +892,7 @@ final class Browser: NSObject, ObservableObject {
                 for tab in tabs {
                     tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
                 }
-                announce(on ? "Passkeys offered again — reload the page" : "Sites will ask for a password instead")
+                announce(on ? L("Passkeys offered again — reload the page") : L("Sites will ask for a password instead"))
             }
             .store(in: &bag)
 
@@ -917,7 +917,7 @@ final class Browser: NSObject, ObservableObject {
                     web.perform(selector, with: nil)
                 }
                 Preferences.tellWebKit(autocorrect: on)
-                announce(on ? "Autocorrect on" : "Autocorrect off")
+                announce(on ? L("Autocorrect on") : L("Autocorrect off"))
             }
             .store(in: &bag)
     }
@@ -1306,7 +1306,7 @@ final class Browser: NSObject, ObservableObject {
         typed = ""
         editing = false
         focusRequest += 1
-        announce("A tab that keeps nothing")
+        announce(L("A tab that keeps nothing"))
     }
 
     /// ⌘D. The same page, beside itself.
@@ -1399,7 +1399,7 @@ final class Browser: NSObject, ObservableObject {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 guard (answer as? String) == "floating" else {
-                    if !quietly { self.announce("Nothing is playing here") }
+                    if !quietly { self.announce(L("Nothing is playing here")) }
                     return
                 }
                 self.floating = tab.id
@@ -1429,7 +1429,7 @@ final class Browser: NSObject, ObservableObject {
             let css = curtain.css(on: host)
             tab.arm(hiding: css)
             tab.applyVeils(css)
-            announce("Hidden — ⌘Z puts it back")
+            announce(L("Hidden — ⌘Z puts it back"))
         }
         tab.onPickEnd = { [weak self] _ in self?.veiling = false }
         tab.onImageMenu = { [weak self] tab, url in self?.showImageMenu(for: tab, at: url) }
@@ -1481,7 +1481,7 @@ final class Browser: NSObject, ObservableObject {
             offering = offer
         }
         tab.onPickTrouble = { [weak self] _, reason in
-            self?.announce("Couldn't hide that — \(reason)")
+            self?.announce(L("Couldn't hide that — %@", "\(reason)"))
         }
 
         // The line at the bottom doubles as the zoom read-out: it keeps being
@@ -1491,7 +1491,7 @@ final class Browser: NSObject, ObservableObject {
             let percent = Int((value * 100).rounded())
             guard percent != zoomShown else { return }
             zoomShown = percent
-            announce("\(percent)%")
+            announce(L("%@%%", "\(percent)"))
         }
 
         // A page's title lands a beat after the page itself, and a history
@@ -1716,7 +1716,7 @@ final class Browser: NSObject, ObservableObject {
         guard let tab = active else { return }
         tab.toggleReader { [weak self] worked in
             guard !worked else { return }
-            self?.announce("Nothing to read on this page")
+            self?.announce(L("Nothing to read on this page"))
         }
     }
 
@@ -1864,7 +1864,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         type: WKMediaCaptureType,
         decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
-        let host = origin.host.isEmpty ? (tab(for: webView)?.address?.host() ?? "This page") : origin.host
+        let host = origin.host.isEmpty ? (tab(for: webView)?.address?.host() ?? L("This page")) : origin.host
         let key = "\(host)|\(type.rawValue)"
 
         if let remembered = Store.settings.object(forKey: "capture." + key) as? Bool {
@@ -1979,17 +1979,17 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     private func message(for code: Int) -> String {
         switch code {
         case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed:
-            return "No site at that address."
+            return L("No site at that address.")
         case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
-            return "No connection."
+            return L("No connection.")
         case NSURLErrorTimedOut:
-            return "The site took too long to answer."
+            return L("The site took too long to answer.")
         case NSURLErrorCannotConnectToHost:
-            return "The site refused the connection."
+            return L("The site refused the connection.")
         case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateUntrusted:
-            return "The connection isn't secure."
+            return L("The connection isn't secure.")
         default:
-            return "The page didn't load."
+            return L("The page didn't load.")
         }
     }
 
@@ -2020,18 +2020,18 @@ extension Browser: WKDownloadDelegate {
                 return
             }
             completionHandler(url)
-            announce("Downloading \(url.lastPathComponent)")
+            announce(L("Downloading %@", "\(url.lastPathComponent)"))
             return
         }
 
         completionHandler(Browser.free(name, in: downloadsFolder))
-        announce("Downloading \(name)")
+        announce(L("Downloading %@", "\(name)"))
     }
 
     func downloadDidFinish(_ download: WKDownload) {
         downloading.removeAll { $0 === download }
         guard let file = download.progress.fileURL else {
-            announce("Download finished")
+            announce(L("Download finished"))
             return
         }
         loot.add(
@@ -2042,7 +2042,7 @@ extension Browser: WKDownloadDelegate {
                 date: Date()
             )
         )
-        announce("Saved \(file.lastPathComponent)")
+        announce(L("Saved %@", "\(file.lastPathComponent)"))
     }
 
     func download(
@@ -2051,7 +2051,7 @@ extension Browser: WKDownloadDelegate {
         resumeData: Data?
     ) {
         downloading.removeAll { $0 === download }
-        announce("Download failed")
+        announce(L("Download failed"))
     }
 
     /// WebKit refuses to write over a file that is already there, so the name

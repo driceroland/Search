@@ -9,12 +9,12 @@ struct HiddenPanel: View {
     @ObservedObject var browser: Browser
 
     var body: some View {
-        Plate(browser.hereHost ?? "This page", width: 380, close: { browser.reviewing = false }) {
+        Plate(browser.hereHost ?? L("This page"), width: 380, close: { browser.reviewing = false }) {
             if browser.hereVeils.isEmpty {
-                Card { Nothing("Nothing is hidden here.") }
+                Card { Nothing(L("Nothing is hidden here.")) }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
-                    Caption("Hidden on this site — rest on a line to see it")
+                    Caption(L("Hidden on this site — rest on a line to see it"))
                     ScrollView(showsIndicators: false) {
                         Card {
                             ForEach(Array(browser.hereVeils.enumerated()), id: \.element.id) { index, veil in
@@ -33,9 +33,9 @@ struct HiddenPanel: View {
             }
         } foot: {
             HStack(spacing: 8) {
-                Pill("Hide something…", filled: true) { browser.toggleHiding() }
+                Pill(L("Hide something…"), filled: true) { browser.toggleHiding() }
                 if !browser.hereVeils.isEmpty {
-                    Pill("Restore all") { browser.restoreAll() }
+                    Pill(L("Restore all")) { browser.restoreAll() }
                 }
                 Spacer()
             }
@@ -70,7 +70,7 @@ struct HiddenPanel: View {
                 }
                 Spacer(minLength: 8)
 
-                Quick("Restore", act: restore)
+                Quick(L("Restore"), act: restore)
                     .opacity(hovering ? 1 : 0)
             }
             .padding(.horizontal, 14)

@@ -293,7 +293,7 @@ final class Tab: ObservableObject, Identifiable {
         if let name, !name.isEmpty { return name }
         if !title.isEmpty { return title }
         if let address { return Address.pretty(address) }
-        return "New Tab"
+        return L("New Tab")
     }
 
     init(shy: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil) {

@@ -49,7 +49,7 @@ enum Spaces {
         Color(red: 0.90, green: 0.33, blue: 0.40), // red
         Color(red: 0.62, green: 0.40, blue: 0.90), // violet
     ]
-    static let colourNames = ["Slate", "Blue", "Green", "Orange", "Red", "Violet"]
+    static let colourNames = [L("Slate"), L("Blue"), L("Green"), L("Orange"), L("Red"), L("Violet")]
 
     /// The icons a space can wear: Apple's own symbols, drawn in one weight
     /// and one grey, grouped as work, thinking, leisure and life.
@@ -60,10 +60,10 @@ enum Spaces {
         "graduationcap", "cart", "airplane", "dumbbell", "leaf", "heart",
     ]
     static let iconNames = [
-        "Work", "Office", "Desktop", "Laptop", "Code", "Terminal",
-        "AI", "Thinking", "Ideas", "Games", "Leisure", "Café",
-        "Music", "Film", "Art", "Photos", "Home", "Reading",
-        "Studies", "Shopping", "Travel", "Sport", "Nature", "Personal",
+        L("Work"), L("Office"), L("Desktop"), L("Laptop"), L("Code"), L("Terminal"),
+        L("AI"), L("Thinking"), L("Ideas"), L("Games"), L("Leisure"), L("Café"),
+        L("Music"), L("Film"), L("Art"), L("Photos"), L("Home"), L("Reading"),
+        L("Studies"), L("Shopping"), L("Travel"), L("Sport"), L("Nature"), L("Personal"),
     ]
 
     private static var file: URL { Store.file("spaces.json") }
@@ -72,7 +72,7 @@ enum Spaces {
     /// list yet.
     static func read() -> [Space] {
         let saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Space].self, from: $0) } ?? []
-        let first = saved.first(where: \.isFirst) ?? Space(id: Space.firstID, name: "Personal", colour: 0)
+        let first = saved.first(where: \.isFirst) ?? Space(id: Space.firstID, name: L("Personal"), colour: 0)
         return [first] + saved.filter { !$0.isFirst }
     }
 
@@ -323,7 +323,7 @@ struct SpaceDot: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("\(browser.space.name) — ⌃1–⌃9 or two fingers sideways to switch")
+        .help(L("%@ — ⌃1–⌃9 or two fingers sideways to switch", "\(browser.space.name)"))
         .onChange(of: key) { _, now in
             let symbol = symbol
             DispatchQueue.main.async {
@@ -367,11 +367,11 @@ enum SpaceMenu {
             menu.addItem(entry)
         }
         menu.addItem(.separator())
-        menu.addItem(item("New Space…") { browser.askForSpace() })
+        menu.addItem(item(L("New Space…")) { browser.askForSpace() })
         menu.addItem(.separator())
         let here = browser.space
-        menu.addItem(item("Rename “\(here.name)”…") {
-            Ask.name("Rename Space", placeholder: here.name, initial: here.name, confirm: "Rename") { browser.renameSpace(here.id, to: $0) }
+        menu.addItem(item(L("Rename “%@”…", "\(here.name)")) {
+            Ask.name(L("Rename Space"), placeholder: here.name, initial: here.name, confirm: L("Rename")) { browser.renameSpace(here.id, to: $0) }
         })
         let icons = NSMenu()
         for (symbol, name) in zip(Spaces.icons, Spaces.iconNames) {
@@ -379,25 +379,25 @@ enum SpaceMenu {
             choice.image = NSImage(systemSymbolName: symbol, accessibilityDescription: name)
             icons.addItem(choice)
         }
-        let icon = NSMenuItem(title: "Icon", action: nil, keyEquivalent: "")
+        let icon = NSMenuItem(title: L("Icon"), action: nil, keyEquivalent: "")
         icon.submenu = icons
         menu.addItem(icon)
         // The order is the swipe's, and ⌃1–⌃9's.
         if let at = browser.spaces.firstIndex(where: { $0.id == here.id }) {
-            if at > 0 { menu.addItem(item("Move Left") { browser.moveSpace(here.id, to: at - 1) }) }
-            if at < browser.spaces.count - 1 { menu.addItem(item("Move Right") { browser.moveSpace(here.id, to: at + 1) }) }
+            if at > 0 { menu.addItem(item(L("Move Left")) { browser.moveSpace(here.id, to: at - 1) }) }
+            if at < browser.spaces.count - 1 { menu.addItem(item(L("Move Right")) { browser.moveSpace(here.id, to: at + 1) }) }
         }
         let folder = here.downloads.map { URL(fileURLWithPath: $0).lastPathComponent }
-        menu.addItem(item(folder.map { "Downloads to “\($0)”…" } ?? "Downloads Folder…") {
+        menu.addItem(item(folder.map { L("Downloads to “%@”…", "\($0)") } ?? L("Downloads Folder…")) {
             Ask.folder { browser.setSpaceDownloads(here.id, to: $0) }
         })
         if folder != nil {
-            menu.addItem(item("Downloads to the Folder in Settings") { browser.setSpaceDownloads(here.id, to: nil) })
+            menu.addItem(item(L("Downloads to the Folder in Settings")) { browser.setSpaceDownloads(here.id, to: nil) })
         }
         if !here.isFirst {
             menu.addItem(.separator())
-            menu.addItem(item("Delete “\(here.name)”…") {
-                Ask.sure("Delete “\(here.name)”?", detail: "Its tabs close, and its cookies and sign-ins are erased from this Mac. History and bookmarks stay.", confirm: "Delete") {
+            menu.addItem(item(L("Delete “%@”…", "\(here.name)")) {
+                Ask.sure(L("Delete “%@”?", "\(here.name)"), detail: L("Its tabs close, and its cookies and sign-ins are erased from this Mac. History and bookmarks stay."), confirm: L("Delete")) {
                     browser.deleteSpace(here.id)
                 }
             })
@@ -417,7 +417,7 @@ enum Ask {
         field.stringValue = initial
         alert.accessoryView = field
         alert.addButton(withTitle: confirm)
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("Cancel"))
         alert.window.initialFirstResponder = field
         show(alert) { ok in
             let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -429,18 +429,18 @@ enum Ask {
     /// have — for when the column isn't there to hold the card.
     static func newSpace(then: @escaping (String, Bool) -> Void) {
         let alert = NSAlert()
-        alert.messageText = "New Space"
-        alert.informativeText = "Its own tabs. Signed in where your other spaces are, unless it starts afresh."
+        alert.messageText = L("New Space")
+        alert.informativeText = L("Its own tabs. Signed in where your other spaces are, unless it starts afresh.")
         let field = NSTextField(frame: NSRect(x: 0, y: 30, width: 260, height: 24))
-        field.placeholderString = "Work"
-        let fresh = NSButton(checkboxWithTitle: "Start signed out, with its own cookies", target: nil, action: nil)
+        field.placeholderString = L("Work")
+        let fresh = NSButton(checkboxWithTitle: L("Start signed out, with its own cookies"), target: nil, action: nil)
         fresh.frame = NSRect(x: 0, y: 0, width: 260, height: 22)
         let box = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 56))
         box.addSubview(field)
         box.addSubview(fresh)
         alert.accessoryView = box
-        alert.addButton(withTitle: "Create")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("Create"))
+        alert.addButton(withTitle: L("Cancel"))
         alert.window.initialFirstResponder = field
         show(alert) { ok in
             let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -453,7 +453,7 @@ enum Ask {
         alert.messageText = title
         alert.informativeText = detail
         alert.addButton(withTitle: confirm).hasDestructiveAction = true
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("Cancel"))
         show(alert) { ok in if ok { then() } }
     }
 
@@ -462,8 +462,8 @@ enum Ask {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "Use for This Space"
-        panel.message = "Downloads in this space go here. Cancel keeps the folder it has."
+        panel.prompt = L("Use for This Space")
+        panel.message = L("Downloads in this space go here. Cancel keeps the folder it has.")
         guard let window = Links.window else { return }
         panel.beginSheetModal(for: window) { answer in
             if answer == .OK, let url = panel.url { then(url) }

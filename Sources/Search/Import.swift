@@ -127,7 +127,7 @@ enum Chromium {
             for key in ["other", "synced"] {
                 if let more = roots[key] as? [String: Any] {
                     let kids = nodes(in: more["children"] as? [[String: Any]] ?? [])
-                    if !kids.isEmpty { out.append(.folder(key == "other" ? "Other" : "Mobile", kids)) }
+                    if !kids.isEmpty { out.append(.folder(key == "other" ? L("Other") : L("Mobile"), kids)) }
                 }
             }
         }
