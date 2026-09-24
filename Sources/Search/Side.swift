@@ -33,6 +33,8 @@ struct SideBar: View {
     @State private var creatingFolder = false
     @State private var editingFolder: UUID?
     @State private var folderDraft = ""
+    @State private var outsideTargeted = false
+    @State private var outsideHovering = false
     @FocusState private var folderFocused: Bool
 
     private static let row: CGFloat = 28
@@ -274,7 +276,8 @@ struct SideBar: View {
             }
         }.count : 0
         let loose = CGFloat(looseTabs.count + shownInFolders + folderCount) * (SideBar.row + SideBar.gap)
-        return Metrics.strip + pinBlock + loose + SideBar.row + 8
+        let outside = prefs.tabFolders && !browser.folders.isEmpty ? 18.0 : 0.0
+        return Metrics.strip + pinBlock + loose + outside + SideBar.row + 8
     }
 
     // MARK: - the pinned squares
@@ -329,7 +332,7 @@ struct SideBar: View {
                 }
             }
         }
-        .padding(.bottom, browser.folders.isEmpty && !creatingFolder ? 0 : 8)
+        .padding(.bottom, browser.folders.isEmpty && creatingFolder ? 8 : 0)
     }
 
     private var folderField: some View {
@@ -593,10 +596,30 @@ struct SideBar: View {
     /// The loose tabs and the row that makes another, which scroll as one.
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if prefs.tabFolders, !browser.folders.isEmpty {
+                outsideFolders
+            }
             loose
             newTab
         }
         .onDrop(of: [.text], isTargeted: nil) { providers in dropTab(providers, into: nil) }
+    }
+
+    /// Between the folders and ordinary tabs: a place to return a tab to the
+    /// loose list, made visible only when a drag comes near it.
+    private var outsideFolders: some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(Palette.ink.opacity(outsideTargeted ? 0.28 : outsideHovering ? 0.12 : 0))
+            .frame(height: 2)
+            .frame(height: 18)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onHover { outsideHovering = $0 }
+            .onDrop(of: [.text], isTargeted: $outsideTargeted) { providers in
+                dropTab(providers, into: nil)
+            }
+            .animation(Motion.quick, value: outsideTargeted)
+            .animation(Motion.quick, value: outsideHovering)
     }
 
     /// The foot's door and its margin beneath.
@@ -858,7 +881,7 @@ private struct FolderRow: View {
             Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(targeted || hovering ? Palette.muted : Palette.faint)
-                .rotationEffect(.degrees(folder.isOpen ? 0 : 180))
+                .rotationEffect(.degrees(folder.isOpen ? 0 : -90))
                 .frame(width: 15)
         }
         .padding(.leading, 10)
