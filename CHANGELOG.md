@@ -65,7 +65,7 @@ in [ROADMAP.md](ROADMAP.md).
 - The grey that fills the tab you're on as you read down the page can be turned off: Settings › Tabs › Show how far you've read. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#57](https://github.com/driceroland/Search/pull/57))
 - A skill that teaches coding agents to drive Search with `./bench`. Thanks [@jasonkneen](https://github.com/jasonkneen) ([#14](https://github.com/driceroland/Search/pull/14))
 - Extensions can be pinned to the toolbar from Settings › Extensions, not just from the puzzle-piece menu.
-- A middle-click on a link opens it in a tab of its own beside the one you are on, and leaves you where you were — the same thing ⌘-click does, for hands that learned it that way. ([#45](https://github.com/driceroland/Search/issues/45))
+- A middle-click on a link opens it in a tab of its own beside the one you are on, and leaves you where you were — the same thing ⌘-click does, for hands that learned it that way. ([#45](https://github.com/driceroland/Search/issues/45)) Thanks [@Dodothereal](https://github.com/Dodothereal) ([#71](https://github.com/driceroland/Search/pull/71))
 
 ### Fixed
 

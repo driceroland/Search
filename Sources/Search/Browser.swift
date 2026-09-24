@@ -1473,7 +1473,8 @@ final class Browser: NSObject, ObservableObject {
         tab.onStoreAdd = { [weak self] tab in self?.addFromStore(tab) }
         // The middle button on a link opens it beside the tab you are on, as
         // it does in every other browser (see MiddleRelay).
-        tab.onMiddleClick = { [weak self] _, url in self?.open(url, foreground: false) }
+        // From a private tab, the new one is private too, as for ⌘-click.
+        tab.onMiddleClick = { [weak self] tab, url in self?.open(url, foreground: false, from: tab) }
 
         // The caret in a sign-in box: the accounts kept for this site hang
         // from the box, and go when the caret does. Nothing is filled on
@@ -1819,6 +1820,14 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // 2 right, 4 middle — so a check for 2 here would have meant the right
         // button, not the middle (see MiddleRelay, which is where the middle
         // button is answered).
+        //
+        // Should a WebKit ever hand one over for the middle button after all,
+        // it is cancelled: MiddleRelay has already opened the link in a tab of
+        // its own, and letting this one through would take the page there too.
+        if action.navigationType == .linkActivated, action.buttonNumber == 4 {
+            decisionHandler(.cancel)
+            return
+        }
         if action.navigationType == .linkActivated,
            ["http", "https"].contains(scheme),
            action.modifierFlags.contains(.command) {

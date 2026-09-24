@@ -1021,7 +1021,7 @@ final class AudioWatch: NSObject {
 /// the page is asked: its own `auxclick` for the middle button names the link
 /// under the pointer, and from there it is an ordinary address to open.
 ///
-/// Only the main frame, only a real `<a href>` to somewhere this browser
+/// Only the main frame, only a real link to somewhere this browser
 /// would go, and only the middle button. A page's own handler runs as it
 /// always did — this says where to, and changes nothing about the click.
 ///
@@ -1042,10 +1042,22 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
       window.__officeMiddle = true;
       document.addEventListener('auxclick', function (e) {
         if (e.button !== 1 || !e.isTrusted || e.defaultPrevented) return;
-        var el = e.target;
-        while (el && el.tagName !== 'A') el = el.parentElement;
-        if (!el || !el.href) return;
-        window.webkit.messageHandlers.officeMiddle.postMessage({ href: el.href });
+        // The path, not the parents: a link inside an open shadow root is
+        // on it too. An <area> of an image map is a link, and so is an SVG
+        // <a>, whose href is an object that holds the address as written.
+        var path = e.composedPath();
+        for (var i = 0; i < path.length; i++) {
+          var el = path[i];
+          var tag = el.tagName ? el.tagName.toLowerCase() : '';
+          if (tag !== 'a' && tag !== 'area') continue;
+          var href = el.href;
+          if (href && typeof href === 'object') {
+            try { href = href.baseVal ? new URL(href.baseVal, el.baseURI).href : ''; } catch (_) { href = ''; }
+          }
+          if (!href) continue;
+          window.webkit.messageHandlers.officeMiddle.postMessage({ href: href });
+          return;
+        }
       });
     })();
     """
