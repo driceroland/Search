@@ -35,6 +35,8 @@ struct SearchApp: App {
                     .keyboardShortcut("w")
             }
             CommandGroup(replacing: .printItem) {
+                Button("Share…") { browser.share() }
+                    .disabled(browser.active?.isBlank ?? true)
                 Button("Print…") { browser.printPage() }
                     .keyboardShortcut("p")
                     .disabled(browser.active?.isBlank ?? true)
