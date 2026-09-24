@@ -62,7 +62,7 @@ struct Fold: View {
     @State private var pointer = Pointer()
 
     /// How near the edge the pointer has to be.
-    private static let edge: CGFloat = 6
+    private static let edge: CGFloat = 12
     /// The grace before the column goes back in.
     private static let grace: TimeInterval = 0.3
     /// The band along the top that is the title bar over the page.
