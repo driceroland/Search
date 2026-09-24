@@ -31,6 +31,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Bringing things over works from Helium too: its bookmarks, history and passwords. Thanks [@bacecek](https://github.com/bacecek) ([#178](https://github.com/driceroland/Search/pull/178))
 - Bringing things over works from Comet too. Thanks [@gabrielemeksiz-ui](https://github.com/gabrielemeksiz-ui) ([#301](https://github.com/driceroland/Search/pull/301))
 - Bringing things over also finds Chrome Beta, Chrome Dev and Chrome Canary, which keep their data apart from Chrome, and Opera and Opera GX.
+- Optional tab groups in either tab layout: create a named group from a tab's menu, move tabs into it, and collapse or expand its heading. Groups and their state stay with each Space across launches. ([#23](https://github.com/driceroland/Search/issues/23))
 
 ### Fixed
 
