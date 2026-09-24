@@ -380,7 +380,7 @@ enum Mozilla {
 
         var id: String { name }
 
-        /// Every profile's places.sqlite file discovered on this Mac.
+        /// Every profile's places.sqlite file discovered on this Mac, newest first.
         var files: [URL] {
             let appSupport = FileManager.default
                 .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -394,7 +394,7 @@ enum Mozilla {
                     out.append(direct)
                 }
                 // Profiles nested inside this folder (e.g. Profiles/*).
-                if let subs = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+                if let subs = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles) {
                     for sub in subs {
                         let places = sub.appendingPathComponent("places.sqlite")
                         if FileManager.default.fileExists(atPath: places.path) {
@@ -404,7 +404,12 @@ enum Mozilla {
                 }
             }
             var seen = Set<String>()
-            return out.filter { seen.insert($0.path).inserted }
+            let unique = out.filter { seen.insert($0.path).inserted }
+            return unique.sorted { a, b in
+                let aDate = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
+                let bDate = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
+                return aDate > bDate
+            }
         }
     }
 
@@ -432,11 +437,60 @@ enum Mozilla {
 
     static func bookmarks(in files: [URL]) -> [Bookmark] {
         var out: [Bookmark] = []
+        var seenURLs = Set<String>()
+
+        func deduplicate(_ list: [Bookmark]) -> [Bookmark] {
+            var res: [Bookmark] = []
+            for b in list {
+                if let url = b.url {
+                    if seenURLs.insert(url).inserted {
+                        res.append(b)
+                    }
+                } else {
+                    let children = deduplicate(b.children ?? [])
+                    if !children.isEmpty {
+                        var folder = b
+                        folder.children = children
+                        res.append(folder)
+                    }
+                }
+            }
+            return res
+        }
+
         for file in files {
             guard FileManager.default.fileExists(atPath: file.path) else { continue }
-            out += (try? bookmarkNodes(in: file)) ?? []
+            if let nodes = try? bookmarkNodes(in: file) {
+                out += deduplicate(nodes)
+            }
         }
         return out
+    }
+
+    /// Safely copy a SQLite database and its WAL/SHM sidecars to an isolated temporary folder.
+    private static func copyDatabaseWithWAL(from source: URL, prefix: String) throws -> (file: URL, cleanup: () -> Void) {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let dest = folder.appendingPathComponent(source.lastPathComponent)
+        try FileManager.default.copyItem(at: source, to: dest)
+
+        let wal = source.deletingLastPathComponent().appendingPathComponent("\(source.lastPathComponent)-wal")
+        if FileManager.default.fileExists(atPath: wal.path) {
+            let destWAL = folder.appendingPathComponent("\(source.lastPathComponent)-wal")
+            try? FileManager.default.copyItem(at: wal, to: destWAL)
+        }
+
+        let shm = source.deletingLastPathComponent().appendingPathComponent("\(source.lastPathComponent)-shm")
+        if FileManager.default.fileExists(atPath: shm.path) {
+            let destSHM = folder.appendingPathComponent("\(source.lastPathComponent)-shm")
+            try? FileManager.default.copyItem(at: shm, to: destSHM)
+        }
+
+        let cleanup: () -> Void = {
+            _ = try? FileManager.default.removeItem(at: folder)
+        }
+        return (dest, cleanup)
     }
 
     private struct RawBookmark {
@@ -450,10 +504,8 @@ enum Mozilla {
     }
 
     private static func bookmarkNodes(in file: URL) throws -> [Bookmark] {
-        let temp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("office-import-moz-bm-\(UUID().uuidString).db")
-        try FileManager.default.copyItem(at: file, to: temp)
-        defer { try? FileManager.default.removeItem(at: temp) }
+        let (temp, cleanup) = try copyDatabaseWithWAL(from: file, prefix: "office-import-moz-bm")
+        defer { cleanup() }
 
         var db: OpaquePointer?
         guard sqlite3_open_v2(temp.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
@@ -576,10 +628,8 @@ enum Mozilla {
     }
 
     private static func placeRows(in file: URL, limit: Int) throws -> [Chromium.Place] {
-        let temp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("office-import-moz-hist-\(UUID().uuidString).db")
-        try FileManager.default.copyItem(at: file, to: temp)
-        defer { try? FileManager.default.removeItem(at: temp) }
+        let (temp, cleanup) = try copyDatabaseWithWAL(from: file, prefix: "office-import-moz-hist")
+        defer { cleanup() }
 
         var db: OpaquePointer?
         guard sqlite3_open_v2(temp.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
@@ -639,10 +689,8 @@ enum Mozilla {
         for file in source.files {
             let favicons = file.deletingLastPathComponent().appendingPathComponent("favicons.sqlite")
             guard FileManager.default.fileExists(atPath: favicons.path) else { continue }
-            let temp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("office-import-moz-fav-\(UUID().uuidString).db")
-            guard (try? FileManager.default.copyItem(at: favicons, to: temp)) != nil else { continue }
-            defer { try? FileManager.default.removeItem(at: temp) }
+            guard let (temp, cleanup) = try? copyDatabaseWithWAL(from: favicons, prefix: "office-import-moz-fav") else { continue }
+            defer { cleanup() }
 
             var db: OpaquePointer?
             guard sqlite3_open_v2(temp.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { continue }
