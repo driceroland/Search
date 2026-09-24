@@ -52,11 +52,20 @@ final class History: ObservableObject {
 
     init() { load() }
 
+    // A short display address drops the query, but it can be the whole
+    // identity of a page: two videos or articles must not overwrite each
+    // other. Query values are case-sensitive.
+    private static func key(for url: URL) -> String {
+        let address = Address.pretty(url).lowercased()
+        guard let query = url.query(percentEncoded: true) else { return address }
+        return address + "?" + query
+    }
+
     // MARK: - writing
 
     func record(_ url: URL, title: String) {
         guard url.scheme == "http" || url.scheme == "https" else { return }
-        let key = Address.pretty(url).lowercased()
+        let key = History.key(for: url)
         guard !key.isEmpty else { return }
 
         // Reading a deep page is also, in the way that matters here, another
@@ -96,7 +105,7 @@ final class History: ObservableObject {
     /// you switch, the field already knows you.
     func take(_ url: URL, title: String, count: Int, last: Date) {
         guard url.scheme == "http" || url.scheme == "https" else { return }
-        let key = Address.pretty(url).lowercased()
+        let key = History.key(for: url)
         guard !key.isEmpty else { return }
         if var seen = visits[key] {
             seen.count += count
@@ -113,7 +122,7 @@ final class History: ObservableObject {
 
     /// A page's title usually lands a beat after the page does.
     func retitle(_ url: URL, _ title: String) {
-        let key = Address.pretty(url).lowercased()
+        let key = History.key(for: url)
         guard !title.isEmpty, var seen = visits[key], seen.title != title else { return }
         seen.title = title
         visits[key] = seen
@@ -281,7 +290,11 @@ final class History: ObservableObject {
             Store.quarantine(History.file)
             return
         }
-        visits = Dictionary(uniqueKeysWithValues: list.map { ($0.key, $0) })
+        visits = Dictionary(uniqueKeysWithValues: list.map { saved in
+            var visit = saved
+            if let url = URL(string: visit.url) { visit.key = History.key(for: url) }
+            return (visit.key, visit)
+        })
     }
 
     /// Coalesced: a busy minute of browsing writes the file once, not thirty
