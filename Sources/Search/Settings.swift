@@ -208,6 +208,14 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autocorrect)
             }
             Rule()
+            Line("Scroll with the middle button", "Click the wheel on a page, then move the mouse up or down to scroll, as on Windows. Click again to stop") {
+                Switch(on: $prefs.autoScroll)
+            }
+            Rule()
+            Line("Flick the floating video to a corner", "Two fingers on it send it to the corner or edge they point at, instead of pushing it along. Dragging still puts it anywhere") {
+                Switch(on: $prefs.floatFlicks)
+            }
+            Rule()
             Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
                 Switch(on: $prefs.bench)
             }
@@ -241,6 +249,10 @@ struct SettingsPanel: View {
             Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
+            }
+            Rule()
+            Line("Show how far you've read", "The tab you're on fills with grey as you scroll down the page") {
+                Switch(on: $prefs.showsReading)
             }
             Rule()
             Line("Sleep tabs you aren't using", "After half an hour away they come back where you left them. Pinned tabs, sound, calls and anything typed stay awake.") {
@@ -283,9 +295,11 @@ struct SettingsPanel: View {
                 Rule()
                 Line(
                     "Offer passkeys",
-                    prefs.passkeysPossible
-                        ? "Touch ID or an iCloud passkey, on sites that offer one"
-                        : "Needs an Apple entitlement this build doesn't have — off keeps sites to the password"
+                    !prefs.passkeysPossible
+                        ? "Needs an Apple entitlement this build doesn't have — off keeps sites to the password"
+                        : Passkeys.access == .denied
+                        ? "macOS was told no — System Settings › Privacy & Security › Passkeys Access for Web Browsers"
+                        : "Touch ID or an iCloud passkey, on sites that offer one"
                 ) {
                     Switch(on: $prefs.passkeys)
                 }
