@@ -102,49 +102,23 @@ enum Web {
 }
 
 /// WKWebView can pause a page's media, but not mute it and let it keep
-/// playing - the one thing a tab's own speaker icon does everywhere else.
-/// WebKit has this itself, one call down from the public framework: the
-/// mute Safari's own tabs use, page JavaScript none the wiser. Asked for
-/// first, the way `inspector(_:on:)` above asks before it uses one too - a
-/// WebKit that has dropped the name leaves muting to the fallback below
-/// rather than falling over.
+/// playing, the one thing a tab's own speaker does everywhere else. WebKit
+/// has that mute one call down from the public framework: the one Safari's
+/// own tabs use, the page's JavaScript none the wiser. The names are asked
+/// for first, the way `inspector(_:on:)` above asks, and a WebKit without
+/// them leaves the tab heard rather than falling over.
 enum Muter {
-    /// `_mediaMutedState` is a bitmask; the low bit is the page's own
-    /// audio, which is the only one a tab's speaker icon should touch (the
-    /// higher bits are the user's camera and microphone capture, someone
-    /// else's to turn off). Returns whether it took - false leaves the
-    /// caller to fall back to `script(muted:)`.
-    @discardableResult
-    static func setPageMuted(_ muted: Bool, on web: WKWebView) -> Bool {
+    /// `_mediaMutedState` is a bitmask. Its low bit is the page's own
+    /// sound, the only one a tab's speaker should touch: the others are the
+    /// camera and the microphone, someone else's to turn off.
+    static func set(_ muted: Bool, on web: WKWebView) {
         let get = NSSelectorFromString("_mediaMutedState")
         let set = NSSelectorFromString("_setPageMuted:")
-        guard web.responds(to: get), web.responds(to: set) else { return false }
+        guard web.responds(to: get), web.responds(to: set) else { return }
         typealias Read = @convention(c) (AnyObject, Selector) -> UInt
         typealias Write = @convention(c) (AnyObject, Selector, UInt) -> Void
         let state = unsafeBitCast(web.method(for: get), to: Read.self)(web, get)
-        let write = unsafeBitCast(web.method(for: set), to: Write.self)
-        write(web, set, muted ? state | 1 : state & ~UInt(1))
-        return true
-    }
-
-    /// Only reached on a WebKit without the call above. Every <audio> and
-    /// <video> element, present now or added later, gets its muted property
-    /// set and kept set - a page watching for that, or for the
-    /// `volumechange` it fires, can tell; the real page mute leaves nothing
-    /// to see.
-    static func script(muted: Bool) -> String {
-        """
-        (function () {
-          var muted = \(muted);
-          function apply() {
-            var els = document.querySelectorAll('audio, video');
-            for (var i = 0; i < els.length; i++) els[i].muted = muted;
-          }
-          window.__officeMuter = { set: function (on) { muted = on; apply(); } };
-          new MutationObserver(apply).observe(document.documentElement, { childList: true, subtree: true });
-          apply();
-        })();
-        """
+        unsafeBitCast(web.method(for: set), to: Write.self)(web, set, muted ? state | 1 : state & ~UInt(1))
     }
 }
 
@@ -282,20 +256,17 @@ final class Tab: ObservableObject, Identifiable {
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
     @Published var noisy = false
-    /// Silenced by hand, the way a tab's speaker icon does it everywhere
-    /// else: the page keeps playing, it is just not heard, and its own
-    /// JavaScript never finds out. Muter.setPageMuted holds once set - it
-    /// carries a WKWebView across whatever it goes to next on its own, which
-    /// is why only build() and this need to reach for it. A WebKit without
-    /// it falls back to Muter.script, re-armed on every navigation (see
-    /// arm(hiding:)) since the page itself has to be told each time.
+    /// Silenced by hand from its speaker or its menu: the page plays on and
+    /// is not heard. WebKit keeps the mute on the view from one page to the
+    /// next, so it is only set again on a view built new, as a sleeping tab
+    /// wakes (see build()).
     @Published var muted = false
 
+    /// Not `web`: a tab asleep is muted without being woken, and hears of
+    /// it when its page is built again.
     func toggleMute() {
         muted.toggle()
-        if !Muter.setPageMuted(muted, on: web) {
-            web.evaluateJavaScript("window.__officeMuter && window.__officeMuter.set(\(muted))")
-        }
+        if let built { Muter.set(muted, on: built) }
     }
 
     /// What the page hands back when you point at something and click it.
@@ -463,6 +434,8 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(middles, name: MiddleRelay.name)
         Shield.shared.protect(controller)
         built = web
+        // A tab muted before it went to sleep wakes muted.
+        if muted { Muter.set(true, on: web) }
         arm(hiding: veils)
 
         watch = [
@@ -542,15 +515,6 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
-        // Holds by itself across whatever this WKWebView goes to next, so a
-        // tab muted before it navigated somewhere else needs nothing done
-        // here to still be muted once it gets there. Only a WebKit without
-        // it needs telling again, every time, in the page's own JavaScript.
-        if !Muter.setPageMuted(muted, on: built) {
-            controller.addUserScript(
-                WKUserScript(source: Muter.script(muted: muted), injectionTime: .atDocumentStart, forMainFrameOnly: false)
-            )
-        }
         controller.addUserScript(
             WKUserScript(source: Veiling.picker, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         )
