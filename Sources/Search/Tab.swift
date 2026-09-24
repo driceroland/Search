@@ -202,12 +202,16 @@ final class Tab: ObservableObject, Identifiable {
     /// The letter a pinned tab is reduced to, and what a tab shows in place of
     /// an icon it doesn't have yet.
     var monogram: String {
-        let host = address?.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
-        return host.first.map { String($0).uppercased() } ?? "•"
+        let host = address?.host()?.lowercased() ?? ""
+        let domain = Vault.registrable(host)
+        return domain.first.map { String($0).uppercased() } ?? "•"
     }
 
     private func adoptIcon() {
-        guard let host = address?.host()?.lowercased() else { return }
+        guard let host = address?.host()?.lowercased() else {
+            icon = nil
+            return
+        }
         icon = Favicons.shared.cached(host)
     }
 
@@ -451,7 +455,9 @@ final class Tab: ObservableObject, Identifiable {
                     // a pinned tab lost the only thing that could bring it
                     // back, and vanished from the session altogether.
                     guard fresh.absoluteString != "about:blank" else { return }
-                    let moved = fresh.host() != self.address?.host()
+                    let freshHost = fresh.host()?.lowercased()
+                    let currentHost = self.address?.host()?.lowercased()
+                    let moved = freshHost != currentHost
                     self.address = fresh
                     if moved { self.adoptIcon() }
                 }
