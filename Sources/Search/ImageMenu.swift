@@ -40,8 +40,12 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
         // Only an address this menu will act on takes WebKit's own menu
         // away; any other scheme keeps it, rather than getting nothing.
         if (!/^(https?|data|blob):/i.test(el.currentSrc)) return;
+        // WebKit's own menu only steps aside when there is a way to ask for
+        // this one — otherwise a right-click shows nothing at all.
+        var relay = window.webkit && webkit.messageHandlers && webkit.messageHandlers.officeImages;
+        if (!relay) return;
         e.preventDefault();
-        window.webkit.messageHandlers.officeImages.postMessage({ src: el.currentSrc });
+        relay.postMessage({ src: el.currentSrc });
       }, true);
     })();
     """

@@ -157,9 +157,20 @@ final class StageView: NSView {
     }
 
     private func settle() {
+        // A video filling the screen has its page lent to WebKit's own
+        // window, with a placeholder left here in its place. The chrome
+        // stepping aside lays this stage out again in that same moment, and
+        // taking the page back then left the screen black with the sound
+        // still playing. WebKit puts it back itself on the way out.
+        if let web = wanted as? WKWebView, web.fullscreenState != .notInFullscreen { return }
+
         // Anything here that isn't wanted, out. Only ever what is actually
-        // ours: a page may be somewhere else on purpose.
-        for view in subviews where view !== wanted {
+        // ours: a page may be somewhere else on purpose. Except the Web
+        // Inspector docked beside the page: WebKit puts it here, next to the
+        // web view, and shrinks the page to make room. Taken out on the next
+        // resize, it left the page shrunk beside nothing (#91).
+        let docked = inspecting
+        for view in subviews where view !== wanted && !(docked && Self.isInspector(view)) {
             view.removeFromSuperview()
         }
 
@@ -178,7 +189,29 @@ final class StageView: NSView {
             wanted.needsDisplay = true
             wanted.layer?.setNeedsDisplay()
         }
-        wanted.frame = bounds
+        // With the inspector docked, WebKit lays the page and it out side by
+        // side as this view changes size; setting the page's frame here would
+        // cover the inspector.
+        if !(docked && subviews.contains(where: Self.isInspector)) {
+            wanted.frame = bounds
+        }
+    }
+
+    /// Whether the page on show has its Web Inspector up. WebKit answers only
+    /// through names outside its public framework, asked for before use (see
+    /// Inspector.swift).
+    private var inspecting: Bool {
+        guard let web = wanted as? WKWebView else { return false }
+        let get = NSSelectorFromString("_inspector")
+        guard web.responds(to: get), let inspector = web.perform(get)?.takeUnretainedValue() as? NSObject else { return false }
+        let visible = NSSelectorFromString("isVisible")
+        guard inspector.responds(to: visible) else { return false }
+        typealias Getter = @convention(c) (AnyObject, Selector) -> Bool
+        return unsafeBitCast(inspector.method(for: visible), to: Getter.self)(inspector, visible)
+    }
+
+    private static func isInspector(_ view: NSView) -> Bool {
+        String(describing: type(of: view)).hasPrefix("WKInspector")
     }
 }
 

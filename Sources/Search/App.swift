@@ -148,6 +148,10 @@ struct SearchApp: App {
                     .keyboardShortcut("b", modifiers: [.command, .shift])
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Show Bookmarks…") { browser.bookmarking = true }
+                Toggle("Show Bookmarks Bar", isOn: Binding(
+                    get: { browser.prefs.bookmarksBar },
+                    set: { on in withAnimation(Motion.glide) { browser.prefs.bookmarksBar = on } }
+                ))
                 // The bookmarks themselves follow, put in by AppKit (see
                 // BookmarkMenu in Bookmarks.swift).
             }
@@ -299,6 +303,14 @@ struct ContentView: View {
                 TabBar(browser: browser)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+
+            // The bookmarks bar, under the strip or beside the column's top.
+            if barShown {
+                BookmarksBar(browser: browser, bookmarks: browser.bookmarks)
+                    .padding(.leading, chrome.width)
+                    .padding(.top, band)
+                    .transition(.opacity)
+            }
         }
         .ignoresSafeArea()
         .animation(Motion.glide, value: browser.prefs.sidebar)
@@ -335,7 +347,14 @@ struct ContentView: View {
     /// What the column and the strip take from the page right now: animated
     /// as they come and go.
     private var chrome: CGSize {
-        CGSize(width: sidebar ? browser.prefs.sideWidth : 0, height: band)
+        CGSize(width: sidebar ? browser.prefs.sideWidth : 0, height: band + (barShown ? BookmarksBar.height : 0))
+    }
+
+    /// The bookmarks bar is up: asked for, there are bookmarks, and the tabs
+    /// aren't folded away or under a video filling the screen.
+    private var barShown: Bool {
+        browser.prefs.bookmarksBar && !browser.bookmarks.isEmpty && !browser.folded
+            && browser.active?.immersed != true
     }
 
     /// The room the page is laid out to leave them, which is not animated.
@@ -448,6 +467,16 @@ struct ContentView: View {
             // The column folded away, and out again at the edge (see Fold.swift).
             .overlay(alignment: .leading) { Fold(browser: browser, prefs: browser.prefs) }
             .overlay(alignment: .bottom) { bars }
+            .overlay {
+                // Over the page only: the column, the strip and the bookmarks
+                // bar stay as they are, uncovered and in reach.
+                PeekLayer(browser: browser)
+                    .padding(.leading, chrome.width)
+                    .padding(.top, chrome.height)
+                    // From the window's own top edge, as the page is:
+                    // the title bar's band is page too.
+                    .ignoresSafeArea()
+            }
             .overlay { field }
             .overlay { panels }
             // The field comes on its spring, and goes quickly: once Return
@@ -779,6 +808,10 @@ struct ContentView: View {
                 browser.cancelTabEdit()
                 return true
             }
+            if browser.peekTab != nil {
+                browser.closePeek()
+                return true
+            }
             if browser.makingSpace {
                 withAnimation(Motion.glide) { browser.makingSpace = false }
                 return true
@@ -962,7 +995,11 @@ struct ContentView: View {
         case "0":
             browser.resetZoom()
         case "w" where !shifted:
-            if let tab = browser.active { browser.close(tab) }
+            if browser.peekTab != nil {
+                browser.closePeek()
+            } else if let tab = browser.active {
+                browser.close(tab)
+            }
         case "l" where !shifted:
             browser.edit()
         case "r" where !shifted:

@@ -576,6 +576,20 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
         for item in items(for: roots) { menu.addItem(item) }
     }
 
+    /// A folder of the bookmarks bar, opened as a menu at the pointer: the
+    /// same items as the menu bar's, folders opening as they are reached.
+    func popUp(_ folder: Bookmark) {
+        let menu = NSMenu(title: folder.title)
+        let made = items(for: folder.children ?? [])
+        if made.isEmpty {
+            let empty = NSMenuItem(title: "Empty", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+        }
+        for item in made { menu.addItem(item) }
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
     private func items(for nodes: [Bookmark]) -> [NSMenuItem] {
         nodes.compactMap { node in
             let item: NSMenuItem

@@ -266,6 +266,10 @@ final class Browser: NSObject, ObservableObject {
         let tab: Tab.ID
         let spot: CGRect
         let logins: [Login]
+        /// The page the list was made for: its site, and whether it came in
+        /// the clear. A click fills only a page that still is that one.
+        let host: String
+        let clear: Bool
     }
     /// Set once you have picked, so the list doesn't come straight back for
     /// the box you are still in. Cleared when the caret leaves the boxes.
@@ -279,7 +283,7 @@ final class Browser: NSObject, ObservableObject {
         guard let offer = offering else { return }
         offering = nil
         let login = offer.login
-        guard Vault.save(host: login.host, user: login.user, password: login.password, used: Date()) else {
+        guard Vault.save(host: login.host, user: login.user, password: login.password, used: Date(), clear: login.clear) else {
             announce("The keychain refused it")
             return
         }
@@ -301,8 +305,14 @@ final class Browser: NSObject, ObservableObject {
     /// One of the accounts in the list, picked by name.
     func choose(_ login: Login) {
         lowering?.cancel()
-        guard let tab = tabs.first(where: { $0.id == suggesting?.tab }) ?? active else { return }
+        guard let list = suggesting, let tab = tabs.first(where: { $0.id == list.tab }) else { return }
         suggesting = nil
+        // The tab may have gone somewhere else while the list was up: a
+        // redirect, a script. What was offered for one site is never put
+        // into another's page.
+        guard curtain.host(of: tab.address) == list.host,
+              (tab.address?.scheme?.lowercased() == "http") == list.clear
+        else { return }
         pickedInto = tab.id
         tab.fill(user: login.user, password: login.password) { [weak self] worked in
             if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
@@ -351,10 +361,25 @@ final class Browser: NSObject, ObservableObject {
         relist()
     }
 
+    /// A password copied is asked for the way one shown is. It goes on this
+    /// Mac's clipboard only, not to your other devices', marked concealed
+    /// and transient, which is what clipboard managers go by to keep it out
+    /// of their history, and it is taken off again after a minute and a
+    /// half unless something else has been copied since.
     func copy(_ login: Login) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(login.password, forType: .string)
-        announce("Password copied")
+        Vault.prove("copy the password for \(login.host)") { [weak self] ok in
+            guard ok, let self else { return }
+            let board = NSPasteboard.general
+            board.prepareForNewContents(with: .currentHostOnly)
+            board.setString(login.password, forType: .string)
+            board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+            board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+            let copied = board.changeCount
+            DispatchQueue.main.asyncAfter(deadline: .now() + 90) {
+                if board.changeCount == copied { board.clearContents() }
+            }
+            announce("Password copied")
+        }
     }
 
     /// What came back from another browser's store, put in the keychain.
@@ -363,7 +388,7 @@ final class Browser: NSObject, ObservableObject {
         case .success(let found):
             var kept = 0
             for login in found.logins
-            where Vault.save(host: login.host, user: login.user, password: login.password, used: login.used) {
+            where Vault.save(host: login.host, user: login.user, password: login.password, used: login.used, clear: login.clear) {
                 kept += 1
             }
             var never = Vault.never
@@ -704,6 +729,8 @@ final class Browser: NSObject, ObservableObject {
     /// whether the card for a new space stands in for them (see SpaceSwipe).
     @Published var spaceSwipe: CGFloat = 0
     @Published var makingSpace = false
+    /// A link's page, peeked at over this one (see Peek.swift).
+    @Published var peekTab: Tab?
     /// Which way the last change of space went: 1 to the next, -1 back.
     @Published var spaceStep = 1
 
@@ -714,7 +741,11 @@ final class Browser: NSObject, ObservableObject {
         Shield.shared.enabled = prefs.shielded
         Shield.shared.compile()
         if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
-        if prefs.bench { Bench.shared.start(for: self) }
+        if prefs.bench {
+            Bench.shared.start(for: self)
+        } else if prefs.benchRefused {
+            announce("“Let a script drive Search” was turned on outside Settings, and stays off")
+        }
         welcoming = !prefs.welcomed
         // Asked to stay out of the way: it starts that way (see Fold.swift).
         folded = prefs.sidebar && prefs.sideHides
@@ -757,13 +788,13 @@ final class Browser: NSObject, ObservableObject {
             guard let self, let id = self.floating,
                   let tab = self.tabs.first(where: { $0.id == id })
             else { return }
-            tab.web.evaluateJavaScript(Isolate.skip(seconds))
+            tab.web.evaluateInSearch(Isolate.skip(seconds))
         }
         floater.onProgress = { [weak self] answer in
             guard let self, let id = self.floating,
                   let tab = self.tabs.first(where: { $0.id == id })
             else { return }
-            tab.web.evaluateJavaScript(Isolate.where_) { found, _ in
+            tab.web.evaluateInSearch(Isolate.where_) { found in
                 MainActor.assumeIsolated {
                     guard let pair = found as? [Any], pair.count == 2,
                           let through = pair[0] as? Double,
@@ -777,7 +808,7 @@ final class Browser: NSObject, ObservableObject {
             guard let self, let id = self.floating,
                   let tab = self.tabs.first(where: { $0.id == id })
             else { return }
-            tab.web.evaluateJavaScript(Isolate.toggle) { playing, _ in
+            tab.web.evaluateInSearch(Isolate.toggle) { playing in
                 MainActor.assumeIsolated { answer((playing as? Bool) ?? true) }
             }
         }
@@ -893,7 +924,7 @@ final class Browser: NSObject, ObservableObject {
                 guard let self else { return }
                 for tab in tabs + parkedTabs {
                     tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
-                    tab.built?.evaluateJavaScript(on ? AutoScroll.script : AutoScroll.off)
+                    tab.built?.evaluateInSearch(on ? AutoScroll.script : AutoScroll.off)
                 }
             }
             .store(in: &bag)
@@ -1055,6 +1086,8 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func select(_ tab: Tab) {
+        // A peek is over the tab it was opened from; another tab puts it away.
+        if peekTab != nil, tab.id != activeID { closePeek() }
         cancelTabEdit()
         summoning = false
         suggesting = nil
@@ -1097,8 +1130,6 @@ final class Browser: NSObject, ObservableObject {
             let loose = others.filter { $0.pin == nil }
             if let back = (loose.isEmpty ? others : loose).max(by: { $0.touched < $1.touched }) {
                 select(back)
-            } else if let asleepPin = tabs.first(where: { $0.id != tab.id }) {
-                select(asleepPin)
             } else {
                 newTab()
             }
@@ -1427,6 +1458,12 @@ final class Browser: NSObject, ObservableObject {
         activeID = active ?? row.first?.id
     }
 
+    /// A tab made outside the row — a peek being kept — put in it at `index`.
+    func insert(_ tab: Tab, at index: Int) {
+        tabs.insert(tab, at: min(max(0, index), tabs.count))
+        rememberSession()
+    }
+
     private func adopt(_ tab: Tab) {
         prepare(tab)
         tabs.append(tab)
@@ -1436,6 +1473,7 @@ final class Browser: NSObject, ObservableObject {
     /// Stepping away from a tab. A video you were watching does not stop
     /// existing because you went to look something up.
     private func leaving() {
+        guard prefs.floatsOnLeave else { return }
         lift(active, quietly: true)
     }
 
@@ -1479,7 +1517,7 @@ final class Browser: NSObject, ObservableObject {
         // A hero background on a studio's home page is a video too, and it
         // followed people around the desktop. ⌘⇧P still lifts from anywhere.
         if quietly, !Players.knows(tab.address) { return }
-        tab.web.evaluateJavaScript(Isolate.on) { [weak self] answer, _ in
+        tab.web.evaluateInSearch(Isolate.on) { [weak self] answer in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 guard (answer as? String) == "floating" else {
@@ -1502,10 +1540,10 @@ final class Browser: NSObject, ObservableObject {
         guard let id = floating, let tab = tabs.first(where: { $0.id == id }) else { return }
         floating = nil
         tab.floating = false
-        tab.web.evaluateJavaScript(Isolate.off)
+        tab.web.evaluateInSearch(Isolate.off)
     }
 
-    private func prepare(_ tab: Tab) {
+    func prepare(_ tab: Tab) {
         tab.delegate = self
         tab.onLink = { [weak self] tab, address in
             guard let self, prefs.showsLinks, tab.id == activeID else { return }
@@ -1555,11 +1593,16 @@ final class Browser: NSObject, ObservableObject {
             guard prefs.fillsPasswords, tab.id == activeID, pickedInto != tab.id,
                   let host = curtain.host(of: tab.address)
             else { return }
-            let known = Array(Vault.logins(matching: host).prefix(5))
-            suggesting = known.isEmpty ? nil : Suggesting(tab: tab.id, spot: spot, logins: known)
+            // A page that came over plain http can have been written by
+            // anyone on the way here — a café's network, a hotel's. It is
+            // offered only what was kept from plain http too, never an
+            // account kept from the https site of the same name.
+            let inTheClear = tab.address?.scheme?.lowercased() == "http"
+            let known = Array(Vault.logins(matching: host).filter { !inTheClear || $0.clear }.prefix(5))
+            suggesting = known.isEmpty ? nil : Suggesting(tab: tab.id, spot: spot, logins: known, host: host, clear: inTheClear)
         }
 
-        tab.onCredentials = { [weak self] tab, host, user, password in
+        tab.onCredentials = { [weak self] tab, host, user, password, clear in
             guard let self, prefs.savesPasswords, !password.isEmpty, !tab.shy,
                   !Vault.isNever(host)
             else { return }
@@ -1568,12 +1611,14 @@ final class Browser: NSObject, ObservableObject {
             if #available(macOS 15.4, *), Extensions.shared.passwordSavingTakenBy != nil { return }
             let known = Vault.logins(for: host)
             // Nothing to ask about one that is already known.
-            if let same = known.first(where: { $0.user == user && $0.password == password }) {
+            if var same = known.first(where: { $0.user == user && $0.password == password }) {
+                // Where it was last used is where it is offered from now on.
+                same.clear = clear
                 Vault.touch(same)
                 return
             }
             let offer = Offer(
-                login: Login(host: host, user: user, password: password, used: nil),
+                login: Login(host: host, user: user, password: password, used: nil, clear: clear),
                 changed: known.contains { $0.user == user }
             )
             guard offering != offer else { return }
@@ -1886,6 +1931,17 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             decisionHandler(.cancel)
             return
         }
+        // Shift-click, when Settings says so: a peek at the link, over this
+        // page (see Peek.swift). Only from a tab in the row — within a peek,
+        // a link just goes.
+        if prefs.peeksLinks, action.navigationType == .linkActivated,
+           ["http", "https"].contains(scheme),
+           action.modifierFlags.intersection([.shift, .command, .option, .control]) == .shift,
+           let from = tab(for: webView), peekTab == nil {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { [weak self] in self?.peek(url, from: from) }
+            return
+        }
         if action.navigationType == .linkActivated,
            ["http", "https"].contains(scheme),
            action.modifierFlags.contains(.command) {
@@ -1908,8 +1964,33 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         if ["http", "https", "file", "about", "data", "blob", "chrome-extension", "webkit-extension"].contains(scheme) {
             decisionHandler(.allow)
         } else {
-            NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
+            handOff(url, scheme: scheme, action: action, from: webView)
+        }
+    }
+
+    /// An address for another app — mail, a call, a meeting. Only the page
+    /// itself may ask, or a click inside one of its frames; a frame that
+    /// asks on its own (an advertisement, say) is ignored. And the other app
+    /// opens only once you have said so, as in Safari — except a mail or
+    /// phone link you just clicked on, which is exactly what it says.
+    private func handOff(_ url: URL, scheme: String, action: WKNavigationAction, from webView: WKWebView) {
+        let clicked = action.navigationType == .linkActivated
+        guard action.targetFrame?.isMainFrame ?? true || clicked else { return }
+        guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return }
+        if clicked, ["mailto", "tel"].contains(scheme) {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        let name = FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "")
+        let alert = NSAlert()
+        alert.messageText = "Open \u{201C}\(name)\u{201D}?"
+        alert.informativeText = "\(webView.url?.host() ?? "This page") wants to open \(name)."
+        alert.addButton(withTitle: "Open")
+        alert.addButton(withTitle: "Cancel")
+        Dialogs.show(alert, over: webView) { answer in
+            guard answer == .alertFirstButtonReturn else { return }
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -1923,6 +2004,13 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         let from = tab(for: webView)?.id ?? activeID
+        // WebKit's copy of the opener's configuration still holds the
+        // opener's user content controller — its scripts and its message
+        // handlers. Shared, the new tab claimed the opener's handlers as its
+        // own, and closing or sleeping it took them off the opener's page:
+        // right-click on a picture on X, after following a link out of it,
+        // did nothing at all. Each tab gets a controller of its own.
+        configuration.userContentController = WKUserContentController()
         let tab = Tab(shy: tab(for: webView)?.shy ?? false, configuration: configuration)
         adopt(tab)
         tab.opener = from
@@ -1946,6 +2034,16 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // youtube.com and some servers do on their redirects.
         if let http = response.response as? HTTPURLResponse, (300...399).contains(http.statusCode) {
             decisionHandler(.allow)
+            return
+        }
+        // A server that says "attachment" means a file to keep, even one
+        // WebKit could show. Gmail's download button loads the attachment
+        // into a hidden frame and counts on exactly that: a PDF shown there
+        // instead was the button doing nothing at all.
+        if let http = response.response as? HTTPURLResponse,
+           let disposition = http.value(forHTTPHeaderField: "Content-Disposition"),
+           disposition.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment") {
+            decisionHandler(.download)
             return
         }
         decisionHandler(response.canShowMIMEType ? .allow : .download)

@@ -20,6 +20,8 @@ final class Favicons {
     private var memory: [String: NSImage] = [:]
     private var busy: Set<String> = []
     private var missing: Set<String> = []
+    /// Keys with no file on disk, as far as `known` has looked.
+    private var absent: Set<String> = []
 
     private static var folder: URL { Store.folder.appendingPathComponent("icons", isDirectory: true) }
     private static func file(_ key: String) -> URL { folder.appendingPathComponent(key + ".png") }
@@ -44,7 +46,15 @@ final class Favicons {
 
     private func known(_ key: String) -> NSImage? {
         if let hit = memory[key] { return hit }
-        guard let image = NSImage(contentsOf: Favicons.file(key)) else { return nil }
+        // A host with no icon on disk is looked for there once, not on every
+        // line of every list that shows it: the History panel asked for two
+        // thousand of them each time it drew. One that arrives later goes
+        // into `memory`, which is asked first.
+        if absent.contains(key) { return nil }
+        guard let image = NSImage(contentsOf: Favicons.file(key)) else {
+            absent.insert(key)
+            return nil
+        }
         memory[key] = image
         return image
     }
