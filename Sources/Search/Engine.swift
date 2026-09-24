@@ -1,7 +1,7 @@
 import Foundation
 
 enum Engine: String, CaseIterable, Identifiable {
-    case google, duckduckgo, bing, ecosia, startpage, kagi, custom
+    case google, duckduckgo, bing, ecosia, startpage, kagi, brave, qwant, custom
 
     static let standard = Engine.google
 
@@ -15,6 +15,8 @@ enum Engine: String, CaseIterable, Identifiable {
         case .ecosia: return "Ecosia"
         case .startpage: return "Startpage"
         case .kagi: return "Kagi"
+        case .brave: return "Brave Search"
+        case .qwant: return "Qwant"
         case .custom: return "Custom"
         }
     }
@@ -27,6 +29,8 @@ enum Engine: String, CaseIterable, Identifiable {
         case .ecosia: return "https://www.ecosia.org/search?q=%s"
         case .startpage: return "https://www.startpage.com/sp/search?query=%s"
         case .kagi: return "https://kagi.com/search?q=%s"
+        case .brave: return "https://search.brave.com/search?q=%s"
+        case .qwant: return "https://www.qwant.com/?q=%s"
         case .custom:
             let trimmed = custom.trimmingCharacters(in: .whitespacesAndNewlines)
             return Engine.accepts(trimmed) ? trimmed : Engine.standard.template(custom: "")
