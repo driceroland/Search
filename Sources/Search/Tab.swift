@@ -393,6 +393,7 @@ final class Tab: ObservableObject, Identifiable {
     /// Switcher.swift). Kept through sleep, so a tab that gave its view back
     /// is still pictured.
     @Published private(set) var thumb: NSImage?
+    private var thumbCapture = 0
 
     private var watch: [NSKeyValueObservation] = []
 
@@ -859,13 +860,20 @@ final class Tab: ObservableObject, Identifiable {
         if built.window == nil, built.frame.isEmpty, let stage, !stage.equalTo(.zero) {
             built.frame.size = stage
         }
+        let capture = thumbCapture
         let small = WKSnapshotConfiguration()
         small.snapshotWidth = 320
         built.takeSnapshot(with: small) { [weak self] image, _ in
             MainActor.assumeIsolated {
-                if let image { self?.thumb = image }
+                guard let self, let image, self.thumbCapture == capture else { return }
+                self.thumb = image
             }
         }
+    }
+
+    func discardThumbnail() {
+        thumbCapture += 1
+        thumb = nil
     }
 
     nonisolated private static func jpeg(_ image: CGImage) -> Data? {

@@ -10,7 +10,7 @@ import SwiftUI
 // The order is read once, when the panel opens: a list that reshuffled under
 // the walk would never land where you meant.
 
-struct Switcher: Equatable {
+struct Switcher {
     /// The tabs, most recently looked at first.
     var order: [Tab.ID]
     /// Which one the walk is on.
@@ -79,48 +79,50 @@ struct SwitcherPanel: View {
             let height = TabCard.height(width)
             let fit = max(1, Int((room.size.height * 0.86 - 2 * inset) / (height + Self.gap)))
 
-            ScrollViewReader { scroller in
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(
-                        columns: Array(repeating: GridItem(.fixed(width), spacing: Self.gap), count: columns),
-                        spacing: Self.gap
-                    ) {
-                        ForEach(tabs) { tab in
-                            TabCard(tab: tab, chosen: tab.id == chosen, width: width)
-                                .id(tab.id)
-                                .onContinuousHover { phase in
-                                    if case .active = phase { browser.point(at: tab.id) }
-                                }
-                                .onTapGesture {
-                                    browser.switcher = nil
-                                    browser.select(tab)
-                                }
+            if columns > 0 {
+                ScrollViewReader { scroller in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVGrid(
+                            columns: Array(repeating: GridItem(.fixed(width), spacing: Self.gap), count: columns),
+                            spacing: Self.gap
+                        ) {
+                            ForEach(tabs) { tab in
+                                TabCard(tab: tab, chosen: tab.id == chosen, width: width)
+                                    .id(tab.id)
+                                    .onContinuousHover { phase in
+                                        if case .active = phase { browser.point(at: tab.id) }
+                                    }
+                                    .onTapGesture {
+                                        browser.switcher = nil
+                                        browser.select(tab)
+                                    }
+                            }
                         }
                     }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(
+                        width: CGFloat(columns) * width + CGFloat(columns - 1) * Self.gap,
+                        height: CGFloat(min(rows, fit)) * (height + Self.gap) - Self.gap
+                    )
+                    .onAppear { scroller.scrollTo(chosen) }
+                    .onChange(of: chosen) { _, id in scroller.scrollTo(id) }
                 }
-                .scrollBounceBehavior(.basedOnSize)
-                .frame(
-                    width: CGFloat(columns) * width + CGFloat(columns - 1) * Self.gap,
-                    height: CGFloat(min(rows, fit)) * (height + Self.gap) - Self.gap
-                )
-                .onAppear { scroller.scrollTo(chosen) }
-                .onChange(of: chosen) { _, id in scroller.scrollTo(id) }
+                .padding(inset)
+                .background {
+                    RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
+                                .fill(Color(white: 0.08).opacity(0.9))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.35), radius: 40, y: 14)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(inset)
-            .background {
-                RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
-                            .fill(Color(white: 0.08).opacity(0.9))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.35), radius: 40, y: 14)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .environment(\.colorScheme, .dark)
     }
@@ -157,16 +159,7 @@ private struct TabCard: View {
                     .font(.system(size: width * 0.082, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.94))
                     .lineLimit(1)
-                    .fixedSize()
                     .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                    .clipped()
-                    // Faded out rather than cut with an ellipsis, as Dia does.
-                    .mask(
-                        LinearGradient(
-                            stops: [.init(color: .black, location: 0.82), .init(color: .clear, location: 1)],
-                            startPoint: .leading, endPoint: .trailing
-                        )
-                    )
             }
             .padding(.horizontal, width * 0.025)
             .frame(width: inner, height: width * 0.2)

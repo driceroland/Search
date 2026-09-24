@@ -15,11 +15,11 @@ final class Browser: NSObject, ObservableObject {
             // gone unwatched long enough to sleep is counted from here, not
             // from when it was first picked. Its picture for ⌃Tab is taken
             // now too, while its page is still the one on screen.
-            guard oldValue != activeID, let old = oldValue,
-                  let left = tabs.first(where: { $0.id == old }) else { return }
+            guard oldValue != activeID, let old = oldValue else { return }
             linkStatus.dismiss()
+            guard let left = tabs.first(where: { $0.id == old }) else { return }
             left.touch()
-            left.capture()
+            if prefs.tabPictures { left.capture() }
         }
     }
 
@@ -886,6 +886,16 @@ final class Browser: NSObject, ObservableObject {
             .dropFirst()
             .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
             .store(in: &bag)
+        prefs.$tabPictures
+            .dropFirst()
+            .filter { !$0 }
+            .sink { [weak self] _ in
+                guard let self else { return }
+                switcher = nil
+                for tab in tabs + parkedTabs { tab.discardThumbnail() }
+            }
+            .store(in: &bag)
+
         prefs.$shielded
             .dropFirst()
             .sink { [weak self] on in
@@ -1150,6 +1160,7 @@ final class Browser: NSObject, ObservableObject {
                 remember(tab, at: 0)
                 tab.close()
                 adopt(fresh)
+                switcher = nil
                 tabs = [fresh]
                 activeID = fresh.id
                 typed = ""
@@ -1458,6 +1469,7 @@ final class Browser: NSObject, ObservableObject {
     /// Another space's row put on screen in place of this one (see
     /// Spaces.swift) — empty, for one that restores its own.
     func showRow(_ row: [Tab], active: Tab.ID?) {
+        switcher = nil
         tabs = row
         activeID = active ?? row.first?.id
     }
