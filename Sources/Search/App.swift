@@ -680,6 +680,10 @@ struct ContentView: View {
                 browser.recalling = false
                 return true
             }
+            if browser.hoarding {
+                browser.hoarding = false
+                return true
+            }
             if browser.suggesting != nil {
                 browser.dropChoice()
                 return true
