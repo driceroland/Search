@@ -134,6 +134,11 @@ struct Fold: View {
         .onChange(of: browser.editingTab) { _, editing in
             if editing == nil, !inside, browser.peeking { peek(false) }
         }
+        // The bookmarks list closed: no need to wait for the pointer to
+        // move again before the column follows it back in.
+        .onChange(of: browser.bookmarksOpen) { _, open in
+            if !open, !inside, browser.peeking { peek(false) }
+        }
     }
 
     /// Folded, and not taken over by a page filling the screen.
@@ -175,14 +180,7 @@ struct Fold: View {
             // column, counts as the column.
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
             let onWindow = top == window.windowNumber
-            // A popover sits at a window level `windowNumber(at:)` never
-            // resolves to the top, even with the pointer right over it, so
-            // its own frame is checked directly, not gated on `!onWindow`:
-            // `top` stays the column's window number the whole time a
-            // popover opened from it is in front.
-            let onOwnPanel = NSApp.windows.contains { panel in
-                panel !== window && panel.isVisible && panel.frame.contains(screen)
-            }
+            let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
             let reach = prefs.sidebar ? prefs.sideWidth : Metrics.strip
             // A bookmark's link opens in the tab the popover sits over, or
             // clicking one just moves the pointer off toward the page: the
