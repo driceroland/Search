@@ -462,6 +462,21 @@ struct ContentView: View {
         }
     }
 
+    /// ⌃Tab's pictures of the tabs (see Switcher.swift). Up a beat after the
+    /// press, so a quick ⌃Tab back to the last tab never flashes it; gone at
+    /// once on letting go, with the page already switched underneath.
+    @ViewBuilder
+    private var switcher: some View {
+        if let shown = browser.switcher {
+            SwitcherPanel(browser: browser, shown: shown)
+                .ignoresSafeArea()
+                .transition(.asymmetric(
+                    insertion: .opacity.animation(.easeOut(duration: 0.12).delay(0.08)),
+                    removal: .identity
+                ))
+        }
+    }
+
     var body: some View {
         window_
             // The column folded away, and out again at the edge (see Fold.swift).
@@ -479,6 +494,7 @@ struct ContentView: View {
             }
             .overlay { field }
             .overlay { panels }
+            .overlay { switcher }
             // The field comes on its spring, and goes quickly: once Return
             // is pressed the page is on its way, and the field is not what
             // there is to watch.
@@ -495,6 +511,8 @@ struct ContentView: View {
                 resting?.isHidden = false
                 // Only the window you were in, or every window's video would come.
                 browser.appLeft()
+                // ⌃ let go of in another app is never heard here.
+                browser.switcher = nil
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { Browser.front = browser }
@@ -755,8 +773,9 @@ struct ContentView: View {
         guard keys == nil else { return }
         keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
             guard event.type == .keyDown else {
-                // ⌘ let go of ends a ⌘K walk, wherever it stopped.
+                // ⌘ let go of ends a ⌘K walk, wherever it stopped; ⌃, a ⌃Tab one.
                 if !event.modifierFlags.contains(.command) { browser.landSummon() }
+                if !event.modifierFlags.contains(.control) { browser.landFlip() }
                 return event
             }
             return take(event) ? nil : event
@@ -806,6 +825,10 @@ struct ContentView: View {
         // Escape puts the page back. On a blank tab there is no page to put
         // back, so it belongs to whatever else wants it.
         if event.keyCode == 53 {
+            if browser.switcher != nil {
+                browser.switcher = nil
+                return true
+            }
             if browser.editingTab != nil {
                 browser.cancelTabEdit()
                 return true
@@ -868,13 +891,15 @@ struct ContentView: View {
         // links, as in every browser. It used to walk the row of tabs, which
         // took it from anyone filling in a form. ⌃Tab walks the row and comes
         // round to the first again, ⌃⇧Tab the other way — the keys every
-        // other browser uses for that.
+        // other browser uses for that. Or, switched on, it brings up the tabs
+        // as pictures, the one you were just on first (see Switcher.swift).
         //
         // While an address is being typed, the list under the field is what
         // there is to move through, and Return takes whatever the walk landed on.
         if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option) {
             if flags.contains(.control) {
-                browser.step(flags.contains(.shift) ? -1 : 1)
+                let way = flags.contains(.shift) ? -1 : 1
+                if browser.prefs.tabPictures { browser.flip(way) } else { browser.step(way) }
                 return true
             }
             if browser.editingTab != nil { return true }

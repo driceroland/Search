@@ -290,6 +290,10 @@ struct SettingsPanel: View {
             Line("Spaces", "Separate sets of tabs, signed in where the others are or starting afresh, switched with ⌃1–⌃9, two fingers sideways over the column, or the space's icon. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
                 Switch(on: $prefs.usesSpaces)
             }
+            Rule()
+            Line("⌃Tab shows the tabs as pictures", "The one you were just on first, as in Arc and Dia: tap for the last tab, or hold ⌃ and keep pressing Tab, then let go. Off, ⌃Tab walks along the row.") {
+                Switch(on: $prefs.tabPictures)
+            }
         }
     }
 

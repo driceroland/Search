@@ -13,10 +13,13 @@ final class Browser: NSObject, ObservableObject {
         didSet {
             // The tab just left is the tab just looked at. Whether a tab has
             // gone unwatched long enough to sleep is counted from here, not
-            // from when it was first picked.
+            // from when it was first picked. Its picture for ⌃Tab is taken
+            // now too, while its page is still the one on screen.
             guard oldValue != activeID, let old = oldValue else { return }
             linkStatus.dismiss()
-            tabs.first { $0.id == old }?.touch()
+            guard let left = tabs.first(where: { $0.id == old }) else { return }
+            left.touch()
+            if prefs.tabPictures { left.capture() }
         }
     }
 
@@ -122,6 +125,8 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var summoning = false
     /// True between the first ⌘K and letting go of ⌘.
     var cycling = false
+    /// ⌃Tab's pictures of the tabs, up while ⌃ is held (see Switcher.swift).
+    @Published var switcher: Switcher?
 
     var active: Tab? { tabs.first { $0.id == activeID } }
     var fieldShowing: Bool { editing || active?.isBlank ?? true }
@@ -881,6 +886,16 @@ final class Browser: NSObject, ObservableObject {
             .dropFirst()
             .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
             .store(in: &bag)
+        prefs.$tabPictures
+            .dropFirst()
+            .filter { !$0 }
+            .sink { [weak self] _ in
+                guard let self else { return }
+                switcher = nil
+                for tab in tabs + parkedTabs { tab.discardThumbnail() }
+            }
+            .store(in: &bag)
+
         prefs.$shielded
             .dropFirst()
             .sink { [weak self] on in
@@ -1145,6 +1160,7 @@ final class Browser: NSObject, ObservableObject {
                 remember(tab, at: 0)
                 tab.close()
                 adopt(fresh)
+                switcher = nil
                 tabs = [fresh]
                 activeID = fresh.id
                 typed = ""
@@ -1453,6 +1469,7 @@ final class Browser: NSObject, ObservableObject {
     /// Another space's row put on screen in place of this one (see
     /// Spaces.swift) — empty, for one that restores its own.
     func showRow(_ row: [Tab], active: Tab.ID?) {
+        switcher = nil
         tabs = row
         activeID = active ?? row.first?.id
     }
