@@ -208,6 +208,26 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autocorrect)
             }
             Rule()
+            Line("Show where links go", "Point at a link and its address shows at the bottom of the page") {
+                Switch(on: $prefs.showsLinks)
+            }
+            Rule()
+            Line("Scroll with the middle button", "Click the wheel on a page, then move the mouse up or down to scroll, as on Windows. Click again to stop") {
+                Switch(on: $prefs.autoScroll)
+            }
+            Rule()
+            Line("Pages at 120 Hz", "Animations and scrolling in pages at up to 120 frames a second on a screen that can, instead of 60 as in Safari. Uses more battery. Open tabs follow when reloaded") {
+                Switch(on: $prefs.fastPages)
+            }
+            Rule()
+            Line("Flick the floating video to a corner", "Two fingers on it send it to the corner or edge they point at, instead of pushing it along. Dragging still puts it anywhere") {
+                Switch(on: $prefs.floatFlicks)
+            }
+            Rule()
+            Line("Float the video when you switch apps", "A video playing on the site you're on comes out into its floating window as another app comes to the front, and goes back into its tab when you return") {
+                Switch(on: $prefs.floatsAway)
+            }
+            Rule()
             Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
                 Switch(on: $prefs.bench)
             }
@@ -245,6 +265,10 @@ struct SettingsPanel: View {
             Rule()
             Line("Share button", "A door beside the bookmarks for File › Share… — Mail, Messages, AirDrop and the rest") {
                 Switch(on: $prefs.showsShare)
+            }
+            Rule()
+            Line("Show how far you've read", "The tab you're on fills with grey as you scroll down the page") {
+                Switch(on: $prefs.showsReading)
             }
             Rule()
             Line("Sleep tabs you aren't using", "After half an hour away they come back where you left them. Pinned tabs, sound, calls and anything typed stay awake.") {
@@ -287,9 +311,11 @@ struct SettingsPanel: View {
                 Rule()
                 Line(
                     "Offer passkeys",
-                    prefs.passkeysPossible
-                        ? "Touch ID or an iCloud passkey, on sites that offer one"
-                        : "Needs an Apple entitlement this build doesn't have — off keeps sites to the password"
+                    !prefs.passkeysPossible
+                        ? "Needs an Apple entitlement this build doesn't have — off keeps sites to the password"
+                        : Passkeys.access == .denied
+                        ? "macOS was told no — System Settings › Privacy & Security › Passkeys Access for Web Browsers"
+                        : "Touch ID or an iCloud passkey, on sites that offer one"
                 ) {
                     Switch(on: $prefs.passkeys)
                 }
@@ -409,6 +435,8 @@ struct SettingsPanel: View {
                 Shortcut("⌘K", "Switch tab")
                 Rule()
                 Shortcut("⌘T  ⌘W  ⇧⌘T", "New, close, reopen tab")
+                Rule()
+                Shortcut("⇧⌘V", "Paste and go")
                 Rule()
                 Shortcut("⌃⇥  ⌘1–9", "Next tab, a tab by its place")
                 Rule()

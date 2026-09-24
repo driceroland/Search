@@ -193,16 +193,26 @@ struct SideBar: View {
                     ViewThatFits(in: .vertical) {
                         rows
                         ScrollViewReader { proxy in
-                            ScrollView(.vertical) { rows }
-                                // The tab you go to is the tab you see — ⌘1–⌘9,
-                                // ⇧⌘], a link opening beside the one on screen.
-                                .onChange(of: browser.activeID) { _, id in
-                                    guard let id else { return }
-                                    withAnimation(Motion.glide) { proxy.scrollTo(id) }
-                                }
-                                .onAppear {
-                                    if let id = browser.activeID { proxy.scrollTo(id, anchor: .center) }
-                                }
+                            // The scroll view reaches into the margin on
+                            // the right and the rows keep it inside, so the
+                            // system's bar lands in the margin beside them
+                            // rather than over the cross on the tab under the
+                            // pointer. The column's edge lies over that margin
+                            // and answers first, so the bar never fights the
+                            // resize; the wheel and the trackpad still scroll.
+                            ScrollView(.vertical) {
+                                rows.padding(.trailing, 10)
+                            }
+                            .padding(.trailing, -10)
+                            // The tab you go to is the tab you see — ⌘1–⌘9,
+                            // ⇧⌘], a link opening beside the one on screen.
+                            .onChange(of: browser.activeID) { _, id in
+                                guard let id else { return }
+                                withAnimation(Motion.glide) { proxy.scrollTo(id) }
+                            }
+                            .onAppear {
+                                if let id = browser.activeID { proxy.scrollTo(id, anchor: .center) }
+                            }
                         }
                     }
                 }
@@ -586,6 +596,11 @@ private struct SideRow: View {
 
     private var editing: Bool { browser.editingTab == tab.id }
 
+    /// The ring or the speaker, which stay for as long as the page loads or
+    /// plays and so keep a place of their own at the end of the row. The
+    /// cross is only there under the pointer, and takes none.
+    private var status: Bool { !editing && (tab.loading || tab.noisy) }
+
     var body: some View {
         HStack(spacing: 8) {
             if editing {
@@ -613,43 +628,66 @@ private struct SideRow: View {
                     .foregroundStyle(colour)
             }
 
-            Spacer(minLength: 2)
+            if status {
+                Spacer(minLength: 2)
 
+                ZStack {
+                    if tab.loading {
+                        Ring().transition(.opacity)
+                    } else {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(Palette.muted)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: 15, height: 15)
+                // The cross takes this place while the pointer is here.
+                .opacity(hovering ? 0 : 1)
+            }
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, status ? 7 : 10)
+        .frame(height: 28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // The title keeps its length under the pointer and fades out
+        // beneath the cross, rather than being cut shorter, so its end
+        // doesn't jump on each row the pointer passes.
+        .mask {
             ZStack {
-                if hovering, !editing {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(Palette.muted)
-                        .frame(width: 15, height: 15)
-                        .background(Palette.ink.opacity(0.07), in: Circle())
-                        .transition(.opacity)
-                } else if tab.loading {
-                    Ring().transition(.opacity)
-                } else if tab.noisy {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(Palette.muted)
-                        .transition(.opacity)
+                Rectangle().opacity(hovering && !editing && !status ? 0 : 1)
+                HStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 16)
+                    Color.clear.frame(width: 26)
                 }
             }
-            .frame(width: editing ? 0 : 15, height: 15)
-            .opacity(editing ? 0 : 1)
-            .overlay {
-                if !editing {
+        }
+        .overlay(alignment: .trailing) {
+            if !editing {
+                ZStack {
+                    if hovering {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Palette.muted)
+                            .frame(width: 15, height: 15)
+                            .background(Palette.ink.opacity(0.07), in: Circle())
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: 15, height: 15)
+                .overlay {
                     Color.clear
                         .frame(width: 30, height: 28)
                         .contentShape(Rectangle())
                         .onTapGesture { if hovering { close() } }
                 }
+                .padding(.trailing, 7)
             }
-            .animation(Motion.quick, value: hovering)
-            .animation(Motion.quick, value: tab.loading)
-            .animation(Motion.quick, value: tab.noisy)
         }
-        .padding(.leading, 10)
-        .padding(.trailing, editing ? 10 : 7)
-        .frame(height: 28)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(Motion.quick, value: tab.loading)
+        .animation(Motion.quick, value: tab.noisy)
         .background { ground }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -674,11 +712,13 @@ private struct SideRow: View {
         if live {
             ZStack(alignment: .leading) {
                 Rectangle().fill(Palette.wash)
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(Palette.ink.opacity(0.055))
-                        .frame(width: geo.size.width * tab.reading)
-                        .animation(.easeOut(duration: 0.15), value: tab.reading)
+                if prefs.showsReading {
+                    GeometryReader { geo in
+                        Rectangle()
+                            .fill(Palette.ink.opacity(0.055))
+                            .frame(width: geo.size.width * tab.reading)
+                            .animation(.easeOut(duration: 0.15), value: tab.reading)
+                    }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))

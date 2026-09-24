@@ -15,6 +15,7 @@ final class Browser: NSObject, ObservableObject {
             // gone unwatched long enough to sleep is counted from here, not
             // from when it was first picked.
             guard oldValue != activeID, let old = oldValue else { return }
+            linkStatus.dismiss()
             tabs.first { $0.id == old }?.touch()
         }
     }
@@ -32,6 +33,7 @@ final class Browser: NSObject, ObservableObject {
     /// Everything there is to set. Held here so the whole window redraws when
     /// one of them changes.
     let prefs = Preferences()
+    let linkStatus = LinkStatus()
     /// The settings panel.
     @Published var tuning = false
     /// The first-launch walk-through, over everything. Also from the menu.
@@ -450,7 +452,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// The last few places, for the History menu.
     var recentlyVisited: [History.Trace] {
-        Array(history.everything().prefix(8))
+        history.recent()
     }
 
     // MARK: - the camera and the microphone
@@ -638,6 +640,21 @@ final class Browser: NSObject, ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.absoluteString, forType: .string)
         announce("Address copied")
+    }
+
+    /// For pasting into notes and messages that read Markdown: a title that
+    /// links, not a bare address to explain in your own words.
+    func copyMarkdownLink() {
+        guard let tab = active, let url = tab.address else { return }
+        // A backslash first, so the ones added next aren't doubled; then both
+        // brackets, either of which would end or break the link's text.
+        let title = tab.label
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "[", with: "\\[")
+            .replacingOccurrences(of: "]", with: "\\]")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("[\(title)](\(url.absoluteString))", forType: .string)
+        announce("Link copied")
     }
 
     func announce(_ text: String) {
@@ -869,6 +886,31 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // Every tab's next page, and the page each is showing now (see AutoScroll.swift).
+        prefs.$autoScroll
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self else { return }
+                for tab in tabs + parkedTabs {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.built?.evaluateJavaScript(on ? AutoScroll.script : AutoScroll.off)
+                }
+            }
+            .store(in: &bag)
+
+        // Every tab's next page, and the page each is showing now.
+        prefs.$showsLinks
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self else { return }
+                if !on { linkStatus.dismiss() }
+                for tab in tabs + parkedTabs {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.built?.evaluateJavaScript(on ? HoveredLink.script : HoveredLink.off, in: nil, in: .defaultClient)
+                }
+            }
+            .store(in: &bag)
+
         prefs.$passkeys
             .dropFirst()
             .sink { [weak self] on in
@@ -956,6 +998,13 @@ final class Browser: NSObject, ObservableObject {
     // MARK: - tabs
 
     func newTab() {
+        // On a private tab, a new one is private too: ⌘T from a page that
+        // keeps nothing and landing on one that keeps everything is how a
+        // private search ends up in the history.
+        if active?.shy == true {
+            newShyTab()
+            return
+        }
         // An extension's new tab page, if one asked and you said yes.
         if #available(macOS 15.4, *), let page = Extensions.shared.newTabPage {
             open(page, foreground: true)
@@ -1170,12 +1219,20 @@ final class Browser: NSObject, ObservableObject {
     /// A link opened from a page lands next to the page it came from, not at
     /// the far end of the row — unless it is one of a batch, which keeps the
     /// order it came in.
+    ///
+    /// `from`: the tab it was opened out of. A private one's opens private,
+    /// in the same store, as a link that asks for a new window already does.
     @discardableResult
-    func open(_ url: URL, foreground: Bool, atEnd: Bool = false) -> Tab {
+    func open(_ url: URL, foreground: Bool, atEnd: Bool = false, from source: Tab? = nil) -> Tab {
         // An extension's own page is served only to a view built from that
         // extension's configuration.
         let url = Browser.page(url)
-        let tab = Tab(configuration: Browser.extensionConfiguration(for: url))
+        let page = Browser.extensionConfiguration(for: url)
+        let tab = if let source, source.shy, page == nil {
+            Tab(shy: true, configuration: Web.configuration(shy: true, store: source.store))
+        } else {
+            Tab(configuration: page)
+        }
         prepare(tab)
         let here = atEnd ? nil : tabs.firstIndex { $0.id == activeID }
         tabs.insert(tab, at: here.map { $0 + 1 } ?? tabs.count)
@@ -1194,10 +1251,20 @@ final class Browser: NSObject, ObservableObject {
     /// built from the extension's configuration, which WebKit keeps to that
     /// extension's own pages, so the load went nowhere and the button did
     /// nothing. The tab is swapped where it stands for an ordinary one on
-    /// the site: to the eye, the page went there.
+    /// the site: to the eye, the page went there. The other way round too:
+    /// an extension sending a website's tab to one of its own pages.
     func replace(_ tab: Tab, going url: URL) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-        let fresh = Tab(bench: tab.bench, configuration: Browser.extensionConfiguration(for: url))
+        // A private tab stays private, and keeps its own sign-ins when it
+        // had them; an extension's page it showed was in that extension's
+        // store, so going back to the web takes a new private one.
+        let page = Browser.extensionConfiguration(for: url)
+        let fresh = if tab.shy {
+            Tab(shy: true, bench: tab.bench, configuration: page
+                ?? Web.configuration(shy: true, store: tab.store.isPersistent ? nil : tab.store))
+        } else {
+            Tab(bench: tab.bench, configuration: page)
+        }
         prepare(fresh)
         let wasActive = activeID == tab.id
         tabs[index] = fresh
@@ -1212,6 +1279,13 @@ final class Browser: NSObject, ObservableObject {
     static func page(_ url: URL) -> URL {
         if #available(macOS 15.4, *) { return Extensions.current(url) }
         return url
+    }
+
+    /// The extension an address belongs to, or nil for the web.
+    static func extensionHost(of url: URL) -> String? {
+        guard #available(macOS 15.4, *) else { return nil }
+        let url = Extensions.current(url)
+        return url.scheme == Extensions.scheme ? url.host : nil
     }
 
     /// The configuration for an extension's page, or nil for anything else.
@@ -1256,13 +1330,36 @@ final class Browser: NSObject, ObservableObject {
             editing = false
             typed = ""
         } else {
-            open(url, foreground: true)
+            open(url, foreground: true, from: active)
         }
+    }
+
+    /// A bookmark picked from the button's list or the full one. Either
+    /// goes as the page starts: the list off the button used to stay open
+    /// over the page it had just sent you to.
+    func pickBookmark(_ url: URL) {
+        bookmarking = false
+        bookmarksOpen = false
+        visit(url)
     }
 
     /// ⌘⇧N. A tab that keeps nothing — its own cookies, its own sign-ins, no
     /// history, and no place in tomorrow's session.
     func newShyTab() {
+        // Never two empty private tabs, as ⌘T never makes two empty ones:
+        // one already open comes to the end of the row and is the one opened.
+        if let blank = tabs.last(where: { $0.isBlank && $0.shy && !$0.bench }) {
+            if let end = tabs.indices.last, tabs.firstIndex(where: { $0.id == blank.id }) != end {
+                move(blank, to: end)
+            }
+            if activeID != blank.id { leaving() }
+            activeID = blank.id
+            summoning = false
+            typed = ""
+            editing = false
+            focusRequest += 1
+            return
+        }
         let tab = Tab(shy: true)
         adopt(tab)
         leaving()
@@ -1277,10 +1374,11 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘D. The same page, beside itself.
     func duplicate() {
         guard let url = active?.address else { return }
-        open(url, foreground: true)
+        open(url, foreground: true, from: active)
     }
 
-    /// ⌘⇧V. What is in the clipboard, if it is a place — or a search.
+    /// ⌘⇧V, when nothing is being typed. What is in the clipboard, if it is a
+    /// place — or a search — in the tab you're on.
     func pasteAndGo() {
         guard let text = NSPasteboard.general.string(forType: .string),
               let url = destination(for: text.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -1341,6 +1439,27 @@ final class Browser: NSObject, ObservableObject {
         lift(active, quietly: true)
     }
 
+    /// Another app in front: the video comes along, as in Arc (Settings ›
+    /// General). Only one lifted this way goes home on its own when Search
+    /// comes back.
+    private var liftedAway = false
+
+    /// The window last in front. Asked once the app has gone to the back,
+    /// macOS no longer says which window was main.
+    static weak var front: Browser?
+
+    func appLeft() {
+        guard prefs.floatsAway, Browser.front == nil || Browser.front === self else { return }
+        liftedAway = !floater.showing
+        lift(active, quietly: true)
+    }
+
+    /// Back, and still on the tab it came from: into the tab again.
+    func appBack() {
+        defer { liftedAway = false }
+        if liftedAway, let id = floating, id == activeID { land() }
+    }
+
     /// ⌘⇧P, for lifting one out by hand.
     func toggleFloat() {
         if floater.showing {
@@ -1388,6 +1507,10 @@ final class Browser: NSObject, ObservableObject {
 
     private func prepare(_ tab: Tab) {
         tab.delegate = self
+        tab.onLink = { [weak self] tab, address in
+            guard let self, prefs.showsLinks, tab.id == activeID else { return }
+            linkStatus.show(address, over: tab.built)
+        }
         tab.onPick = { [weak self] tab, selector, label, note in
             guard let self, let host = curtain.host(of: tab.address) else { return }
             curtain.hide(selector, label: label, note: note, on: host)
@@ -1398,7 +1521,18 @@ final class Browser: NSObject, ObservableObject {
         }
         tab.onPickEnd = { [weak self] _ in self?.veiling = false }
         tab.onImageMenu = { [weak self] tab, url in self?.showImageMenu(for: tab, at: url) }
+        tab.searchName = { [weak self] in self.map { $0.prefs.engine.name(custom: $0.prefs.customEngine) } }
+        tab.onSearch = { [weak self] tab, text in
+            guard let self, let url = self.searchURL(for: text) else { return }
+            // From a private tab, the search is private too (see open(_:foreground:atEnd:from:)).
+            self.open(url, foreground: true, from: tab)
+        }
         tab.onStoreAdd = { [weak self] tab in self?.addFromStore(tab) }
+        // The middle button on a link opens it beside the tab you are on, as
+        // it does in every other browser (see MiddleRelay).
+        // From a private tab, the new one is private too, as for ⌘-click.
+        tab.onMiddleClick = { [weak self] tab, url in self?.open(url, foreground: false, from: tab) }
+        tab.onCross = { [weak self] tab, url in self?.replace(tab, going: url) }
 
         // The caret in a sign-in box: the accounts kept for this site hang
         // from the box, and go when the caret does. Nothing is filled on
@@ -1719,7 +1853,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
         // An extension's OAuth sign-in coming back: the address is the
         // answer, handed to the extension, and never loaded.
-        if ExtensionAuth.intercept(url, browser: self) {
+        if ExtensionAuth.intercept(url, browser: self, from: webView) {
             decisionHandler(.cancel)
             return
         }
@@ -1736,16 +1870,28 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         }
 
         // ⌘-click opens beside this tab and leaves you where you are; ⌘⇧-click
-        // takes you with it. Middle-click does what ⌘-click does, for hands
-        // that learned it that way.
+        // takes you with it.
+        //
+        // The middle button is not judged here. WebKit hands the browser a
+        // navigation action for a ⌘-click and none at all for a middle one,
+        // and where it does report a button it answers with a mask — 1 left,
+        // 2 right, 4 middle — so a check for 2 here would have meant the right
+        // button, not the middle (see MiddleRelay, which is where the middle
+        // button is answered).
+        //
+        // Should a WebKit ever hand one over for the middle button after all,
+        // it is cancelled: MiddleRelay has already opened the link in a tab of
+        // its own, and letting this one through would take the page there too.
+        if action.navigationType == .linkActivated, action.buttonNumber == 4 {
+            decisionHandler(.cancel)
+            return
+        }
         if action.navigationType == .linkActivated,
-           ["http", "https"].contains(scheme) {
-            let flags = action.modifierFlags
-            if flags.contains(.command) || action.buttonNumber == 2 {
-                open(url, foreground: flags.contains(.shift))
-                decisionHandler(.cancel)
-                return
-            }
+           ["http", "https"].contains(scheme),
+           action.modifierFlags.contains(.command) {
+            open(url, foreground: action.modifierFlags.contains(.shift), from: tab(for: webView))
+            decisionHandler(.cancel)
+            return
         }
 
         // The next document gets this site's stylesheet of hidden things,
@@ -1794,6 +1940,14 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         decidePolicyFor response: WKNavigationResponse,
         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
     ) {
+        // A redirect (3xx) has nowhere to be shown and carries no content of
+        // its own, but must be followed rather than downloaded — even if its
+        // headers say `application/binary` or `application/octet-stream`, as
+        // youtube.com and some servers do on their redirects.
+        if let http = response.response as? HTTPURLResponse, (300...399).contains(http.statusCode) {
+            decisionHandler(.allow)
+            return
+        }
         decisionHandler(response.canShowMIMEType ? .allow : .download)
     }
 
@@ -1889,6 +2043,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard let tab = tab(for: webView) else { return }
+        if tab.id == activeID { linkStatus.dismiss() }
         tab.failure = nil
         tab.typing = false
         // Whatever you last set this site to, before it draws a single frame
@@ -2034,7 +2189,6 @@ extension Browser: WKDownloadDelegate {
         return candidate
     }
 }
-
 
 
 

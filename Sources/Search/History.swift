@@ -38,8 +38,16 @@ private struct Visit: Codable {
 @MainActor
 final class History: ObservableObject {
     private var visits: [String: Visit] = [:] {
-        didSet { objectWillChange.send() }
+        didSet {
+            recentCache = nil
+            objectWillChange.send()
+        }
     }
+    /// The last few places, as the History menu lists them. The menu bar is
+    /// drawn again whenever anything in the window changes — every key typed
+    /// into the address field included — and sorting the whole history for
+    /// it each time cost more than everything else a key press does.
+    private var recentCache: [Trace]?
     private var saving = false
 
     init() { load() }
@@ -160,6 +168,15 @@ final class History: ObservableObject {
         save()
     }
 
+    /// The last eight places, newest first; worked out again only once the
+    /// history has changed.
+    func recent() -> [Trace] {
+        if let recentCache { return recentCache }
+        let made = Array(everything().prefix(8))
+        recentCache = made
+        return made
+    }
+
     // MARK: - reading
 
     /// Best matches first. A place you have been always beats a place the app
@@ -223,9 +240,11 @@ final class History: ObservableObject {
     /// host is what people mean, the middle of a path almost never is.
     private func rank(_ key: String, against needle: String) -> Double? {
         if key.hasPrefix(needle) { return 6 }
-        let host = key.split(separator: "/").first.map(String.init) ?? key
+        // Read in place: this runs for every place in the history on every
+        // key, and splitting each key into new strings was most of its cost.
+        let host = key[..<(key.firstIndex(of: "/") ?? key.endIndex)]
         // "hub" finding github.com, once the "git" has been skipped.
-        if let dot = host.range(of: "."), host[dot.upperBound...].hasPrefix(needle) { return 3 }
+        if let dot = host.firstIndex(of: "."), host[host.index(after: dot)...].hasPrefix(needle) { return 3 }
         // Only from two letters up. A single letter matching anywhere inside
         // a name turns "x" into example.com and netflix.com, which is not what
         // anybody meant by it.
