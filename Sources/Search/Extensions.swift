@@ -1180,9 +1180,9 @@ private struct ExtensionButtons: View {
             Extensions.shared.anchors[id] = WeakView(view)
             return view
         }
-        func updateNSView(_ view: NSView, context: Context) {
-            Extensions.shared.anchors[id] = WeakView(view)
-        }
+        // The outgoing layout can still update during a transition. It must
+        // not replace the new layout's anchor with a view about to disappear.
+        func updateNSView(_ view: NSView, context: Context) {}
     }
 }
 
