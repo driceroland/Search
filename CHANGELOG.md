@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Brave Search and Qwant join the engines in Settings › General › Search with. Thanks [@vivescene](https://github.com/vivescene) ([#52](https://github.com/driceroland/Search/pull/52))
+- Pages at 120 Hz on a screen that can, like a MacBook Pro's: animations and scrolling in pages drawn up to 120 times a second instead of about 60. Settings › General › Pages at 120 Hz, off by default, as in Safari; it uses more battery. Open tabs follow when reloaded. Thanks [@AxxzyWasTaken](https://github.com/AxxzyWasTaken) ([#87](https://github.com/driceroland/Search/pull/87))
 - The video you're watching can float when you switch to another app, as in Arc, and go back into its tab when you return to it. Settings › General › Float the video when you switch apps, off by default. Only from the sites a video floats from on its own when you leave its tab; one floated with ⌘⇧P stays out. Thanks [@farchanrifai](https://github.com/farchanrifai) ([#152](https://github.com/driceroland/Search/pull/152))
 - A mouse's back and forward side buttons navigate the page, the way the trackpad's two-finger swipe already does. Thanks [@reloadedhead](https://github.com/reloadedhead) ([#79](https://github.com/driceroland/Search/pull/79))
 - Flick the floating video to a corner, as in Arc and Dia: two fingers on the window send it to the corner or edge they point at, on a short spring, instead of pushing it along. Settings › General › Flick the floating video to a corner, off by default. Dragging still puts it anywhere. Thanks [@farchanrifai](https://github.com/farchanrifai) ([#151](https://github.com/driceroland/Search/pull/151))
@@ -22,6 +24,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Scroll with the middle button, as on Windows: click the wheel on a page, then move the mouse up or down; another click stops it. Settings › General › Scroll with the middle button.
 - Homebrew: `brew install --cask driceroland/tap/search`, and `brew upgrade` brings each new version.
 - ⌘S folds the tab bar away in its layout across the top too, as it folds the column: the page takes the whole height, and the bar comes back down over it when the pointer rests against the top edge. The View menu says Hide Tab Bar there.
+- Where a link goes, before you click it: point at it and its address shows at the bottom of the page, in the other corner if the pointer is in that one. Settings › General › Show where links go, off by default. Thanks [@fschrhunt](https://github.com/fschrhunt) ([#29](https://github.com/driceroland/Search/pull/29))
 
 ### Fixed
 
@@ -51,6 +54,8 @@ in [ROADMAP.md](ROADMAP.md).
 - Passkeys work: a site's "Sign in with a passkey" or "Create a passkey" brings up your Mac's own passkey sheet — Touch ID with your passkeys from iCloud Keychain or a password app, your iPhone over the QR code, or a security key — where it could end in "authentication failed" on every site. Left to WebKit, a sign-in page that offers your passkey under its name field kept a request open with macOS, and if Search quit or crashed while such a page was open, macOS went on refusing all of Search's passkeys until the Mac restarted. Search now carries passkeys out itself, as Chrome does, and never leaves one open; the first time, macOS asks whether Search may use them. **Passkeys still failing after the update? Restart your Mac once.** Not yet: the Mac's passkeys offered under a sign-in field as the page loads — the site's passkey button is the way in for now; a password manager extension that keeps passkeys, such as 1Password, can offer its own there. ([#17](https://github.com/driceroland/Search/issues/17))
 - ⌘⇧N no longer piles up empty private tabs: one already open comes to the end of the row, as with ⌘T.
 - A new space's choice of sign-ins reads in full in the column ("Signed in" / "Signed out"), where it was cut short.
+- A column of tabs long enough to scroll no longer draws its scroll bar over the cross on the tab under the pointer, where one was taken for the other: it sits in the margin beside them instead. ([#83](https://github.com/driceroland/Search/issues/83)) Thanks [@caisergan](https://github.com/caisergan) ([#99](https://github.com/driceroland/Search/pull/99))
+- A hidden sidebar comes out every time the pointer reaches the left edge, and goes when the pointer leaves it. Brought out and put away quickly a few times, it could stay out after the pointer had gone, or not come out at all until the pointer left the edge and came back; the same for the tab bar folded away across the top. It now follows where the pointer is, even with another app in front. ([#114](https://github.com/driceroland/Search/issues/114)) Thanks [@caisergan](https://github.com/caisergan) ([#115](https://github.com/driceroland/Search/pull/115))
 
 ## 1.0.1 — 23 September 2026
 

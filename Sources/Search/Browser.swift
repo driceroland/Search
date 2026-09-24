@@ -15,6 +15,7 @@ final class Browser: NSObject, ObservableObject {
             // gone unwatched long enough to sleep is counted from here, not
             // from when it was first picked.
             guard oldValue != activeID, let old = oldValue else { return }
+            linkStatus.dismiss()
             tabs.first { $0.id == old }?.touch()
         }
     }
@@ -32,6 +33,7 @@ final class Browser: NSObject, ObservableObject {
     /// Everything there is to set. Held here so the whole window redraws when
     /// one of them changes.
     let prefs = Preferences()
+    let linkStatus = LinkStatus()
     /// The settings panel.
     @Published var tuning = false
     /// The first-launch walk-through, over everything. Also from the menu.
@@ -881,6 +883,19 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // Every tab's next page, and the page each is showing now.
+        prefs.$showsLinks
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self else { return }
+                if !on { linkStatus.dismiss() }
+                for tab in tabs + parkedTabs {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.built?.evaluateJavaScript(on ? HoveredLink.script : HoveredLink.off, in: nil, in: .defaultClient)
+                }
+            }
+            .store(in: &bag)
+
         prefs.$passkeys
             .dropFirst()
             .sink { [weak self] on in
@@ -1460,6 +1475,10 @@ final class Browser: NSObject, ObservableObject {
 
     private func prepare(_ tab: Tab) {
         tab.delegate = self
+        tab.onLink = { [weak self] tab, address in
+            guard let self, prefs.showsLinks, tab.id == activeID else { return }
+            linkStatus.show(address, over: tab.built)
+        }
         tab.onPick = { [weak self] tab, selector, label, note in
             guard let self, let host = curtain.host(of: tab.address) else { return }
             curtain.hide(selector, label: label, note: note, on: host)
@@ -1969,6 +1988,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard let tab = tab(for: webView) else { return }
+        if tab.id == activeID { linkStatus.dismiss() }
         tab.failure = nil
         tab.typing = false
         // Whatever you last set this site to, before it draws a single frame
@@ -2114,7 +2134,6 @@ extension Browser: WKDownloadDelegate {
         return candidate
     }
 }
-
 
 
 
