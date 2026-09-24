@@ -736,20 +736,29 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         return send(request, options.signal, pk.extensions);
       });
 
-      // What this browser can and can't do, for the pages that ask first:
-      // passkeys from the Mac, a phone or a key — not yet under the field,
-      // and none of what WebKit would have answered for itself.
+      // Keep these references to recognize later overrides.
+      var ourGet = proto.get;
+      // Check when asked because extension hooks arrive after this script.
+      function answered() {
+        try {
+          var container = navigator.credentials, own = Object.prototype.hasOwnProperty;
+          return own.call(container, 'get') && typeof container.get === 'function' && container.get !== ourGet;
+        } catch (e) { return false; }
+      }
+
+      // Advertise conditional get only when another handler can receive it.
       var P = PublicKeyCredential;
       replace(P, 'isUserVerifyingPlatformAuthenticatorAvailable', function () { return Promise.resolve(true); });
-      replace(P, 'isConditionalMediationAvailable', function () { return Promise.resolve(false); });
+      replace(P, 'isConditionalMediationAvailable', function () { return Promise.resolve(answered()); });
       var nativeCapabilities = P.getClientCapabilities;
       if (typeof nativeCapabilities === 'function') {
         replace(P, 'getClientCapabilities', function () {
           function ours(c) {
             c = Object.assign({}, c);
             Object.keys(c).forEach(function (k) { if (k.indexOf('extension:') === 0 && k !== 'extension:credProps') c[k] = false; });
+            var conditionalGet = answered();
             return Object.assign(c, {
-              conditionalCreate: false, conditionalGet: false, conditionalMediation: false, relatedOrigins: false,
+              conditionalCreate: false, conditionalGet: conditionalGet, conditionalMediation: conditionalGet, relatedOrigins: false,
               signalAllAcceptedCredentials: false, signalCurrentUserDetails: false, signalUnknownCredential: false,
               hybridTransport: true, passkeyPlatformAuthenticator: true, userVerifyingPlatformAuthenticator: true
             });

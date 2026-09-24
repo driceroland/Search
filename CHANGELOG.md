@@ -22,6 +22,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Proton Pass's form detection stopped at a missing `requestIdleCallback`, before drawing its field icon. WebKit reverted its implementation after a page-load regression ([bug 287681](https://bugs.webkit.org/show_bug.cgi?id=287681)); Search now supplies a timer fallback.
+- Sites that check for conditional passkeys could stop before calling Proton Pass: Search always answered `false`, and WebKit could replace the credentials container holding its hooks. Search now keeps the first container and checks for another `get` handler when asked.
 - The stand-in traffic lights drawn while Search is in the background are no longer redrawn each time the window changes screen or size, only when they move.
 - An empty tab no longer works the processor while it waits: the slow breath under the address field was redrawn by the app every frame, about a sixth of a core with nothing happening. The same breath now runs in macOS's own animation layer, at no cost to Search.
 - With extensions installed, the window no longer waits for them: they load once it is up. The first launch after an update, when Search fits its Chrome compatibility layer to each extension again, does that away from the main thread — with Grammarly, the window had stood still for half a second. Thanks [@andupoto](https://x.com/andupoto) for the report

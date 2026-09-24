@@ -177,6 +177,52 @@ enum ExtensionShims {
       // the globals away (MetaMask's LavaMoat) would break the shim's own
       // code that needs them — every fetch of a Request, every import.
       const { URL, FileReader, Response, Blob, File, DOMException, HTMLImageElement, HTMLAnchorElement, Element } = root;
+      // WebKit reverted `requestIdleCallback` after a page-load regression
+      // (bug 287681), leaving Proton Pass's form detection without it.
+      const nativeIdle = typeof root.requestIdleCallback === "function"
+        ? root.requestIdleCallback.bind(root) : null;
+      const nativeCancelIdle = typeof root.cancelIdleCallback === "function"
+        ? root.cancelIdleCallback.bind(root) : null;
+      if (!nativeIdle || !nativeCancelIdle) {
+        const idle = new Map();
+        let idleId = 0;
+        root.requestIdleCallback = (callback, options) => {
+          const id = ++idleId;
+          if (nativeIdle) {
+            const nativeId = nativeIdle((deadline) => {
+              if (!idle.delete(id)) return;
+              callback(deadline);
+            }, options);
+            idle.set(id, { nativeId });
+          } else {
+            // Let the requesting script finish first. Chrome's maximum
+            // idle deadline is 50 ms; this fallback uses the full budget.
+            const timer = setTimeout(() => {
+              if (!idle.delete(id)) return;
+              const start = Date.now();
+              callback({ didTimeout: false, timeRemaining: () => Math.max(0, 50 - (Date.now() - start)) });
+            }, 1);
+            idle.set(id, { timer });
+          }
+          return id;
+        };
+        root.cancelIdleCallback = (id) => {
+          const request = idle.get(id);
+          if (request === undefined) {
+            if (nativeCancelIdle) nativeCancelIdle(id);
+            return;
+          }
+          idle.delete(id);
+          if (request.timer !== undefined) clearTimeout(request.timer);
+          else if (nativeCancelIdle) nativeCancelIdle(request.nativeId);
+        };
+      }
+      // Keep the first credentials container alive so extension hooks
+      // survive WebKit replacing an unreferenced container.
+      const credentials = root.navigator && root.navigator.credentials;
+      if (credentials && !Object.prototype.hasOwnProperty.call(root, "__searchCredentials")) {
+        Object.defineProperty(root, "__searchCredentials", { value: credentials });
+      }
       const chrome = root.chrome || root.browser;
       if (!chrome || root.__searchShim) return;
       Object.defineProperty(root, "__searchShim", { value: true });
