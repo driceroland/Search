@@ -17,6 +17,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A folded sidebar comes out when the pointer is flung past the window's left edge, not only when it stops on it: with the window away from the screen's edge, a quick reach for the tabs sailed off the window and was never seen at the edge. Once out, it stays out while the pointer overshoots the edge a little and comes back. Just to the left of the window counts only for a pointer that came off the window: one moving about over whatever lies there leaves the sidebar where it is.
 - A window a page opens at a size of its own, a sign-in window for one, is named in the tabs by its site rather than by its title, which the page chooses: one called "Sign in with Google" from another address no longer passes for Google's. A plain link opened in a new tab keeps its title, and a name you gave a tab stays first.
 - A link from another app, or one opened from a pinned tab, comes first after the pins instead of landing between two of them. ([#219](https://github.com/driceroland/Search/issues/219))
 - The shortcuts card lists ⇧⌘C, Copy Address, which only the Tabs menu showed. Thanks [@merttopuz](https://github.com/merttopuz) ([#182](https://github.com/driceroland/Search/pull/182)), and [@olllayor](https://github.com/olllayor) for asking ([#176](https://github.com/driceroland/Search/issues/176))

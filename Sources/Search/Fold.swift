@@ -25,6 +25,12 @@ import SwiftUI
 // the tabs, so the column waits for the pointer to settle there a moment
 // before it comes. Folded by hand with ⌘S, it comes at once, as it always did.
 //
+// The edge isn't only where the pointer stops. A hand flung at it, with the
+// window away from the screen's own edge, sails past it off the window, and
+// was never seen at the edge at all. Past the edge counts as the edge, if
+// the pointer got there from the window: not a hand coming in from the left.
+// And while the column is out, a pointer just past the edge is still on it.
+//
 // While a tab's address is being typed into its row, the column stays out:
 // the pointer drifting off it is no reason to take the field away.
 //
@@ -63,6 +69,8 @@ struct Fold: View {
 
     /// How near the edge the pointer has to be.
     private static let edge: CGFloat = 6
+    /// How far past the window's left edge the pointer still counts as on it.
+    private static let overshoot: CGFloat = 48
     /// The grace before the column goes back in.
     private static let grace: TimeInterval = 0.3
     /// The band along the top that is the title bar over the page.
@@ -176,6 +184,13 @@ struct Fold: View {
         let inWindow = point.x >= 0 && point.x < size.width && point.y >= 0 && point.y < size.height
         // Distance from the left edge for the column, from the top for the strip.
         let distance = prefs.sidebar ? point.x : size.height - point.y
+        // Just past the left edge, beside the window rather than above or
+        // below it.
+        let beside = prefs.sidebar && point.x < 0 && point.x > -Fold.overshoot
+            && point.y >= 0 && point.y < size.height
+        // There, and come off the window to get there.
+        let overshot = beside && pointer.crossing
+        pointer.crossing = inWindow || overshot
         if browser.peeking {
             pass()
             // Only this window counts, not another app's window over it. One
@@ -185,7 +200,7 @@ struct Fold: View {
             let onWindow = top == window.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
             let reach = prefs.sidebar ? prefs.sideWidth : Metrics.strip
-            let over = onOwnPanel || (onWindow && inWindow && distance < reach)
+            let over = onOwnPanel || beside || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
         } else if inWindow, distance < Fold.edge {
@@ -193,6 +208,9 @@ struct Fold: View {
             // edge: another app's window over it doesn't bring the column out.
             guard NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber
             else { return pass() }
+            if arriving == nil { arrive() }
+        } else if overshot {
+            // Off the window, so whatever is under the pointer now isn't it.
             if arriving == nil { arrive() }
         } else {
             pass()
@@ -325,6 +343,9 @@ struct Fold: View {
 @MainActor
 private final class Pointer {
     weak var window: NSWindow?
+    /// The pointer is over the window, or just went off its left edge from
+    /// it and hasn't gone further.
+    var crossing = false
     private var local: Any?
     private var global: Any?
     /// The window's own say on mouse-moved events, given back when the
