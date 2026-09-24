@@ -407,6 +407,12 @@ final class Bench {
                 guard let preferences = tab.built?.configuration.preferences, preferences.responds(to: asked) else { return nil }
                 return preferences.value(forKey: "developerExtrasEnabled") as? Bool
             }
+            // Settings › General › Pages at 120 Hz, as each page's WebKit has
+            // it: true is held near 60, WebKit's own default.
+            out["prefersNear60FPS"] = browser.tabs.compactMap { tab -> Bool? in
+                guard let preferences = tab.built?.configuration.preferences else { return nil }
+                return FrameRate.prefersNear60(preferences)
+            }
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
             out["folded"] = browser.folded
             out["peeking"] = browser.peeking
@@ -1040,6 +1046,7 @@ final class Bench {
             if let on = request["bookmarks"] as? Bool { browser.bookmarking = on }
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
+            if let on = request["pages120"] as? Bool { browser.prefs.fastPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
