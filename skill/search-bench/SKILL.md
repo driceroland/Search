@@ -66,7 +66,7 @@ If `./bench tabs` (no flag) is not listening, ask them to turn on **Settings ›
 id=$(./bench --test open https://example.com)
 ./bench --test wait "$id" 20
 ./bench --test text "$id"
-./bench --test shot "$id" /tmp/search-bench.png
+./bench --test shot "$id" "$TMPDIR/search-bench.png"
 ./bench --test close "$id"
 ```
 
@@ -80,7 +80,7 @@ id=$(./bench --test open https://example.com)
 
 `click`, `type`, and `submit` take one CSS selector, resolved with `document.querySelector`. Quote it. `type` sets the control's value and fires `input` and `change` (a contenteditable gets `textContent` and an input event). `submit` submits the form around the element, or the element when it is a form. The reply is `{"ok": true}` or an error: nothing matched, or no form.
 
-`shot` prints the PNG path. Read that file. It is the web view, not the tab bar or the window. Pass a path under `/tmp`. An optional last argument is the snapshot width in points.
+`shot` prints the PNG path. Read that file. It is the web view, not the tab bar or the window. Pass a path under `$TMPDIR`, which is this account's own: `/tmp` is shared, and a picture of a signed-in page is not something to leave where anything else running here can write over it. An optional last argument is the snapshot width in points.
 
 `go ID URL` loads a new address in a bench tab you already have.
 
