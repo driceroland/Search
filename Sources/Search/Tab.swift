@@ -1300,6 +1300,10 @@ final class PageView: WKWebView {
     func showFirstFrame() {
         guard unpainted else { return }
         unpainted = false
+        if Motion.reduced {
+            alphaValue = 1
+            return
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.12
             animator().alphaValue = 1

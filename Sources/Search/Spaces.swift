@@ -331,7 +331,7 @@ struct SpaceDot: View {
         .onChange(of: key) { _, now in
             let symbol = symbol
             DispatchQueue.main.async {
-                withAnimation(.easeOut(duration: 0.22)) { shown = (now, symbol) }
+                withAnimation(Motion.unlessReduced(.easeOut(duration: 0.22))) { shown = (now, symbol) }
             }
         }
         .animation(Motion.quick, value: hovering)

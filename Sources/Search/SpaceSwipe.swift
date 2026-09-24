@@ -1,8 +1,8 @@
 import SwiftUI
 
 // Spaces, paged through: in the column, two fingers sideways go from one to
-// the next, the rows following them, as in Arc; in the bar across the top,
-// the same up and down, the row of tabs following them — or a mouse wheel's
+// the next, the rows following them unless motion is reduced; in the bar across
+// the top, the same up and down — or a mouse wheel's
 // notch, one space at a time. Past the last space a new one is made in
 // place. The space's icon turns over as it goes (see SpaceDot).
 
@@ -129,7 +129,11 @@ final class SpaceSwipe {
             axis = abs(gathered.width) > abs(gathered.height) * 1.5 ? .across : .along
         }
         guard axis == .across else { return false }
-        browser.spaceSwipe = resisted(gathered.width, in: browser)
+        if Motion.reduced {
+            if browser.spaceSwipe != 0 { browser.spaceSwipe = 0 }
+        } else {
+            browser.spaceSwipe = resisted(gathered.width, in: browser)
+        }
         return true
     }
 
@@ -161,19 +165,13 @@ final class SpaceSwipe {
         return blocked ? travel / 4 : travel
     }
 
-    /// The pages carry on the way the fingers went until the next one is
-    /// where this one was; then it becomes the one on screen, in the same
-    /// frame and without anything moving — it was already there. One past
-    /// the last space is the card for a new one.
+    /// The pages follow the fingers unless motion is reduced. Once the next
+    /// is in place, it becomes the one on screen without another move. One
+    /// past the last space is the card for a new one.
     func slide(_ browser: Browser, to target: Int, from here: Int) {
-        // A page is the column's width, or the bar's height.
-        let width = browser.prefs.sidebar ? browser.prefs.sideWidth : Metrics.strip
-        let away: CGFloat = target > here ? -1 : 1
         browser.spaceStep = target > here ? 1 : -1
         resting = Date().addingTimeInterval(SpaceSwipe.rest)
-        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
-            browser.spaceSwipe = away * width
-        } completion: {
+        let finish = {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) {
@@ -185,6 +183,18 @@ final class SpaceSwipe {
                 }
                 browser.spaceSwipe = 0
             }
+        }
+        if Motion.reduced {
+            finish()
+            return
+        }
+        // A page is the column's width, or the bar's height.
+        let width = browser.prefs.sidebar ? browser.prefs.sideWidth : Metrics.strip
+        let away: CGFloat = target > here ? -1 : 1
+        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
+            browser.spaceSwipe = away * width
+        } completion: {
+            finish()
         }
     }
 }

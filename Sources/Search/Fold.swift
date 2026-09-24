@@ -268,6 +268,11 @@ struct Fold: View {
             bar.isHidden = off
             return
         }
+        if Motion.reduced {
+            layer.removeAnimation(forKey: "fold")
+            bar.isHidden = off
+            return
+        }
         // Up is +y in a superview that isn't flipped, -y in one that is.
         let path = up ? "transform.translation.y" : "transform.translation.x"
         let gone: CGFloat = up ? ((bar.superview?.isFlipped ?? false) ? -width : width) : -width

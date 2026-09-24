@@ -462,7 +462,7 @@ private struct TabPill: View {
         .onChange(of: browser.refusals) { _, _ in
             guard editing else { return }
             shake = 0
-            withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
+            withAnimation(Motion.unlessReduced(.easeOut(duration: 0.5))) { shake = 1 }
         }
         // Arriving and leaving from the strip rather than from nowhere.
         .transition(.scale(scale: 0.9, anchor: .leading).combined(with: .opacity))
@@ -582,7 +582,7 @@ private struct TabPill: View {
                     Rectangle()
                         .fill(Palette.ink.opacity(0.055))
                         .frame(width: span * tab.reading)
-                        .animation(.easeOut(duration: 0.15), value: tab.reading)
+                        .animation(Motion.unlessReduced(.easeOut(duration: 0.15)), value: tab.reading)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))

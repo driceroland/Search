@@ -12,7 +12,7 @@ struct SearchApp: App {
 
     var body: some Scene {
         Window("Search", id: "browser") {
-            ContentView(browser: browser)
+            ContentView(browser: browser, prefs: browser.prefs)
                 .frame(minWidth: 640, minHeight: 420)
         }
         .windowStyle(.hiddenTitleBar)
@@ -255,6 +255,7 @@ private final class CursorGroundView: NSView {
 
 struct ContentView: View {
     @ObservedObject var browser: Browser
+    @ObservedObject var prefs: Preferences
 
     @State private var keys: Any?
     @State private var window: NSWindow?
@@ -302,9 +303,12 @@ struct ContentView: View {
         }
         .ignoresSafeArea()
         .animation(Motion.glide, value: browser.prefs.sidebar)
-        .animation(.easeOut(duration: 0.12), value: browser.active?.immersed)
+        .animation(Motion.unlessReduced(.easeOut(duration: 0.12)), value: browser.active?.immersed)
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
+        .onChange(of: Motion.reduced) { _, reduced in
+            if reduced { make(room: chrome, after: chrome) }
+        }
     }
 
     @ViewBuilder
@@ -346,14 +350,18 @@ struct ContentView: View {
     /// still at its old size, which gives up the room once the slide is over.
     /// A column being dragged wider or narrower is followed as it goes.
     private func make(room new: CGSize, after old: CGSize) {
+        roomTicket += 1
+        var still = Transaction()
+        still.disablesAnimations = true
+        if Motion.reduced {
+            withTransaction(still) { room = new }
+            return
+        }
         let now = roomed
         let arriving = (old.width == 0 && new.width > 0, old.height == 0 && new.height > 0)
         var at = now
         if !arriving.0 { at.width = new.width }
         if !arriving.1 { at.height = new.height }
-        roomTicket += 1
-        var still = Transaction()
-        still.disablesAnimations = true
         withTransaction(still) { room = at }
         guard arriving.0 || arriving.1 else { return }
         let ticket = roomTicket
@@ -382,6 +390,7 @@ struct ContentView: View {
             }
         }
         .padding(.bottom, 30)
+        .animation(Motion.settle, value: browser.announcement)
         .animation(Motion.settle, value: browser.veiling)
         .animation(Motion.settle, value: browser.asking)
         .animation(Motion.settle, value: browser.offering)
@@ -392,7 +401,7 @@ struct ContentView: View {
     @ViewBuilder
     private var field: some View {
         if browser.fieldShowing {
-            Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
+            Omnibox(browser: browser, prefs: prefs, over: !(browser.active?.isBlank ?? true))
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
                 // with the page says otherwise.
@@ -467,6 +476,9 @@ struct ContentView: View {
                 // Only the window you were in, or every window's video would come.
                 browser.appLeft()
             }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification)) { _ in
+                prefs.refreshSystemReduceMotion()
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { Browser.front = browser }
             }
@@ -528,7 +540,6 @@ struct ContentView: View {
                 .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
                 .shadow(color: .black.opacity(0.10), radius: 18, y: 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-                .animation(Motion.settle, value: browser.announcement)
         }
     }
 

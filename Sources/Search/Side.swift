@@ -698,7 +698,7 @@ private struct SideRow: View {
         .onChange(of: browser.refusals) { _, _ in
             guard editing else { return }
             shake = 0
-            withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
+            withAnimation(Motion.unlessReduced(.easeOut(duration: 0.5))) { shake = 1 }
         }
         .transition(.scale(scale: 0.94, anchor: .leading).combined(with: .opacity))
     }
@@ -713,7 +713,7 @@ private struct SideRow: View {
                         Rectangle()
                             .fill(Palette.ink.opacity(0.055))
                             .frame(width: geo.size.width * tab.reading)
-                            .animation(.easeOut(duration: 0.15), value: tab.reading)
+                            .animation(Motion.unlessReduced(.easeOut(duration: 0.15)), value: tab.reading)
                     }
                 }
             }
