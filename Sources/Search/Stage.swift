@@ -21,7 +21,7 @@ struct Page: View {
             // before and after the float changes nothing SwiftUI can see, so
             // the stage was never told to take it back when it landed, and
             // the tab stayed empty. Nothing, then the page, is a change.
-            WebStage(page: tab.isBlank || tab.asleep || tab.floating ? nil : tab.web)
+            WebStage(page: tab.isBlank || tab.asleep || tab.floating || tab.detached ? nil : tab.web)
 
             if let cover = tab.cover {
                 // The page as it was left, while it is rebuilt underneath —
@@ -40,6 +40,15 @@ struct Page: View {
                 // The tab is not empty, its page is simply elsewhere. Saying so
                 // is kinder than a white rectangle.
                 Text("This page is playing in the floating window.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Palette.ground)
+                    .transition(.opacity)
+            }
+
+            if tab.detached {
+                Text("This page is open in its own window.")
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.muted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -66,6 +75,7 @@ struct Page: View {
         }
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
+        .animation(Motion.quick, value: tab.detached)
         .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
         .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
     }
