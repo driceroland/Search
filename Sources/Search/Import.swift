@@ -34,23 +34,11 @@ enum Chromium {
                 .appendingPathComponent(folder, isDirectory: true)
         }
 
-        /// Every profile's file, not only the default one.
+        /// every profile's file, each one directly inside its profile folder.
         var files: [URL] {
-            guard let walk = FileManager.default.enumerator(
-                at: root, includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ) else { return [] }
-            var found: [URL] = []
-            for case let url as URL in walk {
-                // Three levels is as deep as a profile goes; going further is
-                // a walk through the cache.
-                if url.pathComponents.count - root.pathComponents.count > 3 {
-                    walk.skipDescendants()
-                    continue
-                }
-                if url.lastPathComponent == "Login Data" { found.append(url) }
-            }
-            return found
+            ((try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? [])
+                .map { $0.appendingPathComponent("Login Data") }
+                .filter { FileManager.default.fileExists(atPath: $0.path) }
         }
     }
 

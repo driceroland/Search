@@ -230,11 +230,14 @@ extension Browser {
         Spaces.write(spaces)
     }
 
-    /// "New Space…": the card in the column when the column is there to
-    /// hold it, a question otherwise.
+    /// "New Space…": the card for a new space, in the column or the bar.
     func askForSpace() {
-        if prefs.sidebar, !folded || peeking {
-            withAnimation(Motion.glide) { makingSpace = true }
+        // In place, where the next space would come in, in the column or the
+        // bar alike; a question only while the tabs are folded out of sight.
+        if !folded || peeking {
+            let here = spaces.firstIndex { $0.id == spaceID } ?? 0
+            SpaceSwipe.shared.start(for: self)
+            SpaceSwipe.shared.slide(self, to: spaces.count, from: here)
         } else {
             Ask.newSpace { name, shared in self.addSpace(named: name, sharesSignIns: shared) }
         }

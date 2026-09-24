@@ -12,23 +12,57 @@ import WebKit
 // keeps what it takes to come back exactly where it was.
 
 enum Web {
-    /// Modern WebKit pools processes by data store on its own — every tab
-    /// asking for the same one is what gets the second tab a warm process, and
-    /// the old WKProcessPool knob does nothing now.
     /// What every view says it is after "AppleWebKit … (KHTML, like Gecko)"
     /// — web tabs and extension views alike (see Extensions.init).
-    static let userAgentName = "Version/26.5 Safari/605.1.15"
+    ///
+    /// The version is the Safari this Mac has, since its WebKit is the one
+    /// every tab runs on. A fixed number went out of date with every macOS:
+    /// a page told "Safari 26" by an engine that is Safari 18 sends what the
+    /// engine can't run.
+    static let userAgentName = "Version/\(safariVersion) Safari/605.1.15"
+
+    private static var safariVersion: String {
+        for path in ["/System/Cryptexes/App/System/Applications/Safari.app", "/Applications/Safari.app"] {
+            if let version = Bundle(path: path)?.infoDictionary?["CFBundleShortVersionString"] as? String {
+                return version
+            }
+        }
+        // Safari can't be read: say the Safari this macOS shipped with, the
+        // oldest its WebKit can be. Under-claiming gets a page older code
+        // that still runs; over-claiming is what this avoids.
+        //
+        // This hardly ever runs. Safari can't be removed from modern macOS,
+        // so reading the installed Safari above should always work. The
+        // formula only matters if that read fails.
+        //
+        // From macOS 26 Safari shares its number; before, it was 3 ahead (14 -> 17, 15 -> 18).
+        let os = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        return os >= 26 ? "\(os).0" : "\(os + 3).0"
+    }
+
+    /// One pool for every tab. The property is deprecated and said to do
+    /// nothing now, but a configuration without it gets a pool of its own
+    /// when its view is made — so every new tab started a web process from
+    /// cold, fonts registered and all, on the main thread, before its page
+    /// could begin: 41 to 59 ms from a bookmark or Return to the load
+    /// starting, the window stuck meanwhile. Sharing one lets WebKit have
+    /// the next process ready: 9 to 10 ms, for the same memory and the same
+    /// number of processes (measured with ./bench bookmark URL new, 24 Sep 2026).
+    static let pool = WKProcessPool()
 
     /// `space`: the space the tab belongs to, when it is not the one on
     /// screen — a parked row made ahead of time (see Spaces.swift).
-    static func configuration(shy: Bool = false, space: UUID? = nil) -> WKWebViewConfiguration {
+    /// `store`: a shy tab's own, for one opened from it — a link followed
+    /// out of a private page is still signed in to whatever that page was.
+    static func configuration(shy: Bool = false, space: UUID? = nil, store: WKWebsiteDataStore? = nil) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         // The real store, not the ephemeral one: staying signed in between
         // launches is the difference between a browser and a preview pane. A
         // shy tab gets its own store, which exists only while it does — its own
         // cookies, its own sign-ins, and nothing left behind when it closes.
         // With spaces on, each space's tabs share a store of that space's.
-        config.websiteDataStore = shy ? .nonPersistent() : MainActor.assumeIsolated { Spaces.store(for: space ?? Spaces.current) }
+        config.websiteDataStore = store ?? (shy ? .nonPersistent() : MainActor.assumeIsolated { Spaces.store(for: space ?? Spaces.current) })
+        config.processPool = Web.pool
         // Chrome extensions see every page but a private one, unless Settings
         // › Extensions says they may. The controller has to be there when the
         // view is made; it can't be added after.
@@ -90,6 +124,8 @@ final class Tab: ObservableObject, Identifiable {
     /// there as it was made (a controller can't be added to a page later).
     @available(macOS 15.4, *)
     var carriesExtensions: Bool { configuration.webExtensionController != nil }
+    /// Where its cookies and sign-ins are kept.
+    var store: WKWebsiteDataStore { configuration.websiteDataStore }
     /// Whoever handles navigation and windows for this page; applied when
     /// the page is built, whenever that is.
     weak var delegate: (WKNavigationDelegate & WKUIDelegate)? {
@@ -225,7 +261,7 @@ final class Tab: ObservableObject, Identifiable {
     private let forms = FormRelay()
     private let images = ImageRelay()
     private let shop = StoreRelay()
-    private let passkeyGate = PasskeyGate()
+    private let passkeyRelay = PasskeyRelay()
     private let ears = AudioWatch()
     private var lastY: Double = 0
 
@@ -328,13 +364,13 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeScriptMessageHandler(forName: FormRelay.name)
         controller.removeScriptMessageHandler(forName: ImageRelay.name)
         controller.removeScriptMessageHandler(forName: StoreRelay.name)
-        controller.removeScriptMessageHandler(forName: PasskeyGate.name)
+        controller.removeScriptMessageHandler(forName: PasskeyRelay.name)
         controller.add(relay, name: ScrollRelay.name)
         controller.add(veils_, name: VeilRelay.name)
         controller.add(images, name: ImageRelay.name)
         controller.add(shop, name: StoreRelay.name)
         controller.add(forms, name: FormRelay.name)
-        controller.addScriptMessageHandler(passkeyGate, contentWorld: .page, name: PasskeyGate.name)
+        controller.addScriptMessageHandler(passkeyRelay, contentWorld: .page, name: PasskeyRelay.name)
         Shield.shared.protect(controller)
         built = web
         arm(hiding: veils)
@@ -437,9 +473,14 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: ImageRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: false)
         )
-        controller.addUserScript(
-            WKUserScript(source: StoreRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        )
+        // The store's "Add to Search" only where Search can add extensions.
+        // Before macOS 15.4 it was drawn all the same, and pressing it did
+        // nothing at all; Settings › Extensions says what they need instead.
+        if #available(macOS 15.4, *) {
+            controller.addUserScript(
+                WKUserScript(source: StoreRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+            )
+        }
         if !FormRelay.passkeysOffered {
             controller.addUserScript(
                 WKUserScript(
@@ -448,11 +489,11 @@ final class Tab: ObservableObject, Identifiable {
                     forMainFrameOnly: false
                 )
             )
-        } else if Passkeys.undecided {
-            // Until macOS has been asked whether Search may use your passkeys,
-            // a site's request for one waits for the question (see Passkeys).
+        } else {
+            // A site's passkey request is carried out by Search itself: WebKit
+            // only does that for an app's own domains (see Passkeys.swift).
             controller.addUserScript(
-                WKUserScript(source: Passkeys.gate, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+                WKUserScript(source: PasskeyRelay.script, injectionTime: .atDocumentStart, forMainFrameOnly: false)
             )
         }
         guard !css.isEmpty else { return }
@@ -905,7 +946,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeScriptMessageHandler(forName: FormRelay.name)
         controller.removeScriptMessageHandler(forName: ImageRelay.name)
         controller.removeScriptMessageHandler(forName: StoreRelay.name)
-        controller.removeScriptMessageHandler(forName: PasskeyGate.name)
+        controller.removeScriptMessageHandler(forName: PasskeyRelay.name)
         controller.removeAllUserScripts()
         web.onPull = nil
         web.onTouch = nil
@@ -979,6 +1020,19 @@ final class PageView: WKWebView {
     override func mouseDown(with event: NSEvent) {
         onTouch?()
         super.mouseDown(with: event)
+    }
+
+    /// The side buttons a mouse has for back and forward — button 3 and 4.
+    /// No standard hands out that numbering; it's the X11 button order
+    /// (0 left, 1 right, 2 middle, 3 back, 4 forward) that most mouse
+    /// drivers settled on regardless, so it's what a mouse's own firmware
+    /// is tuned to send.
+    override func otherMouseDown(with event: NSEvent) {
+        switch event.buttonNumber {
+        case 3 where canGoBack: goBack()
+        case 4 where canGoForward: goForward()
+        default: super.otherMouseDown(with: event)
+        }
     }
 
     // MARK: - keys the page didn't use
