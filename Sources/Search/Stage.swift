@@ -66,8 +66,8 @@ struct Page: View {
         }
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
-        .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
-        .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
+        .animation(Motion.unlessReduced(.easeOut(duration: 0.2)), value: tab.cover == nil)
+        .animation(Motion.unlessReduced(.easeOut(duration: 0.16)), value: tab.pull == nil)
     }
 }
 
@@ -115,7 +115,7 @@ private struct Disc: View {
         .offset(x: (pull.back ? 1 : -1) * (10 + reach * 0.2 + (pull.going ? 12 : 0)))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pull.back ? .leading : .trailing)
         .allowsHitTesting(false)
-        .animation(.easeOut(duration: 0.22), value: pull.going)
+        .animation(Motion.unlessReduced(.easeOut(duration: 0.22)), value: pull.going)
     }
 }
 

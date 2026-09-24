@@ -131,9 +131,16 @@ enum Metrics {
 // arrives or leaves. Using the same two everywhere is most of why a thing feels
 // like a single piece of software rather than a pile of views.
 enum Motion {
-    static let glide = Animation.spring(response: 0.34, dampingFraction: 0.82)
-    static let settle = Animation.spring(response: 0.30, dampingFraction: 0.86)
-    static let quick = Animation.easeOut(duration: 0.14)
+    static var reduced: Bool {
+        Store.settings.bool(forKey: "motion.reduce") || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+    static var glide: Animation? { unlessReduced(.spring(response: 0.34, dampingFraction: 0.82)) }
+    static var settle: Animation? { unlessReduced(.spring(response: 0.30, dampingFraction: 0.86)) }
+    static var quick: Animation? { unlessReduced(.easeOut(duration: 0.14)) }
+
+    static func unlessReduced(_ animation: Animation) -> Animation? {
+        reduced ? nil : animation
+    }
 }
 
 /// Search's mark — Drice's Subtract.svg, a pill with an S cut out of it,

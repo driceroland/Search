@@ -7,6 +7,7 @@ import AppKit
 /// search engine.
 struct Omnibox: View {
     @ObservedObject var browser: Browser
+    @ObservedObject var prefs: Preferences
     /// Raised over a page by ⌘L, rather than standing on an empty tab.
     let over: Bool
 
@@ -69,7 +70,7 @@ struct Omnibox: View {
                     // the only thing on an empty tab, and a thing that never
                     // moves at all reads as a picture of an app rather than
                     // an app.
-                    Breath()
+                    Breath(reduced: prefs.reduceMotion || prefs.systemReduceMotion)
 
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Palette.ground)
@@ -88,7 +89,7 @@ struct Omnibox: View {
             .onChange(of: browser.refusals) { _, _ in
                 shake = 0
                 refused = true
-                withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
+                withAnimation(Motion.unlessReduced(.easeOut(duration: 0.5))) { shake = 1 }
             }
             .onChange(of: browser.typed) { _, _ in
                 withAnimation(Motion.quick) { refused = false }
@@ -184,17 +185,23 @@ struct Omnibox: View {
 /// nothing; and it is a layer, not a second SwiftUI view to build before
 /// the first frame.
 private struct Breath: NSViewRepresentable {
+    let reduced: Bool
     /// As dark as the shape it replaces, 5% ink blurred by 26: a shadow of
     /// the same radius comes out at 0.7 of the darkness at equal strength,
     /// measured on pictures of both (24 Sep 2026), so 7%.
     static let strength: Swift.Float = 0.07
 
-    func makeNSView(context: Context) -> NSView { Lung() }
-    func updateNSView(_ view: NSView, context: Context) {}
+    func makeNSView(context: Context) -> Lung {
+        let view = Lung()
+        view.setReduced(reduced)
+        return view
+    }
+    func updateNSView(_ view: Lung, context: Context) { view.setReduced(reduced) }
 
-    private final class Lung: NSView {
+    final class Lung: NSView {
         private let glow = CALayer()
         private var breathed: CGSize = .zero
+        private var reduced = false
 
         override init(frame: NSRect) {
             super.init(frame: frame)
@@ -209,6 +216,16 @@ private struct Breath: NSViewRepresentable {
         required init?(coder: NSCoder) { fatalError() }
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        func setReduced(_ value: Bool) {
+            guard reduced != value else { return }
+            reduced = value
+            if value {
+                glow.removeAnimation(forKey: "breath")
+            } else {
+                animate()
+            }
+        }
 
         /// The ink is the look's: light on a dark window, dark on a light one.
         override func viewDidChangeEffectiveAppearance() {
@@ -227,6 +244,11 @@ private struct Breath: NSViewRepresentable {
             glow.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 26, cornerHeight: 26, transform: nil)
             effectiveAppearance.performAsCurrentDrawingAppearance { glow.shadowColor = Palette.NS.ink.cgColor }
             CATransaction.commit()
+            animate()
+        }
+
+        private func animate() {
+            guard !reduced, breathed != .zero, glow.animation(forKey: "breath") == nil else { return }
             // From 0.97 to 1.03, from 0.65 to full, 2.6 s each way, for as
             // long as the field is there.
             let size = CABasicAnimation(keyPath: "transform.scale")

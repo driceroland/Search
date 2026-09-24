@@ -39,6 +39,15 @@ final class Preferences: ObservableObject {
             look.apply()
         }
     }
+    /// Skip Search's own transitions, without changing animation inside pages.
+    @Published var reduceMotion: Bool {
+        didSet { store.set(reduceMotion, forKey: "motion.reduce") }
+    }
+    @Published private(set) var systemReduceMotion: Bool
+
+    func refreshSystemReduceMotion() {
+        systemReduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
     /// Titles down the left instead of across the top.
     @Published var sidebar: Bool {
         didSet { store.set(sidebar, forKey: "sidebar") }
@@ -178,6 +187,8 @@ final class Preferences: ObservableObject {
         bench = store.bool(forKey: "bench")
         let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .system
         look = chosen
+        reduceMotion = store.bool(forKey: "motion.reduce")
+        systemReduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         // Before the first window, and not deferred: the window that is about
         // to be made should be made in the right appearance. Through `shared`
         // rather than `NSApp`: on macOS 14 SwiftUI builds this before it has

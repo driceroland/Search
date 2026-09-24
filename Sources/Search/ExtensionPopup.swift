@@ -66,7 +66,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         popover.contentViewController = host
         popover.contentSize = stage.frame.size
         popover.behavior = .transient
-        popover.animates = true
+        popover.animates = !Motion.reduced
         popover.delegate = self
 
         self.web = web
@@ -110,6 +110,10 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         shown = true
         web.frame = NSRect(origin: .zero, size: popover?.contentSize ?? stage.bounds.size)
         web.autoresizingMask = [.width, .height]
+        if Motion.reduced {
+            web.alphaValue = 1
+            return
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.12
             web.animator().alphaValue = 1
@@ -345,4 +349,3 @@ final class PopupPage: NSObject, WKWebExtensionTab {
     func isSelected(for context: WKWebExtensionContext) -> Bool { false }
     func close(for context: WKWebExtensionContext) async throws { ExtensionPopup.shared.close() }
 }
-

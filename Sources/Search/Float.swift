@@ -322,6 +322,15 @@ final class Float {
 
         private func fade(to value: CGFloat) {
             near = value > 0
+            if Motion.reduced {
+                buttons.forEach { $0.alphaValue = value }
+                line.alphaValue = value
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                scrim.opacity = Swift.Float(value)
+                CATransaction.commit()
+                return
+            }
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.16
                 buttons.forEach { $0.animator().alphaValue = value }
