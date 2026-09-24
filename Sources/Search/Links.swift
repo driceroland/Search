@@ -12,8 +12,6 @@ final class Links: NSObject, NSApplicationDelegate {
     private static var deliver: ((URL) -> Void)?
     /// Addresses that arrived first.
     private static var waiting: [URL] = []
-    /// The browser's window, once there is one.
-    static weak var window: NSWindow?
     /// Whether the window has been asked for on a link's behalf (summon).
     private static var summoned = false
     /// The session, written now rather than whenever its own debounce was
@@ -122,7 +120,7 @@ final class Links: NSObject, NSApplicationDelegate {
             // it back, rather than landing in a tab nobody can see. The
             // window is looked for among the app's own too: a reference that
             // lapsed opened a second, empty window behind the other app.
-            if let window = window ?? browserWindow() {
+            if let window = browser?.keyHost ?? browserWindow() {
                 window.makeKeyAndOrderFront(nil)
             } else {
                 _ = NSApp.delegate?.applicationOpenUntitledFile?(NSApp)
@@ -171,13 +169,10 @@ final class Links: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The browser's window, from the app's own list: what `window` points
-    /// at, found again if that reference lapsed.
+    /// The browser's window, from the app's own list.
     @MainActor
     private static func browserWindow() -> NSWindow? {
-        let found = NSApp.windows.first { $0.contentView != nil && !($0 is NSPanel) && $0.canBecomeMain }
-        if let found { window = found }
-        return found
+        NSApp.windows.first { $0.contentView != nil && !($0 is NSPanel) && $0.canBecomeMain }
     }
 
     private static func take(_ url: URL) {
@@ -198,7 +193,7 @@ final class Links: NSObject, NSApplicationDelegate {
     /// gets, its window; a single window, so asking twice can't make two.
     @MainActor
     private static func summon() {
-        guard deliver == nil, window == nil, !summoned else { return }
+        guard deliver == nil, browserWindow() == nil, !summoned else { return }
         summoned = true
         _ = NSApp.delegate?.applicationOpenUntitledFile?(NSApp)
     }

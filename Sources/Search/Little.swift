@@ -90,7 +90,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         home.insert(tab, at: home.placeForNew())
         home.select(tab)
         window.close()
-        (Links.window ?? NSApp.windows.first { $0.contentView != nil && !($0 is NSPanel) && $0 !== window })?
+        (browser.keyHost ?? NSApp.windows.first { $0.contentView != nil && !($0 is NSPanel) && $0 !== window })?
             .makeKeyAndOrderFront(nil)
     }
 

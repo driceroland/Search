@@ -10,7 +10,7 @@ extension Browser {
     /// under the row when the tabs are across the top, and beside the
     /// column's page otherwise. The window's own corner is the fallback.
     func share() {
-        guard let url = key?.active?.address, let window = Links.window,
+        guard let url = key?.active?.address, let window = keyHost,
               let view = key?.active?.built.flatMap({ $0.window === window ? $0 : nil }) ?? window.contentView
         else { return }
         // A few points in from the corner, so the arrow points at the page

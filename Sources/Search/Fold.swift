@@ -233,7 +233,7 @@ struct Fold: View {
     /// circles drawn over them while the app is behind (see RestingLights),
     /// so hiding it hides both, and hidden buttons take no clicks.
     private func hideLights() {
-        guard let bar = Fold.titlebar else { return }
+        guard let bar = titlebar else { return }
         if prefs.sidebar {
             Fold.slide(bar, off: lightsOff, by: prefs.sideWidth)
         } else {
@@ -241,8 +241,8 @@ struct Fold: View {
         }
     }
 
-    static var titlebar: NSView? {
-        Links.window?.standardWindowButton(.closeButton)?.superview
+    var titlebar: NSView? {
+        window.profile.host(of: window)?.standardWindowButton(.closeButton)?.superview
     }
 
     /// Bumped by every slide, so one that was overtaken doesn't hide the

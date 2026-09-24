@@ -583,6 +583,11 @@ final class Browser: NSObject, ObservableObject {
             model.restoreSession()
             if prefs.usesSpaces { model.preloadSpaces() }
         }
+        // The first row goes in the scene's window; any the session also
+        // kept need a window of their own.
+        for model in made.dropFirst() {
+            BrowserHost.show(model)
+        }
     }
 
     // MARK: - the window registry
@@ -612,6 +617,18 @@ final class Browser: NSObject, ObservableObject {
         hosts[model.id]
     }
 
+    /// The window in front, as AppKit sees it.
+    var keyHost: NSWindow? {
+        key.flatMap { host(of: $0) }
+    }
+
+    /// A window came forward: it is the one ⌘T and links from other apps
+    /// belong to. Replaces tracking this through didBecomeKey notifications
+    /// and a static of whichever window was last in front.
+    func becameKey(_ model: WindowModel) {
+        key = model
+    }
+
     /// A new window with one blank tab. ⌘N. The App layer turns the returned
     /// model into a real NSWindow.
     @discardableResult
@@ -623,6 +640,7 @@ final class Browser: NSObject, ObservableObject {
         model.folded = prefs.sidebar && prefs.sideHides
         adopt(model)
         model.adopt(Tab())
+        BrowserHost.show(model)
         return model
     }
 
@@ -653,12 +671,8 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
-    /// The window last in front. Asked once the app has gone to the back,
-    /// macOS no longer says which window was main.
-    static weak var front: Browser?
-
     func appLeft() {
-        guard prefs.floatsAway, Browser.front == nil || Browser.front === self else { return }
+        guard prefs.floatsAway else { return }
         liftedAway = !floater.showing
         lift(key?.active, quietly: true)
     }

@@ -460,7 +460,7 @@ final class Bench {
                     "number": window.windowNumber,
                 ]
             }
-            if let window = Links.window { out["lights"] = Bench.lights(of: window) }
+            if let window = browser.keyHost { out["lights"] = Bench.lights(of: window) }
             out["keysQuieted"] = PageView.quieted
             // Settings › General › Web Inspector, as each page's WebKit has it.
             let asked = NSSelectorFromString("_developerExtrasEnabled")
@@ -484,7 +484,7 @@ final class Bench {
             out["folded"] = (browser.key?.folded ?? false)
             out["peeking"] = (browser.key?.peeking ?? false)
             out["sideHides"] = browser.prefs.sideHides
-            out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
+            out["lightsHidden"] = browser.keyHost?.standardWindowButton(.closeButton)?.superview?.isHidden ?? false
             out["siteCard"] = SiteCardPanel.isShown
             // Whether this Mac lets the browser use its passkeys at all — the
             // one-time permission macOS asks a browser other than Safari for.
@@ -520,7 +520,7 @@ final class Bench {
                 guard let event = NSEvent.keyEvent(
                     with: type, location: .zero, modifierFlags: flags,
                     timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: Links.window?.windowNumber ?? 0, context: nil,
+                    windowNumber: browser.keyHost?.windowNumber ?? 0, context: nil,
                     characters: chars, charactersIgnoringModifiers: chars,
                     isARepeat: repeats && type == .keyDown, keyCode: UInt16(code)
                 ) else { continue }
@@ -574,7 +574,7 @@ final class Bench {
                 answer(["error": "resize only works on a --test run — it would move your window"])
                 return
             }
-            guard let window = Links.window,
+            guard let window = browser.keyHost,
                   let width = request["width"] as? Double, let height = request["height"] as? Double
             else { answer(["error": "resize needs a width and a height"]); return }
             let steps = max(1, request["steps"] as? Int ?? 12)
@@ -601,7 +601,7 @@ final class Bench {
             // AppKit would carry the window off on a drag from there — the
             // question behind a tab that moved the window instead of itself.
             // Only looked at, unless asked for a double-click.
-            guard let window = Links.window, let x = request["x"] as? Double, let y = request["y"] as? Double,
+            guard let window = browser.keyHost, let x = request["x"] as? Double, let y = request["y"] as? Double,
                   let frame = window.contentView?.superview
             else { answer(["error": "hit needs an x and a y"]); return }
             let point = NSPoint(x: x, y: Double(window.frame.height) - y)
@@ -674,7 +674,7 @@ final class Bench {
             let pieces = request["type"] as? Bool == true ? text.map(String.init) : [text]
             if (browser.key?.fieldShowing ?? false) { browser.key?.askFocus() } else { browser.key?.edit() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                guard let field = Bench.addressField(in: Links.window?.contentView),
+                guard let field = Bench.addressField(in: browser.keyHost?.contentView),
                       let editor = field.currentEditor() as? NSTextView
                 else { answer(["error": "the address field has no editor"]); return }
                 var times: [[Double]] = []
@@ -851,7 +851,7 @@ final class Bench {
             // The browser's window, when a probe started hidden came up
             // without one: the Window menu's own item for it.
             guard Store.testing else { answer(["error": "window only works on a --test run"]); return }
-            if Links.window?.contentView != nil, NSApp.windows.contains(where: { $0 === Links.window }) {
+            if browser.keyHost?.contentView != nil, NSApp.windows.contains(where: { $0 === browser.keyHost }) {
                 answer(["window": "there"])
                 return
             }
@@ -871,7 +871,7 @@ final class Bench {
             // once its windows are all off the screen — the browser's own put
             // away, the bench's room far off every screen. Anything of the
             // app's that would show on a screen and the app is hidden again.
-            guard Store.testing, let window = Links.window else { answer(["error": "pages only works on a --test run"]); return }
+            guard Store.testing, let window = browser.keyHost else { answer(["error": "pages only works on a --test run"]); return }
             func onScreen(_ w: NSWindow) -> Bool { NSScreen.screens.contains { $0.frame.intersects(w.frame) } }
             if request["on"] as? Bool == true {
                 _ = room ?? makeRoom()
@@ -897,7 +897,7 @@ final class Bench {
             // started hidden, so nothing shows on anybody's screen. For the
             // images on the site.
             guard Store.testing else { answer(["error": "picture only works on a --test run"]); return }
-            guard let window = Links.window, let frame = window.contentView?.superview,
+            guard let window = browser.keyHost, let frame = window.contentView?.superview,
                   let path = request["path"] as? String, !path.isEmpty
             else { answer(["error": "picture needs a path"]); return }
             func pages(in view: NSView) -> [WKWebView] {
@@ -1023,7 +1023,7 @@ final class Bench {
             // The lights' own slide is a Core Animation one, which a drawing
             // doesn't show: where they are is reported beside each frame.
             guard Store.testing else { answer(["error": "film only works on a --test run"]); return }
-            guard let window = Links.window, let frame = window.contentView?.superview,
+            guard let window = browser.keyHost, let frame = window.contentView?.superview,
                   let path = request["path"] as? String, !path.isEmpty
             else { answer(["error": "film needs something to do and a path"]); return }
             let count = min(60, max(1, request["frames"] as? Int ?? 14))
@@ -1057,7 +1057,7 @@ final class Bench {
                     frame.cacheDisplay(in: corner, to: picture)
                     pictures.append(picture)
                 }
-                if let bar = Fold.titlebar {
+                if let bar = browser.keyHost?.standardWindowButton(.closeButton)?.superview {
                     let moved = bar.layer?.presentation()?.value(forKeyPath: "transform.translation.x") as? CGFloat ?? 0
                     let lifted = bar.layer?.presentation()?.value(forKeyPath: "transform.translation.y") as? CGFloat ?? 0
                     shot["lights"] = ["hidden": bar.isHidden, "x": Int(moved.rounded()), "y": Int(lifted.rounded()),

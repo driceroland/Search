@@ -62,7 +62,7 @@ enum SiteCardPanel {
             guard original != nil, window.editingTab == tab.id, window.tabDraft == original else { return }
             // The field with the caret in it is the one on screen; failing
             // that, the latest one made.
-            let focused = (Links.window?.firstResponder as? NSTextView)?.delegate as? NSTextField
+            let focused = (NSApp.keyWindow?.firstResponder as? NSTextView)?.delegate as? NSTextField
             guard let field = focused ?? anchor, field.window != nil else {
                 if tries < 15 { place(tab, window, tries: tries + 1) }
                 return
@@ -337,7 +337,7 @@ struct SiteCard: View {
 
     /// The system's own certificate sheet, over the window.
     private static func show(_ trust: SecTrust) {
-        guard let window = Links.window else { return }
+        guard let window = NSApp.keyWindow else { return }
         SFCertificatePanel.shared().beginSheet(
             for: window, modalDelegate: nil, didEnd: nil, contextInfo: nil, trust: trust, showGroup: false
         )

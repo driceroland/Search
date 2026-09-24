@@ -420,14 +420,14 @@ enum Ask {
         panel.canCreateDirectories = true
         panel.prompt = "Use for This Space"
         panel.message = "Downloads in this space go here. Cancel keeps the folder it has."
-        guard let window = Links.window else { return }
+        guard let window = NSApp.keyWindow else { return }
         panel.beginSheetModal(for: window) { answer in
             if answer == .OK, let url = panel.url { then(url) }
         }
     }
 
     private static func show(_ alert: NSAlert, _ done: @escaping (Bool) -> Void) {
-        guard let window = Links.window else {
+        guard let window = NSApp.keyWindow else {
             done(alert.runModal() == .alertFirstButtonReturn)
             return
         }

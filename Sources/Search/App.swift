@@ -20,6 +20,8 @@ struct SearchApp: App {
         .commands {
             // One window. Tabs are the only kind of "new" there is.
             CommandGroup(replacing: .newItem) {
+                Button("New Window") { browser.open() }
+                    .keyboardShortcut("n")
                 Button("New Tab") { browser.key?.newTab() }
                     .keyboardShortcut("t")
                 Button("New Private Tab") { browser.key?.newShyTab() }
@@ -499,7 +501,7 @@ struct ContentView: View {
                 browser.appLeft()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-                if let host, (note.object as? NSWindow) === host { Browser.front = browser }
+                if let host, (note.object as? NSWindow) === host { browser.becameKey(window) }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
@@ -703,31 +705,32 @@ struct ContentView: View {
         view.isHidden = NSApp.isActive
     }
 
-    private func dress(_ window: NSWindow) {
-        Links.window = window
+    private func dress(_ host: NSWindow) {
+        browser.claim(host, for: window)
+        browser.becameKey(window)
         // Light or dark is the app's to say (Settings › Appearance); the
         // window only has to be the ground colour that goes with it.
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.backgroundColor = Palette.NS.ground
+        host.titlebarAppearsTransparent = true
+        host.titleVisibility = .hidden
+        host.backgroundColor = Palette.NS.ground
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
-        window.isMovableByWindowBackground = false
+        host.isMovableByWindowBackground = false
         // Nor by its title bar, which the strip is all the way down: AppKit
         // would move the window on any drag there, a tab picked up to take
         // it elsewhere in the row included. DragStrip moves it instead.
-        window.isMovable = false
+        host.isMovable = false
         // Where you left it, at the size you left it. A test run keeps its
         // own: the name lives in the app's standard defaults, which every
         // copy shares, and a probe resized for a test once changed the size
         // the real window came back at.
-        window.setFrameAutosaveName(Store.world.map { "search (\($0))" } ?? "search")
+        host.setFrameAutosaveName(Store.world.map { "search (\($0))" } ?? "search")
 
         // The traffic lights set in from the corner and centred in the strip's
         // height, in both modes, without a toolbar's rounder corners — see
         // Lights.swift. The column's first row is the strip's height too, so
         // its three doors sit on the lights' line.
-        Lights.keep(window) { measureLights() }
+        Lights.keep(host) { measureLights() }
         DispatchQueue.main.async { measureLights() }
 
         // The traffic lights are drawn — measured, they paint themselves — but
@@ -736,9 +739,9 @@ struct ContentView: View {
         // the title bar's own. AppKit's subview order said otherwise; Core
         // Animation is the one actually deciding, so it is told directly.
         DispatchQueue.main.async {
-            guard let close = window.standardWindowButton(.closeButton),
+            guard let close = host.standardWindowButton(.closeButton),
                   let container = close.superview?.superview,
-                  let content = window.contentView,
+                  let content = host.contentView,
                   let frame = content.superview
             else { return }
             frame.addSubview(container, positioned: .above, relativeTo: content)
