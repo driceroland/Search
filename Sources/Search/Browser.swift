@@ -599,7 +599,7 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         renamingTab = false
-        tabDraft = Address.pretty(url)
+        tabDraft = Address.editable(url)
         editingTab = tab.id
     }
 
@@ -646,7 +646,7 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         let draft = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if draft.isEmpty || tab.address.map({ Address.pretty($0) == draft }) == true
+        if draft.isEmpty || tab.address.map({ Address.editable($0) == draft }) == true
             || destination(for: draft) == nil {
             cancelTabEdit()
             return

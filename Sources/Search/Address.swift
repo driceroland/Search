@@ -64,6 +64,26 @@ enum Address {
         return tld.count >= 2 && tld.allSatisfy { $0.isLetter }
     }
 
+    /// A page's address as the field shows it for editing: something that,
+    /// sent as it is, goes back to the same page. The scheme is left off only
+    /// when the field would put that very scheme back, and a bare "/" only
+    /// when nothing follows it — a port, a query, a fragment, plain http to
+    /// somewhere that isn't this Mac or the local network, all stay.
+    static func editable(_ page: URL) -> String {
+        let full = page.absoluteString
+        guard let scheme = page.scheme, full.lowercased().hasPrefix(scheme.lowercased() + "://") else { return full }
+        let short = String(full.dropFirst(scheme.count + 3))
+        var candidates = [short]
+        if page.path() == "/", page.query() == nil, page.fragment() == nil, short.hasSuffix("/") {
+            candidates.insert(String(short.dropLast()), at: 0)
+        }
+        for candidate in candidates {
+            guard let back = url(from: candidate) else { continue }
+            if back.absoluteString == full || back.absoluteString + "/" == full { return candidate }
+        }
+        return full
+    }
+
     /// What the tab says before the page has told us its title: the address,
     /// with the parts nobody reads taken off.
     static func pretty(_ url: URL) -> String {
