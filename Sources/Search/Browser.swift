@@ -88,7 +88,12 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func destination(for typed: String) -> URL? {
-        Address.url(from: typed) ?? searchURL(for: typed)
+        if let url = Address.url(from: typed) { return url }
+        if let (keyword, rest) = Keyword.match(typed, in: prefs.keywords),
+           let url = Engine.url(for: rest, template: keyword.template) {
+            return url
+        }
+        return searchURL(for: typed)
     }
 
     /// ⌘S: the column folded away, and slid out over the page for a look
@@ -1661,12 +1666,15 @@ final class Browser: NSObject, ObservableObject {
         // enough that reading it cost more than typing the address would have.
         var list = history.suggestions(for: typed, limit: 3)
         // Last in the list, and only when what was typed cannot be a place.
-        if !typed.isEmpty,
-           Address.url(from: typed) == nil,
-           let asked = searchURL(for: typed) {
-            list.append(
-                Suggestion(key: typed, title: prefs.engine.name(custom: prefs.customEngine), url: asked, kind: .search)
-            )
+        if !typed.isEmpty, Address.url(from: typed) == nil {
+            if let (keyword, rest) = Keyword.match(typed, in: prefs.keywords),
+               let asked = Engine.url(for: rest, template: keyword.template) {
+                list.append(Suggestion(key: typed, title: keyword.name, url: asked, kind: .search))
+            } else if let asked = searchURL(for: typed) {
+                list.append(
+                    Suggestion(key: typed, title: prefs.engine.name(custom: prefs.customEngine), url: asked, kind: .search)
+                )
+            }
         }
         offers = list
         ending = history.completion(for: typed, among: offers.filter { $0.kind != .open })
