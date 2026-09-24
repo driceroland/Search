@@ -283,6 +283,9 @@ struct ContentView: View {
     /// Everything that rises from the bottom edge to say one thing.
     private var bars: some View {
         VStack(spacing: 8) {
+            if let tab = browser.active, browser.prefs.vimEnabled, !browser.vimPanelOpen, !browser.vimExcluded(tab) {
+                VimStatus(tab: tab)
+            }
             announcement
             if let ask = browser.asking {
                 captureAsking(ask)
@@ -376,10 +379,12 @@ struct ContentView: View {
             // buttons, and on a light window they come out nearly white. Ours
             // go on in their place until the app comes back.
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                browser.vim.update()
                 measureLights()
                 resting?.isHidden = false
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                browser.vim.update()
                 resting?.isHidden = true
             }
             .onChange(of: browser.fieldShowing) { _, showing in
@@ -390,6 +395,16 @@ struct ContentView: View {
                 }
             }
             .onChange(of: browser.activeID) { _, _ in handBack() }
+            .onChange(of: browser.vimPanelOpen) { _, open in
+                if !open { handBack() }
+            }
+            .onChange(of: browser.vimBlocked) { _, _ in browser.vim.update() }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+                browser.vim.update()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+                browser.vim.update()
+            }
             .animation(Motion.settle, value: browser.recalling)
             .animation(Motion.settle, value: browser.hoarding)
             .animation(Motion.settle, value: browser.tuning)
@@ -414,10 +429,11 @@ struct ContentView: View {
     /// WebAuthn refuses to run on a document that isn't focused, and so do a
     /// number of paste and shortcut handlers pages install for themselves.
     private func handBack() {
-        guard !browser.fieldShowing, browser.editingTab == nil else { return }
+        guard !browser.vimPanelOpen else { return }
         DispatchQueue.main.async {
-            guard let web = browser.active?.web, let window = web.window else { return }
+            guard !browser.vimPanelOpen, let web = browser.active?.built, let window = web.window else { return }
             window.makeFirstResponder(web)
+            browser.vim.update()
         }
     }
 

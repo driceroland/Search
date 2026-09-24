@@ -11,6 +11,10 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var tabs: [Tab] = []
     @Published var activeID: Tab.ID? {
         didSet {
+            if oldValue != activeID {
+                if let web = tabs.first(where: { $0.id == oldValue })?.built { vim.cancelTransient(web) }
+                vim.update()
+            }
             // The tab just left is the tab just looked at. Whether a tab has
             // gone unwatched long enough to sleep is counted from here, not
             // from when it was first picked.
@@ -32,6 +36,49 @@ final class Browser: NSObject, ObservableObject {
     /// Everything there is to set. Held here so the whole window redraws when
     /// one of them changes.
     let prefs = Preferences()
+    lazy var vim = Vim(browser: self)
+    @Published private var privateVimHosts: [String: Bool] = [:]
+
+    static func vimHost(_ url: URL?) -> String? {
+        guard let url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              var host = url.host?.lowercased(), !host.isEmpty else { return nil }
+        if host.hasSuffix(".") { host.removeLast() }
+        return host.isEmpty ? nil : host
+    }
+
+    func vimExcluded(_ tab: Tab) -> Bool {
+        guard let host = Self.vimHost(tab.address) else { return false }
+        if tab.shy, let override = privateVimHosts[host] { return override }
+        return prefs.vimExcludedHosts.contains(host)
+    }
+
+    func excludeVimOnCurrentSite(_ excluded: Bool) {
+        guard let tab = active, let host = Self.vimHost(tab.address) else { return }
+        if tab.shy {
+            privateVimHosts[host] = excluded
+        } else {
+            var hosts = Set(prefs.vimExcludedHosts)
+            if excluded { hosts.insert(host) } else { hosts.remove(host) }
+            prefs.vimExcludedHosts = hosts.sorted()
+        }
+        vim.update()
+    }
+
+    var vimPanelOpen: Bool {
+        fieldShowing || tuning || welcoming || finding || bookmarking || bookmarksOpen ||
+            managing || recalling || hoarding || veiling || reviewing || editingTab != nil ||
+            suggesting != nil || asking != nil || offering != nil || makingSpace
+    }
+
+    var vimBlocked: Bool {
+        if vimPanelOpen { return true }
+        if #available(macOS 15.4, *), Extensions.shared.menuOpen { return true }
+        guard NSApp.isActive, let window = Links.window, NSApp.keyWindow === window,
+              window.attachedSheet == nil, NSApp.modalWindow == nil,
+              let web = active?.built, let responder = window.firstResponder as? NSView,
+              responder === web || responder.isDescendant(of: web) else { return true }
+        return false
+    }
     /// The settings panel.
     @Published var tuning = false
     /// The first-launch walk-through, over everything. Also from the menu.
@@ -833,6 +880,17 @@ final class Browser: NSObject, ObservableObject {
             .dropFirst()
             .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
             .store(in: &bag)
+        prefs.$vimEnabled.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.vim.update() }
+        }.store(in: &bag)
+        prefs.$vimExcludedHosts.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.vim.update() }
+        }.store(in: &bag)
+        if #available(macOS 15.4, *) {
+            Extensions.shared.$menuOpen.dropFirst().sink { [weak self] _ in
+                DispatchQueue.main.async { self?.vim.update() }
+            }.store(in: &bag)
+        }
         prefs.$shielded
             .dropFirst()
             .sink { [weak self] on in
@@ -1201,6 +1259,19 @@ final class Browser: NSObject, ObservableObject {
         return tab
     }
 
+    func openVimLink(_ url: URL, from source: Tab) {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil,
+              let index = tabs.firstIndex(where: { $0.id == source.id }),
+              let view = source.built else { return }
+        let configuration = Web.configuration(shy: source.shy)
+        configuration.websiteDataStore = view.configuration.websiteDataStore
+        let tab = Tab(shy: source.shy, configuration: configuration)
+        prepare(tab)
+        tabs.insert(tab, at: index + 1)
+        tab.go(to: url)
+        rememberSession()
+    }
+
     /// An extension's page sending its own tab to a website — 1Password's
     /// "Sign in" does, when its Mac app isn't connected. The page's view was
     /// built from the extension's configuration, which WebKit keeps to that
@@ -1423,6 +1494,7 @@ final class Browser: NSObject, ObservableObject {
 
     private func prepare(_ tab: Tab) {
         tab.delegate = self
+        tab.vim = vim
         tab.onPick = { [weak self] tab, selector, label, note in
             guard let self, let host = curtain.host(of: tab.address) else { return }
             curtain.hide(selector, label: label, note: note, on: host)
@@ -1728,6 +1800,10 @@ final class Browser: NSObject, ObservableObject {
 // MARK: - WebKit
 
 extension Browser: WKNavigationDelegate, WKUIDelegate {
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        vim.invalidate(webView)
+    }
+
     /// Links the window has no business showing — mail, calls, an app's own
     /// scheme — are handed to whoever does own them.
     func webView(
@@ -1923,6 +1999,12 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        // A focused iframe can disappear at commit while WebKit still routes
+        // focus to that old frame. The current page owns the keyboard already.
+        if active?.built === webView, !vimBlocked {
+            webView.evaluateJavaScript("window.focus()", in: nil, in: Vim.world) { _ in }
+        }
+        vim.settled(webView)
         guard let tab = tab(for: webView) else { return }
         tab.failure = nil
         tab.typing = false
@@ -1944,6 +2026,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        vim.settled(webView)
         // A page with nothing to lay out never has a first frame. Done is
         // done, and it is shown.
         (webView as? PageView)?.showFirstFrame()
@@ -1961,6 +2044,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     private func fail(_ webView: WKWebView, _ error: Error) {
+        vim.settled(webView)
         tab(for: webView)?.uncover()
         let nsError = error as NSError
         let code = nsError.code
@@ -2069,8 +2153,6 @@ extension Browser: WKDownloadDelegate {
         return candidate
     }
 }
-
-
 
 
 

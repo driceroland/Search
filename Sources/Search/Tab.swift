@@ -164,6 +164,8 @@ final class Tab: ObservableObject, Identifiable {
 
     /// True while the caret is in something on the page that takes typing.
     @Published var typing = false
+    weak var vim: Vim?
+    @Published var vimPaused = false
     /// True while the page has taken over the screen.
     @Published var immersed = false
 
@@ -345,6 +347,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.addScriptMessageHandler(passkeyRelay, contentWorld: .page, name: PasskeyRelay.name)
         Shield.shared.protect(controller)
         built = web
+        vim?.attach(web)
         arm(hiding: veils)
 
         watch = [
@@ -420,6 +423,10 @@ final class Tab: ObservableObject, Identifiable {
         guard let built else { return }
         let controller = built.configuration.userContentController
         controller.removeAllUserScripts()
+        controller.addUserScript(WKUserScript(source: Vim.clickTargetsScript, injectionTime: .atDocumentStart,
+                                             forMainFrameOnly: false))
+        controller.addUserScript(WKUserScript(source: Vim.script, injectionTime: .atDocumentStart,
+                                             forMainFrameOnly: false, in: Vim.world))
         controller.addUserScript(
             WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
@@ -911,6 +918,8 @@ final class Tab: ObservableObject, Identifiable {
         watch = []
         ears.stop()
         guard let web = built else { return }
+        vim?.detach(web)
+        vimPaused = false
         built = nil
         let controller = web.configuration.userContentController
         controller.removeScriptMessageHandler(forName: ScrollRelay.name)
@@ -1009,6 +1018,9 @@ final class PageView: WKWebView {
     static var quieted = 0
 
     override func keyDown(with event: NSEvent) {
+        // WebKit can return an unused key from an offscreen page through the
+        // key window. It must not become a command in the page now on screen.
+        guard event.windowNumber == window?.windowNumber else { return }
         if let handed, PageView.same(handed, event) {
             self.handed = nil
             PageView.quieted += 1

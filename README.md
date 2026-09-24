@@ -63,6 +63,24 @@ A **private tab** (`⇧⌘N`) has its own cookie jar and leaves nothing behind w
 
 `⌃Tab` and `⌃⇧Tab` walk along the row of tabs; `Tab` stays the page's, for moving through a form. `esc` puts away whatever is open.
 
+### Vim navigation
+
+Enable **Settings → General → Vim navigation** for native Vimari-style browsing. It is off by default. Fields keep ordinary typing; `i` passes keys to a site's own shortcuts until `Esc` or `Ctrl-[`. “Disable on this site” remembers the exact hostname; choices made in private tabs last only for the app session.
+
+| Keys | Action |
+|---|---|
+| `h j k l` | Scroll left, down, up, right |
+| `u d` · `gg G` | Half page up/down · top/bottom |
+| `f F` | Follow a visible link or control · open a web link in the background |
+| `H L` · `r` | Back/forward · reload |
+| `q w` · `x t` | Previous/next tab · close/new tab |
+| `gi` | Focus the first visible writable field |
+| `i` · `Esc` / `Ctrl-[` | Pass keys through · cancel or resume navigation |
+
+Hints cover the focused document, including a focused iframe. They do not combine every frame into one overlay. Use `i` or a site exclusion for custom editors and controls that need their own keyboard handling. Native Find remains `⌘F`.
+
+On macOS 14–26, focused generic containers also keep their keys because WebKit cannot publicly reveal whether they contain a closed editor. Focus a native link/button within a scroll area, or leave the container, to resume Vim navigation.
+
 ---
 
 ## For developers
@@ -73,7 +91,7 @@ So anyone can read exactly what a browser handling their passwords and history i
 
 ### Building it
 
-- macOS 14 or later, Xcode 16 / Swift 6 toolchain
+- Xcode 27 SDK / Swift 6 toolchain; the built app still targets macOS 14 or later
 - `swift build` — runs the app straight from the SwiftPM binary
 - `./build.sh` — assembles a real, double-clickable `Search.app` in `build/`, ad-hoc signed so it runs on your own Mac
 

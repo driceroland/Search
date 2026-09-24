@@ -27,6 +27,13 @@ enum Glyph: String, CaseIterable, Identifiable {
 final class Preferences: ObservableObject {
     private let store = Store.settings
 
+    @Published var vimEnabled: Bool {
+        didSet { store.set(vimEnabled, forKey: "vim.enabled") }
+    }
+    @Published var vimExcludedHosts: [String] {
+        didSet { store.set(Array(Set(vimExcludedHosts)).sorted(), forKey: "vim.excludedHosts") }
+    }
+
     /// A local socket a script can drive the browser through, in tabs of its
     /// own. Off unless asked for.
     @Published var bench: Bool {
@@ -142,6 +149,8 @@ final class Preferences: ObservableObject {
     }
 
     init() {
+        vimEnabled = store.bool(forKey: "vim.enabled")
+        vimExcludedHosts = Array(Set(store.stringArray(forKey: "vim.excludedHosts") ?? [])).sorted()
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
         // The Mac's own unless asked otherwise — a Mac in dark mode expects

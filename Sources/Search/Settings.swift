@@ -212,6 +212,30 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autoScroll)
             }
             Rule()
+            Line("Vim navigation", "Vimari's keys for scrolling, links, and tabs") {
+                Toggle("Vim navigation", isOn: $prefs.vimEnabled).labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
+            if prefs.vimEnabled {
+                Rule()
+                Line("Disable on this site", Browser.vimHost(browser.active?.address) ?? "Open a website to choose") {
+                    Toggle("Disable on this site", isOn: Binding(
+                        get: { browser.active.map { browser.vimExcluded($0) } ?? false },
+                        set: { browser.excludeVimOnCurrentSite($0) }
+                    ))
+                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                    .disabled(Browser.vimHost(browser.active?.address) == nil)
+                }
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("h j k l  Scroll · u d  Half page · gg / G  Top / bottom")
+                    Text("f  Follow · F  Open in background · gi  Focus a field")
+                    Text("H L  Back / forward · r  Reload · q w  Previous / next tab")
+                    Text("x  Close tab · t  New tab · i  Pass keys to the page")
+                    Text("Esc or Ctrl-[  Cancel or resume Vim navigation")
+                }
+                .font(.system(size: 11.5)).foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true).padding(14)
+            }
+            Rule()
             Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
                 Switch(on: $prefs.bench)
             }
