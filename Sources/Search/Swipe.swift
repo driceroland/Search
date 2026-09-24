@@ -31,8 +31,10 @@ enum Swipe {
         let set = NSSelectorFromString("_setRubberBandingEnabled:")
         guard web.responds(to: set) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, UInt) -> Void
-        // _WKRectEdgeLeft (1 << 1) | _WKRectEdgeRight (1 << 3)
-        unsafeBitCast(web.method(for: set), to: Setter.self)(web, set, (1 << 1) | (1 << 3))
+        // _WKRectEdge: one bit per CGRectEdge (_WKRectEdge.h) — the edges
+        // that keep their bounce. Left and right only.
+        let left: UInt = 1 << 0, right: UInt = 1 << 2   // CGRectMinXEdge, CGRectMaxXEdge
+        unsafeBitCast(web.method(for: set), to: Setter.self)(web, set, left | right)
     }
 
     /// Whether a sideways swipe here would scroll something. Said once per
