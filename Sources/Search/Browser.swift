@@ -9,6 +9,9 @@ import Combine
 @MainActor
 final class Browser: NSObject, ObservableObject {
     @Published private(set) var tabs: [Tab] = []
+    /// Named tab sections in the current space, in display order.
+    @Published var tabGroups: [TabGroup] = []
+    @Published var editingGroupID: UUID?
     @Published var activeID: Tab.ID? {
         didSet {
             // The tab just left is the tab just looked at. Whether a tab has
@@ -529,6 +532,7 @@ final class Browser: NSObject, ObservableObject {
 
     func pin(_ tab: Tab) {
         if tab.pin == nil {
+            tab.groupID = nil
             tab.pin = tab.monogram
             // Pinned tabs live at the head of the row, in the order they were
             // pinned, so their letters never move under your hand.
@@ -580,6 +584,7 @@ final class Browser: NSObject, ObservableObject {
                 tabs.move(fromOffsets: IndexSet(integer: here), toOffset: home > here ? home + 1 : home)
             }
         }
+        if prefs.usesTabGroups { arrangeGroupedTabs() }
         rememberSession()
     }
 
@@ -702,6 +707,7 @@ final class Browser: NSObject, ObservableObject {
         let url: URL
         let title: String
         let index: Int
+        let groupID: UUID?
 
         var label: String { title.isEmpty ? Address.pretty(url) : title }
     }
@@ -839,6 +845,7 @@ final class Browser: NSObject, ObservableObject {
     /// The row of tabs the space on screen had last time, or one empty tab.
     func restoreSession() {
         let saved = Session.read(space: spaceID)
+        tabGroups = saved.groups ?? []
         guard !saved.tabs.isEmpty else {
             // A blank tab costs nothing until it is asked for its page. Its
             // web view — and with it WebKit's helper processes — is built a
@@ -859,6 +866,8 @@ final class Browser: NSObject, ObservableObject {
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
+            tab.groupID = entry.pin == nil && tabGroups.contains(where: { $0.id == entry.groupID })
+                ? entry.groupID : nil
             tabs.append(tab)
         }
         guard !tabs.isEmpty else {
@@ -866,9 +875,11 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         let here = min(max(0, saved.active), tabs.count - 1)
-        activeID = tabs[here].id
+        let active = tabs[here]
+        if prefs.usesTabGroups { arrangeGroupedTabs() }
+        activeID = active.id
         // Only the one you were looking at actually loads.
-        tabs[here].wake()
+        active.wake()
     }
 
     /// The few settings that something else has to be told about. The rest are
@@ -880,6 +891,14 @@ final class Browser: NSObject, ObservableObject {
         prefs.$usesSpaces
             .dropFirst()
             .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
+            .store(in: &bag)
+        prefs.$usesTabGroups
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self, on else { return }
+                arrangeGroupedTabs()
+                writeSession(now: true)
+            }
             .store(in: &bag)
         prefs.$shielded
             .dropFirst()
@@ -988,23 +1007,26 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func writeSession(now: Bool = false) {
+        let saved = tabs.compactMap { tab -> (Tab, Session.Entry)? in
+            guard !tab.shy, !tab.bench else { return nil }
+            // A sleeping tab holds its address in `pending`; asking for
+            // it there too means a pin can never be written out of
+            // existence by whatever its web view happens to be showing.
+            guard let url = tab.pending ?? tab.address,
+                  url.scheme?.hasPrefix("http") == true
+            else { return nil }
+            return (tab, Session.Entry(
+                url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name,
+                groupID: tab.groupID
+            ))
+        }
         Session.write(
             now: now,
             space: spaceID,
             .init(
-                tabs: tabs.compactMap { tab in
-                    guard !tab.shy, !tab.bench else { return nil }
-                    // A sleeping tab holds its address in `pending`; asking for
-                    // it there too means a pin can never be written out of
-                    // existence by whatever its web view happens to be showing.
-                    guard let url = tab.pending ?? tab.address,
-                          url.scheme?.hasPrefix("http") == true
-                    else { return nil }
-                    return Session.Entry(
-                        url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name
-                    )
-                },
-                active: tabs.firstIndex { $0.id == activeID } ?? 0
+                tabs: saved.map { $0.1 },
+                active: saved.firstIndex { $0.0.id == activeID } ?? 0,
+                groups: tabGroups
             )
         )
     }
@@ -1080,12 +1102,17 @@ final class Browser: NSObject, ObservableObject {
         let url = Browser.page(url)
         let page = Tab(configuration: Browser.extensionConfiguration(for: url))
         prepare(page)
+        page.groupID = tab.groupID
         tabs[index] = page
         page.go(to: url)
         if activeID == tab.id { activeID = page.id; editing = false }
     }
 
     func select(_ tab: Tab) {
+        if let id = tab.groupID, let index = tabGroups.firstIndex(where: { $0.id == id }), tabGroups[index].collapsed {
+            tabGroups[index].collapsed = false
+            writeSession(now: true)
+        }
         // A peek is over the tab it was opened from; another tab puts it away.
         if peekTab != nil, tab.id != activeID { closePeek() }
         cancelTabEdit()
@@ -1208,8 +1235,10 @@ final class Browser: NSObject, ObservableObject {
         ghosts.removeAll { $0.id == ghost.id }
         let tab = Tab()
         prepare(tab)
+        tab.groupID = tabGroups.contains(where: { $0.id == ghost.groupID }) ? ghost.groupID : nil
         leaving()
         tabs.insert(tab, at: min(ghost.index, tabs.count))
+        if prefs.usesTabGroups { arrangeGroupedTabs() }
         activeID = tab.id
         editing = false
         typed = ""
@@ -1218,7 +1247,7 @@ final class Browser: NSObject, ObservableObject {
 
     private func remember(_ tab: Tab, at index: Int) {
         guard !tab.shy, let url = tab.address else { return }
-        ghosts.append(Ghost(url: url, title: tab.title, index: index))
+        ghosts.append(Ghost(url: url, title: tab.title, index: index, groupID: tab.groupID))
         if ghosts.count > 12 { ghosts.removeFirst() }
     }
 
@@ -1234,6 +1263,85 @@ final class Browser: NSObject, ObservableObject {
         if tab.pin == nil, index < pinned { return }
         tabs.move(fromOffsets: IndexSet(integer: here), toOffset: index > here ? index + 1 : index)
         rememberSession()
+    }
+
+    /// A section can be made empty, then filled from a tab's menu.
+    @discardableResult
+    func addTabGroup(containing tab: Tab? = nil) -> UUID {
+        let id = UUID()
+        tabGroups.append(TabGroup(id: id, name: "Group \(tabGroups.count + 1)", collapsed: false))
+        editingGroupID = id
+        if let tab { move(tab, toGroup: id) }
+        writeSession(now: true)
+        return id
+    }
+
+    func renameTabGroup(_ id: UUID, to name: String) {
+        guard let index = tabGroups.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        tabGroups[index].name = trimmed
+        writeSession(now: true)
+    }
+
+    func toggleTabGroup(_ id: UUID) {
+        guard let index = tabGroups.firstIndex(where: { $0.id == id }) else { return }
+        tabGroups[index].collapsed.toggle()
+        writeSession(now: true)
+    }
+
+    func removeTabGroup(_ id: UUID) {
+        guard tabGroups.contains(where: { $0.id == id }) else { return }
+        for tab in tabs where tab.groupID == id { tab.groupID = nil }
+        tabGroups.removeAll { $0.id == id }
+        if prefs.usesTabGroups { arrangeGroupedTabs() }
+        if editingGroupID == id { editingGroupID = nil }
+        writeSession(now: true)
+    }
+
+    func move(_ tab: Tab, toGroup id: UUID?) {
+        guard tabs.contains(where: { $0.id == tab.id }), tab.pin == nil, !tab.shy, !tab.bench,
+              id == nil || tabGroups.contains(where: { $0.id == id }) else { return }
+        tab.groupID = id
+        if prefs.usesTabGroups { arrangeGroupedTabs() }
+        if let id, let index = tabGroups.firstIndex(where: { $0.id == id }) {
+            tabGroups[index].collapsed = false
+        }
+        writeSession(now: true)
+    }
+
+    /// Reorder only among peers in the displayed section. The underlying
+    /// tab row remains flat for keyboard shortcuts and the top strip.
+    func move(_ tab: Tab, within group: UUID?, to index: Int) {
+        let peers = tabs.filter { $0.pin == nil && $0.groupID == group }
+        guard let from = peers.firstIndex(where: { $0.id == tab.id }),
+              peers.indices.contains(index), from != index,
+              let destination = tabs.firstIndex(where: { $0.id == peers[index].id }) else { return }
+        move(tab, to: destination)
+    }
+
+    func moveTabGroup(_ id: UUID, to index: Int) {
+        guard let from = tabGroups.firstIndex(where: { $0.id == id }),
+              tabGroups.indices.contains(index), from != index else { return }
+        tabGroups.move(fromOffsets: IndexSet(integer: from), toOffset: index > from ? index + 1 : index)
+        if prefs.usesTabGroups { arrangeGroupedTabs() }
+        writeSession(now: true)
+    }
+
+    private func arrangeGroupedTabs() {
+        let pins = tabs.filter { $0.pin != nil }
+        let grouped = tabGroups.flatMap { group in tabs.filter { $0.pin == nil && $0.groupID == group.id } }
+        let ungrouped = tabs.filter { $0.pin == nil && $0.groupID == nil }
+        tabs = pins + grouped + ungrouped
+    }
+
+    func tabs(in group: UUID?) -> [Tab] {
+        tabs.filter { $0.pin == nil && $0.groupID == group }
+    }
+
+    func visibleTabs(in group: TabGroup) -> [Tab] {
+        let members = tabs(in: group.id)
+        return group.collapsed ? members.filter { $0.id == activeID } : members
     }
 
     func step(_ direction: Int) {
@@ -1265,7 +1373,9 @@ final class Browser: NSObject, ObservableObject {
             Tab(configuration: page)
         }
         prepare(tab)
+        if let source, !tab.shy, !tab.bench { tab.groupID = source.groupID }
         tabs.insert(tab, at: atEnd ? tabs.count : placeForNew())
+        if prefs.usesTabGroups && tab.groupID != nil { arrangeGroupedTabs() }
         tab.go(to: url)
         if foreground {
             leaving()
@@ -1296,6 +1406,7 @@ final class Browser: NSObject, ObservableObject {
             Tab(bench: tab.bench, configuration: page)
         }
         prepare(fresh)
+        fresh.groupID = tab.groupID
         let wasActive = activeID == tab.id
         tabs[index] = fresh
         fresh.go(to: url)
@@ -1437,6 +1548,7 @@ final class Browser: NSObject, ObservableObject {
     /// nothing until one is looked at (see Spaces.swift).
     func loadRow(_ space: UUID) -> Parked {
         let saved = Session.read(space: space)
+        let savedGroups = saved.groups ?? []
         var row: [Tab] = []
         for entry in saved.tabs {
             guard let url = URL(string: entry.url) else { continue }
@@ -1444,6 +1556,8 @@ final class Browser: NSObject, ObservableObject {
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
+            tab.groupID = entry.pin == nil && savedGroups.contains(where: { $0.id == entry.groupID })
+                ? entry.groupID : nil
             row.append(tab)
         }
         let active = row.indices.contains(saved.active) ? row[saved.active].id : row.first?.id
@@ -1454,6 +1568,7 @@ final class Browser: NSObject, ObservableObject {
     /// Spaces.swift) — empty, for one that restores its own.
     func showRow(_ row: [Tab], active: Tab.ID?) {
         tabs = row
+        if prefs.usesTabGroups { arrangeGroupedTabs() }
         activeID = active ?? row.first?.id
     }
 
@@ -2297,8 +2412,3 @@ extension Browser: WKDownloadDelegate {
         return candidate
     }
 }
-
-
-
-
-
