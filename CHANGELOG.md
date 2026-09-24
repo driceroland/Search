@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Every site starts at a zoom you choose: Settings › General › Page zoom, from 50% to 300% in steps of 5%. A size you set on a site with ⌘+ and ⌘− is still remembered for it and wins; zoom a site back to the default and it follows the default again. ⌘0, Actual Size and the number in the site card go back to your default rather than to 100%, and changing it resizes the open pages at once. Thanks [@shashwataggarwal](https://github.com/shashwataggarwal) ([#177](https://github.com/driceroland/Search/pull/177))
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed

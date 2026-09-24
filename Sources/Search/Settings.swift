@@ -204,6 +204,15 @@ struct SettingsPanel: View {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
             Rule()
+            Line("Page zoom", "Where every site starts. ⌘+ and ⌘− are still remembered for each site.") {
+                HStack(spacing: 8) {
+                    if prefs.pageZoom != 1 {
+                        Pill("Reset") { prefs.pageZoom = 1 }
+                    }
+                    Steps(stops: Preferences.zooms, value: $prefs.pageZoom, home: 1) { "\(Int(($0 * 100).rounded()))%" }
+                }
+            }
+            Rule()
             Line("Correct spelling as you type", "macOS's autocorrect inside pages — the one that capitalises for you") {
                 Switch(on: $prefs.autocorrect)
             }
@@ -618,6 +627,63 @@ struct Switch: View {
             .contentShape(Capsule())
             .onTapGesture { withAnimation(Motion.settle) { on.toggle() } }
             .animation(Motion.settle, value: on)
+    }
+}
+
+/// A value moved one stop at a time: − and + either side of it, in the same
+/// outlined capsule as a pill. Pressing the value itself takes it home.
+struct Steps: View {
+    let stops: [Double]
+    @Binding var value: Double
+    let home: Double
+    let label: (Double) -> String
+
+    /// The nearest stop either way — a value between stops, from before
+    /// there were stops, still moves to a round one.
+    private var below: Double? { stops.last { $0 < value - 0.001 } }
+    private var above: Double? { stops.first { $0 > value + 0.001 } }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Step(icon: "minus", to: below) { value = $0 }
+            Button { value = home } label: {
+                Text(label(value))
+                    .font(.system(size: 11.5))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.ink)
+                    .frame(minWidth: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Back to \(label(home))")
+            Step(icon: "plus", to: above) { value = $0 }
+        }
+        .padding(.horizontal, 2)
+        .frame(height: 24)
+        .background(Palette.ground, in: Capsule())
+        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+    }
+
+    private struct Step: View {
+        let icon: String
+        let to: Double?
+        let act: (Double) -> Void
+        @State private var hovering = false
+
+        var body: some View {
+            Button { if let to { act(to) } } label: {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(to == nil ? Palette.faint : Palette.ink)
+                    .frame(width: 20, height: 20)
+                    .background(hovering && to != nil ? Palette.hover : .clear, in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(to == nil)
+            .onHover { hovering = $0 }
+            .animation(Motion.quick, value: hovering)
+        }
     }
 }
 

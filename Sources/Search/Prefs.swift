@@ -133,6 +133,13 @@ final class Preferences: ObservableObject {
             Preferences.tellWebKit(autocorrect: autocorrect)
         }
     }
+    /// How big every site is drawn until it has been zoomed on its own.
+    @Published var pageZoom: Double {
+        didSet { store.set(pageZoom, forKey: "pageZoom") }
+    }
+    /// The stops the setting steps through — every 5%, from as small as
+    /// anyone reads to as big as a page is worth.
+    static let zooms: [Double] = stride(from: 50, through: 300, by: 5).map { Double($0) / 100 }
 
     /// A click of the wheel scrolls the page as on Windows (see AutoScroll.swift).
     /// Off unless asked for.
@@ -294,6 +301,7 @@ final class Preferences: ObservableObject {
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.
         Preferences.tellWebKit(autocorrect: corrects)
+        pageZoom = store.object(forKey: "pageZoom") as? Double ?? 1
         // Left behind by an assistant this browser no longer has.
         for key in ["mind.model", "mind.effort", "mind.acting", "mind.width", "mind.open"] {
             store.removeObject(forKey: key)

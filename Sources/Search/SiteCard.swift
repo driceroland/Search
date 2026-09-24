@@ -217,7 +217,7 @@ struct SiteCard: View {
 
     /// The page's size, remembered for the site (see Tab.rememberZoom), as a
     /// menu puts a control on one of its lines: the name, and the steps at
-    /// its end. The number puts it back to 100%.
+    /// its end. The number puts it back to the size every site starts at.
     private var zoom: some View {
         HStack(spacing: 0) {
             Text("Zoom")
