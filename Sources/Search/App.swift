@@ -769,7 +769,8 @@ struct ContentView: View {
     ]
 
     private func take(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let modifierFlags = event.modifierFlags
+        let flags = modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
 
         // Escape puts the page back. On a blank tab there is no page to put
@@ -979,9 +980,17 @@ struct ContentView: View {
             guard !shifted, browser.active?.typing != true,
                   !(event.window?.firstResponder is NSTextView)
             else { return false }
-            // ⌘← and ⌘→, for hands that never learned the brackets.
-            if event.keyCode == 123 { browser.back(); return true }
-            if event.keyCode == 124 { browser.forward(); return true }
+            // ⌘← and ⌘→, for hands that never learned the brackets. Text
+            // selection shortcuts (⌘⇧← and ⌘⇧→) belong to the editor and
+            // must not be intercepted as browser navigation.
+            if event.keyCode == 123, modifierFlags.contains(.command) && !modifierFlags.contains(.shift) {
+                browser.back()
+                return true
+            }
+            if event.keyCode == 124, modifierFlags.contains(.command) && !modifierFlags.contains(.shift) {
+                browser.forward()
+                return true
+            }
             return false
         }
         return true
