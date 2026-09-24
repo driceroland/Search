@@ -965,6 +965,16 @@ final class WindowModel: ObservableObject, Identifiable {
 
     // MARK: - session
 
+    /// This window's row as the session file keeps it.
+    func sessionShape(tabs row: [Tab], active: Tab.ID?) -> Session.WindowShape {
+        Session.WindowShape(
+            id: id.rawValue,
+            tabs: sessionEntries(row),
+            active: row.firstIndex { $0.id == active } ?? 0,
+            frame: profile.host(of: self)?.frame ?? frameRequest
+        )
+    }
+
     /// Entries for one row, as the session file keeps them.
     func sessionEntries(_ row: [Tab]) -> [Session.Entry] {
         row.compactMap { tab in
@@ -985,9 +995,11 @@ final class WindowModel: ObservableObject, Identifiable {
     /// on screen: tabs with an address and no page yet, which cost next to
     /// nothing until one is looked at (see Spaces.swift).
     func loadRow(_ space: UUID) -> Parked {
-        let saved = Session.read(space: space)
+        guard let shape = Self.row(in: Session.read(space: space), for: id) else {
+            return Parked(tabs: [], active: nil)
+        }
         var row: [Tab] = []
-        for entry in saved.tabs {
+        for entry in shape.tabs {
             guard let url = URL(string: entry.url) else { continue }
             let tab = Tab(configuration: Web.configuration(space: space))
             prepare(tab)
@@ -995,8 +1007,14 @@ final class WindowModel: ObservableObject, Identifiable {
             tab.pin = entry.pin
             row.append(tab)
         }
-        let active = row.indices.contains(saved.active) ? row[saved.active].id : row.first?.id
+        let active = row.indices.contains(shape.active) ? row[shape.active].id : row.first?.id
         return Parked(tabs: row, active: active)
+    }
+
+    /// This window's row in a space's session, or the first one still free.
+    static func row(in shape: Session.Shape, for id: WindowID) -> Session.WindowShape? {
+        if let mine = shape.windows.first(where: { $0.id == id.rawValue }) { return mine }
+        return shape.windows.first { $0.id == nil } ?? shape.windows.first
     }
 
     /// Another space's row put on screen in place of this one (see
@@ -1008,8 +1026,8 @@ final class WindowModel: ObservableObject, Identifiable {
 
     /// The row of tabs this window's space had last time, or one empty tab.
     func restoreSession() {
-        let saved = Session.read(space: spaceID)
-        guard !saved.tabs.isEmpty else {
+        let shape = Self.row(in: Session.read(space: spaceID), for: id) ?? Session.WindowShape(id: nil, tabs: [], active: 0)
+        guard !shape.tabs.isEmpty else {
             // A blank tab costs nothing until it is asked for its page. Its
             // web view — and with it WebKit's helper processes — is built a
             // moment after the window is up, so that the first address typed
@@ -1023,7 +1041,7 @@ final class WindowModel: ObservableObject, Identifiable {
             }
             return
         }
-        for entry in saved.tabs {
+        for entry in shape.tabs {
             guard let url = URL(string: entry.url) else { continue }
             let tab = Tab()
             prepare(tab)
@@ -1035,7 +1053,7 @@ final class WindowModel: ObservableObject, Identifiable {
             adopt(Tab())
             return
         }
-        let here = min(max(0, saved.active), tabs.count - 1)
+        let here = min(max(0, shape.active), tabs.count - 1)
         activeID = tabs[here].id
         // Only the one you were looking at actually loads.
         tabs[here].wake()

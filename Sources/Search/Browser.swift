@@ -560,12 +560,29 @@ final class Browser: NSObject, ObservableObject {
             space = last
             Spaces.current = last
         }
-        let first = WindowModel(profile: self, spaceID: space)
-        first.folded = prefs.sidebar && prefs.sideHides
-        windows = [first]
-        key = first
-        first.restoreSession()
-        if prefs.usesSpaces { first.preloadSpaces() }
+        // One window per row the session kept for this space; a file from
+        // before windows, or none at all, is one window.
+        let saved = Session.read(space: space)
+        let rows = saved.windows.isEmpty
+            ? [Session.WindowShape(id: nil, tabs: [], active: 0)]
+            : saved.windows
+        var made: [WindowModel] = []
+        for shape in rows {
+            let model = WindowModel(
+                id: WindowID(rawValue: shape.id ?? UUID()),
+                profile: self,
+                spaceID: space
+            )
+            model.folded = prefs.sidebar && prefs.sideHides
+            model.frameRequest = shape.frame
+            made.append(model)
+        }
+        windows = made
+        key = made.first
+        for model in made {
+            model.restoreSession()
+            if prefs.usesSpaces { model.preloadSpaces() }
+        }
     }
 
     // MARK: - the window registry
@@ -781,18 +798,23 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func writeSession(now: Bool = false) {
-        // One file per space, every window's row in it (see Session.swift).
-        // Unit 1 still writes the single-window shape from the first window;
-        // the window dimension lands with session windows.
-        guard let window = windows.first else { return }
-        Session.write(
-            now: now,
-            space: window.spaceID,
-            .init(
-                tabs: window.sessionEntries(window.tabs),
-                active: window.tabs.firstIndex { $0.id == window.activeID } ?? 0
+        // One file per space, every window's row in it (see Session.swift) —
+        // the ones on screen now, and the ones parked while their window is
+        // in another space.
+        var shapes: [UUID: [Session.WindowShape]] = [:]
+        for window in windows {
+            shapes[window.spaceID, default: []].append(
+                window.sessionShape(tabs: window.tabs, active: window.activeID)
             )
-        )
+            for (space, row) in window.parked {
+                shapes[space, default: []].append(
+                    window.sessionShape(tabs: row.tabs, active: row.active)
+                )
+            }
+        }
+        for (space, list) in shapes {
+            Session.write(now: now, space: space, Session.Shape(windows: list))
+        }
     }
 
     func rememberSession() {
