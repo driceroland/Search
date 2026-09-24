@@ -145,6 +145,7 @@ final class Extensions: NSObject, ObservableObject {
         Links.onceShown { [weak self] in
             Task { [weak self] in
                 guard let self else { return }
+                await forgetWorkersIfChanged()
                 // One after another, a moment apart: started all at once, WebKit
                 // fails some of their workers and never tries them again.
                 for item in installed where item.enabled {
@@ -156,6 +157,37 @@ final class Extensions: NSObject, ObservableObject {
                 checkForUpdates()
             }
         }
+    }
+
+    // MARK: - workers WebKit remembers
+
+    /// WebKit keeps each extension's service worker registered from one
+    /// launch to the next, with the scripts it fetched then, and may start
+    /// that copy rather than what is on disk now. A copy from another build
+    /// of the shim or another version of the extension can leave the worker
+    /// dead for good — reinstalling, reloading and restarting all bring the
+    /// same stale copy back (Vimium's keys stopped working, for one). WebKit
+    /// lists no records for extension origins, so there is no clearing one
+    /// extension's alone; clearing them all stops the workers that run. So
+    /// it is done at launch, before any extension loads, and only when what
+    /// they would run has changed since. Websites' workers go with them and
+    /// are registered again on the next visit.
+    private static let workersKey = "extensions.workers"
+
+    private var workers: String {
+        ([ExtensionShims.version] + installed.map { "\($0.id) \($0.version)" }.sorted()).joined(separator: "\n")
+    }
+
+    private func forgetWorkersIfChanged() async {
+        guard Store.settings.string(forKey: Extensions.workersKey) != workers else { return }
+        await Store.websites.removeData(ofTypes: [WKWebsiteDataTypeServiceWorkerRegistrations], modifiedSince: .distantPast)
+        Store.settings.set(workers, forKey: Extensions.workersKey)
+    }
+
+    /// An extension put in again, reloaded or found with its worker dead:
+    /// the version alone doesn't tell, so the next launch clears regardless.
+    private func workersChanged() {
+        Store.settings.removeObject(forKey: Extensions.workersKey)
     }
 
     // MARK: - the row, as WebKit sees it
@@ -391,6 +423,7 @@ final class Extensions: NSObject, ObservableObject {
             }
             unload(id)
             errors[id] = nil
+            workersChanged()
             if let staged {
                 do {
                     try? files.removeItem(at: target)
@@ -428,6 +461,7 @@ final class Extensions: NSObject, ObservableObject {
         guard let item = installed.first(where: { $0.id == id }), item.enabled,
               Date().timeIntervalSince(revived[id] ?? .distantPast) > 60 else { return }
         revived[id] = Date()
+        workersChanged()
         noteError("restarted the extension: \(reason)", for: id)
         // Its popup goes with it; it is opened again once the extension is back.
         let popup = ExtensionPopup.shared.extensionID == id ? ExtensionPopup.shared.view?.url : nil
@@ -497,6 +531,7 @@ final class Extensions: NSObject, ObservableObject {
         installed.removeAll { $0.id == id }
         installed.append(item)
         save()
+        workersChanged()
         if await load(item) {
             browser?.announce("\(name) is installed")
         } else {
