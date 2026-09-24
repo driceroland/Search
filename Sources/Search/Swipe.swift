@@ -101,4 +101,14 @@ struct Pull: Equatable {
     var armed: Bool
     /// Let go while armed: the page is on its way, and the disc leaves.
     var going: Bool
+    /// Held once armed: the pages that way, top to bottom, in place of the
+    /// disc, and the one letting go would open (see PageView.hold).
+    var stops: [Stop]? = nil
+    var picked = 0
+}
+
+/// A page in the list a held swipe shows.
+struct Stop: Equatable {
+    var title: String
+    var url: URL
 }

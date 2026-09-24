@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Hold a back or forward swipe to pick a page from history, as in Dia: once the swipe is far enough to go, keep your fingers down and the last pages that way appear, with the nearest lit. Moving up or down slides the list under the light, and letting go goes to the lit page. Settings › General › Hold a swipe to pick from history, off by default.
 - Mute a tab and let it play on: press the speaker at the end of a tab that plays sound, or pick Mute Tab in its right-click menu. A muted tab keeps a crossed-out speaker, to be heard again the same way. Thanks [@merttopuz](https://github.com/merttopuz) ([#61](https://github.com/driceroland/Search/pull/61))
 - File › Share… sends the page where the Mac would send it: Mail, Messages, AirDrop, Notes and the rest, as Safari's Share button does. Thanks [@merttopuz](https://github.com/merttopuz) ([#78](https://github.com/driceroland/Search/pull/78))
 - Pages at 120 Hz on a screen that can, like a MacBook Pro's: animations and scrolling in pages drawn up to 120 times a second instead of about 60. Settings › General › Pages at 120 Hz, off by default, as in Safari; it uses more battery. Open tabs follow when reloaded. Thanks [@AxxzyWasTaken](https://github.com/AxxzyWasTaken) ([#87](https://github.com/driceroland/Search/pull/87))

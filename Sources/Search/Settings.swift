@@ -220,6 +220,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.fastPages)
             }
             Rule()
+            Line("Hold a swipe to pick from history", "Swipe back or forward and keep your fingers down: the pages that way appear, and moving up or down picks one to go to") {
+                Switch(on: $prefs.holdsHistory)
+            }
+            Rule()
             Line("Flick the floating video to a corner", "Two fingers on it send it to the corner or edge they point at, instead of pushing it along. Dragging still puts it anywhere") {
                 Switch(on: $prefs.floatFlicks)
             }

@@ -1330,6 +1330,21 @@ final class PageView: WKWebView {
     private var showing = false
     private var going = false
     private var pulls = 0
+    /// Armed and held there: in a moment the disc becomes the list of pages
+    /// that way, and moving the fingers up or down picks one (as in Dia).
+    private var holding: DispatchWorkItem?
+    private var stops: [Stop]?
+    private var items: [WKBackForwardListItem] = []
+    private var picked = 0
+    /// How far the fingers have gone up (or down, below nought) since the
+    /// last step through the list.
+    private var climbed: CGFloat = 0
+    /// Settings › General › Hold a swipe to pick from history. Off unless
+    /// asked for; off, a held swipe is a swipe like any other.
+    static var holdsHistory = false
+    /// How long armed before the list, and how far up or down a step is.
+    private static let hold: TimeInterval = 0.45
+    private static let step: CGFloat = 22
 
     /// How far the fingers travel before letting go means it.
     private static let arm: CGFloat = 110
@@ -1419,8 +1434,9 @@ final class PageView: WKWebView {
     override func scrollWheel(with event: NSEvent) {
         onTouch?()
         // The page gets every event first and scrolls as it always did. The
-        // swipe is only read, never taken.
-        super.scrollWheel(with: event)
+        // swipe is only read, never taken — except while its list is open,
+        // when up and down are picking a page, not scrolling this one.
+        if stops == nil { super.scrollWheel(with: event) }
         // Only a live trackpad gesture — not its glide afterwards, and not a
         // mouse wheel, which has no beginning or end to speak of.
         guard event.momentumPhase == [] else { return }
@@ -1436,6 +1452,10 @@ final class PageView: WKWebView {
             spent = false
             armedNow = false
             showing = false
+            holding?.cancel()
+            holding = nil
+            stops = nil
+            items = []
             // A disc still on its way out belongs to the last gesture. It is
             // already invisible; it is only taken off the stage so the next
             // one arrives fresh rather than fading back in.
@@ -1470,6 +1490,7 @@ final class PageView: WKWebView {
                 return
             }
             sideways += event.scrollingDeltaX
+            if stops != nil { climb(event) }
             tell()
         case .ended:
             release()
@@ -1516,7 +1537,16 @@ final class PageView: WKWebView {
         }
 
         let armed = travel >= PageView.arm
-        if armed != armedNow {
+        if PageView.holdsHistory, stops == nil, armed != armedNow {
+            holding?.cancel()
+            holding = nil
+            if armed {
+                let hold = DispatchWorkItem { [weak self] in self?.openList() }
+                holding = hold
+                DispatchQueue.main.asyncAfter(deadline: .now() + PageView.hold, execute: hold)
+            }
+        }
+        if armed != armedNow, stops == nil {
             // Two different taps: one for reaching it, a lighter one for
             // stepping back from it, so you know without looking that
             // letting go now is safe.
@@ -1525,18 +1555,64 @@ final class PageView: WKWebView {
             )
         }
         armedNow = armed
-        settle(Pull(back: back, travel: travel, armed: armed, going: false))
+        settle(Pull(back: back, travel: travel, armed: armed, going: false, stops: stops, picked: picked))
+    }
+
+    /// Held long enough: the pages that way, nearest to the fingers — at the
+    /// bottom going back, at the top going forward — and that one picked.
+    private func openList() {
+        holding = nil
+        guard !spent, armedNow, stops == nil else { return }
+        let list = back ? Array(backForwardList.backList.suffix(8)) : Array(backForwardList.forwardList.prefix(8))
+        guard list.count >= 2 else { return }
+        items = list
+        stops = list.map { Stop(title: $0.title ?? "", url: $0.url) }
+        picked = back ? list.count - 1 : 0
+        climbed = 0
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+        tell()
+    }
+
+    /// Through the list a step at a time, the list sliding with the fingers
+    /// under a light that stays put, as in Dia: down brings the row above
+    /// under it — further back, or nearer going forward — and up the row
+    /// below. With natural scrolling the deltas run with the fingers,
+    /// without it against them.
+    private func climb(_ event: NSEvent) {
+        guard let stops else { return }
+        let sign: CGFloat = event.isDirectionInvertedFromDevice ? 1 : -1
+        climbed += -sign * event.scrollingDeltaY
+        var moved = false
+        while climbed >= PageView.step, picked < stops.count - 1 {
+            picked += 1
+            climbed -= PageView.step
+            moved = true
+        }
+        while climbed <= -PageView.step, picked > 0 {
+            picked -= 1
+            climbed += PageView.step
+            moved = true
+        }
+        // At either end, the fingers going on further count for nothing.
+        climbed = max(-PageView.step, min(PageView.step, climbed))
+        if moved { NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now) }
     }
 
     private func release() {
         defer { spent = true }
-        guard !spent, free == true, armedNow else {
+        guard !spent, free == true, armedNow || stops != nil else {
             settle(nil)
             return
         }
         going = true
-        settle(Pull(back: back, travel: travel, armed: true, going: true))
-        if back { goBack() } else { goForward() }
+        settle(Pull(back: back, travel: travel, armed: true, going: true, stops: stops, picked: picked))
+        if stops != nil, items.indices.contains(picked) {
+            go(to: items[picked])
+        } else if back {
+            goBack()
+        } else {
+            goForward()
+        }
         pulls += 1
         let mine = pulls
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { [weak self] in
@@ -1547,6 +1623,12 @@ final class PageView: WKWebView {
     }
 
     private func settle(_ pull: Pull?) {
+        if pull == nil {
+            holding?.cancel()
+            holding = nil
+            stops = nil
+            items = []
+        }
         showing = pull != nil
         onPull?(pull)
     }
