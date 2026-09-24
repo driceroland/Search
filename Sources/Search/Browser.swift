@@ -1677,8 +1677,15 @@ final class Browser: NSObject, ObservableObject {
                 Suggestion(key: typed, title: prefs.engine.name(custom: prefs.customEngine), url: asked, kind: .search)
             )
         }
+        // First, not last: typing "settings" to reach Settings is the whole
+        // point, and it would otherwise sit under a search for the word.
+        if prefs.commandBar, let command = Command.matching(typed, in: self) {
+            list.insert(.command(command), at: 0)
+        }
         offers = list
-        ending = history.completion(for: typed, among: offers.filter { $0.kind != .open })
+        // Neither a page already open nor a command has an address to
+        // complete towards.
+        ending = history.completion(for: typed, among: offers.filter { $0.kind != .open && !$0.kind.isCommand })
         // A row that was picked stops being the right row the moment the
         // question changes.
         picked = nil
@@ -1716,7 +1723,9 @@ final class Browser: NSObject, ObservableObject {
     /// resting cursor would otherwise rewrite the field before you had moved.
     func take(_ offer: Suggestion) {
         summoning = false
-        if let id = offer.tab, let tab = tabs.first(where: { $0.id == id }) {
+        if case .command(let command) = offer.kind {
+            command.run(on: self)
+        } else if let id = offer.tab, let tab = tabs.first(where: { $0.id == id }) {
             select(tab)
         } else {
             (active ?? tabs.first)?.go(to: offer.url)
@@ -1794,6 +1803,17 @@ final class Browser: NSObject, ObservableObject {
                 editing = false
                 return
             }
+        }
+
+        // What the arrow keys chose, or, absent that, the top of the list —
+        // the same row Return would otherwise fall through to.
+        let chosen = (picked.flatMap { offers.indices.contains($0) ? offers[$0] : nil }) ?? offers.first
+        if case .command(let command) = chosen?.kind {
+            command.run(on: self)
+            editing = false
+            typed = ""
+            picked = nil
+            return
         }
 
         let target: URL?

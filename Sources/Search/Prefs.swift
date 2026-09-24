@@ -185,6 +185,12 @@ final class Preferences: ObservableObject {
     @Published var usesSpaces: Bool {
         didSet { store.set(usesSpaces, forKey: "spaces") }
     }
+    /// "settings", "new tab" and the like in the address field reach that
+    /// part of the app instead of asking a search engine for the word (see
+    /// Commands.swift). Off unless asked for.
+    @Published var commandBar: Bool {
+        didSet { store.set(commandBar, forKey: "commandbar") }
+    }
 
     init() {
         // Carried over from when there were four ways of holding the browser
@@ -241,6 +247,7 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
+        commandBar = store.bool(forKey: "commandbar")
         let flicks = store.bool(forKey: "float.flicks")
         floatFlicks = flicks
         Float.flicks = flicks

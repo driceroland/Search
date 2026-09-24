@@ -212,6 +212,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.peeksLinks)
             }
             Rule()
+            Line("Address bar commands", "A word like \"settings\" or \"new tab\" in the address field reaches that instead of a search for it") {
+                Switch(on: $prefs.commandBar)
+            }
+            Rule()
             Line("Show where links go", "Point at a link and its address shows at the bottom of the page") {
                 Switch(on: $prefs.showsLinks)
             }
