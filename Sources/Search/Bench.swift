@@ -1055,7 +1055,7 @@ final class Bench {
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }
             answer(["ok": true])
 
-        case "extensions", "ext-add", "ext-folder", "ext-press", "ext-tap", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable":
+        case "extensions", "ext-add", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable":
             guard #available(macOS 15.4, *) else {
                 answer(["error": "extensions need macOS 15.4"])
                 return
@@ -1107,34 +1107,6 @@ final class Bench {
             guard let id = request["id"] as? String else { answer(["error": "ext-press needs an id"]); return }
             extensions.press(id)
             answer(["pressed": true])
-        case "ext-tap":
-            // Its button clicked the way a hand clicks it: the press goes
-            // through the app's own event queue — where a popover that closes
-            // on a click outside it sees it, as it sees a real one — and the
-            // button's action follows as the release would bring it. (The
-            // release itself would reach a button only in a window that is
-            // key, and a test run's window stays behind the one in use.)
-            // Only on a SEARCH_PROBE run: it clicks.
-            guard Store.testing else { answer(["error": "ext-tap only works on a --test run — it would click in your window"]); return }
-            guard let id = request["id"] as? String, let view = extensions.anchors[id]?.view, let window = view.window else {
-                answer(["error": "no button in the window for that extension — pin it first"])
-                return
-            }
-            let point = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
-            func post(_ type: NSEvent.EventType) {
-                guard let event = NSEvent.mouseEvent(
-                    with: type, location: point, modifierFlags: [],
-                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                    context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0
-                ) else { return }
-                NSApp.postEvent(event, atStart: false)
-            }
-            post(.leftMouseDown)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                post(.leftMouseUp)
-                extensions.press(id)
-                answer(["tapped": true])
-            }
         case "ext-enable":
             guard let id = request["id"] as? String else { answer(["error": "ext-enable needs an id"]); return }
             extensions.setEnabled(id, request["on"] as? Bool ?? true)
