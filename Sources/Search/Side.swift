@@ -23,6 +23,10 @@ struct SideBar: View {
     /// A pin, picked up out of the grid — a separate state from the loose
     /// rows above, since the two gestures never happen at once but move on
     /// two different axes.
+    /// The neighbouring spaces' own grey, apart from this one's.
+    @Namespace private var before
+    @Namespace private var after
+
     @State private var pinDragging: Tab.ID?
     @State private var pinFrom = 0
     @State private var pinTravel: CGSize = .zero
@@ -34,7 +38,9 @@ struct SideBar: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            DragStrip(reserved: 0, below: rowsEnd)
+            // Not under the card for a new space: it isn't made of views that
+            // would take the click first.
+            DragStrip(reserved: 0, below: browser.makingSpace ? .greatestFiniteMagnitude : rowsEnd)
 
             // The band the lights sit in is this mode's title bar: the window
             // is dragged by it and a double-click fills the screen with it,
@@ -62,17 +68,16 @@ struct SideBar: View {
                 }
                 .frame(height: Metrics.strip)
 
-                if browser.pinnedCount > 0 {
-                    pinned
-                        .padding(.bottom, 10)
-                }
-
-                loose
-                newTab
+                // The spaces side by side, as pages: two fingers sideways move
+                // the one on screen and the next one together, the next one
+                // coming in as this one goes, with nothing between them.
+                pages
 
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
+            // Clear of the foot, which sits over the column's bottom edge.
+            .padding(.bottom, SideBar.footHeight)
 
             VStack {
                 Spacer()
@@ -81,6 +86,9 @@ struct SideBar: View {
         }
         .frame(width: prefs.sideWidth)
         .frame(maxHeight: .infinity)
+        // Rows on their way to or from another space stay in the column.
+        .clipped()
+        .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background(landing ? Palette.hover : Palette.ground)
         .overlay(alignment: .trailing) {
             Rectangle().fill(Palette.hairline).frame(width: 1)
@@ -124,6 +132,117 @@ struct SideBar: View {
             .animation(Motion.quick, value: onEdge)
     }
 
+    // MARK: - the spaces, as pages
+
+    /// Where the space on screen sits among them: one past the last while
+    /// the card for a new one is up.
+    private var spaceAt: Int {
+        browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
+    }
+
+    private var pages: some View {
+        let width = prefs.sideWidth
+        let swipe = browser.spaceSwipe
+        let at = spaceAt
+        return ZStack(alignment: .topLeading) {
+            page(at, pill: pill)
+                .offset(x: swipe)
+            // Only while the fingers are bringing one in: the one they are
+            // bringing, a page's width away.
+            if swipe > 0, at > 0 {
+                page(at - 1, pill: before)
+                    .offset(x: swipe - width)
+            }
+            if swipe < 0, at < browser.spaces.count {
+                page(at + 1, pill: after)
+                    .offset(x: swipe + width)
+            }
+        }
+        // The pages are the column's whole width, each with its own margin.
+        .padding(.horizontal, -10)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// One space's page: the rows on screen, another space's rows as they
+    /// were left, or past the last the card for a new one.
+    @ViewBuilder
+    private func page(_ index: Int, pill: Namespace.ID) -> some View {
+        Group {
+            if index == browser.spaces.count {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    NewSpaceCard(browser: browser)
+                    Spacer(minLength: 0)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxHeight: .infinity)
+            } else if browser.spaces[index].id == browser.spaceID {
+                VStack(alignment: .leading, spacing: 0) {
+                    if browser.pinnedCount > 0 {
+                        pinned
+                            .padding(.bottom, 10)
+                    }
+                    // A row too long for the window scrolls between the pins
+                    // and the foot, rather than running under the lights at one
+                    // end and the foot at the other. While it fits it stays a
+                    // plain stack, and the space under it is still the
+                    // window's to be dragged by. Inside the page: the swipe
+                    // between spaces moves the page, scroll and all.
+                    ViewThatFits(in: .vertical) {
+                        rows
+                        ScrollViewReader { proxy in
+                            ScrollView(.vertical) { rows }
+                                // The tab you go to is the tab you see — ⌘1–⌘9,
+                                // ⇧⌘], a link opening beside the one on screen.
+                                .onChange(of: browser.activeID) { _, id in
+                                    guard let id else { return }
+                                    withAnimation(Motion.glide) { proxy.scrollTo(id) }
+                                }
+                                .onAppear {
+                                    if let id = browser.activeID { proxy.scrollTo(id, anchor: .center) }
+                                }
+                        }
+                    }
+                }
+            } else {
+                preview(browser.parked[browser.spaces[index].id] ?? Parked(tabs: [], active: nil), pill: pill)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(width: prefs.sideWidth, alignment: .topLeading)
+    }
+
+    /// Another space's rows, drawn with the same pieces as this one's so the
+    /// two read as one column while they pass — and nothing to press until
+    /// it is the one on screen.
+    private func preview(_ row: Parked, pill: Namespace.ID) -> some View {
+        let pins = row.tabs.filter { $0.pin != nil }
+        let rest = row.tabs.filter { $0.pin == nil }
+        let cols = SideBar.pinColumns(pins.count)
+        let width = pinWidth(for: pins.count)
+        let height = min(SideBar.square, width)
+        return VStack(alignment: .leading, spacing: 0) {
+            if !pins.isEmpty {
+                VStack(spacing: 0) {
+                    PinGrid(columns: cols, width: width, height: height, spacing: SideBar.pinGap) {
+                        ForEach(pins) { tab in
+                            PinSquare(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
+                                      pill: pill, width: width, height: height)
+                        }
+                    }
+                }
+                .padding(.bottom, 10)
+            }
+            VStack(spacing: SideBar.gap) {
+                ForEach(rest) { tab in
+                    SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active, pill: pill, close: {})
+                }
+            }
+            newTab
+        }
+        .allowsHitTesting(false)
+    }
+
     /// Where the rows stop and the window's own drag area starts. Added up
     /// from what was drawn rather than measured: a measurement would arrive a
     /// frame late, and for one frame the whole column would drag the window.
@@ -155,8 +274,10 @@ struct SideBar: View {
     /// width between them — the row is what fills edge to edge, not each
     /// cell on its own, so this grows past 34 just as readily as it shrinks
     /// below it.
-    private var pinWidth: CGFloat {
-        let cols = SideBar.pinColumns(browser.pinnedCount)
+    private var pinWidth: CGFloat { pinWidth(for: browser.pinnedCount) }
+
+    private func pinWidth(for count: Int) -> CGFloat {
+        let cols = SideBar.pinColumns(count)
         guard cols > 0 else { return SideBar.square }
         let available = prefs.sideWidth - 20 - CGFloat(cols - 1) * SideBar.pinGap
         return max(20, available / CGFloat(cols))
@@ -323,6 +444,17 @@ struct SideBar: View {
             }
     }
 
+    /// The loose tabs and the row that makes another, which scroll as one.
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            loose
+            newTab
+        }
+    }
+
+    /// The foot's door and its margin beneath.
+    private static let footHeight: CGFloat = 26 + 10
+
     private var newTab: some View {
         Quiet(icon: "plus", title: "New tab", height: SideBar.row) { browser.newTab() }
             .padding(.top, SideBar.gap)
@@ -424,6 +556,8 @@ private struct PinSquare: View {
         .modifier(OneClick(double: live) {
             if live { browser.editLetter(tab) } else { browser.select(tab) }
         })
+        // Put down, like ⌘W: close() is what knows a pin isn't removed.
+        .overlay { MiddleClick { browser.close(tab) } }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
         .help(tab.label)
@@ -445,6 +579,11 @@ private struct SideRow: View {
     @State private var shake: CGFloat = 0
 
     private var editing: Bool { browser.editingTab == tab.id }
+
+    /// The ring or the speaker, which stay for as long as the page loads or
+    /// plays and so keep a place of their own at the end of the row. The
+    /// cross is only there under the pointer, and takes none.
+    private var status: Bool { !editing && (tab.loading || tab.noisy) }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -473,49 +612,73 @@ private struct SideRow: View {
                     .foregroundStyle(colour)
             }
 
-            Spacer(minLength: 2)
+            if status {
+                Spacer(minLength: 2)
 
+                ZStack {
+                    if tab.loading {
+                        Ring().transition(.opacity)
+                    } else {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(Palette.muted)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: 15, height: 15)
+                // The cross takes this place while the pointer is here.
+                .opacity(hovering ? 0 : 1)
+            }
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, status ? 7 : 10)
+        .frame(height: 28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // The title keeps its length under the pointer and fades out
+        // beneath the cross, rather than being cut shorter, so its end
+        // doesn't jump on each row the pointer passes.
+        .mask {
             ZStack {
-                if hovering, !editing {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(Palette.muted)
-                        .frame(width: 15, height: 15)
-                        .background(Palette.ink.opacity(0.07), in: Circle())
-                        .transition(.opacity)
-                } else if tab.loading {
-                    Ring().transition(.opacity)
-                } else if tab.noisy {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(Palette.muted)
-                        .transition(.opacity)
+                Rectangle().opacity(hovering && !editing && !status ? 0 : 1)
+                HStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 16)
+                    Color.clear.frame(width: 26)
                 }
             }
-            .frame(width: editing ? 0 : 15, height: 15)
-            .opacity(editing ? 0 : 1)
-            .overlay {
-                if !editing {
+        }
+        .overlay(alignment: .trailing) {
+            if !editing {
+                ZStack {
+                    if hovering {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Palette.muted)
+                            .frame(width: 15, height: 15)
+                            .background(Palette.ink.opacity(0.07), in: Circle())
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: 15, height: 15)
+                .overlay {
                     Color.clear
                         .frame(width: 30, height: 28)
                         .contentShape(Rectangle())
                         .onTapGesture { if hovering { close() } }
                 }
+                .padding(.trailing, 7)
             }
-            .animation(Motion.quick, value: hovering)
-            .animation(Motion.quick, value: tab.loading)
-            .animation(Motion.quick, value: tab.noisy)
         }
-        .padding(.leading, 10)
-        .padding(.trailing, editing ? 10 : 7)
-        .frame(height: 28)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(Motion.quick, value: tab.loading)
+        .animation(Motion.quick, value: tab.noisy)
         .background { ground }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })
+        .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
         .animation(Motion.quick, value: hovering)
@@ -533,11 +696,13 @@ private struct SideRow: View {
         if live {
             ZStack(alignment: .leading) {
                 Rectangle().fill(Palette.wash)
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(Palette.ink.opacity(0.055))
-                        .frame(width: geo.size.width * tab.reading)
-                        .animation(.easeOut(duration: 0.15), value: tab.reading)
+                if prefs.showsReading {
+                    GeometryReader { geo in
+                        Rectangle()
+                            .fill(Palette.ink.opacity(0.055))
+                            .frame(width: geo.size.width * tab.reading)
+                            .animation(.easeOut(duration: 0.15), value: tab.reading)
+                    }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))

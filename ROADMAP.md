@@ -12,28 +12,28 @@ don't build it twice.
 ## Now — fixes for the next update
 
 - [ ] **Bitwarden goes blank after signing in** (and for one person doesn't load). Before signing in it works — popup, WebAssembly, background — so this needs an account to reproduce. *(X, several)*
-- [ ] **Search quits as it opens on macOS 14.8.3.** Nothing in the build points to it yet; waiting on the crash report. *(X)*
 - [ ] **Vimium C doesn't start**: WebKit fails to load its background (Vimium itself works). *(X)*
+- [ ] **Passkeys under the sign-in field.** A site's passkey button brings up the Mac's passkey sheet now; next is the suggestion Safari shows as you click into a sign-in field. *(X, [#17](https://github.com/driceroland/Search/issues/17))*
+- [ ] **Extension fixes held until 1.0.1 is out:** the field on an extension's new tab page ([#42](https://github.com/driceroland/Search/pull/42)), popups at their own size ([#48](https://github.com/driceroland/Search/pull/48)), pinning extensions from Settings ([#50](https://github.com/driceroland/Search/pull/50)).
+- [ ] **A local .html or .xhtml opened from the Finder does nothing.** Since [#140](https://github.com/driceroland/Search/pull/140) Search claims those files (it is what makes it eligible as the default browser), but `Links.application(_:open:)` only takes http and https. *(follow-up to #140)*
 
 ## Next — small additions people asked for
 
-- [ ] **Middle-click closes a tab.** *(X)*
-- [ ] **The sidebar hides by itself** until the pointer reaches the edge, as an option on top of ⌘S. *(X, several)*
-- [ ] **A setting to turn off the reading-progress fill** in the tab you are on. *(X)*
+- [ ] **Where a link goes, shown on hover**, as an option. *([#29](https://github.com/driceroland/Search/pull/29))*
 - [ ] **Import from Comet**, alongside Chrome, Arc, Brave, Edge and Dia. *(X)*
-- [ ] **Homebrew**: `brew install --cask search`. *(X)*
 - [ ] **Intel Macs.** *(X)*
 
 ## Later — bigger pieces of work
 
 - [ ] **More of the extension APIs**: the side panel, and the proxy API VPN and proxy extensions rely on. *([#12](https://github.com/driceroland/Search/issues/12), X)*
 - [ ] **An address bar that stays visible** above the page, as an option. *([#15](https://github.com/driceroland/Search/issues/15))*
-- [ ] **A tab switcher with previews** (⌃Tab held down). *(X)*
-- [ ] **Your own keyboard shortcuts.** *(X)*
+- [ ] **A tab switcher with previews** (⌃Tab held down). *(X, [#24](https://github.com/driceroland/Search/pull/24))*
+- [ ] **Your own keyboard shortcuts.** *(X, [#36](https://github.com/driceroland/Search/pull/36))*
 - [ ] **Driving Search from an agent** (an MCP server over the bench), for automation and testing. *(X, [#14](https://github.com/driceroland/Search/pull/14))*
 - [ ] **Web push notifications**, as far as WebKit lets an app other than Safari have them. *(X)*
 - [ ] **Smoother scrolling with a mouse wheel.** To look into. *(X)*
-- [ ] **Tab groups.** To weigh against keeping the sidebar quiet. *(X)*
+- [ ] **Tab groups.** To weigh against keeping the sidebar quiet, now that there are Spaces. *(X, [#31](https://github.com/driceroland/Search/pull/31))*
+- [ ] **A title bar in the page's colour**, as an option, without bringing back the toolbar. *([#25](https://github.com/driceroland/Search/pull/25))*
 
 ## Not on the list, for now
 

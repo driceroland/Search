@@ -222,6 +222,12 @@ struct WindowSetup: NSViewRepresentable {
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError() }
 
+        /// Here only to learn the window, never to be clicked: set behind or
+        /// over something that spans the whole window — Fold's layer does,
+        /// since its band runs along the top — a view that answered would
+        /// take every click meant for the page and the tabs.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             guard let window else { return }
@@ -328,8 +334,10 @@ struct DragStrip: NSViewRepresentable {
 /// It lives inside the title bar rather than in the window's content, because
 /// the title bar draws above everything the app puts on screen.
 final class RestingLights: NSView {
+    /// Set again each time the title bar is laid out — every change of
+    /// screen, key window or size — and redrawn only when they moved.
     var spots: [CGRect] = [] {
-        didSet { needsDisplay = true }
+        didSet { if spots != oldValue { needsDisplay = true } }
     }
 
     override func draw(_ dirty: NSRect) {
