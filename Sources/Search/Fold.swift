@@ -142,6 +142,11 @@ struct Fold: View {
         .onChange(of: browser.editingTab) { _, editing in
             if editing == nil, !inside, browser.peeking { peek(false) }
         }
+        // The bookmarks list closed: no need to wait for the pointer to
+        // move again before the column follows it back in.
+        .onChange(of: browser.bookmarksOpen) { _, open in
+            if !open, !inside, browser.peeking { peek(false) }
+        }
     }
 
     /// Folded, and not taken over by a page filling the screen.
@@ -185,7 +190,11 @@ struct Fold: View {
             let onWindow = top == window.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
             let reach = prefs.sidebar ? prefs.sideWidth : Metrics.strip
-            let over = onOwnPanel || (onWindow && inWindow && distance < reach)
+            // A bookmark's link opens in the tab the popover sits over, or
+            // clicking one just moves the pointer off toward the page: the
+            // column would otherwise fold away under a popover that is
+            // still open and still wants somewhere to sit.
+            let over = Fold.ownPopoverOpen(browser) || onOwnPanel || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
         } else if inWindow, distance < Fold.edge {
@@ -234,12 +243,21 @@ struct Fold: View {
             guard leaving == nil else { return }
             let going = DispatchWorkItem {
                 leaving = nil
-                guard browser.editingTab == nil else { return }
+                guard browser.editingTab == nil, !Fold.ownPopoverOpen(browser) else { return }
                 browser.peek(false)
             }
             leaving = going
             DispatchQueue.main.asyncAfter(deadline: .now() + Fold.grace, execute: going)
         }
+    }
+
+    /// A popover opened from a Door in the column, still open: closing the
+    /// column would take it along, so it holds the column out no matter
+    /// where the pointer has wandered off to meanwhile.
+    private static func ownPopoverOpen(_ browser: Browser) -> Bool {
+        if browser.bookmarksOpen { return true }
+        if #available(macOS 15.4, *), Extensions.shared.menuOpen { return true }
+        return false
     }
 
     /// The title bar's own view holds the three buttons and the resting
