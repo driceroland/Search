@@ -69,6 +69,7 @@ fi
 # to keep in step with anything.
 ICONSET="build/AppIcon.iconset"
 rm -rf "$ICONSET"
+cp Search.sdef "$APP/Contents/Resources/"
 swift Icon/icon.swift "$ICONSET" > /dev/null
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET"
@@ -90,6 +91,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHumanReadableCopyright</key><string>© Office Commun · Search</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppleScriptEnabled</key><true/>
+  <key>OSAScriptingDefinition</key><string>Search.sdef</string>
   <!-- Owning http and https is what sends a link clicked in Mail here.
        Appearing in Desktop & Dock → Default web browser also needs the
        XHTML document type below. -->

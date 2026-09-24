@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary title="Search Terminology">
+    <suite name="Search Suite" code="Srch" description="Windows and their tabs.">
+        <command name="count" code="corecnte" description="Return the number of elements of a particular class within an object.">
+            <cocoa class="NSCountCommand"/>
+            <direct-parameter type="specifier" description="The objects to be counted."/>
+            <parameter name="each" code="kocl" type="type" optional="yes" hidden="yes" description="The class of objects to be counted.">
+                <cocoa key="ObjectClass"/>
+            </parameter>
+            <result type="integer" description="The count."/>
+        </command>
+        <class name="application" code="capp" description="Search.">
+            <cocoa class="NSApplication"/>
+            <element type="window" access="r">
+                <cocoa key="orderedWindows"/>
+            </element>
+        </class>
+        <class name="window" code="cwin" description="A browser window.">
+            <cocoa class="NSWindow"/>
+            <element type="tab" access="r">
+                <cocoa key="scriptTabs"/>
+            </element>
+            <property name="current tab" code="cTab" type="tab" access="r" description="The tab showing in the window.">
+                <cocoa key="scriptCurrentTab"/>
+            </property>
+        </class>
+        <class name="tab" plural="tabs" code="bTab" description="A tab.">
+            <cocoa class="ScriptTab"/>
+            <property name="URL" code="pURL" type="text" access="r" description="The address of the tab's page.">
+                <cocoa key="url"/>
+            </property>
+            <property name="name" code="pnam" type="text" access="r" description="The title of the tab's page.">
+                <cocoa key="name"/>
+            </property>
+        </class>
+    </suite>
+</dictionary>

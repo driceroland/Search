@@ -14,6 +14,7 @@ final class Links: NSObject, NSApplicationDelegate {
     private static var waiting: [URL] = []
     /// The browser's window, once there is one.
     static weak var window: NSWindow?
+    @MainActor static weak var browser: Browser?
     /// Whether the window has been asked for on a link's behalf (summon).
     private static var summoned = false
     /// The session, written now rather than whenever its own debounce was
@@ -111,6 +112,7 @@ final class Links: NSObject, NSApplicationDelegate {
     /// it, a few frames apart, in the order they came.
     @MainActor
     static func hand(to browser: Browser) {
+        Links.browser = browser
         deliver = { [weak browser] url in
             browser?.arrive(url)
             // The window closed with the app still running: the link brings
