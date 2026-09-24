@@ -440,17 +440,10 @@ final class Extensions: NSObject, ObservableObject {
         }
     }
 
-    /// WebKit keeps an extension's worker registration from one launch to
-    /// the next, and on this macOS it never starts a kept one again: after a
-    /// relaunch every message to the worker went unanswered, a reload didn't
-    /// help, and a popup built on its worker (Bitwarden, Tampermonkey) spun
-    /// for ever. Dropped before the extensions load, each is registered
-    /// afresh. Only registrations go; what extensions stored stays.
-    ///
-    /// Sites' registrations go with them, since WebKit lists none for an
-    /// extension's origin to pick out; a site registers its own again on
-    /// its next visit.
+    /// WebKit does not restart extension workers after relaunch. This also
+    /// removes sites' registrations, so do it only when extensions are enabled.
     private func clearWorkers() async {
+        guard installed.contains(where: { $0.enabled }) else { return }
         await Store.websites.removeData(ofTypes: [WKWebsiteDataTypeServiceWorkerRegistrations], modifiedSince: .distantPast)
     }
 
