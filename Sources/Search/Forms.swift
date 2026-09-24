@@ -65,15 +65,60 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
 
     /// Only the passkey object goes. navigator.credentials itself stays: sites
     /// use it for stored passwords too, and that half still works.
+    ///
+    /// Unless an extension answers passkey requests itself — a password
+    /// manager with your passkeys in it, as 1Password is. It puts its own get
+    /// and create on navigator.credentials, and reaches for the passkey object
+    /// from its own script as it does; from then on sites see the object, and
+    /// the extension is the one they ask. Whatever it leaves to the browser is
+    /// refused at once, as if you had said no, where WebKit would try and fail.
     static let withoutPasskeys = """
     (function () {
+      var real = window.PublicKeyCredential;
+      if (!real) return;
+      var claimed = false;
+      function answered() {
+        if (claimed) return true;
+        try {
+          if (navigator.credentials && Object.getOwnPropertyDescriptor(navigator.credentials, 'get')) claimed = true;
+          else if ((new Error().stack || '').indexOf('-extension://') >= 0) claimed = true;
+        } catch (e) {}
+        return claimed;
+      }
       try {
         Object.defineProperty(window, 'PublicKeyCredential', {
-          value: undefined, configurable: true, writable: true
+          configurable: true,
+          get: function () { return answered() ? real : undefined; },
+          set: function (value) { real = value; }
         });
       } catch (e) {
         try { delete window.PublicKeyCredential; } catch (ignored) {}
+        return;
       }
+      var proto = CredentialsContainer.prototype;
+      ['get', 'create'].forEach(function (name) {
+        var native = proto[name];
+        try {
+          Object.defineProperty(proto, name, {
+            configurable: true, writable: true,
+            value: function (options) {
+              if (!options || !options.publicKey) return native.apply(this, arguments);
+              var signal = options.signal;
+              // Under the name field: nothing to offer, so it waits, as it
+              // would while nobody picks one, until the page lets it go.
+              if (name === 'get' && options.mediation === 'conditional') {
+                return new Promise(function (resolve, reject) {
+                  if (!signal) return;
+                  var aborted = function () { return signal.reason || new DOMException('The operation was aborted.', 'AbortError'); };
+                  if (signal.aborted) return reject(aborted());
+                  signal.addEventListener('abort', function () { reject(aborted()); }, { once: true });
+                });
+              }
+              return Promise.reject(new DOMException('The operation either timed out or was not allowed.', 'NotAllowedError'));
+            }
+          });
+        } catch (e) {}
+      });
     })();
     """
 
