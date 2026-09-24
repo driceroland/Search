@@ -37,13 +37,16 @@ extension Browser {
     /// ⌘S. The column, or the strip across the top, out of the way, or back.
     func toggleFold() {
         peeking = false
-        withAnimation(Motion.glide) { folded.toggle() }
+        withAnimation(foldMotion) { folded.toggle() }
     }
 
     /// The folded column out over the page, or back in.
     func peek(_ out: Bool) {
-        withAnimation(Motion.glide) { peeking = out }
+        withAnimation(foldMotion) { peeking = out }
     }
+
+    /// The column's slide, as long as Settings › Tabs says; nil for none.
+    var foldMotion: Animation? { Motion.fold(prefs.sideSpeed) }
 }
 
 /// Over the window while the column or the strip is folded: the column or
@@ -102,7 +105,13 @@ struct Fold: View {
             ZStack(alignment: .leading) {
                 Color.clear.frame(width: 0)
                 if folding, prefs.sidebar, browser.peeking {
+                    // The spring carries the column a few points past the
+                    // window's edge before it settles. Beside the page, as
+                    // with ⌘S, the window's own ground fills that; out over
+                    // the page it showed the page, so the column brings its
+                    // ground along past its left edge.
                     SideBar(browser: browser, prefs: prefs)
+                        .background(Palette.ground.padding(.leading, -40))
                         .shadow(color: .black.opacity(0.14), radius: 20, x: 4)
                         .transition(.move(edge: .leading))
                 }
@@ -135,7 +144,7 @@ struct Fold: View {
         .onChange(of: prefs.sideHides) { _, hides in
             guard prefs.sidebar else { return }
             browser.peeking = false
-            withAnimation(Motion.glide) { browser.folded = hides }
+            withAnimation(browser.foldMotion) { browser.folded = hides }
         }
         // The address typed into a row is done with, and the pointer went
         // elsewhere while it was: the column goes the way it would have.
@@ -248,9 +257,9 @@ struct Fold: View {
     private func hideLights() {
         guard let bar = Fold.titlebar else { return }
         if prefs.sidebar {
-            Fold.slide(bar, off: lightsOff, by: prefs.sideWidth)
+            Fold.slide(bar, off: lightsOff, by: prefs.sideWidth, response: prefs.sideSpeed)
         } else {
-            Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true)
+            Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true, response: prefs.sideSpeed)
         }
     }
 
@@ -266,10 +275,11 @@ struct Fold: View {
     /// does. Shown or hidden at once, they stood in their place while the
     /// column was still sliding in under them, and vanished before it had
     /// gone. So they come in from the left edge and go back off it, on the
-    /// column's own spring (Motion.glide, in Core Animation's terms) — from
+    /// column's own spring (Motion.fold, in Core Animation's terms) — from
     /// wherever they are, when the pointer turns back halfway. `up`: off the
     /// top edge with the strip rather than off the left edge with the column.
-    static func slide(_ bar: NSView, off: Bool, by width: CGFloat, up: Bool = false) {
+    /// `response`: the spring's, from Settings › Tabs; zero is no slide.
+    static func slide(_ bar: NSView, off: Bool, by width: CGFloat, up: Bool = false, response: Double) {
         slides += 1
         let turn = slides
         guard let layer = bar.layer else {
@@ -291,15 +301,15 @@ struct Fold: View {
             ? (layer.presentation()?.value(forKeyPath: path) as? CGFloat ?? 0)
             : (bar.isHidden ? gone : 0)
         let to: CGFloat = off ? gone : 0
-        guard from != to else {
+        guard from != to, response > 0 else {
             layer.removeAnimation(forKey: "fold")
             bar.isHidden = off
             return
         }
         let spring = CASpringAnimation(keyPath: path)
         spring.mass = 1
-        spring.stiffness = pow(2 * .pi / 0.34, 2)
-        spring.damping = 4 * .pi * 0.82 / 0.34
+        spring.stiffness = pow(2 * .pi / response, 2)
+        spring.damping = 4 * .pi * 0.82 / response
         spring.fromValue = from
         spring.toValue = to
         spring.duration = spring.settlingDuration

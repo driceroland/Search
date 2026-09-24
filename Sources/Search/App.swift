@@ -284,7 +284,8 @@ struct ContentView: View {
             // When the column or the strip comes or goes, the page slides with
             // it and is resized once, not on every frame of the slide: laid out
             // again thirty times a second, the page juddered along its right
-            // edge and overshot the window with the spring (see `room`).
+            // edge and overshot the window with the spring (see `room`). The
+            // column is the exception: the page narrows and widens with it.
             stage
                 .padding(.leading, roomed.width)
                 .padding(.top, roomed.height)
@@ -313,7 +314,7 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
-        .animation(Motion.glide, value: browser.prefs.sidebar)
+        .animation(browser.foldMotion, value: browser.prefs.sidebar)
         .animation(.easeOut(duration: 0.12), value: browser.active?.immersed)
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
@@ -360,21 +361,26 @@ struct ContentView: View {
     /// The room the page is laid out to leave them, which is not animated.
     private var roomed: CGSize { room ?? chrome }
 
-    /// Chrome going away gives the page its room at once, the page sliding
-    /// out from under it at its new size. Chrome arriving slides over a page
-    /// still at its old size, which gives up the room once the slide is over.
-    /// A column being dragged wider or narrower is followed as it goes.
+    /// The column coming or going gives or takes the page's room on the
+    /// column's own spring, so the page narrows and widens with it rather
+    /// than jumping before or after it has moved. The strip going away gives
+    /// the page its room at once, the page sliding out from under it at its
+    /// new size; the strip arriving slides over a page still at its old size,
+    /// which gives up the room once the slide is over. A column being dragged
+    /// wider or narrower is followed as it goes.
     private func make(room new: CGSize, after old: CGSize) {
         let now = roomed
-        let arriving = (old.width == 0 && new.width > 0, old.height == 0 && new.height > 0)
+        let arriving = old.height == 0 && new.height > 0
+        let sliding = (old.width == 0) != (new.width == 0)
         var at = now
-        if !arriving.0 { at.width = new.width }
-        if !arriving.1 { at.height = new.height }
+        if !sliding { at.width = new.width }
+        if !arriving { at.height = new.height }
         roomTicket += 1
         var still = Transaction()
         still.disablesAnimations = true
         withTransaction(still) { room = at }
-        guard arriving.0 || arriving.1 else { return }
+        if sliding { withAnimation(browser.foldMotion) { room?.width = new.width } }
+        guard arriving else { return }
         let ticket = roomTicket
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
             guard ticket == roomTicket else { return }

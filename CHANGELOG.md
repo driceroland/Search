@@ -14,8 +14,12 @@ in [ROADMAP.md](ROADMAP.md).
 ### Added
 
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
+- How long the sidebar takes to open and close, from instant to 0.6 s, in Settings › Tabs › Sidebar speed. It starts where it always was.
 
 ### Fixed
+
+- The page narrows and widens with the sidebar as it opens and closes with ⌘S, rather than jumping to its new width before the sidebar has moved or after it has stopped.
+- The sidebar brought out by the pointer at the window's edge no longer shows a sliver of the page along the edge as it settles.
 
 - A window a page opens at a size of its own, a sign-in window for one, is named in the tabs by its site rather than by its title, which the page chooses: one called "Sign in with Google" from another address no longer passes for Google's. A plain link opened in a new tab keeps its title, and a name you gave a tab stays first.
 - A link from another app, or one opened from a pinned tab, comes first after the pins instead of landing between two of them. ([#219](https://github.com/driceroland/Search/issues/219))

@@ -261,13 +261,31 @@ struct SettingsPanel: View {
             Line("Tabs in a sidebar", "Down the left instead of across the top. Pull its edge to make it wider; double-click the edge to reset.") {
                 Switch(on: Binding(
                     get: { prefs.sidebar },
-                    set: { on in withAnimation(Motion.glide) { prefs.sidebar = on } }
+                    set: { on in withAnimation(Motion.fold(prefs.sideSpeed)) { prefs.sidebar = on } }
                 ))
             }
             if prefs.sidebar {
                 Rule()
                 Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its left edge for the tabs. ⌘S keeps them out.") {
                     Switch(on: $prefs.sideHides)
+                }
+                Rule()
+                Line("Sidebar speed", "How long it takes to open and close.") {
+                    HStack(spacing: 10) {
+                        // No `step`: on the Mac that draws a tick for every
+                        // one. Rounded to hundredths here instead.
+                        Slider(value: Binding(
+                            get: { prefs.sideSpeed },
+                            set: { prefs.sideSpeed = ($0 * 100).rounded() / 100 }
+                        ), in: Preferences.sideSpeeds)
+                            .controlSize(.small)
+                            .tint(Palette.ink)
+                            .frame(width: 140)
+                        Text(prefs.sideSpeed > 0 ? String(format: "%.2f s", prefs.sideSpeed) : "Instant")
+                            .font(.system(size: 11.5).monospacedDigit())
+                            .foregroundStyle(Palette.muted)
+                            .frame(width: 48, alignment: .trailing)
+                    }
                 }
             }
             Rule()
