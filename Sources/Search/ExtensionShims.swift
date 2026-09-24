@@ -439,6 +439,8 @@ enum ExtensionShims {
           if (wanted.length) return load(...wanted);
         };
       }
+      // The tab an extension's framed page is in, asked once (see __searchToFrame).
+      let ownTab = null;
       const gather = (event) => {
         if (!event || typeof event.addListener !== "function") return;
         const add = event.addListener.bind(event);
@@ -456,6 +458,30 @@ enum ExtensionShims {
           if (message && message.__searchUserScript === true) {
             const route = root.__searchUserScriptMessage;
             return route && route(message.message, sender, sendResponse) && !settled ? true : undefined;
+          }
+          // A tab's message, handed on by the worker (see alsoFramed): taken
+          // by the frame it names, in the tab it names; every other page lets
+          // it pass without answering, as it would a message not for it.
+          if (message && message.__searchToFrame) {
+            const to = message.__searchToFrame;
+            if (!embedded || !(to.urls || []).includes(location.href)) {
+              if (!background) setTimeout(() => sendResponse(undefined), 10000);
+              return background ? undefined : true;
+            }
+            if (!ownTab) ownTab = Promise.resolve(runtime.sendMessage({ __searchCall: { space: "tabs", method: "getCurrent", args: [] } }))
+              .then((reply) => reply && reply.value ? reply.value.id : null, () => null);
+            ownTab.then((id) => {
+              if (id !== to.tabId) return setTimeout(() => sendResponse(undefined), 10000);
+              let kept = false;
+              for (const listener of [...listeners]) {
+                let result;
+                try { result = listener(to.message, sender, sendResponse); } catch (e) { setTimeout(() => { throw e; }); continue; }
+                if (result === true) kept = true;
+                else if (result && typeof result.then === "function") { kept = true; result.then(sendResponse, () => sendResponse(undefined)); }
+              }
+              if (!kept) sendResponse(undefined);
+            });
+            return true;
           }
           // A call one of the extension's pages in a website's frame can't
           // make itself (see `embedded`), made here for it — and only for
@@ -623,12 +649,35 @@ enum ExtensionShims {
           return replied(answer, callback, "The message port closed before a response was received.");
         });
       }
+      // A message for a tab reaches only its content scripts in WebKit. In
+      // Chrome it reaches the extension's own pages framed in that tab too —
+      // 1Password's sign-in banner is one, told this way to offer a passkey
+      // instead of a password, and without it the site's request failed. So
+      // the worker hands it to those frames as well, and the first answer
+      // from either wins.
+      const alsoFramed = (answer, tabId, message, options) => {
+        const nav = chrome.webNavigation;
+        if (!nav || typeof nav.getAllFrames !== "function" || typeof tabId !== "number") return answer;
+        const own = runtime.getURL("");
+        const wanted = options && typeof options.frameId === "number" ? options.frameId : null;
+        const framed = Promise.resolve(nav.getAllFrames({ tabId })).then((frames) => {
+          const urls = (frames || []).filter((f) => f.url && f.url.startsWith(own) && f.frameId !== 0 && (wanted === null || f.frameId === wanted)).map((f) => f.url);
+          if (!urls.length) return undefined;
+          return Object.getPrototypeOf(runtime).sendMessage.call(runtime, { __searchToFrame: { tabId, urls, message } });
+        }, () => undefined);
+        return new Promise((resolve, reject) => {
+          let left = 2, failure = null;
+          const none = () => { if (--left === 0) failure ? reject(failure) : resolve(undefined); };
+          answer.then((v) => v !== undefined ? resolve(v) : none(), (e) => { failure = e; none(); });
+          framed.then((v) => v !== undefined ? resolve(v) : none(), () => none());
+        });
+      };
       if (chrome.tabs && typeof chrome.tabs.sendMessage === "function") {
         const send = chrome.tabs.sendMessage.bind(chrome.tabs);
         put(chrome.tabs, "sendMessage", (tabId, message, options, callback) => {
           if (typeof options === "function") { callback = options; options = undefined; }
           const p = options === undefined ? send(tabId, message) : send(tabId, message, options);
-          return replied(p, callback, "Could not establish connection. Receiving end does not exist.");
+          return replied(background ? alsoFramed(p, tabId, message, options) : p, callback, "Could not establish connection. Receiving end does not exist.");
         });
       }
       if (typeof document !== "undefined" && runtime && typeof runtime.connect === "function") {
