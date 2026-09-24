@@ -15,6 +15,7 @@ don't build it twice.
 - [ ] **Vimium C doesn't start**: WebKit fails to load its background (Vimium itself works). *(X)*
 - [ ] **Passkeys under the sign-in field.** A site's passkey button brings up the Mac's passkey sheet now; next is the suggestion Safari shows as you click into a sign-in field. *(X, [#17](https://github.com/driceroland/Search/issues/17))*
 - [ ] **Extension fixes held until 1.0.1 is out:** the field on an extension's new tab page ([#42](https://github.com/driceroland/Search/pull/42)), popups at their own size ([#48](https://github.com/driceroland/Search/pull/48)), pinning extensions from Settings ([#50](https://github.com/driceroland/Search/pull/50)).
+- [ ] **A local .html or .xhtml opened from the Finder does nothing.** Since [#140](https://github.com/driceroland/Search/pull/140) Search claims those files (it is what makes it eligible as the default browser), but `Links.application(_:open:)` only takes http and https. *(follow-up to #140)*
 
 ## Next — small additions people asked for
 

@@ -730,6 +730,11 @@ struct TabMenu: View {
             browser.copyAddress()
         }
         .disabled(tab.isBlank)
+        Button("Copy as Markdown Link") {
+            browser.select(tab)
+            browser.copyMarkdownLink()
+        }
+        .disabled(tab.isBlank)
         Button(tab.muted ? "Unmute Tab" : "Mute Tab") { tab.toggleMute() }
         Divider()
         Button("Close Tab", action: close)

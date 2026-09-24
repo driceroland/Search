@@ -11,7 +11,7 @@ import Combine
 // which one is in front, what a new tab or a popup means in this window, who
 // is asked for a permission and how — plus the Chrome Web Store install
 // (Crx.swift) and the APIs WebKit doesn't have, filled in natively
-// (ExtensionShims.swift, ExtensionNative.swift).
+// (ExtensionShims.swift, ExtensionNative.swift, ExtensionSocket.swift).
 //
 // Tab is a Swift class and the protocols are Objective-C ones, so each tab
 // is represented to WebKit by a small adapter kept here. A tab can be in the
@@ -139,16 +139,22 @@ final class Extensions: NSObject, ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] pair in self?.activated(from: pair.0, to: pair.1) }
             .store(in: &bag)
-        Task {
-            // One after another, a moment apart: started all at once, WebKit
-            // fails some of their workers and never tries them again.
-            for item in installed where item.enabled {
-                await load(item)
-                if contexts[item.id]?.webExtension.hasBackgroundContent == true {
-                    try? await Task.sleep(for: .milliseconds(400))
+        // Once the window is up: loading one takes the main thread for tens
+        // of milliseconds (uBlock Origin Lite, 45), and the first frame
+        // waited behind it.
+        Links.onceShown { [weak self] in
+            Task { [weak self] in
+                guard let self else { return }
+                // One after another, a moment apart: started all at once, WebKit
+                // fails some of their workers and never tries them again.
+                for item in installed where item.enabled {
+                    await load(item)
+                    if contexts[item.id]?.webExtension.hasBackgroundContent == true {
+                        try? await Task.sleep(for: .milliseconds(400))
+                    }
                 }
+                checkForUpdates()
             }
-            checkForUpdates()
         }
     }
 
@@ -221,8 +227,11 @@ final class Extensions: NSObject, ObservableObject {
     @discardableResult
     private func load(_ item: Installed) async -> Bool {
         // The shim this build of Search carries, in place of whatever the
-        // build that installed it carried.
-        try? ExtensionShims.prepare(Extensions.folder(for: item.id))
+        // build that installed it carried — away from the main thread: the
+        // first launch after an update reads and rewrites every script and
+        // page each extension ships (Grammarly: 450 ms).
+        let folder = Extensions.folder(for: item.id)
+        try? await Task.detached(priority: .userInitiated) { try ExtensionShims.prepare(folder) }.value
         do {
             let found = try await WKWebExtension(resourceBaseURL: Extensions.folder(for: item.id))
             let context = WKWebExtensionContext(for: found)
@@ -738,7 +747,7 @@ final class Extensions: NSObject, ObservableObject {
     }
 
     func press(_ id: String) {
-        guard let context = contexts[id] else { return }
+        guard let context = contexts[id], !ExtensionPopup.shared.closes(id) else { return }
         if let tab = activeAdapter { context.userGesturePerformed(in: tab) }
         // An extension that asked for its button to open its side panel.
         if ExtensionShims.panelOnClick.contains(id), context.action(for: activeAdapter)?.presentsPopup != true {
@@ -875,6 +884,10 @@ extension Extensions: WKWebExtensionControllerDelegate {
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, connectUsing port: WKWebExtension.MessagePort, for extensionContext: WKWebExtensionContext) async throws {
+        if port.applicationIdentifier == ExtensionSocket.name {
+            ExtensionSocket.connect(port, from: extensionContext.uniqueIdentifier)
+            return
+        }
         try ExtensionNative.connect(port, from: extensionContext.uniqueIdentifier)
     }
 }
@@ -928,7 +941,21 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
         tab?.magnify(to: CGFloat(zoomFactor))
     }
 
-    func loadURL(_ url: URL, for context: WKWebExtensionContext) async throws { tab?.go(to: url) }
+    func loadURL(_ url: URL, for context: WKWebExtensionContext) async throws {
+        guard let tab else { return }
+        // A website's tab sent to one of an extension's own pages — 1Password
+        // does, once a sign-in in its tab has added the account. The page
+        // can only be served to a view built from that extension's
+        // configuration, so the tab is swapped for one that is, as an
+        // extension's page sent to a website is (see Browser.replace).
+        let url = Extensions.current(url)
+        let here = tab.built?.url ?? tab.address
+        if url.scheme == Extensions.scheme, here?.scheme != Extensions.scheme || here?.host != url.host, let browser {
+            browser.replace(tab, going: url)
+            return
+        }
+        tab.go(to: url)
+    }
     func reload(fromOrigin: Bool, for context: WKWebExtensionContext) async throws { tab?.reload() }
     func goBack(for context: WKWebExtensionContext) async throws { tab?.back() }
     func goForward(for context: WKWebExtensionContext) async throws { tab?.forward() }
