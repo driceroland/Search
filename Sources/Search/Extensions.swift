@@ -145,6 +145,7 @@ final class Extensions: NSObject, ObservableObject {
         Links.onceShown { [weak self] in
             Task { [weak self] in
                 guard let self else { return }
+                await clearWorkers()
                 // One after another, a moment apart: started all at once, WebKit
                 // fails some of their workers and never tries them again.
                 for item in installed where item.enabled {
@@ -437,6 +438,20 @@ final class Extensions: NSObject, ObservableObject {
             guard await load(item), let popup, let context = contexts[id] else { return }
             ExtensionPopup.shared.show(popup, for: context, from: anchor)
         }
+    }
+
+    /// WebKit keeps an extension's worker registration from one launch to
+    /// the next, and on this macOS it never starts a kept one again: after a
+    /// relaunch every message to the worker went unanswered, a reload didn't
+    /// help, and a popup built on its worker (Bitwarden, Tampermonkey) spun
+    /// for ever. Dropped before the extensions load, each is registered
+    /// afresh. Only registrations go; what extensions stored stays.
+    ///
+    /// Sites' registrations go with them, since WebKit lists none for an
+    /// extension's origin to pick out; a site registers its own again on
+    /// its next visit.
+    private func clearWorkers() async {
+        await Store.websites.removeData(ofTypes: [WKWebsiteDataTypeServiceWorkerRegistrations], modifiedSince: .distantPast)
     }
 
     /// WebKit records a worker that failed to start as an error on its
