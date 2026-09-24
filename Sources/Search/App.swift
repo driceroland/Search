@@ -263,6 +263,7 @@ struct ContentView: View {
     @State private var keys: Any?
     @State private var window: NSWindow?
     @State private var resting: RestingLights?
+    @State private var touchBar: TouchBar?
     /// The room the page leaves for the column and the strip, set without
     /// animation (see `make(room:after:)`); nil only before the window is up.
     @State private var room: CGSize?
@@ -720,6 +721,13 @@ struct ContentView: View {
         // copy shares, and a probe resized for a test once changed the size
         // the real window came back at.
         window.setFrameAutosaveName(Store.world.map { "search (\($0))" } ?? "search")
+
+        // Back, forward, the tabs and the rest, on a Mac with a Touch Bar
+        // (see TouchBar.swift). Nothing is made on one without.
+        let bar = TouchBar(browser: browser)
+        touchBar = bar
+        window.touchBar = bar.make()
+        NSApp.isAutomaticCustomizeTouchBarMenuItemEnabled = true
 
         // The traffic lights set in from the corner and centred in the strip's
         // height, in both modes, without a toolbar's rounder corners — see

@@ -1165,6 +1165,26 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
+    /// Home, on the Touch Bar: this tab starts over as a blank one, as
+    /// Chrome's goes to its new tab page. What it showed comes back with
+    /// ⇧⌘T, like a closed tab. A pin is a place kept, so it stays where it
+    /// is and Home opens a new tab instead.
+    func goHome() {
+        guard let tab = active, !tab.isBlank else { return askFocus() }
+        guard tab.pin == nil, let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return newTab() }
+        if floating == tab.id { land() }
+        let fresh = Tab(shy: tab.shy)
+        prepare(fresh)
+        remember(tab, at: index)
+        tab.close()
+        tabs[index] = fresh
+        activeID = fresh.id
+        typed = ""
+        editing = false
+        focusRequest += 1
+        rememberSession()
+    }
+
     /// Everything but this one. Pinned tabs are put down rather than removed —
     /// they are not open pages so much as places kept.
     func closeOthers(but keep: Tab) {
