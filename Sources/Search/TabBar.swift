@@ -21,8 +21,6 @@ struct TabBar: View {
     @State private var plussed = false
     /// How wide the doors at the far end are, extension buttons included.
     @State private var doors: CGFloat = 0
-    /// The share door's own spot, for the picker to open under.
-    @State private var shareDoor: NSView?
 
     var body: some View {
         // A GeometryReader is only here to measure the width. Its content is
@@ -146,10 +144,7 @@ struct TabBar: View {
                     HStack(spacing: Metrics.tabGap) {
                         ExtensionSlot()
                         Helm(browser: browser)
-                        if browser.prefs.showsShare {
-                            Door(icon: "square.and.arrow.up", help: "Share…", size: 9.5, nudge: -1) { browser.share(from: shareDoor) }
-                                .background(DoorAnchor(view: $shareDoor))
-                        }
+                            .padding(.trailing, 8)
                         Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
                             .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .bottom) {
                                 BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)

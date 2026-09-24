@@ -263,10 +263,6 @@ struct SettingsPanel: View {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
             }
             Rule()
-            Line("Share button", "A door beside the bookmarks for File › Share… — Mail, Messages, AirDrop and the rest") {
-                Switch(on: $prefs.showsShare)
-            }
-            Rule()
             Line("Show how far you've read", "The tab you're on fills with grey as you scroll down the page") {
                 Switch(on: $prefs.showsReading)
             }

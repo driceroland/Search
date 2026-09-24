@@ -55,11 +55,6 @@ final class Preferences: ObservableObject {
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
     }
-    /// A door for File › Share… at the end of the row, beside the bookmarks.
-    /// Off unless asked for.
-    @Published var showsShare: Bool {
-        didSet { store.set(showsShare, forKey: "share.button") }
-    }
     @Published var engine: Engine {
         didSet { store.set(engine.rawValue, forKey: "search.engine") }
     }
@@ -194,7 +189,6 @@ final class Preferences: ObservableObject {
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
-        showsShare = store.bool(forKey: "share.button")
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
