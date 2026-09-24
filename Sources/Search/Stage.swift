@@ -56,8 +56,8 @@ struct Page: View {
                 HistoryList(pull: pull)
                     .id(pull.back)
                     .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 0.92)),
-                        removal: .opacity.combined(with: .scale(scale: 0.96))
+                        insertion: .opacity.combined(with: .scale(scale: 0.92, anchor: pull.back ? .leading : .trailing)),
+                        removal: .opacity.combined(with: .scale(scale: 0.96, anchor: pull.back ? .leading : .trailing))
                     ))
             } else if let pull = tab.pull {
                 Disc(pull: pull)
@@ -67,8 +67,11 @@ struct Page: View {
                     .id(pull.back)
                     // A short fade and a little growth, both ways. Anything
                     // longer is still arriving when a quick flick has already
-                    // let go.
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    // let go. Grown from the edge it comes in at: the disc is
+                    // in a frame as wide as the window, and grown from that
+                    // frame's middle it came in from the middle, sliding out
+                    // to its edge — from the right, going back.
+                    .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: pull.back ? .leading : .trailing)))
             }
         }
         .animation(Motion.quick, value: tab.failure)
