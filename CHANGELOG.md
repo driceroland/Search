@@ -13,7 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
-- Settings › Search now has the engine choices in the browser's own style; Brave Search and Qwant join the list.
+- Brave Search and Qwant join the engines in Settings › General › Search with. Thanks [@vivescene](https://github.com/vivescene) ([#52](https://github.com/driceroland/Search/pull/52))
 - The video you're watching can float when you switch to another app, as in Arc, and go back into its tab when you return to it. Settings › General › Float the video when you switch apps, off by default. Only from the sites a video floats from on its own when you leave its tab; one floated with ⌘⇧P stays out. Thanks [@farchanrifai](https://github.com/farchanrifai) ([#152](https://github.com/driceroland/Search/pull/152))
 - A mouse's back and forward side buttons navigate the page, the way the trackpad's two-finger swipe already does. Thanks [@reloadedhead](https://github.com/reloadedhead) ([#79](https://github.com/driceroland/Search/pull/79))
 - Flick the floating video to a corner, as in Arc and Dia: two fingers on the window send it to the corner or edge they point at, on a short spring, instead of pushing it along. Settings › General › Flick the floating video to a corner, off by default. Dragging still puts it anywhere. Thanks [@farchanrifai](https://github.com/farchanrifai) ([#151](https://github.com/driceroland/Search/pull/151))
