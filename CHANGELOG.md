@@ -13,7 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
-- Reduce motion: interface transitions are immediate when macOS Reduce Motion is on or turned on in Settings › General. Thanks @berkinory ([#186](https://github.com/driceroland/Search/issues/186))
+- Reduce motion: interface transitions are immediate when macOS Reduce Motion is on in System Settings. Thanks @berkinory ([#186](https://github.com/driceroland/Search/issues/186))
 - The video that comes out into its floating window when you leave its tab (YouTube and the like) can be kept in its tab: Settings › General › Float the video when you switch tabs, on as before. ⇧⌘P still floats one by hand. Thanks [@mihsanbudiman](https://x.com/mihsanbudiman) for asking
 - The site you are on, in a card: click the tab you are on to change its address, and a card comes up under it with whether the connection is private (a step in shows the certificate), Copy Address, Print and the page's zoom. It goes as soon as you type. Right-click a tab › Site Information… opens it too. In the column and in the bar across the top alike, with nothing added to either. The card is from [@kndpt](https://github.com/kndpt)'s address bar ([#56](https://github.com/driceroland/Search/pull/56)), which stayed out: Search has the column or the bar, never a second row over the page.
 - Mute a tab and let it play on: press the speaker at the end of a tab that plays sound, or pick Mute Tab in its right-click menu. A muted tab keeps a crossed-out speaker, to be heard again the same way. Thanks [@merttopuz](https://github.com/merttopuz) ([#61](https://github.com/driceroland/Search/pull/61))

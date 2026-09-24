@@ -204,10 +204,6 @@ struct SettingsPanel: View {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
             Rule()
-            Line("Reduce motion", "Interface transitions are immediate without springs. Follows macOS Accessibility when on there too") {
-                Switch(on: $prefs.reduceMotion)
-            }
-            Rule()
             Line("Correct spelling as you type", "macOS's autocorrect inside pages — the one that capitalises for you") {
                 Switch(on: $prefs.autocorrect)
             }

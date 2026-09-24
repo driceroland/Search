@@ -143,16 +143,13 @@ enum Metrics {
 // One spring for anything that moves between two places, one for anything that
 // arrives or leaves. Using the same two everywhere is most of why a thing feels
 // like a single piece of software rather than a pile of views.
-// When Reduce Motion is active — whether from macOS Accessibility or chosen in
-// Settings — transitions become immediate so the interface does not jump or slide.
+// When macOS Reduce Motion is on in System Settings, transitions become
+// immediate so the interface does not jump or slide.
 enum Motion {
-    /// True when chosen in Settings › General.
-    static var reduceMotion: Bool = false
-
-    /// Whether interface transitions should be immediate, following either the
-    /// Mac's own accessibility setting or Search's setting.
+    /// Whether interface transitions should be immediate, following the
+    /// Mac's own accessibility setting.
     static var reduced: Bool {
-        reduceMotion || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
     static var glide: Animation? {
