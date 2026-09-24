@@ -331,7 +331,7 @@ final class Passkeys: NSObject {
     /// WebKit's own test for a public suffix, from the list macOS keeps.
     /// Private to CFNetwork: without it, a page's own host is the only
     /// relying party it gets.
-    private static let publicSuffix: (@convention(c) (CFString) -> Bool)? = {
+    nonisolated static let publicSuffix: (@convention(c) (CFString) -> Bool)? = {
         guard let symbol = dlsym(dlopen("/System/Library/Frameworks/CFNetwork.framework/CFNetwork", RTLD_NOW), "_CFHostIsDomainTopLevel")
         else { return nil }
         return unsafeBitCast(symbol, to: (@convention(c) (CFString) -> Bool).self)

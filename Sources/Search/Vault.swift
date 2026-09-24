@@ -182,16 +182,9 @@ enum Vault {
     // MARK: - the site behind a host
 
     /// example.com for www.example.com and accounts.example.com; bbc.co.uk
-    /// stays bbc.co.uk. The handful of two-part endings that matter here are
-    /// listed; a full public suffix list would be a library for a corner.
+    /// stays bbc.co.uk.
     static func registrable(_ host: String) -> String {
-        let labels = host.lowercased().split(separator: ".").map(String.init)
-        guard labels.count > 2 else { return labels.joined(separator: ".") }
-        let seconds: Set<String> = ["co", "com", "org", "net", "gov", "gouv", "ac", "edu", "asso", "or", "ne"]
-        if seconds.contains(labels[labels.count - 2]), labels[labels.count - 1].count == 2 {
-            return labels.suffix(3).joined(separator: ".")
-        }
-        return labels.suffix(2).joined(separator: ".")
+        Registrable.domain(of: host, isSuffix: Passkeys.publicSuffix.map { test in { test($0 as CFString) } })
     }
 
     static func host(of text: String) -> String {
