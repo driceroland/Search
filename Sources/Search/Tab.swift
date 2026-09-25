@@ -247,8 +247,8 @@ final class Tab: ObservableObject, Identifiable {
     /// True while this tab's page is out in the little window.
     @Published var floating = false
 
-    /// A sideways swipe in progress, for the disc that shows it.
-    @Published var pull: Pull?
+    /// A sideways swipe in progress, for the drop that shows it.
+    let pulling = Pulling()
 
     /// Remembered for the site, not for the tab: setting a paper's type to
     /// 125% once should be the last time you think about it.
@@ -428,10 +428,10 @@ final class Tab: ObservableObject, Identifiable {
         web.allowsMagnification = true
         // WebKit's own two-finger swipe stays off. It drags the page across
         // the window with a picture of the last one behind it; ours is in
-        // PageView, and it moves nothing but a disc.
+        // PageView, and it moves nothing but a drop.
         web.allowsBackForwardNavigationGestures = false
         Swipe.calm(web)
-        web.onPull = { [weak self] pull in self?.pull = pull }
+        web.onPull = { [weak self] pull in self?.pulling.pull = pull }
         web.onTouch = { [weak self] in self?.uncover() }
         web.searchName = { [weak self] in self?.searchName?() }
         web.onSearch = { [weak self] text in
@@ -792,7 +792,7 @@ final class Tab: ObservableObject, Identifiable {
         lastY = 0
         noisy = false
         stale = false
-        pull = nil
+        pulling.pull = nil
         // Loading about:blank here looked like letting the page go, and
         // wasn't: WebKit keeps the document it just left in the back-forward
         // cache — alive, suspended, and still counted by its own origin as an
@@ -814,7 +814,7 @@ final class Tab: ObservableObject, Identifiable {
         self.picture = picture
         pending = url
         stale = false
-        pull = nil
+        pulling.pull = nil
         discard()
     }
 
@@ -1349,29 +1349,43 @@ final class PageView: WKWebView {
 
     // MARK: - two fingers sideways
 
-    private enum Axis { case across, down }
+    /// One gesture, from the fingers going down to their lifting.
+    private struct Gesture {
+        enum Axis { case across, down }
 
-    private var sideways: CGFloat = 0
-    private var gatheredX: CGFloat = 0
-    private var gatheredY: CGFloat = 0
-    private var axis: Axis?
-    /// Which way the gesture set off, decided once and kept. Turning round
-    /// mid-swipe pulls the disc back; it never becomes the other disc.
-    private var back = true
-    /// The page's word on whether this swipe is its own. Nil until it says.
-    private var free: Bool?
-    private var asked: Date?
-    /// Already went somewhere, or was refused: nothing more this gesture.
-    private var spent = false
-    private var armedNow = false
-    private var showing = false
+        /// How far the fingers have gone, rightwards positive.
+        var sideways: CGFloat = 0
+        /// Both ways at once, only until the axis is decided.
+        var gathered = CGSize.zero
+        var axis: Axis?
+        /// Which way it set off, decided once and kept. Turning round takes
+        /// the drop back in; it never becomes the other drop.
+        var back = true
+        /// The page's word on whether this swipe is its own. Nil until it says.
+        var free: Bool?
+        var asked: Date?
+        /// Already went somewhere, or was refused: nothing more this gesture.
+        var spent = false
+        var armed = false
+        var showing = false
+
+        /// Only the distance in the direction it set off in. Past the origin
+        /// the other way is just nought.
+        var travel: CGFloat { max(0, back ? sideways : -sideways) }
+    }
+
+    private var gesture = Gesture()
+    /// The last drop is on its way out with the page.
     private var going = false
+    /// Counts gestures and goings, so a late clean-up knows it is stale.
     private var pulls = 0
 
     /// How far the fingers travel before letting go means it. It was 110,
     /// and going back took a long reach across the trackpad — "too far",
-    /// people said; Safari goes on less.
-    private static let arm: CGFloat = 70
+    /// people said; Safari goes on less. It is also where the drop comes
+    /// away from the edge (see Drop in Stage.swift): its width, and the
+    /// short neck the edge holds on by.
+    static let arm: CGFloat = 82
     /// A quick flick goes too, short of that, as it does in Safari: at least
     /// this far, within `flickTime` of setting off.
     private static let flick: CGFloat = 30
@@ -1470,16 +1484,8 @@ final class PageView: WKWebView {
 
         switch event.phase {
         case .mayBegin, .began:
-            sideways = 0
-            gatheredX = 0
-            gatheredY = 0
-            axis = nil
-            free = nil
-            asked = nil
-            spent = false
-            armedNow = false
-            showing = false
-            // A disc still on its way out belongs to the last gesture. It is
+            gesture = Gesture()
+            // A drop still on its way out belongs to the last gesture. It is
             // already invisible; it is only taken off the stage so the next
             // one arrives fresh rather than fading back in.
             pulls += 1
@@ -1488,78 +1494,72 @@ final class PageView: WKWebView {
                 onPull?(nil)
             }
         case .changed:
-            guard !spent else { return }
-            if axis == nil {
+            guard !gesture.spent else { return }
+            gesture.sideways += PageView.fingers(event)
+            if gesture.axis == nil {
                 // A few points in, the gesture has shown which way it means
                 // to go. Only a clearly sideways one is read further.
-                gatheredX += abs(event.scrollingDeltaX)
-                gatheredY += abs(event.scrollingDeltaY)
-                sideways += event.scrollingDeltaX
-                guard gatheredX + gatheredY > 6 else { return }
-                axis = gatheredX > gatheredY * 1.3 ? .across : .down
-                if axis == .down {
-                    spent = true
+                gesture.gathered.width += abs(event.scrollingDeltaX)
+                gesture.gathered.height += abs(event.scrollingDeltaY)
+                let gathered = gesture.gathered
+                guard gathered.width + gathered.height > 6 else { return }
+                gesture.axis = gathered.width > gathered.height * 1.3 ? .across : .down
+                gesture.back = gesture.sideways > 0
+                // Up and down, or nowhere to go that way: nothing to show,
+                // and nothing more to read from this gesture.
+                if gesture.axis == .down || (gesture.back ? !canGoBack : !canGoForward) {
+                    gesture.spent = true
                     return
                 }
-                back = sideways > 0
-                // Nowhere to go that way: nothing to show, and nothing more
-                // to read from this gesture.
-                if back ? !canGoBack : !canGoForward {
-                    spent = true
-                    return
-                }
-                asked = Date()
-                tell()
-                return
+                gesture.asked = Date()
             }
-            sideways += event.scrollingDeltaX
             tell()
         case .ended:
             release()
         case .cancelled:
-            spent = true
+            gesture.spent = true
             settle(nil)
         default:
             break
         }
     }
 
-    /// The page has said whether the swipe would scroll something.
-    func answer(free yes: Bool) {
-        guard axis != .down, !spent else { return }
-        guard yes else {
-            free = false
-            spent = true
-            settle(nil)
-            return
-        }
-        guard free == nil else { return }
-        free = true
-        tell()
+    /// How far the fingers themselves went, rightwards positive. The scroll
+    /// delta is the content's movement, which only matches the fingers with
+    /// natural scrolling on; with it off, a swipe to the right read as
+    /// forward. Safari goes back on a swipe to the right either way.
+    static func fingers(_ event: NSEvent) -> CGFloat {
+        event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
     }
 
-    /// Only the distance in the direction it set off in. Past the origin the
-    /// other way is just nought.
-    private var travel: CGFloat { max(0, back ? sideways : -sideways) }
+    /// The page has said whether the swipe would scroll something. Only
+    /// its first word counts: once the drop is out the gesture is the
+    /// drop's, and fingers turning back to take it in again would otherwise
+    /// be read as a scroll on any page with somewhere to go that way.
+    func answer(free yes: Bool) {
+        guard gesture.axis != .down, !gesture.spent, gesture.free == nil else { return }
+        gesture.free = yes
+        if yes { tell() } else { gesture.spent = true }
+    }
 
     private func tell() {
-        if free == nil, let asked, Date().timeIntervalSince(asked) > 0.18 {
+        if gesture.free == nil, let asked = gesture.asked, Date().timeIntervalSince(asked) > 0.18 {
             // A page that never answers — a PDF, a page that failed to load —
             // still has to be leavable by hand.
-            free = true
+            gesture.free = true
         }
-        guard free == true else { return }
+        guard gesture.free == true else { return }
 
-        let travel = travel
-        // Drawn all the way back, the disc goes; drawn out again, it returns.
+        let travel = gesture.travel
+        // Drawn all the way back, the drop goes; drawn out again, it returns.
         // Nothing is decided until the fingers lift.
         guard travel >= PageView.show else {
-            if showing { settle(nil) }
+            if gesture.showing { settle(nil) }
             return
         }
 
         let armed = travel >= PageView.arm
-        if armed != armedNow {
+        if armed != gesture.armed {
             // Two different taps: one for reaching it, a lighter one for
             // stepping back from it, so you know without looking that
             // letting go now is safe.
@@ -1567,21 +1567,21 @@ final class PageView: WKWebView {
                 armed ? .levelChange : .alignment, performanceTime: .now
             )
         }
-        armedNow = armed
-        settle(Pull(back: back, travel: travel, armed: armed, going: false))
+        gesture.armed = armed
+        settle(Pull(back: gesture.back, travel: travel, armed: armed, going: false))
     }
 
     private func release() {
-        defer { spent = true }
-        let flicked = !spent && free == true && travel >= PageView.flick
-            && (asked.map { Date().timeIntervalSince($0) <= PageView.flickTime } ?? false)
-        guard !spent, free == true, armedNow || flicked else {
+        defer { gesture.spent = true }
+        let flicked = gesture.travel >= PageView.flick
+            && (gesture.asked.map { Date().timeIntervalSince($0) <= PageView.flickTime } ?? false)
+        guard !gesture.spent, gesture.free == true, gesture.armed || flicked else {
             settle(nil)
             return
         }
         going = true
-        settle(Pull(back: back, travel: travel, armed: true, going: true))
-        if back { goBack() } else { goForward() }
+        settle(Pull(back: gesture.back, travel: gesture.travel, armed: true, going: true))
+        if gesture.back { goBack() } else { goForward() }
         pulls += 1
         let mine = pulls
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { [weak self] in
@@ -1592,7 +1592,7 @@ final class PageView: WKWebView {
     }
 
     private func settle(_ pull: Pull?) {
-        showing = pull != nil
+        gesture.showing = pull != nil
         onPull?(pull)
     }
 

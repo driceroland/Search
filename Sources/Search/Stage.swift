@@ -52,70 +52,210 @@ struct Page: View {
                     .transition(.opacity)
             }
 
-            if let pull = tab.pull {
-                Disc(pull: pull)
-                    // A disc for each edge, never one that changes edges: a
-                    // view whose alignment flips is a view that glides the
-                    // whole way across the window to get there.
-                    .id(pull.back)
-                    // A short fade and a little growth, both ways. Anything
-                    // longer is still arriving when a quick flick has already
-                    // let go.
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
-            }
+            Drops(pulling: tab.pulling)
         }
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
         .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
-        .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
     }
 }
 
-/// The disc a sideways swipe brings in from the edge.
-///
-/// White, with a hairline, like everything else that floats over a page. A
-/// line of ink winds round it as the fingers go and closes at the point where
-/// letting go would mean it. Turn back and it unwinds. Let go while it is
-/// closed and the disc leaves with the page.
-///
-/// It follows the fingers directly, with no spring between: a spring reads
-/// as lag on a quick flick, and a quick flick is how most people swipe.
-private struct Disc: View {
-    let pull: Pull
+/// The swipe's drop over the page, watching the swipe alone: it changes with
+/// every event the trackpad sends, and nothing else here needs to hear it.
+private struct Drops: View {
+    @ObservedObject var pulling: Pulling
 
     var body: some View {
-        // The fingers can travel as far as they like; the disc stops short.
-        let reach = 150 * (1 - exp(-pull.travel / 110))
-        let grown = min(1, pull.travel / 110)
-        let scale: CGFloat = pull.going ? 1.08 : 0.86 + 0.14 * grown
-
         ZStack {
-            Circle()
-                .fill(Palette.ground)
-            Circle()
-                .strokeBorder(Palette.hairline, lineWidth: 1)
-            // How far there is to go, wound round the edge, closed when it
-            // is armed.
-            Circle()
-                .trim(from: 0, to: grown)
-                .stroke(Palette.ink, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .padding(0.75)
-            Image(systemName: pull.back ? "arrow.left" : "arrow.right")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Palette.ink.opacity(0.4 + 0.6 * grown))
+            if let pull = pulling.pull {
+                Drop(pull: pull)
+                    // A drop for each edge, never one that changes edges: a
+                    // view whose alignment flips is a view that glides the
+                    // whole way across the window to get there.
+                    .id(pull.back)
+                    // In at once, already under the fingers — any fade or
+                    // growth on the way in is a drop that lags behind them.
+                    // Only the way out is eased.
+                    .transition(.asymmetric(insertion: .identity, removal: .opacity))
+            }
         }
-        .frame(width: 52, height: 52)
-        .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
-        .scaleEffect(scale)
+        .allowsHitTesting(false)
+        .animation(.easeOut(duration: 0.16), value: pulling.pull == nil)
+    }
+}
+
+/// The drop a sideways swipe draws out of the edge.
+///
+/// Its leading edge is exactly where the fingers are — a point on the
+/// trackpad is a point on the screen — so it is never behind them. The rest
+/// of it is liquid: while the drop and the edge are close a neck joins them,
+/// and the neck thins and snaps as they part. It snaps as the swipe is armed,
+/// so a drop that has come away is a swipe that will go.
+///
+/// On macOS 26 it is Liquid Glass, the page bending through it, and the neck
+/// is the system's own: two pieces of glass in one container flow together
+/// when they come close. Before that, the edge and the drop are drawn as one
+/// blurred shape and cut back to a hard one, which joins them the same way.
+///
+/// Drawn for the left edge; the right edge's is the same, mirrored. The
+/// canvas starts `behind` points past the edge, so the edge itself can be
+/// drawn there and joined to the drop.
+private struct Drop: View {
+    let pull: Pull
+    @State private var jelly = Jelly()
+
+    static let size: CGFloat = 64
+    private static let behind: CGFloat = 40
+    /// The piece of edge the drop is joined to, as tall as the glass draws it.
+    private static let wall = size * 1.2
+    /// Room ahead of the drop for its blur and its wobble.
+    private static let ahead: CGFloat = 24
+
+    var body: some View {
+        let lead = pull.travel
+        TimelineView(.animation) { timeline in
+            let size = jelly.step(lead: lead, held: !pull.armed, at: timeline.date)
+            // Its leading edge on the fingers, its body behind.
+            let blob = Blob(x: Drop.behind + lead - size.width, size: size)
+            // Glass needs the macOS 26 SDK to build, not only macOS 26 to
+            // run: an older Xcode builds the drawn drop alone.
+            #if compiler(>=6.2)
+            if #available(macOS 26, *) {
+                glass(blob)
+            } else {
+                ink(blob)
+            }
+            #else
+            ink(blob)
+            #endif
+        }
+        .frame(width: Drop.behind + lead + Drop.ahead, height: Drop.size * 2.4)
+        .offset(x: -Drop.behind)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .scaleEffect(x: pull.back ? 1 : -1)
+        // Past the edge is the sidebar's, not the drop's.
+        .clipped()
         .opacity(pull.going ? 0 : 1)
-        // Whole from the first point, a little way in from the edge, drawn
-        // further in as the fingers go — and a step further on its way out
-        // with the page.
-        .offset(x: (pull.back ? 1 : -1) * (10 + reach * 0.2 + (pull.going ? 12 : 0)))
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pull.back ? .leading : .trailing)
         .allowsHitTesting(false)
         .animation(.easeOut(duration: 0.22), value: pull.going)
+    }
+
+    /// Where the drop is this frame: across from the canvas's leading edge,
+    /// and how big, stretched or squashed.
+    private struct Blob {
+        var x: CGFloat
+        var size: CGSize
+    }
+
+    #if compiler(>=6.2)
+    @available(macOS 26, *)
+    private func glass(_ blob: Blob) -> some View {
+        ZStack(alignment: .leading) {
+            // The drop's own shape, neck and all, a little below it, seen
+            // through it as it would be through glass on a table. Joined
+            // over the same reach as the glass, whose neck lasts longer than
+            // the drawn drop's, and from as short an edge.
+            liquid(blob, in: .black, reach: 14, wall: Drop.wall)
+                .opacity(0.18)
+                .blur(radius: 6)
+                .offset(y: 7)
+            // Under the glass, so it is seen through it.
+            arrow(blob)
+            // Two pieces of glass, the edge and the drop, which the
+            // container flows together while they are close.
+            GlassEffectContainer(spacing: 20) {
+                ZStack(alignment: .leading) {
+                    Color.clear
+                        .frame(width: Drop.behind, height: Drop.wall)
+                        .glassEffect(.clear, in: Rectangle())
+                    Color.clear
+                        .frame(width: blob.size.width, height: blob.size.height)
+                        .glassEffect(.clear, in: Ellipse())
+                        .offset(x: blob.x)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+    #endif
+
+    private func ink(_ blob: Blob) -> some View {
+        ZStack(alignment: .leading) {
+            liquid(blob, in: Palette.ground)
+                .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
+            // Over the drop, which is solid.
+            arrow(blob)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    /// The drop and the edge as one shape: blurred together and cut back to
+    /// a hard one, so a neck joins them while they are close. `reach` is
+    /// how far apart they still join; `wall`, how much of the edge there is
+    /// to join to — all of it unless said.
+    private func liquid(_ blob: Blob, in color: Color, reach: CGFloat = 9, wall: CGFloat? = nil) -> some View {
+        Canvas { context, size in
+            // Added in reverse: blurred first, then cut at half.
+            context.addFilter(.alphaThreshold(min: 0.5, color: color))
+            context.addFilter(.blur(radius: reach))
+            context.drawLayer { layer in
+                // Stopping a little short of the edge, or a hairline of it is
+                // left standing along the page.
+                let tall = wall ?? size.height
+                layer.fill(Path(CGRect(x: 0, y: (size.height - tall) / 2, width: Drop.behind - 3, height: tall)), with: .color(.black))
+                layer.fill(Path(ellipseIn: CGRect(
+                    x: blob.x, y: (size.height - blob.size.height) / 2,
+                    width: blob.size.width, height: blob.size.height
+                )), with: .color(.black))
+            }
+        }
+    }
+
+    /// Back, pointing the way the page goes — mirrored with the drop for
+    /// forward. Out of focus while letting go would do nothing, sharp from
+    /// the moment it would, with the tap under the fingers.
+    private func arrow(_ blob: Blob) -> some View {
+        Image(systemName: "arrow.left")
+            .font(.system(size: 34, weight: .bold))
+            .foregroundStyle(Palette.ink)
+            .blur(radius: pull.armed ? 0 : 6 * (1 - min(1, pull.travel / PageView.arm)))
+            .frame(width: blob.size.width, height: blob.size.height)
+            .offset(x: blob.x)
+    }
+}
+
+/// The drop's body, which trails its leading edge on a spring: stretched
+/// out behind while the fingers move, squashed when they stop short, and
+/// wobbling for a moment after. The edge holds some of it back while the
+/// two are joined, so when the neck snaps it springs forward.
+private final class Jelly {
+    /// Where the body's middle is, and how fast it is getting there.
+    private var at: CGFloat?
+    private var speed: CGFloat = 0
+    private var then: Date?
+
+    private static let radius = Drop.size / 2
+    /// About five wobbles a second, gone in a quarter of one.
+    private static let stiffness: CGFloat = 900
+    private static let damping: CGFloat = 17
+    /// How much of the gap to the edge the neck holds back.
+    private static let tether: CGFloat = 0.6
+
+    func step(lead: CGFloat, held: Bool, at now: Date) -> CGSize {
+        let r = Jelly.radius
+        let gap = max(0, lead - 2 * r)
+        let rest = lead - r - (held ? Jelly.tether * gap : 0)
+        var at = self.at ?? rest
+        // A dropped frame is a small step, not a leap that throws it apart.
+        let dt = min(1 / 30, max(0, now.timeIntervalSince(then ?? now)))
+        speed += (Jelly.stiffness * (rest - at) - Jelly.damping * speed) * dt
+        at += speed * dt
+        self.at = at
+        then = now
+        // Behind its place is stretched, ahead of it squashed; the area
+        // stays about the same, as a liquid's would.
+        let stretch = min(0.4, max(-0.18, 0.45 * (lead - r - at) / r))
+        return CGSize(width: 2 * r * (1 + stretch), height: 2 * r / (1 + stretch))
     }
 }
 

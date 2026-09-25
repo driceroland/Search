@@ -13,10 +13,16 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- The swipe back and forward draws a drop out of the edge you pull from, in place of the disc. It follows the fingers point for point, stays joined to the edge by a neck that snaps as the swipe arms, wobbles as it comes away, and goes back into the edge if you turn back. On macOS 26 it is Liquid Glass, the page bending through it, over an arrow that comes into focus as the swipe arms; before that it is drawn in white.
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed
 
+- Turning back in the middle of a swipe takes it back in on any page. On a page even a pixel wider than the window, the disc vanished instead.
+- A pinched-in page pans sideways instead of going back, on the many sites that hide their sideways overflow.
+- A swipe at the edge of a page no longer drags the page off it over blank ground.
+- A swipe to the right goes back with natural scrolling off too, as it does in Safari.
+- Only the swipe's own drawing is redone as the fingers move, not the tab's row and the page under it with every event.
 - A window a page opens at a size of its own, a sign-in window for one, is named in the tabs by its site rather than by its title, which the page chooses: one called "Sign in with Google" from another address no longer passes for Google's. A plain link opened in a new tab keeps its title, and a name you gave a tab stays first.
 - A link from another app, or one opened from a pinned tab, comes first after the pins instead of landing between two of them. ([#219](https://github.com/driceroland/Search/issues/219))
 - The shortcuts card lists ⇧⌘C, Copy Address, which only the Tabs menu showed. Thanks [@merttopuz](https://github.com/merttopuz) ([#182](https://github.com/driceroland/Search/pull/182)), and [@olllayor](https://github.com/olllayor) for asking ([#176](https://github.com/driceroland/Search/issues/176))

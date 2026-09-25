@@ -810,18 +810,41 @@ final class Bench {
             browser.peek(url, from: tab)
             answer(["peek": url.absoluteString])
 
+        case "magnify":
+            // Two fingers apart on the page, as far as SCALE, around the
+            // point AT (from the page's top left, its middle if left out) —
+            // for the swipe that has to leave a zoomed page to its panning.
+            // Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "magnify only works on a --test run"]); return }
+            guard let tab = browser.active, let web = tab.built, let scale = request["scale"] as? Double
+            else { answer(["error": "magnify needs a loaded tab and a scale"]); return }
+            let at = (request["at"] as? [Double]).map { CGPoint(x: $0[0], y: web.bounds.height - $0[1]) }
+                ?? CGPoint(x: web.bounds.midX, y: web.bounds.midY)
+            web.setMagnification(scale, centeredAt: at)
+            answer(["magnification": web.magnification])
+
         case "pull":
             // Two fingers sideways over the page: DX points in STEPS scroll
             // events spread over MS milliseconds, with a trackpad's phases,
             // handed to the page's view — for the swipe back and forward.
-            // Reports where the tab is after. Only on a SEARCH_PROBE run.
+            // UNDO points back the other way before they lift, over as many
+            // more events. Reports where the tab is after, and where the
+            // drop was as they lifted. Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "pull only works on a --test run"]); return }
             guard let tab = browser.active, let web = tab.built, let dx = request["dx"] as? Double
             else { answer(["error": "pull needs a loaded tab and a distance"]); return }
             let steps = max(2, request["steps"] as? Int ?? 10)
             let ms = max(1, request["ms"] as? Double ?? 200)
+            let undo = request["undo"] as? Double ?? 0
+            let moves = Array(repeating: dx / Double(steps), count: steps)
+                + (undo == 0 ? [] : Array(repeating: -undo / Double(steps), count: steps))
             let before = tab.address?.absoluteString ?? ""
-            func send(_ phase: Int64, _ delta: Double) {
+            var lifted: [String: Any] = ["drop": false]
+            // DX is the fingers' way, rightwards positive. An event made
+            // here is never marked as natural scrolling, so the content
+            // moves against the fingers (see PageView.fingers).
+            func send(_ phase: Int64, _ fingers: Double) {
+                let delta = -fingers
                 guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: Int32(delta), wheel3: 0) else { return }
                 cg.setIntegerValueField(CGEventField(rawValue: 88)!, value: 1) // kCGScrollWheelEventIsContinuous
                 cg.setIntegerValueField(CGEventField(rawValue: 99)!, value: phase) // kCGScrollWheelEventScrollPhase
@@ -829,14 +852,16 @@ final class Bench {
                 if let event = NSEvent(cgEvent: cg) { web.scrollWheel(with: event) }
             }
             send(1, 0)
-            for n in 1...steps {
-                DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000 * Double(n) / Double(steps)) {
-                    send(2, dx / Double(steps))
-                    if n == steps { send(4, 0) }
+            for (n, move) in moves.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000 * Double(n + 1) / Double(moves.count)) {
+                    send(2, move)
+                    guard n == moves.count - 1 else { return }
+                    if let pull = tab.pulling.pull { lifted = ["drop": true, "travel": pull.travel, "armed": pull.armed] }
+                    send(4, 0)
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000 + 1.2) {
-                answer(["before": before, "after": tab.address?.absoluteString ?? ""])
+                answer(["before": before, "after": tab.address?.absoluteString ?? "", "lifted": lifted])
             }
 
         case "place":
@@ -1302,7 +1327,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "keyeq", "pull", "space", "strip", "column", "fold", "consent", "site", "little", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "keyeq", "magnify", "pull", "space", "strip", "column", "fold", "consent", "site", "little", "ui",
             ]])
         }
     }
