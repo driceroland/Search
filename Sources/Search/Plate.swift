@@ -32,7 +32,7 @@ struct Plate<Content: View, Foot: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Text(title)
+                Text(title.said)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Palette.ink)
                 Spacer(minLength: 0)
@@ -115,11 +115,11 @@ struct Line<Control: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                Text(title.said)
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.ink)
                 if let detail {
-                    Text(detail)
+                    Text(detail.said)
                         .font(.system(size: 11.5))
                         .foregroundStyle(Palette.muted)
                         .lineLimit(3)
@@ -139,7 +139,7 @@ struct Caption: View {
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
-        Text(text)
+        Text(text.said)
             .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(Palette.muted)
             .padding(.leading, 2)
@@ -159,7 +159,7 @@ struct Hunt: View {
                 .foregroundStyle(Palette.muted)
             ZStack(alignment: .leading) {
                 if text.isEmpty {
-                    Text(prompt).foregroundStyle(Palette.muted.opacity(0.7))
+                    Text(prompt.said).foregroundStyle(Palette.muted.opacity(0.7))
                 }
                 TextField("", text: $text)
                     .textFieldStyle(.plain)
@@ -187,7 +187,7 @@ struct Nothing: View {
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
-        Text(text)
+        Text(text.said)
             .font(.system(size: 13))
             .foregroundStyle(Palette.muted)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -210,7 +210,7 @@ struct Quick: View {
 
     var body: some View {
         Button(action: act) {
-            Text(title)
+            Text(title.said)
                 .font(.system(size: 11.5))
                 .foregroundStyle(tint)
                 .padding(.horizontal, 8)

@@ -268,10 +268,10 @@ struct WelcomePanel: View {
 
     private func heading(_ title: String, _ line: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
+            Text(title.said)
                 .font(.system(size: 26, weight: .medium))
                 .foregroundStyle(Palette.ink)
-            Text(line)
+            Text(line.said)
                 .font(.system(size: 14))
                 .foregroundStyle(Palette.muted)
                 .lineSpacing(2)
@@ -307,7 +307,7 @@ struct WelcomePanel: View {
 
         var body: some View {
             Button(action: act) {
-                Text(title)
+                Text(title.said)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(filled ? Palette.ground : Palette.ink)
                     .padding(.horizontal, 16)
@@ -334,8 +334,8 @@ struct WelcomePanel: View {
         var body: some View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 13.5)).foregroundStyle(Palette.ink)
-                    Text(detail).font(.system(size: 11.5)).foregroundStyle(Palette.faint)
+                    Text(title.said).font(.system(size: 13.5)).foregroundStyle(Palette.ink)
+                    Text(detail.said).font(.system(size: 11.5)).foregroundStyle(Palette.faint)
                 }
                 Spacer()
                 Switch(on: $on)
@@ -383,7 +383,7 @@ struct WelcomePanel: View {
                     }
                     .frame(height: 110)
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
-                    Text(title)
+                    Text(title.said)
                         .font(.system(size: 13, weight: chosen ? .medium : .regular))
                         .foregroundStyle(chosen ? Palette.ink : Palette.muted)
                 }
@@ -418,7 +418,7 @@ struct WelcomePanel: View {
                     .padding(.vertical, 3)
                     .background(Palette.wash, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .frame(minWidth: 44)
-                Text(what).font(.system(size: 13)).foregroundStyle(Palette.muted)
+                Text(what.said).font(.system(size: 13)).foregroundStyle(Palette.muted)
             }
         }
     }

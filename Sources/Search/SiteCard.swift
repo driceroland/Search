@@ -249,12 +249,12 @@ struct SiteCard: View {
             if let url = tab.address {
                 Header(title: SiteCard.site(url))
             }
-            Text(safety.title)
+            Text(safety.title.said)
                 .font(MenuMetrics.font)
                 .foregroundStyle(Color(nsColor: .labelColor))
                 .padding(.leading, MenuMetrics.text)
                 .frame(height: MenuMetrics.row, alignment: .leading)
-            Text(safety.detail)
+            Text(safety.detail.said)
                 .font(.system(size: 11))
                 .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                 .fixedSize(horizontal: false, vertical: true)
@@ -369,7 +369,7 @@ struct SiteCard: View {
 
         var body: some View {
             HStack(spacing: 0) {
-                Text(title)
+                Text(title.said)
                     .font(MenuMetrics.font)
                     .foregroundStyle(hovering ? Color.white : Color(nsColor: .labelColor))
                     .lineLimit(1)
@@ -406,7 +406,7 @@ struct SiteCard: View {
         let title: String
 
         var body: some View {
-            Text(title)
+            Text(title.said)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                 .lineLimit(1)

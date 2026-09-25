@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Search can be read in another language. The words of the interface look themselves up in a language file that ships beside the binary — English stays in the code and needs no file, and a sentence no language knows passes through in English — and the first language is Simplified Chinese: the menus, the tabs and their menu, every panel, the message under a page that never loaded. Settings › General › Language chooses between following the Mac, English, and 简体中文, and restarts to put it in. From [@songqii](https://github.com/songqii) ([#304](https://github.com/driceroland/Search/issues/304))
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed
