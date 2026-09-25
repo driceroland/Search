@@ -12,8 +12,10 @@ struct SearchApp: App {
 
     var body: some Scene {
         Window("Search", id: "browser") {
-            SceneRoot(browser: browser)
-                .frame(minWidth: 640, minHeight: 420)
+            if let model = browser.sceneModel {
+                SceneRoot(model: model)
+                    .frame(minWidth: 640, minHeight: 420)
+            }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 780)
@@ -262,13 +264,13 @@ private final class CursorGroundView: NSView {
 /// The SwiftUI scene's window. It draws one model for its whole life.
 /// `browser.key` moves when another window comes forward; following it here
 /// made this window repaint the other one's row and drop its own tabs.
+/// The model is not observed through `browser`, so a focus change in another
+/// window does not rebuild this whole tree.
 private struct SceneRoot: View {
-    @ObservedObject var browser: Browser
+    let model: WindowModel
 
     var body: some View {
-        if let model = browser.sceneModel {
-            ContentView(window: model)
-        }
+        ContentView(window: model)
     }
 }
 
@@ -277,7 +279,6 @@ struct ContentView: View {
     /// Profile services this window draws from.
     var browser: Browser { window.profile }
 
-    @State private var keys: Any?
     @State private var host: NSWindow?
     @State private var resting: RestingLights?
     /// The room the page leaves for the column and the strip, set without
@@ -510,15 +511,16 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
                 measureLights()
                 resting?.isHidden = false
-                // Only the window you were in, or every window's video would come.
-                browser.appLeft()
+                // Only from the window in front. Every window answering
+                // lifted the video once per window.
+                if browser.key === window { browser.appLeft() }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
                 if let host, (note.object as? NSWindow) === host { browser.becameKey(window) }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
-                browser.appBack()
+                if browser.key === window { browser.appBack() }
             }
             .onChange(of: window.fieldShowing) { _, showing in
                 if showing {
@@ -765,21 +767,34 @@ struct ContentView: View {
 
     // MARK: - keys
 
+    /// One monitor for the whole app. A monitor per window meant every
+    /// window's `take` saw the key first, and the one that registered first
+    /// acted on its own row whatever window the key was pressed in.
+    private static var keys: Any?
+    /// A model to fall back to when the event has no window of ours yet.
+    private static weak var anyModel: WindowModel?
+
     /// A web view takes first responder and keeps most of the keyboard, so the
     /// shortcuts are caught before the event ever reaches it. The menu carries
     /// the same commands for anyone looking for them, and never sees these
     /// keystrokes because this runs first.
     private func watchKeys() {
-        guard keys == nil else { return }
-        keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+        ContentView.anyModel = window
+        ContentView.keyHook = { event in
+            ContentView.take(event, fallback: window) ? nil : event
+        }
+        guard ContentView.keys == nil else { return }
+        ContentView.keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+            guard let root = ContentView.anyModel else { return event }
             guard event.type == .keyDown else {
                 // ⌘ let go of ends a ⌘K walk, wherever it stopped.
-                if !event.modifierFlags.contains(.command) { window.landSummon() }
+                if !event.modifierFlags.contains(.command) {
+                    root.profile.model(owning: event.window)?.landSummon()
+                }
                 return event
             }
-            return take(event) ? nil : event
+            return ContentView.take(event, fallback: root) ? nil : event
         }
-        ContentView.keyHook = { event in take(event) ? nil : event }
     }
 
     /// The same handling the key monitor gives an event, for the bench to
@@ -797,7 +812,7 @@ struct ContentView: View {
     /// while the page has the keyboard; in the address field or a panel,
     /// Search's keys are Search's. The keys that make and close tabs and move
     /// between them stay Search's first, as Chrome keeps them its own.
-    private func pageFirst(_ event: NSEvent, key: String, shifted: Bool) -> Bool {
+    private static func pageFirst(_ event: NSEvent, key: String, shifted: Bool, browser: Browser) -> Bool {
         let reserved = (key == "t") || (key == "w" && !shifted) || (key == "n")
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
@@ -815,9 +830,13 @@ struct ContentView: View {
         18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9, 29: 0,
     ]
 
-    private func take(_ event: NSEvent) -> Bool {
+    /// Keys go to the window they were pressed in, not whichever ContentView
+    /// installed the monitor first.
+    private static func take(_ event: NSEvent, fallback: WindowModel) -> Bool {
         // A small window's keys are its own (see Little.swift).
         if let little = LittleWindow.owning(event.window) { return little.take(event) }
+        let window = fallback.profile.model(owning: event.window) ?? fallback
+        let browser = window.profile
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
 
@@ -940,7 +959,7 @@ struct ContentView: View {
         }
 
         // The page's turn first, for the keys it may want (Refs #147).
-        if pageFirst(event, key: key, shifted: shifted) { return false }
+        if pageFirst(event, key: key, shifted: shifted, browser: browser) { return false }
 
         switch key {
         case "t" where !shifted:

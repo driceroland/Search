@@ -73,7 +73,10 @@ struct TabBar: View {
                                                 pill: pill,
                                                 close: { window.close(tab) }
                                             )
-                                            .modifier(Carried(index: index, count: window.tabs.count, step: step, vertical: false, space: "strip", move: { window.move(tab, to: $0) }, tear: { window.detach(tab) }))
+                                            .modifier(Carried(index: index, count: window.tabs.count, step: step, vertical: false, space: "strip", move: { window.move(tab, to: $0) }, tear: {
+                                                // Already dropped into another window.
+                                                if tab.owner === window { window.detach(tab) }
+                                            }))
                                             .id(tab.id)
                                         }
                                     }
@@ -404,6 +407,10 @@ private struct TabPill: View {
         .background { ground }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        // The row's own gesture reorders and tears off; this is what another
+        // window's strip can receive. Without it dropDestination never sees
+        // a payload and a tab cannot join another window.
+        .draggable(TabTransfer(tabID: tab.id, from: window.id))
         // Never both at once.
         //
         // A view carrying a single tap *and* a double tap has to wait out the
@@ -645,7 +652,11 @@ struct Carried: ViewModifier {
                             travel = 0
                             across = 0
                         }
-                        if out { tear?() }
+                        // A drop on another window can land in the same turn.
+                        // Tear only after that has had its chance.
+                        if out {
+                            DispatchQueue.main.async { tear?() }
+                        }
                     }
             )
     }

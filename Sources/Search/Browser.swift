@@ -621,6 +621,13 @@ final class Browser: NSObject, ObservableObject {
         hosts[model.id]
     }
 
+    /// The model behind an NSWindow, for a key event or a notification.
+    /// Falls back to the window in front, which is where unclaimed keys go.
+    func model(owning host: NSWindow?) -> WindowModel? {
+        guard let host else { return key }
+        return windows.first { self.host(of: $0) === host } ?? key
+    }
+
     /// The window in front, as AppKit sees it.
     var keyHost: NSWindow? {
         key.flatMap { host(of: $0) }
