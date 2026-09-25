@@ -1984,7 +1984,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// asks on its own (an advertisement, say) is ignored. And the other app
     /// opens only once you have said so, as in Safari — except a mail or
     /// phone link you just clicked on, which is exactly what it says.
-    private func handOff(_ url: URL, scheme: String, action: WKNavigationAction, from webView: WKWebView) {
+    /// An extension's side panel hands its own off here too (see ExtensionPanel).
+    func handOff(_ url: URL, scheme: String, action: WKNavigationAction, from webView: WKWebView) {
         let clicked = action.navigationType == .linkActivated
         guard action.targetFrame?.isMainFrame ?? true || clicked else { return }
         guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return }

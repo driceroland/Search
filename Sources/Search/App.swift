@@ -365,10 +365,16 @@ struct ContentView: View {
 
     /// What the panel takes from the page: the width it was pulled to,
     /// unless the window can't leave the page 320 beside it — then less,
-    /// but never under the panel's own minimum. Nothing without a panel.
+    /// but not under the panel's own minimum. Unless even that would run
+    /// over the column or past the window's edge: a 640-point window with
+    /// the column at its widest has 200 left, and there the panel gives way
+    /// to the page's last 160 rather than draw over either. Nothing without
+    /// a panel.
     private var panelWidth: CGFloat {
         guard browser.panel != nil else { return 0 }
-        return min(browser.prefs.panelWidth, max(Metrics.panelMin, span - chrome.width - 320))
+        let room = span - chrome.width
+        let wanted = min(browser.prefs.panelWidth, max(Metrics.panelMin, room - 320))
+        return max(0, min(wanted, room - 160))
     }
 
     /// The bookmarks bar is up: asked for, there are bookmarks, and the tabs

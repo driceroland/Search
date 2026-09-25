@@ -2646,8 +2646,13 @@ enum ExtensionShims {
         // MARK: side panel — docked beside the page (see ExtensionPanel.swift)
         case "sidePanel.setOptions":
             if let path = (first as? [String: Any])?["path"] as? String { panelPath[id] = path }
-            // Chrome takes enabled: false as "put it away" for a panel that is up.
-            if (first as? [String: Any])?["enabled"] as? Bool == false, owner.browser?.panel?.id == id { owner.browser?.closePanel() }
+            // Chrome takes enabled: false as "put it away" — for the window's
+            // panel. Said of a tab, it is a per-tab setting this panel doesn't
+            // keep, and Chrome's own site-specific pattern says it of every
+            // other tab as it loads; closing on those would take the panel
+            // from under the user each time a background tab finished.
+            if let options = first as? [String: Any], options["enabled"] as? Bool == false,
+               !(options["tabId"] is NSNumber), owner.browser?.panel?.id == id { owner.browser?.closePanel() }
             return nil
         case "sidePanel.getOptions":
             return ["enabled": true, "path": panelPath[id] ?? defaultPanel(context) ?? ""]

@@ -78,15 +78,36 @@ final class ExtensionPanel: NSObject, DockedPage, WKUIDelegate, WKNavigationDele
     }
 
     /// The panel shows the extension's own pages and nothing else: a
-    /// website it sends itself to goes to the row, and the panel keeps its
-    /// page. Frames inside it may load what they like.
+    /// website it sends itself to goes to the row, an address for another
+    /// app is handed off as a page's is, and the panel keeps its page. A
+    /// download is a download, not the panel's next page (see the same
+    /// guard in Browser). Frames inside it may load what they like.
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard !action.shouldPerformDownload else { decisionHandler(.download); return }
         guard action.targetFrame?.isMainFrame ?? true, let url = action.request.url,
-              url.scheme != "about", url.scheme != base.scheme || url.host != base.host
+              let scheme = url.scheme?.lowercased(), !own(url)
         else { decisionHandler(.allow); return }
-        browser.open(url, foreground: true)
         decisionHandler(.cancel)
+        if ["http", "https", "file"].contains(scheme) {
+            browser.open(url, foreground: true)
+        } else {
+            browser.handOff(url, scheme: scheme, action: action, from: webView)
+        }
     }
+
+    /// The extension's own: its pages, and a blob it made for itself
+    /// (blob:chrome-extension://id/…, the usual shape of an export).
+    private func own(_ url: URL) -> Bool {
+        if url.scheme == "about" { return true }
+        var inner = url.absoluteString
+        if url.scheme == "blob" { inner = String(inner.dropFirst("blob:".count)) }
+        guard let parts = URL(string: inner) else { return false }
+        return parts.scheme == base.scheme && parts.host == base.host
+    }
+
+    /// A download from the panel goes where the window's downloads go.
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) { browser.keep(download) }
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) { browser.keep(download) }
 }
 
 /// The panel page, as WebKit finds it: in the browser's window, but not
