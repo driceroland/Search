@@ -17,6 +17,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- An extension talking to an app on the Mac finds a host registered with Vivaldi or with Opera: both keep their `NativeMessagingHosts` folder where Chrome, Chromium, Edge, Brave and Arc keep theirs, and Search reads them all now. The two were already browsers it brings passwords and bookmarks in from, so the folders it reads name the same browsers the import list does.
 - A window a page opens at a size of its own, a sign-in window for one, is named in the tabs by its site rather than by its title, which the page chooses: one called "Sign in with Google" from another address no longer passes for Google's. A plain link opened in a new tab keeps its title, and a name you gave a tab stays first.
 - A link from another app, or one opened from a pinned tab, comes first after the pins instead of landing between two of them. ([#219](https://github.com/driceroland/Search/issues/219))
 - The shortcuts card lists ⇧⌘C, Copy Address, which only the Tabs menu showed. Thanks [@merttopuz](https://github.com/merttopuz) ([#182](https://github.com/driceroland/Search/pull/182)), and [@olllayor](https://github.com/olllayor) for asking ([#176](https://github.com/driceroland/Search/issues/176))
