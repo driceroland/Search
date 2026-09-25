@@ -89,6 +89,11 @@ def loaded(name):
 
 
 def install(folder, name):
+    # A run that failed left its copy behind; a second copy would be found first.
+    for item in ask({"do": "extensions"}).get("extensions", []):
+        if item.get("name") == name:
+            ask({"do": "ext-remove", "id": item["id"]})
+    until(f"no earlier {name}", lambda: not any(i.get("name") == name for i in ask({"do": "extensions"}).get("extensions", [])))
     ask({"do": "ext-answer", "answer": "yes"})
     ask({"do": "ext-folder", "path": folder, "yes": True})
     return until(f"{name} loaded", lambda: loaded(name), seconds=30)
@@ -117,9 +122,17 @@ def in_panel(ext, js):
     return got.get("value")
 
 
+def run(ext, js):
+    """Runs js in the panel for its effect; a promise or a window it leaves
+    behind is not something WebKit can hand back, so nothing is asked for."""
+    in_panel(ext, js + "; undefined")
+
+
 def settled(ext, js, seconds=10):
-    """Runs js, which must leave its answer in window.__r, and reads it."""
-    in_panel(ext, "window.__r = undefined; " + js)
+    """Runs js, which must leave its answer in window.__r, and reads it. The
+    statement's own value is a promise WebKit can't hand back, so it ends
+    on one it can."""
+    in_panel(ext, "window.__r = undefined; " + js + "; undefined")
     return until("a value in window.__r", lambda: in_panel(ext, "window.__r"), seconds)
 
 
@@ -174,28 +187,34 @@ def main(argv):
         expect("the panel stays across a tab switch", (panel() or {}).get("id") == fixture)
         ask({"do": "select", "id": page})
 
-        # Task 3: a narrow window clamps the panel, never the page to nothing.
+        # Task 3: a narrow window clamps the panel so the page keeps 320 —
+        # and with the column of tabs taking its share too, the panel stops
+        # at its own minimum rather than squeezing the page further.
         ask({"do": "resize", "width": 640, "height": 500})
         time.sleep(0.6)
-        expect("a narrow window clamps the panel to its minimum", (panel() or {}).get("width") == 280)
+        expect("a narrow window leaves the page 320 beside the panel", (panel() or {}).get("width") == 320)
+        ask({"do": "ui", "sidebar": True})
+        time.sleep(0.6)
+        expect("with the column too, the panel stops at its minimum", (panel() or {}).get("width") == 280)
+        ask({"do": "ui", "sidebar": False})
         ask({"do": "resize", "width": 1180, "height": 780})
         time.sleep(0.6)
 
         # Task 4: closing from the page, links out, self-navigation, no path, reload.
-        in_panel(fixture, "window.close()")
+        run(fixture, "window.close()")
         time.sleep(0.4)
         expect("window.close() from the panel closes it", panel() == "")
         press_until_up(fixture)
-        in_panel(fixture, "chrome.sidePanel.setOptions({enabled: false})")
+        run(fixture, "chrome.sidePanel.setOptions({enabled: false})")
         time.sleep(0.4)
         expect("setOptions({enabled: false}) closes it", panel() == "")
         press_until_up(fixture)
         before = len(ask({"do": "tabs"}).get("tabs", []))
-        in_panel(fixture, "window.open('https://example.net/')")
+        run(fixture, "window.open('https://example.net/')")
         until("a tab for the link", lambda: len(ask({"do": "tabs"}).get("tabs", [])) > before)
         expect("a link out of the panel is a tab, and the panel stays", (panel() or {}).get("id") == fixture)
         before = len(ask({"do": "tabs"}).get("tabs", []))
-        in_panel(fixture, "location.href = 'https://example.edu/'")
+        run(fixture, "location.href = 'https://example.edu/'")
         until("a tab for the navigation", lambda: len(ask({"do": "tabs"}).get("tabs", [])) > before)
         time.sleep(0.6)
         expect("the panel keeps its own page after navigating away", settled(fixture, "window.__r = location.href").startswith("chrome-extension://"))
@@ -203,7 +222,7 @@ def main(argv):
         nopanel = install(NOPANEL, "No panel fixture")["id"]
         probe_tab = ask({"do": "ext-page", "id": nopanel, "path": "page.html"})["id"]
         ask({"do": "wait", "id": probe_tab, "seconds": 20})
-        ask({"do": "eval", "id": probe_tab, "js": "window.__r = undefined; chrome.sidePanel.open({}).then(() => window.__r = 'opened', e => window.__r = 'error: ' + e.message)"})
+        ask({"do": "eval", "id": probe_tab, "js": "window.__r = undefined; chrome.sidePanel.open({}).then(() => window.__r = 'opened', e => window.__r = 'error: ' + e.message); undefined"})
         said = until("sidePanel.open to settle", lambda: ask({"do": "eval", "id": probe_tab, "js": "window.__r"}).get("value"))
         expect("sidePanel.open() with no path rejects", said.startswith("error:") and "path" in said)
 

@@ -87,7 +87,8 @@ struct PeekPanel: View {
         }
     }
 
-    private struct Knob: View {
+    /// Shared with the extension panel's head (see ExtensionPanel.swift).
+    struct Knob: View {
         let symbol: String
         let help: String
         let act: () -> Void

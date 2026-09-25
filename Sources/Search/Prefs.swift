@@ -59,6 +59,10 @@ final class Preferences: ObservableObject {
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
     }
+    /// How wide an extension's side panel is. Pulled by its edge, and remembered.
+    @Published var panelWidth: CGFloat {
+        didSet { store.set(Double(panelWidth), forKey: "panel.width") }
+    }
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
     }
@@ -232,6 +236,8 @@ final class Preferences: ObservableObject {
         sideHides = store.bool(forKey: "sidebar.hides")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
+        let panel = store.object(forKey: "panel.width") as? Double ?? Double(Metrics.panel)
+        panelWidth = min(Metrics.panelMax, max(Metrics.panelMin, CGFloat(panel)))
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""

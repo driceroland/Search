@@ -143,3 +143,74 @@ extension Browser {
         if panel?.id == context.uniqueIdentifier { closePanel() } else { try showPanel(for: context) }
     }
 }
+
+/// The column: the extension's name over its page, and a hairline on its
+/// left that pulls to resize, as the tabs' column pulls on its right.
+struct PanelColumn: View {
+    @ObservedObject var browser: Browser
+    @ObservedObject var prefs: Preferences
+    let panel: DockedPage
+    /// What the window can give it right now (see ContentView.panelWidth).
+    let width: CGFloat
+
+    /// The width the panel had when the edge was picked up.
+    @State private var grabbed: CGFloat?
+    @State private var onEdge = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                if let icon = panel.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                }
+                Text(panel.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                PeekPanel.Knob("xmark", help: "Close") { browser.closePanel() }
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 4)
+            .frame(height: Metrics.panelHead)
+            Rectangle().fill(Palette.hairline).frame(height: 1)
+            WebStage(page: panel.view)
+        }
+        .frame(width: width)
+        .frame(maxHeight: .infinity)
+        .background(Palette.ground)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Palette.hairline).frame(width: 1)
+        }
+        .overlay(alignment: .leading) { edge }
+    }
+
+    /// The panel's edge: pull it to make the panel wider or narrower,
+    /// double-click it to put it back. On the right, pulling left widens.
+    private var edge: some View {
+        Rectangle()
+            .fill(Palette.ink.opacity(onEdge || grabbed != nil ? 0.18 : 0))
+            .frame(width: onEdge || grabbed != nil ? 2 : 1)
+            .frame(width: 9)
+            .contentShape(Rectangle())
+            .onHover { over in
+                onEdge = over
+                if over { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        if grabbed == nil { grabbed = prefs.panelWidth }
+                        let wanted = (grabbed ?? prefs.panelWidth) - value.translation.width
+                        prefs.panelWidth = min(Metrics.panelMax, max(Metrics.panelMin, wanted))
+                    }
+                    .onEnded { _ in grabbed = nil }
+            )
+            .modifier(OneClick(double: true) {
+                withAnimation(Motion.settle) { prefs.panelWidth = Metrics.panel }
+            })
+            .animation(Motion.quick, value: onEdge)
+    }
+}

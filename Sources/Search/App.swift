@@ -267,7 +267,8 @@ struct ContentView: View {
     /// animation (see `make(room:after:)`); nil only before the window is up.
     @State private var room: CGSize?
     @State private var roomTicket = 0
-
+    /// How wide the window is, for what the panel may take (see panelWidth).
+    @State private var span: CGFloat = 0
 
     /// The window: room at the top, one stage for the page, and the row when
     /// there is one.
@@ -288,6 +289,7 @@ struct ContentView: View {
             stage
                 .padding(.leading, roomed.width)
                 .padding(.top, roomed.height)
+                .padding(.trailing, panelWidth)
                 .offset(x: chrome.width - roomed.width, y: chrome.height - roomed.height)
 
             // The column of tabs, in the way that has one. It takes the full
@@ -304,6 +306,14 @@ struct ContentView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
+            // An extension's side panel, docked on the right, the page's
+            // height: under the strip, beside the column (see ExtensionPanel.swift).
+            if let panel = browser.panel {
+                PanelColumn(browser: browser, prefs: browser.prefs, panel: panel, width: panelWidth)
+                    .padding(.top, chrome.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            }
+
             // The bookmarks bar, under the strip or beside the column's top.
             if barShown {
                 BookmarksBar(browser: browser, bookmarks: browser.bookmarks)
@@ -313,6 +323,9 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+        .background(GeometryReader { geo in
+            Color.clear.onChange(of: geo.size.width, initial: true) { _, width in span = width }
+        })
         .animation(Motion.glide, value: browser.prefs.sidebar)
         .animation(.easeOut(duration: 0.12), value: browser.active?.immersed)
         .onAppear { if room == nil { room = chrome } }
@@ -348,6 +361,14 @@ struct ContentView: View {
     /// as they come and go.
     private var chrome: CGSize {
         CGSize(width: sidebar ? browser.prefs.sideWidth : 0, height: band + (barShown ? BookmarksBar.height : 0))
+    }
+
+    /// What the panel takes from the page: the width it was pulled to,
+    /// unless the window can't leave the page 320 beside it — then less,
+    /// but never under the panel's own minimum. Nothing without a panel.
+    private var panelWidth: CGFloat {
+        guard browser.panel != nil else { return 0 }
+        return min(browser.prefs.panelWidth, max(Metrics.panelMin, span - chrome.width - 320))
     }
 
     /// The bookmarks bar is up: asked for, there are bookmarks, and the tabs
