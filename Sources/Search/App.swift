@@ -1015,7 +1015,12 @@ struct ContentView: View {
         default:
             // Moving or selecting text belongs to the editor, not the page's
             // history — in web forms and in the browser's own fields alike.
+            // The page's own word on typing misses a click straight into a
+            // frame, and never reaches into another site's, such as an
+            // embedded comment box. The web view has an input context only
+            // while the caret is in something editable, in any frame.
             guard !shifted, browser.active?.typing != true,
+                  browser.active?.built?.inputContext == nil,
                   !(event.window?.firstResponder is NSTextView)
             else { return false }
             // ⌘← and ⌘→, for hands that never learned the brackets.
