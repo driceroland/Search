@@ -77,7 +77,7 @@ struct PeekPanel: View {
                         .shadow(color: .black.opacity(0.25), radius: 30, y: 10)
                     VStack(spacing: 8) {
                         Knob("xmark", help: "Close (esc)") { browser.closePeek() }
-                        Knob("arrow.up.left.and.arrow.down.right", help: "Open as a tab") { browser.keepPeek() }
+                        Knob("arrow.up.left.and.arrow.down.right", help: "Open as a tab (⌘↩)") { browser.keepPeek() }
                     }
                 }
                 .frame(width: geo.size.width * 0.82, height: geo.size.height * 0.86)
