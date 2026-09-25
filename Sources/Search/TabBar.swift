@@ -73,16 +73,18 @@ struct TabBar: View {
                                                 pill: pill,
                                                 close: { window.close(tab) }
                                             )
-                                            .modifier(Carried(index: index, count: window.tabs.count, step: step, vertical: false, space: "strip", move: { window.move(tab, to: $0) }, tear: {
-                                                // Already dropped into another window.
-                                                if tab.owner === window { window.detach(tab) }
-                                            }))
+                                            .modifier(Carried(
+                                                index: index,
+                                                count: window.tabs.count,
+                                                step: step,
+                                                vertical: false,
+                                                space: "strip",
+                                                move: { window.move(tab, to: $0) },
+                                                tab: tab,
+                                                window: window
+                                            ))
                                             .id(tab.id)
                                         }
-                                    }
-                                    .dropDestination(for: TabTransfer.self) { items, _ in
-                                        guard let first = items.first else { return false }
-                                        return window.take(first, at: window.tabs.count)
                                     }
                                     .frame(height: Metrics.strip)
                                 }
@@ -407,10 +409,7 @@ private struct TabPill: View {
         .background { ground }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        // The row's own gesture reorders and tears off; this is what another
-        // window's strip can receive. Without it dropDestination never sees
-        // a payload and a tab cannot join another window.
-        .draggable(TabTransfer(tabID: tab.id, from: window.id))
+
         // Never both at once.
         //
         // A view carrying a single tap *and* a double tap has to wait out the
@@ -607,8 +606,8 @@ struct Carried: ViewModifier {
     /// keeps its bearings (see the sidebar's grid).
     let space: String
     let move: (Int) -> Void
-    /// A pull clear of the row: the tab tears off into a window of its own.
-    let tear: (() -> Void)?
+    let tab: Tab
+    let window: WindowModel
 
     @State private var held = false
     @State private var from = 0
@@ -646,16 +645,24 @@ struct Carried: ViewModifier {
                         }
                     }
                     .onEnded { _ in
-                        let out = tear != nil && abs(across) > 80
+                        let out = abs(across) > (vertical ? 40 : 30)
                         withAnimation(Motion.settle) {
                             held = false
                             travel = 0
                             across = 0
                         }
-                        // A drop on another window can land in the same turn.
-                        // Tear only after that has had its chance.
-                        if out {
-                            DispatchQueue.main.async { tear?() }
+                        guard out else { return }
+
+                        let mouse = NSEvent.mouseLocation
+                        let browser = window.profile
+                        if let target = browser.window(at: mouse), target !== window {
+                            let idx = target.insertionIndex(at: mouse)
+                            window.move(tab, to: target, at: idx)
+                            if let host = browser.host(of: target) {
+                                host.makeKeyAndOrderFront(nil)
+                            }
+                        } else if let host = browser.host(of: window), !host.frame.contains(mouse) {
+                            window.detach(tab, at: mouse)
                         }
                     }
             )

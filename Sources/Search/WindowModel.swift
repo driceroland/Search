@@ -288,9 +288,9 @@ final class WindowModel: ObservableObject, Identifiable {
         }
 
         if tabs.count == 1 {
-            if tab.isBlank {
-                // Closing the last blank tab closes this window, not whatever
-                // window happens to be key.
+            if tab.isBlank || profile.windows.count > 1 {
+                // Closing the last tab closes this window when there are multiple
+                // windows, or when the tab is already blank in the last window.
                 profile.close(self)
             } else {
                 let fresh = makeTab()
@@ -463,6 +463,7 @@ final class WindowModel: ObservableObject, Identifiable {
         let url = Browser.page(url)
         let tab = Tab(bench: true, configuration: Browser.extensionConfiguration(for: url))
         prepare(tab)
+        tab.enter(self)
         tabs.append(tab)
         tab.go(to: url)
         return tab
@@ -1010,6 +1011,7 @@ final class WindowModel: ObservableObject, Identifiable {
             guard let url = URL(string: entry.url) else { continue }
             let tab = Tab(configuration: Web.configuration(space: space))
             prepare(tab)
+            tab.enter(self)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
             row.append(tab)
@@ -1027,6 +1029,7 @@ final class WindowModel: ObservableObject, Identifiable {
     /// Another space's row put on screen in place of this one (see
     /// Spaces.swift) — empty, for one that restores its own.
     func showRow(_ row: [Tab], active: Tab.ID?) {
+        for tab in row { tab.enter(self) }
         tabs = row
         activeID = active ?? row.first?.id
     }
@@ -1052,6 +1055,7 @@ final class WindowModel: ObservableObject, Identifiable {
             guard let url = URL(string: entry.url) else { continue }
             let tab = makeTab()
             prepare(tab)
+            tab.enter(self)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
             tabs.append(tab)

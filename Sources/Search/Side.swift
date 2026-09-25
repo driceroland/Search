@@ -412,14 +412,17 @@ struct SideBar: View {
                 )
                 // Positions here are among the loose rows; the pinned block
                 // sits in front of them in the real list.
-                .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true, space: "rows", move: { window.move(tab, to: $0 + window.pinnedCount) }, tear: {
-                    if tab.owner === window { window.detach(tab) }
-                }))
+                .modifier(Carried(
+                    index: index,
+                    count: looseTabs.count,
+                    step: step,
+                    vertical: true,
+                    space: "rows",
+                    move: { window.move(tab, to: $0 + window.pinnedCount) },
+                    tab: tab,
+                    window: window
+                ))
             }
-        }
-        .dropDestination(for: TabTransfer.self) { items, _ in
-            guard let first = items.first else { return false }
-            return window.take(first, at: window.pinnedCount + looseTabs.count)
         }
         .coordinateSpace(name: "rows")
     }
@@ -620,7 +623,7 @@ private struct SideRow: View {
         .padding(.trailing, status ? 7 : 10)
         .frame(height: 28)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .draggable(TabTransfer(tabID: tab.id, from: window.id))
+
         // The title keeps its length under the pointer and fades out
         // beneath the cross, rather than being cut shorter, so its end
         // doesn't jump on each row the pointer passes.

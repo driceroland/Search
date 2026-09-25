@@ -332,7 +332,15 @@ final class Bench {
                 return
             }
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
-            browser.key!.select(tab)
+            if let window = tab.owner {
+                window.select(tab)
+                if browser.key !== window {
+                    browser.becameKey(window)
+                    if let host = browser.host(of: window) { host.makeKeyAndOrderFront(nil) }
+                }
+            } else {
+                browser.key?.select(tab)
+            }
             answer(describe(tab))
 
         case "text":
@@ -858,6 +866,36 @@ final class Bench {
             else { answer(["error": "place needs a tab id and an index"]); return }
             browser.key!.move(tab, to: to)
             answer(["at": (browser.key?.tabs ?? []).firstIndex { $0.id == tab.id } ?? -1])
+
+        case "move-tab":
+            // Move a tab to another window
+            guard let id = request["id"] as? String,
+                  let tab = browser.allTabs.first(where: { Bench.short($0) == id }),
+                  let fromWindow = tab.owner,
+                  let targetIdx = request["window"] as? Int,
+                  targetIdx < browser.windows.count
+            else { answer(["error": "move-tab needs a tab id and a target window index"]); return }
+            let toWindow = browser.windows[targetIdx]
+            let at = request["at"] as? Int ?? toWindow.tabs.count
+            fromWindow.move(tab, to: toWindow, at: at)
+            answer(["moved": true, "targetTabs": toWindow.tabs.count])
+
+        case "detach-tab":
+            // Detach a tab into its own window
+            guard let id = request["id"] as? String,
+                  let tab = browser.allTabs.first(where: { Bench.short($0) == id }),
+                  let fromWindow = tab.owner
+            else { answer(["error": "detach-tab needs a tab id"]); return }
+            _ = fromWindow.detach(tab)
+            answer(["detached": true, "windows": browser.windows.count])
+
+        case "close-window":
+            guard let idx = request["window"] as? Int, idx < browser.windows.count else {
+                answer(["error": "invalid window index"])
+                return
+            }
+            browser.close(browser.windows[idx])
+            answer(["closed": true, "remaining": browser.windows.count])
 
         case "window":
             // The browser's window, when a probe started hidden came up
@@ -1433,7 +1471,7 @@ final class Bench {
     /// `window.open` carries no flask and would be out of reach otherwise.
     private func find(_ request: [String: Any], in browser: Browser) -> Tab? {
         guard let ref = (request["id"] as? String)?.lowercased(), !ref.isEmpty else { return nil }
-        return (browser.key?.tabs ?? []).first { (Store.testing || $0.bench) && $0.id.uuidString.lowercased().hasPrefix(ref) }
+        return browser.allTabs.first { (Store.testing || $0.bench) && $0.id.uuidString.lowercased().hasPrefix(ref) }
     }
 
     private func missing(_ request: [String: Any]) -> [String: Any] {

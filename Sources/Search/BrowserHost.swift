@@ -13,6 +13,7 @@ final class BrowserHost: NSObject, NSWindowDelegate {
 
     let model: WindowModel
     private let window: NSWindow
+    private var closing = false
 
     /// A new window for `model`, on screen and in front.
     @discardableResult
@@ -22,10 +23,16 @@ final class BrowserHost: NSObject, NSWindowDelegate {
         if let frame = model.frameRequest {
             model.frameRequest = nil
             host.window.setFrame(frame, display: true)
+        } else if let keyHost = model.profile.keyHost {
+            let topLeft = NSPoint(x: keyHost.frame.minX, y: keyHost.frame.maxY)
+            let p = host.window.cascadeTopLeft(from: topLeft)
+            host.window.setFrameTopLeftPoint(p)
         } else {
             host.window.center()
         }
         host.window.makeKeyAndOrderFront(nil)
+        model.profile.becameKey(model)
+        model.askFocus()
         return host
     }
 
@@ -53,11 +60,16 @@ final class BrowserHost: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        guard !closing else { return }
+        closing = true
+        window.delegate = nil
         BrowserHost.open.removeAll { $0 === self }
         model.profile.close(model)
+        window.contentView = nil
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
         model.profile.becameKey(model)
+        model.askFocus()
     }
 }

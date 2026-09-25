@@ -625,7 +625,25 @@ final class Browser: NSObject, ObservableObject {
     /// Falls back to the window in front, which is where unclaimed keys go.
     func model(owning host: NSWindow?) -> WindowModel? {
         guard let host else { return key }
-        return windows.first { self.host(of: $0) === host } ?? key
+        if let direct = windows.first(where: { self.host(of: $0) === host }) {
+            return direct
+        }
+        if let parent = host.parent, let parentModel = windows.first(where: { self.host(of: $0) === parent }) {
+            return parentModel
+        }
+        return key
+    }
+
+    /// Which window sits under a point on the screen.
+    func window(at screenPoint: NSPoint) -> WindowModel? {
+        let hit = NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: 0)
+        if hit > 0, let nsWindow = NSApp.window(withWindowNumber: hit), let model = model(owning: nsWindow) {
+            return model
+        }
+        return windows.first { model in
+            guard let host = host(of: model) else { return false }
+            return host.frame.contains(screenPoint)
+        }
     }
 
     /// The window in front, as AppKit sees it.
@@ -652,6 +670,7 @@ final class Browser: NSObject, ObservableObject {
         adopt(model)
         model.adopt(model.makeTab())
         BrowserHost.show(model)
+        writeSession(now: true)
         return model
     }
 
@@ -676,10 +695,16 @@ final class Browser: NSObject, ObservableObject {
         }
         for tab in window.tabs { tab.close() }
         windows.removeAll { $0.id == window.id }
-        if key === window { key = windows.first }
         if let host = hosts.removeValue(forKey: window.id) {
             host.close()
         }
+        if key === window {
+            key = windows.first
+            if let next = key, let nextHost = host(of: next) {
+                nextHost.makeKeyAndOrderFront(nil)
+            }
+        }
+        writeSession(now: true)
     }
 
     func appLeft() {

@@ -518,6 +518,9 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
                 if let host, (note.object as? NSWindow) === host { browser.becameKey(window) }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
+                if let host, (note.object as? NSWindow) === host { browser.close(window) }
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
                 if browser.key === window { browser.appBack() }
@@ -722,7 +725,6 @@ struct ContentView: View {
 
     private func dress(_ host: NSWindow) {
         browser.claim(host, for: window)
-        browser.becameKey(window)
         // Light or dark is the app's to say (Settings › Appearance); the
         // window only has to be the ground colour that goes with it.
         host.titlebarAppearsTransparent = true
@@ -735,11 +737,12 @@ struct ContentView: View {
         // would move the window on any drag there, a tab picked up to take
         // it elsewhere in the row included. DragStrip moves it instead.
         host.isMovable = false
-        // Where you left it, at the size you left it. A test run keeps its
-        // own: the name lives in the app's standard defaults, which every
-        // copy shares, and a probe resized for a test once changed the size
-        // the real window came back at.
-        host.setFrameAutosaveName(Store.world.map { "search (\($0))" } ?? "search")
+        // Where you left it, at the size you left it. Only the primary
+        // scene window autosaves under "search", so new windows can
+        // cascade freely without snapping directly on top.
+        if window === browser.sceneModel {
+            host.setFrameAutosaveName(Store.world.map { "search (\($0))" } ?? "search")
+        }
 
         // The traffic lights set in from the corner and centred in the strip's
         // height, in both modes, without a toolbar's rounder corners — see
@@ -767,33 +770,34 @@ struct ContentView: View {
 
     // MARK: - keys
 
-    /// One monitor for the whole app. A monitor per window meant every
-    /// window's `take` saw the key first, and the one that registered first
-    /// acted on its own row whatever window the key was pressed in.
+    /// One monitor for the whole app. Keys go to the window they were pressed in.
     private static var keys: Any?
-    /// A model to fall back to when the event has no window of ours yet.
-    private static weak var anyModel: WindowModel?
+    private static weak var appBrowser: Browser?
 
     /// A web view takes first responder and keeps most of the keyboard, so the
     /// shortcuts are caught before the event ever reaches it. The menu carries
     /// the same commands for anyone looking for them, and never sees these
     /// keystrokes because this runs first.
     private func watchKeys() {
-        ContentView.anyModel = window
+        ContentView.appBrowser = browser
         ContentView.keyHook = { event in
-            ContentView.take(event, fallback: window) ? nil : event
+            guard let browser = ContentView.appBrowser else { return event }
+            let target = browser.model(owning: event.window ?? NSApp.keyWindow) ?? browser.key ?? window
+            return ContentView.take(event, in: target) ? nil : event
         }
         guard ContentView.keys == nil else { return }
         ContentView.keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
-            guard let root = ContentView.anyModel else { return event }
+            guard let browser = ContentView.appBrowser else { return event }
+            let target = browser.model(owning: event.window ?? NSApp.keyWindow) ?? browser.key ?? browser.windows.first
+            guard let target else { return event }
             guard event.type == .keyDown else {
                 // ⌘ let go of ends a ⌘K walk, wherever it stopped.
                 if !event.modifierFlags.contains(.command) {
-                    root.profile.model(owning: event.window)?.landSummon()
+                    target.landSummon()
                 }
                 return event
             }
-            return ContentView.take(event, fallback: root) ? nil : event
+            return ContentView.take(event, in: target) ? nil : event
         }
     }
 
@@ -832,10 +836,9 @@ struct ContentView: View {
 
     /// Keys go to the window they were pressed in, not whichever ContentView
     /// installed the monitor first.
-    private static func take(_ event: NSEvent, fallback: WindowModel) -> Bool {
+    private static func take(_ event: NSEvent, in window: WindowModel) -> Bool {
         // A small window's keys are its own (see Little.swift).
         if let little = LittleWindow.owning(event.window) { return little.take(event) }
-        let window = fallback.profile.model(owning: event.window) ?? fallback
         let browser = window.profile
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
@@ -1039,7 +1042,7 @@ struct ContentView: View {
             if window.peekTab != nil {
                 window.closePeek()
             } else if let tab = window.active {
-                browser.closeTab(tab)
+                window.close(tab)
             }
         case "l" where !shifted:
             window.edit()
