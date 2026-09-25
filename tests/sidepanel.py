@@ -122,7 +122,7 @@ def in_panel(ext, js):
     return got.get("value")
 
 
-def run(ext, js):
+def fire(ext, js):
     """Runs js in the panel for its effect; a promise or a window it leaves
     behind is not something WebKit can hand back, so nothing is asked for."""
     in_panel(ext, js + "; undefined")
@@ -201,20 +201,20 @@ def main(argv):
         time.sleep(0.6)
 
         # Task 4: closing from the page, links out, self-navigation, no path, reload.
-        run(fixture, "window.close()")
+        fire(fixture, "window.close()")
         time.sleep(0.4)
         expect("window.close() from the panel closes it", panel() == "")
         press_until_up(fixture)
-        run(fixture, "chrome.sidePanel.setOptions({enabled: false})")
+        fire(fixture, "chrome.sidePanel.setOptions({enabled: false})")
         time.sleep(0.4)
         expect("setOptions({enabled: false}) closes it", panel() == "")
         press_until_up(fixture)
         before = len(ask({"do": "tabs"}).get("tabs", []))
-        run(fixture, "window.open('https://example.net/')")
+        fire(fixture, "window.open('https://example.net/')")
         until("a tab for the link", lambda: len(ask({"do": "tabs"}).get("tabs", [])) > before)
         expect("a link out of the panel is a tab, and the panel stays", (panel() or {}).get("id") == fixture)
         before = len(ask({"do": "tabs"}).get("tabs", []))
-        run(fixture, "location.href = 'https://example.edu/'")
+        fire(fixture, "location.href = 'https://example.edu/'")
         until("a tab for the navigation", lambda: len(ask({"do": "tabs"}).get("tabs", [])) > before)
         time.sleep(0.6)
         expect("the panel keeps its own page after navigating away", settled(fixture, "window.__r = location.href").startswith("chrome-extension://"))
