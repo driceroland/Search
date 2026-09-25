@@ -76,10 +76,10 @@ struct SearchApp: App {
                 Divider()
                 Button("Reload Page") { browser.reload() }
                     .keyboardShortcut("r")
-                Button("Reload Page from Origin") { browser.reload(fromOrigin: true) }
-                    .keyboardShortcut("r", modifiers: [.command, .shift])
-                Button("Reading Mode") { browser.toggleReader() }
+                Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
                     .keyboardShortcut("r", modifiers: [.command, .option])
+                Button("Reading Mode") { browser.toggleReader() }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button("Float Video") { browser.toggleFloat() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
                 Divider()
@@ -907,7 +907,7 @@ struct ContentView: View {
         if flags.contains(.option), !shifted, !flags.contains(.control),
            event.characters(byApplyingModifiers: [])?.lowercased() == "r" {
             if pageFirst(event, key: "r", shifted: false) { return false }
-            browser.toggleReader()
+            browser.reload(fromOrigin: true)
             return true
         }
 
@@ -1014,7 +1014,7 @@ struct ContentView: View {
         case "r" where !shifted:
             browser.reload()
         case "r" where shifted:
-            browser.reload(fromOrigin: true)
+            browser.toggleReader()
         case "[":
             shifted ? browser.step(-1) : browser.back()
         case "]":

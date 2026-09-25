@@ -13,7 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
-- Separate reload shortcuts: ⌘R reloads normally, ⇧⌘R reloads from origin and revalidates cached content. Reading Mode moves to ⌥⌘R. ([#171](https://github.com/driceroland/Search/issues/171))
+- Separate reload shortcuts, as in Safari: ⌘R reloads normally, ⌥⌘R reloads the page from origin and revalidates cached content. Reading Mode stays on ⇧⌘R. ([#171](https://github.com/driceroland/Search/issues/171))
 
 ### Fixed
 

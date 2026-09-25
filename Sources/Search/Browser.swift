@@ -1855,7 +1855,7 @@ final class Browser: NSObject, ObservableObject {
     func zoom(by factor: CGFloat) { active?.magnify(by: factor) }
     func resetZoom() { active?.resetZoom() }
 
-    /// ⌘⌥R. The article, and nothing that was arranged around it.
+    /// ⌘⇧R. The article, and nothing that was arranged around it.
     func toggleReader() {
         guard let tab = active else { return }
         tab.toggleReader { [weak self] worked in
