@@ -2236,24 +2236,9 @@ extension Browser: WKDownloadDelegate {
         completionHandler: @escaping (URL?) -> Void
     ) {
         let asked = response.url.flatMap { namedDownloads.removeValue(forKey: $0) }
-        let name = asked ?? (suggestedFilename.isEmpty ? "download" : suggestedFilename)
-
-        guard !prefs.asksWhereToSave else {
-            let panel = NSSavePanel()
-            panel.nameFieldStringValue = name
-            panel.directoryURL = downloadsFolder
-            panel.canCreateDirectories = true
-            guard panel.runModal() == .OK, let url = panel.url else {
-                completionHandler(nil)
-                return
-            }
-            completionHandler(url)
-            announce("Downloading \(url.lastPathComponent)")
-            return
-        }
-
-        completionHandler(Browser.free(name, in: downloadsFolder))
-        announce("Downloading \(name)")
+        let file = whereToSave(asked ?? suggestedFilename)
+        completionHandler(file)
+        if let file { announce("Downloading \(file.lastPathComponent)") }
     }
 
     func downloadDidFinish(_ download: WKDownload) {
@@ -2262,14 +2247,45 @@ extension Browser: WKDownloadDelegate {
             announce("Download finished")
             return
         }
-        loot.add(
-            Keep(
-                name: file.lastPathComponent,
-                from: download.originalRequest?.url?.host() ?? "",
-                path: file.path,
-                date: Date()
-            )
-        )
+        saved(file, from: download.originalRequest?.url)
+    }
+
+    /// The download button in the bar WebKit draws over a PDF. WebKit has the
+    /// file already and hands it over whole — to a delegate that answers
+    /// this name, outside the public framework, and to nobody otherwise: the
+    /// button did nothing at all.
+    @objc(_webView:saveDataToFile:suggestedFilename:mimeType:originatingURL:)
+    func webView(
+        _ webView: WKWebView,
+        saveDataToFile data: Data?,
+        suggestedFilename: String?,
+        mimeType: String?,
+        originatingURL: URL?
+    ) {
+        guard let data, let file = whereToSave(suggestedFilename ?? "") else { return }
+        do {
+            try data.write(to: file)
+            saved(file, from: originatingURL)
+        } catch {
+            announce("Download failed")
+        }
+    }
+
+    /// Where a file goes: the downloads folder, or wherever you say when
+    /// Settings says to ask. Nil when the question was cancelled.
+    private func whereToSave(_ name: String) -> URL? {
+        let name = name.isEmpty ? "download" : name
+        guard prefs.asksWhereToSave else { return Browser.free(name, in: downloadsFolder) }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = name
+        panel.directoryURL = downloadsFolder
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
+    }
+
+    private func saved(_ file: URL, from source: URL?) {
+        loot.add(Keep(name: file.lastPathComponent, from: source?.host() ?? "", path: file.path, date: Date()))
         announce("Saved \(file.lastPathComponent)")
     }
 
