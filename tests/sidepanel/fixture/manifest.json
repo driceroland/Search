@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Side panel fixture",
+  "version": "1.0",
+  "description": "A panel beside the page, for tests/sidepanel.py.",
+  "permissions": ["sidePanel", "tabs"],
+  "action": { "default_title": "Side panel fixture" },
+  "side_panel": { "default_path": "panel.html" },
+  "background": { "service_worker": "worker.js", "type": "module" }
+}
