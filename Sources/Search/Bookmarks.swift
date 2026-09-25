@@ -414,7 +414,7 @@ struct BookmarksDropdown: View {
             } else {
                 ScrollView {
                     BookmarkOutline(bookmarks: bookmarks) { url in
-                        browser.pickBookmark(url)
+                        browser.key?.pickBookmark(url)
                     }
                     .padding(6)
                 }
@@ -478,7 +478,7 @@ struct BookmarksPanel: View {
                 ScrollView(showsIndicators: false) {
                     Card {
                         BookmarkOutline(bookmarks: bookmarks) { url in
-                            browser.pickBookmark(url)
+                            browser.key?.pickBookmark(url)
                         }
                         .padding(.horizontal, 6)
                         .padding(.vertical, 6)
@@ -626,7 +626,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
 
     @objc private func open(_ item: NSMenuItem) {
         guard let url = item.representedObject as? URL else { return }
-        browser?.visit(url)
+        browser?.key?.visit(url)
     }
 
     /// SwiftUI's delegate, with the bookmarks put in after its update.

@@ -387,7 +387,7 @@ struct SettingsPanel: View {
                             get: { !Shield.shared.isPaused(on: host) },
                             set: { on in
                                 Shield.shared.pause(host, !on)
-                                browser.reload()
+                                browser.key?.reload()
                             }
                         ))
                     }
@@ -515,7 +515,7 @@ struct SettingsPanel: View {
         case .offered(let next):
             Pill("Download", filled: true) {
                 browser.tuning = false
-                browser.open(next.dmg, foreground: true)
+                browser.key?.open(next.dmg, foreground: true)
             }
         case .waiting:
             Pill("Install", filled: true) { updater.install() }

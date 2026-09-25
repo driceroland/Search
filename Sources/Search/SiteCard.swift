@@ -32,23 +32,23 @@ enum SiteCardPanel {
     /// The address as the edit began with it.
     private static var original: String?
 
-    static func follow(_ browser: Browser, anchor field: NSView) {
+    static func follow(_ window: WindowModel, anchor field: NSView) {
         anchor = field
-        let key = ObjectIdentifier(browser)
+        let key = ObjectIdentifier(window)
         guard watching[key] == nil else { return }
-        watching[key] = browser.$editingTab.combineLatest(browser.$tabDraft)
+        watching[key] = window.$editingTab.combineLatest(window.$tabDraft)
             .receive(on: DispatchQueue.main)
-            .sink { [weak browser] editing, draft in
+            .sink { [weak window] editing, draft in
                 MainActor.assumeIsolated {
-                    guard let browser else { return }
-                    guard let id = editing, !browser.renamingTab,
-                          let tab = browser.tabs.first(where: { $0.id == id }), !tab.isBlank
+                    guard let window else { return }
+                    guard let id = editing, !window.renamingTab,
+                          let tab = window.tabs.first(where: { $0.id == id }), !tab.isBlank
                     else { original = nil; hide(); return }
                     if original == nil {
                         // The edit began: the card comes up under the field once it
                         // is in its window.
                         original = draft
-                        place(tab, browser, tries: 0)
+                        place(tab, window, tries: 0)
                     } else if draft != original {
                         // Typing somewhere else: the card was about the page you are on.
                         hide()
@@ -57,30 +57,30 @@ enum SiteCardPanel {
             }
     }
 
-    private static func place(_ tab: Tab, _ browser: Browser, tries: Int) {
+    private static func place(_ tab: Tab, _ window: WindowModel, tries: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
-            guard original != nil, browser.editingTab == tab.id, browser.tabDraft == original else { return }
+            guard original != nil, window.editingTab == tab.id, window.tabDraft == original else { return }
             // The field with the caret in it is the one on screen; failing
             // that, the latest one made.
-            let focused = (Links.window?.firstResponder as? NSTextView)?.delegate as? NSTextField
+            let focused = (NSApp.keyWindow?.firstResponder as? NSTextView)?.delegate as? NSTextField
             guard let field = focused ?? anchor, field.window != nil else {
-                if tries < 15 { place(tab, browser, tries: tries + 1) }
+                if tries < 15 { place(tab, window, tries: tries + 1) }
                 return
             }
-            show(for: tab, in: browser, under: field)
+            show(for: tab, in: window, under: field)
         }
     }
 
     /// Under `field`, the tab's address, in `browser`'s window.
-    private static func show(for tab: Tab, in browser: Browser, under field: NSView) {
-        guard let window = field.window else { return }
+    private static func show(for tab: Tab, in model: WindowModel, under field: NSView) {
+        guard let nsWindow = field.window else { return }
         hide()
-        let card = SiteCard(browser: browser, tab: tab) {
+        let card = SiteCard(window: model, tab: tab) {
             SiteCardPanel.hide()
-            browser.cancelTabEdit()
+            model.cancelTabEdit()
         }
-        let host = FirstClick(rootView: AnyView(card.fixedSize()))
-        let size = host.fittingSize
+        let viewer = FirstClick(rootView: AnyView(card.fixedSize()))
+        let size = viewer.fittingSize
         let glass = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
         glass.material = .menu
         glass.state = .active
@@ -90,9 +90,9 @@ enum SiteCardPanel {
         glass.layer?.masksToBounds = true
         glass.layer?.borderWidth = 0.5
         glass.layer?.borderColor = MenuMetrics.edge.cgColor
-        host.frame = glass.bounds
-        host.autoresizingMask = [.width, .height]
-        glass.addSubview(host)
+        viewer.frame = glass.bounds
+        viewer.autoresizingMask = [.width, .height]
+        glass.addSubview(viewer)
 
         let panel = Panel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.contentView = glass
@@ -102,16 +102,16 @@ enum SiteCardPanel {
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = true
         // Under the address, lined up with the tab's own edge.
-        let spot = window.convertToScreen(field.convert(field.bounds, to: nil))
+        let spot = nsWindow.convertToScreen(field.convert(field.bounds, to: nil))
         var origin = NSPoint(x: spot.minX - 12, y: spot.minY - 12 - size.height)
-        if let screen = window.screen?.visibleFrame {
+        if let screen = nsWindow.screen?.visibleFrame {
             origin.x = min(max(origin.x, screen.minX + 8), screen.maxX - size.width - 8)
             origin.y = max(origin.y, screen.minY + 8)
         }
         panel.setFrameOrigin(origin)
-        window.addChildWindow(panel, ordered: .above)
+        nsWindow.addChildWindow(panel, ordered: .above)
         // Its height follows the card: one step in on the connection is taller.
-        host.onResize = { [weak panel] fitted in
+        viewer.onResize = { [weak panel] fitted in
             guard let panel, fitted.height > 0 else { return }
             var frame = panel.frame
             frame.origin.y += frame.height - fitted.height
@@ -155,7 +155,9 @@ enum SiteCardPanel {
 /// that belong to this page rather than to the browser. The connection's line
 /// goes a step further in, to what it means and the certificate behind it.
 struct SiteCard: View {
-    let browser: Browser
+    let window: WindowModel
+    /// Profile services this window draws from.
+    var browser: Browser { window.profile }
     @ObservedObject var tab: Tab
     let close: () -> Void
 
@@ -165,8 +167,8 @@ struct SiteCard: View {
     /// been asked, off the main thread: asking can go to the network.
     @State private var certified: Bool?
 
-    init(browser: Browser, tab: Tab, deeper: Bool = false, close: @escaping () -> Void) {
-        self.browser = browser
+    init(window: WindowModel, tab: Tab, deeper: Bool = false, close: @escaping () -> Void) {
+        self.window = window
         self.tab = tab
         self.close = close
         _deeper = State(initialValue: deeper)
@@ -208,7 +210,7 @@ struct SiteCard: View {
             if let safety {
                 Row(safety.title, submenu: true) { deeper = true }
             }
-            Row("Copy Address", keys: "⇧⌘C") { after { browser.copyAddress() } }
+            Row("Copy Address", keys: "⇧⌘C") { after { window.copyAddress() } }
             Separator()
             Row("Print…", keys: "⌘P") { after { browser.printPage() } }
             zoom
@@ -224,8 +226,8 @@ struct SiteCard: View {
                 .font(MenuMetrics.font)
                 .foregroundStyle(Color(nsColor: .labelColor))
             Spacer(minLength: 24)
-            Step(symbol: "minus", help: "Zoom Out   ⌘-") { browser.zoom(by: 1 / 1.1) }
-            Button { browser.resetZoom() } label: {
+            Step(symbol: "minus", help: "Zoom Out   ⌘-") { window.zoom(by: 1 / 1.1) }
+            Button { window.resetZoom() } label: {
                 Text("\(Int((tab.zoom * 100).rounded()))%")
                     .font(MenuMetrics.font)
                     .monospacedDigit()
@@ -235,7 +237,7 @@ struct SiteCard: View {
             }
             .buttonStyle(.plain)
             .help("Actual Size   ⌘0")
-            Step(symbol: "plus", help: "Zoom In   ⌘+") { browser.zoom(by: 1.1) }
+            Step(symbol: "plus", help: "Zoom In   ⌘+") { window.zoom(by: 1.1) }
         }
         .padding(.leading, MenuMetrics.text)
         .padding(.trailing, MenuMetrics.inset + 4)
@@ -335,7 +337,7 @@ struct SiteCard: View {
 
     /// The system's own certificate sheet, over the window.
     private static func show(_ trust: SecTrust) {
-        guard let window = Links.window else { return }
+        guard let window = NSApp.keyWindow else { return }
         SFCertificatePanel.shared().beginSheet(
             for: window, modalDelegate: nil, didEnd: nil, contextInfo: nil, trust: trust, showGroup: false
         )

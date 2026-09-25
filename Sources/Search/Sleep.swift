@@ -54,8 +54,9 @@ extension Browser {
         guard prefs.sleepsTabs else { return }
         let wait = given ?? Browser.sleepAfter
         let now = Date()
-        // The rows of the other spaces too: parked is not the same as used.
-        let idle = (tabs + parkedTabs)
+        // Every window's row, and the rows of the other spaces too: parked
+        // is not the same as used.
+        let idle = allTabs
             .filter { now.timeIntervalSince($0.touched) >= wait && awake(because: $0) == nil }
             .sorted { $0.touched < $1.touched }
         for tab in idle { self.sleep(tab) }
@@ -64,7 +65,7 @@ extension Browser {
     /// Why a tab has to stay awake — nil when nothing keeps it. The clock is
     /// the caller's business; this is everything else.
     func awake(because tab: Tab) -> String? {
-        if tab.id == activeID { return "on screen" }
+        if tab.owner?.activeID == tab.id { return "on screen" }
         if tab.pin != nil { return "pinned" }
         if tab.bench { return "a bench tab" }
         if tab.isBlank { return "blank" }
@@ -76,7 +77,7 @@ extension Browser {
         if web.cameraCaptureState != .none || web.microphoneCaptureState != .none { return "on a call" }
         if downloading.contains(where: { $0.webView === web }) { return "downloading" }
         // A sign-in window hands its answer back to the page that opened it.
-        if active?.opener == tab.id { return "the page on screen came from it" }
+        if tab.owner?.active?.opener == tab.id { return "the page on screen came from it" }
         return nil
     }
 

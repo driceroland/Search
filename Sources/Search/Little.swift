@@ -26,7 +26,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// must never put a window on screen.
     static func show(_ url: URL, for browser: Browser, front: Bool = true) {
         let tab = Tab()
-        browser.prepare(tab)
+        browser.key?.prepare(tab)
         tab.go(to: url)
         let little = LittleWindow(tab: tab, browser: browser)
         open.append(little)
@@ -86,10 +86,11 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     func keep() {
         guard let browser else { return }
         kept = true
-        browser.insert(tab, at: browser.placeForNew())
-        browser.select(tab)
+        guard let home = browser.key else { return }
+        home.insert(tab, at: home.placeForNew())
+        home.select(tab)
         window.close()
-        (Links.window ?? NSApp.windows.first { $0.contentView != nil && !($0 is NSPanel) && $0 !== window })?
+        (browser.keyHost ?? NSApp.windows.first { $0.contentView != nil && !($0 is NSPanel) && $0 !== window })?
             .makeKeyAndOrderFront(nil)
     }
 

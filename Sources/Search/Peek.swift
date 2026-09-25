@@ -11,48 +11,22 @@ import SwiftUI
 // The page is a tab of its own, only not in the row: keeping it is moving
 // it there, with nothing loaded twice.
 
-extension Browser {
-    /// Shift-click on a link, from a tab in the row.
-    func peek(_ url: URL, from tab: Tab) {
-        let page = Tab(shy: tab.shy)
-        prepare(page)
-        page.go(to: url)
-        withAnimation(Motion.settle) { peekTab = page }
-    }
-
-    /// Put away: the page goes with the panel.
-    func closePeek() {
-        guard let page = peekTab else { return }
-        withAnimation(Motion.quick) { peekTab = nil }
-        page.close()
-    }
-
-    /// Kept: a tab beside the one it was opened from, and in front.
-    func keepPeek() {
-        guard let page = peekTab else { return }
-        let place = placeForNew()
-        withAnimation(Motion.quick) { peekTab = nil }
-        insert(page, at: place)
-        select(page)
-    }
-}
-
 /// The peek over the page: the page dimmed around it, and the panel.
 struct PeekLayer: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
 
     var body: some View {
         ZStack {
             // The dimming only fades. Grown and shrunk with the panel, its
             // edges travelled across the window as it came (Drice, 24 Sep 2026).
-            if browser.peekTab != nil {
+            if window.peekTab != nil {
                 Color.black.opacity(0.22)
                     .contentShape(Rectangle())
-                    .onTapGesture { browser.closePeek() }
+                    .onTapGesture { window.closePeek() }
                     .transition(.opacity)
             }
-            if let tab = browser.peekTab {
-                PeekPanel(browser: browser, tab: tab)
+            if let tab = window.peekTab {
+                PeekPanel(window: window, tab: tab)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }
@@ -61,7 +35,7 @@ struct PeekLayer: View {
 
 /// The panel itself, in the middle of the page.
 struct PeekPanel: View {
-    @ObservedObject var browser: Browser
+    @ObservedObject var window: WindowModel
     @ObservedObject var tab: Tab
 
     var body: some View {
@@ -76,8 +50,8 @@ struct PeekPanel: View {
                         )
                         .shadow(color: .black.opacity(0.25), radius: 30, y: 10)
                     VStack(spacing: 8) {
-                        Knob("xmark", help: "Close (esc)") { browser.closePeek() }
-                        Knob("arrow.up.left.and.arrow.down.right", help: "Open as a tab") { browser.keepPeek() }
+                        Knob("xmark", help: "Close (esc)") { window.closePeek() }
+                        Knob("arrow.up.left.and.arrow.down.right", help: "Open as a tab") { window.keepPeek() }
                     }
                 }
                 .frame(width: geo.size.width * 0.82, height: geo.size.height * 0.86)

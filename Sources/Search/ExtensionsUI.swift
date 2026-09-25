@@ -33,7 +33,7 @@ struct ExtensionsPage: View {
                             Spacer(minLength: 8)
                             Pill("Open the Store") {
                                 browser.tuning = false
-                                browser.open(Browser.webStore, foreground: true)
+                                browser.key?.open(Browser.webStore, foreground: true)
                             }
                         }
                         HStack(spacing: 8) {
@@ -181,7 +181,7 @@ struct StoreOffer: View {
     @ObservedObject var browser: Browser
 
     var body: some View {
-        if #available(macOS 15.4, *), let tab = browser.active {
+        if #available(macOS 15.4, *), let tab = browser.key?.active {
             Watch(tab: tab, extensions: .shared)
         }
     }

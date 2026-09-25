@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- More than one window. ⌘N, or File › New Window, opens another window with tabs of its own. Drag a tab clear of its row and it tears off into a new window; drag a tab onto another window's row and it joins that one. History, bookmarks, passwords and settings stay shared, and a session brings every window back. ([#247](https://github.com/driceroland/Search/issues/247), [#230](https://github.com/driceroland/Search/issues/230), [#72](https://github.com/driceroland/Search/issues/72))
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed

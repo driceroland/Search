@@ -202,7 +202,7 @@ extension Browser {
         guard let tab = tab(for: webView) else { return }
         // In front of you: straight back, a reload beats a white page with a
         // button on it. Behind another tab: the moment you come back to it.
-        if tab.id == activeID, !tab.isBlank {
+        if tab.id == key?.activeID, !tab.isBlank {
             tab.recoverFromCrash()
         } else {
             tab.stale = true

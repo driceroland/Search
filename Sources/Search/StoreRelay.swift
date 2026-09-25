@@ -187,7 +187,7 @@ extension Browser {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
                 guard let self else { return }
-                for tab in tabs where tab.built != nil { tellStore(tab) }
+                for tab in allTabs where tab.built != nil { tellStore(tab) }
             }
     }
 }
