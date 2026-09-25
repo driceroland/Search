@@ -47,11 +47,16 @@ BUILD="$(date +%Y%m%d%H%M)"
 MINIMUM="14.0"
 
 swift build -c "$CONFIG"
-BINARY=".build/$CONFIG/Search"
+BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
+BINARY="$BIN_DIR/Search"
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Helpers"
 cp "$BINARY" "$APP/Contents/MacOS/$NAME"
+# A site app carries just this small WebKit host, never a second browser
+# engine. It is signed with Search here, then signed locally under the new
+# site's identity when someone creates an app from the Tabs menu.
+cp "$BIN_DIR/SearchSite" "$APP/Contents/Helpers/SearchSite"
 
 # Symbols stay out of the app. The linker leaves every function's name and a
 # map back to the source in the binary — 15,000 entries, more than half of
@@ -63,6 +68,7 @@ if [ "$CONFIG" = "release" ]; then
   rm -rf "$APP.dSYM"
   dsymutil "$BINARY" -o "$APP.dSYM" 2>/dev/null || echo "no dSYM this time" >&2
   strip -x "$APP/Contents/MacOS/$NAME"
+  strip -x "$APP/Contents/Helpers/SearchSite"
 fi
 
 # The icon, drawn fresh each time — it is thirty lines of Swift, not an asset

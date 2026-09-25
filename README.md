@@ -53,6 +53,31 @@ On purpose:
 
 A **private tab** (`⇧⌘N`) has its own cookie jar and leaves nothing behind when it closes.
 
+## A site in its own app
+
+For a page you keep open all day, choose **Tabs › Add to Dock…**, give it a
+name, and choose **Create App**. Search puts a small app in your home
+**Applications** folder and opens it. Right-click its Dock icon and choose
+**Options › Keep in Dock** to keep it there after quitting. macOS does not
+offer a public API for Search to perform that final step automatically.
+
+The app has its own WebKit window and sign-ins, and works while Search is
+closed. Back, Forward, Home and Reload stay within that window; **Open in
+Search** returns a page to the browser. It uses the Mac's WebKit, with no
+extra browser engine or new dependencies. Private tabs and non-web pages
+cannot be made into apps.
+
+These are simple site viewers: Search's saved passwords, extensions, ad
+blocker and other browser features are not copied. Scripted popup sign-in
+flows, downloads, notifications and camera/microphone access are not
+supported; use **Open in Search** for those. Each app is signed
+locally on the Mac that creates it; it is not a separately notarized release
+and does not run Search's updater. Its WebKit engine updates with macOS;
+to get changes to Search's site viewer, create a new app after updating
+Search. Remove a site app by moving it from your Applications folder to the
+Trash, as with any other app. Removing the app does not erase its WebKit
+website data.
+
 ## Keyboard
 
 | | |
@@ -76,6 +101,7 @@ So anyone can read exactly what a browser handling their passwords and history i
 - macOS 14 or later, Xcode 16 / Swift 6 toolchain
 - `swift build` — runs the app straight from the SwiftPM binary
 - `./build.sh` — assembles a real, double-clickable `Search.app` in `build/`, ad-hoc signed so it runs on your own Mac
+- `./scripts/check-site-apps.sh` — checks site app installation and signing in a temporary folder, without changing your Applications folder or Dock
 
 A build you make yourself won't be notarized or carry Office Commun's Developer ID, so the first launch needs a right-click → Open (or an allow in System Settings → Privacy & Security). That's expected — it's the same thing that happens with any app that isn't from the App Store or a notarized DMG. Your own build also keeps its passwords apart from a signed Search's: the keychain tells the two apart by their signatures.
 
