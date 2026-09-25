@@ -941,6 +941,16 @@ struct ContentView: View {
         // Other shortcuts with ⌥ or ⌃ on top are somebody else's.
         guard !flags.contains(.option), !flags.contains(.control) else { return false }
 
+        // ⌘Return in the address field: what is typed there in a new tab,
+        // the one you are on left as it was, as in Safari; ⇧⌘Return goes to
+        // it. Here rather than in the field's delegate, which ⌘Return doesn't
+        // reliably reach.
+        if event.keyCode == 36 || event.keyCode == 76, browser.fieldShowing,
+           browser.editingTab == nil, event.window?.firstResponder is NSTextView {
+            browser.submit(aside: true, front: shifted)
+            return true
+        }
+
         // ⌘1 through ⌘9, and ⌘0, by the key rather than the character it
         // types. On AZERTY and many other layouts the top row types &, é, "…
         // unless shift is held, so matching the character left these

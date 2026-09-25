@@ -1952,7 +1952,11 @@ final class Browser: NSObject, ObservableObject {
     /// Return. A row picked from the list wins; otherwise what the field was
     /// finishing for you wins; otherwise what you actually typed. If none of
     /// those is a place, nothing happens and the field says so.
-    func submit() {
+    ///
+    /// `aside`: ⌘Return, as in Safari. The place opens in a new tab and the
+    /// tab you were on is left as it was, behind it unless `front` (⇧⌘Return)
+    /// asks to go there.
+    func submit(aside: Bool = false, front: Bool = false) {
         // A page already open is switched to, not opened again.
         if let picked, offers.indices.contains(picked),
            let id = offers[picked].tab,
@@ -1989,7 +1993,11 @@ final class Browser: NSObject, ObservableObject {
             refusals += 1
             return
         }
-        (active ?? tabs.first)?.go(to: url)
+        if aside {
+            open(url, foreground: front, from: active)
+        } else {
+            (active ?? tabs.first)?.go(to: url)
+        }
         editing = false
         typed = ""
     }
