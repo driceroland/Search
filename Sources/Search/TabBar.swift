@@ -71,7 +71,7 @@ struct TabBar: View {
                                                 pill: pill,
                                                 close: { browser.close(tab) }
                                             )
-                                            .modifier(Carried(index: index, count: browser.tabs.count, step: step, vertical: false, space: "strip") {
+                                            .modifier(Carried(index: index, count: browser.tabs.count, step: step, vertical: false, space: "strip", enabled: browser.pendingSplit == nil && browser.visiblePair == nil) {
                                                 browser.move(tab, to: $0)
                                             })
                                             .id(tab.id)
@@ -392,6 +392,13 @@ private struct TabPill: View {
             }
         }
         .background { ground }
+        .overlay(alignment: .bottom) {
+            if prefs.splitViews, browser.pair(for: tab) != nil {
+                Capsule().fill(Palette.ink.opacity(live ? 0.65 : 0.35))
+                    .frame(width: 16, height: 2)
+                    .allowsHitTesting(false)
+            }
+        }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         // Never both at once.
@@ -417,6 +424,7 @@ private struct TabPill: View {
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
+        .modifier(SplitSource(browser: browser, tab: tab))
         .help(pinned || compact ? tab.label : "")
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)
@@ -589,6 +597,8 @@ struct Carried: ViewModifier {
     /// The row's coordinate space, not the tab's: a tab that has just moved
     /// keeps its bearings (see the sidebar's grid).
     let space: String
+    /// Let native tab dragging reach a split pane while it is on screen.
+    let enabled: Bool
     let move: (Int) -> Void
 
     @State private var held = false
@@ -627,7 +637,8 @@ struct Carried: ViewModifier {
                             held = false
                             travel = 0
                         }
-                    }
+                    },
+                including: enabled ? .all : .none
             )
     }
 }
@@ -755,6 +766,19 @@ struct TabMenu: View {
         } else {
             Button("Change Letter") { browser.editLetter(tab) }
             Button("Unpin") { browser.unpin(tab) }
+        }
+        if browser.prefs.splitViews {
+            Divider()
+            if browser.pair(for: tab) != nil {
+                Button("Unsplit") { browser.unsplit(tab) }
+            } else {
+                Button("Split Tab") { browser.startSplit(tab) }
+                    .disabled(tab.bench || !browser.tabs.contains(where: { $0.id != tab.id && !$0.bench }))
+                if let pair = browser.visiblePair, !tab.bench {
+                    Button("Replace Left Pane") { browser.put(tab.id, on: .left, of: pair.id) }
+                    Button("Replace Right Pane") { browser.put(tab.id, on: .right, of: pair.id) }
+                }
+            }
         }
         Divider()
         Button("Rename") { browser.beginTabRename(tab) }

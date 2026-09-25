@@ -145,6 +145,7 @@ enum Spaces {
 struct Parked {
     var tabs: [Tab]
     var active: Tab.ID?
+    var splits: [SplitPair] = []
 }
 
 extension Browser {
@@ -170,22 +171,24 @@ extension Browser {
         // Which way the icon at the foot turns over: the way the spaces lie.
         if !makingSpace { spaceStep = to > (spaces.firstIndex { $0.id == spaceID } ?? 0) ? 1 : -1 }
         cancelTabEdit()
+        pendingSplit = nil
         if floater.showing { land() }
         writeSession(now: true)
 
         // The row on screen is parked as it is, sound and all: music or a
         // stream keeps playing in the space you left, as it does in a tab
         // you left. ⌘⇧M, or its speaker, stops it.
-        parked[spaceID] = Parked(tabs: tabs, active: activeID)
+        parked[spaceID] = Parked(tabs: tabs, active: activeID, splits: splitPairs)
 
         spaceID = id
         Spaces.current = id
         Store.settings.set(id.uuidString, forKey: "space.current")
         if let back = parked.removeValue(forKey: id), !back.tabs.isEmpty {
-            showRow(back.tabs, active: back.active)
+            showRow(back.tabs, active: back.active, splits: back.splits)
             if let active, !active.wake() { active.revive() }
+            wakeSplitPartner()
         } else {
-            showRow([], active: nil)
+            showRow([], active: nil, splits: [])
             restoreSession()
         }
         editing = active?.isBlank ?? true

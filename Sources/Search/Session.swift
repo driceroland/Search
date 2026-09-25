@@ -5,6 +5,12 @@ import Foundation
 // page or in the history file next door.
 
 enum Session {
+    struct Split: Codable {
+        var left: Int
+        var right: Int
+        var fraction: Double
+    }
+
     struct Entry: Codable {
         var url: String
         var title: String
@@ -16,6 +22,7 @@ enum Session {
     struct Shape: Codable {
         var tabs: [Entry]
         var active: Int
+        var splits: [Split]? = nil
     }
 
     /// The first space's is the session there always was; each other space

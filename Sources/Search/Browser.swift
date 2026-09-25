@@ -9,8 +9,12 @@ import Combine
 @MainActor
 final class Browser: NSObject, ObservableObject {
     @Published private(set) var tabs: [Tab] = []
+    @Published var splitPairs: [SplitPair] = []
+    @Published var pendingSplit: Tab.ID?
+    @Published var splitCanShow = true
     @Published var activeID: Tab.ID? {
         didSet {
+            if let pendingSplit, activeID != pendingSplit { self.pendingSplit = nil }
             // The tab just left is the tab just looked at. Whether a tab has
             // gone unwatched long enough to sleep is counted from here, not
             // from when it was first picked.
@@ -853,13 +857,20 @@ final class Browser: NSObject, ObservableObject {
             }
             return
         }
+        var restored: [Tab?] = []
         for entry in saved.tabs {
-            guard let url = URL(string: entry.url) else { continue }
+            guard let url = URL(string: entry.url) else { restored.append(nil); continue }
             let tab = Tab()
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
             tabs.append(tab)
+            restored.append(tab)
+        }
+        splitPairs = (saved.splits ?? []).compactMap { split in
+            guard restored.indices.contains(split.left), restored.indices.contains(split.right),
+                  let left = restored[split.left], let right = restored[split.right], left.id != right.id else { return nil }
+            return SplitPair(left: left.id, right: right.id, fraction: split.fraction)
         }
         guard !tabs.isEmpty else {
             adopt(Tab())
@@ -869,6 +880,7 @@ final class Browser: NSObject, ObservableObject {
         activeID = tabs[here].id
         // Only the one you were looking at actually loads.
         tabs[here].wake()
+        if prefs.splitViews { wakeSplitPartner() }
     }
 
     /// The few settings that something else has to be told about. The rest are
@@ -880,6 +892,13 @@ final class Browser: NSObject, ObservableObject {
         prefs.$usesSpaces
             .dropFirst()
             .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
+            .store(in: &bag)
+        prefs.$splitViews
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self else { return }
+                if on { wakeSplitPartner() } else { pendingSplit = nil }
+            }
             .store(in: &bag)
         prefs.$shielded
             .dropFirst()
@@ -988,23 +1007,23 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func writeSession(now: Bool = false) {
+        let entries: [(Tab.ID, Session.Entry)] = tabs.compactMap { tab in
+            guard !tab.shy, !tab.bench else { return nil }
+            guard let url = tab.pending ?? tab.address,
+                  url.scheme?.hasPrefix("http") == true else { return nil }
+            return (tab.id, Session.Entry(url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name))
+        }
         Session.write(
             now: now,
             space: spaceID,
             .init(
-                tabs: tabs.compactMap { tab in
-                    guard !tab.shy, !tab.bench else { return nil }
-                    // A sleeping tab holds its address in `pending`; asking for
-                    // it there too means a pin can never be written out of
-                    // existence by whatever its web view happens to be showing.
-                    guard let url = tab.pending ?? tab.address,
-                          url.scheme?.hasPrefix("http") == true
-                    else { return nil }
-                    return Session.Entry(
-                        url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name
-                    )
-                },
-                active: tabs.firstIndex { $0.id == activeID } ?? 0
+                tabs: entries.map(\.1),
+                active: entries.firstIndex { $0.0 == activeID } ?? 0,
+                splits: splitPairs.compactMap { pair in
+                    guard let left = entries.firstIndex(where: { $0.0 == pair.left }),
+                          let right = entries.firstIndex(where: { $0.0 == pair.right }) else { return nil }
+                    return Session.Split(left: left, right: right, fraction: pair.fraction)
+                }
             )
         )
     }
@@ -1081,6 +1100,7 @@ final class Browser: NSObject, ObservableObject {
         let page = Tab(configuration: Browser.extensionConfiguration(for: url))
         prepare(page)
         tabs[index] = page
+        replaceSplitTab(tab.id, with: page.id)
         page.go(to: url)
         if activeID == tab.id { activeID = page.id; editing = false }
     }
@@ -1092,6 +1112,16 @@ final class Browser: NSObject, ObservableObject {
         summoning = false
         suggesting = nil
         guard tab.id != activeID else { return }
+        if pendingSplit != nil { pendingSplit = nil }
+        if activePair?.contains(tab.id) == true {
+            activeID = tab.id
+            tab.touch()
+            if !tab.wake() { tab.revive() }
+            rememberSession()
+            editing = false
+            typed = ""
+            return
+        }
         // Coming back to the tab whose video is out brings it home first, so
         // it is never lifted and landed in the same breath.
         if floating == tab.id { land() }
@@ -1103,6 +1133,7 @@ final class Browser: NSObject, ObservableObject {
         // wake is this the other case, one whose page quietly died while you
         // were elsewhere, which revive() checks for on its own.
         if !tab.wake() { tab.revive() }
+        wakeSplitPartner()
         rememberSession()
         editing = false
         typed = ""
@@ -1112,6 +1143,7 @@ final class Browser: NSObject, ObservableObject {
     /// behind; closing that blank tab closes the window.
     func close(_ tab: Tab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        let partner = removeFromSplit(tab.id)
 
         // A tab whose page is out in the little window takes the window with
         // it. Left alone, the window would go on holding a page belonging to a
@@ -1123,6 +1155,11 @@ final class Browser: NSObject, ObservableObject {
         // looking at before. Only Unpin takes it out of the row.
         if tab.pin != nil {
             tab.rest()
+            if let partner, let other = tabs.first(where: { $0.id == partner }) {
+                select(other)
+                writeSession(now: true)
+                return
+            }
             // Ordinary tabs first. Falling back to the most recent tab of any
             // kind meant closing one pin landed you on another pin, and ⌘W
             // bounced between the two instead of getting you out of them.
@@ -1155,7 +1192,9 @@ final class Browser: NSObject, ObservableObject {
         remember(tab, at: index)
         tab.close()
         tabs.remove(at: index)
-        if activeID == tab.id {
+        if let partner, let other = tabs.first(where: { $0.id == partner }) {
+            select(other)
+        } else if activeID == tab.id {
             // The neighbour on the right, or the last one if there is no
             // right — through select(), same as everywhere else you land on
             // a tab, so one that was never built yet actually wakes up
@@ -1298,6 +1337,7 @@ final class Browser: NSObject, ObservableObject {
         prepare(fresh)
         let wasActive = activeID == tab.id
         tabs[index] = fresh
+        replaceSplitTab(tab.id, with: fresh.id)
         fresh.go(to: url)
         if wasActive { activeID = fresh.id }
         tab.close()
@@ -1438,22 +1478,30 @@ final class Browser: NSObject, ObservableObject {
     func loadRow(_ space: UUID) -> Parked {
         let saved = Session.read(space: space)
         var row: [Tab] = []
+        var restored: [Tab?] = []
         for entry in saved.tabs {
-            guard let url = URL(string: entry.url) else { continue }
+            guard let url = URL(string: entry.url) else { restored.append(nil); continue }
             let tab = Tab(configuration: Web.configuration(space: space))
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
             row.append(tab)
+            restored.append(tab)
         }
         let active = row.indices.contains(saved.active) ? row[saved.active].id : row.first?.id
-        return Parked(tabs: row, active: active)
+        let splits = (saved.splits ?? []).compactMap { split -> SplitPair? in
+            guard restored.indices.contains(split.left), restored.indices.contains(split.right),
+                  let left = restored[split.left], let right = restored[split.right], left.id != right.id else { return nil }
+            return SplitPair(left: left.id, right: right.id, fraction: split.fraction)
+        }
+        return Parked(tabs: row, active: active, splits: splits)
     }
 
     /// Another space's row put on screen in place of this one (see
     /// Spaces.swift) — empty, for one that restores its own.
-    func showRow(_ row: [Tab], active: Tab.ID?) {
+    func showRow(_ row: [Tab], active: Tab.ID?, splits: [SplitPair]) {
         tabs = row
+        splitPairs = splits
         activeID = active ?? row.first?.id
     }
 
@@ -2297,8 +2345,3 @@ extension Browser: WKDownloadDelegate {
         return candidate
     }
 }
-
-
-
-
-

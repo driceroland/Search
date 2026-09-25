@@ -1262,6 +1262,34 @@ final class Bench {
                 }
             }
 
+        case "split":
+            guard Store.testing else { answer(["error": "split only works on a test run"]); return }
+            let step = request["step"] as? String ?? "state"
+            if step == "fraction" {
+                if let pair = browser.activePair, let fraction = request["fraction"] as? Double {
+                    browser.setSplitFraction(fraction, for: pair.id, save: true)
+                }
+            } else if step != "state" {
+                guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+                switch step {
+                case "start": browser.startSplit(tab)
+                case "finish": browser.finishSplit(with: tab.id)
+                case "unsplit": browser.unsplit(tab)
+                case "put":
+                    if let pair = browser.activePair {
+                        browser.put(tab.id, on: request["side"] as? String == "left" ? .left : .right, of: pair.id)
+                    }
+                default: break
+                }
+            }
+            answer([
+                "enabled": browser.prefs.splitViews,
+                "pending": browser.pendingSplit?.uuidString ?? "",
+                "active": browser.activeID?.uuidString ?? "",
+                "visible": browser.visiblePair != nil,
+                "pairs": browser.splitPairs.map { ["left": $0.left.uuidString, "right": $0.right.uuidString, "fraction": $0.fraction] },
+            ])
+
         case "ui":
             // Open or close the app's own panels, to reproduce what a person
             // did without a person.
@@ -1275,6 +1303,7 @@ final class Bench {
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
             if let on = request["pages120"] as? Bool { browser.prefs.fastPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
+            if let on = request["split"] as? Bool { browser.prefs.splitViews = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["folded"] as? Bool { browser.folded = on }

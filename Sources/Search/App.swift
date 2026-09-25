@@ -321,27 +321,23 @@ struct ContentView: View {
 
     @ViewBuilder
     private var stage: some View {
-        if let tab = browser.active {
-            Page(tab: tab)
-                .overlay {
-                    if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
+        SplitStage(browser: browser)
+            .overlay {
+                if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
+            }
+            .overlay(alignment: .topTrailing) {
+                if browser.finding {
+                    FindBar(browser: browser)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .overlay(alignment: .topTrailing) {
-                    if browser.finding {
-                        FindBar(browser: browser)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
+            }
+            .overlay(alignment: .topLeading) {
+                if let asked = browser.suggesting, asked.tab == browser.activeID {
+                    AccountList(browser: browser, asked: asked)
+                        .transition(.opacity)
                 }
-                .overlay(alignment: .topLeading) {
-                    if let asked = browser.suggesting, asked.tab == tab.id {
-                        AccountList(browser: browser, asked: asked)
-                            .transition(.opacity)
-                    }
-                }
-                .animation(Motion.quick, value: browser.suggesting)
-        } else {
-            Palette.ground
-        }
+            }
+            .animation(Motion.quick, value: browser.suggesting)
     }
 
     /// What the column and the strip take from the page right now: animated
@@ -753,7 +749,11 @@ struct ContentView: View {
     /// keystrokes because this runs first.
     private func watchKeys() {
         guard keys == nil else { return }
-        keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+        keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown]) { event in
+            if event.type == .leftMouseDown {
+                browser.focusSplitPage(at: event)
+                return event
+            }
             guard event.type == .keyDown else {
                 // ⌘ let go of ends a ⌘K walk, wherever it stopped.
                 if !event.modifierFlags.contains(.command) { browser.landSummon() }
@@ -808,6 +808,10 @@ struct ContentView: View {
         if event.keyCode == 53 {
             if browser.editingTab != nil {
                 browser.cancelTabEdit()
+                return true
+            }
+            if browser.pendingSplit != nil {
+                browser.pendingSplit = nil
                 return true
             }
             if browser.peekTab != nil {

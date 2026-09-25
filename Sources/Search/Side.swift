@@ -327,7 +327,8 @@ struct SideBar: View {
                 .transaction { if held { $0.animation = nil } }
                 .zIndex(held ? 1 : 0)
                 .shadow(color: .black.opacity(held ? 0.16 : 0), radius: 10, y: 3)
-                .gesture(pinReorder(tab: tab, index: index, columns: cols, width: width, height: height))
+                .gesture(pinReorder(tab: tab, index: index, columns: cols, width: width, height: height),
+                         including: browser.pendingSplit == nil && browser.visiblePair == nil ? .all : .none)
             }
         } }
         .coordinateSpace(name: "pins")
@@ -410,7 +411,7 @@ struct SideBar: View {
                 )
                 // Positions here are among the loose rows; the pinned block
                 // sits in front of them in the real list.
-                .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true, space: "rows") {
+                .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true, space: "rows", enabled: browser.pendingSplit == nil && browser.visiblePair == nil) {
                     browser.move(tab, to: $0 + browser.pinnedCount)
                 })
             }
@@ -526,6 +527,13 @@ private struct PinSquare: View {
                     .fill(hovering ? Palette.hover : Palette.wash.opacity(0.55))
             }
         }
+        .overlay(alignment: .bottom) {
+            if prefs.splitViews, browser.pair(for: tab) != nil {
+                Capsule().fill(Palette.ink.opacity(live ? 0.65 : 0.35))
+                    .frame(width: 14, height: 2)
+                    .allowsHitTesting(false)
+            }
+        }
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
         .modifier(OneClick(double: live) {
             if live { browser.editLetter(tab) } else { browser.select(tab) }
@@ -534,6 +542,7 @@ private struct PinSquare: View {
         .overlay { MiddleClick { browser.close(tab) } }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
+        .modifier(SplitSource(browser: browser, tab: tab))
         .help(tab.label)
         .animation(Motion.quick, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -649,6 +658,14 @@ private struct SideRow: View {
         .animation(Motion.quick, value: tab.loading)
         .animation(Motion.quick, value: speaker)
         .background { ground }
+        .overlay(alignment: .leading) {
+            if prefs.splitViews, browser.pair(for: tab) != nil {
+                Capsule().fill(Palette.ink.opacity(live ? 0.65 : 0.35))
+                    .frame(width: 2, height: 16)
+                    .padding(.leading, 2)
+                    .allowsHitTesting(false)
+            }
+        }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
@@ -657,6 +674,7 @@ private struct SideRow: View {
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
+        .modifier(SplitSource(browser: browser, tab: tab))
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)
         .onChange(of: browser.refusals) { _, _ in
