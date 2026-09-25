@@ -143,6 +143,13 @@ final class WindowModel: ObservableObject, Identifiable {
         tabs.first { $0.id == id }
     }
 
+    /// A tab for this window's space. Passing the space keeps a window that
+    /// is not in the first space from picking up whichever store
+    /// `Spaces.current` last pointed at.
+    func makeTab(shy: Bool = false) -> Tab {
+        Tab(configuration: Web.configuration(shy: shy, space: spaceID))
+    }
+
     func newTab() {
         // On a private tab, a new one is private too: ⌘T from a page that
         // keeps nothing and landing on one that keeps everything is how a
@@ -175,7 +182,7 @@ final class WindowModel: ObservableObject, Identifiable {
             profile.rememberSession()
             return
         }
-        let tab = Tab()
+        let tab = makeTab()
         adopt(tab)
         leaving()
         activeID = tab.id
@@ -286,7 +293,7 @@ final class WindowModel: ObservableObject, Identifiable {
                 // window happens to be key.
                 profile.close(self)
             } else {
-                let fresh = Tab()
+                let fresh = makeTab()
                 remember(tab, at: 0)
                 tab.close()
                 adopt(fresh)
@@ -351,7 +358,7 @@ final class WindowModel: ObservableObject, Identifiable {
     /// One of them by name, from the History menu.
     func reopen(_ ghost: Ghost) {
         ghosts.removeAll { $0.id == ghost.id }
-        let tab = Tab()
+        let tab = makeTab()
         prepare(tab)
         leaving()
         tabs.insert(tab, at: min(ghost.index, tabs.count))
@@ -1033,7 +1040,7 @@ final class WindowModel: ObservableObject, Identifiable {
             // moment after the window is up, so that the first address typed
             // finds everything already running, and the first frame never
             // had to share the CPU with it.
-            let tab = Tab()
+            let tab = makeTab()
             adopt(tab)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak tab] in
                 guard let tab, tab.isBlank else { return }
@@ -1043,14 +1050,14 @@ final class WindowModel: ObservableObject, Identifiable {
         }
         for entry in shape.tabs {
             guard let url = URL(string: entry.url) else { continue }
-            let tab = Tab()
+            let tab = makeTab()
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
             tabs.append(tab)
         }
         guard !tabs.isEmpty else {
-            adopt(Tab())
+            adopt(makeTab())
             return
         }
         let here = min(max(0, shape.active), tabs.count - 1)
@@ -1120,7 +1127,7 @@ final class WindowModel: ObservableObject, Identifiable {
 
     /// Shift-click on a link, from a tab in the row.
     func peek(_ url: URL, from tab: Tab) {
-        let page = Tab(shy: tab.shy)
+        let page = makeTab(shy: tab.shy)
         prepare(page)
         page.go(to: url)
         withAnimation(Motion.settle) { peekTab = page }

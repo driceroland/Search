@@ -10,6 +10,9 @@ import Combine
 final class Browser: NSObject, ObservableObject {
     /// Every open window. Starts with one; ⌘N and tear-off add more.
     @Published private(set) var windows: [WindowModel] = []
+    /// The model the SwiftUI scene window draws. Extra windows are
+    /// BrowserHosts. Commands use `key`, which moves; this does not.
+    private(set) var sceneModel: WindowModel?
     /// The window that receives ⌘T and links from other apps. Set on
     /// didBecomeKey; replaces Browser.front and Links.window as the answer
     /// to "which window".
@@ -578,6 +581,7 @@ final class Browser: NSObject, ObservableObject {
             made.append(model)
         }
         windows = made
+        sceneModel = made.first
         key = made.first
         for model in made {
             model.restoreSession()
@@ -639,7 +643,7 @@ final class Browser: NSObject, ObservableObject {
         )
         model.folded = prefs.sidebar && prefs.sideHides
         adopt(model)
-        model.adopt(Tab())
+        model.adopt(model.makeTab())
         BrowserHost.show(model)
         return model
     }

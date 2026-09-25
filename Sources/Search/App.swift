@@ -12,7 +12,7 @@ struct SearchApp: App {
 
     var body: some Scene {
         Window("Search", id: "browser") {
-            ContentView(window: browser.key ?? browser.windows[0])
+            SceneRoot(browser: browser)
                 .frame(minWidth: 640, minHeight: 420)
         }
         .windowStyle(.hiddenTitleBar)
@@ -256,6 +256,19 @@ private final class CursorGroundView: NSView {
     override func layout() {
         super.layout()
         window?.invalidateCursorRects(for: self)
+    }
+}
+
+/// The SwiftUI scene's window. It draws one model for its whole life.
+/// `browser.key` moves when another window comes forward; following it here
+/// made this window repaint the other one's row and drop its own tabs.
+private struct SceneRoot: View {
+    @ObservedObject var browser: Browser
+
+    var body: some View {
+        if let model = browser.sceneModel {
+            ContentView(window: model)
+        }
     }
 }
 
@@ -785,7 +798,7 @@ struct ContentView: View {
     /// Search's keys are Search's. The keys that make and close tabs and move
     /// between them stay Search's first, as Chrome keeps them its own.
     private func pageFirst(_ event: NSEvent, key: String, shifted: Bool) -> Bool {
-        let reserved = (key == "t") || (key == "w" && !shifted) || (key == "n" && shifted)
+        let reserved = (key == "t") || (key == "w" && !shifted) || (key == "n")
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
         guard !reserved, event.window?.firstResponder is PageView else { return false }
@@ -938,6 +951,8 @@ struct ContentView: View {
             window.copyAddress()
         case "d" where !shifted:
             window.duplicate()
+        case "n" where !shifted:
+            browser.open()
         case "n" where shifted:
             window.newShyTab()
         case "y" where !shifted:

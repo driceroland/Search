@@ -460,6 +460,18 @@ final class Bench {
                     "number": window.windowNumber,
                 ]
             }
+            // Each window's own row, so a multi-window bug can be seen from
+            // the shell: which model the scene is drawing, and what each holds.
+            out["rows"] = browser.windows.map { model -> [String: Any] in
+                [
+                    "scene": model === browser.sceneModel,
+                    "key": model === browser.key,
+                    "host": browser.host(of: model).map { $0.windowNumber } ?? -1,
+                    "tabs": model.tabs.map { $0.title.isEmpty ? ($0.address?.absoluteString ?? "") : $0.title },
+                ]
+            }
+            out["sceneModel"] = browser.sceneModel.map { "\($0.id.rawValue)" } ?? ""
+            out["keyModel"] = browser.key.map { "\($0.id.rawValue)" } ?? ""
             if let window = browser.keyHost { out["lights"] = Bench.lights(of: window) }
             out["keysQuieted"] = PageView.quieted
             // Settings › General › Web Inspector, as each page's WebKit has it.
