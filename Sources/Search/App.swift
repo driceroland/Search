@@ -11,7 +11,7 @@ struct SearchApp: App {
     @NSApplicationDelegateAdaptor(Links.self) private var links
 
     var body: some Scene {
-        Window("Search", id: "browser") {
+        Window("Search", id: Store.world.map { "search (\($0))" } ?? "search") {
             ContentView(browser: browser)
                 .frame(minWidth: 640, minHeight: 420)
         }
@@ -715,12 +715,6 @@ struct ContentView: View {
         // would move the window on any drag there, a tab picked up to take
         // it elsewhere in the row included. DragStrip moves it instead.
         window.isMovable = false
-        // Where you left it, at the size you left it. A test run keeps its
-        // own: the name lives in the app's standard defaults, which every
-        // copy shares, and a probe resized for a test once changed the size
-        // the real window came back at.
-        window.setFrameAutosaveName(Store.world.map { "search (\($0))" } ?? "search")
-
         // The traffic lights set in from the corner and centred in the strip's
         // height, in both modes, without a toolbar's rounder corners — see
         // Lights.swift. The column's first row is the strip's height too, so
