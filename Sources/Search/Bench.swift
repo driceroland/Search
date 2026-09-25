@@ -202,6 +202,11 @@ final class Bench {
             self.handle = handle
             self.gone = gone
             fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+            // A script that gave up waiting has closed its end; the answer
+            // arriving later must fail as a write, not as SIGPIPE, which
+            // took the whole browser down with it.
+            var quiet: Int32 = 1
+            setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &quiet, socklen_t(MemoryLayout<Int32>.size))
             source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)
             source.setEventHandler { [weak self] in self?.read() }
             source.resume()
