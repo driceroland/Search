@@ -78,6 +78,9 @@ enum ExtensionNative {
     static func connect(_ port: WKWebExtension.MessagePort, from extensionID: String) throws {
         guard let name = port.applicationIdentifier else { throw Refused(why: "No host named") }
         let program = try host(name, for: extensionID)
+        // A new port is often a worker starting over; the one before may
+        // have left its host behind.
+        stopOrphans()
         let pipe = HostPipe(program: program, origin: "chrome-extension://\(extensionID)/")
         try pipe.start()
         pipe.onMessage = { message in
@@ -86,19 +89,54 @@ enum ExtensionNative {
         pipe.onExit = {
             DispatchQueue.main.async { if !port.isDisconnected { port.disconnect() } }
         }
+        var beating: Timer?
         port.messageHandler = { message, _ in
             guard let message else { return }
+            // A worker's shim asking whether the port has arrived (see the
+            // shim, after its WebSocket): answered here, never passed on.
+            if let asked = message as? [String: Any], let word = asked["__searchNative"] {
+                // The shim's answer to "alive" (below) is only the worker
+                // keeping itself: nothing to say back.
+                guard (word as? String) == "here?" else { return }
+                port.sendMessage(["__searchNative": "here"], completionHandler: nil)
+                // Asked, it is a worker's port, and WebKit unloads a worker
+                // that hasn't posted on a port for two minutes: iCloud
+                // Passwords then forgets it was paired and asks for a code
+                // again. Chrome keeps a worker with a port to an app alive;
+                // here a word on the port now and then, heard only by the
+                // shim, has the worker answer on it, which is what WebKit
+                // counts.
+                if beating == nil {
+                    beating = Timer.scheduledTimer(withTimeInterval: 25, repeats: true) { timer in
+                        guard !port.isDisconnected else { timer.invalidate(); return }
+                        port.sendMessage(["__searchNative": "alive"], completionHandler: nil)
+                    }
+                }
+                return
+            }
             try? pipe.write(message)
         }
-        port.disconnectHandler = { _ in pipe.stop() }
-        Live.keep(pipe)
+        port.disconnectHandler = { _ in beating?.invalidate(); pipe.stop() }
+        Live.keep(pipe, for: port)
+    }
+
+    /// WebKit doesn't always say when a port goes: an extension unloaded —
+    /// taken up afresh, turned off, removed — leaves its worker's ports
+    /// disconnected without calling their disconnect handlers. Each host
+    /// would run on, with any code prompt it had open, until the browser
+    /// quit: iCloud Passwords left a helper behind at every restart. So the
+    /// hosts of ports that have gone are stopped here; a port still
+    /// connected keeps its own.
+    @MainActor
+    static func stopOrphans() {
+        for (pipe, port) in Live.pipes.values where port.isDisconnected { pipe.stop() }
     }
 
     /// Hosts that are connected, held until they end.
     private enum Live {
-        nonisolated(unsafe) static var pipes: [ObjectIdentifier: HostPipe] = [:]
-        static func keep(_ pipe: HostPipe) {
-            pipes[ObjectIdentifier(pipe)] = pipe
+        nonisolated(unsafe) static var pipes: [ObjectIdentifier: (pipe: HostPipe, port: WKWebExtension.MessagePort)] = [:]
+        static func keep(_ pipe: HostPipe, for port: WKWebExtension.MessagePort) {
+            pipes[ObjectIdentifier(pipe)] = (pipe, port)
             let previous = pipe.onExit
             pipe.onExit = {
                 previous?()
@@ -126,6 +164,10 @@ final class HostPipe: @unchecked Sendable {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        // A host that is already gone — refused to run, killed as it
+        // started — would take the browser with it: writing to its closed
+        // pipe raises SIGPIPE. Refused, the write only fails.
+        _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
     }
 
     func start() throws {

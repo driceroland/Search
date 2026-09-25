@@ -112,6 +112,11 @@ final class Links: NSObject, NSApplicationDelegate {
     @MainActor
     static func hand(to browser: Browser) {
         deliver = { [weak browser] url in
+            // In a small window of its own, for whoever chose that.
+            if let browser, browser.prefs.littleLinks {
+                LittleWindow.show(url, for: browser)
+                return
+            }
             browser?.arrive(url)
             // The window closed with the app still running: the link brings
             // it back, rather than landing in a tab nobody can see. The

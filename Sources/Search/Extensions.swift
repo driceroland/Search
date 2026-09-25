@@ -267,6 +267,8 @@ final class Extensions: NSObject, ObservableObject {
     private func unload(_ id: String) {
         guard let context = contexts[id] else { return }
         try? controller.unload(context)
+        // Its ports read as gone only once WebKit has had a turn.
+        DispatchQueue.main.async { ExtensionNative.stopOrphans() }
         contexts[id] = nil
         actionsChanged += 1
     }
@@ -981,6 +983,9 @@ extension Extensions: WKWebExtensionControllerDelegate {
             ExtensionSocket.connect(port, from: extensionContext.uniqueIdentifier)
             return
         }
+        // The port a worker's shim opens only to find what ports share; it
+        // lets go at once.
+        if port.applicationIdentifier == ExtensionShims.application { return }
         try ExtensionNative.connect(port, from: extensionContext.uniqueIdentifier)
     }
 }

@@ -13,9 +13,18 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 - Separate reload shortcuts, as in Safari: ⌘R reloads normally, ⌥⌘R reloads the page from origin and revalidates cached content. Reading Mode stays on ⇧⌘R. ([#171](https://github.com/driceroland/Search/issues/171))
 
 ### Fixed
+
+- A window a page opens at a size of its own, a sign-in window for one, is named in the tabs by its site rather than by its title, which the page chooses: one called "Sign in with Google" from another address no longer passes for Google's. A plain link opened in a new tab keeps its title, and a name you gave a tab stays first.
+- A link from another app, or one opened from a pinned tab, comes first after the pins instead of landing between two of them. ([#219](https://github.com/driceroland/Search/issues/219))
+- The shortcuts card lists ⇧⌘C, Copy Address, which only the Tabs menu showed. Thanks [@merttopuz](https://github.com/merttopuz) ([#182](https://github.com/driceroland/Search/pull/182)), and [@olllayor](https://github.com/olllayor) for asking ([#176](https://github.com/driceroland/Search/issues/176))
+- The Settings sidebar's colour reaches the divider at the top and bottom, without rounded inner corners. Thanks [@sunniekapar](https://github.com/sunniekapar) ([#222](https://github.com/driceroland/Search/pull/222))
+- An extension whose worker is a module gets Search's Chrome layer before its own imports run, not after them, and finds `navigator.userAgentData` there, which Chrome has and WebKit doesn't. Content scripts can call `chrome.runtime` functions on their own, as Chrome allows (`const connect = chrome.runtime.connect; connect()`), where WebKit answered nothing. Vimium C's background starts, where WebKit failed to load it; it doesn't answer its keys yet. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#170](https://github.com/driceroland/Search/pull/170))
+- A floating video stays inside its window on players that centre it with a transform, and Netflix subtitles stay visible over the picture. Thanks [@K-NRS](https://github.com/K-NRS) ([#190](https://github.com/driceroland/Search/pull/190))
+- iCloud Passwords pairs on the first code, and stays paired. Its first words to Apple's helper were lost as its background started, so every code you typed got a request for a new one; and WebKit put an extension's background to sleep after two minutes even while it was talking to an app on the Mac, after which iCloud Passwords asked for a code again. Both are mended: its first messages wait until the helper is there, and an extension talking to an app on the Mac stays awake, as in Chrome. Thanks [@PeterTheMango](https://github.com/PeterTheMango) ([#217](https://github.com/driceroland/Search/pull/217), [#17](https://github.com/driceroland/Search/issues/17))
 
 ## 1.0.3 — 24 September 2026
 

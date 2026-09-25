@@ -30,9 +30,9 @@ extension Browser {
     /// Kept: a tab beside the one it was opened from, and in front.
     func keepPeek() {
         guard let page = peekTab else { return }
-        let here = tabs.firstIndex { $0.id == activeID }
+        let place = placeForNew()
         withAnimation(Motion.quick) { peekTab = nil }
-        insert(page, at: here.map { $0 + 1 } ?? tabs.count)
+        insert(page, at: place)
         select(page)
     }
 }

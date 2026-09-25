@@ -354,6 +354,12 @@ final class Tab: ObservableObject, Identifiable {
     /// hand you back to it when they are done.
     var opener: Tab.ID?
 
+    /// A window a page opened at a size of its own, or without a toolbar:
+    /// a pop-up, not a link. It is named by its site, never by its title — a
+    /// page that opens one can call it anything, "Sign in with Google" over
+    /// somebody else's address included.
+    var popup = false
+
     /// One letter, when the tab has been pinned. A pinned tab keeps its place
     /// at the head of the row and gives up its title for that letter — which
     /// is all you need for the five or six pages you keep open all day.
@@ -395,6 +401,9 @@ final class Tab: ObservableObject, Identifiable {
     /// can't find your way back to.
     var label: String {
         if let name, !name.isEmpty { return name }
+        if popup, let host = address?.host(), !host.isEmpty {
+            return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        }
         if !title.isEmpty { return title }
         if let address { return Address.pretty(address) }
         return "New Tab"

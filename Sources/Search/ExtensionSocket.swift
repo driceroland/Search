@@ -58,6 +58,13 @@ enum ExtensionSocket {
 
         private func take(_ message: Any?) {
             guard let message = message as? [String: Any] else { return }
+            // The worker's shim asks every port to an app whether it has
+            // arrived before sending on it (see ExtensionNative): this one
+            // answers too, so the socket is never held waiting.
+            if let word = message["__searchNative"] {
+                if (word as? String) == "here?" { post(["__searchNative": "here"]) }
+                return
+            }
             if let address = message["open"] as? String {
                 // Said again now that the worker is surely listening: the
                 // first one, sent as the port opened, is often lost. The

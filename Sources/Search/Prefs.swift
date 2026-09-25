@@ -157,6 +157,11 @@ final class Preferences: ObservableObject {
     @Published var peeksLinks: Bool {
         didSet { store.set(peeksLinks, forKey: "links.peek") }
     }
+    /// A link from another app opens in a small window of its own (see
+    /// Little.swift). Off unless asked for.
+    @Published var littleLinks: Bool {
+        didSet { store.set(littleLinks, forKey: "links.little") }
+    }
     /// The bookmarks bar above the page (see BookmarksBar.swift). Off
     /// unless asked for.
     @Published var bookmarksBar: Bool {
@@ -271,6 +276,7 @@ final class Preferences: ObservableObject {
         floatsOnLeave = store.object(forKey: "float.leave") as? Bool ?? true
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.bool(forKey: "links.peek")
+        littleLinks = store.bool(forKey: "links.little")
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         let links = store.bool(forKey: "links.show")
         showsLinks = links

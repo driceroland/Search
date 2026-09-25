@@ -80,9 +80,9 @@ enum ExtensionShims {
         }
 
         // The background, whichever kind it is, gets the shim first. A
-        // service worker gets it written at the top of its own file: that
-        // holds whether WebKit runs it as a worker or as a page, as a classic
-        // script or a module, where a wrapper importing it would not.
+        // classic service worker gets it written at the top of its own file;
+        // a module one imports it first, as its imports run before anything
+        // written above them.
         if var background = manifest["background"] as? [String: Any] {
             // A manifest is not a way out of its own package: a worker path
             // that resolves outside the folder, or is a link, is left alone.
@@ -100,7 +100,10 @@ enum ExtensionShims {
                     while source.hasPrefix(marker), let end = source.range(of: "\n})();\n") {
                         source = String(source[end.upperBound...])
                     }
-                    try (marker + "\n" + script + "\n" + ender + "\n" + source).write(to: path, atomically: true, encoding: .utf8)
+                    let first = "import \"/\(file)\";\n"
+                    while source.hasPrefix(first) { source.removeFirst(first.count) }
+                    let module = (background["type"] as? String) == "module"
+                    try (module ? first + source : marker + "\n" + script + "\n" + ender + "\n" + source).write(to: path, atomically: true, encoding: .utf8)
                 }
             }
             // Scripts, alone or beside a worker — WebKit runs them as a page
@@ -112,7 +115,7 @@ enum ExtensionShims {
             manifest["background"] = background
         }
 
-        // Content scripts too — there only the sendMessage mend applies. One
+        // Content scripts too — there only Chrome's behaviour is mended. One
         // that runs in the page's own world has Search's passkey patch before
         // it: a password manager's there keeps a reference to
         // navigator.credentials as it finds it, and that has to be Search's,
@@ -486,6 +489,95 @@ enum ExtensionShims {
         for (const [k, v] of Object.entries(states)) { Object.defineProperty(WebSocket, k, { value: v }); Object.defineProperty(WebSocket.prototype, k, { value: v }); }
         Object.defineProperty(root, "WebSocket", { value: WebSocket, configurable: true, writable: true });
       }
+      // The same loss meets a worker's port to an app on the Mac: what it
+      // posts in its first moments never reaches the app, and comes back to
+      // the worker's own listeners instead. iCloud Passwords says hello to
+      // its helper that way, and without the helper's answer asks for the
+      // code again and again. So on such a port, what the extension posts
+      // is held from its first message until the browser says the port has
+      // arrived — asked on the same port, as the socket asks — and then sent
+      // in order. WebKit won't let connectNative be replaced in a worker, so
+      // this is done on what every port shares, found through a port to the
+      // browser itself; the question and the answer are kept from the
+      // extension's listeners, and never reach the app.
+      if (worker && runtime && typeof runtime.connectNative === "function") {
+        let found = null;
+        try { found = runtime.connectNative("search"); found.disconnect(); } catch (e) {}
+        const portProto = found && Object.getPrototypeOf(found);
+        const eventProto = found && found.onMessage && Object.getPrototypeOf(found.onMessage);
+        if (portProto && eventProto && typeof portProto.postMessage === "function" && typeof eventProto.addListener === "function") {
+          // Ports that go to the extension's own pages or tabs, not an app.
+          const toPages = new WeakSet();
+          for (const [space, name] of [[runtime, "connect"], [chrome.tabs, "connect"]]) {
+            const connect = space && space[name];
+            if (typeof connect !== "function") continue;
+            put(space, name, (...args) => { const port = connect.apply(space, args); try { toPages.add(port); } catch (e) {} return port; });
+          }
+          const post = portProto.postMessage, add = eventProto.addListener, remove = eventProto.removeListener, has = eventProto.hasListener;
+          const ours = (m) => !!m && typeof m === "object" && "__searchNative" in m;
+          // Ports seen, each with what waits to be sent (null once it may go).
+          const ports = new WeakMap();
+          const start = (port) => {
+            const state = { held: [] };
+            let tries = 0;
+            const flush = () => { const list = state.held; state.held = null; for (const m of list || []) post.call(port, m); };
+            const again = () => {
+              if (!state.held) return;
+              // Unanswered, they go anyway: no worse than before.
+              if (tries++ >= 20) { flush(); return; }
+              try { post.call(port, { __searchNative: "here?" }); } catch (e) {}
+              setTimeout(again, 100 * Math.min(tries, 5));
+            };
+            add.call(port.onMessage, (m) => {
+              if (m && m.__searchNative === "here" && state.held) flush();
+              // WebKit keeps a worker only while it has posted on an open
+              // port in the last two minutes; what arrives on one doesn't
+              // count. The browser's word now and then is answered on the
+              // port, so a worker holding a port to an app stays, as in
+              // Chrome — iCloud Passwords otherwise forgets it was paired.
+              if (m && m.__searchNative === "alive") { try { post.call(port, { __searchNative: "beat" }); } catch (e) {} }
+            });
+            add.call(port.onDisconnect, () => { state.held = null; });
+            again();
+            return state;
+          };
+          put(portProto, "postMessage", function (message) {
+            let state = ports.get(this);
+            if (!state) {
+              const native = !toPages.has(this) && this.sender == null && typeof this.name === "string" && !/^search(\.|$)/.test(this.name);
+              state = native ? start(this) : { held: null };
+              ports.set(this, state);
+            }
+            if (state.held) { state.held.push(message); return; }
+            return post.call(this, message);
+          });
+          // A port's listeners, and only a port's (the namespaces' own
+          // events are kept as they are), each behind one that lets the
+          // question and the answer pass by.
+          const wrapped = new WeakMap();
+          const wrapper = (event, f, make) => {
+            let byEvent = wrapped.get(event);
+            if (!byEvent) { byEvent = new Map(); if (make) wrapped.set(event, byEvent); }
+            let w = byEvent.get(f);
+            if (!w && make) { w = function (m, ...rest) { if (ours(m)) return; return f.call(this, m, ...rest); }; byEvent.set(f, w); }
+            return w;
+          };
+          put(eventProto, "addListener", function (f) {
+            if (kept.has(this) || typeof f !== "function") return add.call(this, f);
+            return add.call(this, wrapper(this, f, true));
+          });
+          put(eventProto, "removeListener", function (f) {
+            const w = !kept.has(this) && typeof f === "function" && wrapper(this, f, false);
+            if (!w) return remove.call(this, f);
+            wrapped.get(this).delete(f);
+            return remove.call(this, w);
+          });
+          put(eventProto, "hasListener", function (f) {
+            const w = !kept.has(this) && typeof f === "function" && wrapper(this, f, false);
+            return has.call(this, w || f);
+          });
+        }
+      }
       // WebKit gives a worker the user agent of the last web page that set
       // one — Safari's, as Search's tabs send — not the Chrome one the
       // extension's pages have. Code that picks its path by it then takes
@@ -502,6 +594,20 @@ enum ExtensionShims {
             Object.defineProperty(proto, "userAgent", { get: () => chromeUA, configurable: true });
             Object.defineProperty(proto, "appVersion", { get: () => chromeUA.replace(/^Mozilla\//, ""), configurable: true });
             Object.defineProperty(proto, "vendor", { get: () => "Google Inc.", configurable: true });
+            if (!("userAgentData" in navigator)) {
+              const major = "__SEARCH_CHROME__".split(".")[0];
+              const brands = [{ brand: "Chromium", version: major }, { brand: "Google Chrome", version: major }, { brand: "Not.A/Brand", version: "99" }];
+              const low = { brands, mobile: false, platform: "macOS" };
+              const mac = (chromeUA.match(/Mac OS X (\d+)[_.](\d+)(?:[_.](\d+))?/) || []).slice(1).map((n) => n || "0").join(".") || "10.15.7";
+              const high = {
+                architecture: "arm", bitness: "64", model: "", platformVersion: mac, wow64: false,
+                fullVersionList: brands.map((b) => ({ brand: b.brand, version: b.version === major ? "__SEARCH_CHROME__" : b.version + ".0.0.0" })),
+                uaFullVersion: "__SEARCH_CHROME__",
+              };
+              const pick = (hints) => Object.assign({}, low, ...(Array.isArray(hints) ? hints : []).filter((h) => h in high).map((h) => ({ [h]: high[h] })));
+              const data = Object.assign({}, low, { getHighEntropyValues: (hints) => Promise.resolve(pick(hints)), toJSON: () => low });
+              Object.defineProperty(proto, "userAgentData", { get: () => data, configurable: true });
+            }
           }
         } catch (e) {}
       }
@@ -720,6 +826,15 @@ enum ExtensionShims {
         // WebKit's from the start.
         if (background) { attached = true; add(dispatch); }
       };
+      if (runtime) {
+        const names = new Set();
+        for (let o = runtime; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) Object.getOwnPropertyNames(o).forEach((k) => names.add(k));
+        for (const name of names) {
+          if (name === "constructor" || /^on[A-Z]/.test(name)) continue;
+          let f; try { f = runtime[name]; } catch (e) { continue; }
+          if (typeof f === "function") put(runtime, name, f.bind(runtime));
+        }
+      }
       if (inContent) return;
 
       // In a website's frame, everything WebKit keeps to the extension's own
@@ -1714,6 +1829,72 @@ enum ExtensionShims {
             put(target, "removeListener", (listener) => { late.delete(listener); try { remove(listener); } catch (e) {} });
           }
         }
+      }
+
+      // What one of the extension's pages or its worker posts to another
+      // before their port has opened — at once after connect, or from inside
+      // onConnect — WebKit keeps until the other end takes the port, then
+      // hands on once for each end's world: between two of the extension's
+      // own, the same world, so twice. iCloud Passwords' popup asks its
+      // worker for its state that way, and was answered twice. So between
+      // the extension's own ends every message goes numbered by the end
+      // that sends it, and a number already heard is let go by. A content
+      // script's port, or an app's, goes as it is.
+      if (runtime && typeof runtime.connect === "function" && runtime.onConnect) {
+        const own = runtime.getURL("");
+        const numbered = new WeakSet();
+        // Set on the port itself, not with `put`, which holds what it touches
+        // for good: a port is the extension's to let go. Its onMessage is held
+        // by what is set here, so it isn't made afresh without it.
+        const set = (target, key, value) => { try { Object.defineProperty(target, key, { value, configurable: true, writable: true }); } catch (e) {} };
+        const number = (port) => {
+          const event = port && port.onMessage, post = port && port.postMessage;
+          if (!event || typeof event.addListener !== "function" || typeof post !== "function" || numbered.has(port)) return port;
+          numbered.add(port);
+          const me = Math.random().toString(36).slice(2);
+          let sent = 0;
+          const heard = new Map();
+          const listeners = new Set();
+          event.addListener.call(event, (message, ...rest) => {
+            const tag = message && typeof message === "object" ? message.__searchPort : null;
+            if (Array.isArray(tag)) {
+              if (tag[1] <= (heard.get(tag[0]) || 0)) return;
+              heard.set(tag[0], tag[1]);
+              message = message.message;
+            }
+            for (const f of [...listeners]) { try { f(message, ...rest); } catch (e) { setTimeout(() => { throw e; }); } }
+          });
+          // WebKit makes a port's onMessage afresh once nothing holds it, and
+          // a fresh one has none of what is set below: a listener added to it
+          // later would hear the numbered wrapper. Held on the port, it stays.
+          set(port, "onMessage", event);
+          set(port, "postMessage", (message) => post.call(port, { __searchPort: [me, ++sent], message }));
+          set(event, "addListener", (f) => { listeners.add(f); });
+          set(event, "removeListener", (f) => { listeners.delete(f); });
+          set(event, "hasListener", (f) => listeners.has(f));
+          set(event, "hasListeners", () => listeners.size > 0);
+          return port;
+        };
+        const connect = runtime.connect;
+        // Only a port to the extension itself: another extension would hear
+        // the numbered wrapper, not the message.
+        put(runtime, "connect", (...args) => {
+          const port = connect.apply(runtime, args);
+          return typeof args[0] === "string" && args[0] !== runtime.id ? port : number(port);
+        });
+        const onConnect = runtime.onConnect;
+        const add = onConnect.addListener, remove = onConnect.removeListener, has = onConnect.hasListener;
+        const wrapped = new WeakMap();
+        // The worker's sender is the bare origin, with no slash after it.
+        const fromOwn = (port) => !!port && !!port.sender && (String(port.sender.url) + "/").startsWith(own);
+        put(onConnect, "addListener", (listener, ...rest) => {
+          if (typeof listener !== "function") return add.call(onConnect, listener, ...rest);
+          let w = wrapped.get(listener);
+          if (!w) { w = (port) => listener(fromOwn(port) ? number(port) : port); wrapped.set(listener, w); }
+          return add.call(onConnect, w, ...rest);
+        });
+        put(onConnect, "removeListener", (listener) => remove.call(onConnect, wrapped.get(listener) || listener));
+        put(onConnect, "hasListener", (listener) => has.call(onConnect, wrapped.get(listener) || listener));
       }
 
       // Members of namespaces WebKit has.

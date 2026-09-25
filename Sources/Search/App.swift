@@ -800,6 +800,8 @@ struct ContentView: View {
     ]
 
     private func take(_ event: NSEvent) -> Bool {
+        // A small window's keys are its own (see Little.swift).
+        if let little = LittleWindow.owning(event.window) { return little.take(event) }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
 

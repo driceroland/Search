@@ -175,6 +175,7 @@ struct WelcomePanel: View {
                 Key("⌘K", "Every open tab, by name.")
                 Key("⌘,", "Settings, including passwords and updates.")
                 Key("⌃1", "Spaces: separate tabs and sign-ins. Turn them on in Settings › Tabs.")
+                Key("⌘O", "Links from other apps can open in a small window. Settings › General.")
             }
         }
     }

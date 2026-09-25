@@ -20,6 +20,7 @@
     ./bench close ID | all             only tabs the bench opened
     ./bench probe                      the window's own state: panels, modal, windows
     ./bench extensions                 installed extensions, loaded or not, with their warnings
+    ./bench little URL|keep|close      a small window for a link (made unseen), kept into the row, or closed
     ./bench site PATH [security]       the site card for the tab on screen, drawn to a PNG
     ./bench ext-add ID|LINK [--yes]    install from the Chrome Web Store (--yes only in a --test run)
     ./bench ext-folder PATH [--yes]    install an unpacked extension
@@ -201,6 +202,9 @@ def main(argv):
         if not 1 <= len(args) <= 2: sys.exit("usage: bench fold PATH [WIDTH]")
         request["path"] = os.path.abspath(args[0])
         if len(args) == 2: request["width"] = float(args[1])
+    elif verb == "little":
+        if len(args) != 1: sys.exit("usage: bench little URL|keep|close")
+        request["what"] = args[0]
     elif verb == "site":
         if not 1 <= len(args) <= 2: sys.exit("usage: bench site PATH [security]")
         request["path"] = os.path.abspath(args[0])

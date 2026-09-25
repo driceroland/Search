@@ -668,7 +668,17 @@ enum Isolate {
         'left:0 !important; top:0 !important; right:0 !important; bottom:0 !important;',
         'width:100vw !important; height:100vh !important;',
         'max-width:none !important; max-height:none !important;',
+        // Players such as Netflix center the element with a translation.
+        // With our top/left at zero, that moves it out of the floating window.
+        'transform:none !important;',
         'object-fit:contain !important; z-index:2147483647 !important}',
+        // Netflix renders timed text after the video, in a layer of its own
+        // beside it or one level up. Keep it above the video without
+        // exposing the rest of the player.
+        'html.office-floating [data-office-float] ~ .player-timedtext,',
+        'html.office-floating :has(> [data-office-float]) > .player-timedtext,',
+        'html.office-floating :has([data-office-float]) > .player-timedtext {',
+        'visibility:visible !important; z-index:2147483647 !important}',
         // Fixed or not, the video is still cut to the box of any ancestor
         // that clips — YouTube's player does — and in a window this small
         // that box sits partly or wholly off screen, more so on a page that

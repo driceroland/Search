@@ -1137,6 +1137,22 @@ final class Bench {
                 window.contentView = nil
             }
 
+        case "little":
+            // A small window for a link, made without being shown (see
+            // Little.swift); then kept into the row, or closed.
+            switch request["what"] as? String ?? "" {
+            case "keep": LittleWindow.all.last?.keep()
+            case "close": LittleWindow.all.last?.close()
+            default:
+                guard let text = request["what"] as? String, let url = URL(string: text) else { answer(["error": "little needs a url, keep or close"]); return }
+                LittleWindow.show(url, for: browser, front: false)
+            }
+            answer([
+                "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" },
+                "tabs": browser.tabs.map { ($0.pin != nil ? "PIN " : "") + ($0.address?.host() ?? "blank") },
+                "active": browser.active?.address?.host() ?? "",
+            ])
+
         case "site":
             // The site card for the tab on screen, or one step in on its
             // connection, drawn off screen (see SiteCard.swift).
@@ -1286,7 +1302,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "keyeq", "pull", "space", "strip", "column", "fold", "consent", "site", "ui",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "keyeq", "pull", "space", "strip", "column", "fold", "consent", "site", "little", "ui",
             ]])
         }
     }
