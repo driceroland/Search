@@ -16,6 +16,8 @@ struct TabBar: View {
     /// The plus only comes out when the pointer is in the row.
     @State private var nearby = false
     @State private var plussed = false
+    /// The helm's width when it stands before the tabs rather than after them.
+    private var leading: CGFloat { browser.prefs.navigationLeft ? Metrics.helm - 8 + Metrics.tabGap : 0 }
     /// How wide the doors at the far end are, extension buttons included.
     @State private var doors: CGFloat = 0
 
@@ -29,13 +31,15 @@ struct TabBar: View {
             ZStack(alignment: .leading) {
                 // The empty half of the strip is what you grab to move the
                 // window; the tabs keep the run they sit on.
-                DragStrip(reserved: Metrics.lights + dot + (making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width)) + Metrics.tabGap + Metrics.plusWidth, trailing: Metrics.helm + 26 + 24)
+                DragStrip(reserved: Metrics.lights + dot + leading + (making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width)) + Metrics.tabGap + Metrics.plusWidth, trailing: doors + 12)
                 // And the corner the lights sit in, which is title bar too —
                 // the one stretch left to take hold of when tabs fill the row.
                 DragStrip()
                     .frame(width: Metrics.lights)
 
                 HStack(spacing: Metrics.tabGap) {
+                    // Back, forward and reload by the lights, when asked.
+                    if browser.prefs.navigationLeft { Helm(browser: browser) }
                     // The space on screen, first, when there are spaces.
                     if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
 
@@ -67,7 +71,7 @@ struct TabBar: View {
                                                 tab: tab,
                                                 live: tab.id == browser.activeID,
                                                 width: width(in: geo.size.width),
-                                                room: geo.size.width - Metrics.lights - 12,
+                                                room: geo.size.width - Metrics.lights - leading - 12,
                                                 pill: pill,
                                                 close: { browser.close(tab) }
                                             )
@@ -128,13 +132,13 @@ struct TabBar: View {
                     // Back, forward, reload, and the bookmarks, at the far end
                     // of the row. The dropdown hangs from the last one.
                     HStack(spacing: Metrics.tabGap) {
-                        ExtensionSlot()
-                        Helm(browser: browser)
-                            .padding(.trailing, 8)
-                        Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
-                            .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .bottom) {
-                                BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
-                            }
+                        ExtensionSlot(showMenu: browser.prefs.extensionButton)
+                        if !browser.prefs.navigationLeft {
+                            Helm(browser: browser).padding(.trailing, 8)
+                        }
+                        if browser.prefs.bookmarkButton {
+                            BookmarkDoor(browser: browser, edge: .bottom)
+                        }
                     }
                     .background {
                         GeometryReader { box in
@@ -247,17 +251,18 @@ struct TabBar: View {
         var total = pinned * Metrics.pinWidth + loose * each
             + CGFloat(max(0, browser.tabs.count - 1)) * Metrics.tabGap
         if let id = browser.editingTab, let tab = browser.tabs.first(where: { $0.id == id }) {
-            total += min(340, strip - Metrics.lights - 12) - (tab.pin != nil ? Metrics.pinWidth : each)
+            total += min(340, strip - Metrics.lights - leading - 12) - (tab.pin != nil ? Metrics.pinWidth : each)
         }
         return total
     }
 
-    /// The strip, less the lights, the plus, the doors at the far end and
-    /// the air around them. The doors are measured; until they have been,
-    /// the three of the helm and the bookmarks stand in for them.
+    /// The strip, less the lights, the helm when it leads, the plus, the
+    /// doors at the far end and the air around them. The doors are measured;
+    /// until they have been, the helm and the bookmarks stand in for them —
+    /// unless the helm leads, when nothing at the far end may be a real zero.
     private func room(in strip: CGFloat) -> CGFloat {
-        let far = doors > 0 ? doors : Metrics.helm + 26
-        return max(0, strip - Metrics.lights - dot - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
+        let far = doors > 0 || browser.prefs.navigationLeft ? doors : Metrics.helm + 26
+        return max(0, strip - Metrics.lights - dot - leading - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
     }
 
     /// What the space's dot takes before the tabs, when there are spaces.
@@ -961,5 +966,17 @@ struct PinField: NSViewRepresentable {
             let browser = browser
             DispatchQueue.main.async { browser.endPinEdit() }
         }
+    }
+}
+
+/// Shared by both toolbar placements, including the same bookmark popover.
+struct BookmarkDoor: View {
+    @ObservedObject var browser: Browser
+    let edge: Edge
+    var body: some View {
+        Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
+            .popover(isPresented: $browser.bookmarksOpen, arrowEdge: edge) {
+                BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
+            }
     }
 }

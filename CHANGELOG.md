@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- The toolbar, your way: back, forward and reload can sit before the tabs, by the window's buttons, instead of after them; and the Bookmarks and Extensions buttons can be hidden if you don't use them. The Bookmarks menu and pinned extensions stay either way. Off unless turned on, in Settings › Tabs.
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed

@@ -132,7 +132,9 @@ struct SettingsPanel: View {
                 VStack(alignment: .leading, spacing: 18) {
                     switch page {
                     case .general: general
-                    case .tabs: tabs
+                    case .tabs:
+                        tabs
+                        toolbar
                     case .extensions: ExtensionsPage(browser: browser)
                     case .passwords: passwords
                     case .downloads: downloads
@@ -255,6 +257,26 @@ struct SettingsPanel: View {
     }
 
     // MARK: - tabs
+
+    /// What sits in the bar besides the tabs. With the sidebar, back, forward
+    /// and reload are already beside the window's buttons: nothing to move.
+    private var toolbar: some View {
+        Card {
+            if !prefs.sidebar {
+                Line("Back, forward and reload on the left", "Beside the window's buttons, before the tabs") {
+                    Switch(on: $prefs.navigationLeft)
+                }
+                Rule()
+            }
+            Line("Show the Bookmarks button", "The Bookmarks menu has them either way") {
+                Switch(on: $prefs.bookmarkButton)
+            }
+            Rule()
+            Line("Show the Extensions button", "Pinned extensions stay where they are") {
+                Switch(on: $prefs.extensionButton)
+            }
+        }
+    }
 
     private var tabs: some View {
         Card {
