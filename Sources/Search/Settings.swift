@@ -266,7 +266,14 @@ struct SettingsPanel: View {
             }
             if prefs.sidebar {
                 Rule()
-                Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its left edge for the tabs. ⌘S keeps them out.") {
+                Line("Put the sidebar on the right", "Down the right edge instead of the left.") {
+                    Switch(on: Binding(
+                        get: { prefs.sideOnRight },
+                        set: { on in withAnimation(Motion.glide) { prefs.sideOnRight = on } }
+                    ))
+                }
+                Rule()
+                Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its \(prefs.sideOnRight ? "right" : "left") edge for the tabs. ⌘S keeps them out.") {
                     Switch(on: $prefs.sideHides)
                 }
             }

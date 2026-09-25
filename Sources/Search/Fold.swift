@@ -99,15 +99,15 @@ struct Fold: View {
                     }
                     .transition(.move(edge: .top))
             }
-            ZStack(alignment: .leading) {
+            ZStack(alignment: prefs.sideOnRight ? .trailing : .leading) {
                 Color.clear.frame(width: 0)
                 if folding, prefs.sidebar, browser.peeking {
                     SideBar(browser: browser, prefs: prefs)
-                        .shadow(color: .black.opacity(0.14), radius: 20, x: 4)
-                        .transition(.move(edge: .leading))
+                        .shadow(color: .black.opacity(0.14), radius: 20, x: prefs.sideOnRight ? -4 : 4)
+                        .transition(.move(edge: prefs.sideOnRight ? .trailing : .leading))
                 }
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
@@ -174,8 +174,11 @@ struct Fold: View {
         let point = window.convertPoint(fromScreen: screen)
         let size = window.frame.size
         let inWindow = point.x >= 0 && point.x < size.width && point.y >= 0 && point.y < size.height
-        // Distance from the left edge for the column, from the top for the strip.
-        let distance = prefs.sidebar ? point.x : size.height - point.y
+        // Distance from the column's own edge — the left, unless it's on the
+        // right — or from the top for the strip.
+        let distance = prefs.sidebar
+            ? (prefs.sideOnRight ? size.width - point.x : point.x)
+            : size.height - point.y
         if browser.peeking {
             pass()
             // Only this window counts, not another app's window over it. One

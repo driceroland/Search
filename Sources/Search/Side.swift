@@ -32,6 +32,13 @@ struct SideBar: View {
     private static let gap: CGFloat = 2
     private static let square: CGFloat = 34
     private static let pinGap: CGFloat = 4
+    /// On the right, the doors' row isn't holding a place for lights, so it
+    /// only has to fit the doors themselves rather than match the strip.
+    private static let rightTop: CGFloat = 40
+
+    /// The height of the doors' row: the full strip on the left, to sit at
+    /// the lights' own height; a plain, shorter row on the right.
+    private var topHeight: CGFloat { prefs.sideOnRight ? SideBar.rightTop : Metrics.strip }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -43,27 +50,31 @@ struct SideBar: View {
             // is dragged by it and a double-click fills the screen with it,
             // everywhere but over the three doors, which take their own
             // clicks. The lights are the title bar's own and answer first.
+            // On the right the lights are the page's neighbour instead, so
+            // the column keeps no room for them.
             HStack(spacing: 0) {
                 DragStrip()
-                    .frame(width: 10 + Metrics.sideLights)
+                    .frame(width: prefs.sideOnRight ? 10 : 10 + Metrics.sideLights)
                 Color.clear
                     .frame(width: Metrics.helm)
                     .allowsHitTesting(false)
                 DragStrip()
             }
-            .frame(height: Metrics.strip)
+            .frame(height: topHeight)
 
             VStack(alignment: .leading, spacing: 0) {
                 // The traffic lights' corner, with back, forward and reload
                 // sitting right of them — the same three doors as the top
                 // bar, moved beside the lights since there's no far end of a
-                // row to put them at in this mode.
+                // row to put them at in this mode. On the right there is no
+                // corner to share and no lights to match the height of, so
+                // the doors sit in a plain, shorter row instead.
                 HStack(spacing: 0) {
-                    Color.clear.frame(width: Metrics.sideLights)
+                    if !prefs.sideOnRight { Color.clear.frame(width: Metrics.sideLights) }
                     Helm(browser: browser)
                     Spacer(minLength: 0)
                 }
-                .frame(height: Metrics.strip)
+                .frame(height: topHeight)
 
                 // The spaces side by side, as pages: two fingers sideways move
                 // the one on screen and the next one together, the next one
@@ -87,10 +98,10 @@ struct SideBar: View {
         .clipped()
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background(landing ? Palette.hover : Palette.ground)
-        .overlay(alignment: .trailing) {
+        .overlay(alignment: prefs.sideOnRight ? .leading : .trailing) {
             Rectangle().fill(Palette.hairline).frame(width: 1)
         }
-        .overlay(alignment: .trailing) { edge }
+        .overlay(alignment: prefs.sideOnRight ? .leading : .trailing) { edge }
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
             browser.take(providers)
         }
@@ -118,7 +129,10 @@ struct SideBar: View {
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
                         if grabbed == nil { grabbed = prefs.sideWidth }
-                        let wanted = (grabbed ?? prefs.sideWidth) + value.translation.width
+                        // On the right, the edge is the column's leading one:
+                        // dragging it left, not right, is what widens it.
+                        let travel = prefs.sideOnRight ? -value.translation.width : value.translation.width
+                        let wanted = (grabbed ?? prefs.sideWidth) + travel
                         prefs.sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, wanted))
                     }
                     .onEnded { _ in grabbed = nil }
@@ -260,7 +274,7 @@ struct SideBar: View {
         let pinBlock = pinRows == 0 ? 0
             : CGFloat(pinRows) * pinHeight + CGFloat(pinRows - 1) * SideBar.pinGap + 10
         let loose = CGFloat(browser.tabs.count - pins) * (SideBar.row + SideBar.gap)
-        return Metrics.strip + pinBlock + loose + SideBar.row + 8
+        return topHeight + pinBlock + loose + SideBar.row + 8
     }
 
     // MARK: - the pinned squares
