@@ -412,10 +412,12 @@ struct SideBar: View {
                 )
                 // Positions here are among the loose rows; the pinned block
                 // sits in front of them in the real list.
-                .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true, space: "rows") {
-                    window.move(tab, to: $0 + window.pinnedCount)
-                })
+                .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true, space: "rows", move: { window.move(tab, to: $0 + window.pinnedCount) }, tear: { window.detach(tab) }))
             }
+        }
+        .dropDestination(for: TabTransfer.self) { items, _ in
+            guard let first = items.first else { return false }
+            return window.take(first, at: window.pinnedCount + looseTabs.count)
         }
         .coordinateSpace(name: "rows")
     }

@@ -73,11 +73,13 @@ struct TabBar: View {
                                                 pill: pill,
                                                 close: { window.close(tab) }
                                             )
-                                            .modifier(Carried(index: index, count: window.tabs.count, step: step, vertical: false, space: "strip") {
-                                                window.move(tab, to: $0)
-                                            })
+                                            .modifier(Carried(index: index, count: window.tabs.count, step: step, vertical: false, space: "strip", move: { window.move(tab, to: $0) }, tear: { window.detach(tab) }))
                                             .id(tab.id)
                                         }
+                                    }
+                                    .dropDestination(for: TabTransfer.self) { items, _ in
+                                        guard let first = items.first else { return false }
+                                        return window.take(first, at: window.tabs.count)
                                     }
                                     .frame(height: Metrics.strip)
                                 }
@@ -598,10 +600,15 @@ struct Carried: ViewModifier {
     /// keeps its bearings (see the sidebar's grid).
     let space: String
     let move: (Int) -> Void
+    /// A pull clear of the row: the tab tears off into a window of its own.
+    let tear: (() -> Void)?
 
     @State private var held = false
     @State private var from = 0
     @State private var travel: CGFloat = 0
+    /// How far the hand has gone across the row, not along it. Past a few
+    /// points the tab is being carried out of the strip.
+    @State private var across: CGFloat = 0
 
     func body(content: Content) -> some View {
         // What it has travelled, less the ground its new place has already
@@ -625,16 +632,20 @@ struct Carried: ViewModifier {
                             from = index
                         }
                         travel = vertical ? value.translation.height : value.translation.width
+                        across = vertical ? value.translation.width : value.translation.height
                         let target = min(max(0, from + Int((travel / step).rounded())), count - 1)
                         if target != index {
                             withAnimation(Motion.settle) { move(target) }
                         }
                     }
                     .onEnded { _ in
+                        let out = tear != nil && abs(across) > 80
                         withAnimation(Motion.settle) {
                             held = false
                             travel = 0
+                            across = 0
                         }
+                        if out { tear?() }
                     }
             )
     }
@@ -793,6 +804,8 @@ struct TabMenu: View {
             window.copyMarkdownLink()
         }
         .disabled(tab.isBlank)
+        Button("Open in New Window") { window.detach(tab) }
+            .disabled(tab.pin != nil)
         Button(tab.muted ? "Unmute Tab" : "Mute Tab") { tab.toggleMute() }
         Divider()
         Button("Close Tab", action: close)
