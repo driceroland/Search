@@ -864,6 +864,14 @@ struct ContentView: View {
             return true
         }
 
+        // ⌘Return keeps a peek, as its other button does. Not while typing in
+        // it: a comment box or a mail there sends with the same keys.
+        if event.keyCode == 36 || event.keyCode == 76, flags == .command,
+           let peek = browser.peekTab, !peek.typing {
+            browser.keepPeek()
+            return true
+        }
+
         // Tab is the page's: it moves between a form's fields and a page's
         // links, as in every browser. It used to walk the row of tabs, which
         // took it from anyone filling in a form. ⌃Tab walks the row and comes
