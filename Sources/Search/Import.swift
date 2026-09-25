@@ -2,6 +2,7 @@ import Foundation
 import Security
 import SQLite3
 import CommonCrypto
+import CryptoKit
 
 // Reading what another browser on this Mac already holds.
 //
@@ -66,6 +67,11 @@ enum Chromium {
         var logins: [Login]
         /// Sites the other browser was told never to ask about.
         var never: [String]
+    }
+
+    struct CookieImport {
+        let cookies: [HTTPCookie]
+        let skipped: Int
     }
 
     static func read(_ source: Source) throws -> Found {
@@ -252,6 +258,137 @@ enum Chromium {
         return out
     }
 
+    // MARK: - where they are signed in
+
+    /// The other browser's cookies, unwrapped with the same key as its
+    /// passwords, so the sites you are signed in to there are signed in here.
+    /// Expired ones are left behind.
+    static func cookies(in source: Source) throws -> CookieImport {
+        guard let passphrase = safeStorage(source) else { throw Trouble.noPassphrase }
+        let files = source.files
+        guard let file = files.first(where: { $0.deletingLastPathComponent().lastPathComponent == "Default" }) ?? files.first else {
+            throw Trouble.unreadable
+        }
+        let folder = file.deletingLastPathComponent()
+        // Newer profiles keep them under Network/, older ones beside Login Data.
+        guard let jar = [folder.appendingPathComponent("Network/Cookies"), folder.appendingPathComponent("Cookies")]
+            .first(where: { FileManager.default.fileExists(atPath: $0.path) })
+        else { throw Trouble.unreadable }
+        return try cookieRows(in: jar, key: stretch(passphrase))
+    }
+
+    private static func cookieRows(in file: URL, key: [UInt8]) throws -> CookieImport {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("office-import-\(UUID().uuidString).db")
+        let manager = FileManager.default
+        try manager.copyItem(at: file, to: temp)
+        defer {
+            try? manager.removeItem(at: temp)
+            for suffix in ["-wal", "-shm"] {
+                try? manager.removeItem(at: URL(fileURLWithPath: temp.path + suffix))
+            }
+        }
+        for suffix in ["-wal", "-shm"] {
+            let sidecar = URL(fileURLWithPath: file.path + suffix)
+            guard manager.fileExists(atPath: sidecar.path) else { continue }
+            try manager.copyItem(at: sidecar, to: URL(fileURLWithPath: temp.path + suffix))
+        }
+
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(temp.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
+            throw Trouble.unreadable
+        }
+        defer { sqlite3_close(db) }
+
+        // From version 24 on, each value starts with a hash of its host.
+        var version = 0
+        var meta: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT value FROM meta WHERE key = 'version'", -1, &meta, nil) == SQLITE_OK,
+           sqlite3_step(meta) == SQLITE_ROW, let raw = sqlite3_column_text(meta, 0) {
+            version = Int(String(cString: raw)) ?? 0
+        }
+        sqlite3_finalize(meta)
+
+        let sql = """
+        SELECT host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly, samesite, top_frame_site_key
+        FROM cookies
+        """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw Trouble.unreadable
+        }
+        defer { sqlite3_finalize(statement) }
+
+        let now = Date()
+        var out: [HTTPCookie] = []
+        var skipped = 0
+        while true {
+            let status = sqlite3_step(statement)
+            guard status != SQLITE_DONE else { break }
+            guard status == SQLITE_ROW else { throw Trouble.unreadable }
+            func text(_ i: Int32) -> String { sqlite3_column_text(statement, i).map { String(cString: $0) } ?? "" }
+            guard text(9).isEmpty else {
+                skipped += 1
+                continue
+            }
+            let host = text(0)
+            var value = text(2)
+            if value.isEmpty, let bytes = sqlite3_column_blob(statement, 3) {
+                let blob = Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 3)))
+                guard var plain = open(blob, key: key) else { continue }
+                if version >= 24 {
+                    let hash = Data(SHA256.hash(data: Data(host.utf8)))
+                    guard blob.prefix(3) == Data("v10".utf8), plain.count >= hash.count,
+                          plain.prefix(hash.count).elementsEqual(hash)
+                    else { continue }
+                    plain.removeFirst(hash.count)
+                }
+                guard let decoded = String(data: plain, encoding: .utf8) else { continue }
+                value = decoded
+            }
+            let stamp = sqlite3_column_int64(statement, 5)
+            var properties: [HTTPCookiePropertyKey: Any] = [
+                .domain: host, .name: text(1), .value: value, .path: text(4).isEmpty ? "/" : text(4),
+            ]
+            if stamp > 0 {
+                let expires = Date(timeIntervalSince1970: Double(stamp) / 1_000_000 - 11_644_473_600)
+                guard expires > now else { continue }
+                properties[.expires] = expires
+            }
+            if sqlite3_column_int(statement, 6) != 0 { properties[.secure] = "TRUE" }
+            if sqlite3_column_int(statement, 7) != 0 { properties[HTTPCookiePropertyKey("HttpOnly")] = "TRUE" }
+            switch sqlite3_column_int(statement, 8) {
+            case 1: properties[.sameSitePolicy] = HTTPCookieStringPolicy.sameSiteLax.rawValue
+            case 2: properties[.sameSitePolicy] = HTTPCookieStringPolicy.sameSiteStrict.rawValue
+            default: break
+            }
+            if let cookie = HTTPCookie(properties: properties) { out.append(cookie) }
+        }
+        return CookieImport(cookies: out, skipped: skipped)
+    }
+
+    // MARK: - what they run
+
+    /// The ids of the other browser's extensions that came from the Chrome
+    /// Web Store — the only ones that can be fetched again from there.
+    static func extensions(in source: Source) -> [String] {
+        var ids: [String] = []
+        for file in source.files {
+            let folder = file.deletingLastPathComponent().appendingPathComponent("Extensions")
+            for id in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+            where id.count == 32 && !ids.contains(id) {
+                let versions = (try? FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent(id).path)) ?? []
+                guard let latest = versions.filter({ !$0.hasPrefix(".") }).sorted().last,
+                      let data = try? Data(contentsOf: folder.appendingPathComponent("\(id)/\(latest)/manifest.json")),
+                      let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      (manifest["update_url"] as? String)?.contains("clients2.google.com") == true
+                else { continue }
+                ids.append(id)
+            }
+        }
+        return ids
+    }
+
     // MARK: - the key
 
     private static func safeStorage(_ source: Source) -> String? {
@@ -291,10 +428,17 @@ enum Chromium {
 
     /// "v10" and then AES-128-CBC with an IV of sixteen spaces.
     private static func unwrap(_ blob: Data, key: [UInt8]) -> String? {
-        guard blob.count > 3, blob.prefix(3) == Data("v10".utf8) else {
-            // Not encrypted at all, on some very old profiles.
-            return String(data: blob, encoding: .utf8)
-        }
+        guard let plain = open(blob, key: key) else { return nil }
+        if let text = String(data: plain, encoding: .utf8) { return text }
+        // Newer builds prefix the password with a hash of the site. Past it,
+        // the password is the same as ever.
+        guard plain.count > 32 else { return nil }
+        return String(data: plain.dropFirst(32), encoding: .utf8)
+    }
+
+    private static func open(_ blob: Data, key: [UInt8]) -> Data? {
+        // Not encrypted at all, on some very old profiles.
+        guard blob.count > 3, blob.prefix(3) == Data("v10".utf8) else { return blob }
         let body = [UInt8](blob.dropFirst(3))
         let iv = [UInt8](repeating: 0x20, count: 16)
         var out = [UInt8](repeating: 0, count: body.count + kCCBlockSizeAES128)
@@ -306,12 +450,7 @@ enum Chromium {
             &out, out.count, &moved
         )
         guard status == kCCSuccess else { return nil }
-        let plain = Data(out.prefix(moved))
-        if let text = String(data: plain, encoding: .utf8) { return text }
-        // Newer builds prefix the password with a hash of the site. Past it,
-        // the password is the same as ever.
-        guard plain.count > 32 else { return nil }
-        return String(data: plain.dropFirst(32), encoding: .utf8)
+        return Data(out.prefix(moved))
     }
 
     // MARK: - the file
