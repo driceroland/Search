@@ -325,12 +325,13 @@ final class Browser: NSObject, ObservableObject {
     // The list of what is kept.
 
     @Published var managing = false { didSet { if managing { relist() } } }
-    @Published private(set) var saved: [Login] = []
+    /// The list, without secrets: see `Kept` and `Vault.all()`.
+    @Published private(set) var saved: [Kept] = []
     @Published var hunting = ""
 
     struct SiteRow {
         let host: String
-        let logins: [Login]
+        let logins: [Kept]
     }
 
     /// Grouped by site, filtered by what has been typed.
@@ -356,7 +357,7 @@ final class Browser: NSObject, ObservableObject {
         announce("Kept for \(host)")
     }
 
-    func forget(_ login: Login) {
+    func forget(_ login: Kept) {
         Vault.forget(host: login.host, user: login.user)
         relist()
     }
@@ -366,12 +367,18 @@ final class Browser: NSObject, ObservableObject {
     /// and transient, which is what clipboard managers go by to keep it out
     /// of their history, and it is taken off again after a minute and a
     /// half unless something else has been copied since.
-    func copy(_ login: Login) {
+    func copy(_ login: Kept) {
         Vault.prove("copy the password for \(login.host)") { [weak self] ok in
             guard ok, let self else { return }
+            // Read here, once the Mac has said who this is: what the panel
+            // drew its list from holds no secrets.
+            guard let password = Vault.secret(of: login) else {
+                self.announce("The keychain refused it")
+                return
+            }
             let board = NSPasteboard.general
             board.prepareForNewContents(with: .currentHostOnly)
-            board.setString(login.password, forType: .string)
+            board.setString(password, forType: .string)
             board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
             board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
             let copied = board.changeCount

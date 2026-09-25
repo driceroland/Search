@@ -25,6 +25,23 @@ struct Login: Identifiable, Equatable, Hashable {
     var id: String { host + "\u{1}" + user }
 }
 
+/// One item as a list needs it: the site, the account, and when it was last
+/// used, without the secret. Reading a secret is one keychain call, and the
+/// list asks for one only when a password is shown or copied: a drawer of four
+/// hundred kept passwords would otherwise be four hundred calls before the
+/// panel could draw itself. Nothing that writes a password or fills one into a
+/// page takes this type, so a row cannot be handed on as though it held one.
+struct Kept: Identifiable, Equatable, Hashable {
+    var host: String
+    var user: String
+    /// When it was last used to sign in, if known. Newest first in lists.
+    var used: Date?
+    /// Kept from a page sent in the clear, over plain http. See `Login`.
+    var clear = false
+
+    var id: String { host + "\u{1}" + user }
+}
+
 enum Vault {
     /// What every item of ours is tagged with. A test run tags its own, so a
     /// password saved while trying something never sits among the real ones.
@@ -57,10 +74,11 @@ enum Vault {
         return (exact + wider).sorted { ($0.used ?? .distantPast) > ($1.used ?? .distantPast) }
     }
 
-    /// Everything this app holds, for the list. Read on demand and never kept
-    /// in a property.
-    static func all() -> [Login] {
-        rows(where: [:]).compactMap(login(from:))
+    /// Everything this app holds, as the list needs it: no secrets. Each one
+    /// is `secret(of:)`, a call of its own, and only when it is asked for.
+    /// Read on demand and never kept in a property.
+    static func all() -> [Kept] {
+        rows(where: [:]).compactMap(kept(from:))
             .sorted { $0.host == $1.host ? $0.user < $1.user : $0.host < $1.host }
     }
 
@@ -102,16 +120,38 @@ enum Vault {
         return String(data: data, encoding: .utf8)
     }
 
+    /// One item's secret, where a list holds only the item: read when a
+    /// password is shown or copied, and never as part of a list.
+    static func secret(of kept: Kept) -> String? { secret(host: kept.host, user: kept.user) }
+
+    /// What an item's attributes say beyond its name: when it was last used,
+    /// and whether it was kept from a page sent in the clear.
+    private static func noted(_ row: [String: Any]) -> (used: Date?, clear: Bool) {
+        // The keychain has no "last used" of its own; it rides in the comment.
+        let used = (row[kSecAttrComment as String] as? String)
+            .flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
+        let clear = (row[kSecAttrProtocol as String] as? String) == (kSecAttrProtocolHTTP as String)
+        return (used, clear)
+    }
+
+    /// One item with its secret, for the paths that hand a password over:
+    /// filling a sign-in in, and telling whether one is already kept.
     private static func login(from row: [String: Any]) -> Login? {
         guard let host = row[kSecAttrServer as String] as? String,
               let user = row[kSecAttrAccount as String] as? String,
               let password = secret(host: host, user: user)
         else { return nil }
-        // The keychain has no "last used" of its own; it rides in the comment.
-        let used = (row[kSecAttrComment as String] as? String)
-            .flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
-        let clear = (row[kSecAttrProtocol as String] as? String) == (kSecAttrProtocolHTTP as String)
+        let (used, clear) = noted(row)
         return Login(host: host, user: user, password: password, used: used, clear: clear)
+    }
+
+    /// One item without its secret, for the list.
+    private static func kept(from row: [String: Any]) -> Kept? {
+        guard let host = row[kSecAttrServer as String] as? String,
+              let user = row[kSecAttrAccount as String] as? String
+        else { return nil }
+        let (used, clear) = noted(row)
+        return Kept(host: host, user: user, used: used, clear: clear)
     }
 
     // MARK: - writing
