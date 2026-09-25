@@ -256,7 +256,9 @@ struct BookmarkOutline: View {
             Row(
                 node: node,
                 depth: depth,
-                open: node.isFolder ? nil : { open(URL(string: node.url!)!) },
+                // An extension can write an address that does not parse,
+                // and the menu below already unwraps this the same way.
+                open: node.isFolder ? nil : { if let text = node.url, let url = URL(string: text) { open(url) } },
                 isOpen: expanded.contains(node.id),
                 dragging: dragging == node.id,
                 toggle: node.isFolder ? { toggle(node.id) } : nil,
