@@ -173,9 +173,9 @@ extension Browser {
         if floater.showing { land() }
         writeSession(now: true)
 
-        // The row on screen is parked as it is. Its sound stops: a space
-        // you left is not one you are listening to.
-        for tab in tabs where tab.built != nil { tab.web.pauseAllMediaPlayback() }
+        // The row on screen is parked as it is, sound and all: music or a
+        // stream keeps playing in the space you left, as it does in a tab
+        // you left. ⌘⇧M, or its speaker, stops it.
         parked[spaceID] = Parked(tabs: tabs, active: activeID)
 
         spaceID = id

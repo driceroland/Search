@@ -103,6 +103,11 @@ enum Web {
         // Off by default on macOS, which is why a full-screen button on a video
         // did nothing at all: the page asks, and WebKit refuses without a word.
         config.preferences.isElementFullscreenEnabled = true
+        // On by default on macOS: a page could open a new tab, and take you
+        // to it, whenever it liked — on load, on a timer. Off, window.open
+        // works only from a click or a key, as Safari's pop-up blocking has
+        // it; a sign-in window opened by its button still opens.
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
         config.mediaTypesRequiringUserActionForPlayback = .audio
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
         inspector(config.preferences)
@@ -300,8 +305,9 @@ final class Tab: ObservableObject, Identifiable {
     /// is, in the web view's points, or nil when it has left.
     var onField: ((Tab, CGRect?) -> Void)?
     /// The site the sign-in was sent from — not the one it landed on —
-    /// then the name and the password.
-    var onCredentials: ((Tab, String, String, String) -> Void)?
+    /// then the name and the password, and whether that page came over
+    /// plain http.
+    var onCredentials: ((Tab, String, String, String, Bool) -> Void)?
     var onPickEnd: ((Tab) -> Void)?
     var onPickTrouble: ((Tab, String) -> Void)?
     /// Right-click landed on an image. WebKit's own menu offers to copy or
@@ -415,6 +421,7 @@ final class Tab: ObservableObject, Identifiable {
         // the window with a picture of the last one behind it; ours is in
         // PageView, and it moves nothing but a disc.
         web.allowsBackForwardNavigationGestures = false
+        Swipe.calm(web)
         web.onPull = { [weak self] pull in self?.pull = pull }
         web.onTouch = { [weak self] in self?.uncover() }
         web.searchName = { [weak self] in self?.searchName?() }
@@ -543,9 +550,6 @@ final class Tab: ObservableObject, Identifiable {
                 WKUserScript(source: AutoScroll.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
             )
         }
-        controller.addUserScript(
-            WKUserScript(source: Swipe.calm, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
-        )
         // Every frame: a swipe over an embedded map is the map's, and only the
         // map's own document can say so.
         controller.addUserScript(
@@ -624,7 +628,7 @@ final class Tab: ObservableObject, Identifiable {
     /// Whether the sign-in worked is only known afterwards: a page that
     /// comes back without a password box took it, one that still has the
     /// box refused it, and only the first is worth remembering.
-    private var sent: (host: String, user: String, password: String, at: Date)?
+    private var sent: (host: String, user: String, password: String, clear: Bool, at: Date)?
 
     func sentSignIn(user: String, password: String) {
         // The host now, while the page is still the sign-in page: a moment
@@ -632,7 +636,7 @@ final class Tab: ObservableObject, Identifiable {
         // the password belongs.
         guard let host = address?.host()?.lowercased() else { return }
         let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-        sent = (bare, user, password, Date())
+        sent = (bare, user, password, address?.scheme?.lowercased() == "http", Date())
     }
 
     /// The page has moved on — a new document has loaded, or the sign-in
@@ -667,7 +671,7 @@ final class Tab: ObservableObject, Identifiable {
                 // still on its way.
                 if (still as? Bool) == true { return }
                 self.sent = nil
-                self.onCredentials?(self, sent.host, sent.user, sent.password)
+                self.onCredentials?(self, sent.host, sent.user, sent.password, sent.clear)
             }
         }
     }

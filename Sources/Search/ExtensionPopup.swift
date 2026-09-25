@@ -52,7 +52,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         // background unset, and their dark text over the popover's dark
         // material would vanish.
         web.alphaValue = 0
-        web.load(URLRequest(url: url))
+        web.load(URLRequest(url: Extensions.unpopped(url)))
 
         let stage = NSView(frame: NSRect(origin: .zero, size: ExtensionPopup.lastSize[context.uniqueIdentifier] ?? NSSize(width: 360, height: 240)))
         stage.addSubview(web)

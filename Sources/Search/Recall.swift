@@ -44,6 +44,9 @@ struct HistoryPanel: View {
 
     @FocusState private var hunting: Bool
     @State private var traces: [History.Trace] = []
+    /// The list as drawn: each day's name, then its pages. Worked out when
+    /// the history or the search changes, not each time the panel is drawn.
+    @State private var lines: [Listed] = []
     @State private var clearing = false
 
     var body: some View {
@@ -54,27 +57,45 @@ struct HistoryPanel: View {
                 if traces.isEmpty {
                     Card { Nothing(browser.recallHunt.isEmpty ? "Nothing yet." : "Nothing matches.") }
                 } else {
+                    // Lazy: only the lines in view are made. Two thousand of
+                    // them, each with its icon, took the panel a third of a
+                    // second to open, and scrolling redrew them all.
                     ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            ForEach(days, id: \.0) { day, rows in
-                                VStack(alignment: .leading, spacing: 6) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(lines) { line in
+                                switch line.kind {
+                                case .day(let day):
                                     Caption(day)
-                                    Card {
-                                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, trace in
-                                            if index > 0 { Rule() }
-                                            Row(
-                                                trace: trace,
-                                                go: {
-                                                    browser.recalling = false
-                                                    browser.active?.go(to: trace.url)
-                                                },
-                                                forget: {
-                                                    browser.history.forget(trace.key)
-                                                    refresh()
-                                                }
-                                            )
-                                        }
+                                        .padding(.top, line.id == lines.first?.id ? 0 : 14)
+                                        .padding(.bottom, 6)
+                                case .trace(let trace, let first, let last):
+                                    VStack(spacing: 0) {
+                                        if !first { Rule() }
+                                        Row(
+                                            trace: trace,
+                                            go: {
+                                                browser.recalling = false
+                                                browser.active?.go(to: trace.url)
+                                            },
+                                            forget: {
+                                                browser.history.forget(trace.key)
+                                                refresh()
+                                            }
+                                        )
                                     }
+                                    // A day's card, drawn a line at a time.
+                                    .background(Palette.ground)
+                                    .clipShape(Slice(first: first, last: last))
+                                    // The card's outline, reaching a point past the lines it
+                                    // shares with its neighbours and cut to its own: only
+                                    // its sides, and its rounded top or bottom, remain.
+                                    .overlay(
+                                        Slice(first: first, last: last)
+                                            .strokeBorder(Palette.hairline, lineWidth: 1)
+                                            .padding(.top, first ? 0 : -1)
+                                            .padding(.bottom, last ? 0 : -1)
+                                            .clipped()
+                                    )
                                 }
                             }
                         }
@@ -133,16 +154,50 @@ struct HistoryPanel: View {
         .transition(.opacity)
     }
 
-    private var days: [(String, [History.Trace])] {
-        let calendar = Calendar.current
-        let grouped = Dictionary(grouping: traces) { calendar.startOfDay(for: $0.last) }
-        return grouped.keys.sorted(by: >).map { day in
-            (When.day(day), grouped[day]!.sorted { $0.last > $1.last })
-        }
-    }
-
     private func refresh() {
         traces = browser.history.everything(matching: browser.recallHunt)
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: traces) { calendar.startOfDay(for: $0.last) }
+        var made: [Listed] = []
+        for day in grouped.keys.sorted(by: >) {
+            let rows = grouped[day]!.sorted { $0.last > $1.last }
+            made.append(Listed(id: "day " + day.description, kind: .day(When.day(day))))
+            for (index, trace) in rows.enumerated() {
+                made.append(Listed(id: trace.id, kind: .trace(trace, first: index == 0, last: index == rows.count - 1)))
+            }
+        }
+        lines = made
+    }
+
+    /// One line of the list: a day's name, or a page under it.
+    struct Listed: Identifiable {
+        enum Kind {
+            case day(String)
+            case trace(History.Trace, first: Bool, last: Bool)
+        }
+        let id: String
+        let kind: Kind
+    }
+
+    /// A slice of a card: rounded at the top on its first line and at the
+    /// bottom on its last, as the whole card would be.
+    struct Slice: InsettableShape {
+        let first: Bool
+        let last: Bool
+        var inset: CGFloat = 0
+
+        func path(in rect: CGRect) -> Path {
+            let radius: CGFloat = 11 - inset
+            let top = first ? radius : 0, bottom = last ? radius : 0
+            return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom, bottomTrailingRadius: bottom, topTrailingRadius: top, style: .continuous)
+                .path(in: rect.insetBy(dx: inset, dy: inset))
+        }
+
+        func inset(by amount: CGFloat) -> Slice {
+            var copy = self
+            copy.inset += amount
+            return copy
+        }
     }
 
     /// One line. A title, where it came from, and when — the three things you

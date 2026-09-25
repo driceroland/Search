@@ -295,7 +295,7 @@ struct Helm: View {
         } else {
             // Nowhere to go and nothing to reload: the doors stay in place,
             // greyed, so the row doesn't shift when a tab arrives.
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
                 Door(icon: "chevron.left") {}
                 Door(icon: "chevron.right") {}
                 Door(icon: "arrow.clockwise") {}
@@ -312,7 +312,7 @@ struct Helm: View {
         var body: some View {
             let back = !tab.isBlank && tab.canGoBack
             let forward = !tab.isBlank && tab.canGoForward
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
                 Door(icon: "chevron.left", help: "Back   ⌘[") { browser.back() }
                     .disabled(!back)
                     .opacity(back ? 1 : 0.3)

@@ -19,7 +19,7 @@ Fixes and things every browser is expected to do (Tab moving between a form's fi
 
 ## Where things are tracked
 
-- [ROADMAP.md](ROADMAP.md): everything asked for and not done yet, sorted into what's next and what isn't planned.
+- [ROADMAP.md](ROADMAP.md), live at [officecommun.com/search/roadmap](https://officecommun.com/search/roadmap): every idea and report, from issues, pull requests, emails and X, with where it stands — being built, in the next version, next, or not planned. Maintainers keep it with `./ideas`.
 - [CHANGELOG.md](CHANGELOG.md): what has changed since the last version. A pull request that fixes or adds something also adds its line under **Unreleased** (and takes its item off the roadmap), so the next update's notes write themselves.
 
 ## What tends to get merged

@@ -88,7 +88,8 @@ enum Chromium {
                     continue
                 }
                 guard let password = unwrap(row.blob, key: key), !password.isEmpty else { continue }
-                let login = Login(host: host, user: row.user, password: password, used: row.used)
+                let clear = row.origin.lowercased().hasPrefix("http://")
+                let login = Login(host: host, user: row.user, password: password, used: row.used, clear: clear)
                 guard seen.insert(login.id).inserted else { continue }
                 logins.append(login)
             }

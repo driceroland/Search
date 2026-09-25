@@ -35,6 +35,10 @@
     ./bench ext-remove ID
     ./bench strip PATH [WIDTH]         the row of tabs across the top, drawn off screen to a PNG
     ./bench column PATH [HEIGHT]       the column of tabs, drawn off screen to a PNG
+    ./bench consent [grant|revoke]     test run: the mark Settings' bench switch leaves in the keychain, in this
+                                       world's own account — whether it is there, before and after
+    ./bench fold PATH [WIDTH]          test run: the folded strip or column out over the page (ui folded on,
+                                       ui peek on), drawn off screen over red — red shows where the page would
     ./bench space [new NAME [fresh]|go N|delete|swipe DX|hold DX|release|move N]
                                        test run: the spaces, a new one (signed in with the others, or fresh),
                                        switch to the Nth, delete this one,
@@ -188,6 +192,13 @@ def main(argv):
         if len(args) == 3: request["steps"] = int(args[2])
     elif verb == "strip":
         if not 1 <= len(args) <= 2: sys.exit("usage: bench strip PATH [WIDTH]")
+        request["path"] = os.path.abspath(args[0])
+        if len(args) == 2: request["width"] = float(args[1])
+    elif verb == "consent":
+        if len(args) > 1 or (args and args[0] not in ("grant", "revoke")): sys.exit("usage: bench consent [grant|revoke]")
+        if args: request["action"] = args[0]
+    elif verb == "fold":
+        if not 1 <= len(args) <= 2: sys.exit("usage: bench fold PATH [WIDTH]")
         request["path"] = os.path.abspath(args[0])
         if len(args) == 2: request["width"] = float(args[1])
     elif verb == "site":

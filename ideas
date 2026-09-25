@@ -1,0 +1,388 @@
+#!/usr/bin/env python3
+"""Every idea and report about Search, in one live list.
+
+The list lives in the Office Commun database (table search_ideas) and is read
+live by https://officecommun.com/search/roadmap: a change here shows there
+within a second. ROADMAP.md is written from it (`./ideas md`).
+
+    ./ideas                          what's being built, what's in the next version, what's next
+    ./ideas all [STATUS]             every idea, or those with one status
+    ./ideas find WORDS…              look for an idea before adding one
+    ./ideas show ID
+    ./ideas add TITLE [DETAIL] --area AREA [--now|--next|--later] [--status S] [--fix|--feature] [--from SRC…]
+    ./ideas from ID SRC…             one more person asked: add sources
+    ./ideas start ID WHO             someone is building it now (WHO: "Office Search 3")
+    ./ideas stop ID                  back on the list
+    ./ideas done ID [VERSION]        on main: it goes out with the next version
+    ./ideas set ID KEY=VALUE…        title, detail, area, status, lane, kind, reason, version, by
+    ./ideas ship VERSION             at release: everything done becomes shipped in VERSION
+    ./ideas check                    every open issue and PR has its idea; nothing closed is still to do
+    ./ideas md                       write ROADMAP.md from the list
+
+Titles are short, a few words: the page lists them one to a line and
+opens the detail on a click. Areas group them: passwords, extensions,
+video, tabs, speed, sites, interface, keyboard, import, security, platform.
+Sources: #123 (an issue or a pull request, looked up), email, x, message.
+Statuses: new, planned (with a lane: now, next, later), building, review
+(a pull request to review), ready (done, in the next version), shipped,
+asked (waiting on the person who reported it), call (Drice's to decide),
+declined (with a reason).
+
+Writing needs this Mac's Supabase CLI login (the owner's); anyone can read
+the page. Never put a private security report here, nor a name or an
+address from an email.
+"""
+
+import base64
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = "driceroland/Search"
+PROJECT = "auvryubksvduljzkkdcj"
+STATUSES = ["building", "ready", "planned", "review", "call", "asked", "new", "declined", "shipped"]
+LANES = ["now", "next", "later"]
+FIELDS = {"title", "detail", "area", "status", "lane", "kind", "reason", "version", "by"}
+AREAS = ["passwords", "extensions", "video", "tabs", "speed", "sites", "interface", "keyboard", "import", "security", "platform"]
+
+# ── the database ─────────────────────────────────────────────────────────
+
+def token():
+    """The Supabase CLI's own login, from the keychain (`supabase login`)."""
+    raw = os.environ.get("SUPABASE_ACCESS_TOKEN") or subprocess.run(
+        ["security", "find-generic-password", "-s", "Supabase CLI", "-a", "supabase", "-w"],
+        capture_output=True, text=True,
+    ).stdout.strip()
+    if raw.startswith("go-keyring-base64:"):
+        raw = base64.b64decode(raw.split(":", 1)[1]).decode()
+    if not raw:
+        sys.exit("No Supabase login on this Mac: `supabase login` first.")
+    return raw
+
+def sql(query):
+    """Runs SQL on the Office Commun project through the Management API."""
+    request = urllib.request.Request(
+        f"https://api.supabase.com/v1/projects/{PROJECT}/database/query",
+        data=json.dumps({"query": query}).encode(),
+        headers={"Authorization": "Bearer " + token(), "Content-Type": "application/json", "User-Agent": "search-ideas"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read() or b"[]")
+    except urllib.error.HTTPError as e:
+        sys.exit(f"Database: {e.code} {e.read().decode(errors='replace')[:300]}")
+
+def lit(value):
+    if value is None:
+        return "null"
+    return "'" + str(value).replace("'", "''") + "'"
+
+def rows(where="true", order="updated_at desc"):
+    return sql(f"select * from search_ideas where {where} order by {order}")
+
+def one(ident):
+    found = rows(f"id = {int(ident)}")
+    if not found:
+        sys.exit(f"No idea #{ident}.")
+    return found[0]
+
+def as_list(value):
+    if isinstance(value, str):
+        return json.loads(value or "[]")
+    return value or []
+
+# ── sources ──────────────────────────────────────────────────────────────
+
+def gh(*args):
+    out = subprocess.run(["gh", *args], capture_output=True, text=True)
+    if out.returncode:
+        sys.exit(out.stderr.strip() or "gh failed")
+    return json.loads(out.stdout or "null")
+
+def source(token):
+    t = token.strip().lower()
+    if t in ("email", "x", "message"):
+        return {"kind": t}
+    m = re.fullmatch(r"(?:pr|issue)?#?(\d+)", t)
+    if not m:
+        sys.exit(f"Unknown source {token!r}: #123, email, x or message.")
+    n = int(m.group(1))
+    item = gh("api", f"repos/{REPO}/issues/{n}")
+    return {"kind": "pull" if item.get("pull_request") else "issue", "n": n}
+
+def source_text(s, markdown=False):
+    if s["kind"] in ("issue", "pull"):
+        n = s["n"]
+        return f"[#{n}](https://github.com/{REPO}/{'pull' if s['kind'] == 'pull' else 'issues'}/{n})" if markdown else f"#{n}"
+    return {"email": "email", "x": "X", "message": "message"}[s["kind"]]
+
+def sources_text(sources, markdown=False):
+    counts, order = {}, []
+    for s in sources:
+        key = source_text(s, markdown)
+        if key not in counts:
+            order.append(key)
+        counts[key] = counts.get(key, 0) + 1
+    return ", ".join(k + (f" ×{counts[k]}" if counts[k] > 1 else "") for k in order)
+
+# ── printing ─────────────────────────────────────────────────────────────
+
+def line(r):
+    where = r["status"] + (f"/{r['lane']}" if r["status"] == "planned" and r.get("lane") else "")
+    extra = ""
+    if r["status"] == "building" and r.get("by"):
+        extra = f"  ← {r['by']}"
+    if r["status"] in ("ready", "shipped") and r.get("version"):
+        extra = f"  ({r['version']})"
+    src = sources_text(as_list(r["sources"]))
+    return f"{r['id']:>4}  {where:<14} {(r.get('area') or '?'):<10} {r['title']}" + (f"  [{src}]" if src else "") + extra
+
+def board():
+    all_rows = rows(order="id")
+    for status, label in [("building", "Being built now"), ("ready", "Done, in the next version"), ("new", "Just in, not sorted")]:
+        part = [r for r in all_rows if r["status"] == status]
+        if part:
+            print(f"\n{label}:")
+            for r in part:
+                print(line(r))
+    part = [r for r in all_rows if r["status"] == "planned" and r.get("lane") == "now"]
+    if part:
+        print("\nNow:")
+        for r in part:
+            print(line(r))
+    counts = {s: sum(1 for r in all_rows if r["status"] == s) for s in STATUSES}
+    print("\n" + ", ".join(f"{n} {s}" for s, n in counts.items() if n) + ". `./ideas all` for everything.")
+
+# ── ROADMAP.md ───────────────────────────────────────────────────────────
+
+HEADER = """# Roadmap
+
+Every idea and every report about Search, in one place: what is being built
+right now, what goes out with the next version, what comes after, and what
+is not on the list — each with where it came from. GitHub issues, pull
+requests, the emails that reach hello@officecommun.com and the replies on X
+all land here.
+
+**The live version is [officecommun.com/search/roadmap](https://officecommun.com/search/roadmap)**:
+it changes the moment the work does. This file is a copy of the same list,
+written by `./ideas md`. What has shipped is in [CHANGELOG.md](CHANGELOG.md).
+
+Want something that isn't here? [Open an issue](https://github.com/driceroland/Search/issues).
+Want to build something that is? Say so on its issue first, so two people
+don't build it twice.
+
+## Keeping it whole
+
+The list is only worth something if nothing is missing from it and nothing
+in it is stale. Whoever works on Search keeps it that way, with `./ideas`
+(`./ideas help` for everything it does):
+
+- **Every new idea or report gets its line the day it arrives**, whatever the
+  source: an issue, a pull request, an email, a reply on X, a message.
+  `./ideas find` first: if it is already there, `./ideas from ID SOURCE` adds
+  the new voice instead of a second line.
+- **Say what you're building as you start**: `./ideas start ID "who"`, and
+  `./ideas done ID` when it's on main, in the same breath as its line in
+  CHANGELOG.md. The page shows both at once.
+- **`./ideas check`** compares the list with GitHub: every open issue and pull
+  request without its idea, and every idea still to do whose issue or pull
+  request is closed. Run it whenever you pick up where someone else left off.
+- **`./ideas md`** writes this file again; commit it with the work.
+- **Public.** Emails are marked *(email)*, never with a name or an address. A
+  security report sent privately never comes here, not even in outline: it
+  is fixed, it ships, and only then is it credited in CHANGELOG.md.
+"""
+
+SECTIONS = [
+    ("building", None, "Being built now", ""),
+    ("ready", None, "Done, in the next version", ""),
+    ("planned", "now", "Now — fixes for the next update", ""),
+    ("planned", "next", "Next — small additions people asked for", ""),
+    ("planned", "later", "Later — bigger pieces of work", ""),
+    ("review", None, "Pull requests to review", ""),
+    ("call", None, "Drice's call", ""),
+    ("asked", None, "Asked to try again on the latest version", ""),
+    ("new", None, "Just in, not sorted yet", ""),
+    ("declined", None, "Not on the list, for now", ""),
+]
+
+def md_line(r):
+    text = f"**{r['title']}**"
+    if r.get("detail"):
+        text += " " + r["detail"]
+    if r["status"] == "declined" and r.get("reason"):
+        text += " " + r["reason"]
+    src = sources_text(as_list(r["sources"]), markdown=True)
+    if src:
+        text += f" *({src})*"
+    box = "- " if r["status"] == "declined" else ("- [x] " if r["status"] == "ready" else "- [ ] ")
+    return box + text
+
+def write_md():
+    all_rows = rows(order="id")
+    out = [HEADER]
+    for status, lane, title, _ in SECTIONS:
+        part = [r for r in all_rows if r["status"] == status and (lane is None or r.get("lane") == lane)]
+        if not part:
+            continue
+        out.append(f"## {title}\n")
+        out.extend(md_line(r) for r in part)
+        out.append("")
+    with open(os.path.join(HERE, "ROADMAP.md"), "w", encoding="utf-8") as f:
+        f.write("\n".join(out).rstrip() + "\n")
+    print(f"ROADMAP.md written: {sum(1 for r in all_rows if r['status'] != 'shipped')} ideas.")
+
+# ── GitHub ───────────────────────────────────────────────────────────────
+
+def check():
+    issues = gh("issue", "list", "--repo", REPO, "--state", "open", "--limit", "500", "--json", "number,title")
+    pulls = gh("pr", "list", "--repo", REPO, "--state", "open", "--limit", "500", "--json", "number,title,author")
+    opened = {i["number"] for i in issues} | {p["number"] for p in pulls}
+    all_rows = rows(order="id")
+    known = {}
+    for r in all_rows:
+        for s in as_list(r["sources"]):
+            if s["kind"] in ("issue", "pull"):
+                known.setdefault(s["n"], []).append(r)
+    missing = [("issue", i["number"], i["title"]) for i in issues if i["number"] not in known]
+    missing += [("PR", p["number"], f"{p['title']} (@{p['author']['login']})") for p in pulls if p["number"] not in known]
+    print(f"{len(issues)} open issues, {len(pulls)} open PRs, {len(all_rows)} ideas.")
+    if missing:
+        print(f"\nOpen on GitHub, no idea yet ({len(missing)}) — `./ideas find`, then `./ideas from` or `./ideas add`:")
+        for kind, n, title in sorted(missing, key=lambda m: m[1]):
+            print(f"  {kind:5} #{n}  {title}")
+    stale = []
+    for r in all_rows:
+        numbers = [s["n"] for s in as_list(r["sources"]) if s["kind"] in ("issue", "pull")]
+        if r["status"] in ("planned", "building", "review", "asked", "call", "new") and numbers and not any(n in opened for n in numbers):
+            stale.append(r)
+    if stale:
+        print(f"\nStill to do, but everything it came from is closed on GitHub ({len(stale)}):")
+        for r in stale:
+            print(line(r))
+    close = []
+    for r in all_rows:
+        if r["status"] in ("shipped", "declined"):
+            for s in as_list(r["sources"]):
+                if s["kind"] == "issue" and s["n"] in opened:
+                    close.append((s["n"], r))
+    if close:
+        print(f"\nShipped or declined, the issue still open — to close on GitHub ({len(close)}):")
+        for n, r in sorted(close, key=lambda c: c[0]):
+            print(f"  #{n}  {r['status']}{' ' + r['version'] if r.get('version') else ''}: {r['title']}")
+    if not missing:
+        print("\nEverything open on GitHub has its idea.")
+    return 1 if missing else 0
+
+# ── commands ─────────────────────────────────────────────────────────────
+
+def next_version():
+    try:
+        v = open(os.path.join(HERE, "VERSION")).read().strip().split(".")
+        return ".".join(v[:-1] + [str(int(v[-1]) + 1)])
+    except Exception:
+        return None
+
+def main(argv):
+    if not argv:
+        return board()
+    cmd, args = argv[0], argv[1:]
+    if cmd in ("help", "-h", "--help"):
+        print(__doc__)
+    elif cmd == "all":
+        where = f"status = {lit(args[0])}" if args else "true"
+        for r in rows(where, order="status, lane, id"):
+            print(line(r))
+    elif cmd == "find":
+        words = [w for w in args if w]
+        where = " and ".join(f"(title || ' ' || detail || ' ' || sources::text) ilike {lit('%' + w + '%')}" for w in words) or "true"
+        found = rows(where, order="id")
+        for r in found:
+            print(line(r))
+        if not found:
+            print("Nothing yet: `./ideas add`.")
+    elif cmd == "show":
+        r = one(args[0])
+        for k in ("id", "title", "detail", "status", "lane", "kind", "by", "version", "reason", "created_at", "updated_at"):
+            if r.get(k):
+                print(f"{k:>10}: {r[k]}")
+        print(f"{'sources':>10}: {sources_text(as_list(r['sources']))}")
+    elif cmd == "add":
+        if not args:
+            sys.exit("./ideas add TITLE [DETAIL] [--now|--next|--later] [--status S] [--fix|--feature] [--from SRC…]")
+        title, rest = args[0], args[1:]
+        detail, lane, status, kind, area, froms = "", None, None, "feature", None, []
+        i = 0
+        while i < len(rest):
+            a = rest[i]
+            if a in ("--now", "--next", "--later"):
+                lane = a[2:]
+            elif a == "--status":
+                i += 1; status = rest[i]
+            elif a == "--area":
+                i += 1; area = rest[i]
+            elif a in ("--fix", "--feature"):
+                kind = a[2:]
+            elif a == "--from":
+                while i + 1 < len(rest) and not rest[i + 1].startswith("--"):
+                    i += 1; froms.append(source(rest[i]))
+            else:
+                detail = a
+            i += 1
+        if area not in AREAS:
+            sys.exit(f"--area is one of: {', '.join(AREAS)}.")
+        if len(title) > 48:
+            print(f"A long title ({len(title)} characters): keep it to a few words, the rest goes in DETAIL.", file=sys.stderr)
+        status = status or ("planned" if lane else "new")
+        r = sql(
+            "insert into search_ideas (title, detail, area, status, lane, kind, sources) values "
+            f"({lit(title)}, {lit(detail)}, {lit(area)}, {lit(status)}, {lit(lane)}, {lit(kind)}, {lit(json.dumps(froms))}::jsonb) returning *"
+        )
+        print(line(r[0]))
+    elif cmd == "from":
+        r = one(args[0])
+        more = [source(a) for a in args[1:]]
+        r = sql(f"update search_ideas set sources = sources || {lit(json.dumps(more))}::jsonb where id = {int(args[0])} returning *")
+        print(line(r[0]))
+    elif cmd == "start":
+        who = " ".join(args[1:]) or os.environ.get("USER")
+        r = sql(f"update search_ideas set status = 'building', by = {lit(who)} where id = {int(args[0])} returning *")
+        print(line(r[0]))
+    elif cmd == "stop":
+        r = sql(f"update search_ideas set status = 'planned', by = null, lane = coalesce(lane, 'now') where id = {int(args[0])} returning *")
+        print(line(r[0]))
+    elif cmd == "done":
+        version = args[1] if len(args) > 1 else next_version()
+        r = sql(f"update search_ideas set status = 'ready', version = {lit(version)} where id = {int(args[0])} returning *")
+        print(line(r[0]))
+    elif cmd == "set":
+        changes = []
+        for pair in args[1:]:
+            key, _, value = pair.partition("=")
+            if key not in FIELDS:
+                sys.exit(f"Can't set {key!r}: {', '.join(sorted(FIELDS))}.")
+            if key == "area" and value not in AREAS:
+                sys.exit(f"area is one of: {', '.join(AREAS)}.")
+            changes.append(f"{key} = {lit(value) if value != '' else 'null'}")
+        r = sql(f"update search_ideas set {', '.join(changes)} where id = {int(args[0])} returning *")
+        print(line(r[0]))
+    elif cmd == "ship":
+        if not args:
+            sys.exit("./ideas ship VERSION")
+        r = sql(f"update search_ideas set status = 'shipped', version = {lit(args[0])}, by = null where status = 'ready' returning *")
+        print(f"{len(r)} ideas shipped in {args[0]}.")
+    elif cmd == "check":
+        return check()
+    elif cmd == "md":
+        write_md()
+    else:
+        sys.exit(f"Unknown command {cmd!r}. ./ideas help")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]) or 0)

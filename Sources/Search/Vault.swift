@@ -16,6 +16,11 @@ struct Login: Identifiable, Equatable, Hashable {
     var password: String
     /// When it was last used to sign in, if known. Newest first in lists.
     var used: Date?
+    /// Kept from a page sent in the clear, over plain http. Only these are
+    /// offered on such a page: one kept from https, or from before this was
+    /// written down, is never handed to a page anyone on the way could have
+    /// written.
+    var clear = false
 
     var id: String { host + "\u{1}" + user }
 }
@@ -105,25 +110,35 @@ enum Vault {
         // The keychain has no "last used" of its own; it rides in the comment.
         let used = (row[kSecAttrComment as String] as? String)
             .flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
-        return Login(host: host, user: user, password: password, used: used)
+        let clear = (row[kSecAttrProtocol as String] as? String) == (kSecAttrProtocolHTTP as String)
+        return Login(host: host, user: user, password: password, used: used, clear: clear)
     }
 
     // MARK: - writing
 
     @discardableResult
-    static func save(host: String, user: String, password: String, used: Date? = nil) -> Bool {
+    static func save(host: String, user: String, password: String, used: Date? = nil, clear: Bool = false) -> Bool {
         guard !host.isEmpty, !password.isEmpty,
               let data = password.data(using: .utf8)
         else { return false }
 
+        // Ours only. Server and account alone also match what other apps
+        // keep for the same site — git's token for github.com under your
+        // username — and an update would write this password over it.
         let identity: [String: Any] = [
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrServer as String: host,
             kSecAttrAccount as String: user,
+            kSecAttrLabel as String: label,
         ]
+        // A web form's, which also keeps ours apart from another app's item
+        // in the keychain's eyes: one for the same server, account and
+        // protocol — git's — makes adding ours fail as a duplicate.
         var fields: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrLabel as String: label,
+            kSecAttrAuthenticationType as String: kSecAttrAuthenticationTypeHTMLForm,
+            kSecAttrProtocol as String: clear ? kSecAttrProtocolHTTP : kSecAttrProtocolHTTPS,
         ]
         if let used { fields[kSecAttrComment as String] = String(used.timeIntervalSince1970) }
 
@@ -138,7 +153,7 @@ enum Vault {
 
     /// It was just used to sign in. Lists put it first from now on.
     static func touch(_ login: Login) {
-        save(host: login.host, user: login.user, password: login.password, used: Date())
+        save(host: login.host, user: login.user, password: login.password, used: Date(), clear: login.clear)
     }
 
     static func forget(host: String, user: String) {
@@ -146,6 +161,7 @@ enum Vault {
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrServer as String: host,
             kSecAttrAccount as String: user,
+            kSecAttrLabel as String: label,
         ] as CFDictionary)
     }
 
@@ -224,7 +240,8 @@ enum Vault {
                 skipped += 1
                 continue
             }
-            save(host: host, user: row[userAt], password: password) ? (kept += 1) : (skipped += 1)
+            let clear = row[urlAt].trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("http://")
+            save(host: host, user: row[userAt], password: password, clear: clear) ? (kept += 1) : (skipped += 1)
         }
         return (kept, skipped)
     }
