@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Added
 
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
+- ⌘Return, in the field ⌘L opens, duplicates the tab beside itself, its address left as it was, rather than reloading it as Return alone would. Thanks [@junguye-BRONGA](https://github.com/junguye-BRONGA) for asking ([#249](https://github.com/driceroland/Search/issues/249))
 
 ### Fixed
 

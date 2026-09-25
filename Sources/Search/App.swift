@@ -907,6 +907,13 @@ struct ContentView: View {
         // Anything with ⌥ or ⌃ on top is somebody else's.
         guard !flags.contains(.option), !flags.contains(.control) else { return false }
 
+        // ⌘Return in the field ⌘L opened: the tab beside itself, its address
+        // left alone, rather than whatever Return alone would do to it.
+        if !shifted, event.keyCode == 36 || event.keyCode == 76, browser.editing {
+            browser.duplicateFromField()
+            return true
+        }
+
         // ⌘1 through ⌘9, and ⌘0, by the key rather than the character it
         // types. On AZERTY and many other layouts the top row types &, é, "…
         // unless shift is held, so matching the character left these
