@@ -145,6 +145,7 @@ final class Extensions: NSObject, ObservableObject {
         Links.onceShown { [weak self] in
             Task { [weak self] in
                 guard let self else { return }
+                await clearWorkers()
                 // One after another, a moment apart: started all at once, WebKit
                 // fails some of their workers and never tries them again.
                 for item in installed where item.enabled {
@@ -437,6 +438,13 @@ final class Extensions: NSObject, ObservableObject {
             guard await load(item), let popup, let context = contexts[id] else { return }
             ExtensionPopup.shared.show(popup, for: context, from: anchor)
         }
+    }
+
+    /// WebKit does not restart extension workers after relaunch. This also
+    /// removes sites' registrations, so do it only when extensions are enabled.
+    private func clearWorkers() async {
+        guard installed.contains(where: { $0.enabled }) else { return }
+        await Store.websites.removeData(ofTypes: [WKWebsiteDataTypeServiceWorkerRegistrations], modifiedSince: .distantPast)
     }
 
     /// WebKit records a worker that failed to start as an error on its
