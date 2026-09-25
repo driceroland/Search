@@ -37,7 +37,7 @@ struct TabBar: View {
 
                 HStack(spacing: Metrics.tabGap) {
                     // The space on screen, first, when there are spaces.
-                    if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
+                    if browser.kind == .home, browser.prefs.usesSpaces { SpaceDot(browser: browser) }
 
                     // The tabs, in a run of their own. While they fit, it is
                     // exactly as wide as they are and nothing about the row
@@ -155,7 +155,7 @@ struct TabBar: View {
         }
         .frame(height: Metrics.strip)
         .onHover { nearby = $0 }
-        .onAppear { SpaceSwipe.shared.start(for: browser) }
+        .onAppear { if browser.kind == .home { SpaceSwipe.shared.start(for: browser) } }
         // A link dragged onto the row opens there.
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
             browser.take(providers)
@@ -172,7 +172,7 @@ struct TabBar: View {
 
     // MARK: - the spaces, one above the other
 
-    private var making: Bool { browser.prefs.usesSpaces && browser.makingSpace }
+    private var making: Bool { browser.kind == .home && browser.prefs.usesSpaces && browser.makingSpace }
 
     /// Where the space on screen sits among them: one past the last while
     /// the row for a new one is up.
@@ -261,7 +261,7 @@ struct TabBar: View {
     }
 
     /// What the space's dot takes before the tabs, when there are spaces.
-    private var dot: CGFloat { browser.prefs.usesSpaces ? SpaceDot.width + Metrics.tabGap : 0 }
+    private var dot: CGFloat { browser.kind == .home && browser.prefs.usesSpaces ? SpaceDot.width + Metrics.tabGap : 0 }
 
     /// Every loose tab is the same width, so the cross is always in the same
     /// place. Past a dozen or so they start giving ground; too narrow for a

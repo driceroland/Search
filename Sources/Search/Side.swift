@@ -85,7 +85,7 @@ struct SideBar: View {
         .frame(maxHeight: .infinity)
         // Rows on their way to or from another space stay in the column.
         .clipped()
-        .onAppear { SpaceSwipe.shared.start(for: browser) }
+        .onAppear { if browser.kind == .home { SpaceSwipe.shared.start(for: browser) } }
         .background(landing ? Palette.hover : Palette.ground)
         .overlay(alignment: .trailing) {
             Rectangle().fill(Palette.hairline).frame(width: 1)
@@ -437,7 +437,7 @@ struct SideBar: View {
     /// One small door at the bottom: the settings.
     private var foot: some View {
         HStack(spacing: 2) {
-            if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
+            if browser.kind == .home, browser.prefs.usesSpaces { SpaceDot(browser: browser) }
             ExtensionSlot(edge: .trailing)
             Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
                 .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .trailing) {

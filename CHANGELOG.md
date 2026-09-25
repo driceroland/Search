@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Added
 
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
+- ⌘N opens a new window, and ⇧⌘N a private one. A new window has its own tabs and the same sign-ins, history and bookmarks as the first. A private window's tabs share a jar that keeps nothing and dies with the window — no history, no place in tomorrow's session. A private tab in the ordinary window is still in the File menu. Each window goes by the tab on screen in the Dock's menu and the Window menu, as in Safari.
 
 ### Fixed
 

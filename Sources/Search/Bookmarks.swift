@@ -626,7 +626,8 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
 
     @objc private func open(_ item: NSMenuItem) {
         guard let url = item.representedObject as? URL else { return }
-        browser?.visit(url)
+        guard let browser else { return }
+        Windows.acting(fallback: browser).visit(url)
     }
 
     /// SwiftUI's delegate, with the bookmarks put in after its update.
