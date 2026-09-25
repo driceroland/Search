@@ -81,6 +81,7 @@ enum SiteCardPanel {
         }
         let host = FirstClick(rootView: AnyView(card.fixedSize()))
         let size = host.fittingSize
+        host.lastFittingSize = size
         let glass = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
         glass.material = .menu
         glass.state = .active
@@ -139,13 +140,19 @@ enum SiteCardPanel {
     }
 
     /// Takes the first click even though its window never becomes key, and
-    /// says when what it shows changes size.
+    /// says when what it shows changes size. SwiftUI can lay out new content
+    /// without calling invalidateIntrinsicContentSize, so the fitting size is
+    /// checked after every layout pass instead, and the panel is resized
+    /// outside of it.
     private final class FirstClick: NSHostingView<AnyView> {
         var onResize: ((NSSize) -> Void)?
+        var lastFittingSize: NSSize?
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-        override func invalidateIntrinsicContentSize() {
-            super.invalidateIntrinsicContentSize()
+        override func layout() {
+            super.layout()
             let fitted = fittingSize
+            guard fitted != lastFittingSize else { return }
+            lastFittingSize = fitted
             DispatchQueue.main.async { [weak self] in self?.onResize?(fitted) }
         }
     }
