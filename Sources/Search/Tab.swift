@@ -1011,6 +1011,14 @@ final class Tab: ObservableObject, Identifiable {
         adoptIcon()
     }
 
+    /// A new tab again: where it was going turned out to be a file, not a
+    /// page, and an address kept for it downloads the file once more
+    /// whenever the tab is opened (see Browser.dropEmpty).
+    func forget() {
+        address = nil
+        icon = nil
+    }
+
     func touch() { touched = Date() }
 
     /// True when the web view holds nothing — never loaded, or emptied —
