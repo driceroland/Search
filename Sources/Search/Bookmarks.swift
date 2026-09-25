@@ -236,6 +236,7 @@ final class Bookmarks: ObservableObject {
 struct BookmarkOutline: View {
     @ObservedObject var bookmarks: Bookmarks
     let open: (URL) -> Void
+    let openInNewTab: (URL) -> Void
 
     @State private var expanded: Set<Bookmark.ID> = []
     @State private var dragging: Bookmark.ID?
@@ -264,6 +265,11 @@ struct BookmarkOutline: View {
                 moveTo: { bookmarks.move(node.id, into: $0) },
                 remove: { bookmarks.remove(node.id) }
             )
+            .overlay {
+                if let url = node.url.flatMap(URL.init(string:)) {
+                    MiddleClick { openInNewTab(url) }
+                }
+            }
             .onDrag {
                 dragging = node.id
                 return NSItemProvider(object: node.id.uuidString as NSString)
@@ -415,6 +421,8 @@ struct BookmarksDropdown: View {
                 ScrollView {
                     BookmarkOutline(bookmarks: bookmarks) { url in
                         browser.pickBookmark(url)
+                    } openInNewTab: { url in
+                        browser.pickBookmark(url, inNewTab: true)
                     }
                     .padding(6)
                 }
@@ -479,6 +487,8 @@ struct BookmarksPanel: View {
                     Card {
                         BookmarkOutline(bookmarks: bookmarks) { url in
                             browser.pickBookmark(url)
+                        } openInNewTab: { url in
+                            browser.pickBookmark(url, inNewTab: true)
                         }
                         .padding(.horizontal, 6)
                         .padding(.vertical, 6)
