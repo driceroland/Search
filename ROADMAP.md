@@ -126,7 +126,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 ## Asked to try again on the latest version
 
 - [ ] **Google asks for a reCAPTCHA** Google search asks for a reCAPTCHA. 1.0.2 no longer tells pages it is a separate app and says it is Safari. *([#26](https://github.com/driceroland/Search/issues/26))*
-- [ ] **NordPass doesn't work** *([#98](https://github.com/driceroland/Search/issues/98))*
 - [ ] **A tab loses track of its site** A tab's site switches, and the tab doesn't follow. Not reproduced. *([#28](https://github.com/driceroland/Search/issues/28))*
 - [ ] **Page shortcuts vs Search's** Keep a page's editing shortcuts while Search's own still work. 1.0.2 gives the page the first go at its shortcuts; asked whether it's enough. *([#147](https://github.com/driceroland/Search/issues/147))*
 
