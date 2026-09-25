@@ -342,7 +342,7 @@ struct SettingsPanel: View {
                 }
             }
             Card {
-                Line("Bring yours in", "From Dia, Chrome, Arc, Brave or Edge on this Mac — nothing leaves it") {
+                Line("Bring yours in", "From Dia, Chrome, Arc, Brave, Edge or Comet on this Mac — nothing leaves it") {
                     Pill("Import…") {
                         browser.tuning = false
                         browser.managing = true

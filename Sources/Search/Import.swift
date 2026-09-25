@@ -44,6 +44,7 @@ enum Chromium {
 
     static let known: [Source] = [
         Source(name: "Dia", folder: "Dia/User Data", service: "Dia Safe Storage", account: "Dia"),
+        Source(name: "Comet", folder: "Comet", service: "Comet Safe Storage", account: "Comet"),
         Source(name: "Chrome", folder: "Google/Chrome", service: "Chrome Safe Storage", account: "Chrome"),
         Source(name: "Arc", folder: "Arc/User Data", service: "Arc Safe Storage", account: "Arc"),
         Source(name: "Brave", folder: "BraveSoftware/Brave-Browser", service: "Brave Safe Storage", account: "Brave"),
