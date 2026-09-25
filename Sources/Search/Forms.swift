@@ -33,7 +33,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
             case "settled":
                 tab?.settleSignIn(navigated: false)
             case "focus":
-                tab?.typing = body["typing"] as? Bool ?? false
+                tab?.setTyping(body["typing"] as? Bool ?? false)
                 // Which sign-in box the caret is in, and where it sits on the
                 // page — so a list of accounts can hang from it.
                 if let rect = body["rect"] as? [String: Double],
@@ -294,9 +294,12 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       }
 
       // The box moves when the page scrolls or the window changes size, and
-      // whatever hangs from it has to move too. Once a frame at most.
+      // whatever hangs from it has to move too. Only while something is being
+      // typed into: with nothing focused there is nothing to follow, and `pair`
+      // searches the whole document for one.
       var moving = false;
       function moved() {
+        if (!editable(document.activeElement)) return;
         if (moving) return;
         moving = true;
         requestAnimationFrame(function () { moving = false; caret(); });

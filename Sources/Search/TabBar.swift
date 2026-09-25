@@ -541,10 +541,7 @@ private struct TabPill: View {
                 // says nothing about anything — it needs the width of a title
                 // to read as progress at all.
                 if !pinned && !compact && prefs.showsReading {
-                    Rectangle()
-                        .fill(Palette.ink.opacity(0.055))
-                        .frame(width: span * tab.reading)
-                        .animation(.easeOut(duration: 0.15), value: tab.reading)
+                    ReadingFill(reading: tab.reading, span: span)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
