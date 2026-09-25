@@ -68,7 +68,7 @@ struct PeekPanel: View {
         GeometryReader { geo in
             ZStack {
                 HStack(alignment: .top, spacing: 10) {
-                    Page(tab: tab)
+                    Page(tab: tab, browser: browser)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)

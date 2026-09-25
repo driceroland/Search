@@ -36,16 +36,16 @@ struct SearchApp: App {
             }
             CommandGroup(replacing: .printItem) {
                 Button("Share…") { browser.share() }
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(browser.active?.showsPage != true)
                 Button("Print…") { browser.printPage() }
                     .keyboardShortcut("p")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(browser.active?.showsPage != true)
             }
             CommandGroup(after: .pasteboard) {
                 Divider()
                 Button("Find on Page…") { browser.openFind() }
                     .keyboardShortcut("f")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(browser.active?.showsPage != true)
                 Button("Find Next") { browser.look(forward: true) }
                     .keyboardShortcut("g")
                     .disabled(!browser.finding)
@@ -102,6 +102,9 @@ struct SearchApp: App {
                     .keyboardShortcut("c", modifiers: [.command, .option])
             }
             CommandMenu("Tabs") {
+                if browser.prefs.usesDial {
+                    Button("Speed Dial") { browser.showDial() }
+                }
                 Button("Back") { browser.back() }
                     .keyboardShortcut("[")
                     .disabled(browser.active?.canGoBack != true)
@@ -119,7 +122,7 @@ struct SearchApp: App {
                 if let tab = browser.active {
                     if tab.pin == nil {
                         Button("Pin Tab") { browser.pin(tab) }
-                            .disabled(tab.isBlank)
+                            .disabled(!tab.showsPage)
                     } else {
                         Button("Change Letter") { browser.editLetter(tab) }
                         Button("Unpin Tab") { browser.unpin(tab) }
@@ -129,12 +132,12 @@ struct SearchApp: App {
                     .disabled(browser.active == nil)
                 Button("Duplicate Tab") { browser.duplicate() }
                     .keyboardShortcut("d")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(browser.active?.showsPage != true)
                 Button("Copy Address") { browser.copyAddress() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(browser.active?.showsPage != true)
                 Button("Copy as Markdown Link") { browser.copyMarkdownLink() }
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(browser.active?.showsPage != true)
                 Button("Paste and Go") { browser.pasteAndGo() }
                     .keyboardShortcut("v", modifiers: [.command, .shift])
                 Divider()
@@ -146,7 +149,11 @@ struct SearchApp: App {
             CommandMenu("Bookmarks") {
                 Button("Add This Page") { browser.bookmarkCurrent() }
                     .keyboardShortcut("b", modifiers: [.command, .shift])
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(browser.active?.showsPage != true)
+                if browser.prefs.usesDial {
+                    Button("Add This Page to Speed Dial") { browser.dialCurrent() }
+                        .disabled(browser.active.map { !SpeedDial.canCapture($0) } ?? true)
+                }
                 Button("Show Bookmarks…") { browser.bookmarking = true }
                 Toggle("Show Bookmarks Bar", isOn: Binding(
                     get: { browser.prefs.bookmarksBar },
@@ -322,7 +329,7 @@ struct ContentView: View {
     @ViewBuilder
     private var stage: some View {
         if let tab = browser.active {
-            Page(tab: tab)
+            Page(tab: tab, browser: browser)
                 .overlay {
                     if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
                 }
@@ -410,7 +417,7 @@ struct ContentView: View {
     /// own whenever a tab has nowhere to be yet.
     @ViewBuilder
     private var field: some View {
-        if browser.fieldShowing {
+        if browser.fieldShowing, browser.active?.onDial != true {
             Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
@@ -537,7 +544,7 @@ struct ContentView: View {
     private func handBack() {
         guard !browser.fieldShowing, browser.editingTab == nil else { return }
         DispatchQueue.main.async {
-            guard let web = browser.active?.web, let window = web.window else { return }
+            guard browser.active?.onDial != true, let web = browser.active?.built, let window = web.window else { return }
             window.makeFirstResponder(web)
         }
     }

@@ -1119,10 +1119,11 @@ struct ExtensionSlot: View {
     /// The side the list opens toward: down from the top row, out to the
     /// right from the sidebar.
     var edge: Edge = .bottom
+    var showMenu = true
 
     var body: some View {
         if #available(macOS 15.4, *) {
-            ExtensionButtons(extensions: .shared, edge: edge)
+            ExtensionButtons(extensions: .shared, edge: edge, showMenu: showMenu)
         }
     }
 }
@@ -1131,6 +1132,7 @@ struct ExtensionSlot: View {
 private struct ExtensionButtons: View {
     @ObservedObject var extensions: Extensions
     let edge: Edge
+    let showMenu: Bool
 
     var body: some View {
         if !extensions.installed.isEmpty {
@@ -1140,12 +1142,14 @@ private struct ExtensionButtons: View {
                         .background(Anchor(id: button.id))
                         .contextMenu { ExtensionActions(id: button.id, name: button.name, extensions: extensions) }
                 }
-                Door(icon: "puzzlepiece.extension", on: extensions.menuOpen, help: "Extensions") {
-                    extensions.menuOpen.toggle()
-                }
-                .background(Anchor(id: Extensions.menuAnchor))
-                .popover(isPresented: $extensions.menuOpen, arrowEdge: edge) {
-                    ExtensionMenu(extensions: extensions)
+                if showMenu {
+                    Door(icon: "puzzlepiece.extension", on: extensions.menuOpen, help: "Extensions") {
+                        extensions.menuOpen.toggle()
+                    }
+                    .background(Anchor(id: Extensions.menuAnchor))
+                    .popover(isPresented: $extensions.menuOpen, arrowEdge: edge) {
+                        ExtensionMenu(extensions: extensions)
+                    }
                 }
             }
         }
