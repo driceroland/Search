@@ -130,6 +130,8 @@ struct SearchApp: App {
                 Button("Duplicate Tab") { browser.duplicate() }
                     .keyboardShortcut("d")
                     .disabled(browser.active?.isBlank ?? true)
+                Button("Add to Dock…") { browser.addSiteApp() }
+                    .disabled(!browser.canAddSiteApp)
                 Button("Copy Address") { browser.copyAddress() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
                     .disabled(browser.active?.isBlank ?? true)
