@@ -310,7 +310,9 @@ struct Helm: View {
         @ObservedObject var tab: Tab
 
         var body: some View {
-            let back = !tab.isBlank && tab.canGoBack
+            // Back from a tab a page sent you to closes it, even from its
+            // first page (see Tab.returnTo).
+            let back = !tab.isBlank && tab.canGoBackOrReturn
             let forward = !tab.isBlank && tab.canGoForward
             HStack(spacing: 4) {
                 Door(icon: "chevron.left", help: "Back   ⌘[") { browser.back() }

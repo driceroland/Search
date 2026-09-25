@@ -212,6 +212,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.peeksLinks)
             }
             Rule()
+            Line("Back from a link's tab returns to its page", "A link opened in a new tab closes when you go back from its first page, and you are where you clicked it") {
+                Switch(on: $prefs.returnsFromLinks)
+            }
+            Rule()
             Line("Open links from other apps in a small window", "To read and close, or keep with Open in Search (⌘O)") {
                 Switch(on: $prefs.littleLinks)
             }
