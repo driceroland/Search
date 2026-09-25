@@ -277,6 +277,16 @@ struct ContentView: View {
             // that survives the transition is not a white band across the top.
             (browser.active?.immersed == true ? Color.black : Palette.ground)
 
+            // On the right, the lights' own band is otherwise nothing to
+            // grab: no column there to carry the window's drag, as the left
+            // one does, and no strip either.
+            if sidebar, browser.prefs.sideOnRight, browser.active?.immersed != true {
+                DragStrip()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: band)
+                    .padding(.trailing, chrome.width)
+            }
+
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
             // is a browser showing off, and it costs a compositing pass.
@@ -286,17 +296,18 @@ struct ContentView: View {
             // again thirty times a second, the page juddered along its right
             // edge and overshot the window with the spring (see `room`).
             stage
-                .padding(.leading, roomed.width)
+                .padding(sideEdge, roomed.width)
                 .padding(.top, roomed.height)
-                .offset(x: chrome.width - roomed.width, y: chrome.height - roomed.height)
+                .offset(x: sideSign * (chrome.width - roomed.width), y: chrome.height - roomed.height)
 
-            // The column of tabs, in the way that has one. It takes the full
-            // height, so the traffic lights sit in its own corner rather than
-            // over the page.
+            // The column of tabs, in the way that has one. On the left it
+            // takes the full height, so the traffic lights sit in its own
+            // corner rather than over the page; on the right the lights stay
+            // with the page, and the column is a plain column beside it.
             if sidebar {
                 SideBar(browser: browser, prefs: browser.prefs)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .transition(.move(edge: .leading))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: browser.prefs.sideOnRight ? .topTrailing : .topLeading)
+                    .transition(.move(edge: browser.prefs.sideOnRight ? .trailing : .leading))
             }
 
             if !browser.prefs.sidebar, !browser.folded, browser.active?.immersed != true {
@@ -307,13 +318,14 @@ struct ContentView: View {
             // The bookmarks bar, under the strip or beside the column's top.
             if barShown {
                 BookmarksBar(browser: browser, bookmarks: browser.bookmarks)
-                    .padding(.leading, chrome.width)
+                    .padding(sideEdge, chrome.width)
                     .padding(.top, band)
                     .transition(.opacity)
             }
         }
         .ignoresSafeArea()
         .animation(Motion.glide, value: browser.prefs.sidebar)
+        .animation(Motion.glide, value: browser.prefs.sideOnRight)
         .animation(.easeOut(duration: 0.12), value: browser.active?.immersed)
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
@@ -349,6 +361,12 @@ struct ContentView: View {
     private var chrome: CGSize {
         CGSize(width: sidebar ? browser.prefs.sideWidth : 0, height: band + (barShown ? BookmarksBar.height : 0))
     }
+
+    /// Which edge the column takes its room from.
+    private var sideEdge: Edge.Set { browser.prefs.sideOnRight ? .trailing : .leading }
+    /// The page's offset runs the other way when the room it gives up is on
+    /// its right rather than its left.
+    private var sideSign: CGFloat { browser.prefs.sideOnRight ? -1 : 1 }
 
     /// The bookmarks bar is up: asked for, there are bookmarks, and the tabs
     /// aren't folded away or under a video filling the screen.
@@ -415,7 +433,7 @@ struct ContentView: View {
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
                 // with the page says otherwise.
-                .padding(.leading, sidebar ? browser.prefs.sideWidth : 0)
+                .padding(sideEdge, sidebar ? browser.prefs.sideWidth : 0)
                 .transition(.scale(scale: 0.97).combined(with: .opacity))
         }
     }
@@ -465,13 +483,15 @@ struct ContentView: View {
     var body: some View {
         window_
             // The column folded away, and out again at the edge (see Fold.swift).
-            .overlay(alignment: .leading) { Fold(browser: browser, prefs: browser.prefs) }
+            .overlay(alignment: browser.prefs.sideOnRight ? .trailing : .leading) {
+                Fold(browser: browser, prefs: browser.prefs)
+            }
             .overlay(alignment: .bottom) { bars }
             .overlay {
                 // Over the page only: the column, the strip and the bookmarks
                 // bar stay as they are, uncovered and in reach.
                 PeekLayer(browser: browser)
-                    .padding(.leading, chrome.width)
+                    .padding(sideEdge, chrome.width)
                     .padding(.top, chrome.height)
                     // From the window's own top edge, as the page is:
                     // the title bar's band is page too.
@@ -673,12 +693,19 @@ struct ContentView: View {
         browser.prefs.sidebar && !browser.folded && browser.active?.immersed != true
     }
 
-    /// The column has its own corner for the lights, so the page beside it
-    /// starts at the very top; the strip needs a band.
+    /// The column has its own corner for the lights only on the left, so the
+    /// page beside it starts at the very top there; on the right the lights
+    /// are over the page instead, which needs the strip's own height to keep
+    /// them centred in it, exactly as it does with the strip across the top.
+    /// A shorter band would still clear them, but off centre: they sit at a
+    /// fixed height from the top regardless of the band's own height. Folded,
+    /// the lights go with the column (see Fold.swift) and the page has the
+    /// whole height regardless of side.
     private var band: CGFloat {
         guard browser.active?.immersed != true else { return 0 }
-        // Folded, the strip is out of the window and the page has its height.
-        return browser.prefs.sidebar || browser.folded ? 0 : Metrics.strip
+        if browser.folded { return 0 }
+        if browser.prefs.sidebar { return browser.prefs.sideOnRight ? Metrics.strip : 0 }
+        return Metrics.strip
     }
 
     /// Put the resting circles in the title bar, exactly over the buttons.
