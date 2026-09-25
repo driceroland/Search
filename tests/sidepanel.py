@@ -190,15 +190,17 @@ def main(argv):
         # Task 3: a narrow window clamps the panel so the page keeps 320 —
         # and with the column of tabs taking its share too, the panel stops
         # at its own minimum rather than squeezing the page further.
+        # The window is taken there in steps, like a drag, so the width is
+        # waited for rather than read after a fixed pause.
         ask({"do": "resize", "width": 640, "height": 500})
-        time.sleep(0.6)
+        until("the window at 640", lambda: (panel() or {}).get("width") == 320, seconds=8)
         expect("a narrow window leaves the page 320 beside the panel", (panel() or {}).get("width") == 320)
         ask({"do": "ui", "sidebar": True})
-        time.sleep(0.6)
+        until("the column out", lambda: (panel() or {}).get("width") == 280, seconds=8)
         expect("with the column too, the panel stops at its minimum", (panel() or {}).get("width") == 280)
         ask({"do": "ui", "sidebar": False})
         ask({"do": "resize", "width": 1180, "height": 780})
-        time.sleep(0.6)
+        until("the window back at 1180", lambda: (panel() or {}).get("width") == 360, seconds=8)
 
         # Task 4: closing from the page, links out, self-navigation, no path, reload.
         fire(fixture, "window.close()")

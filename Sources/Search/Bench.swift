@@ -483,7 +483,9 @@ final class Bench {
             }
             // An extension's side panel, docked on the right (see ExtensionPanel.swift).
             if let panel = browser.panel {
-                out["panel"] = ["id": panel.id, "name": panel.name, "width": Int(panel.view.bounds.width)]
+                let web = panel.view as? WKWebView
+                out["panel"] = ["id": panel.id, "name": panel.name, "width": Int(panel.view.bounds.width),
+                                "url": web?.url?.absoluteString ?? "", "title": web?.title ?? "", "loading": web?.isLoading ?? false]
             } else {
                 out["panel"] = ""
             }
