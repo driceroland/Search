@@ -146,12 +146,21 @@ final class StageView: NSView {
     /// every layout. Nothing to fall out of step with.
     private weak var wanted: NSView?
 
+    /// The Web Inspector each page off show had docked beside it. WebKit
+    /// docks it once, on show; a page coming back without it was laid out
+    /// short, beside an empty space.
+    private static let docks = NSMapTable<NSView, NSView>.weakToStrongObjects()
+
     override func layout() {
         super.layout()
         settle()
     }
 
     func show(_ page: NSView?) {
+        if let leaving = wanted, leaving !== page, let dock = subviews.first(where: Self.isInspector) {
+            Self.docks.setObject(dock, forKey: leaving)
+            dock.removeFromSuperview()
+        }
         wanted = page
         settle()
     }
@@ -182,6 +191,13 @@ final class StageView: NSView {
             // Seen — unless it has yet to draw, and would be seen white.
             wanted.alphaValue = (wanted as? PageView)?.unpainted == true ? 0 : 1
             addSubview(wanted)
+            if docked, let dock = Self.docks.object(forKey: wanted) {
+                addSubview(dock, positioned: .below, relativeTo: wanted)
+            }
+            Self.docks.removeObject(forKey: wanted)
+            // Full size, which WebKit, with its inspector back, cuts down to
+            // make room for it again at the stage's size now.
+            wanted.frame = bounds
             // A web view coming back into a window sometimes keeps the last
             // picture it had — which, after a while out of one, is nothing.
             // Asking it to draw again is cheap and is what brings it back.
