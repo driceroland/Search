@@ -2643,9 +2643,11 @@ enum ExtensionShims {
         case "downloads.pause", "downloads.resume", "downloads.cancel", "downloads.removeFile", "downloads.getFileIcon":
             throw Unsupported(what: "\(api) isn't available in Search yet")
 
-        // MARK: side panel — a tab of its own, since this window has one column
+        // MARK: side panel — docked beside the page (see ExtensionPanel.swift)
         case "sidePanel.setOptions":
             if let path = (first as? [String: Any])?["path"] as? String { panelPath[id] = path }
+            // Chrome takes enabled: false as "put it away" for a panel that is up.
+            if (first as? [String: Any])?["enabled"] as? Bool == false, owner.browser?.panel?.id == id { owner.browser?.closePanel() }
             return nil
         case "sidePanel.getOptions":
             return ["enabled": true, "path": panelPath[id] ?? defaultPanel(context) ?? ""]
@@ -2657,7 +2659,7 @@ enum ExtensionShims {
         case "sidePanel.getPanelBehavior":
             return ["openPanelOnActionClick": panelOnClick.contains(id)]
         case "sidePanel.open":
-            openPanel(context, owner: owner)
+            try owner.browser?.showPanel(for: context)
             return nil
 
         // MARK: offscreen — a page with a DOM for a worker that has none
@@ -3188,12 +3190,6 @@ enum ExtensionShims {
 
     static func defaultPanel(_ context: WKWebExtensionContext) -> String? {
         (context.webExtension.manifest["side_panel"] as? [String: Any])?["default_path"] as? String
-    }
-
-    static func openPanel(_ context: WKWebExtensionContext, owner: Extensions) {
-        guard let path = panelPath[context.uniqueIdentifier] ?? defaultPanel(context) else { return }
-        let url = context.baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
-        owner.browser?.open(url, foreground: true)
     }
 
     // MARK: - bookmarks, as Chrome shapes them

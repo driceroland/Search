@@ -266,6 +266,9 @@ final class Extensions: NSObject, ObservableObject {
 
     private func unload(_ id: String) {
         guard let context = contexts[id] else { return }
+        // Its panel first: a view built from a context that is gone is a
+        // page whose worker will never answer.
+        if browser?.panel?.id == id { browser?.closePanel() }
         try? controller.unload(context)
         // Its ports read as gone only once WebKit has had a turn.
         DispatchQueue.main.async { ExtensionNative.stopOrphans() }
@@ -844,9 +847,10 @@ final class Extensions: NSObject, ObservableObject {
     func press(_ id: String) {
         guard let context = contexts[id], !ExtensionPopup.shared.closes(id) else { return }
         if let tab = activeAdapter { context.userGesturePerformed(in: tab) }
-        // An extension that asked for its button to open its side panel.
+        // An extension that asked for its button to open its side panel:
+        // up if it isn't, away if it is, as Chrome's.
         if ExtensionShims.panelOnClick.contains(id), context.action(for: activeAdapter)?.presentsPopup != true {
-            ExtensionShims.openPanel(context, owner: self)
+            _ = try? browser?.togglePanel(for: context)
             return
         }
         // A popup is opened here, straight away. Left to WebKit, it builds

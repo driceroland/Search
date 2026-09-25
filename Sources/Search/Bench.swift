@@ -481,6 +481,17 @@ final class Bench {
                 let r = web.convert(web.bounds, to: nil)
                 out["peekFrame"] = [Int(r.minX), Int(window.frame.height - r.maxY), Int(r.width), Int(r.height)]
             }
+            // An extension's side panel, docked on the right (see ExtensionPanel.swift).
+            if let panel = browser.panel {
+                out["panel"] = ["id": panel.id, "name": panel.name, "width": Int(panel.view.bounds.width)]
+            } else {
+                out["panel"] = ""
+            }
+            // Where it sits in the window, from the top-left corner, in points.
+            if let view = browser.panel?.view, let window = view.window {
+                let r = view.convert(view.bounds, to: nil)
+                out["panelFrame"] = [Int(r.minX), Int(window.frame.height - r.maxY), Int(r.width), Int(r.height)]
+            }
             out["folded"] = browser.folded
             out["peeking"] = browser.peeking
             out["sideHides"] = browser.prefs.sideHides
@@ -1293,7 +1304,7 @@ final class Bench {
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }
             answer(["ok": true])
 
-        case "extensions", "ext-add", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable":
+        case "extensions", "ext-add", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-panel", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable":
             guard #available(macOS 15.4, *) else {
                 answer(["error": "extensions need macOS 15.4"])
                 return
@@ -1385,6 +1396,17 @@ final class Bench {
             guard let id = request["id"] as? String else { answer(["error": "ext-remove needs an id"]); return }
             extensions.remove(id)
             answer(["removed": true])
+        case "ext-panel":
+            // JavaScript in the extension's side panel, while it is up.
+            guard let id = request["id"] as? String, let panel = browser.panel, panel.id == id,
+                  let web = panel.view as? WKWebView
+            else { answer(["error": "no side panel up for that extension"]); return }
+            web.evaluateJavaScript(request["js"] as? String ?? "document.title") { value, error in
+                MainActor.assumeIsolated {
+                    if let error { answer(["error": error.localizedDescription]); return }
+                    answer(["value": Bench.plain(value)])
+                }
+            }
         case "ext-popup":
             // JavaScript in the extension's popup, while it is open.
             guard let id = request["id"] as? String, ExtensionPopup.shared.extensionID == id,

@@ -731,6 +731,8 @@ final class Browser: NSObject, ObservableObject {
     @Published var makingSpace = false
     /// A link's page, peeked at over this one (see Peek.swift).
     @Published var peekTab: Tab?
+    /// An extension's side panel, docked beside the page (see ExtensionPanel.swift).
+    @Published var panel: DockedPage?
     /// Which way the last change of space went: 1 to the next, -1 back.
     @Published var spaceStep = 1
 
