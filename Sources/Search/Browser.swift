@@ -1804,6 +1804,15 @@ final class Browser: NSObject, ObservableObject {
         focusRequest += 1
     }
 
+    /// ⌘L then ⌘Return: the tab as it was, beside itself, rather than what
+    /// you were about to type over its address.
+    func duplicateFromField() {
+        summoning = false
+        duplicate()
+        editing = false
+        typed = ""
+    }
+
     func dismiss() {
         summoning = false
         cycling = false
