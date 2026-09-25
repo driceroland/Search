@@ -354,6 +354,29 @@ final class Tab: ObservableObject, Identifiable {
     /// hand you back to it when they are done.
     var opener: Tab.ID?
 
+    /// The tab whose page sent you here — a link opened into a tab of its
+    /// own, by the page or by ⌘ or the middle button — while it is still
+    /// open. Back from this tab's first page closes it and returns there,
+    /// the way a link opened on a phone does.
+    @Published var returnTo: Tab.ID? {
+        didSet { built?.leave = leave }
+    }
+    /// Asked to close this tab for the one it returns to.
+    var onReturn: ((Tab) -> Void)?
+
+    /// Whether back does anything: a page to go back to, or a tab to return to.
+    var canGoBackOrReturn: Bool { canGoBack || returnTo != nil }
+
+    /// Back past the first page, for the page's view: nil when there is
+    /// nowhere to return to.
+    private var leave: (() -> Void)? {
+        guard returnTo != nil else { return nil }
+        return { [weak self] in
+            guard let self else { return }
+            onReturn?(self)
+        }
+    }
+
     /// A window a page opened at a size of its own, or without a toolbar:
     /// a pop-up, not a link. It is named by its site, never by its title — a
     /// page that opens one can call it anything, "Sign in with Google" over
@@ -432,6 +455,7 @@ final class Tab: ObservableObject, Identifiable {
         web.allowsBackForwardNavigationGestures = false
         Swipe.calm(web)
         web.onPull = { [weak self] pull in self?.pull = pull }
+        web.leave = leave
         web.onTouch = { [weak self] in self?.uncover() }
         web.searchName = { [weak self] in self?.searchName?() }
         web.onSearch = { [weak self] text in
@@ -1036,7 +1060,7 @@ final class Tab: ObservableObject, Identifiable {
     func stop() { web.stopLoading() }
     /// Straight through, every time. A page that has to be fetched again is
     /// fetched again — nothing is kept behind to make that look otherwise.
-    func back() { web.goBack() }
+    func back() { web.goBackOrLeave() }
     func forward() { web.goForward() }
 
     /// Called when the tab is thrown away. Without it the view keeps running
@@ -1252,6 +1276,15 @@ final class PageView: WKWebView {
 
     /// Told where a sideways swipe has got to, and nil when there is none.
     var onPull: ((Pull?) -> Void)?
+    /// Back from the first page, when the tab was opened from another to
+    /// return to (see Tab.returnTo). Every way back goes through here.
+    var leave: (() -> Void)?
+
+    var canGoBackOrLeave: Bool { canGoBack || leave != nil }
+
+    func goBackOrLeave() {
+        if canGoBack { goBack() } else { leave?() }
+    }
     /// Told the moment the page is reached for — a click, a scroll — so the
     /// picture of a tab waking up never stands between you and the page.
     var onTouch: (() -> Void)?
@@ -1268,7 +1301,7 @@ final class PageView: WKWebView {
     /// is tuned to send.
     override func otherMouseDown(with event: NSEvent) {
         switch event.buttonNumber {
-        case 3 where canGoBack: goBack()
+        case 3 where canGoBackOrLeave: goBackOrLeave()
         case 4 where canGoForward: goForward()
         default: super.otherMouseDown(with: event)
         }
@@ -1277,7 +1310,7 @@ final class PageView: WKWebView {
     /// Logi Options+ sends its Back/Forward buttons as a swipe, not buttons
     /// 3 and 4 — deltaX 1 for back, -1 for forward, as Safari reads it.
     override func swipe(with event: NSEvent) {
-        if event.deltaX > 0, canGoBack { goBack() }
+        if event.deltaX > 0, canGoBackOrLeave { goBackOrLeave() }
         else if event.deltaX < 0, canGoForward { goForward() }
         else { super.swipe(with: event) }
     }
@@ -1504,7 +1537,7 @@ final class PageView: WKWebView {
                 back = sideways > 0
                 // Nowhere to go that way: nothing to show, and nothing more
                 // to read from this gesture.
-                if back ? !canGoBack : !canGoForward {
+                if back ? !canGoBackOrLeave : !canGoForward {
                     spent = true
                     return
                 }
@@ -1581,7 +1614,7 @@ final class PageView: WKWebView {
         }
         going = true
         settle(Pull(back: back, travel: travel, armed: true, going: true))
-        if back { goBack() } else { goForward() }
+        if back { goBackOrLeave() } else { goForward() }
         pulls += 1
         let mine = pulls
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { [weak self] in

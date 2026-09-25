@@ -881,6 +881,15 @@ final class Browser: NSObject, ObservableObject {
             .dropFirst()
             .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
             .store(in: &bag)
+        // Turned off, no tab a link opened goes back to its page any more,
+        // however long it has been open.
+        prefs.$returnsFromLinks
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self, !on else { return }
+                for tab in tabs + parkedTabs { tab.returnTo = nil }
+            }
+            .store(in: &bag)
         prefs.$shielded
             .dropFirst()
             .sink { [weak self] on in
@@ -1155,6 +1164,7 @@ final class Browser: NSObject, ObservableObject {
         remember(tab, at: index)
         tab.close()
         tabs.remove(at: index)
+        for other in tabs where other.returnTo == tab.id { other.returnTo = nil }
         if activeID == tab.id {
             // The neighbour on the right, or the last one if there is no
             // right — through select(), same as everywhere else you land on
@@ -1274,6 +1284,25 @@ final class Browser: NSObject, ObservableObject {
             typed = ""
         }
         return tab
+    }
+
+    /// A link a page sent to a tab of its own. Back from that tab's first
+    /// page closes it and returns to the page (see Tab.returnTo) — unlike a
+    /// tab you opened yourself, from a bookmark or with ⌘D — when Settings
+    /// says so.
+    @discardableResult
+    func openFromPage(_ url: URL, foreground: Bool, from page: Tab) -> Tab {
+        let tab = open(url, foreground: foreground, from: page)
+        if prefs.returnsFromLinks { tab.returnTo = page.id }
+        return tab
+    }
+
+    /// Back from the first page of a tab a page sent you to: the page it
+    /// came from, and this one closed. Put back with ⇧⌘T, like any other.
+    private func returnFrom(_ tab: Tab) {
+        guard let home = tabs.first(where: { $0.id == tab.returnTo }) else { return }
+        select(home)
+        close(tab)
     }
 
     /// An extension's page sending its own tab to a website — 1Password's
@@ -1571,13 +1600,14 @@ final class Browser: NSObject, ObservableObject {
         tab.onSearch = { [weak self] tab, text in
             guard let self, let url = self.searchURL(for: text) else { return }
             // From a private tab, the search is private too (see open(_:foreground:atEnd:from:)).
-            self.open(url, foreground: true, from: tab)
+            self.openFromPage(url, foreground: true, from: tab)
         }
         tab.onStoreAdd = { [weak self] tab in self?.addFromStore(tab) }
         // The middle button on a link opens it beside the tab you are on, as
         // it does in every other browser (see MiddleRelay).
         // From a private tab, the new one is private too, as for ⌘-click.
-        tab.onMiddleClick = { [weak self] tab, url in self?.open(url, foreground: false, from: tab) }
+        tab.onMiddleClick = { [weak self] tab, url in self?.openFromPage(url, foreground: false, from: tab) }
+        tab.onReturn = { [weak self] tab in self?.returnFrom(tab) }
         tab.onCross = { [weak self] tab, url in self?.replace(tab, going: url) }
 
         // The caret in a sign-in box: the accounts kept for this site hang
@@ -1952,8 +1982,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         }
         if action.navigationType == .linkActivated,
            ["http", "https"].contains(scheme),
-           action.modifierFlags.contains(.command) {
-            open(url, foreground: action.modifierFlags.contains(.shift), from: tab(for: webView))
+           action.modifierFlags.contains(.command), let from = tab(for: webView) {
+            openFromPage(url, foreground: action.modifierFlags.contains(.shift), from: from)
             decisionHandler(.cancel)
             return
         }
@@ -2024,6 +2054,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             || windowFeatures.toolbarsVisibility?.boolValue == false
         adopt(tab)
         tab.opener = from
+        if prefs.returnsFromLinks { tab.returnTo = from }
         activeID = tab.id
         editing = false
         // Returning the view is what makes it the target. WebKit loads the

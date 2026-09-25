@@ -157,6 +157,11 @@ final class Preferences: ObservableObject {
     @Published var peeksLinks: Bool {
         didSet { store.set(peeksLinks, forKey: "links.peek") }
     }
+    /// Back from the first page of a tab a link opened closes it and
+    /// returns to the page (see Tab.returnTo). On unless turned off.
+    @Published var returnsFromLinks: Bool {
+        didSet { store.set(returnsFromLinks, forKey: "links.return") }
+    }
     /// A link from another app opens in a small window of its own (see
     /// Little.swift). Off unless asked for.
     @Published var littleLinks: Bool {
@@ -277,6 +282,7 @@ final class Preferences: ObservableObject {
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.bool(forKey: "links.peek")
         littleLinks = store.bool(forKey: "links.little")
+        returnsFromLinks = store.object(forKey: "links.return") as? Bool ?? true
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         let links = store.bool(forKey: "links.show")
         showsLinks = links

@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Going back from the first page of a tab a link opened closes it and takes you back to the page you clicked the link on, the way a link opened on a phone does: a link that opens a new tab, ⌘-click, the middle button, Open Image in New Tab, a search for what is selected. Every way back does it: the swipe, ⌘[, the toolbar and a mouse's back button. A tab you opened yourself, from a bookmark or with ⌘D, goes back as it always did. On unless you turn it off in Settings › General › Back from a link's tab returns to its page.
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed

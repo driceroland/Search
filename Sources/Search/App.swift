@@ -104,7 +104,7 @@ struct SearchApp: App {
             CommandMenu("Tabs") {
                 Button("Back") { browser.back() }
                     .keyboardShortcut("[")
-                    .disabled(browser.active?.canGoBack != true)
+                    .disabled(browser.active?.canGoBackOrReturn != true)
                 Button("Forward") { browser.forward() }
                     .keyboardShortcut("]")
                     .disabled(browser.active?.canGoForward != true)
