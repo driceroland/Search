@@ -76,6 +76,8 @@ struct SearchApp: App {
                 Divider()
                 Button("Reload Page") { browser.reload() }
                     .keyboardShortcut("r")
+                Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
+                    .keyboardShortcut("r", modifiers: [.command, .option])
                 Button("Reading Mode") { browser.toggleReader() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button("Float Video") { browser.toggleFloat() }
@@ -904,7 +906,14 @@ struct ContentView: View {
         guard flags.contains(.command) else { return false }
         let shifted = flags.contains(.shift)
 
-        // Anything with ⌥ or ⌃ on top is somebody else's.
+        if flags.contains(.option), !shifted, !flags.contains(.control),
+           event.characters(byApplyingModifiers: [])?.lowercased() == "r" {
+            if pageFirst(event, key: "r", shifted: false) { return false }
+            browser.reload(fromOrigin: true)
+            return true
+        }
+
+        // Other shortcuts with ⌥ or ⌃ on top are somebody else's.
         guard !flags.contains(.option), !flags.contains(.control) else { return false }
 
         // ⌘1 through ⌘9, and ⌘0, by the key rather than the character it

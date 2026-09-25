@@ -1872,7 +1872,7 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
-    func reload() { active?.reload() }
+    func reload(fromOrigin: Bool = false) { active?.reload(fromOrigin: fromOrigin) }
     func back() { active?.back() }
     func forward() { active?.forward() }
 }

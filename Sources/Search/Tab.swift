@@ -1021,16 +1021,19 @@ final class Tab: ObservableObject, Identifiable {
         return there.absoluteString == "about:blank" && pending == nil && address != nil
     }
 
-    /// Again from the network. A view that has lost its document is given
-    /// the address back instead: there is nothing else for it to reload.
-    func reload() {
+    /// A view that has lost its document is given the address back instead:
+    /// there is nothing else for it to reload.
+    func reload(fromOrigin: Bool = false) {
         // A pin put down with ⌘W has no view left to reload; waking it is
         // the reload.
         guard !wake() else { return }
+        reader = false
         if hollow, let address {
             web.open(address)
-        } else {
+        } else if fromOrigin {
             web.reloadFromOrigin()
+        } else {
+            web.reload()
         }
     }
     func stop() { web.stopLoading() }
