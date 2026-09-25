@@ -35,6 +35,12 @@ extension WindowModel {
         }
         model.insert(freed, at: 0)
         model.select(freed)
+        // A row left with nothing is a window with nothing to show. Close it
+        // once the new one is up, so tearing off the only tab replaces the
+        // window rather than leaving an empty one behind.
+        if tabs.isEmpty {
+            profile.close(self)
+        }
         return model
     }
 
