@@ -95,7 +95,7 @@ struct SettingsPanel: View {
                     Image(systemName: page.icon)
                         .font(.system(size: 12, weight: .medium))
                         .frame(width: 16)
-                    Text(page.title)
+                    Text(page.title.said)
                         .font(.system(size: 13, weight: on ? .medium : .regular))
                     Spacer(minLength: 0)
                 }
@@ -120,7 +120,7 @@ struct SettingsPanel: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(page.title)
+                Text(page.title.said)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Palette.ink)
                 Spacer()
@@ -153,6 +153,22 @@ struct SettingsPanel: View {
 
     private var general: some View {
         Card {
+            Line("Language", "The words of this app. Search restarts to put new ones in place.") {
+                HStack(spacing: 8) {
+                    if prefs.tongue.pending {
+                        Pill("Relaunch now", filled: true) { Updater.shared.relaunch() }
+                    }
+                    Picker("", selection: $prefs.tongue) {
+                        ForEach(Tongue.allCases) { tongue in
+                            Text(tongue.title.said).tag(tongue)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                }
+            }
+            Rule()
             Line(
                 "Open links from other apps",
                 isDefault ? "Search is the default browser on this Mac" : "Mail, Slack and the rest still send links elsewhere"
@@ -545,7 +561,7 @@ struct SettingsPanel: View {
 
         var body: some View {
             HStack {
-                Text(does)
+                Text(does.said)
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.ink)
                 Spacer()
@@ -573,7 +589,7 @@ struct Segmented<Option: Hashable>: View {
     var body: some View {
         HStack(spacing: 2) {
             ForEach(options, id: \.0) { option, title in
-                Text(title)
+                Text(title.said)
                     .font(.system(size: 11.5, weight: option == selection ? .medium : .regular))
                     .foregroundStyle(option == selection ? Palette.ink : Palette.muted)
                     .lineLimit(1)
@@ -640,7 +656,7 @@ struct Pill: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            Text(title.said)
                 .font(.system(size: 11.5))
                 .foregroundStyle(filled ? Palette.ground : tint)
                 .padding(.horizontal, 10)

@@ -548,7 +548,7 @@ struct ContentView: View {
     @ViewBuilder
     private var announcement: some View {
         if let text = browser.announcement {
-            Text(text)
+            Text(text.said)
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.ink)
                 .padding(.horizontal, 15)
