@@ -1,4 +1,5 @@
 import AuthenticationServices
+import CryptoKit
 import OSLog
 import WebKit
 
@@ -197,6 +198,7 @@ final class Passkeys: NSObject {
             .createCredentialAssertionRequest(clientData: clientData)
         platform.allowedCredentials = allowed.map { ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: $0.id) }
         platform.userVerificationPreference = verification
+        if #available(macOS 15.0, *) { platform.prf = Passkeys.prfAssertion(body["prf"]) }
         var requests: [ASAuthorizationRequest] = [platform]
         if #available(macOS 14.4, *) {
             let key = ASAuthorizationSecurityKeyPublicKeyCredentialProvider(relyingPartyIdentifier: rp)
@@ -234,6 +236,9 @@ final class Passkeys: NSObject {
             if #available(macOS 14.4, *) {
                 platform.excludedCredentials = excluded.map { ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: $0.id) }
             }
+            if #available(macOS 15.0, *), let prf = body["prf"] as? [String: Any] {
+                platform.prf = Passkeys.prfValues(prf["eval"]).map { .inputValues($0) } ?? .checkForSupport
+            }
             requests.append(platform)
         }
         if attachment != "platform", #available(macOS 14.4, *) {
@@ -255,6 +260,46 @@ final class Passkeys: NSObject {
             requests.append(key)
         }
         return requests
+    }
+
+    // MARK: - keys derived from a passkey
+
+    /// Whether this Mac can derive keys from a passkey at all: the PRF
+    /// extension, which sites use to encrypt data only your passkey opens.
+    static var prfAvailable: Bool {
+        if #available(macOS 15.0, *) { return true }
+        return false
+    }
+
+    /// The page's `prf.eval` and `prf.evalByCredential`, as AuthenticationServices
+    /// takes them. The salts go through untouched: macOS hashes them as the
+    /// standard says, the way it does for Safari.
+    @available(macOS 15.0, *)
+    private static func prfAssertion(_ value: Any?) -> ASAuthorizationPublicKeyCredentialPRFAssertionInput? {
+        guard let prf = value as? [String: Any] else { return nil }
+        var byCredential: [Data: ASAuthorizationPublicKeyCredentialPRFAssertionInput.InputValues] = [:]
+        for (id, values) in prf["byCredential"] as? [String: Any] ?? [:] {
+            if let id = data(id), let values = prfValues(values) { byCredential[id] = values }
+        }
+        if let values = prfValues(prf["eval"]) {
+            return .inputValues(values, perCredentialInputValues: byCredential.isEmpty ? nil : byCredential)
+        }
+        return byCredential.isEmpty ? nil : .perCredentialInputValues(byCredential)
+    }
+
+    @available(macOS 15.0, *)
+    private static func prfValues(_ value: Any?) -> ASAuthorizationPublicKeyCredentialPRFAssertionInput.InputValues? {
+        guard let values = value as? [String: Any], let first = data(values["first"]) else { return nil }
+        return .saltInput1(first, saltInput2: data(values["second"]))
+    }
+
+    /// What the passkey derived, for the page: `enabled` only answers a registration.
+    static func prfReply(enabled: Bool?, first: SymmetricKey?, second: SymmetricKey?) -> [String: Any] {
+        var reply: [String: Any] = [:]
+        if let enabled { reply["enabled"] = enabled }
+        if let first { reply["first"] = text(first.withUnsafeBytes { Data($0) }) }
+        if let second { reply["second"] = text(second.withUnsafeBytes { Data($0) }) }
+        return reply
     }
 
     // MARK: - answers
@@ -456,19 +501,27 @@ extension Passkeys: ASAuthorizationControllerDelegate, ASAuthorizationController
         if let got = credential as? ASAuthorizationPublicKeyCredentialAssertion {
             let attachment = (credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion)?.attachment
             Passkeys.log.notice("signed in")
-            finish(Passkeys.assertionReply(
+            var reply = Passkeys.assertionReply(
                 id: got.credentialID, clientData: got.rawClientDataJSON, authenticatorData: got.rawAuthenticatorData,
                 signature: got.signature, user: got.userID,
                 attachment: attachment == .platform ? "platform" : "cross-platform"
-            ))
+            )
+            if #available(macOS 15.0, *), let prf = (credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion)?.prf {
+                reply["prf"] = Passkeys.prfReply(enabled: nil, first: prf.first, second: prf.second)
+            }
+            finish(reply)
         } else if let made = credential as? ASAuthorizationPublicKeyCredentialRegistration {
             let platform = credential as? ASAuthorizationPlatformPublicKeyCredentialRegistration
             Passkeys.log.notice("made one")
-            finish(Passkeys.registrationReply(
+            var reply = Passkeys.registrationReply(
                 id: made.credentialID, clientData: made.rawClientDataJSON, attestation: made.rawAttestationObject ?? Data(),
                 transports: platform == nil ? ["usb"] : ["hybrid", "internal"],
                 attachment: platform?.attachment == .platform ? "platform" : "cross-platform"
-            ))
+            )
+            if #available(macOS 15.0, *), let prf = platform?.prf {
+                reply["prf"] = Passkeys.prfReply(enabled: prf.isSupported, first: prf.first, second: prf.second)
+            }
+            finish(reply)
         } else {
             finish(Passkeys.failure("NotAllowedError", "The authenticator answered with something else."))
         }
@@ -635,6 +688,34 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
         return out.buffer;
       }
+      // The PRF extension's salts, and what the passkey derived from them.
+      function prfValues(v) {
+        return { first: encode(v.first), second: v.second !== undefined ? encode(v.second) : null };
+      }
+      function prfInput(extensions, allowed) {
+        var prf = extensions && extensions.prf;
+        if (!prf) return null;
+        var out = {};
+        if (prf.eval) out.eval = prfValues(prf.eval);
+        if (prf.evalByCredential) {
+          // As the standard has it: salts for particular passkeys need the list of them.
+          if (!allowed || !allowed.length) throw new DOMException('evalByCredential needs allowCredentials.', 'NotSupportedError');
+          out.byCredential = {};
+          Object.keys(prf.evalByCredential).forEach(function (id) { out.byCredential[id] = prfValues(prf.evalByCredential[id]); });
+        }
+        return out;
+      }
+      function prfOutput(reply, made, binary) {
+        var out = {};
+        if (made) out.enabled = !!reply.enabled;
+        if (reply.first) {
+          var value = binary ? decode : function (s) { return s; };
+          out.results = { first: value(reply.first) };
+          if (reply.second) out.results.second = value(reply.second);
+        }
+        return out;
+      }
+
       function descriptors(list) {
         return Array.prototype.map.call(list || [], function (c) {
           return { id: encode(c.id), transports: Array.prototype.slice.call(c.transports || []) };
@@ -674,8 +755,12 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         // naming it; the site may have asked whether it is.
         var results = {};
         if (made && extensions && extensions.credProps && reply.attachment === 'platform') results.credProps = { rk: true };
+        // PRF outputs are bytes: made afresh for each caller, base64url in JSON.
+        var prf = extensions && extensions.prf && reply.prf ? reply.prf : null;
         var attachment = reply.attachment || null;
-        var json = { id: reply.id, rawId: reply.id, type: 'public-key', authenticatorAttachment: attachment, clientExtensionResults: results };
+        var jsonResults = JSON.parse(JSON.stringify(results));
+        if (prf) jsonResults.prf = prfOutput(prf, made, false);
+        var json = { id: reply.id, rawId: reply.id, type: 'public-key', authenticatorAttachment: attachment, clientExtensionResults: jsonResults };
         json.response = made
           ? { clientDataJSON: reply.clientDataJSON, attestationObject: reply.attestationObject, authenticatorData: reply.authenticatorData,
               transports: (reply.transports || []).slice(), publicKeyAlgorithm: reply.publicKeyAlgorithm != null ? reply.publicKeyAlgorithm : -7 }
@@ -685,7 +770,11 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         var result = Object.create(PublicKeyCredential.prototype);
         define(result, { id: reply.id, rawId: decode(reply.id), type: 'public-key', authenticatorAttachment: attachment, response: response });
         return define(result, {
-          getClientExtensionResults: function () { return JSON.parse(JSON.stringify(results)); },
+          getClientExtensionResults: function () {
+            var copy = JSON.parse(JSON.stringify(results));
+            if (prf) copy.prf = prfOutput(prf, made, true);
+            return copy;
+          },
           toJSON: function () { return JSON.parse(JSON.stringify(json)); }
         }, true);
       }
@@ -746,7 +835,8 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
           request = {
             kind: 'get', challenge: encode(pk.challenge), rpId: pk.rpId || null,
             allowCredentials: descriptors(pk.allowCredentials),
-            userVerification: pk.userVerification || 'preferred'
+            userVerification: pk.userVerification || 'preferred',
+            prf: prfInput(pk.extensions, pk.allowCredentials)
           };
         } catch (e) { return Promise.reject(e); }
         return send(request, signal, pk.extensions);
@@ -768,7 +858,8 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
             authenticatorAttachment: selection.authenticatorAttachment || null,
             residentKey: selection.residentKey || (selection.requireResidentKey ? 'required' : 'discouraged'),
             userVerification: selection.userVerification || 'preferred',
-            attestation: pk.attestation || 'none'
+            attestation: pk.attestation || 'none',
+            prf: prfInput(pk.extensions, null)
           };
         } catch (e) { return Promise.reject(e); }
         return send(request, options.signal, pk.extensions);
@@ -801,6 +892,7 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
           function ours(c) {
             c = Object.assign({}, c);
             Object.keys(c).forEach(function (k) { if (k.indexOf('extension:') === 0 && k !== 'extension:credProps') c[k] = false; });
+            c['extension:prf'] = \(Passkeys.prfAvailable);
             return Object.assign(c, {
               conditionalCreate: false, conditionalGet: field, conditionalMediation: field, relatedOrigins: false,
               signalAllAcceptedCredentials: false, signalCurrentUserDetails: false, signalUnknownCredential: false,

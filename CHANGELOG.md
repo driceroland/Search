@@ -83,6 +83,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Passkeys can unlock what a site encrypted with them: the WebAuthn PRF extension now reaches the passkey and its result comes back to the page, where it was dropped and sites that derive a key from your passkey said it wasn't supported. macOS 15 or later. ([#312](https://github.com/driceroland/Search/issues/312)) Thanks [@arvakme](https://github.com/arvakme) ([#313](https://github.com/driceroland/Search/pull/313))
 - A page on this Mac opens: an .html or .xhtml file double-clicked in the Finder, once Search is the Mac's browser, opened Search and nothing else. It now comes up in a tab, with the files beside it it asks for.
 - Gmail's download button downloads the attachment again, a PDF included: a file the server sends as an attachment is now always saved, as in Safari and Chrome, where Search showed it instead whenever WebKit could — out of sight, in the hidden frame Gmail loads it into, so the button seemed to do nothing.
 - Right-click on a picture works again in a tab you had followed a link out of: closing or putting to sleep the tab the link opened took Search's page scripts away from the first one, so the right-click menu on an image (X's photos, for one) showed nothing at all, and saved passwords, the swipe back and hidden elements stopped answering there too.
