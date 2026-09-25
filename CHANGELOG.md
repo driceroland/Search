@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Added
 
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
+- Comet joins the browsers Search brings passwords, bookmarks and history in from. It is Chromium underneath, and keeps its profile like one: `Comet` in Application Support, its passwords behind a keychain key of its own, both the same shape as Chrome's and Dia's — so it is one line in the list of sources, and the reading, the key and the writing after it are the ones already there. Asked for on the [roadmap](https://officecommun.com/search/roadmap).
 
 ### Fixed
 
