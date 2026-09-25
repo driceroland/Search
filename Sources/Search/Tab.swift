@@ -195,9 +195,8 @@ final class Tab: ObservableObject, Identifiable {
     /// Set when the page never arrived — no host, no network, a refused
     /// connection. Shown in place of the page rather than in a dialog.
     @Published var failure: String?
-    /// How far down the page you are, nought to one. The tab's own pill fills
-    /// with it.
-    @Published var reading: Double = 0
+    /// How far down the page you are, nought to one.
+    let reading = Reading()
 
     /// True while the page has been stripped back to its article.
     @Published private(set) var reader = false
@@ -274,9 +273,6 @@ final class Tab: ObservableObject, Identifiable {
     /// stays as sharp at 200% as it was at 100%.
     @Published private(set) var zoom: CGFloat = 1
 
-    /// Where the page is and which way it just went, for anything that wants
-    /// to follow along.
-    var onScroll: ((Tab, Double, Double) -> Void)?
     var onZoom: ((Tab, CGFloat) -> Void)?
     /// The resolved address under the pointer, or nil when it leaves a link.
     var onLink: ((Tab, String?) -> Void)?
@@ -339,7 +335,6 @@ final class Tab: ObservableObject, Identifiable {
     private let passkeyRelay = PasskeyRelay()
     private let hovered = HoveredLink()
     private let ears = AudioWatch()
-    private var lastY: Double = 0
 
     /// A tab that keeps nothing: its own cookies, no history, no place in the
     /// session. Signed in as nobody, and forgotten when it goes.
@@ -617,6 +612,9 @@ final class Tab: ObservableObject, Identifiable {
     func startPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on()") }
     func stopPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.off()") }
 
+    /// A scroll reports this once a frame; only a real change is worth the redraw.
+    func setTyping(_ typing: Bool) { if self.typing != typing { self.typing = typing } }
+
     func foundSignIn() { onSignIn?(self) }
 
     /// From the page, in CSS pixels; passed on in points. Page zoom is the
@@ -728,11 +726,9 @@ final class Tab: ObservableObject, Identifiable {
         // frame while it scrolls — 120 times a second on a 120 Hz screen — and
         // each new value had the window redraw the tab's fill, a third of a
         // core on the thread WebKit needs to put the scrolled page on screen.
+        // The write goes to the fill's own object rather than the tab itself.
         let fraction = ceiling > 0 ? (min(1, max(0, y / ceiling)) * 100).rounded() / 100 : 0
-        if fraction != reading { reading = fraction }
-        let delta = y - lastY
-        lastY = y
-        onScroll?(self, y, delta)
+        if fraction != reading.through { reading.through = fraction }
     }
 
     func go(to url: URL) {
@@ -751,8 +747,7 @@ final class Tab: ObservableObject, Identifiable {
         address = url
         title = ""
         failure = nil
-        reading = 0
-        lastY = 0
+        reading.through = 0
         reader = false
         typing = false
         immersed = false
@@ -788,8 +783,7 @@ final class Tab: ObservableObject, Identifiable {
         pending = url
         memory = nil
         picture = nil
-        reading = 0
-        lastY = 0
+        reading.through = 0
         noisy = false
         stale = false
         pull = nil
@@ -985,8 +979,7 @@ final class Tab: ObservableObject, Identifiable {
         guard let url = pending else { return false }
         pending = nil
         failure = nil
-        reading = 0
-        lastY = 0
+        reading.through = 0
         reader = false
         typing = false
         immersed = false
@@ -1042,7 +1035,6 @@ final class Tab: ObservableObject, Identifiable {
     /// Called when the tab is thrown away. Without it the view keeps running
     /// whatever the page left behind — timers, video, sockets.
     func close() {
-        onScroll = nil
         onZoom = nil
         onLink = nil
         onPick = nil
@@ -1642,6 +1634,28 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
       tell();
     })();
     """
+}
+
+/// How far down the page you are, nought to one, for the tab's own fill.
+///
+/// An object of its own, not a property of the tab: a tab is watched by its row,
+/// by its helm and by its page's own host, and this changes every frame.
+@MainActor
+final class Reading: ObservableObject {
+    @Published var through: Double = 0
+}
+
+/// The grey that fills a row as you read down the page — a view of its own, so a
+/// frame of a scroll redraws this and nothing else.
+struct ReadingFill: View {
+    @ObservedObject var reading: Reading
+    let span: CGFloat
+    var body: some View {
+        Rectangle()
+            .fill(Palette.ink.opacity(0.055))
+            .frame(width: span * reading.through)
+            .animation(.easeOut(duration: 0.15), value: reading.through)
+    }
 }
 
 
