@@ -37,6 +37,12 @@ def ask(request):
     return json.loads(line or b"{}")
 
 
+# SIDEPANEL_KEEP_GOING=1 runs every check and fails at the end, for watching a
+# new check fail before its fix; otherwise the first failure stops the run.
+KEEP_GOING = os.environ.get("SIDEPANEL_KEEP_GOING") == "1"
+failures = []
+
+
 def until(what, check, seconds=20, every=0.25):
     """Polls check() until it returns something truthy; that value."""
     end = time.time() + seconds
@@ -48,12 +54,19 @@ def until(what, check, seconds=20, every=0.25):
         if got:
             return got
         time.sleep(every)
+    if KEEP_GOING:
+        print(f"FAIL {what} (waited {seconds}s)")
+        failures.append(what)
+        return None
     sys.exit(f"FAIL: {what} (waited {seconds}s)")
 
 
 def expect(what, ok):
     print(("ok   " if ok else "FAIL ") + what)
     if not ok:
+        if KEEP_GOING:
+            failures.append(what)
+            return
         sys.exit(1)
 
 
@@ -66,10 +79,12 @@ class Run:
         # The bench listens only when Settings' switch is on; in a test world
         # the switch alone is enough (no keychain mark is asked for).
         subprocess.run(["defaults", "write", "com.officecommun.search.test", "bench", "-bool", "true"], check=True)
-        # The first start begins from the panel's default width, whatever an
-        # earlier run or a hand on the edge left in this world.
+        # The first start begins from the default layout — tabs across the
+        # top, the panel and the column at their default widths — whatever an
+        # earlier run that stopped midway, or a hand on an edge, left behind.
         if fresh:
-            subprocess.run(["defaults", "delete", "com.officecommun.search.test", "panel.width"], capture_output=True)
+            for key in ("panel.width", "sidebar", "sidebar.width"):
+                subprocess.run(["defaults", "delete", "com.officecommun.search.test", key], capture_output=True)
         env = dict(os.environ, SEARCH_PROBE="1")
         self.process = subprocess.Popen([self.binary], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         until("the bench socket", lambda: os.path.exists(SOCKET) and ask({"do": "probe"}), seconds=40)
@@ -199,9 +214,14 @@ def main(argv):
         ask({"do": "resize", "width": 640, "height": 500})
         until("the window at 640", lambda: (panel() or {}).get("width") == 320, seconds=8)
         expect("a narrow window leaves the page 320 beside the panel", (panel() or {}).get("width") == 320)
+        # With the column of tabs out as well (232 by default), even the
+        # panel's minimum would leave the page under 160: the panel gives
+        # way, and stays clear of the column and inside the window.
         ask({"do": "ui", "sidebar": True})
-        until("the column out", lambda: (panel() or {}).get("width") == 280, seconds=8)
-        expect("with the column too, the panel stops at its minimum", (panel() or {}).get("width") == 280)
+        until("the column out", lambda: (panel() or {}).get("width", 999) < 280, seconds=8)
+        frame = ask({"do": "probe"}).get("panelFrame") or [0, 0, 0, 0]
+        expect("with the column too, the panel gives way and the page keeps 160",
+               frame[2] < 280 and frame[0] - 232 >= 160 and frame[0] + frame[2] <= 641)
         ask({"do": "ui", "sidebar": False})
         ask({"do": "resize", "width": 1180, "height": 780})
         until("the window back at 1180", lambda: (panel() or {}).get("width") == 360, seconds=8)
@@ -211,10 +231,26 @@ def main(argv):
         time.sleep(0.4)
         expect("window.close() from the panel closes it", panel() == "")
         press_until_up(fixture)
+        # Chrome's site-specific pattern disables the panel per tab for every
+        # other tab; that must not close the one the user is working in.
+        fire(fixture, "chrome.sidePanel.setOptions({tabId: 123456789, enabled: false})")
+        time.sleep(0.6)
+        expect("setOptions({tabId, enabled: false}) leaves the panel alone", (panel() or {}).get("id") == fixture)
         fire(fixture, "chrome.sidePanel.setOptions({enabled: false})")
         time.sleep(0.4)
         expect("setOptions({enabled: false}) closes it", panel() == "")
         press_until_up(fixture)
+        # A download link in the panel is a download, not the panel's next page:
+        # the file lands in this world's own downloads folder and the panel stays.
+        # (A blob, as panels export: a download of one of the extension's own
+        # files is refused by WebKit's extension scheme, in a tab as well.)
+        downloads = os.path.join(WORLD, "Downloads")
+        for name in os.listdir(downloads) if os.path.isdir(downloads) else []:
+            if name.startswith("export"):
+                os.remove(os.path.join(downloads, name))
+        fire(fixture, "exportBlob()")
+        until("the export to land in Downloads", lambda: os.path.isdir(downloads) and any(n.startswith("export") for n in os.listdir(downloads)), seconds=10)
+        expect("a download link keeps the panel's page", (settled(fixture, "window.__r = location.href") or "").endswith("/panel.html"))
         before = len(ask({"do": "tabs"}).get("tabs", []))
         fire(fixture, "window.open('https://example.net/')")
         until("a tab for the link", lambda: len(ask({"do": "tabs"}).get("tabs", [])) > before)
@@ -238,18 +274,38 @@ def main(argv):
         press_until_up(fixture)
         expect("the panel comes back after a reload", (panel() or {}).get("id") == fixture)
 
-        # Task 5: the width is remembered across a relaunch.
-        width = (panel() or {}).get("width")
+        # Task 5: the width is remembered across a relaunch. A width nobody
+        # dragged to is written to the store first, so a Prefs that never
+        # saved or never read would be caught; and the column of tabs is
+        # made as wide as it goes, for the narrow-window check below.
         run.stop()
+        subprocess.run(["defaults", "write", "com.officecommun.search.test", "panel.width", "-float", "420"], check=True)
+        subprocess.run(["defaults", "write", "com.officecommun.search.test", "sidebar.width", "-float", "440"], check=True)
         run.start()
         until("the fixture after relaunch", lambda: loaded("Side panel fixture"))
         page = ask({"do": "open", "url": "https://example.com/"})["id"]
         ask({"do": "wait", "id": page, "seconds": 20})
+        ask({"do": "resize", "width": 1180, "height": 780})
         press_until_up(fixture)
-        expect("the width survives a relaunch", (panel() or {}).get("width") == width)
+        until("the stored width", lambda: (panel() or {}).get("width") == 420, seconds=8)
+        expect("the width survives a relaunch", (panel() or {}).get("width") == 420)
+
+        # A window too narrow for the widest column plus the panel: the panel
+        # gives way rather than overflowing the window or covering the column.
+        ask({"do": "ui", "sidebar": True})
+        ask({"do": "resize", "width": 640, "height": 500})
+        until("the window at 640 with the column out", lambda: (ask({"do": "probe"}).get("panelFrame") or [0, 0, 0, 0])[0] + (ask({"do": "probe"}).get("panelFrame") or [0, 0, 0, 0])[2] <= 641, seconds=8)
+        frame = ask({"do": "probe"}).get("panelFrame") or [0, 0, 0, 0]
+        expect("the panel stays inside the window beside the widest column", frame[0] >= 440 and frame[0] + frame[2] <= 641 and frame[2] > 0)
+        ask({"do": "ui", "sidebar": False})
+        ask({"do": "resize", "width": 1180, "height": 780})
+        subprocess.run(["defaults", "delete", "com.officecommun.search.test", "sidebar.width"], capture_output=True)
 
         ask({"do": "ext-remove", "id": fixture})
         ask({"do": "ext-remove", "id": nopanel})
+        if failures:
+            print(f"{len(failures)} check(s) failed: " + "; ".join(failures))
+            return 1
         print("all checks passed")
         return 0
     finally:
