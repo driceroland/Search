@@ -13,10 +13,12 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- An extension's side panel opens beside the page, docked on the right and pulled to the width you like, instead of in a tab of its own. Extensions that read the page you are on from their panel work now: from the panel, the tab in front is the page, not the panel.
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed
 
+- An extension's side panel follows Chrome's `sidePanel`. A path may carry a query and a hash, so Bitwarden's panel opens on its real page. Changing the path updates the panel that is already open. The button's behavior and the options are remembered across launches, which is how an extension that sets them once at install keeps working. A panel enabled for one tab is hidden on the tabs where that extension turned it off, and comes back with the tab. `sidePanel.close`, `getLayout`, `onOpened` and `onClosed` are there.
 - A window a page opens at a size of its own, a sign-in window for one, is named in the tabs by its site rather than by its title, which the page chooses: one called "Sign in with Google" from another address no longer passes for Google's. A plain link opened in a new tab keeps its title, and a name you gave a tab stays first.
 - A link from another app, or one opened from a pinned tab, comes first after the pins instead of landing between two of them. ([#219](https://github.com/driceroland/Search/issues/219))
 - The shortcuts card lists ⇧⌘C, Copy Address, which only the Tabs menu showed. Thanks [@merttopuz](https://github.com/merttopuz) ([#182](https://github.com/driceroland/Search/pull/182)), and [@olllayor](https://github.com/olllayor) for asking ([#176](https://github.com/driceroland/Search/issues/176))

@@ -27,6 +27,7 @@
     ./bench ext-press ID               press its button
     ./bench ext-page ID [PATH]         one of its pages in a bench tab → tab id, for eval
     ./bench ext-popup ID JS            run JavaScript in its popup while it is open
+    ./bench ext-panel ID JS            run JavaScript in its side panel while it is up
     ./bench ext-reload ID              take it up again (a folder one is copied in afresh)
     ./bench ext-pin ID [on|off]        keep its button in the row beside the puzzle
     ./bench ext-menu PATH              the puzzle button's list, drawn to a PNG
@@ -177,6 +178,9 @@ def main(argv):
     elif verb == "ext-popup":
         if len(args) != 2: sys.exit("usage: bench ext-popup ID JS")
         request["id"], request["js"] = args
+    elif verb == "ext-panel":
+        if len(args) != 2: sys.exit("usage: bench ext-panel ID JS")
+        request["id"], request["js"] = args
     elif verb == "ext-page":
         if not args: sys.exit("usage: bench ext-page ID [PATH]")
         request["id"] = args[0]
@@ -282,7 +286,7 @@ def main(argv):
         print(answer["path"])
     elif verb in ("open", "ext-page"):
         print(answer["id"])
-    elif verb in ("eval", "ext-popup"):
+    elif verb in ("eval", "ext-popup", "ext-panel"):
         value = answer.get("value")
         print(value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2))
     elif verb == "tabs":

@@ -95,7 +95,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 
 ## Later — bigger pieces of work
 
-- [ ] **More extension APIs** More of the extension APIs. The side panel, and invisible offscreen documents ([#192](https://github.com/driceroland/Search/pull/192)). *([#12](https://github.com/driceroland/Search/issues/12), X, [#192](https://github.com/driceroland/Search/pull/192))*
+- [ ] **More extension APIs** More of the extension APIs. Invisible offscreen documents ([#192](https://github.com/driceroland/Search/pull/192)); the side panel is done. *([#12](https://github.com/driceroland/Search/issues/12), X, [#192](https://github.com/driceroland/Search/pull/192))*
 - [ ] **Drive Search from an agent** An MCP server over the bench, for automation and testing. An earlier pull request, [#14](https://github.com/driceroland/Search/pull/14), began one. *(X)*
 - [ ] **Web push notifications** As far as WebKit lets an app other than Safari have them. *(X)*
 - [ ] **Split view** Two tabs or more side by side in one window. *([#173](https://github.com/driceroland/Search/issues/173))*

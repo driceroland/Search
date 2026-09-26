@@ -731,6 +731,11 @@ final class Browser: NSObject, ObservableObject {
     @Published var makingSpace = false
     /// A link's page, peeked at over this one (see Peek.swift).
     @Published var peekTab: Tab?
+    /// An extension's side panel, docked beside the page (see ExtensionPanel.swift).
+    @Published var panel: DockedPage?
+    /// Open, but not on this tab: the column is put away until a tab where
+    /// the extension enabled it is in front again.
+    @Published var panelHeld = false
     /// Which way the last change of space went: 1 to the next, -1 back.
     @Published var spaceStep = 1
 
@@ -1982,7 +1987,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// asks on its own (an advertisement, say) is ignored. And the other app
     /// opens only once you have said so, as in Safari — except a mail or
     /// phone link you just clicked on, which is exactly what it says.
-    private func handOff(_ url: URL, scheme: String, action: WKNavigationAction, from webView: WKWebView) {
+    /// An extension's side panel hands its own off here too (see ExtensionPanel).
+    func handOff(_ url: URL, scheme: String, action: WKNavigationAction, from webView: WKWebView) {
         let clicked = action.navigationType == .linkActivated
         guard action.targetFrame?.isMainFrame ?? true || clicked else { return }
         guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return }

@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "No panel fixture",
+  "version": "1.0",
+  "description": "An extension with no side panel, for tests/sidepanel.py.",
+  "permissions": ["sidePanel"],
+  "action": { "default_title": "No panel fixture" }
+}

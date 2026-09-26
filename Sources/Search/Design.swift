@@ -138,6 +138,12 @@ enum Metrics {
     static let side: CGFloat = 232
     static let sideMin: CGFloat = 176
     static let sideMax: CGFloat = 440
+    /// An extension's side panel, docked on the right (see ExtensionPanel.swift).
+    static let panel: CGFloat = 360
+    static let panelMin: CGFloat = 280
+    static let panelMax: CGFloat = 640
+    /// Its head: the extension's name, and the cross.
+    static let panelHead: CGFloat = 32
 }
 
 // One spring for anything that moves between two places, one for anything that
