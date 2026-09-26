@@ -315,6 +315,8 @@ struct BookmarkOutline: View {
     /// The row being renamed, its title a field in place; nil again when
     /// Escape puts the old name back, and nothing typed is kept then.
     @Binding var editing: Bookmark.ID?
+    /// A row to wash for a moment, after a search showed where it is.
+    var shown: Bookmark.ID? = nil
     let open: (URL) -> Void
 
     @State private var dragging: Bookmark.ID?
@@ -354,6 +356,7 @@ struct BookmarkOutline: View {
                 dragging: dragging == node.id,
                 aim: aimed?.id == node.id ? aimed?.zone : nil,
                 editing: editing == node.id,
+                shown: shown == node.id,
                 toggle: node.isFolder ? { toggle(node.id) } : nil,
                 edit: { editing = node.id },
                 save: { title, address in save(node, title: title, address: address) },
@@ -553,6 +556,7 @@ struct BookmarkOutline: View {
         /// Where a drag over this row would land, if one is.
         let aim: Zone?
         let editing: Bool
+        let shown: Bool
         let toggle: (() -> Void)?
         let edit: () -> Void
         let save: (String, String?) -> Void
@@ -642,10 +646,11 @@ struct BookmarkOutline: View {
             .animation(Motion.quick, value: hovering)
             .animation(Motion.quick, value: dragging)
             .animation(Motion.quick, value: aim)
+            .animation(Motion.settle, value: shown)
         }
 
         private var wash: Color {
-            if aim == .into { return Palette.hover }
+            if aim == .into || shown { return Palette.hover }
             return hovering || editing ? Palette.wash : .clear
         }
     }
@@ -775,28 +780,36 @@ struct BookmarksDropdown: View {
     }
 }
 
-/// The full list, for taking things out of it or bringing more in.
+/// The full list, for putting it in order, finding one, or bringing more in.
 struct BookmarksPanel: View {
     @ObservedObject var browser: Browser
     @ObservedObject var bookmarks: Bookmarks
 
     @State private var expanded: Set<Bookmark.ID> = []
+    @State private var query = ""
+    @FocusState private var hunting: Bool
+    /// The row just shown from a search, washed for a moment so the eye
+    /// lands on it.
+    @State private var shown: Bookmark.ID?
 
     var body: some View {
         Plate("Bookmarks", width: 600, close: { browser.bookmarking = false }) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
-                    Spacer(minLength: 0)
+                    Hunt(text: $query, prompt: "Search bookmarks", focus: $hunting)
+                        .onSubmit(openFirst)
                     Pill("New Folder", action: newFolder)
                 }
 
                 if bookmarks.isEmpty {
                     Card { Nothing("Nothing kept yet. Add this page with ⇧⌘B, make a folder for what comes, or bring yours in below.") }
+                } else if !query.isEmpty {
+                    found
                 } else {
                     ScrollViewReader { scroller in
                         ScrollView(showsIndicators: false) {
                             Card {
-                                BookmarkOutline(bookmarks: bookmarks, expanded: $expanded, editing: $browser.editingBookmark) { url in
+                                BookmarkOutline(bookmarks: bookmarks, expanded: $expanded, editing: $browser.editingBookmark, shown: shown) { url in
                                     browser.pickBookmark(url)
                                 }
                                 .padding(.horizontal, 6)
@@ -805,11 +818,18 @@ struct BookmarksPanel: View {
                             .padding(.bottom, 2)
                         }
                         .frame(maxHeight: 440)
-                        // A folder just made is named where it lands, which
-                        // may be below what shows.
+                        // A folder just made is named where it lands, and a
+                        // bookmark found is shown where it lives: either may
+                        // be below what shows.
                         .onChange(of: browser.editingBookmark) { _, id in
                             guard let id else { return }
                             withAnimation(Motion.settle) { scroller.scrollTo(id, anchor: .center) }
+                        }
+                        .onChange(of: shown) { _, id in
+                            guard let id else { return }
+                            DispatchQueue.main.async {
+                                withAnimation(Motion.settle) { scroller.scrollTo(id, anchor: .center) }
+                            }
                         }
                     }
                 }
@@ -830,11 +850,114 @@ struct BookmarksPanel: View {
                     .foregroundStyle(Palette.muted)
             }
         }
+        .animation(Motion.settle, value: query.isEmpty)
+        .onAppear { hunting = true }
+    }
+
+    /// What the search finds, flat, each with the folders it is in. Nothing
+    /// here is dragged: it is put in order in the tree.
+    @ViewBuilder
+    private var found: some View {
+        let hits = bookmarks.matches(query)
+        if hits.isEmpty {
+            Card { Nothing("Nothing matches.") }
+        } else {
+            ScrollView(showsIndicators: false) {
+                Card {
+                    ForEach(Array(hits.enumerated()), id: \.element.node.id) { index, hit in
+                        if index > 0 { Rule(inset: 40) }
+                        Found(
+                            node: hit.node,
+                            path: hit.path,
+                            open: hit.node.url.flatMap(URL.init(string:)).map { url in { browser.pickBookmark(url) } },
+                            show: { show(hit.node) }
+                        )
+                    }
+                }
+                .padding(.bottom, 2)
+            }
+            .frame(maxHeight: 440)
+        }
+    }
+
+    /// Return in the field: the first site found.
+    private func openFirst() {
+        guard let url = bookmarks.matches(query).lazy.compactMap({ $0.node.url.flatMap(URL.init(string:)) }).first
+        else { return }
+        browser.pickBookmark(url)
+    }
+
+    /// Back to the tree, opened down to it, and it washed a moment. A
+    /// folder is shown open.
+    private func show(_ node: Bookmark) {
+        query = ""
+        expanded.formUnion((bookmarks.path(to: node.id) ?? []).map(\.id))
+        if node.isFolder { expanded.insert(node.id) }
+        shown = node.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            if shown == node.id { withAnimation(Motion.settle) { shown = nil } }
+        }
     }
 
     /// At the end of the top level, named as it appears.
     private func newFolder() {
+        query = ""
         browser.editingBookmark = bookmarks.insert(.folder("New Folder", []), into: nil).id
+    }
+
+    /// One line of what was found: its title, then where it is.
+    private struct Found: View {
+        let node: Bookmark
+        let path: [String]
+        /// Nil for a folder, which is shown in the tree instead.
+        let open: (() -> Void)?
+        let show: () -> Void
+
+        @State private var hovering = false
+
+        var body: some View {
+            HStack(spacing: 10) {
+                if node.isFolder {
+                    Mark(icon: nil, letter: "", size: 16)
+                        .overlay(Image(systemName: "folder.fill").font(.system(size: 9.5)).foregroundStyle(Palette.muted))
+                } else {
+                    Mark(icon: Favicons.shared.cached(node.host ?? ""), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 16)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(node.title)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                    Text(whereabouts)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 8)
+                if hovering {
+                    Quick("Show in Folder", act: show)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(hovering ? Palette.hover : .clear)
+            .contentShape(Rectangle())
+            .onTapGesture { open?() ?? show() }
+            .onHover { hovering = $0 }
+            .contextMenu {
+                if let open { Button("Open", action: open) }
+                Button("Show in Folder", action: show)
+            }
+            .animation(Motion.quick, value: hovering)
+        }
+
+        /// The folders it is in, then the site.
+        private var whereabouts: String {
+            let folders = path.isEmpty ? "Top level" : path.joined(separator: " \u{203A} ")
+            guard let host = node.host else { return folders }
+            return folders + "  \u{00B7}  " + host
+        }
     }
 }
 

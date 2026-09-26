@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Search your bookmarks in Bookmarks › Show Bookmarks: what matches is listed with the folders it is in, Return opens the first, and Show in Folder opens the list down to it.
 - Folders for bookmarks: New Folder in Bookmarks › Show Bookmarks, or New Folder Inside on a folder's right-click, names it where it appears. Rename a folder, or Edit… a bookmark's name and address, in place from the right-click menu; Return or a click elsewhere keeps it, Escape puts it back. Removing a folder with bookmarks in it asks first.
 - Bookmarks go in the order you put them: drag one above or below another in the list under the bookmark button or in Bookmarks › Show Bookmarks, or onto the middle of a folder to file it there; a closed folder held over opens. The bar and the Bookmarks menu keep the same order.
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
