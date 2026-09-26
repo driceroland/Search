@@ -23,13 +23,19 @@ final class Lights: NSObject {
 
     /// Starts looking after a window's lights, once. `moved` hears each time
     /// they have been put in place.
-    static func keep(_ window: NSWindow, moved: @escaping () -> Void) {
+    static func keep(_ window: NSWindow, centreX: @escaping () -> CGFloat, moved: @escaping () -> Void) {
         guard kept[ObjectIdentifier(window)] == nil else { return }
-        kept[ObjectIdentifier(window)] = Lights(window, moved: moved)
+        kept[ObjectIdentifier(window)] = Lights(window, centreX: centreX, moved: moved)
+    }
+
+    static func refresh(_ window: NSWindow?) {
+        guard let window else { return }
+        kept[ObjectIdentifier(window)]?.place()
     }
 
     private weak var window: NSWindow?
     private let moved: () -> Void
+    private let centreX: () -> CGFloat
     private var placing = false
     /// AppKit's own spacing between the three, read once from its first
     /// layout and kept. Read again on every pass, it was caught while AppKit
@@ -39,8 +45,9 @@ final class Lights: NSObject {
     /// from the one before. Reproduced with ./bench resize, 23 Sep 2026.
     private let spacing: CGFloat
 
-    private init(_ window: NSWindow, moved: @escaping () -> Void) {
+    private init(_ window: NSWindow, centreX: @escaping () -> CGFloat, moved: @escaping () -> Void) {
         self.window = window
+        self.centreX = centreX
         self.moved = moved
         let row = [NSWindow.ButtonType.closeButton, .miniaturizeButton].compactMap { window.standardWindowButton($0) }
         let measured = row.count == 2 ? row[1].frame.minX - row[0].frame.minX : 0
@@ -91,7 +98,7 @@ final class Lights: NSObject {
         for (index, button) in buttons.enumerated() {
             let size = button.frame.size
             let origin = NSPoint(
-                x: Lights.centre.x - size.width / 2 + CGFloat(index) * spacing,
+                x: centreX() - size.width / 2 + CGFloat(index) * spacing,
                 y: bar.bounds.height - Lights.centre.y - size.height / 2
             )
             if button.frame.origin != origin { button.setFrameOrigin(origin) }

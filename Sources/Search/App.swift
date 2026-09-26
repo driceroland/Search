@@ -272,7 +272,7 @@ struct ContentView: View {
     /// The window: room at the top, one stage for the page, and the row when
     /// there is one.
     private var window_: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: sideOnRight ? .topTrailing : .topLeading) {
             // Black while a page has the screen, so the frame of our own window
             // that survives the transition is not a white band across the top.
             (browser.active?.immersed == true ? Color.black : Palette.ground)
@@ -286,9 +286,11 @@ struct ContentView: View {
             // again thirty times a second, the page juddered along its right
             // edge and overshot the window with the spring (see `room`).
             stage
-                .padding(.leading, roomed.width)
+                .padding(.leading, sideOnRight ? 0 : roomed.width)
+                .padding(.trailing, sideOnRight ? roomed.width : 0)
                 .padding(.top, roomed.height)
-                .offset(x: chrome.width - roomed.width, y: chrome.height - roomed.height)
+                .offset(x: sideOnRight ? 0 : chrome.width - roomed.width,
+                        y: chrome.height - roomed.height)
 
             // The column of tabs, in the way that has one. It takes the full
             // height, so the traffic lights sit in its own corner rather than
@@ -296,7 +298,7 @@ struct ContentView: View {
             if sidebar {
                 SideBar(browser: browser, prefs: browser.prefs)
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .transition(.move(edge: .leading))
+                    .transition(.move(edge: sideOnRight ? .trailing : .leading))
             }
 
             if !browser.prefs.sidebar, !browser.folded, browser.active?.immersed != true {
@@ -307,13 +309,15 @@ struct ContentView: View {
             // The bookmarks bar, under the strip or beside the column's top.
             if barShown {
                 BookmarksBar(browser: browser, bookmarks: browser.bookmarks)
-                    .padding(.leading, chrome.width)
+                    .padding(.leading, sideOnRight ? 0 : chrome.width)
+                    .padding(.trailing, sideOnRight ? chrome.width : 0)
                     .padding(.top, band)
                     .transition(.opacity)
             }
         }
         .ignoresSafeArea()
         .animation(Motion.glide, value: browser.prefs.sidebar)
+        .animation(Motion.glide, value: browser.prefs.sidePosition)
         .animation(.easeOut(duration: 0.12), value: browser.active?.immersed)
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
@@ -359,6 +363,10 @@ struct ContentView: View {
 
     /// The room the page is laid out to leave them, which is not animated.
     private var roomed: CGSize { room ?? chrome }
+
+    private var sideOnRight: Bool {
+        browser.prefs.sidebar && browser.prefs.sidePosition == .right
+    }
 
     /// Chrome going away gives the page its room at once, the page sliding
     /// out from under it at its new size. Chrome arriving slides over a page
@@ -415,7 +423,8 @@ struct ContentView: View {
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
                 // with the page says otherwise.
-                .padding(.leading, sidebar ? browser.prefs.sideWidth : 0)
+                .padding(.leading, sidebar && !sideOnRight ? browser.prefs.sideWidth : 0)
+                .padding(.trailing, sidebar && sideOnRight ? browser.prefs.sideWidth : 0)
                 .transition(.scale(scale: 0.97).combined(with: .opacity))
         }
     }
@@ -465,13 +474,14 @@ struct ContentView: View {
     var body: some View {
         window_
             // The column folded away, and out again at the edge (see Fold.swift).
-            .overlay(alignment: .leading) { Fold(browser: browser, prefs: browser.prefs) }
+            .overlay(alignment: sideOnRight ? .trailing : .leading) { Fold(browser: browser, prefs: browser.prefs) }
             .overlay(alignment: .bottom) { bars }
             .overlay {
                 // Over the page only: the column, the strip and the bookmarks
                 // bar stay as they are, uncovered and in reach.
                 PeekLayer(browser: browser)
-                    .padding(.leading, chrome.width)
+                    .padding(.leading, sideOnRight ? 0 : chrome.width)
+                    .padding(.trailing, sideOnRight ? chrome.width : 0)
                     .padding(.top, chrome.height)
                     // From the window's own top edge, as the page is:
                     // the title bar's band is page too.
@@ -485,7 +495,13 @@ struct ContentView: View {
             .animation(browser.fieldShowing ? Motion.settle : Motion.quick, value: browser.fieldShowing)
             .background(WindowSetup { window = $0; dress($0) })
             .onChange(of: browser.prefs.sidebar) { _, _ in
-                DispatchQueue.main.async { measureLights() }
+                DispatchQueue.main.async { Lights.refresh(window); measureLights() }
+            }
+            .onChange(of: browser.prefs.sidePosition) { _, _ in
+                DispatchQueue.main.async { Lights.refresh(window); measureLights() }
+            }
+            .onChange(of: browser.prefs.sideWidth) { _, _ in
+                DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             // Stepping away to another app: macOS draws its own resting
             // buttons, and on a light window they come out nearly white. Ours
@@ -725,7 +741,11 @@ struct ContentView: View {
         // height, in both modes, without a toolbar's rounder corners — see
         // Lights.swift. The column's first row is the strip's height too, so
         // its three doors sit on the lights' line.
-        Lights.keep(window) { measureLights() }
+        Lights.keep(window, centreX: {
+            browser.prefs.sidebar && browser.prefs.sidePosition == .right
+                ? window.frame.width - browser.prefs.sideWidth + Lights.centre.x
+                : Lights.centre.x
+        }) { measureLights() }
         DispatchQueue.main.async { measureLights() }
 
         // The traffic lights are drawn — measured, they paint themselves — but

@@ -64,7 +64,7 @@
     ./bench picture PATH               test run: the whole window, pages included, drawn to a PNG (start the probe hidden)
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
-                                       look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
+                                       look light|dark|system, sidebar on|off, side left|right, spaces on|off, hides on|off,
                                        folded on|off, peek on|off, peeklink keep|close, pages120 on|off
 
 Needs Settings › General › "Let a script drive Search" switched on in the
@@ -147,7 +147,8 @@ def main(argv):
     elif verb == "ui":
         if len(args) != 2: sys.exit("usage: bench ui KEY VALUE")
         key, value = args
-        request[key] = value if key in ("look", "edittab", "peeklink") else value in ("on", "true", "1", "yes")
+        if key == "side" and value not in ("left", "right"): sys.exit("usage: bench ui side left|right")
+        request[key] = value if key in ("look", "edittab", "peeklink", "side") else value in ("on", "true", "1", "yes")
     elif verb in ("ext-add", "ext-press", "ext-remove", "ext-reload"):
         if len(args) != 1: sys.exit(f"usage: bench {verb} ID")
         request["id"] = args[0]
