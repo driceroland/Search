@@ -442,9 +442,23 @@ final class Browser: NSObject, ObservableObject {
 
     // MARK: - what is kept, and getting rid of it
 
-    @Published var recalling = false
+    @Published var recalling = false {
+        didSet {
+            if !recalling {
+                clearingBrowsingData = false
+            }
+        }
+    }
+    @Published var clearingBrowsingData = false
     @Published var hoarding = false
     @Published var recallHunt = ""
+
+    /// Opens the History panel with its browsing-data clearing controls shown immediately.
+    /// If History is already open, reveals the clearing controls in place.
+    func openClearBrowsingData() {
+        recalling = true
+        clearingBrowsingData = true
+    }
 
     /// Cookies, caches, local storage — everything a site left on this Mac,
     /// in every space. Clearing it signs you out of everything, which is

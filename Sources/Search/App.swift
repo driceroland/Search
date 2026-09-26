@@ -177,8 +177,13 @@ struct SearchApp: App {
                     }
                 }
                 Divider()
-                Button("Show History…") { browser.recalling = true }
+                Button("Show History…") {
+                    browser.clearingBrowsingData = false
+                    browser.recalling = true
+                }
                     .keyboardShortcut("y")
+                Button("Clear Browsing Data…") { browser.openClearBrowsingData() }
+                    .keyboardShortcut(.delete, modifiers: [.command, .shift])
                 Button("Downloads…") { browser.hoarding = true }
                     .keyboardShortcut("j", modifiers: [.command, .shift])
                 Divider()
@@ -780,9 +785,11 @@ struct ContentView: View {
     /// Search's keys are Search's. The keys that make and close tabs and move
     /// between them stay Search's first, as Chrome keeps them its own.
     private func pageFirst(_ event: NSEvent, key: String, shifted: Bool) -> Bool {
+        let isDelete = event.keyCode == 51 || event.keyCode == 117 || key == "\u{7f}" || key == "\u{08}"
         let reserved = (key == "t") || (key == "w" && !shifted) || (key == "n" && shifted)
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
+            || (isDelete && shifted)
         guard !reserved, event.window?.firstResponder is PageView else { return false }
         if let passed = ContentView.passed, PageView.same(passed, event) {
             ContentView.passed = nil
@@ -828,6 +835,10 @@ struct ContentView: View {
             }
             if browser.managing {
                 browser.managing = false
+                return true
+            }
+            if browser.clearingBrowsingData {
+                withAnimation(Motion.settle) { browser.clearingBrowsingData = false }
                 return true
             }
             if browser.recalling {
@@ -923,6 +934,12 @@ struct ContentView: View {
 
         // The page's turn first, for the keys it may want (Refs #147).
         if pageFirst(event, key: key, shifted: shifted) { return false }
+
+        let isDelete = event.keyCode == 51 || event.keyCode == 117 || key == "\u{7f}" || key == "\u{08}"
+        if isDelete && shifted {
+            browser.openClearBrowsingData()
+            return true
+        }
 
         switch key {
         case "t" where !shifted:

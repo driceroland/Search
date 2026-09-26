@@ -47,7 +47,6 @@ struct HistoryPanel: View {
     /// The list as drawn: each day's name, then its pages. Worked out when
     /// the history or the search changes, not each time the panel is drawn.
     @State private var lines: [Listed] = []
-    @State private var clearing = false
 
     var body: some View {
         Plate("History", width: 600, close: { browser.recalling = false }) {
@@ -105,7 +104,7 @@ struct HistoryPanel: View {
                 }
             }
         } foot: {
-            if clearing {
+            if browser.clearingBrowsingData {
                 sweeps
             } else {
                 HStack {
@@ -113,11 +112,11 @@ struct HistoryPanel: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)
                     Spacer()
-                    Pill("Clear…") { withAnimation(Motion.settle) { clearing = true } }
+                    Pill("Clear…") { withAnimation(Motion.settle) { browser.clearingBrowsingData = true } }
                 }
             }
         }
-        .animation(Motion.settle, value: clearing)
+        .animation(Motion.settle, value: browser.clearingBrowsingData)
         .onAppear {
             hunting = true
             refresh()
@@ -134,7 +133,7 @@ struct HistoryPanel: View {
                     Pill("Clear") {
                         browser.clearHistory()
                         refresh()
-                        withAnimation(Motion.settle) { clearing = false }
+                        withAnimation(Motion.settle) { browser.clearingBrowsingData = false }
                     }
                 }
                 Rule()
@@ -148,7 +147,7 @@ struct HistoryPanel: View {
             }
             HStack {
                 Spacer()
-                Pill("Back") { withAnimation(Motion.settle) { clearing = false } }
+                Pill("Back") { withAnimation(Motion.settle) { browser.clearingBrowsingData = false } }
             }
         }
         .transition(.opacity)

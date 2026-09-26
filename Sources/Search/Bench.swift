@@ -440,6 +440,7 @@ final class Bench {
                 "welcome": browser.welcoming,
                 "passwords": browser.managing,
                 "history": browser.recalling,
+                "clearing": browser.clearingBrowsingData,
                 "downloads": browser.hoarding,
                 "bookmarks": browser.bookmarking,
                 "field": browser.editing,
@@ -1269,6 +1270,9 @@ final class Bench {
             if let on = request["passwords"] as? Bool { browser.managing = on }
             if let on = request["welcome"] as? Bool { browser.welcoming = on }
             if let on = request["history"] as? Bool { browser.recalling = on }
+            if let on = request["clearing"] as? Bool {
+                if on { browser.openClearBrowsingData() } else { browser.clearingBrowsingData = false }
+            }
             if let on = request["downloads"] as? Bool { browser.hoarding = on }
             if let on = request["bookmarks"] as? Bool { browser.bookmarking = on }
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
