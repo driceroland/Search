@@ -13,10 +13,15 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- ⇧⌘B keeps the page and opens a small card off the bookmark button, to give it another name or file it in a folder, a new one included, or take it back with Remove. On a page already kept, ⇧⌘B opens the same card, and the button is filled. With the tabs folded away it says "Bookmarked", as before.
+- Search your bookmarks in Bookmarks › Show Bookmarks: what matches is listed with the folders it is in, Return opens the first, and Show in Folder opens the list down to it.
+- Folders for bookmarks: New Folder in Bookmarks › Show Bookmarks, or New Folder Inside on a folder's right-click, names it where it appears. Rename a folder, or Edit… a bookmark's name and address, in place from the right-click menu; Return or a click elsewhere keeps it, Escape puts it back. Removing a folder with bookmarks in it asks first.
+- Bookmarks go in the order you put them: drag one above or below another in the list under the bookmark button or in Bookmarks › Show Bookmarks, or onto the middle of a folder to file it there; a closed folder held over opens. The bar and the Bookmarks menu keep the same order.
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed
 
+- Extensions put a bookmark where they ask: `chrome.bookmarks.create` and `chrome.bookmarks.move` with an `index` place it there in the folder, where it always went to the end, and a move that names no folder leaves it in the one it is in instead of taking it to the top.
 - A window a page opens at a size of its own, a sign-in window for one, is named in the tabs by its site rather than by its title, which the page chooses: one called "Sign in with Google" from another address no longer passes for Google's. A plain link opened in a new tab keeps its title, and a name you gave a tab stays first.
 - A link from another app, or one opened from a pinned tab, comes first after the pins instead of landing between two of them. ([#219](https://github.com/driceroland/Search/issues/219))
 - The shortcuts card lists ⇧⌘C, Copy Address, which only the Tabs menu showed. Thanks [@merttopuz](https://github.com/merttopuz) ([#182](https://github.com/driceroland/Search/pull/182)), and [@olllayor](https://github.com/olllayor) for asking ([#176](https://github.com/driceroland/Search/issues/176))

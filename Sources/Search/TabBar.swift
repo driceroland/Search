@@ -131,10 +131,7 @@ struct TabBar: View {
                         ExtensionSlot()
                         Helm(browser: browser)
                             .padding(.trailing, 8)
-                        Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
-                            .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .bottom) {
-                                BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
-                            }
+                        BookmarkDoor(browser: browser, arrowEdge: .bottom)
                     }
                     .background {
                         GeometryReader { box in
