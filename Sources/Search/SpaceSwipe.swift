@@ -166,6 +166,9 @@ final class SpaceSwipe {
     /// frame and without anything moving — it was already there. One past
     /// the last space is the card for a new one.
     func slide(_ browser: Browser, to target: Int, from here: Int) {
+        if browser.makingSpace, target != browser.spaces.count {
+            browser.cancelSpaceCreation()
+        }
         // A page is the column's width, or the bar's height.
         let width = browser.prefs.sidebar ? browser.prefs.sideWidth : Metrics.strip
         let away: CGFloat = target > here ? -1 : 1
@@ -329,6 +332,7 @@ struct NewSpaceCard: View {
 
     /// Back to the space it was made from, the way it came.
     private func cancel() {
+        browser.cancelSpaceCreation()
         let back = browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0
         SpaceSwipe.shared.slide(browser, to: back, from: browser.spaces.count)
     }
