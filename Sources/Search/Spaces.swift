@@ -410,7 +410,8 @@ enum SpaceMenu {
     }
 }
 
-/// The few questions a space's menu asks, as sheets on the window.
+/// The few questions a space's menu asks, as sheets on the window. The
+/// bookmarks list borrows `name` for Rename….
 @MainActor
 enum Ask {
     static func name(_ title: String, placeholder: String, initial: String = "", confirm: String, then: @escaping (String) -> Void) {

@@ -183,7 +183,8 @@ final class Bookmarks: ObservableObject {
         return node
     }
 
-    /// A new title or address for one that is kept. chrome.bookmarks.update.
+    /// A new title or address for one that is kept. chrome.bookmarks.update,
+    /// and Rename… in the list's right-click menu.
     func update(_ id: Bookmark.ID, title: String?, url: String?) {
         func walk(_ nodes: inout [Bookmark]) -> Bool {
             for i in nodes.indices {
@@ -262,6 +263,7 @@ struct BookmarkOutline: View {
                 toggle: node.isFolder ? { toggle(node.id) } : nil,
                 moveTargets: Bookmarks.folders(bookmarks.roots).filter { !Bookmarks.holds($0.node.id, node) },
                 moveTo: { bookmarks.move(node.id, into: $0) },
+                rename: { rename(node) },
                 remove: { bookmarks.remove(node.id) }
             )
             .onDrag {
@@ -288,6 +290,16 @@ struct BookmarkOutline: View {
 
     private func toggle(_ id: Bookmark.ID) {
         if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
+
+    /// A name of your own for a bookmark or a folder, asked for the way a
+    /// space's is: the page's title is what a bookmark starts with, and a
+    /// folder brought in from another browser is called after it. The name
+    /// it has arrives in the field; an empty one changes nothing.
+    private func rename(_ node: Bookmark) {
+        Ask.name(node.isFolder ? "Rename Folder" : "Rename Bookmark", placeholder: node.title, initial: node.title, confirm: "Rename") {
+            bookmarks.update(node.id, title: $0, url: nil)
+        }
     }
 
     private func drop(_ providers: [NSItemProvider], into folderID: Bookmark.ID?) -> Bool {
@@ -333,6 +345,7 @@ struct BookmarkOutline: View {
         let toggle: (() -> Void)?
         let moveTargets: [(node: Bookmark, depth: Int)]
         let moveTo: (Bookmark.ID?) -> Void
+        let rename: () -> Void
         let remove: () -> Void
 
         @State private var hovering = false
@@ -379,6 +392,7 @@ struct BookmarkOutline: View {
                     Button("Open", action: open)
                     Divider()
                 }
+                Button("Rename…", action: rename)
                 Menu("Move to") {
                     Button("Top Level", action: { moveTo(nil) })
                     if !moveTargets.isEmpty {
