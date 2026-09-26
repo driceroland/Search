@@ -942,6 +942,19 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // Every open page that hasn't a size of its own takes the new one.
+        // Asleep, a tab has no page to resize; it takes it on waking.
+        prefs.$pageZoom
+            .dropFirst()
+            .sink { [weak self] _ in
+                // Published before it is stored; the tabs read the stored one.
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    for tab in self.tabs + self.parkedTabs where tab.built != nil { tab.applyRememberedZoom() }
+                }
+            }
+            .store(in: &bag)
+
         prefs.$passkeys
             .dropFirst()
             .sink { [weak self] on in
