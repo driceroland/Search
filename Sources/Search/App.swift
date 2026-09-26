@@ -182,6 +182,8 @@ struct SearchApp: App {
                 Button("Downloads…") { browser.hoarding = true }
                     .keyboardShortcut("j", modifiers: [.command, .shift])
                 Divider()
+                Button("Clear Browsing Data…") { browser.recallMode = .clearing }
+                    .keyboardShortcut(.delete, modifiers: [.command, .shift])
                 Button("Clear History") { browser.clearHistory() }
             }
             CommandGroup(after: .appSettings) {
@@ -918,6 +920,12 @@ struct ContentView: View {
             } else {
                 browser.select(index: number == 9 ? browser.tabs.count - 1 : number - 1)
             }
+            return true
+        }
+
+        // Keep the clearing controls reachable from a focused page editor.
+        if shifted, event.keyCode == 51 {
+            browser.recallMode = .clearing
             return true
         }
 
