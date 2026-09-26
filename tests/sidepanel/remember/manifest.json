@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Remember panel",
+  "version": "1.0",
+  "description": "Sets the side panel button once, at install.",
+  "permissions": ["sidePanel"],
+  "action": { "default_title": "Remember panel" },
+  "side_panel": { "default_path": "panel.html" },
+  "background": { "service_worker": "worker.js" }
+}

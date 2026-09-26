@@ -308,7 +308,7 @@ struct ContentView: View {
 
             // An extension's side panel, docked on the right, the page's
             // height: under the strip, beside the column (see ExtensionPanel.swift).
-            if let panel = browser.panel {
+            if let panel = browser.panel, !browser.panelHeld {
                 PanelColumn(browser: browser, prefs: browser.prefs, panel: panel, width: panelWidth)
                     .padding(.top, chrome.height)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
@@ -371,7 +371,7 @@ struct ContentView: View {
     /// to the page's last 160 rather than draw over either. Nothing without
     /// a panel.
     private var panelWidth: CGFloat {
-        guard browser.panel != nil else { return 0 }
+        guard browser.panel != nil, !browser.panelHeld else { return 0 }
         let room = span - chrome.width
         let wanted = min(browser.prefs.panelWidth, max(Metrics.panelMin, room - 320))
         return max(0, min(wanted, room - 160))

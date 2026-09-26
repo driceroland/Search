@@ -733,6 +733,9 @@ final class Browser: NSObject, ObservableObject {
     @Published var peekTab: Tab?
     /// An extension's side panel, docked beside the page (see ExtensionPanel.swift).
     @Published var panel: DockedPage?
+    /// Open, but not on this tab: the column is put away until a tab where
+    /// the extension enabled it is in front again.
+    @Published var panelHeld = false
     /// Which way the last change of space went: 1 to the next, -1 back.
     @Published var spaceStep = 1
 

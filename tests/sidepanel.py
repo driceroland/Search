@@ -19,6 +19,7 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURE = os.path.join(ROOT, "tests", "sidepanel", "fixture")
 NOPANEL = os.path.join(ROOT, "tests", "sidepanel", "nopanel")
+REMEMBER = os.path.join(ROOT, "tests", "sidepanel", "remember")
 WORLD = os.path.expanduser("~/Library/Application Support/Search (test)")
 SOCKET = os.path.join(WORLD, "bench.sock")
 
@@ -197,6 +198,18 @@ def main(argv):
         expect("windows.getCurrent() has an id", win not in ("undefined", "null", "NaN", None))
         echo = settled(fixture, "(() => { const p = chrome.runtime.connect(); p.onMessage.addListener(m => window.__r = JSON.stringify(m)); p.postMessage({hi: 1}) })()")
         expect("a runtime.connect port reaches the worker and back", echo == '{"echo":{"hi":1}}')
+        layout = settled(fixture, "chrome.sidePanel.getLayout().then(l => window.__r = l && l.side)")
+        expect("getLayout() is the right-hand column", layout == "right")
+        events = settled(fixture, "chrome.runtime.sendMessage('panel-events').then(e => { if ((e || []).some(x => String(x).indexOf('opened:') === 0)) window.__r = JSON.stringify(e) })", seconds=8)
+        expect("the worker hears sidePanel.onOpened", bool(events) and "opened:panel.html" in events)
+        def href():
+            got = ask({"do": "ext-panel", "id": fixture, "js": "location.href"})
+            return got.get("value") if "error" not in got else None
+        fire(fixture, "chrome.sidePanel.setOptions({path: 'panel.html?x=1#z'})")
+        found = until("the open panel to follow its new path", lambda: found if isinstance(found := href(), str) and "x=1" in found else None, seconds=8)
+        expect("a path keeps its query and its hash", bool(found) and "x=1" in (found or "") and "#z" in (found or ""))
+        fire(fixture, "chrome.sidePanel.setOptions({path: 'panel.html'})")
+        until("the panel page restored", lambda: isinstance(now := href(), str) and now.split("?")[0].endswith("/panel.html") and "x=1" not in now, seconds=8)
 
         # Task 3: the panel survives a tab switch.
         other = ask({"do": "open", "url": "https://example.org/"})["id"]
@@ -236,9 +249,26 @@ def main(argv):
         fire(fixture, "chrome.sidePanel.setOptions({tabId: 123456789, enabled: false})")
         time.sleep(0.6)
         expect("setOptions({tabId, enabled: false}) leaves the panel alone", (panel() or {}).get("id") == fixture)
+        # The tab in front, disabled: the panel is hidden, and comes back when enabled.
+        fire(fixture, "chrome.tabs.query({active: true}).then(t => chrome.sidePanel.setOptions({tabId: t[0].id, enabled: false}))")
+        until("the panel hidden on its own tab", lambda: panel() == "", seconds=6)
+        expect("the tab in front can hide its panel", panel() == "")
+        restore = ask({"do": "ext-page", "id": fixture, "path": "panel.html"})["id"]
+        ask({"do": "wait", "id": restore, "seconds": 15})
+        ask({"do": "eval", "id": restore, "js": "chrome.tabs.query({active:true}).then(t => chrome.sidePanel.setOptions({tabId: t[0].id, enabled: true})); undefined"})
+        until("the panel back on its tab", lambda: (panel() or {}).get("id") == fixture, seconds=6)
         fire(fixture, "chrome.sidePanel.setOptions({enabled: false})")
         time.sleep(0.4)
         expect("setOptions({enabled: false}) closes it", panel() == "")
+        # The tab in front was given its own enabled:true above, which outranks
+        # the window setting. Turn that off too, or the button may open it.
+        ask({"do": "eval", "id": restore, "js": "chrome.tabs.query({active:true}).then(t => chrome.sidePanel.setOptions({tabId: t[0].id, enabled: false})); undefined"})
+        time.sleep(0.4)
+        ask({"do": "ext-press", "id": fixture})
+        time.sleep(0.5)
+        expect("a disabled panel stays down", panel() == "")
+        ask({"do": "eval", "id": restore, "js": "chrome.tabs.query({active:true}).then(t => chrome.sidePanel.setOptions({tabId: t[0].id, enabled: true})); chrome.sidePanel.setOptions({enabled: true}); undefined"})
+        time.sleep(0.3)
         press_until_up(fixture)
         # A download link in the panel is a download, not the panel's next page:
         # the file lands in this world's own downloads folder and the panel stays.
@@ -266,13 +296,24 @@ def main(argv):
         ask({"do": "wait", "id": probe_tab, "seconds": 20})
         ask({"do": "eval", "id": probe_tab, "js": "window.__r = undefined; chrome.sidePanel.open({}).then(() => window.__r = 'opened', e => window.__r = 'error: ' + e.message); undefined"})
         said = until("sidePanel.open to settle", lambda: ask({"do": "eval", "id": probe_tab, "js": "window.__r"}).get("value"))
-        expect("sidePanel.open() with no path rejects", said.startswith("error:") and "path" in said)
+        expect("sidePanel.open() needs a tab or a window", isinstance(said, str) and said.startswith("error:") and ("tabId" in said or "windowId" in said))
+        ask({"do": "eval", "id": probe_tab, "js": "window.__r = undefined; chrome.windows.getCurrent().then(w => chrome.sidePanel.open({windowId: w.id})).then(() => window.__r = 'opened', e => window.__r = 'error: ' + e.message); undefined"})
+        said = until("sidePanel.open with a window to settle", lambda: ask({"do": "eval", "id": probe_tab, "js": "window.__r"}).get("value"))
+        expect("sidePanel.open() with no path rejects", isinstance(said, str) and said.startswith("error:") and "path" in said)
 
         ask({"do": "ext-reload", "id": fixture})
         until("the panel to close on reload", lambda: panel() == "")
         until("the fixture to load again", lambda: loaded("Side panel fixture"))
         press_until_up(fixture)
         expect("the panel comes back after a reload", (panel() or {}).get("id") == fixture)
+
+        # Set once at install, as Chrome's own samples do, and still true
+        # after a relaunch: the browser remembers it, the worker does not say it again.
+        remember = install(REMEMBER, "Remember panel")["id"]
+        press_until_up(remember)
+        expect("a panel set at install opens", (panel() or {}).get("id") == remember)
+        ask({"do": "ext-press", "id": remember})
+        time.sleep(0.4)
 
         # Task 5: the width is remembered across a relaunch. A width nobody
         # dragged to is written to the store first, so a Prefs that never
@@ -283,6 +324,11 @@ def main(argv):
         subprocess.run(["defaults", "write", "com.officecommun.search.test", "sidebar.width", "-float", "440"], check=True)
         run.start()
         until("the fixture after relaunch", lambda: loaded("Side panel fixture"))
+        until("the remembered panel after relaunch", lambda: loaded("Remember panel"))
+        press_until_up(remember)
+        expect("the button still opens the panel after a relaunch", (panel() or {}).get("id") == remember)
+        ask({"do": "ext-press", "id": remember})
+        time.sleep(0.4)
         page = ask({"do": "open", "url": "https://example.com/"})["id"]
         ask({"do": "wait", "id": page, "seconds": 20})
         ask({"do": "resize", "width": 1180, "height": 780})
@@ -303,6 +349,7 @@ def main(argv):
 
         ask({"do": "ext-remove", "id": fixture})
         ask({"do": "ext-remove", "id": nopanel})
+        ask({"do": "ext-remove", "id": remember})
         if failures:
             print(f"{len(failures)} check(s) failed: " + "; ".join(failures))
             return 1

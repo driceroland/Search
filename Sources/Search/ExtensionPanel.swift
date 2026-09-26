@@ -43,8 +43,12 @@ final class ExtensionPanel: NSObject, DockedPage, WKUIDelegate, WKNavigationDele
     private let base: URL
 
     var view: NSView { web }
+    /// The path the extension asked for, as `onOpened` reports it.
+    private var pathShown = ""
+    private var expected: URL?
+    private var announced = false
 
-    init?(context: WKWebExtensionContext, url: URL, browser: Browser) {
+    init?(context: WKWebExtensionContext, url: URL, path: String, browser: Browser) {
         guard let configuration = context.webViewConfiguration else { return nil }
         id = context.uniqueIdentifier
         name = context.webExtension.displayName ?? id
@@ -57,6 +61,21 @@ final class ExtensionPanel: NSObject, DockedPage, WKUIDelegate, WKNavigationDele
         web.uiDelegate = self
         web.navigationDelegate = self
         Extensions.shared.controller.didOpenTab(page)
+        show(url, path: path)
+    }
+
+    /// Another path for the panel that is already up. The same document,
+    /// including one still loading, is left to finish.
+    func show(_ url: URL, path: String) {
+        pathShown = path
+        let same = web.url?.absoluteString == url.absoluteString
+            || (expected?.absoluteString == url.absoluteString && (web.isLoading || web.url == nil))
+        expected = url
+        if same {
+            if !web.isLoading, web.url != nil { announce("onOpened") }
+            return
+        }
+        announced = false
         web.load(URLRequest(url: url))
     }
 
@@ -66,9 +85,48 @@ final class ExtensionPanel: NSObject, DockedPage, WKUIDelegate, WKNavigationDele
 
     // MARK: - the page asking
 
-    /// window.close() from the panel — how an extension closes its own
-    /// panel, Chrome having no sidePanel.close().
+    /// window.close() from the panel, and sidePanel.close() from its worker.
     func webViewDidClose(_ webView: WKWebView) { browser.closePanel() }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // A later load is not a window script opened, so WebKit ignores
+        // window.close(). The panel's own page closes itself through us.
+        web.evaluateJavaScript("""
+        if (!window.__searchPanelClose) {
+          window.__searchPanelClose = true;
+          window.close = function () {
+            try { chrome.runtime.sendNativeMessage("search", {api: "sidePanel.dismiss", args: []}); }
+            catch (e) {}
+          };
+        }
+        """) { _, _ in }
+        guard let expected, web.url?.absoluteString == expected.absoluteString else { return }
+        announce("onOpened")
+    }
+
+    /// `onOpened` / `onClosed`, in this page and, through it, in the worker.
+    func announce(_ name: String) {
+        if name == "onOpened" {
+            guard !announced else { return }
+            announced = true
+        } else {
+            guard announced else { return }
+            announced = false
+        }
+        var info: [String: Any] = ["path": pathShown, "windowId": ExtensionShims.frontWindow ?? 0]
+        if ExtensionShims.opened?.id == id, let tab = ExtensionShims.opened?.tab { info["tabId"] = tab }
+        guard let data = try? JSONSerialization.data(withJSONObject: info),
+              let json = String(data: data, encoding: .utf8) else { return }
+        let js = """
+        (() => { try {
+          const info = \(json);
+          const ev = chrome.sidePanel && chrome.sidePanel.\(name);
+          if (ev && ev.listeners) for (const f of [...ev.listeners]) { try { f(info); } catch (e) {} }
+          chrome.runtime.sendMessage({ __searchSidePanel: { event: "\(name)", info } });
+        } catch (e) {} })()
+        """
+        web.evaluateJavaScript(js) { _, _ in }
+    }
 
     /// A link that asks for a new window becomes a tab. The panel stays: it
     /// is the window's furniture, not a popup that a click is done with.
@@ -133,35 +191,58 @@ final class PanelPage: NSObject, WKWebExtensionTab {
 }
 
 extension Browser {
-    /// The extension's panel, up beside the page. Another extension's panel
-    /// goes first — one at a time, as in Chrome; the same one already up
-    /// stays as it is.
+    /// The extension's panel, up beside the page. Another extension's goes
+    /// first. The same one, asked for a different path, navigates; Chrome
+    /// swaps the open panel's page that way.
     @available(macOS 15.4, *)
-    func showPanel(for context: WKWebExtensionContext) throws {
-        let id = context.uniqueIdentifier
-        if panel?.id == id { return }
-        guard let path = ExtensionShims.panelPath[id] ?? ExtensionShims.defaultPanel(context) else {
-            // Chrome refuses the same call the same way.
-            throw ExtensionShims.Unsupported(what: "No side panel path is set")
+    func presentPanel(for context: WKWebExtensionContext, path: String) {
+        let url = ExtensionShims.pageURL(path, base: context.baseURL)
+        panelHeld = false
+        if let panel = panel as? ExtensionPanel, panel.id == context.uniqueIdentifier {
+            panel.show(url, path: path)
+            return
         }
-        let url = context.baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
         closePanel()
-        guard let opened = ExtensionPanel(context: context, url: url, browser: self) else { return }
+        guard let opened = ExtensionPanel(context: context, url: url, path: path, browser: self) else { return }
         panel = opened
     }
 
-    /// Put away. The one path out: the cross, the button, window.close(),
+    /// Off this tab, but not dismissed: the page stays, the column doesn't.
+    /// Coming back to a tab where it is enabled shows it again.
+    @available(macOS 15.4, *)
+    func holdPanel() {
+        guard let panel = panel as? ExtensionPanel else { panelHeld = true; return }
+        guard !panelHeld else { return }
+        panel.announce("onClosed")
+        panelHeld = true
+    }
+
+    /// Put away. The cross, the button, window.close(), sidePanel.close(),
     /// setOptions({enabled: false}) and an extension going all come here.
-    func closePanel() {
+    /// `immediately`: the extension itself is going, so the view cannot
+    /// outlive its context by a turn.
+    func closePanel(immediately: Bool = false) {
+        panelHeld = false
         guard let panel else { return }
+        if #available(macOS 15.4, *) {
+            (panel as? ExtensionPanel)?.announce("onClosed")
+            if ExtensionShims.opened?.id == panel.id { ExtensionShims.opened = nil }
+        }
+        let going = panel
         self.panel = nil
-        panel.forget()
+        if immediately { going.forget(); return }
+        // The close event is a script in the page. Let it run, then drop the view.
+        DispatchQueue.main.async { going.forget() }
     }
 
     /// The extension's button: up if it isn't, away if it is, as Chrome's.
     @available(macOS 15.4, *)
     func togglePanel(for context: WKWebExtensionContext) throws {
-        if panel?.id == context.uniqueIdentifier { closePanel() } else { try showPanel(for: context) }
+        if panel?.id == context.uniqueIdentifier, !panelHeld {
+            closePanel()
+        } else {
+            try ExtensionShims.openFromAction(context, owner: Extensions.shared)
+        }
     }
 }
 

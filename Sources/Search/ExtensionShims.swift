@@ -701,6 +701,17 @@ enum ExtensionShims {
             if (background) { sendResponse("pong"); return; }
             return true;
           }
+          // The open panel telling its worker that it opened or closed.
+          // Chrome fires sidePanel.onOpened / onClosed there; the page
+          // can't reach the worker's listeners itself.
+          if (message && message.__searchSidePanel) {
+            if (!background) return;
+            const spec = message.__searchSidePanel;
+            const ev = chrome.sidePanel && chrome.sidePanel[spec.event];
+            if (ev && ev.listeners) for (const f of [...ev.listeners]) { try { f(spec.info); } catch (e) {} }
+            sendResponse(null);
+            return;
+          }
           if (message && message.__searchUserScript === true) {
             const route = root.__searchUserScriptMessage;
             return route && route(message.message, sender, sendResponse) && !settled ? true : undefined;
@@ -1017,7 +1028,9 @@ enum ExtensionShims {
       define("downloads",
         ["download", "search", "pause", "resume", "cancel", "open", "show", "showDefaultFolder", "erase", "removeFile", "getFileIcon"],
         ["onCreated", "onChanged", "onErased", "onDeterminingFilename"]);
-      define("sidePanel", ["open", "setOptions", "getOptions", "setPanelBehavior", "getPanelBehavior"]);
+      define("sidePanel",
+        ["open", "setOptions", "getOptions", "setPanelBehavior", "getPanelBehavior", "close", "getLayout"],
+        ["onOpened", "onClosed"]);
       define("offscreen", ["createDocument", "closeDocument", "hasDocument"], [],
         { Reason: new Proxy({}, { get: (_, key) => String(key) }) });
       define("tabGroups", ["get", "query", "update", "move"],
@@ -1800,6 +1813,23 @@ enum ExtensionShims {
       // just aren't heard. (Request events are left alone: a listener for
       // all of them would wake the worker for every request.)
       if (background) {
+        // Which tab is in front, so a panel set for one tab follows it.
+        // The id is WebKit's, and only the extension can see it.
+        try {
+          const reportFront = (tabId, windowId) => {
+            if (typeof tabId !== "number") return;
+            native("sidePanel.front", [tabId, typeof windowId === "number" ? windowId : null]).catch(() => {});
+          };
+          if (chrome.tabs && chrome.tabs.onActivated) {
+            chrome.tabs.onActivated.addListener((info) => reportFront(info.tabId, info.windowId));
+          }
+          if (chrome.tabs && chrome.tabs.query) {
+            chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+              const tab = tabs && tabs[0];
+              if (tab) reportFront(tab.id, tab.windowId);
+            }).catch(() => {});
+          }
+        } catch (e) {}
         const mentioned = new Set(__SEARCH_EVENTS__);
         for (const space of Object.keys(chrome)) {
           if (space === "webRequest") continue;
@@ -2423,10 +2453,33 @@ enum ExtensionShims {
 
     // MARK: - answering
 
-    /// Remembered per extension: the side panel it set, and whether its
-    /// button should open it.
-    static var panelPath: [String: String] = [:]
+    /// Remembered per extension: whether its button opens the panel.
+    /// Chrome keeps this across launches; an extension sets it once, from
+    /// `onInstalled`, and never again.
     static var panelOnClick: Set<String> = []
+    /// The tab in front, and the window, as the extension numbers them.
+    static var frontTab: Int?
+    static var frontWindow: Int?
+    /// Which extension's panel is open, and whether for one tab or the window.
+    /// `tab` nil is the window's panel. A tab's own options hide it there
+    /// without this being forgotten, so coming back shows it again.
+    struct OpenPanel {
+        var id: String
+        var tab: Int?
+    }
+    static var opened: OpenPanel?
+    /// Options an extension set. A tab's entry overrides the window's for
+    /// that tab only; Chrome's site-specific panel is that.
+    struct PanelChoice {
+        var path: String?
+        var enabled = true
+        var hasPath = false
+        var hasEnabled = false
+    }
+    private static var panelGlobal: [String: PanelChoice] = [:]
+    private static var panelTabs: [String: [Int: PanelChoice]] = [:]
+    private static var panelsLoaded = false
+    private static let panelMemory = "sidePanel.memory"
     /// Offscreen documents, one per extension, as Chrome allows.
     static var offscreen: [String: WKWebView] = [:]
     /// One voice for every extension that reads aloud.
@@ -2645,26 +2698,43 @@ enum ExtensionShims {
 
         // MARK: side panel — docked beside the page (see ExtensionPanel.swift)
         case "sidePanel.setOptions":
-            if let path = (first as? [String: Any])?["path"] as? String { panelPath[id] = path }
-            // Chrome takes enabled: false as "put it away" — for the window's
-            // panel. Said of a tab, it is a per-tab setting this panel doesn't
-            // keep, and Chrome's own site-specific pattern says it of every
-            // other tab as it loads; closing on those would take the panel
-            // from under the user each time a background tab finished.
-            if let options = first as? [String: Any], options["enabled"] as? Bool == false,
-               !(options["tabId"] is NSNumber), owner.browser?.panel?.id == id { owner.browser?.closePanel() }
+            setPanelOptions(first as? [String: Any] ?? [:], id: id, manifest: defaultPanel(context), owner: owner)
             return nil
         case "sidePanel.getOptions":
-            return ["enabled": true, "path": panelPath[id] ?? defaultPanel(context) ?? ""]
+            ensurePanels()
+            let spec = first as? [String: Any] ?? [:]
+            let choice = panelChoice(id, tab: whole(spec["tabId"]), manifest: defaultPanel(context))
+            return ["enabled": choice.enabled, "path": choice.path ?? ""]
         case "sidePanel.setPanelBehavior":
+            ensurePanels()
             if let on = (first as? [String: Any])?["openPanelOnActionClick"] as? Bool {
                 if on { panelOnClick.insert(id) } else { panelOnClick.remove(id) }
+                rememberPanel(id)
             }
             return nil
         case "sidePanel.getPanelBehavior":
+            ensurePanels()
             return ["openPanelOnActionClick": panelOnClick.contains(id)]
+        case "sidePanel.getLayout":
+            // The panel is the right-hand column. Chrome also offers left.
+            return ["side": "right"]
         case "sidePanel.open":
-            try owner.browser?.showPanel(for: context)
+            try openPanel(first as? [String: Any] ?? [:], context: context, owner: owner)
+            return nil
+        case "sidePanel.close":
+            try closePanel(first as? [String: Any] ?? [:], id: id, owner: owner)
+            return nil
+        case "sidePanel.dismiss":
+            // window.close() in the panel page, once a navigation has made
+            // WebKit refuse to close the view itself.
+            if opened?.id == id { owner.browser?.closePanel() }
+            return nil
+        case "sidePanel.front":
+            if let tab = whole(first) {
+                frontTab = tab
+                if let window = whole(args.dropFirst().first) { frontWindow = window }
+                followPanel(owner)
+            }
             return nil
 
         // MARK: offscreen — a page with a DOM for a worker that has none
@@ -3195,6 +3265,190 @@ enum ExtensionShims {
 
     static func defaultPanel(_ context: WKWebExtensionContext) -> String? {
         (context.webExtension.manifest["side_panel"] as? [String: Any])?["default_path"] as? String
+    }
+
+    /// Read what was set last time, once. The button has to know before the
+    /// worker runs: the worker that set it did so at install, and does not
+    /// say it again when the browser comes back.
+    static func ensurePanels() {
+        guard !panelsLoaded else { return }
+        panelsLoaded = true
+        let saved = Store.settings.dictionary(forKey: panelMemory) as? [String: [String: Any]] ?? [:]
+        for (id, row) in saved {
+            if row["onClick"] as? Bool == true { panelOnClick.insert(id) }
+            var choice = PanelChoice()
+            if let path = row["path"] as? String, !path.isEmpty {
+                choice.path = path
+                choice.hasPath = true
+            }
+            if let enabled = row["enabled"] as? Bool {
+                choice.enabled = enabled
+                choice.hasEnabled = true
+            }
+            if choice.hasPath || choice.hasEnabled { panelGlobal[id] = choice }
+        }
+    }
+
+    /// The window's options, and a tab's on top of them when it has its own.
+    private static func panelChoice(_ id: String, tab: Int?, manifest: String?) -> (path: String?, enabled: Bool) {
+        let global = panelGlobal[id]
+        var path = global?.hasPath == true ? global?.path : manifest
+        var enabled = global?.hasEnabled == true ? (global?.enabled ?? true) : true
+        if let tab, let own = panelTabs[id]?[tab] {
+            if own.hasPath { path = own.path ?? path }
+            if own.hasEnabled { enabled = own.enabled }
+        }
+        if path?.isEmpty == true { path = nil }
+        return (path, enabled)
+    }
+
+    private static func setPanelOptions(_ spec: [String: Any], id: String, manifest: String?, owner: Extensions) {
+        ensurePanels()
+        let tab = whole(spec["tabId"])
+        var choice = (tab == nil ? panelGlobal[id] : panelTabs[id]?[tab!]) ?? PanelChoice()
+        if let path = spec["path"] as? String {
+            choice.path = path
+            choice.hasPath = true
+        }
+        if let enabled = spec["enabled"] as? Bool {
+            choice.enabled = enabled
+            choice.hasEnabled = true
+        }
+        if let tab {
+            var map = panelTabs[id] ?? [:]
+            map[tab] = choice
+            panelTabs[id] = map
+        } else {
+            panelGlobal[id] = choice
+            rememberPanel(id)
+        }
+        guard opened?.id == id else { return }
+        // Disabling the window's panel puts it away. Disabling some other
+        // tab does not: Chrome's site-specific panel says that of every tab
+        // that isn't the one in front, as each finishes loading.
+        if tab == nil, spec["enabled"] as? Bool == false, opened?.tab == nil, opened?.id == id {
+            owner.browser?.closePanel()
+            return
+        }
+        followPanel(owner)
+    }
+
+    /// The button, or `sidePanel.open`. One window, so a window id we have
+    /// not been told yet is this one. A tab id names that tab's panel when
+    /// the extension set one, and the window's panel otherwise.
+    private static func openPanel(_ spec: [String: Any], context: WKWebExtensionContext, owner: Extensions) throws {
+        ensurePanels()
+        let tab = whole(spec["tabId"])
+        let window = whole(spec["windowId"])
+        if tab == nil, window == nil {
+            throw Unsupported(what: "At least one of `tabId` and `windowId` must be provided")
+        }
+        // One window. The id is remembered for events; an id we have not
+        // seen yet is still this window.
+        if let window, window != 0, frontWindow == nil { frontWindow = window }
+        let id = context.uniqueIdentifier
+        let manifest = defaultPanel(context)
+        if let tab {
+            let choice = panelChoice(id, tab: tab, manifest: manifest)
+            guard choice.path != nil else { throw Unsupported(what: "No side panel path is set") }
+            guard choice.enabled else { throw Unsupported(what: "No active side panel for tabId: \(tab)") }
+            // A path of its own is a tab's panel: it shows on that tab only.
+            // enabled alone just says whether the window's panel is allowed there.
+            let own = panelTabs[id]?[tab]?.hasPath == true
+            opened = OpenPanel(id: id, tab: own ? tab : nil)
+        } else {
+            let choice = panelChoice(id, tab: nil, manifest: manifest)
+            guard choice.path != nil else { throw Unsupported(what: "No side panel path is set") }
+            guard choice.enabled else { throw Unsupported(what: "No active side panel for windowId: \(window ?? 0)") }
+            opened = OpenPanel(id: id, tab: nil)
+        }
+        followPanel(owner)
+    }
+
+    /// What the toolbar button does: open for the tab in front, or the
+    /// window when that tab has not been reported yet. `0` is this window
+    /// until a real id arrives, and is not remembered as one.
+    static func openFromAction(_ context: WKWebExtensionContext, owner: Extensions) throws {
+        var spec: [String: Any] = [:]
+        if let frontTab { spec["tabId"] = frontTab }
+        else if let frontWindow { spec["windowId"] = frontWindow }
+        else { spec["windowId"] = 0 }
+        try openPanel(spec, context: context, owner: owner)
+    }
+
+    private static func closePanel(_ spec: [String: Any], id: String, owner: Extensions) throws {
+        ensurePanels()
+        let tab = whole(spec["tabId"])
+        let window = whole(spec["windowId"])
+        if tab == nil, window == nil {
+            throw Unsupported(what: "At least one of `tabId` and `windowId` must be provided")
+        }
+        guard opened?.id == id else { return }
+        if let tab {
+            guard opened?.tab == tab else {
+                throw Unsupported(what: "No active tab-specific side panel for tabId: \(tab)")
+            }
+            owner.browser?.closePanel()
+            return
+        }
+        // Closing the window's panel leaves a tab's own panel up.
+        guard opened?.tab == nil else { return }
+        owner.browser?.closePanel()
+    }
+
+    /// Show, hide or retarget whatever `opened` says, for the tab in front.
+    private static func followPanel(_ owner: Extensions) {
+        guard let browser = owner.browser else { return }
+        guard let opened, let context = owner.contexts[opened.id] else {
+            if browser.panel != nil { browser.closePanel() }
+            return
+        }
+        if let only = opened.tab, let frontTab, frontTab != only {
+            browser.holdPanel()
+            return
+        }
+        let tab = opened.tab ?? frontTab
+        let choice = panelChoice(opened.id, tab: tab, manifest: defaultPanel(context))
+        guard choice.enabled, let path = choice.path else {
+            browser.holdPanel()
+            return
+        }
+        browser.presentPanel(for: context, path: path)
+    }
+
+    private static func rememberPanel(_ id: String) {
+        var all = Store.settings.dictionary(forKey: panelMemory) as? [String: [String: Any]] ?? [:]
+        var row: [String: Any] = [:]
+        if panelOnClick.contains(id) { row["onClick"] = true }
+        if let choice = panelGlobal[id] {
+            if choice.hasPath, let path = choice.path, !path.isEmpty { row["path"] = path }
+            if choice.hasEnabled { row["enabled"] = choice.enabled }
+        }
+        if row.isEmpty { all.removeValue(forKey: id) } else { all[id] = row }
+        Store.settings.set(all, forKey: panelMemory)
+    }
+
+    /// A panel path, query and hash included. `appendingPathComponent`
+    /// encodes both, and Bitwarden's panel is `popup/index.html?uilocation=sidepanel#/…`.
+    static func pageURL(_ path: String, base: URL) -> URL {
+        let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let root = base.absoluteString.hasSuffix("/") ? base : URL(string: base.absoluteString + "/") ?? base
+        if let url = URL(string: trimmed, relativeTo: root)?.absoluteURL { return url }
+        return base.appendingPathComponent(trimmed)
+    }
+
+    /// A JSON number, which arrives as an Int, a Double, or an NSNumber.
+    /// A boolean is an NSNumber too, and is not an id.
+    private static func whole(_ value: Any?) -> Int? {
+        switch value {
+        case let number as Int: return number
+        case let number as Double where number.rounded() == number && number >= 0 && number < Double(Int.max):
+            return Int(number)
+        case let number as NSNumber:
+            if CFGetTypeID(number) == CFBooleanGetTypeID() { return nil }
+            return number.intValue
+        default: return nil
+        }
     }
 
     // MARK: - bookmarks, as Chrome shapes them

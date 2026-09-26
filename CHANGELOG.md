@@ -18,6 +18,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- An extension's side panel follows Chrome's `sidePanel`. A path may carry a query and a hash, so Bitwarden's panel opens on its real page. Changing the path updates the panel that is already open. The button's behavior and the options are remembered across launches, which is how an extension that sets them once at install keeps working. A panel enabled for one tab is hidden on the tabs where that extension turned it off, and comes back with the tab. `sidePanel.close`, `getLayout`, `onOpened` and `onClosed` are there.
 - A window a page opens at a size of its own, a sign-in window for one, is named in the tabs by its site rather than by its title, which the page chooses: one called "Sign in with Google" from another address no longer passes for Google's. A plain link opened in a new tab keeps its title, and a name you gave a tab stays first.
 - A link from another app, or one opened from a pinned tab, comes first after the pins instead of landing between two of them. ([#219](https://github.com/driceroland/Search/issues/219))
 - The shortcuts card lists ⇧⌘C, Copy Address, which only the Tabs menu showed. Thanks [@merttopuz](https://github.com/merttopuz) ([#182](https://github.com/driceroland/Search/pull/182)), and [@olllayor](https://github.com/olllayor) for asking ([#176](https://github.com/driceroland/Search/issues/176))

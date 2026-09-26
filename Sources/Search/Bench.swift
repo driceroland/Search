@@ -487,7 +487,7 @@ final class Bench {
                 out["peekFrame"] = [Int(r.minX), Int(window.frame.height - r.maxY), Int(r.width), Int(r.height)]
             }
             // An extension's side panel, docked on the right (see ExtensionPanel.swift).
-            if let panel = browser.panel {
+            if let panel = browser.panel, !browser.panelHeld {
                 let web = panel.view as? WKWebView
                 out["panel"] = ["id": panel.id, "name": panel.name, "width": Int(panel.view.bounds.width),
                                 "url": web?.url?.absoluteString ?? "", "title": web?.title ?? "", "loading": web?.isLoading ?? false]
@@ -495,7 +495,7 @@ final class Bench {
                 out["panel"] = ""
             }
             // Where it sits in the window, from the top-left corner, in points.
-            if let view = browser.panel?.view, let window = view.window {
+            if let view = browser.panel?.view, !browser.panelHeld, let window = view.window {
                 let r = view.convert(view.bounds, to: nil)
                 out["panelFrame"] = [Int(r.minX), Int(window.frame.height - r.maxY), Int(r.width), Int(r.height)]
             }
