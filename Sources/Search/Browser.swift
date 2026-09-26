@@ -46,6 +46,9 @@ final class Browser: NSObject, ObservableObject {
     @Published var bookmarking = false
     /// The dropdown off the button.
     @Published var bookmarksOpen = false
+    /// The bookmark whose name is a field in the list, in the dropdown or
+    /// the full one. Escape puts the name back (see ContentView.take).
+    @Published var editingBookmark: Bookmark.ID?
 
     /// ⇧⌘B. The page you are on, at the end of the list.
     func bookmarkCurrent() {

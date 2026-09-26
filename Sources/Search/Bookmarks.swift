@@ -305,13 +305,16 @@ final class Bookmarks: ObservableObject {
 
 /// The list itself: folders that open in place rather than to the side, each
 /// row draggable above or below another, or into a folder, each row good
-/// for a right-click too. Used both in the small dropdown off the button and
+/// for a right-click too, and renamed where it stands. Used both in the small dropdown off the button and
 /// in the full manager — the interaction is the same size either way.
 struct BookmarkOutline: View {
     @ObservedObject var bookmarks: Bookmarks
     /// The folders open, kept by whoever shows the outline, so the manager
     /// can open the way down to one it was asked to show.
     @Binding var expanded: Set<Bookmark.ID>
+    /// The row being renamed, its title a field in place; nil again when
+    /// Escape puts the old name back, and nothing typed is kept then.
+    @Binding var editing: Bookmark.ID?
     let open: (URL) -> Void
 
     @State private var dragging: Bookmark.ID?
@@ -350,11 +353,16 @@ struct BookmarkOutline: View {
                 isOpen: isOpen,
                 dragging: dragging == node.id,
                 aim: aimed?.id == node.id ? aimed?.zone : nil,
+                editing: editing == node.id,
                 toggle: node.isFolder ? { toggle(node.id) } : nil,
+                edit: { editing = node.id },
+                save: { title, address in save(node, title: title, address: address) },
+                newFolder: node.isFolder ? { newFolder(in: node.id) } : nil,
                 moveTargets: Bookmarks.folders(bookmarks.roots).filter { !Bookmarks.holds($0.node.id, node) },
                 moveTo: { bookmarks.move(node.id, into: $0) },
-                remove: { bookmarks.remove(node.id) }
+                remove: { remove(node) }
             )
+            .id(node.id)
             .onDrag {
                 dragging = node.id
                 return NSItemProvider(object: node.id.uuidString as NSString)
@@ -397,6 +405,40 @@ struct BookmarkOutline: View {
         if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
     }
 
+    /// A name left empty, or an address that isn't one, keeps what was there.
+    private func save(_ node: Bookmark, title: String, address: String?) {
+        guard editing == node.id else { return }
+        editing = nil
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = address.flatMap(Address.url(from:))?.absoluteString
+        bookmarks.update(node.id, title: title.isEmpty || title == node.title ? nil : title,
+                         url: url == node.url ? nil : url)
+    }
+
+    private func newFolder(in parent: Bookmark.ID) {
+        let made = bookmarks.insert(.folder("New Folder", []), into: parent)
+        expanded.insert(parent)
+        editing = made.id
+    }
+
+    /// A folder with bookmarks in it asks first: they all go with it, and
+    /// there is no taking it back.
+    private func remove(_ node: Bookmark) {
+        guard node.isFolder, let kids = node.children, !kids.isEmpty else {
+            bookmarks.remove(node.id)
+            return
+        }
+        let count = Bookmarks.count(kids)
+        let detail = switch count {
+        case 0: "The empty folders in it go too."
+        case 1: "The bookmark in it goes too."
+        default: "The \(count) bookmarks in it go too."
+        }
+        Ask.sure("Remove \u{201C}\(node.title)\u{201D}?", detail: detail, confirm: "Remove") {
+            bookmarks.remove(node.id)
+        }
+    }
+
     /// A folder can't go above, below or into anything inside itself.
     private func allows(_ target: Bookmark.ID) -> Bool {
         guard let dragging else { return true }
@@ -429,6 +471,13 @@ struct BookmarkOutline: View {
     }
 
     private func indent(_ depth: Int) -> CGFloat { CGFloat(depth) * 18 }
+
+    /// A click anywhere else keeps the name being typed. AppKit leaves a
+    /// field its keyboard when the click lands on nothing that takes one,
+    /// so the field is let go of here, and that keeps it (see Editor).
+    static func settle() {
+        NSApp.keyWindow?.makeFirstResponder(nil)
+    }
 
     enum Zone { case before, into, after }
 
@@ -503,7 +552,12 @@ struct BookmarkOutline: View {
         let dragging: Bool
         /// Where a drag over this row would land, if one is.
         let aim: Zone?
+        let editing: Bool
         let toggle: (() -> Void)?
+        let edit: () -> Void
+        let save: (String, String?) -> Void
+        /// Nil for a site.
+        let newFolder: (() -> Void)?
         let moveTargets: [(node: Bookmark, depth: Int)]
         let moveTo: (Bookmark.ID?) -> Void
         let remove: () -> Void
@@ -528,12 +582,16 @@ struct BookmarkOutline: View {
                     Spacer().frame(width: 10)
                     Mark(icon: Favicons.shared.cached(node.host ?? ""), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 15)
                 }
-                Text(node.title)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Palette.ink)
-                    .lineLimit(1)
+                if editing {
+                    Editor(node: node, save: save)
+                } else {
+                    Text(node.title)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                }
                 Spacer(minLength: 8)
-                if node.isFolder, let kids = node.children, !kids.isEmpty {
+                if !editing, node.isFolder, let kids = node.children, !kids.isEmpty {
                     Text("\(Bookmarks.count(kids))")
                         .font(.system(size: 11))
                         .foregroundStyle(Palette.faint)
@@ -552,12 +610,20 @@ struct BookmarkOutline: View {
             }
             .contentShape(Rectangle())
             .opacity(dragging ? 0.35 : 1)
-            .onTapGesture { open?() ?? toggle?() }
+            .onTapGesture {
+                guard !editing else { return }
+                BookmarkOutline.settle()
+                open?() ?? toggle?()
+            }
             .onHover { hovering = $0 }
             .contextMenu {
                 if let open {
                     Button("Open", action: open)
                     Divider()
+                }
+                Button(node.isFolder ? "Rename" : "Edit\u{2026}", action: edit)
+                if let newFolder {
+                    Button("New Folder Inside", action: newFolder)
                 }
                 Menu("Move to") {
                     Button("Top Level", action: { moveTo(nil) })
@@ -580,7 +646,63 @@ struct BookmarkOutline: View {
 
         private var wash: Color {
             if aim == .into { return Palette.hover }
-            return hovering ? Palette.wash : .clear
+            return hovering || editing ? Palette.wash : .clear
+        }
+    }
+
+    /// A row's title as a field, and a site's address under it. Return, or
+    /// clicking anywhere else, keeps what was typed; Escape doesn't.
+    private struct Editor: View {
+        let node: Bookmark
+        let save: (String, String?) -> Void
+
+        @State private var title = ""
+        @State private var address = ""
+        @State private var done = false
+        @FocusState private var focus: Field?
+
+        enum Field { case title, address }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 3) {
+                field($title, .title, size: 12.5, tint: Palette.ink)
+                if !node.isFolder {
+                    field($address, .address, size: 11.5, tint: Palette.muted)
+                }
+            }
+            .onAppear {
+                title = node.title
+                address = node.url ?? ""
+                focus = .title
+            }
+            // Tab from the name to the address lets go of one before the
+            // other takes the keyboard; only a field still let go of a turn
+            // later has been left.
+            .onChange(of: focus) { _, now in
+                guard now == nil else { return }
+                DispatchQueue.main.async { if focus == nil { keep() } }
+            }
+            // The list closing under it keeps what was typed too.
+            .onDisappear(perform: keep)
+        }
+
+        private func field(_ text: Binding<String>, _ which: Field, size: CGFloat, tint: Color) -> some View {
+            TextField("", text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: size))
+                .foregroundStyle(tint)
+                .focused($focus, equals: which)
+                .onSubmit(keep)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Palette.ground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+        }
+
+        private func keep() {
+            guard !done else { return }
+            done = true
+            save(title, node.isFolder ? nil : address)
         }
     }
 }
@@ -601,7 +723,7 @@ struct BookmarksDropdown: View {
                     .padding(14)
             } else {
                 ScrollView {
-                    BookmarkOutline(bookmarks: bookmarks, expanded: $expanded) { url in
+                    BookmarkOutline(bookmarks: bookmarks, expanded: $expanded, editing: $browser.editingBookmark) { url in
                         browser.pickBookmark(url)
                     }
                     .padding(6)
@@ -662,21 +784,38 @@ struct BookmarksPanel: View {
 
     var body: some View {
         Plate("Bookmarks", width: 600, close: { browser.bookmarking = false }) {
-            if bookmarks.isEmpty {
-                Card { Nothing("Nothing kept yet. Add this page with ⇧⌘B, or bring yours in below.") }
-            } else {
-                ScrollView(showsIndicators: false) {
-                    Card {
-                        BookmarkOutline(bookmarks: bookmarks, expanded: $expanded) { url in
-                            browser.pickBookmark(url)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 6)
-                    }
-                    .padding(.bottom, 2)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Spacer(minLength: 0)
+                    Pill("New Folder", action: newFolder)
                 }
-                .frame(maxHeight: 440)
+
+                if bookmarks.isEmpty {
+                    Card { Nothing("Nothing kept yet. Add this page with ⇧⌘B, make a folder for what comes, or bring yours in below.") }
+                } else {
+                    ScrollViewReader { scroller in
+                        ScrollView(showsIndicators: false) {
+                            Card {
+                                BookmarkOutline(bookmarks: bookmarks, expanded: $expanded, editing: $browser.editingBookmark) { url in
+                                    browser.pickBookmark(url)
+                                }
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 6)
+                            }
+                            .padding(.bottom, 2)
+                        }
+                        .frame(maxHeight: 440)
+                        // A folder just made is named where it lands, which
+                        // may be below what shows.
+                        .onChange(of: browser.editingBookmark) { _, id in
+                            guard let id else { return }
+                            withAnimation(Motion.settle) { scroller.scrollTo(id, anchor: .center) }
+                        }
+                    }
+                }
             }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: BookmarkOutline.settle)
         } foot: {
             HStack(spacing: 8) {
                 Text("Bring in from")
@@ -691,6 +830,11 @@ struct BookmarksPanel: View {
                     .foregroundStyle(Palette.muted)
             }
         }
+    }
+
+    /// At the end of the top level, named as it appears.
+    private func newFolder() {
+        browser.editingBookmark = bookmarks.insert(.folder("New Folder", []), into: nil).id
     }
 }
 
