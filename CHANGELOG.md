@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Rename a bookmark or a folder: Rename… in a row's right-click menu, in the bookmarks dropdown and in Manage Bookmarks alike, asks for the name with the one it has in the field. A bookmark no longer has to keep the title the page had when it was added, nor a folder the name of the browser it came from. ([#341](https://github.com/driceroland/Search/issues/341))
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed
