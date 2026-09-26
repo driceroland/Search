@@ -221,6 +221,13 @@ enum ExtensionShims {
       // (There, Search's passkey patch holds navigator.credentials.)
       const ours = (() => { try { return !!(chrome && chrome.runtime && chrome.runtime.id); } catch (e) { return false; } })();
       if (!ours || root.__searchShim) return;
+      // Bitwarden's bundled TypeScript uses these as computed class keys
+      // before it registers disposable resources. Define them before any
+      // extension code runs; Symbol.for keeps the key shared by its frames.
+      const symbol = root.Symbol;
+      for (const name of ["dispose", "asyncDispose"]) {
+        if (symbol[name] === undefined) Object.defineProperty(symbol, name, { value: symbol.for("Symbol." + name) });
+      }
       // WebKit reverted `requestIdleCallback` after a page-load regression
       // (bug 287681), leaving Proton Pass's form detection without it.
       const nativeIdle = typeof root.requestIdleCallback === "function"
