@@ -103,9 +103,17 @@ final class Bookmarks: ObservableObject {
 
     /// The one kept for this address, wherever it is filed.
     func bookmark(for url: URL) -> Bookmark? {
+        first { $0.url == url.absoluteString }
+    }
+
+    func bookmark(_ id: Bookmark.ID) -> Bookmark? {
+        first { $0.id == id }
+    }
+
+    private func first(where test: (Bookmark) -> Bool) -> Bookmark? {
         func walk(_ nodes: [Bookmark]) -> Bookmark? {
             for node in nodes {
-                if node.url == url.absoluteString { return node }
+                if test(node) { return node }
                 if let found = walk(node.children ?? []) { return found }
             }
             return nil
@@ -712,6 +720,169 @@ struct BookmarkOutline: View {
     }
 }
 
+/// The bookmark button, in the row or at the foot of the column: filled on
+/// a page that is kept, and what hangs off it — the card for one bookmark
+/// when ⇧⌘B opened it, the list otherwise.
+struct BookmarkDoor: View {
+    @ObservedObject var browser: Browser
+    let arrowEdge: Edge
+
+    var body: some View {
+        Group {
+            if let tab = browser.active {
+                Kept(browser: browser, bookmarks: browser.bookmarks, tab: tab)
+            } else {
+                BookmarkDoor.door(browser, kept: false)
+            }
+        }
+        .popover(isPresented: $browser.bookmarksOpen, arrowEdge: arrowEdge) {
+            if let id = browser.bookmarkCard {
+                BookmarkCard(browser: browser, bookmarks: browser.bookmarks, id: id)
+            } else {
+                BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
+            }
+        }
+    }
+
+    fileprivate static func door(_ browser: Browser, kept: Bool) -> some View {
+        Door(icon: kept ? "bookmark.fill" : "bookmark", help: "Bookmarks") { browser.toggleBookmarks() }
+    }
+
+    /// Watches the tab for where it goes and the bookmarks for what is
+    /// kept, so the button fills and empties with either.
+    private struct Kept: View {
+        let browser: Browser
+        @ObservedObject var bookmarks: Bookmarks
+        @ObservedObject var tab: Tab
+
+        var body: some View {
+            BookmarkDoor.door(browser, kept: tab.address.map(bookmarks.contains) ?? false)
+        }
+    }
+}
+
+/// What ⇧⌘B opens off the button: the page just kept, or kept before, with
+/// its name to change and a folder to file it in. Each change is kept as it
+/// is made, so Done, Return, Escape and a click elsewhere all only close it.
+struct BookmarkCard: View {
+    @ObservedObject var browser: Browser
+    @ObservedObject var bookmarks: Bookmarks
+    let id: Bookmark.ID
+
+    @State private var title = ""
+    @FocusState private var naming: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Bookmarked")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.ink)
+
+            VStack(spacing: 8) {
+                line("Name") {
+                    TextField("", text: $title)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Palette.ink)
+                        .focused($naming)
+                        .onSubmit(close)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .onChange(of: title) { _, typed in rename(typed) }
+                }
+                line("Folder") { folder }
+            }
+
+            HStack(spacing: 8) {
+                Quick("Remove", tint: .red.opacity(0.75)) {
+                    close()
+                    bookmarks.remove(id)
+                }
+                Spacer(minLength: 0)
+                Pill("Done", filled: true, action: close)
+            }
+        }
+        .padding(14)
+        .frame(width: 280)
+        .background(Palette.ground)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+        .onAppear {
+            title = bookmarks.bookmark(id)?.title ?? ""
+            // The popover's window takes the keyboard only after this, and
+            // gives it to the first button it finds unless told otherwise.
+            DispatchQueue.main.async { naming = true }
+        }
+    }
+
+    /// Where it is filed, and every other folder to file it in.
+    private var folder: some View {
+        let here = bookmarks.path(to: id)?.last
+        return Menu {
+            Button("Top Level") { bookmarks.move(id, into: nil) }
+            let folders = Bookmarks.folders(bookmarks.roots)
+            if !folders.isEmpty {
+                Divider()
+                ForEach(folders, id: \.node.id) { target in
+                    Button(String(repeating: "   ", count: target.depth) + target.node.title) {
+                        bookmarks.move(id, into: target.node.id)
+                    }
+                }
+            }
+            Divider()
+            Button("New Folder\u{2026}") {
+                Ask.name("New Folder", placeholder: "Name", confirm: "Create") { name in
+                    let made = bookmarks.insert(.folder(name, []), into: nil)
+                    bookmarks.move(id, into: made.id)
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "folder")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Palette.muted)
+                Text(here?.title ?? "Top Level")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Palette.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+    }
+
+    private func line(_ name: String, @ViewBuilder _ control: () -> some View) -> some View {
+        HStack(spacing: 10) {
+            Text(name)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Palette.muted)
+                .frame(width: 42, alignment: .leading)
+            control()
+        }
+    }
+
+    /// An empty name keeps the one it had.
+    private func rename(_ typed: String) {
+        let name = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != bookmarks.bookmark(id)?.title else { return }
+        bookmarks.update(id, title: name, url: nil)
+    }
+
+    private func close() {
+        browser.bookmarksOpen = false
+    }
+}
+
 /// The button's dropdown: the tree, and the two things that aren't in it.
 struct BookmarksDropdown: View {
     @ObservedObject var browser: Browser
@@ -737,7 +908,9 @@ struct BookmarksDropdown: View {
             }
             Divider().overlay(Palette.hairline)
             VStack(spacing: 1) {
-                Foot("bookmark", "Add This Page") { browser.bookmarkCurrent() }
+                Foot(browser.pageKept ? "bookmark.fill" : "bookmark", browser.pageKept ? "Edit This Bookmark\u{2026}" : "Add This Page") {
+                    browser.bookmarkCurrent()
+                }
                 Foot(nil, "Manage Bookmarks…") { browser.bookmarking = true }
             }
             .padding(6)

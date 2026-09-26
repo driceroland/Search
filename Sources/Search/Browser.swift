@@ -46,19 +46,39 @@ final class Browser: NSObject, ObservableObject {
     @Published var bookmarking = false
     /// The dropdown off the button.
     @Published var bookmarksOpen = false
+    /// What hangs off the button instead of the list: the card for one
+    /// bookmark, its name and folder, as ⇧⌘B opens it.
+    @Published var bookmarkCard: Bookmark.ID?
     /// The bookmark whose name is a field in the list, in the dropdown or
     /// the full one. Escape puts the name back (see ContentView.take).
     @Published var editingBookmark: Bookmark.ID?
 
-    /// ⇧⌘B. The page you are on, at the end of the list.
+    /// The page you are on is kept, wherever it is filed.
+    var pageKept: Bool {
+        active?.address.map(bookmarks.contains) ?? false
+    }
+
+    /// ⇧⌘B. The page you are on, at the end of the list, and the card off
+    /// the button to name it and file it — or the card for it, if it was
+    /// kept already. Without the button on screen (the tabs folded away)
+    /// there is nothing to hang the card from, and a word says what
+    /// happened instead.
     func bookmarkCurrent() {
         guard let tab = active, let url = tab.address else { return }
-        guard !bookmarks.contains(url) else {
-            announce("Already a bookmark")
+        let kept = bookmarks.bookmark(for: url)
+        guard let id = (kept ?? bookmarks.add(url, title: tab.title))?.id else { return }
+        guard !folded else {
+            announce(kept == nil ? "Bookmarked" : "Already a bookmark")
             return
         }
-        bookmarks.add(url, title: tab.title)
-        announce("Bookmarked")
+        bookmarkCard = id
+        bookmarksOpen = true
+    }
+
+    /// The button: the list, never a card left from before.
+    func toggleBookmarks() {
+        if !bookmarksOpen { bookmarkCard = nil }
+        bookmarksOpen.toggle()
     }
 
     /// Another browser's bookmarks, folders and all — and, behind them, the

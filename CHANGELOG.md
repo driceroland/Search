@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- ⇧⌘B keeps the page and opens a small card off the bookmark button, to give it another name or file it in a folder, a new one included, or take it back with Remove. On a page already kept, ⇧⌘B opens the same card, and the button is filled. With the tabs folded away it says "Bookmarked", as before.
 - Search your bookmarks in Bookmarks › Show Bookmarks: what matches is listed with the folders it is in, Return opens the first, and Show in Folder opens the list down to it.
 - Folders for bookmarks: New Folder in Bookmarks › Show Bookmarks, or New Folder Inside on a folder's right-click, names it where it appears. Rename a folder, or Edit… a bookmark's name and address, in place from the right-click menu; Return or a click elsewhere keeps it, Escape puts it back. Removing a folder with bookmarks in it asks first.
 - Bookmarks go in the order you put them: drag one above or below another in the list under the bookmark button or in Bookmarks › Show Bookmarks, or onto the middle of a folder to file it there; a closed folder held over opens. The bar and the Bookmarks menu keep the same order.
