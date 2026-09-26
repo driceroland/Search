@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Added
 
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
+- Ctrl+Tab can walk your tabs in the order you last looked at them, most recent first, instead of walking the row: keep holding Control and press Tab again for the one before that, ⌃⇧⇥ for the other way. Off unless you turn it on in Settings › Tabs › Ctrl+Tab walks recent tabs. The idea came from [@NANAMINER](https://github.com/NANAMINER) ([#345](https://github.com/driceroland/Search/issues/345))
 
 ### Fixed
 
