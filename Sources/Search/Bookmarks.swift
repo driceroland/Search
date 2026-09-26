@@ -31,7 +31,13 @@ struct Bookmark: Codable, Identifiable, Hashable {
 
 @MainActor
 final class Bookmarks: ObservableObject {
-    @Published private(set) var roots: [Bookmark] = []
+    @Published private(set) var roots: [Bookmark] = [] {
+        didSet { kept = Set(Bookmarks.urls(roots).map(\.absoluteString)) }
+    }
+
+    /// Every address kept, for `contains` — asked on every redraw of the
+    /// button, which fills in on a page that is kept.
+    private var kept: Set<String> = []
 
     init() { load() }
 
@@ -61,21 +67,68 @@ final class Bookmarks: ObservableObject {
         }
     }
 
+    /// Every site and folder whose title or address holds all the words,
+    /// with the folders it sits in — the same rule chrome.bookmarks.search
+    /// keeps (see ExtensionShims.swift).
+    func matches(_ text: String) -> [(node: Bookmark, path: [String])] {
+        let words = text.lowercased().split(separator: " ").map(String.init)
+        guard !words.isEmpty else { return [] }
+        func walk(_ nodes: [Bookmark], _ path: [String]) -> [(node: Bookmark, path: [String])] {
+            nodes.flatMap { node -> [(node: Bookmark, path: [String])] in
+                let hay = (node.title + " " + (node.url ?? "")).lowercased()
+                let hit = words.allSatisfy { hay.contains($0) } ? [(node: node, path: path)] : []
+                return hit + walk(node.children ?? [], path + [node.title])
+            }
+        }
+        return walk(roots, [])
+    }
+
+    /// The folders `id` sits in, outermost first; empty at the top level,
+    /// nil when it isn't here at all.
+    func path(to id: Bookmark.ID) -> [Bookmark]? {
+        func walk(_ nodes: [Bookmark], _ above: [Bookmark]) -> [Bookmark]? {
+            for node in nodes {
+                if node.id == id { return above }
+                if let kids = node.children, let found = walk(kids, above + [node]) { return found }
+            }
+            return nil
+        }
+        return walk(roots, [])
+    }
+
+    /// The folder `id` sits in, nil at the top level.
+    func parent(of id: Bookmark.ID) -> Bookmark.ID? {
+        path(to: id)?.last?.id
+    }
+
+    /// The one kept for this address, wherever it is filed.
+    func bookmark(for url: URL) -> Bookmark? {
+        func walk(_ nodes: [Bookmark]) -> Bookmark? {
+            for node in nodes {
+                if node.url == url.absoluteString { return node }
+                if let found = walk(node.children ?? []) { return found }
+            }
+            return nil
+        }
+        return walk(roots)
+    }
+
     // MARK: - changing
 
-    /// The page, at the end of the list. Nothing is asked: the title is the
-    /// page's, and filing it into a folder is a drag or a right-click away.
-    func add(_ url: URL, title: String) {
-        guard !contains(url) else { return }
-        roots.append(.site(title, url))
+    /// The page, at the end of the list. Nothing is asked first: the title
+    /// is the page's, and the card that opens after (see BookmarkCard) is
+    /// where it gets another name or a folder.
+    @discardableResult
+    func add(_ url: URL, title: String) -> Bookmark? {
+        guard !contains(url) else { return nil }
+        let made = Bookmark.site(title, url)
+        roots.append(made)
         save()
+        return made
     }
 
     func contains(_ url: URL) -> Bool {
-        func walk(_ nodes: [Bookmark]) -> Bool {
-            nodes.contains { $0.url == url.absoluteString || walk($0.children ?? []) }
-        }
-        return walk(roots)
+        kept.contains(url.absoluteString)
     }
 
     func remove(_ id: Bookmark.ID) {
@@ -93,22 +146,38 @@ final class Bookmarks: ObservableObject {
     }
 
     /// Takes a bookmark or a whole folder out of wherever it currently sits
-    /// and puts it at the end of another folder's children — or back at the
-    /// top level when `folderID` is nil. Moving a folder into its own
+    /// and puts it in another folder — or at the top level when `folderID`
+    /// is nil — at `index` among what is there, or at the end. The index is
+    /// counted as the list reads before the move, so dropping a row just
+    /// below itself leaves it where it was. Moving a folder into its own
     /// children is refused rather than allowed to erase it by looping it
     /// inside itself; moving it onto itself is simply nothing to do.
-    func move(_ id: Bookmark.ID, into folderID: Bookmark.ID?) {
+    func move(_ id: Bookmark.ID, into folderID: Bookmark.ID?, at index: Int? = nil) {
         guard id != folderID else { return }
+        var index = index
+        if let at = index, let from = siblings(of: folderID).firstIndex(where: { $0.id == id }), from < at {
+            // It leaves a gap above the place it goes to.
+            index = at - 1
+        }
         var working = roots
         guard let node = Bookmarks.detach(id, from: &working) else { return }
-        if let folderID {
-            guard !Bookmarks.holds(folderID, node) else { return }
-            guard Bookmarks.insert(node, into: folderID, nodes: &working) else { return }
-        } else {
-            working.append(node)
-        }
+        if let folderID, Bookmarks.holds(folderID, node) { return }
+        guard Bookmarks.place(node, in: folderID, at: index, nodes: &working) else { return }
         roots = working
         save()
+    }
+
+    /// What a folder holds, or the top level for nil.
+    private func siblings(of folderID: Bookmark.ID?) -> [Bookmark] {
+        guard let folderID else { return roots }
+        func walk(_ nodes: [Bookmark]) -> [Bookmark]? {
+            for node in nodes {
+                if node.id == folderID { return node.children ?? [] }
+                if let found = walk(node.children ?? []) { return found }
+            }
+            return nil
+        }
+        return walk(roots) ?? []
     }
 
     private static func detach(_ id: Bookmark.ID, from nodes: inout [Bookmark]) -> Bookmark? {
@@ -124,16 +193,24 @@ final class Bookmarks: ObservableObject {
         return nil
     }
 
+    /// `node` into the folder `id` (the top level for nil) at `index`,
+    /// clamped to what is there, or at the end. False when there is no such
+    /// folder.
     @discardableResult
-    private static func insert(_ node: Bookmark, into id: Bookmark.ID, nodes: inout [Bookmark]) -> Bool {
+    private static func place(_ node: Bookmark, in id: Bookmark.ID?, at index: Int?, nodes: inout [Bookmark]) -> Bool {
+        guard let id else {
+            nodes.insert(node, at: min(max(index ?? nodes.count, 0), nodes.count))
+            return true
+        }
         for i in nodes.indices {
             if nodes[i].id == id, nodes[i].isFolder {
-                nodes[i].children = (nodes[i].children ?? []) + [node]
+                var kids = nodes[i].children ?? []
+                kids.insert(node, at: min(max(index ?? kids.count, 0), kids.count))
+                nodes[i].children = kids
                 return true
             }
-            guard nodes[i].children != nil else { continue }
-            var kids = nodes[i].children!
-            if insert(node, into: id, nodes: &kids) {
+            guard var kids = nodes[i].children else { continue }
+            if place(node, in: id, at: index, nodes: &kids) {
                 nodes[i].children = kids
                 return true
             }
@@ -166,19 +243,16 @@ final class Bookmarks: ObservableObject {
 
     // MARK: - for extensions
 
-    /// A page or a folder filed under `parent`, or at the top level for nil
-    /// or a folder that isn't there. What chrome.bookmarks.create does.
+    /// A page or a folder filed under `parent` at `index`, or at the top
+    /// level for nil or a folder that isn't there. What
+    /// chrome.bookmarks.create does, and New Folder.
     @discardableResult
-    func insert(_ node: Bookmark, into parent: Bookmark.ID?) -> Bookmark {
-        if let parent {
-            var nodes = roots
-            if Bookmarks.insert(node, into: parent, nodes: &nodes) {
-                roots = nodes
-                save()
-                return node
-            }
+    func insert(_ node: Bookmark, into parent: Bookmark.ID?, at index: Int? = nil) -> Bookmark {
+        var nodes = roots
+        if !Bookmarks.place(node, in: parent, at: index, nodes: &nodes) {
+            Bookmarks.place(node, in: nil, at: index, nodes: &nodes)
         }
-        roots.append(node)
+        roots = nodes
         save()
         return node
     }

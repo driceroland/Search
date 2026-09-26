@@ -2546,13 +2546,14 @@ enum ExtensionShims {
             let spec = first as? [String: Any] ?? [:]
             let title = spec["title"] as? String ?? ""
             let parent = (spec["parentId"] as? String).flatMap(UUID.init(uuidString:))
+            let index = spec["index"] as? Int
             let made: Bookmark
             if let url = (spec["url"] as? String).flatMap(URL.init(string:)) {
-                made = browser.bookmarks.insert(.site(title, url), into: parent)
+                made = browser.bookmarks.insert(.site(title, url), into: parent, at: index)
             } else {
-                made = browser.bookmarks.insert(.folder(title, []), into: parent)
+                made = browser.bookmarks.insert(.folder(title, []), into: parent, at: index)
             }
-            return node(made, parent: parent?.uuidString ?? "1", index: 0, deep: false)
+            return find(made.id.uuidString, in: browser.bookmarks.roots).map { node($0.node, parent: $0.parent, index: $0.index, deep: false) }
         case "bookmarks.update":
             guard let key = first as? String, let uuid = UUID(uuidString: key) else { throw Unsupported(what: "No such bookmark") }
             let changes = args.count > 1 ? args[1] as? [String: Any] ?? [:] : [:]
@@ -2560,8 +2561,11 @@ enum ExtensionShims {
             return find(key, in: browser.bookmarks.roots).map { node($0.node, parent: $0.parent, index: $0.index, deep: false) }
         case "bookmarks.move":
             guard let key = first as? String, let uuid = UUID(uuidString: key) else { throw Unsupported(what: "No such bookmark") }
-            let target = (args.count > 1 ? args[1] as? [String: Any] : nil)?["parentId"] as? String
-            browser.bookmarks.move(uuid, into: target.flatMap(UUID.init(uuidString:)))
+            let spec = (args.count > 1 ? args[1] as? [String: Any] : nil) ?? [:]
+            // No parent named keeps it in the folder it is in, as in Chrome;
+            // "1", the bar, is the top level.
+            let target = (spec["parentId"] as? String).map(UUID.init(uuidString:)) ?? browser.bookmarks.parent(of: uuid)
+            browser.bookmarks.move(uuid, into: target, at: spec["index"] as? Int)
             return find(key, in: browser.bookmarks.roots).map { node($0.node, parent: $0.parent, index: $0.index, deep: false) }
         case "bookmarks.remove", "bookmarks.removeTree":
             guard let key = first as? String, let uuid = UUID(uuidString: key) else { throw Unsupported(what: "No such bookmark") }
