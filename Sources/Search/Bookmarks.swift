@@ -345,7 +345,7 @@ final class Bookmarks: ObservableObject {
 // MARK: - the tree, drawn
 
 /// The list itself: folders that open in place rather than to the side, each
-/// row draggable into another folder or back out to the top, each row good
+/// row draggable above or below another, or into a folder, each row good
 /// for a right-click too. Used both in the small dropdown off the button and
 /// in the full manager — the interaction is the same size either way.
 struct BookmarkOutline: View {
@@ -355,28 +355,43 @@ struct BookmarkOutline: View {
 
     @State private var expanded: Set<Bookmark.ID> = []
     @State private var dragging: Bookmark.ID?
-    @State private var overRoot = false
+    /// Where the drag under way would land, drawn as a line or a wash.
+    @State private var aimed: Aim?
+    /// A closed folder held over opens after a moment, so a bookmark can go
+    /// deep without being dropped on the way.
+    @State private var spring: DispatchWorkItem?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            rows(bookmarks.roots, depth: 0)
+            rows(bookmarks.roots, depth: 0, parent: nil)
+            // Past the last row: the end of the top level, which "after" on
+            // an open folder at the bottom can't reach.
+            Color.clear
+                .frame(height: 10)
+                .overlay(alignment: .top) { if aimed == Aim(id: nil, zone: .after) { Line(depth: 0) } }
+                .modifier(Landing(
+                    isFolder: false,
+                    allowed: { true },
+                    aim: { aim($0.map { _ in Aim(id: nil, zone: .after) }) },
+                    land: { _, providers in drop(providers) { bookmarks.move($0, into: nil) } }
+                ))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(overRoot ? Palette.wash : .clear)
-        .onDrop(of: [.text], isTargeted: $overRoot) { providers in drop(providers, into: nil) }
     }
 
     @ViewBuilder
-    private func rows(_ nodes: [Bookmark], depth: Int) -> some View {
-        ForEach(nodes) { node in
+    private func rows(_ nodes: [Bookmark], depth: Int, parent: Bookmark.ID?) -> some View {
+        ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
+            let isOpen = node.isFolder && expanded.contains(node.id)
             Row(
                 node: node,
                 depth: depth,
                 // An extension can write an address that does not parse,
                 // and the menu below already unwraps this the same way.
                 open: node.isFolder ? nil : { if let text = node.url, let url = URL(string: text) { open(url) } },
-                isOpen: expanded.contains(node.id),
+                isOpen: isOpen,
                 dragging: dragging == node.id,
+                aim: aimed?.id == node.id ? aimed?.zone : nil,
                 toggle: node.isFolder ? { toggle(node.id) } : nil,
                 moveTargets: Bookmarks.folders(bookmarks.roots).filter { !Bookmarks.holds($0.node.id, node) },
                 moveTo: { bookmarks.move(node.id, into: $0) },
@@ -395,19 +410,45 @@ struct BookmarkOutline: View {
                 dragging = node.id
                 return NSItemProvider(object: node.id.uuidString as NSString)
             }
-            .modifier(DropOnto(active: node.isFolder) { providers in drop(providers, into: node.id) })
+            .modifier(Landing(
+                isFolder: node.isFolder,
+                allowed: { allows(node.id) },
+                aim: { aim($0.map { Aim(id: node.id, zone: $0) }) },
+                land: { zone, providers in
+                    drop(providers) { id in
+                        switch zone {
+                        case .before: bookmarks.move(id, into: parent, at: index)
+                        // Below an open folder's row is above its first
+                        // child, so that is where it goes.
+                        case .after where isOpen: bookmarks.move(id, into: node.id, at: 0)
+                        case .after: bookmarks.move(id, into: parent, at: index + 1)
+                        case .into: bookmarks.move(id, into: node.id)
+                        }
+                    }
+                }
+            ))
 
-            if node.isFolder, expanded.contains(node.id) {
+            if isOpen {
                 if let kids = node.children, !kids.isEmpty {
                     // Type-erased: a view that calls itself can't let Swift
                     // infer its own opaque return type from its own body.
-                    AnyView(rows(kids, depth: depth + 1))
+                    AnyView(rows(kids, depth: depth + 1, parent: node.id))
                 } else {
+                    // Where its first bookmark would be, so a drop here goes
+                    // in, shown as the folder's own lower edge shows it.
                     Text("Empty")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.faint)
                         .padding(.leading, indent(depth + 1) + 26)
                         .padding(.vertical, 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .modifier(Landing(
+                            isFolder: false,
+                            allowed: { allows(node.id) },
+                            aim: { aim($0.map { _ in Aim(id: node.id, zone: .after) }) },
+                            land: { _, providers in drop(providers) { bookmarks.move($0, into: node.id) } }
+                        ))
                 }
             }
         }
@@ -427,12 +468,31 @@ struct BookmarkOutline: View {
         }
     }
 
-    private func drop(_ providers: [NSItemProvider], into folderID: Bookmark.ID?) -> Bool {
+    /// A folder can't go above, below or into anything inside itself.
+    private func allows(_ target: Bookmark.ID) -> Bool {
+        guard let dragging else { return true }
+        return target != dragging && !(bookmarks.path(to: target) ?? []).contains { $0.id == dragging }
+    }
+
+    private func aim(_ target: Aim?) {
+        guard target != aimed else { return }
+        aimed = target
+        spring?.cancel()
+        spring = nil
+        guard let target, target.zone == .into, let id = target.id, !expanded.contains(id) else { return }
+        let expanded = $expanded
+        let work = DispatchWorkItem { withAnimation(Motion.settle) { _ = expanded.wrappedValue.insert(id) } }
+        spring = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
+    }
+
+    private func drop(_ providers: [NSItemProvider], then move: @escaping (Bookmark.ID) -> Void) -> Bool {
+        aim(nil)
         guard let provider = providers.first(where: { $0.canLoadObject(ofClass: String.self) }) else { return false }
         _ = provider.loadObject(ofClass: String.self) { text, _ in
             guard let text, let id = UUID(uuidString: text) else { return }
             DispatchQueue.main.async {
-                self.bookmarks.move(id, into: folderID)
+                withAnimation(Motion.settle) { move(id) }
                 self.dragging = nil
             }
         }
@@ -441,21 +501,66 @@ struct BookmarkOutline: View {
 
     private func indent(_ depth: Int) -> CGFloat { CGFloat(depth) * 18 }
 
-    /// Lets a row's own onDrop only run for folders — a bookmark isn't a
-    /// place to file something else into — while every row still fires the
-    /// same one onDrag above.
-    private struct DropOnto: ViewModifier {
-        let active: Bool
-        let action: ([NSItemProvider]) -> Bool
-        @State private var targeted = false
+    enum Zone { case before, into, after }
+
+    /// A row and where on it; no row is the end of the list.
+    struct Aim: Equatable {
+        let id: Bookmark.ID?
+        let zone: Zone
+    }
+
+    /// The line where a dragged row would go.
+    private struct Line: View {
+        let depth: Int
+        var body: some View {
+            Capsule()
+                .fill(Palette.ink.opacity(0.55))
+                .frame(height: 2)
+                .padding(.leading, CGFloat(depth) * 18 + 10)
+                .padding(.trailing, 10)
+        }
+    }
+
+    /// Every row takes a drop: the top of it means above, the bottom below,
+    /// and the middle of a folder means into it. Which part the pointer is
+    /// over is only known against the row's height, so it is measured.
+    private struct Landing: ViewModifier {
+        let isFolder: Bool
+        let allowed: () -> Bool
+        let aim: (Zone?) -> Void
+        let land: (Zone, [NSItemProvider]) -> Bool
+
+        @State private var height: CGFloat = 1
 
         func body(content: Content) -> some View {
-            if active {
-                content
-                    .background(targeted ? Palette.hover : .clear)
-                    .onDrop(of: [.text], isTargeted: $targeted, perform: action)
-            } else {
-                content
+            content
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height = max($0, 1) }
+                .onDrop(of: [.text], delegate: Spot(landing: self))
+        }
+
+        func zone(at y: CGFloat) -> Zone {
+            let part = y / height
+            guard isFolder else { return part < 0.5 ? .before : .after }
+            return part < 0.25 ? .before : part > 0.75 ? .after : .into
+        }
+
+        private struct Spot: DropDelegate {
+            let landing: Landing
+
+            func dropUpdated(info: DropInfo) -> DropProposal? {
+                guard landing.allowed() else {
+                    landing.aim(nil)
+                    return DropProposal(operation: .forbidden)
+                }
+                landing.aim(landing.zone(at: info.location.y))
+                return DropProposal(operation: .move)
+            }
+
+            func dropExited(info: DropInfo) { landing.aim(nil) }
+
+            func performDrop(info: DropInfo) -> Bool {
+                guard landing.allowed() else { return false }
+                return landing.land(landing.zone(at: info.location.y), info.itemProviders(for: [.text]))
             }
         }
     }
@@ -467,6 +572,8 @@ struct BookmarkOutline: View {
         let open: (() -> Void)?
         let isOpen: Bool
         let dragging: Bool
+        /// Where a drag over this row would land, if one is.
+        let aim: Zone?
         let toggle: (() -> Void)?
         let moveTargets: [(node: Bookmark, depth: Int)]
         let moveTo: (Bookmark.ID?) -> Void
@@ -509,7 +616,14 @@ struct BookmarkOutline: View {
             .padding(.leading, CGFloat(depth) * 18 + 10)
             .padding(.trailing, 10)
             .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(hovering ? Palette.wash : .clear))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(wash))
+            .overlay(alignment: aim == .before ? .top : .bottom) {
+                if aim == .before || aim == .after {
+                    // Below an open folder is its first child's place.
+                    Line(depth: aim == .after && isOpen ? depth + 1 : depth)
+                        .offset(y: aim == .before ? -1.5 : 1.5)
+                }
+            }
             .contentShape(Rectangle())
             .opacity(dragging ? 0.35 : 1)
             .onTapGesture { open?() ?? toggle?() }
@@ -539,6 +653,12 @@ struct BookmarkOutline: View {
             }
             .animation(Motion.quick, value: hovering)
             .animation(Motion.quick, value: dragging)
+            .animation(Motion.quick, value: aim)
+        }
+
+        private var wash: Color {
+            if aim == .into { return Palette.hover }
+            return hovering ? Palette.wash : .clear
         }
     }
 }
