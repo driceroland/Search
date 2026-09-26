@@ -15,11 +15,15 @@ final class Browser: NSObject, ObservableObject {
             // gone unwatched long enough to sleep is counted from here, not
             // from when it was first picked. Its picture for ⌃Tab is taken
             // now too, while its page is still the one on screen.
-            guard oldValue != activeID, let old = oldValue else { return }
-            linkStatus.dismiss()
-            guard let left = tabs.first(where: { $0.id == old }) else { return }
-            left.touch()
-            if prefs.tabPictures { left.capture() }
+            guard oldValue != activeID else { return }
+            if let old = oldValue {
+                linkStatus.dismiss()
+                if let left = tabs.first(where: { $0.id == old }) {
+                    left.touch()
+                    if prefs.tabPictures { left.capture() }
+                }
+            }
+            if let active { openFolder(containing: active) }
         }
     }
 
@@ -193,6 +197,10 @@ final class Browser: NSObject, ObservableObject {
     @Published var reviewing = false {
         didSet { if !reviewing { stopPeeking() } }
     }
+    /// The colour picker for the frame (see Theme.swift).
+    @Published var theming = false
+    /// Folders in the column that are shut (see Folders.swift), by space and name.
+    @Published var shutFolders: Set<String> = []
 
     var hereHost: String? { curtain.host(of: active?.address) }
     var hereVeils: [Veil] { curtain.veils(on: hereHost) }
@@ -534,6 +542,7 @@ final class Browser: NSObject, ObservableObject {
 
     func pin(_ tab: Tab) {
         if tab.pin == nil {
+            tab.folder = nil
             tab.pin = tab.monogram
             // Pinned tabs live at the head of the row, in the order they were
             // pinned, so their letters never move under your hand.
@@ -864,6 +873,7 @@ final class Browser: NSObject, ObservableObject {
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
+            tab.folder = entry.folder
             tabs.append(tab)
         }
         guard !tabs.isEmpty else {
@@ -1016,7 +1026,7 @@ final class Browser: NSObject, ObservableObject {
                           url.scheme?.hasPrefix("http") == true
                     else { return nil }
                     return Session.Entry(
-                        url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name
+                        url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name, folder: tab.folder
                     )
                 },
                 active: tabs.firstIndex { $0.id == activeID } ?? 0
@@ -1460,6 +1470,7 @@ final class Browser: NSObject, ObservableObject {
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
+            tab.folder = entry.folder
             row.append(tab)
         }
         let active = row.indices.contains(saved.active) ? row[saved.active].id : row.first?.id

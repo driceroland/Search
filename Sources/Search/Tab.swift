@@ -370,6 +370,9 @@ final class Tab: ObservableObject, Identifiable {
     /// a job, not for a page.
     @Published var name: String?
 
+    /// The folder in the column it sits in (see Folders.swift); nil for none.
+    @Published var folder: String?
+
     /// When you last looked at it. The summon lists pages by this, because
     /// what you were just reading is what you are most likely to want back.
     private(set) var touched = Date()

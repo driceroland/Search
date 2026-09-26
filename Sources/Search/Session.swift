@@ -11,6 +11,8 @@ enum Session {
         var pin: String?
         /// The name you gave the tab, when you gave it one.
         var name: String?
+        /// The folder it sits in, in the column (see Folders.swift).
+        var folder: String?
     }
 
     struct Shape: Codable {

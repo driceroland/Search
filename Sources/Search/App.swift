@@ -85,6 +85,7 @@ struct SearchApp: App {
                     .keyboardShortcut("h", modifiers: [.command, .shift])
                 Button("Hidden on This Site…") { browser.reviewing.toggle() }
                     .keyboardShortcut("u", modifiers: [.command, .shift])
+                Button("Colour…") { browser.theming.toggle() }
                 Divider()
                 Button("Zoom In") { browser.zoom(by: 1.1) }
                     .keyboardShortcut("+")
@@ -275,7 +276,7 @@ struct ContentView: View {
         ZStack(alignment: .topLeading) {
             // Black while a page has the screen, so the frame of our own window
             // that survives the transition is not a white band across the top.
-            (browser.active?.immersed == true ? Color.black : Palette.ground)
+            if browser.active?.immersed == true { Color.black } else { ThemeGround(theme: browser.space.theme) }
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
@@ -339,6 +340,16 @@ struct ContentView: View {
                     }
                 }
                 .animation(Motion.quick, value: browser.suggesting)
+                // With a colour, the page sits in the frame as a card, as in
+                // Arc, so the colour goes all the way round.
+                .clipShape(RoundedRectangle(cornerRadius: framed ? 10 : 0, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.black.opacity(framed ? 0.1 : 0), lineWidth: 1)
+                )
+                .padding(framed ? (sidebar ? EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 8)
+                                           : EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 8))
+                                : EdgeInsets())
         } else {
             Palette.ground
         }
@@ -460,6 +471,20 @@ struct ContentView: View {
             .ignoresSafeArea()
             .transition(.opacity)
         }
+        if browser.theming {
+            // Nothing dimmed: the frame is what is being changed.
+            ZStack(alignment: .topTrailing) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { browser.theming = false }
+                ThemePanel(browser: browser, prefs: browser.prefs)
+                    .padding(.top, Metrics.strip + 8)
+                    .padding(.trailing, 14)
+                    .transition(.scale(scale: 0.97, anchor: .topTrailing).combined(with: .opacity))
+            }
+            .ignoresSafeArea()
+            .transition(.opacity)
+        }
     }
 
     /// ⌃Tab's pictures of the tabs (see Switcher.swift). Up a beat after the
@@ -536,6 +561,8 @@ struct ContentView: View {
             .animation(Motion.settle, value: browser.bookmarking)
             .animation(Motion.settle, value: browser.managing)
             .animation(Motion.settle, value: browser.reviewing)
+            .animation(Motion.settle, value: browser.theming)
+            .onChange(of: browser.space.theme != nil) { _, _ in glaze(window) }
         .onAppear {
             watchKeys()
             browser.askFocus()
@@ -691,6 +718,11 @@ struct ContentView: View {
         browser.prefs.sidebar && !browser.folded && browser.active?.immersed != true
     }
 
+    /// The page as a card in a coloured frame (see Theme.swift).
+    private var framed: Bool {
+        browser.space.theme != nil && browser.active?.immersed != true
+    }
+
     /// The column has its own corner for the lights, so the page beside it
     /// starts at the very top; the strip needs a band.
     private var band: CGFloat {
@@ -725,7 +757,7 @@ struct ContentView: View {
         // window only has to be the ground colour that goes with it.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.backgroundColor = Palette.NS.ground
+        glaze(window)
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
@@ -761,6 +793,15 @@ struct ContentView: View {
             container.wantsLayer = true
             container.layer?.zPosition = 10
         }
+    }
+
+    /// See-through where the frame is, when the space has a colour: the
+    /// desktop shows, frosted, under it (see Theme.swift). Opaque otherwise.
+    private func glaze(_ window: NSWindow?) {
+        guard let window else { return }
+        let themed = browser.space.theme != nil
+        window.isOpaque = !themed
+        window.backgroundColor = themed ? .clear : Palette.NS.ground
     }
 
     // MARK: - keys
@@ -867,6 +908,10 @@ struct ContentView: View {
             }
             if browser.veiling {
                 browser.toggleHiding()
+                return true
+            }
+            if browser.theming {
+                browser.theming = false
                 return true
             }
             if browser.reviewing {

@@ -14,6 +14,8 @@ in [ROADMAP.md](ROADMAP.md).
 ### Added
 
 - ⌃Tab can show every tab as a picture, the one you were just on first, as in Arc and Dia: a tap flicks back to the last tab; held, Tab walks on and ⇧Tab walks back, the pointer picks a card too, and letting go of ⌃ switches. Settings › Tabs › ⌃Tab shows the tabs as pictures, off by default.
+- A colour for the frame, as in Arc: View › Colour…, or Settings › General › Colour, none until picked. Up to three dots on a pad make a gradient, with how strong, how grainy and how clear (frosted glass to the desktop straight through); each space keeps its own. The page then sits in the colour as a rounded card, and the column takes Arc's look: the address in a well at the top, larger rows, white on the colour.
+- Folders in the column: right-click a tab › Add to Folder › New Folder…, and the folder sits above your tabs with them under it; a click opens or shuts it, and its own right-click renames, ungroups or closes it.
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed
