@@ -285,6 +285,9 @@ struct ContentView: View {
             // it and is resized once, not on every frame of the slide: laid out
             // again thirty times a second, the page juddered along its right
             // edge and overshot the window with the spring (see `room`).
+            // The wallpaper stays at the window's size behind that movement.
+            if let tab = browser.active { WallpaperView(tab: tab) }
+
             stage
                 .padding(.leading, roomed.width)
                 .padding(.top, roomed.height)
@@ -301,6 +304,7 @@ struct ContentView: View {
 
             if !browser.prefs.sidebar, !browser.folded, browser.active?.immersed != true {
                 TabBar(browser: browser)
+                    .background(Palette.ground)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
