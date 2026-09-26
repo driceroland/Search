@@ -467,6 +467,8 @@ struct SettingsPanel: View {
                 Shortcut("⇧⌘H", "Hide something on this site")
                 Rule()
                 Shortcut("⇧⌘P", "Float the video")
+                Rule()
+                Shortcut("⌘⇧⌫", "Clear browsing data")
             }
         }
     }
