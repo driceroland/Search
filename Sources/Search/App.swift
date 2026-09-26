@@ -757,6 +757,8 @@ struct ContentView: View {
             guard event.type == .keyDown else {
                 // ⌘ let go of ends a ⌘K walk, wherever it stopped.
                 if !event.modifierFlags.contains(.command) { browser.landSummon() }
+                // ⌃ let go of ends a ⌃⇥ walk, wherever it stopped.
+                if !event.modifierFlags.contains(.control) { browser.landMRU() }
                 return event
             }
             return take(event) ? nil : event
@@ -866,15 +868,21 @@ struct ContentView: View {
 
         // Tab is the page's: it moves between a form's fields and a page's
         // links, as in every browser. It used to walk the row of tabs, which
-        // took it from anyone filling in a form. ⌃Tab walks the row and comes
+        // took it from anyone filling in a form. ⌃Tab walks the tabs and comes
         // round to the first again, ⌃⇧Tab the other way — the keys every
-        // other browser uses for that.
+        // other browser uses for that. With recent order on (Settings › Tabs)
+        // it walks most recently looked at first instead of walking the row.
         //
         // While an address is being typed, the list under the field is what
         // there is to move through, and Return takes whatever the walk landed on.
         if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option) {
             if flags.contains(.control) {
-                browser.step(flags.contains(.shift) ? -1 : 1)
+                let direction = flags.contains(.shift) ? -1 : 1
+                if browser.prefs.mruTabs {
+                    browser.stepMRU(direction)
+                } else {
+                    browser.step(direction)
+                }
                 return true
             }
             if browser.editingTab != nil { return true }

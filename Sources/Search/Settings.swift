@@ -287,6 +287,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.sleepsTabs)
             }
             Rule()
+            Line("Ctrl+Tab walks recent tabs", "Most recently looked at first, like switching apps — hold it and press Tab again for the one before that. Off, it walks the row in order.") {
+                Switch(on: $prefs.mruTabs)
+            }
+            Rule()
             Line("Spaces", "Separate sets of tabs, signed in where the others are or starting afresh, switched with ⌃1–⌃9, two fingers sideways over the column, or the space's icon. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
                 Switch(on: $prefs.usesSpaces)
             }

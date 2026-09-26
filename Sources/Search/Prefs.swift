@@ -73,6 +73,12 @@ final class Preferences: ObservableObject {
     @Published var sleepsTabs: Bool {
         didSet { store.set(sleepsTabs, forKey: "tabs.sleep") }
     }
+    /// ⌃⇥ walks the tabs in the order they were last looked at, most recent
+    /// first — like switching apps — instead of walking the row in order.
+    /// Off unless asked for.
+    @Published var mruTabs: Bool {
+        didSet { store.set(mruTabs, forKey: "tabs.mru") }
+    }
     @Published var showsReading: Bool {
         didSet { store.set(showsReading, forKey: "tabs.reading") }
     }
@@ -236,6 +242,7 @@ final class Preferences: ObservableObject {
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
+        mruTabs = store.bool(forKey: "tabs.mru")
         showsReading = store.object(forKey: "tabs.reading") as? Bool ?? true
         shielded = store.object(forKey: "shield") as? Bool ?? true
         extensionsInPrivate = store.bool(forKey: "extensions.private")

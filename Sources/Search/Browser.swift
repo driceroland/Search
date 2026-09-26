@@ -1242,6 +1242,40 @@ final class Browser: NSObject, ObservableObject {
         select(tabs[next])
     }
 
+    /// True between the first ⌃⇥ of a walk and letting go of ⌃. While it
+    /// holds, every ⌃⇥ steps through the same snapshot — most recently
+    /// looked at first — instead of re-reading the row, which would bounce
+    /// between the two newest tabs rather than walking further back.
+    private var mruCycling = false
+    private var mruOrder: [Tab.ID] = []
+
+    /// ⌃⇥ with Settings › Tabs › recent order on. The first step lands on
+    /// the tab looked at before this one; kept held, each further step goes
+    /// one older. ⌃⇧⇥ walks the same list the other way. A quick tap is just
+    /// the first step, so tapping toggles between the two newest.
+    func stepMRU(_ direction: Int) {
+        guard tabs.count > 1, let current = activeID else { return }
+        if !mruCycling {
+            let rest = tabs.filter { $0.id != current }.sorted { $0.touched > $1.touched }
+            mruOrder = [current] + rest.map(\.id)
+            mruCycling = true
+        }
+        // Tabs closed mid-walk fall out; tabs opened mid-walk join at the end.
+        mruOrder.removeAll { id in !tabs.contains(where: { $0.id == id }) }
+        for tab in tabs where !mruOrder.contains(tab.id) { mruOrder.append(tab.id) }
+        guard mruOrder.count > 1 else { return }
+        let here = mruOrder.firstIndex(of: current) ?? 0
+        let next = (here + direction + mruOrder.count) % mruOrder.count
+        guard let tab = tabs.first(where: { $0.id == mruOrder[next] }) else { return }
+        select(tab)
+    }
+
+    /// ⌃ let go of ends a walk, wherever it stopped.
+    func landMRU() {
+        mruCycling = false
+        mruOrder = []
+    }
+
     func select(index: Int) {
         guard tabs.indices.contains(index) else { return }
         select(tabs[index])
@@ -1453,6 +1487,7 @@ final class Browser: NSObject, ObservableObject {
     /// Another space's row put on screen in place of this one (see
     /// Spaces.swift) — empty, for one that restores its own.
     func showRow(_ row: [Tab], active: Tab.ID?) {
+        landMRU()
         tabs = row
         activeID = active ?? row.first?.id
     }
