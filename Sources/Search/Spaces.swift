@@ -213,14 +213,19 @@ extension Browser {
         return Spaces.icons.first { !used.contains($0) } ?? "briefcase"
     }
 
-    /// A new space, empty, and on screen — signed in where the others are,
-    /// or starting afresh with its own cookies and sign-ins.
+    /// A new space — signed in where the others are, or starting afresh with
+    /// its own cookies and sign-ins. By default it starts empty and on screen.
     func addSpace(named name: String, icon: String? = nil, sharesSignIns: Bool = true) {
         makingSpace = false
         let made = Space(id: UUID(), name: name, colour: 0, icon: icon ?? freeIcon, sharesSignIns: sharesSignIns)
         spaces.append(made)
         Spaces.write(spaces)
-        switchSpace(to: made.id)
+        if let afterSpaceCreated {
+            self.afterSpaceCreated = nil
+            afterSpaceCreated(made)
+        } else {
+            switchSpace(to: made.id)
+        }
     }
 
     /// Dragged to another place among the dots. ⌃1–⌃9 follow the order.
@@ -231,7 +236,8 @@ extension Browser {
     }
 
     /// "New Space…": the card for a new space, in the column or the bar.
-    func askForSpace() {
+    func askForSpace(then onCreated: ((Space) -> Void)? = nil) {
+        afterSpaceCreated = onCreated
         // In place, where the next space would come in, in the column or the
         // bar alike; a question only while the tabs are folded out of sight.
         if !folded || peeking {
@@ -239,8 +245,15 @@ extension Browser {
             SpaceSwipe.shared.start(for: self)
             SpaceSwipe.shared.slide(self, to: spaces.count, from: here)
         } else {
-            Ask.newSpace { name, shared in self.addSpace(named: name, sharesSignIns: shared) }
+            Ask.newSpace(
+                then: { name, shared in self.addSpace(named: name, sharesSignIns: shared) },
+                cancelled: { self.cancelSpaceCreation() }
+            )
         }
+    }
+
+    func cancelSpaceCreation() {
+        afterSpaceCreated = nil
     }
 
     func renameSpace(_ id: UUID, to name: String) {
@@ -431,7 +444,7 @@ enum Ask {
 
     /// A new space's name, and whether it keeps the sign-ins the others
     /// have — for when the column isn't there to hold the card.
-    static func newSpace(then: @escaping (String, Bool) -> Void) {
+    static func newSpace(then: @escaping (String, Bool) -> Void, cancelled: @escaping () -> Void) {
         let alert = NSAlert()
         alert.messageText = "New Space"
         alert.informativeText = "Its own tabs. Signed in where your other spaces are, unless it starts afresh."
@@ -448,7 +461,8 @@ enum Ask {
         alert.window.initialFirstResponder = field
         show(alert) { ok in
             let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if ok, !name.isEmpty { then(name, fresh.state != .on) }
+            guard ok, !name.isEmpty else { cancelled(); return }
+            then(name, fresh.state != .on)
         }
     }
 

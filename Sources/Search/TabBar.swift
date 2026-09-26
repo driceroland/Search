@@ -756,6 +756,27 @@ struct TabMenu: View {
             Button("Change Letter") { browser.editLetter(tab) }
             Button("Unpin") { browser.unpin(tab) }
         }
+        if browser.prefs.usesSpaces, !tab.bench,
+           tab.address.flatMap({ Browser.extensionHost(of: $0) }) == nil {
+            Menu("Move to Space") {
+                ForEach(browser.spaces.filter { $0.id != browser.spaceID }) { space in
+                    Button {
+                        browser.move(tab, toSpace: space.id)
+                    } label: {
+                        Label(space.name, systemImage: space.symbol)
+                    }
+                }
+                if browser.spaces.count > 1 { Divider() }
+                Button("New Space…") {
+                    browser.askForSpace { space in
+                        browser.move(tab, toSpace: space.id) {
+                            browser.switchSpace(to: space.id)
+                        }
+                    }
+                }
+            }
+            .help("Pages moved to a Space with different sign-ins reopen there.")
+        }
         Divider()
         Button("Rename") { browser.beginTabRename(tab) }
         Button("Duplicate") {

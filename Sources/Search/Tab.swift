@@ -166,7 +166,7 @@ final class Tab: ObservableObject, Identifiable {
     /// The web view if there is one yet, for the callers that must not be
     /// the reason there is.
     private(set) var built: PageView?
-    private let configuration: WKWebViewConfiguration
+    private var configuration: WKWebViewConfiguration
 
     /// Whether its page was made with the extension controller in it — every
     /// ordinary tab, and a private one only when extensions were allowed
@@ -816,6 +816,21 @@ final class Tab: ObservableObject, Identifiable {
         stale = false
         pull = nil
         discard()
+    }
+
+    /// A page moved to another space must use that space's cookies. WebKit
+    /// binds the store when the view is made, so keep its restorable state
+    /// and build the view again with the destination's store.
+    func rehome(in space: UUID) {
+        guard !shy, !bench, store !== Spaces.store(for: space) else { return }
+        if let built {
+            memory = built.isLoading ? nil : built.interactionState
+            pending = address ?? built.url
+            picture = nil
+            cover = nil
+            discard()
+        }
+        configuration = Web.configuration(space: space)
     }
 
     /// Whether the page holds something typed and not yet sent — a draft, a
