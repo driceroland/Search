@@ -62,10 +62,14 @@ class Run:
         self.binary = os.path.join(app, "Contents", "MacOS", "Search")
         self.process = None
 
-    def start(self):
+    def start(self, fresh=False):
         # The bench listens only when Settings' switch is on; in a test world
         # the switch alone is enough (no keychain mark is asked for).
         subprocess.run(["defaults", "write", "com.officecommun.search.test", "bench", "-bool", "true"], check=True)
+        # The first start begins from the panel's default width, whatever an
+        # earlier run or a hand on the edge left in this world.
+        if fresh:
+            subprocess.run(["defaults", "delete", "com.officecommun.search.test", "panel.width"], capture_output=True)
         env = dict(os.environ, SEARCH_PROBE="1")
         self.process = subprocess.Popen([self.binary], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         until("the bench socket", lambda: os.path.exists(SOCKET) and ask({"do": "probe"}), seconds=40)
@@ -143,7 +147,7 @@ def main(argv):
     if not os.path.exists(app):
         sys.exit(f"no app at {app} — ./build.sh debug first")
     run = Run(app)
-    run.start()
+    run.start(fresh=True)
     try:
         fixture = install(FIXTURE, "Side panel fixture")["id"]
         page = ask({"do": "open", "url": "https://example.com/"})["id"]
