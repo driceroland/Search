@@ -13,10 +13,17 @@ final class Browser: NSObject, ObservableObject {
         didSet {
             // The tab just left is the tab just looked at. Whether a tab has
             // gone unwatched long enough to sleep is counted from here, not
-            // from when it was first picked.
-            guard oldValue != activeID, let old = oldValue else { return }
-            linkStatus.dismiss()
-            tabs.first { $0.id == old }?.touch()
+            // from when it was first picked. Its picture for ⌃Tab is taken
+            // now too, while its page is still the one on screen.
+            guard oldValue != activeID else { return }
+            if let old = oldValue {
+                linkStatus.dismiss()
+                if let left = tabs.first(where: { $0.id == old }) {
+                    left.touch()
+                    if prefs.tabPictures { left.capture() }
+                }
+            }
+            if let active { openFolder(containing: active) }
         }
     }
 
@@ -122,6 +129,8 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var summoning = false
     /// True between the first ⌘K and letting go of ⌘.
     var cycling = false
+    /// ⌃Tab's pictures of the tabs, up while ⌃ is held (see Switcher.swift).
+    @Published var switcher: Switcher?
 
     var active: Tab? { tabs.first { $0.id == activeID } }
     var fieldShowing: Bool { editing || active?.isBlank ?? true }
@@ -188,6 +197,10 @@ final class Browser: NSObject, ObservableObject {
     @Published var reviewing = false {
         didSet { if !reviewing { stopPeeking() } }
     }
+    /// The colour picker for the frame (see Theme.swift).
+    @Published var theming = false
+    /// Folders in the column that are shut (see Folders.swift), by space and name.
+    @Published var shutFolders: Set<String> = []
 
     var hereHost: String? { curtain.host(of: active?.address) }
     var hereVeils: [Veil] { curtain.veils(on: hereHost) }
@@ -529,6 +542,7 @@ final class Browser: NSObject, ObservableObject {
 
     func pin(_ tab: Tab) {
         if tab.pin == nil {
+            tab.folder = nil
             tab.pin = tab.monogram
             // Pinned tabs live at the head of the row, in the order they were
             // pinned, so their letters never move under your hand.
@@ -859,6 +873,7 @@ final class Browser: NSObject, ObservableObject {
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
+            tab.folder = entry.folder
             tabs.append(tab)
         }
         guard !tabs.isEmpty else {
@@ -881,6 +896,16 @@ final class Browser: NSObject, ObservableObject {
             .dropFirst()
             .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
             .store(in: &bag)
+        prefs.$tabPictures
+            .dropFirst()
+            .filter { !$0 }
+            .sink { [weak self] _ in
+                guard let self else { return }
+                switcher = nil
+                for tab in tabs + parkedTabs { tab.discardThumbnail() }
+            }
+            .store(in: &bag)
+
         prefs.$shielded
             .dropFirst()
             .sink { [weak self] on in
@@ -988,23 +1013,23 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func writeSession(now: Bool = false) {
+        saveSession(tabs, active: activeID, space: spaceID, now: now)
+    }
+
+    private func saveSession(_ row: [Tab], active: Tab.ID?, space: UUID, now: Bool) {
+        let saved = row.filter {
+            !$0.shy && !$0.bench && ($0.pending ?? $0.address)?.scheme?.hasPrefix("http") == true
+        }
         Session.write(
-            now: now,
-            space: spaceID,
+            now: now, space: space,
             .init(
-                tabs: tabs.compactMap { tab in
-                    guard !tab.shy, !tab.bench else { return nil }
-                    // A sleeping tab holds its address in `pending`; asking for
-                    // it there too means a pin can never be written out of
-                    // existence by whatever its web view happens to be showing.
-                    guard let url = tab.pending ?? tab.address,
-                          url.scheme?.hasPrefix("http") == true
-                    else { return nil }
+                tabs: saved.compactMap { tab in
+                    guard let url = tab.pending ?? tab.address else { return nil }
                     return Session.Entry(
-                        url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name
+                        url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name, folder: tab.folder
                     )
                 },
-                active: tabs.firstIndex { $0.id == activeID } ?? 0
+                active: saved.firstIndex { $0.id == active } ?? 0
             )
         )
     }
@@ -1024,6 +1049,10 @@ final class Browser: NSObject, ObservableObject {
     /// quit, before there is a process left to finish the wait on its behalf.
     func flushSession() {
         writeSession(now: true)
+        for (id, row) in parked {
+            saveSession(row.tabs, active: row.active, space: id, now: true)
+        }
+        Spaces.write(spaces)
     }
 
     // MARK: - tabs
@@ -1145,6 +1174,7 @@ final class Browser: NSObject, ObservableObject {
                 remember(tab, at: 0)
                 tab.close()
                 adopt(fresh)
+                switcher = nil
                 tabs = [fresh]
                 activeID = fresh.id
                 typed = ""
@@ -1165,15 +1195,17 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
-    /// Everything but this one. Pinned tabs are put down rather than removed —
-    /// they are not open pages so much as places kept.
+    /// Remove every other tab, including pins, without leaving the current page.
     func closeOthers(but keep: Tab) {
+        switcher = nil
         select(keep)
         // The list is read once: closing walks the row and can add to it.
         for tab in tabs.filter({ $0.id != keep.id }) {
+            tab.pin = nil
             close(tab)
         }
         select(keep)
+        writeSession(now: true)
     }
 
     /// A link let go of over the tabs becomes a tab among them.
@@ -1444,6 +1476,7 @@ final class Browser: NSObject, ObservableObject {
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
+            tab.folder = entry.folder
             row.append(tab)
         }
         let active = row.indices.contains(saved.active) ? row[saved.active].id : row.first?.id
@@ -1453,6 +1486,7 @@ final class Browser: NSObject, ObservableObject {
     /// Another space's row put on screen in place of this one (see
     /// Spaces.swift) — empty, for one that restores its own.
     func showRow(_ row: [Tab], active: Tab.ID?) {
+        switcher = nil
         tabs = row
         activeID = active ?? row.first?.id
     }

@@ -204,6 +204,13 @@ struct SettingsPanel: View {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
             Rule()
+            Line("Colour", "A gradient for the frame around the page, as faint or strong as you like — each space its own") {
+                Pill("Choose…") {
+                    browser.tuning = false
+                    browser.theming = true
+                }
+            }
+            Rule()
             Line("Correct spelling as you type", "macOS's autocorrect inside pages — the one that capitalises for you") {
                 Switch(on: $prefs.autocorrect)
             }
@@ -289,6 +296,10 @@ struct SettingsPanel: View {
             Rule()
             Line("Spaces", "Separate sets of tabs, signed in where the others are or starting afresh, switched with ⌃1–⌃9, two fingers sideways over the column, or the space's icon. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
                 Switch(on: $prefs.usesSpaces)
+            }
+            Rule()
+            Line("⌃Tab shows the tabs as pictures", "The one you were just on first, as in Arc and Dia: tap for the last tab, or hold ⌃ and keep pressing Tab, then let go. Off, ⌃Tab walks along the row.") {
+                Switch(on: $prefs.tabPictures)
             }
         }
     }
@@ -451,6 +462,8 @@ struct SettingsPanel: View {
                 Shortcut("⌘K", "Switch tab")
                 Rule()
                 Shortcut("⌘T  ⌘W  ⇧⌘T", "New, close, reopen tab")
+                Rule()
+                Shortcut("⇧⌘K", "Close every other tab")
                 Rule()
                 Shortcut("⇧⌘V", "Paste and go")
                 Rule()

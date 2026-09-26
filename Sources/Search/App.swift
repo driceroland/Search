@@ -85,6 +85,7 @@ struct SearchApp: App {
                     .keyboardShortcut("h", modifiers: [.command, .shift])
                 Button("Hidden on This Site…") { browser.reviewing.toggle() }
                     .keyboardShortcut("u", modifiers: [.command, .shift])
+                Button("Colour…") { browser.theming.toggle() }
                 Divider()
                 Button("Zoom In") { browser.zoom(by: 1.1) }
                     .keyboardShortcut("+")
@@ -139,6 +140,7 @@ struct SearchApp: App {
                     .keyboardShortcut("v", modifiers: [.command, .shift])
                 Divider()
                 Button("Close Other Tabs") { if let tab = browser.active { browser.closeOthers(but: tab) } }
+                    .keyboardShortcut("k", modifiers: [.command, .shift])
                     .disabled(browser.tabs.count < 2)
                 Button("Stop Sound in Tab") { browser.pauseMedia() }
                     .keyboardShortcut("m", modifiers: [.command, .shift])
@@ -275,7 +277,7 @@ struct ContentView: View {
         ZStack(alignment: .topLeading) {
             // Black while a page has the screen, so the frame of our own window
             // that survives the transition is not a white band across the top.
-            (browser.active?.immersed == true ? Color.black : Palette.ground)
+            if browser.active?.immersed == true { Color.black } else { ThemeGround(theme: browser.space.theme) }
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
@@ -339,6 +341,16 @@ struct ContentView: View {
                     }
                 }
                 .animation(Motion.quick, value: browser.suggesting)
+                // With a colour, the page sits in the frame as a card, as in
+                // Arc, so the colour goes all the way round.
+                .clipShape(RoundedRectangle(cornerRadius: framed ? 10 : 0, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.black.opacity(framed ? 0.1 : 0), lineWidth: 1)
+                )
+                .padding(framed ? (sidebar ? EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 8)
+                                           : EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 8))
+                                : EdgeInsets())
         } else {
             Palette.ground
         }
@@ -460,6 +472,35 @@ struct ContentView: View {
             .ignoresSafeArea()
             .transition(.opacity)
         }
+        if browser.theming {
+            // Nothing dimmed: the frame is what is being changed.
+            ZStack(alignment: .topTrailing) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { browser.theming = false }
+                ThemePanel(browser: browser, prefs: browser.prefs)
+                    .padding(.top, Metrics.strip + 8)
+                    .padding(.trailing, 14)
+                    .transition(.scale(scale: 0.97, anchor: .topTrailing).combined(with: .opacity))
+            }
+            .ignoresSafeArea()
+            .transition(.opacity)
+        }
+    }
+
+    /// ⌃Tab's pictures of the tabs (see Switcher.swift). Up a beat after the
+    /// press, so a quick ⌃Tab back to the last tab never flashes it; gone at
+    /// once on letting go, with the page already switched underneath.
+    @ViewBuilder
+    private var switcher: some View {
+        if let shown = browser.switcher {
+            SwitcherPanel(browser: browser, shown: shown)
+                .ignoresSafeArea()
+                .transition(.asymmetric(
+                    insertion: .opacity.animation(.easeOut(duration: 0.12).delay(0.08)),
+                    removal: .identity
+                ))
+        }
     }
 
     var body: some View {
@@ -479,6 +520,7 @@ struct ContentView: View {
             }
             .overlay { field }
             .overlay { panels }
+            .overlay { switcher }
             // The field comes on its spring, and goes quickly: once Return
             // is pressed the page is on its way, and the field is not what
             // there is to watch.
@@ -495,6 +537,8 @@ struct ContentView: View {
                 resting?.isHidden = false
                 // Only the window you were in, or every window's video would come.
                 browser.appLeft()
+                // ⌃ let go of in another app is never heard here.
+                browser.switcher = nil
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { Browser.front = browser }
@@ -518,6 +562,8 @@ struct ContentView: View {
             .animation(Motion.settle, value: browser.bookmarking)
             .animation(Motion.settle, value: browser.managing)
             .animation(Motion.settle, value: browser.reviewing)
+            .animation(Motion.settle, value: browser.theming)
+            .onChange(of: browser.space.theme != nil) { _, _ in glaze(window) }
         .onAppear {
             watchKeys()
             browser.askFocus()
@@ -673,6 +719,11 @@ struct ContentView: View {
         browser.prefs.sidebar && !browser.folded && browser.active?.immersed != true
     }
 
+    /// The page as a card in a coloured frame (see Theme.swift).
+    private var framed: Bool {
+        browser.space.theme != nil && browser.active?.immersed != true
+    }
+
     /// The column has its own corner for the lights, so the page beside it
     /// starts at the very top; the strip needs a band.
     private var band: CGFloat {
@@ -707,7 +758,7 @@ struct ContentView: View {
         // window only has to be the ground colour that goes with it.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.backgroundColor = Palette.NS.ground
+        glaze(window)
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
@@ -745,6 +796,15 @@ struct ContentView: View {
         }
     }
 
+    /// See-through where the frame is, when the space has a colour: the
+    /// desktop shows, frosted, under it (see Theme.swift). Opaque otherwise.
+    private func glaze(_ window: NSWindow?) {
+        guard let window else { return }
+        let themed = browser.space.theme != nil
+        window.isOpaque = !themed
+        window.backgroundColor = themed ? .clear : Palette.NS.ground
+    }
+
     // MARK: - keys
 
     /// A web view takes first responder and keeps most of the keyboard, so the
@@ -755,8 +815,9 @@ struct ContentView: View {
         guard keys == nil else { return }
         keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
             guard event.type == .keyDown else {
-                // ⌘ let go of ends a ⌘K walk, wherever it stopped.
+                // ⌘ let go of ends a ⌘K walk, wherever it stopped; ⌃, a ⌃Tab one.
                 if !event.modifierFlags.contains(.command) { browser.landSummon() }
+                if !event.modifierFlags.contains(.control) { browser.landFlip() }
                 return event
             }
             return take(event) ? nil : event
@@ -782,6 +843,7 @@ struct ContentView: View {
     private func pageFirst(_ event: NSEvent, key: String, shifted: Bool) -> Bool {
         let reserved = (key == "t") || (key == "w" && !shifted) || (key == "n" && shifted)
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
+            || (key == "k" && shifted)
             || (key == "z" && browser.veiling)
         guard !reserved, event.window?.firstResponder is PageView else { return false }
         if let passed = ContentView.passed, PageView.same(passed, event) {
@@ -806,6 +868,10 @@ struct ContentView: View {
         // Escape puts the page back. On a blank tab there is no page to put
         // back, so it belongs to whatever else wants it.
         if event.keyCode == 53 {
+            if browser.switcher != nil {
+                browser.switcher = nil
+                return true
+            }
             if browser.editingTab != nil {
                 browser.cancelTabEdit()
                 return true
@@ -846,6 +912,10 @@ struct ContentView: View {
                 browser.toggleHiding()
                 return true
             }
+            if browser.theming {
+                browser.theming = false
+                return true
+            }
             if browser.reviewing {
                 browser.reviewing = false
                 return true
@@ -868,13 +938,15 @@ struct ContentView: View {
         // links, as in every browser. It used to walk the row of tabs, which
         // took it from anyone filling in a form. ⌃Tab walks the row and comes
         // round to the first again, ⌃⇧Tab the other way — the keys every
-        // other browser uses for that.
+        // other browser uses for that. Or, switched on, it brings up the tabs
+        // as pictures, the one you were just on first (see Switcher.swift).
         //
         // While an address is being typed, the list under the field is what
         // there is to move through, and Return takes whatever the walk landed on.
         if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option) {
             if flags.contains(.control) {
-                browser.step(flags.contains(.shift) ? -1 : 1)
+                let way = flags.contains(.shift) ? -1 : 1
+                if browser.prefs.tabPictures { browser.flip(way) } else { browser.step(way) }
                 return true
             }
             if browser.editingTab != nil { return true }
@@ -964,6 +1036,8 @@ struct ContentView: View {
             browser.pauseMedia()
         case "p" where shifted:
             browser.toggleFloat()
+        case "k" where shifted:
+            if let tab = browser.active { browser.closeOthers(but: tab) }
         case "k" where !shifted:
             // Held down, ⌘K walks the list a step at a time; letting go of ⌘
             // takes wherever it stopped.

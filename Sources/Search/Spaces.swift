@@ -30,6 +30,8 @@ struct Space: Codable, Identifiable, Equatable {
     var sharesSignIns: Bool?
     /// Where this space's downloads go; nil for the folder in Settings.
     var downloads: String?
+    /// The frame's colour in this space (see Theme.swift); nil for plain.
+    var theme: Theme?
 
     /// The first space: the session and the store there were before spaces.
     static let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000001") ?? UUID()
@@ -71,9 +73,31 @@ enum Spaces {
     /// Every space, the first one first — made on the spot if there is no
     /// list yet.
     static func read() -> [Space] {
-        let saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Space].self, from: $0) } ?? []
+        let saved = readSaved()
         let first = saved.first(where: \.isFirst) ?? Space(id: Space.firstID, name: "Personal", colour: 0)
         return [first] + saved.filter { !$0.isFirst }
+    }
+
+    private static func readSaved() -> [Space] {
+        guard let data = try? Data(contentsOf: file) else { return [] }
+        let decoder = JSONDecoder()
+        if let saved = try? decoder.decode([Space].self, from: data) { return saved }
+
+        // Once, give themes saved before the Clear control their frosted
+        // glass value, then replace the file with the current schema.
+        guard var records = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [] }
+        for index in records.indices {
+            guard var theme = records[index]["theme"] as? [String: Any], theme["clarity"] == nil else { continue }
+            theme["clarity"] = 0
+            records[index]["theme"] = theme
+        }
+        guard let migrated = try? JSONSerialization.data(withJSONObject: records),
+              let saved = try? decoder.decode([Space].self, from: migrated)
+        else { return [] }
+        // Decode before writing; a failed atomic write leaves the original
+        // file intact and the restored themes available in memory.
+        write(saved)
+        return saved
     }
 
     static func write(_ spaces: [Space]) {

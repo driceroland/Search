@@ -135,6 +135,8 @@ struct TabBar: View {
                             .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .bottom) {
                                 BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
                             }
+                        Door(icon: "arrow.down.circle", on: browser.hoarding, help: "Downloads   ⇧⌘J") { browser.hoarding.toggle() }
+                            .accessibilityLabel("Downloads")
                     }
                     .background {
                         GeometryReader { box in
@@ -756,6 +758,8 @@ struct TabMenu: View {
             Button("Change Letter") { browser.editLetter(tab) }
             Button("Unpin") { browser.unpin(tab) }
         }
+        // Folders are the column's; the strip has nowhere to show them.
+        if browser.prefs.sidebar { FolderMenu(browser: browser, tab: tab) }
         Divider()
         Button("Rename") { browser.beginTabRename(tab) }
         Button("Duplicate") {
