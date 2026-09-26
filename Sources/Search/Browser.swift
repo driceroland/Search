@@ -442,7 +442,16 @@ final class Browser: NSObject, ObservableObject {
 
     // MARK: - what is kept, and getting rid of it
 
-    @Published var recalling = false
+    enum RecallMode {
+        case history, clearing
+    }
+
+    // One state keeps closing History from leaving its clearing controls open.
+    @Published var recallMode: RecallMode?
+    var recalling: Bool {
+        get { recallMode != nil }
+        set { recallMode = newValue ? .history : nil }
+    }
     @Published var hoarding = false
     @Published var recallHunt = ""
 
