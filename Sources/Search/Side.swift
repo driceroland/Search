@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The tabs, down the left instead of across the top.
+/// The tabs, down either side instead of across the top.
 ///
 /// The same pieces as the strip — the grey that slides to the tab you picked,
 /// the pinned squares, the cross that appears under the pointer — laid out the
@@ -32,6 +32,9 @@ struct SideBar: View {
     private static let gap: CGFloat = 2
     private static let square: CGFloat = 34
     private static let pinGap: CGFloat = 4
+
+    private var onRight: Bool { prefs.sidePosition == .right }
+    private var innerEdge: Alignment { onRight ? .leading : .trailing }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -87,10 +90,10 @@ struct SideBar: View {
         .clipped()
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background(landing ? Palette.hover : Palette.ground)
-        .overlay(alignment: .trailing) {
+        .overlay(alignment: innerEdge) {
             Rectangle().fill(Palette.hairline).frame(width: 1)
         }
-        .overlay(alignment: .trailing) { edge }
+        .overlay(alignment: innerEdge) { edge }
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
             browser.take(providers)
         }
@@ -118,7 +121,8 @@ struct SideBar: View {
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
                         if grabbed == nil { grabbed = prefs.sideWidth }
-                        let wanted = (grabbed ?? prefs.sideWidth) + value.translation.width
+                        let delta = onRight ? -value.translation.width : value.translation.width
+                        let wanted = (grabbed ?? prefs.sideWidth) + delta
                         prefs.sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, wanted))
                     }
                     .onEnded { _ in grabbed = nil }

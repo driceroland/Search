@@ -23,6 +23,20 @@ enum Glyph: String, CaseIterable, Identifiable {
     }
 }
 
+/// Which edge the tab column sits on when tabs are arranged in a sidebar.
+enum SidebarPosition: String, CaseIterable, Identifiable {
+    case left, right
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .left: return "Left"
+        case .right: return "Right"
+        }
+    }
+}
+
 @MainActor
 final class Preferences: ObservableObject {
     private let store = Store.settings
@@ -46,11 +60,15 @@ final class Preferences: ObservableObject {
             look.apply()
         }
     }
-    /// Titles down the left instead of across the top.
+    /// Titles down a side instead of across the top.
     @Published var sidebar: Bool {
         didSet { store.set(sidebar, forKey: "sidebar") }
     }
-    /// The column folded away whenever the pointer isn't at the left edge,
+    /// Which side the column is on when it is shown vertically.
+    @Published var sidePosition: SidebarPosition {
+        didSet { store.set(sidePosition.rawValue, forKey: "sidebar.position") }
+    }
+    /// The column folded away whenever the pointer isn't at its edge,
     /// rather than only after ⌘S (see Fold.swift). Off unless asked for.
     @Published var sideHides: Bool {
         didSet { store.set(sideHides, forKey: "sidebar.hides") }
@@ -229,6 +247,7 @@ final class Preferences: ObservableObject {
         NSApplication.shared.appearance = chosen.appearance
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
+        sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))

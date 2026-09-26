@@ -117,7 +117,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Dark mode for the Search site** A dark mode for the site's Search page. *([#51](https://github.com/driceroland/Search/issues/51))*
 - [ ] **Detach a tab into a window** Detach a tab into its own window. Search has one window, like [#72](https://github.com/driceroland/Search/issues/72). *([#184](https://github.com/driceroland/Search/pull/184), [#72](https://github.com/driceroland/Search/issues/72), [#230](https://github.com/driceroland/Search/issues/230))*
 - [ ] **Home page or home button** A home page or home button. *(email)*
-- [ ] **Sidebar on the right** The sidebar on the right. *(email)*
 - [ ] **Toolbar buttons on the left** Back, forward and reload on the left with the tabs across the top. *(email)*
 - [ ] **Autocomplete in a new tab** What exactly was asked, to find out. *(X)*
 - [ ] **⌃Tab in recent-use order** ⌃Tab goes to the tab used last in this space, not the neighbour in the row; holding it walks back through them. Also asks for its own shortcut recorders in Settings › Tabs. *([#225](https://github.com/driceroland/Search/pull/225))*

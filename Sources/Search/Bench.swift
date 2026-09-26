@@ -447,6 +447,9 @@ final class Bench {
                 "offering": browser.offering != nil,
                 "modal": NSApp.modalWindow.map { "\(type(of: $0)) “\($0.title)”" } ?? "",
                 "look": browser.prefs.look.rawValue,
+                "sidebar": browser.prefs.sidebar,
+                "sidePosition": browser.prefs.sidePosition.rawValue,
+                "sideWidth": Double(browser.prefs.sideWidth),
                 "appearance": NSApp.appearance?.name.rawValue ?? "system",
                 "key": NSApp.keyWindow.map { "\(type(of: $0)) “\($0.title)”" } ?? "",
             ]
@@ -461,6 +464,13 @@ final class Bench {
                 ]
             }
             if let window = Links.window { out["lights"] = Bench.lights(of: window) }
+            if let tab = browser.active, let web = tab.built, let window = Links.window, web.window === window {
+                let frame = web.convert(web.bounds, to: nil)
+                out["activePageFrame"] = [
+                    Int(frame.minX), Int(window.frame.height - frame.maxY),
+                    Int(frame.width), Int(frame.height),
+                ]
+            }
             out["keysQuieted"] = PageView.quieted
             // Settings › General › Web Inspector, as each page's WebKit has it.
             let asked = NSSelectorFromString("_developerExtrasEnabled")
@@ -1273,6 +1283,13 @@ final class Bench {
             if let on = request["bookmarks"] as? Bool { browser.bookmarking = on }
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
+            if let side = request["side"] as? String {
+                guard let position = SidebarPosition(rawValue: side) else {
+                    answer(["error": "side needs left or right"])
+                    return
+                }
+                browser.prefs.sidePosition = position
+            }
             if let on = request["pages120"] as? Bool { browser.prefs.fastPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
