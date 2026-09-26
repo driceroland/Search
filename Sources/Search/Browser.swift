@@ -1013,23 +1013,23 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func writeSession(now: Bool = false) {
+        saveSession(tabs, active: activeID, space: spaceID, now: now)
+    }
+
+    private func saveSession(_ row: [Tab], active: Tab.ID?, space: UUID, now: Bool) {
+        let saved = row.filter {
+            !$0.shy && !$0.bench && ($0.pending ?? $0.address)?.scheme?.hasPrefix("http") == true
+        }
         Session.write(
-            now: now,
-            space: spaceID,
+            now: now, space: space,
             .init(
-                tabs: tabs.compactMap { tab in
-                    guard !tab.shy, !tab.bench else { return nil }
-                    // A sleeping tab holds its address in `pending`; asking for
-                    // it there too means a pin can never be written out of
-                    // existence by whatever its web view happens to be showing.
-                    guard let url = tab.pending ?? tab.address,
-                          url.scheme?.hasPrefix("http") == true
-                    else { return nil }
+                tabs: saved.compactMap { tab in
+                    guard let url = tab.pending ?? tab.address else { return nil }
                     return Session.Entry(
                         url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name, folder: tab.folder
                     )
                 },
-                active: tabs.firstIndex { $0.id == activeID } ?? 0
+                active: saved.firstIndex { $0.id == active } ?? 0
             )
         )
     }
@@ -1049,6 +1049,10 @@ final class Browser: NSObject, ObservableObject {
     /// quit, before there is a process left to finish the wait on its behalf.
     func flushSession() {
         writeSession(now: true)
+        for (id, row) in parked {
+            saveSession(row.tabs, active: row.active, space: id, now: true)
+        }
+        Spaces.write(spaces)
     }
 
     // MARK: - tabs
@@ -1191,15 +1195,17 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
-    /// Everything but this one. Pinned tabs are put down rather than removed —
-    /// they are not open pages so much as places kept.
+    /// Remove every other tab, including pins, without leaving the current page.
     func closeOthers(but keep: Tab) {
+        switcher = nil
         select(keep)
         // The list is read once: closing walks the row and can add to it.
         for tab in tabs.filter({ $0.id != keep.id }) {
+            tab.pin = nil
             close(tab)
         }
         select(keep)
+        writeSession(now: true)
     }
 
     /// A link let go of over the tabs becomes a tab among them.

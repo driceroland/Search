@@ -135,6 +135,8 @@ struct TabBar: View {
                             .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .bottom) {
                                 BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
                             }
+                        Door(icon: "arrow.down.circle", on: browser.hoarding, help: "Downloads   ⇧⌘J") { browser.hoarding.toggle() }
+                            .accessibilityLabel("Downloads")
                     }
                     .background {
                         GeometryReader { box in

@@ -56,9 +56,9 @@ extension Browser {
     }
 }
 
-/// The panel: cards five across, centred on the window, dark whatever the
-/// window is — it is over every kind of page at once.
+/// Compact cards, five across at most, following the window's appearance.
 struct SwitcherPanel: View {
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var browser: Browser
     let shown: Switcher
 
@@ -68,16 +68,15 @@ struct SwitcherPanel: View {
         let tabs = shown.order.compactMap { id in browser.tabs.first { $0.id == id } }
         let chosen = shown.order[shown.at]
         GeometryReader { room in
-            // Five cards across nine tenths of the window, fewer when they
-            // would come out smaller than a card can be read at.
             let span = room.size.width * 0.93
+            // Keep cards compact even in a wide window.
             let across = max(1, min(5, Int(span / 170)))
-            let width = min(300, (span - Self.gap * CGFloat(across - 1)) / (CGFloat(across) + 0.1))
+            let width = min(156, (span - Self.gap * CGFloat(across - 1)) / (CGFloat(across) + 0.1))
             let inset = width * 0.048
             let columns = min(across, tabs.count)
             let rows = (tabs.count + across - 1) / across
             let height = TabCard.height(width)
-            let fit = max(1, Int((room.size.height * 0.86 - 2 * inset) / (height + Self.gap)))
+            let fit = max(1, min(10 / across, Int((room.size.height * 0.86 - 2 * inset) / (height + Self.gap))))
 
             if columns > 0 {
                 ScrollViewReader { scroller in
@@ -113,24 +112,24 @@ struct SwitcherPanel: View {
                         .fill(.ultraThinMaterial)
                         .overlay(
                             RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
-                                .fill(Color(white: 0.08).opacity(0.9))
+                                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.9))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
                         )
-                        .shadow(color: .black.opacity(0.35), radius: 40, y: 14)
+                        .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.2), radius: 40, y: 14)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .environment(\.colorScheme, .dark)
     }
 }
 
 /// One tab: its picture, and under it its icon and name, on a lighter ground
 /// when it is the one the walk is on.
 private struct TabCard: View {
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var tab: Tab
     let chosen: Bool
     let width: CGFloat
@@ -151,13 +150,13 @@ private struct TabCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
                 )
             HStack(spacing: width * 0.04) {
                 Mark(icon: tab.icon, letter: tab.monogram, size: width * 0.095)
                 Text(tab.label)
                     .font(.system(size: width * 0.082, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.94))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                     .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             }
@@ -167,7 +166,7 @@ private struct TabCard: View {
         .padding([.horizontal, .top], pad)
         .background(
             RoundedRectangle(cornerRadius: width * 0.058, style: .continuous)
-                .fill(Color.white.opacity(chosen ? 0.3 : 0))
+                .fill(Color.primary.opacity(chosen ? (colorScheme == .dark ? 0.3 : 0.1) : 0))
         )
         .contentShape(Rectangle())
     }
@@ -182,7 +181,7 @@ private struct TabCard: View {
             // Never opened since launch, or nothing to show yet: the icon on
             // a quiet ground rather than a white rectangle.
             ZStack {
-                Color.white.opacity(0.05)
+                Color.primary.opacity(0.05)
                 Mark(icon: tab.icon, letter: tab.monogram, size: width * 0.16)
             }
         }

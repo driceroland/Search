@@ -490,7 +490,7 @@ struct SideBar: View {
             .padding(.top, SideBar.gap)
     }
 
-    /// One small door at the bottom: the settings.
+    /// Bookmarks, downloads and extensions stay within reach.
     private var foot: some View {
         HStack(spacing: 2) {
             if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
@@ -499,6 +499,8 @@ struct SideBar: View {
                 .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .trailing) {
                     BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
                 }
+            Door(icon: "arrow.down.circle", on: browser.hoarding, help: "Downloads   ⇧⌘J") { browser.hoarding.toggle() }
+                .accessibilityLabel("Downloads")
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)

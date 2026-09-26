@@ -20,6 +20,9 @@ enum Session {
         var active: Int
     }
 
+    /// Keep older background saves ahead of the final save made on quit.
+    private static let writes = DispatchQueue(label: "search.session", qos: .utility)
+
     /// The first space's is the session there always was; each other space
     /// keeps its own beside it.
     private static func file(_ space: UUID) -> URL {
@@ -28,7 +31,7 @@ enum Session {
 
     static func erase(space: UUID) {
         guard space != Space.firstID else { return }
-        try? FileManager.default.removeItem(at: file(space))
+        writes.sync { try? FileManager.default.removeItem(at: file(space)) }
     }
 
     static func read(space: UUID = Space.firstID) -> Shape {
@@ -44,9 +47,8 @@ enum Session {
         return shape
     }
 
-    /// `now` writes on the calling thread. Quitting doesn't wait for a
-    /// background queue, and a session handed to one on the way out is a
-    /// session that may never reach the disk.
+    /// `now` waits for earlier saves and this write to reach disk. Otherwise
+    /// an older background save could overwrite the final session on quit.
     static func write(now: Bool = false, space: UUID = Space.firstID, _ shape: Shape) {
         let file = file(space)
         let put = {
@@ -57,9 +59,9 @@ enum Session {
             try? data.write(to: file, options: .atomic)
         }
         if now {
-            put()
+            writes.sync(execute: put)
         } else {
-            DispatchQueue.global(qos: .utility).async(execute: put)
+            writes.async(execute: put)
         }
     }
 }

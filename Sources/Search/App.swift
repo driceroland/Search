@@ -140,6 +140,7 @@ struct SearchApp: App {
                     .keyboardShortcut("v", modifiers: [.command, .shift])
                 Divider()
                 Button("Close Other Tabs") { if let tab = browser.active { browser.closeOthers(but: tab) } }
+                    .keyboardShortcut("k", modifiers: [.command, .shift])
                     .disabled(browser.tabs.count < 2)
                 Button("Stop Sound in Tab") { browser.pauseMedia() }
                     .keyboardShortcut("m", modifiers: [.command, .shift])
@@ -842,6 +843,7 @@ struct ContentView: View {
     private func pageFirst(_ event: NSEvent, key: String, shifted: Bool) -> Bool {
         let reserved = (key == "t") || (key == "w" && !shifted) || (key == "n" && shifted)
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
+            || (key == "k" && shifted)
             || (key == "z" && browser.veiling)
         guard !reserved, event.window?.firstResponder is PageView else { return false }
         if let passed = ContentView.passed, PageView.same(passed, event) {
@@ -1034,6 +1036,8 @@ struct ContentView: View {
             browser.pauseMedia()
         case "p" where shifted:
             browser.toggleFloat()
+        case "k" where shifted:
+            if let tab = browser.active { browser.closeOthers(but: tab) }
         case "k" where !shifted:
             // Held down, ⌘K walks the list a step at a time; letting go of ⌘
             // takes wherever it stopped.
