@@ -300,6 +300,11 @@ final class Tab: ObservableObject, Identifiable {
     /// The letter a pinned tab is reduced to, and what a tab shows in place of
     /// an icon it doesn't have yet.
     var monogram: String {
+        if address?.isFileURL == true {
+            let name = address?.lastPathComponent ?? ""
+            let clean = name.trimmingCharacters(in: CharacterSet(charactersIn: "/."))
+            return clean.first.map { String($0).uppercased() } ?? "•"
+        }
         let host = address?.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
         return host.first.map { String($0).uppercased() } ?? "•"
     }
@@ -1061,7 +1066,7 @@ final class Tab: ObservableObject, Identifiable {
         // A tab that slept has its own history to go back to — the page, its
         // back list and its scroll position, in one. Anything else starts
         // from the address.
-        if let state {
+        if let state, !url.isFileURL {
             view.interactionState = state
         } else {
             view.open(url)
@@ -1173,7 +1178,9 @@ final class Tab: ObservableObject, Identifiable {
         // the reload.
         guard !wake() else { return }
         reader = false
-        if hollow, let address {
+        if let address, address.isFileURL {
+            web.open(address)
+        } else if hollow, let address {
             web.open(address)
         } else if fromOrigin {
             web.reloadFromOrigin()
