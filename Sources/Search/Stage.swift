@@ -146,12 +146,23 @@ final class StageView: NSView {
     /// every layout. Nothing to fall out of step with.
     private weak var wanted: NSView?
 
+    /// The Web Inspector each page off show had docked beside it. WebKit
+    /// docks it once, on show; a page coming back without it was laid out
+    /// short, beside an empty space. Weak both ways: a closed tab's page
+    /// takes its entry with it, and an inspector is kept by WebKit while it
+    /// is open, never by this.
+    private static let docks = NSMapTable<NSView, NSView>.weakToWeakObjects()
+
     override func layout() {
         super.layout()
         settle()
     }
 
     func show(_ page: NSView?) {
+        if let leaving = wanted, leaving !== page, let dock = subviews.first(where: Self.isInspector) {
+            Self.docks.setObject(dock, forKey: leaving)
+            dock.removeFromSuperview()
+        }
         wanted = page
         settle()
     }
@@ -182,6 +193,13 @@ final class StageView: NSView {
             // Seen — unless it has yet to draw, and would be seen white.
             wanted.alphaValue = (wanted as? PageView)?.unpainted == true ? 0 : 1
             addSubview(wanted)
+            if docked, let dock = Self.docks.object(forKey: wanted) {
+                addSubview(dock, positioned: .below, relativeTo: wanted)
+            }
+            Self.docks.removeObject(forKey: wanted)
+            // Full size, which WebKit, with its inspector back, cuts down to
+            // make room for it again at the stage's size now.
+            wanted.frame = bounds
             // A web view coming back into a window sometimes keeps the last
             // picture it had — which, after a while out of one, is nothing.
             // Asking it to draw again is cheap and is what brings it back.
@@ -286,6 +304,11 @@ struct DragStrip: NSViewRepresentable {
     var below: CGFloat = 0
     /// The run at the trailing end that belongs to a button.
     var trailing: CGFloat = 0
+    /// Stands in for the title bar's own double-click, in a strip that is
+    /// empty tab-row rather than title bar: the empty space below or after
+    /// the tabs, where a double-click opens a new tab instead of zooming the
+    /// window.
+    var onDoubleClick: (() -> Void)? = nil
 
     func makeNSView(context: Context) -> NSView { Strip() }
 
@@ -293,12 +316,14 @@ struct DragStrip: NSViewRepresentable {
         (view as? Strip)?.reserved = reserved
         (view as? Strip)?.below = below
         (view as? Strip)?.trailing = trailing
+        (view as? Strip)?.onDoubleClick = onDoubleClick
     }
 
     private final class Strip: NSView {
         var reserved: CGFloat = 0
         var below: CGFloat = 0
         var trailing: CGFloat = 0
+        var onDoubleClick: (() -> Void)?
 
         private var pressed: NSEvent?
         private var moved = false
@@ -338,12 +363,18 @@ struct DragStrip: NSViewRepresentable {
             window.isMovable = false
         }
 
-        /// A double-click does what a title bar's does. It answered every
-        /// click before — so a double-click filled the screen on the first
-        /// click and put the window back on the second, and looked like
-        /// nothing at all.
+        /// A double-click does what a title bar's does, unless this strip
+        /// stands for empty tab row instead, in which case it opens a new
+        /// tab, the same as the button it is standing in for. It answered
+        /// every click before, so a double-click filled the screen on the
+        /// first click and put the window back on the second, and looked
+        /// like nothing at all.
         override func mouseUp(with event: NSEvent) {
             guard let window, !moved, event.clickCount == 2 else { return }
+            if let onDoubleClick {
+                onDoubleClick()
+                return
+            }
             // System Settings › Desktop & Dock: what double-clicking a title
             // bar should do. Unset means the default, which fills the screen.
             switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {

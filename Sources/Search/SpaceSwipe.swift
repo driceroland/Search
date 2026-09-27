@@ -61,15 +61,20 @@ final class SpaceSwipe {
     /// True for an event the swipe keeps for itself.
     private func takes(_ event: NSEvent) -> Bool {
         guard let browser, browser.prefs.usesSpaces, !browser.folded || browser.peeking else { return false }
-        // A mouse wheel over the bar: a spin, a space.
+        // A mouse wheel over the tabs: a notch along the spaces' axis — up or down
+        // in the bar, sideways in the column — brings one space. In the column
+        // only a notch more sideways than up or down: scrolling the tabs is
+        // never taken for it.
         if !event.hasPreciseScrollingDeltas {
-            guard !browser.prefs.sidebar, event.scrollingDeltaY != 0, overTabs(event, in: browser) else { return false }
+            let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
+            let step = browser.prefs.sidebar ? (abs(dx) > abs(dy) ? dx : 0) : dy
+            guard step != 0, overTabs(event, in: browser) else { return false }
             let now = Date()
             let rested = now.timeIntervalSince(notched) > 0.3 && now > resting
             notched = now
             guard rested else { return true }
             let here = browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
-            let target = here + (event.scrollingDeltaY < 0 ? 1 : -1)
+            let target = here + (step < 0 ? 1 : -1)
             if target >= 0, target <= browser.spaces.count { slide(browser, to: target, from: here) }
             return true
         }
@@ -166,6 +171,9 @@ final class SpaceSwipe {
     /// frame and without anything moving — it was already there. One past
     /// the last space is the card for a new one.
     func slide(_ browser: Browser, to target: Int, from here: Int) {
+        if browser.makingSpace, target != browser.spaces.count {
+            browser.cancelSpaceCreation()
+        }
         // A page is the column's width, or the bar's height.
         let width = browser.prefs.sidebar ? browser.prefs.sideWidth : Metrics.strip
         let away: CGFloat = target > here ? -1 : 1
@@ -329,6 +337,7 @@ struct NewSpaceCard: View {
 
     /// Back to the space it was made from, the way it came.
     private func cancel() {
+        browser.cancelSpaceCreation()
         let back = browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0
         SpaceSwipe.shared.slide(browser, to: back, from: browser.spaces.count)
     }

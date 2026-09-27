@@ -377,8 +377,10 @@ struct ContentView: View {
         roomTicket += 1
         var still = Transaction()
         still.disablesAnimations = true
-        withTransaction(still) { room = at }
-        guard arriving.0 || arriving.1 else { return }
+        // With Reduce Motion on, nothing slides: the page takes its new room
+        // with the chrome, not after a slide that isn't there.
+        withTransaction(still) { room = Motion.reduced ? new : at }
+        guard !Motion.reduced, arriving.0 || arriving.1 else { return }
         let ticket = roomTicket
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
             guard ticket == roomTicket else { return }
@@ -806,6 +808,10 @@ struct ContentView: View {
     /// Search's keys are Search's. The keys that make and close tabs and move
     /// between them stay Search's first, as Chrome keeps them its own.
     ///
+    /// ⌘K is always Search's, on every page: the way to any open page is
+    /// the one key that must never be taken (Drice; #238). Slack, X, GitHub
+    /// and ChatGPT use it themselves, and given it first they kept it.
+    ///
     /// ⌘← and ⌘→ are Search's too while nothing is being typed: WebKit takes
     /// them to scroll the page sideways and never hands them back, so
     /// passing them on left them dead for going back and forward (#324).
@@ -813,6 +819,7 @@ struct ContentView: View {
         let reserved = (key == "t") || (key == "w" && !shifted) || (key == "n" && shifted)
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
+            || (key == "k" && !shifted)
             || (!shifted && (event.keyCode == 123 || event.keyCode == 124) && !caretIn(event))
         guard !reserved, event.window?.firstResponder is PageView else { return false }
         if let passed = ContentView.passed, PageView.same(passed, event) {
@@ -866,6 +873,7 @@ struct ContentView: View {
                 return true
             }
             if browser.makingSpace {
+                browser.cancelSpaceCreation()
                 withAnimation(Motion.glide) { browser.makingSpace = false }
                 return true
             }

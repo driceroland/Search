@@ -322,7 +322,10 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
     /// A link that asks for a new window becomes a tab, and the popup goes —
     /// the way it does in Chrome when you follow a link out of one.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url { Extensions.shared.browser?.open(url, foreground: true) }
+        // The same rule as tabs.create: never a file on this Mac, never javascript:.
+        if let url = action.request.url, (try? Extensions.mayOpen(url)) != nil {
+            Extensions.shared.browser?.open(url, foreground: true)
+        }
         close()
         return nil
     }

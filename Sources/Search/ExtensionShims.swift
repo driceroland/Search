@@ -401,13 +401,42 @@ enum ExtensionShims {
       // never passed on. The browser knows which pages are open, so they
       // are added to the list; a message posted to one reaches it through
       // a channel the pages listen on, as a message from the worker.
+      // The other way round, a page reaches the worker through
+      // navigator.serviceWorker, and the worker answers the page a message
+      // came from — ScriptCat's worker hands each GM_xmlhttpRequest to its
+      // offscreen document so. Here no worker controls the extension's
+      // pages, so a page is given one that posts to the worker over the same
+      // channel, and a message either way says who sent it. A port handed
+      // over with a message can't cross the channel: it stays with the
+      // sender, and what is posted to the one the other side is given comes
+      // back over the channel to it.
       const clientsChannel = typeof BroadcastChannel === "function" && !inContent && !embedded ? new BroadcastChannel("search-clients") : null;
+      const heldPorts = new Map();
+      const handOver = (transfer) => (Array.isArray(transfer) ? transfer : (transfer && transfer.transfer) || [])
+        .filter((p) => p instanceof MessagePort)
+        .map((port) => { const key = Math.random().toString(36).slice(2); heldPorts.set(key, port); return key; });
+      const answered = (data) => {
+        if (typeof data.port !== "string") return false;
+        const port = heldPorts.get(data.port);
+        if (port) port.postMessage(data.data);
+        return true;
+      };
+      const messageFrom = (source, data, keys) => {
+        const ports = (Array.isArray(keys) ? keys : []).map((key) => {
+          const pair = new MessageChannel();
+          pair.port1.onmessage = (e) => clientsChannel.postMessage({ port: key, data: e.data });
+          return pair.port2;
+        });
+        const event = new MessageEvent("message", { data, ports, origin: location.origin });
+        if (source) Object.defineProperty(event, "source", { value: source });
+        return event;
+      };
       if (worker && clientsChannel && root.clients && typeof root.clients.matchAll === "function") {
         const matchAll = root.clients.matchAll.bind(root.clients);
         const client = (p) => ({
           id: "search-" + p.id, url: p.url, type: "window", frameType: "top-level",
           visibilityState: p.visible ? "visible" : "hidden", focused: !!p.focused,
-          postMessage: (data) => { try { clientsChannel.postMessage({ url: p.url, data }); } catch (e) {} },
+          postMessage: (data, transfer) => { try { clientsChannel.postMessage({ url: p.url, data, ports: handOver(transfer) }); } catch (e) {} },
           focus() { return Promise.resolve(this); },
           navigate: () => Promise.resolve(null),
         });
@@ -420,11 +449,30 @@ enum ExtensionShims {
           const listed = new Set(found.map((c) => c.url));
           return found.concat(pages.filter((p) => p && typeof p.url === "string" && !listed.has(p.url)).map(client));
         });
-      } else if (clientsChannel && !background && typeof navigator !== "undefined" && navigator.serviceWorker) {
         clientsChannel.onmessage = ({ data }) => {
-          if (!data || data.url !== location.href) return;
-          try { navigator.serviceWorker.dispatchEvent(new MessageEvent("message", { data: data.data })); } catch (e) {}
+          if (!data || answered(data) || typeof data.from !== "string") return;
+          root.dispatchEvent(messageFrom(client({ id: data.from, url: data.from }), data.data, data.ports));
         };
+      } else if (clientsChannel && !background && typeof navigator !== "undefined" && navigator.serviceWorker) {
+        const container = navigator.serviceWorker;
+        const script = (() => { try { return (runtime.getManifest().background || {}).service_worker; } catch (e) { return null; } })();
+        const controller = script && !container.controller ? {
+          scriptURL: new URL(script, location.origin + "/").href, state: "activated", onstatechange: null, onerror: null,
+          postMessage: (data, transfer) => { try { clientsChannel.postMessage({ from: location.href, data, ports: handOver(transfer) }); } catch (e) {} },
+          addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => true,
+        } : null;
+        clientsChannel.onmessage = ({ data }) => {
+          if (!data || answered(data) || data.url !== location.href) return;
+          try { container.dispatchEvent(messageFrom(controller, data.data, data.ports)); } catch (e) {}
+        };
+        // Only the controller: `ready` is left as WebKit has it, since a
+        // made-up registration has none of a real one's methods
+        // (showNotification…), and a page calling them would throw where it
+        // used to wait.
+        if (controller) {
+          kept.add(container);
+          try { Object.defineProperty(container, "controller", { configurable: true, get: () => controller }); } catch (e) {}
+        }
       }
       // WebKit runs an extension's worker on its web process's main thread,
       // and a worker's WebSocket waits there for the main thread to set up
@@ -2985,6 +3033,8 @@ enum ExtensionShims {
                 let shown = tab.id == browser.activeID && web.window?.occlusionState.contains(.visible) == true
                 pages.append(["id": tab.id.uuidString, "url": url.absoluteString, "visible": shown, "focused": shown && web.window?.isKeyWindow == true])
             }
+            // Its offscreen document too, as Chrome lists it.
+            if let url = offscreen[id]?.url { pages.append(["id": "offscreen", "url": url.absoluteString, "visible": false, "focused": false]) }
             return pages
 
         // MARK: the button's popup
@@ -3426,7 +3476,8 @@ enum ExtensionAuth {
     }
 
     static func run(_ url: URL, extension id: String, browser: Browser) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
+        if #available(macOS 15.4, *) { try Extensions.mayOpen(url) }
+        return try await withCheckedThrowingContinuation { continuation in
             waiting[id]?.finish(.failure(Declined()))
             let tab = browser.open(url, foreground: true)
             waiting[id] = (tab.id, { result in continuation.resume(with: result) })

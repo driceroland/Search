@@ -59,6 +59,7 @@
                                        folder (open: its first bookmark picked)
     ./bench bookmark URL [new]         test run: a bookmark picked from the list, timed until it loads
                                        (new: into a new tab, whose page isn't built yet)
+    ./bench fill [STEPS]               test run: the page reporting its scroll STEPS times, each timed until the window rests
     ./bench peek URL|close             test run: the peek panel over the tab in front, as a shift-click opens it
     ./bench window                     test run: open the browser's window if a hidden probe came up without it
     ./bench pages on|off               test run: let a hidden probe's pages be painted, off every screen (for picture)
@@ -258,6 +259,9 @@ def main(argv):
     elif verb == "keyeq":
         if len(args) < 2 or any(a != "shift" for a in args[2:]): sys.exit("usage: bench keyeq CHARS CODE [shift]")
         request["chars"], request["code"], request["mods"] = args[0], int(args[1]), args[2:]
+    elif verb == "fill":
+        if len(args) > 1: sys.exit("usage: bench fill [STEPS]")
+        if args: request["steps"] = int(args[0])
     elif verb == "peek":
         if len(args) != 1: sys.exit("usage: bench peek URL|close")
         request["url"] = args[0]

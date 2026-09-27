@@ -150,6 +150,30 @@ enum Muter {
     }
 }
 
+/// How far down its page a tab is. Its own object, watched by the fill in
+/// the tab's pill alone: as part of the tab, every percent scrolled re-ran
+/// everything that watches the tab — the page's stage, the buttons, the
+/// row — two to four milliseconds of the window's time each, while WebKit
+/// needed that thread to put the scrolled page on screen.
+@MainActor
+final class Reading: ObservableObject {
+    @Published var value: Double = 0
+}
+
+/// The fill itself: the grey that grows from the left of the tab you are on
+/// as you read down its page, in a width it is given.
+struct ReadingFill: View {
+    @ObservedObject var meter: Reading
+    let width: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .fill(Palette.ink.opacity(0.055))
+            .frame(width: width * meter.value)
+            .animation(.easeOut(duration: 0.15), value: meter.value)
+    }
+}
+
 @MainActor
 final class Tab: ObservableObject, Identifiable {
     let id = UUID()
@@ -166,7 +190,7 @@ final class Tab: ObservableObject, Identifiable {
     /// The web view if there is one yet, for the callers that must not be
     /// the reason there is.
     private(set) var built: PageView?
-    private let configuration: WKWebViewConfiguration
+    private var configuration: WKWebViewConfiguration
     let extensionReturn = ExtensionReturnNavigation()
 
     /// Whether its page was made with the extension controller in it — every
@@ -208,8 +232,13 @@ final class Tab: ObservableObject, Identifiable {
     /// connection. Shown in place of the page rather than in a dialog.
     @Published var failure: String?
     /// How far down the page you are, nought to one. The tab's own pill fills
-    /// with it.
-    @Published var reading: Double = 0
+    /// with it. Kept apart from the rest of the tab (see Reading): it changes
+    /// all the way down a page, and only the fill has any use for it.
+    let meter = Reading()
+    var reading: Double {
+        get { meter.value }
+        set { if meter.value != newValue { meter.value = newValue } }
+    }
 
     /// True while the page has been stripped back to its article.
     @Published private(set) var reader = false
@@ -262,11 +291,18 @@ final class Tab: ObservableObject, Identifiable {
     /// A sideways swipe in progress, for the disc that shows it.
     @Published var pull: Pull?
 
+    /// What a site opens at until you zoom it yourself: Settings › General ›
+    /// Page zoom. Read from the file, not from the one object the window holds.
+    static var defaultZoom: CGFloat {
+        CGFloat(Store.settings.object(forKey: "pageZoom") as? Double ?? 1)
+    }
+
     /// Remembered for the site, not for the tab: setting a paper's type to
-    /// 125% once should be the last time you think about it.
+    /// 125% once should be the last time you think about it. A site at the
+    /// size every site starts at keeps nothing, and follows that size.
     func rememberZoom() {
         guard let host = address?.host(), !shy else { return }
-        if abs(zoom - 1) < 0.01 {
+        if abs(zoom - Tab.defaultZoom) < 0.01 {
             Store.settings.removeObject(forKey: "zoom." + host)
         } else {
             Store.settings.set(Double(zoom), forKey: "zoom." + host)
@@ -275,10 +311,11 @@ final class Tab: ObservableObject, Identifiable {
 
     func applyRememberedZoom() {
         guard let host = address?.host() else { return }
-        let kept = Store.settings.object(forKey: "zoom." + host) as? Double ?? 1
-        guard abs(CGFloat(kept) - web.pageZoom) > 0.004 else { return }
-        web.pageZoom = CGFloat(kept)
-        zoom = CGFloat(kept)
+        let kept = (Store.settings.object(forKey: "zoom." + host) as? Double).map { CGFloat($0) }
+            ?? Tab.defaultZoom
+        guard abs(kept - web.pageZoom) > 0.004 else { return }
+        web.pageZoom = kept
+        zoom = kept
     }
 
     /// How much bigger the page is being drawn. Not a magnifying glass over
@@ -543,9 +580,10 @@ final class Tab: ObservableObject, Identifiable {
 
     func magnify(by factor: CGFloat) { magnify(to: web.pageZoom * factor) }
 
-    /// ⌘0 undoes both kinds of zoom at once — whichever one you reached for.
+    /// ⌘0 undoes both kinds of zoom at once — whichever one you reached for —
+    /// back to the size every site starts at.
     func resetZoom() {
-        magnify(to: 1)
+        magnify(to: Tab.defaultZoom)
         guard web.magnification != 1 else { return }
         web.magnification = 1
         onZoom?(self, 1)
@@ -833,6 +871,21 @@ final class Tab: ObservableObject, Identifiable {
         stale = false
         pull = nil
         discard()
+    }
+
+    /// A page moved to another space must use that space's cookies. WebKit
+    /// binds the store when the view is made, so keep its restorable state
+    /// and build the view again with the destination's store.
+    func rehome(in space: UUID) {
+        guard !shy, !bench, store !== Spaces.store(for: space) else { return }
+        if let built {
+            memory = built.isLoading ? nil : built.interactionState
+            pending = address ?? built.url
+            picture = nil
+            cover = nil
+            discard()
+        }
+        configuration = Web.configuration(space: space)
     }
 
     /// Whether the page holds something typed and not yet sent — a draft, a
