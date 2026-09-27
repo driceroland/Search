@@ -828,7 +828,10 @@ struct ContentView: View {
         // With the ⌃Tab switcher up, the side arrows move along a row as Tab
         // does, up and down shift into the space above or below, Return takes
         // the one picked without waiting for ⌃, and Escape puts it away
-        // having chosen nothing.
+        // having chosen nothing. ⌃ is still down, so the arrows arrive only
+        // with Mission Control's ⌃-arrow shortcuts turned off: macOS takes
+        // them first, and nothing short of a system-wide event tap gets them
+        // back, which a browser has no business asking for.
         if browser.flipOpen {
             switch event.keyCode {
             case 123: browser.flip(-1); return true
