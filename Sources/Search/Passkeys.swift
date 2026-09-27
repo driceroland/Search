@@ -77,6 +77,8 @@ final class Passkeys: NSObject {
     /// The one on screen, and whom to answer when it ends. A new request
     /// ends the one before, as a page asking twice gets in any browser.
     private var controller: ASAuthorizationController?
+    /// The page's one-time key for this request's PRF results (see prfReply).
+    private var prfKey: P256.KeyAgreement.PublicKey?
     private var token: String?
     private var answer: (([String: Any]) -> Void)?
     private weak var anchor: NSWindow?
@@ -158,7 +160,15 @@ final class Passkeys: NSObject {
         // spot instead, so the checks above and the page's side are still
         // what they are for real.
         if Store.testing {
-            return answer(Passkeys.rehearsal(kind, rp: rp, origin: origin, challenge: challenge))
+            var reply = Passkeys.rehearsal(kind, rp: rp, origin: origin, challenge: challenge)
+            if body["prf"] is [String: Any] {
+                // Made-up output, sealed the way a real one is, so the page's
+                // side of it is what it is for real.
+                reply["prf"] = Passkeys.prfReply(enabled: kind == "create" ? true : nil,
+                                                 first: SymmetricKey(data: SHA256.hash(data: Data("rehearsal".utf8))),
+                                                 second: nil, for: Passkeys.pageKey(body))
+            }
+            return answer(reply)
         }
 
         let token = body["token"] as? String
@@ -169,6 +179,7 @@ final class Passkeys: NSObject {
                 return answer(Passkeys.failure("AbortError", "The operation was aborted."))
             }
             self.begin(requests, token: token, in: caller.window, answer: answer)
+            self.prfKey = Passkeys.pageKey(body)
         }
     }
 
@@ -198,7 +209,7 @@ final class Passkeys: NSObject {
             .createCredentialAssertionRequest(clientData: clientData)
         platform.allowedCredentials = allowed.map { ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: $0.id) }
         platform.userVerificationPreference = verification
-        if #available(macOS 15.0, *) { platform.prf = Passkeys.prfAssertion(body["prf"]) }
+        if #available(macOS 15.0, *) { platform.prf = Passkeys.prfAssertion(body["prf"], allowed: Set(allowed.map(\.id))) }
         var requests: [ASAuthorizationRequest] = [platform]
         if #available(macOS 14.4, *) {
             let key = ASAuthorizationSecurityKeyPublicKeyCredentialProvider(relyingPartyIdentifier: rp)
@@ -275,11 +286,13 @@ final class Passkeys: NSObject {
     /// takes them. The salts go through untouched: macOS hashes them as the
     /// standard says, the way it does for Safari.
     @available(macOS 15.0, *)
-    private static func prfAssertion(_ value: Any?) -> ASAuthorizationPublicKeyCredentialPRFAssertionInput? {
+    private static func prfAssertion(_ value: Any?, allowed: Set<Data>) -> ASAuthorizationPublicKeyCredentialPRFAssertionInput? {
         guard let prf = value as? [String: Any] else { return nil }
         var byCredential: [Data: ASAuthorizationPublicKeyCredentialPRFAssertionInput.InputValues] = [:]
+        // Salts for a passkey the request doesn't allow are for nobody: the
+        // page's script refuses them, and they are left out here too.
         for (id, values) in prf["byCredential"] as? [String: Any] ?? [:] {
-            if let id = data(id), let values = prfValues(values) { byCredential[id] = values }
+            if let id = data(id), allowed.contains(id), let values = prfValues(values) { byCredential[id] = values }
         }
         if let values = prfValues(prf["eval"]) {
             return .inputValues(values, perCredentialInputValues: byCredential.isEmpty ? nil : byCredential)
@@ -293,12 +306,29 @@ final class Passkeys: NSObject {
         return .saltInput1(first, saltInput2: data(values["second"]))
     }
 
-    /// What the passkey derived, for the page: `enabled` only answers a registration.
-    static func prfReply(enabled: Bool?, first: SymmetricKey?, second: SymmetricKey?) -> [String: Any] {
+    /// The one-time public key the page's script made for this request.
+    static func pageKey(_ body: [String: Any]) -> P256.KeyAgreement.PublicKey? {
+        (body["prfKey"] as? String).flatMap(data).flatMap { try? P256.KeyAgreement.PublicKey(x963Representation: $0) }
+    }
+
+    /// What the passkey derived, for the page: `enabled` only answers a
+    /// registration. The results are keys only the page's own call may see,
+    /// and the way back to it is an event any script on the page can listen
+    /// to: so they go sealed, for the one-time key the call made and kept to
+    /// itself (ECDH P-256, HKDF-SHA256, AES-GCM). Without that key, none go.
+    static func prfReply(enabled: Bool?, first: SymmetricKey?, second: SymmetricKey?, for page: P256.KeyAgreement.PublicKey?) -> [String: Any] {
         var reply: [String: Any] = [:]
         if let enabled { reply["enabled"] = enabled }
-        if let first { reply["first"] = text(first.withUnsafeBytes { Data($0) }) }
-        if let second { reply["second"] = text(second.withUnsafeBytes { Data($0) }) }
+        guard let first, let page else { return reply }
+        var results = ["first": text(first.withUnsafeBytes { Data($0) })]
+        if let second { results["second"] = text(second.withUnsafeBytes { Data($0) }) }
+        let mine = P256.KeyAgreement.PrivateKey()
+        guard let shared = try? mine.sharedSecretFromKeyAgreement(with: page),
+              let plain = try? JSONSerialization.data(withJSONObject: results)
+        else { return reply }
+        let key = shared.hkdfDerivedSymmetricKey(using: SHA256.self, salt: Data(), sharedInfo: Data("search-prf".utf8), outputByteCount: 32)
+        guard let box = try? AES.GCM.seal(plain, using: key).combined else { return reply }
+        reply["sealed"] = ["key": text(mine.publicKey.x963Representation), "box": text(box)]
         return reply
     }
 
@@ -314,6 +344,7 @@ final class Passkeys: NSObject {
         controller = nil
         token = nil
         answer = nil
+        prfKey = nil
     }
 
     private func refuse(_ answer: ([String: Any]) -> Void, _ name: String, _ message: String) {
@@ -507,7 +538,7 @@ extension Passkeys: ASAuthorizationControllerDelegate, ASAuthorizationController
                 attachment: attachment == .platform ? "platform" : "cross-platform"
             )
             if #available(macOS 15.0, *), let prf = (credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion)?.prf {
-                reply["prf"] = Passkeys.prfReply(enabled: nil, first: prf.first, second: prf.second)
+                reply["prf"] = Passkeys.prfReply(enabled: nil, first: prf.first, second: prf.second, for: prfKey)
             }
             finish(reply)
         } else if let made = credential as? ASAuthorizationPublicKeyCredentialRegistration {
@@ -519,7 +550,7 @@ extension Passkeys: ASAuthorizationControllerDelegate, ASAuthorizationController
                 attachment: platform?.attachment == .platform ? "platform" : "cross-platform"
             )
             if #available(macOS 15.0, *), let prf = platform?.prf {
-                reply["prf"] = Passkeys.prfReply(enabled: prf.isSupported, first: prf.first, second: prf.second)
+                reply["prf"] = Passkeys.prfReply(enabled: prf.isSupported, first: prf.first, second: prf.second, for: prfKey)
             }
             finish(reply)
         } else {
@@ -670,6 +701,15 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
       try { Object.defineProperty(proto, mark, { value: navigator.credentials }); } catch (e) { return; }
       var nativeGet = proto.get, nativeCreate = proto.create;
       var refused = 'The operation either timed out or was not allowed.';
+      // WebCrypto as it is now, before the site's own scripts run: the PRF
+      // results come back sealed for a key made here (see Passkeys.prfReply).
+      var subtle = window.crypto && crypto.subtle, sealing = null;
+      if (subtle) sealing = {
+        generate: subtle.generateKey.bind(subtle), exportKey: subtle.exportKey.bind(subtle),
+        importKey: subtle.importKey.bind(subtle), deriveBits: subtle.deriveBits.bind(subtle),
+        deriveKey: subtle.deriveKey.bind(subtle), decrypt: subtle.decrypt.bind(subtle)
+      };
+      var utf8 = new TextEncoder(), text = new TextDecoder();
 
       function bytes(source) {
         if (source instanceof ArrayBuffer) return new Uint8Array(source);
@@ -698,10 +738,15 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         var out = {};
         if (prf.eval) out.eval = prfValues(prf.eval);
         if (prf.evalByCredential) {
-          // As the standard has it: salts for particular passkeys need the list of them.
+          // As the standard has it: salts for particular passkeys need the list
+          // of them, and every one of them has to be on it.
           if (!allowed || !allowed.length) throw new DOMException('evalByCredential needs allowCredentials.', 'NotSupportedError');
+          var ids = Array.prototype.map.call(allowed, function (c) { return encode(c.id); });
           out.byCredential = {};
-          Object.keys(prf.evalByCredential).forEach(function (id) { out.byCredential[id] = prfValues(prf.evalByCredential[id]); });
+          Object.keys(prf.evalByCredential).forEach(function (id) {
+            if (!id || ids.indexOf(id) < 0) throw new DOMException('evalByCredential names a credential allowCredentials does not.', 'SyntaxError');
+            out.byCredential[id] = prfValues(prf.evalByCredential[id]);
+          });
         }
         return out;
       }
@@ -795,22 +840,53 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         });
       }
 
+      // A one-time key pair for a request's PRF results; the private half
+      // never leaves this script.
+      function prfKeys() {
+        if (!sealing) return Promise.resolve(null);
+        return sealing.generate({ name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']).then(function (pair) {
+          return sealing.exportKey('raw', pair.publicKey).then(function (raw) { return { pair: pair, raw: encode(raw) }; });
+        }, function () { return null; });
+      }
+      function unseal(prf, keys) {
+        if (!prf || !prf.sealed || !keys) return Promise.resolve(prf ? { enabled: prf.enabled } : null);
+        var box = new Uint8Array(decode(prf.sealed.box));
+        return sealing.importKey('raw', decode(prf.sealed.key), { name: 'ECDH', namedCurve: 'P-256' }, false, [])
+          .then(function (theirs) { return sealing.deriveBits({ name: 'ECDH', public: theirs }, keys.pair.privateKey, 256); })
+          .then(function (bits) { return sealing.importKey('raw', bits, 'HKDF', false, ['deriveKey']); })
+          .then(function (base) {
+            return sealing.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: utf8.encode('search-prf') },
+              base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+          })
+          .then(function (key) { return sealing.decrypt({ name: 'AES-GCM', iv: box.slice(0, 12) }, key, box.slice(12)); })
+          .then(function (plain) {
+            var results = JSON.parse(text.decode(plain));
+            return { enabled: prf.enabled, first: results.first, second: results.second };
+          }, function () { return { enabled: prf.enabled }; });
+      }
+
       function send(request, signal, extensions) {
         if (signal && signal.aborted) return Promise.reject(aborted(signal));
         request.token = Math.random().toString(36).slice(2);
-        return new Promise(function (resolve, reject) {
-          if (signal) signal.addEventListener('abort', function () {
-            ask({ kind: 'cancel', token: request.token });
-            reject(aborted(signal));
-          }, { once: true });
-          ask(request).then(function (reply) {
-            if (!reply || reply.error) {
-              var name = (reply && reply.error) || 'NotAllowedError';
-              var message = (reply && reply.message) || refused;
-              return reject(name === 'TypeError' ? new TypeError(message) : new DOMException(message, name));
-            }
-            resolve(credential(reply, extensions));
-          }, function () { reject(new DOMException(refused, 'NotAllowedError')); });
+        return (request.prf ? prfKeys() : Promise.resolve(null)).then(function (keys) {
+          if (keys) request.prfKey = keys.raw;
+          return new Promise(function (resolve, reject) {
+            if (signal) signal.addEventListener('abort', function () {
+              ask({ kind: 'cancel', token: request.token });
+              reject(aborted(signal));
+            }, { once: true });
+            ask(request).then(function (reply) {
+              if (!reply || reply.error) {
+                var name = (reply && reply.error) || 'NotAllowedError';
+                var message = (reply && reply.message) || refused;
+                return reject(name === 'TypeError' ? new TypeError(message) : new DOMException(message, name));
+              }
+              unseal(reply.prf, keys).then(function (prf) {
+                if (prf) reply.prf = prf; else delete reply.prf;
+                resolve(credential(reply, extensions));
+              });
+            }, function () { reject(new DOMException(refused, 'NotAllowedError')); });
+          });
         });
       }
 
