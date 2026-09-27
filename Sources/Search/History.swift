@@ -108,7 +108,9 @@ final class History: ObservableObject {
         let key = History.key(for: url)
         guard !key.isEmpty else { return }
         if var seen = visits[key] {
-            seen.count += count
+            // The larger of the two, not their sum: the same browser brought
+            // in again must not count every visit twice.
+            seen.count = max(seen.count, count)
             if last > seen.last { seen.last = last }
             if seen.title.isEmpty { seen.title = title }
             visits[key] = seen

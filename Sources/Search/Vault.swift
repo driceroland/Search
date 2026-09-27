@@ -246,7 +246,13 @@ enum Vault {
     static func host(of text: String) -> String {
         var value = text.trimmingCharacters(in: .whitespaces)
         if !value.contains("://") { value = "https://" + value }
-        guard let host = URL(string: value)?.host()?.lowercased() else { return "" }
+        // A website's, and nothing else: an Android app's login in an export
+        // (android://…@com.vendor.app/) names a package, which can read as a
+        // domain somebody else owns — com.vendor.app, .shopping… — and would
+        // be offered to them.
+        guard let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              let host = url.host()?.lowercased()
+        else { return "" }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 

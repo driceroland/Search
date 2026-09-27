@@ -159,7 +159,7 @@ enum ExtensionShims {
     /// read through it and written back over it as a regular file, so a
     /// link to a file elsewhere would put that file's bytes in the package.
     /// A folder on the way that is a link is caught by where it resolves.
-    nonisolated static func inside(_ name: String, of folder: URL) -> URL? {
+    nonisolated private static func inside(_ name: String, of folder: URL) -> URL? {
         let path = folder.appendingPathComponent(name.trimmingCharacters(in: CharacterSet(charactersIn: "/"))).standardizedFileURL
         guard path.path.hasPrefix(folder.standardizedFileURL.path + "/"),
               (try? path.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
@@ -221,6 +221,13 @@ enum ExtensionShims {
       // (There, Search's passkey patch holds navigator.credentials.)
       const ours = (() => { try { return !!(chrome && chrome.runtime && chrome.runtime.id); } catch (e) { return false; } })();
       if (!ours || root.__searchShim) return;
+      // Bitwarden's bundled TypeScript uses these as computed class keys
+      // before it registers disposable resources. Define them before any
+      // extension code runs; Symbol.for keeps the key shared by its frames.
+      const symbol = root.Symbol;
+      for (const name of ["dispose", "asyncDispose"]) {
+        if (symbol[name] === undefined) Object.defineProperty(symbol, name, { value: symbol.for("Symbol." + name) });
+      }
       // WebKit reverted `requestIdleCallback` after a page-load regression
       // (bug 287681), leaving Proton Pass's form detection without it.
       const nativeIdle = typeof root.requestIdleCallback === "function"
@@ -385,6 +392,39 @@ enum ExtensionShims {
       // event.addRoutes) — a speed-up, so nothing is lost without it.
       if (worker && typeof root.InstallEvent === "function" && !InstallEvent.prototype.addRoutes) {
         InstallEvent.prototype.addRoutes = () => Promise.resolve();
+      }
+      // clients.matchAll() in an extension's worker: Chrome lists the
+      // extension's own pages that are open — its popup, its pages in tabs.
+      // WebKit lists none, so an extension that checks whether its popup is
+      // open before sending it news always hears no: 1Password's popup
+      // stays on "connecting to the app" for ever, the answer from the app
+      // never passed on. The browser knows which pages are open, so they
+      // are added to the list; a message posted to one reaches it through
+      // a channel the pages listen on, as a message from the worker.
+      const clientsChannel = typeof BroadcastChannel === "function" && !inContent && !embedded ? new BroadcastChannel("search-clients") : null;
+      if (worker && clientsChannel && root.clients && typeof root.clients.matchAll === "function") {
+        const matchAll = root.clients.matchAll.bind(root.clients);
+        const client = (p) => ({
+          id: "search-" + p.id, url: p.url, type: "window", frameType: "top-level",
+          visibilityState: p.visible ? "visible" : "hidden", focused: !!p.focused,
+          postMessage: (data) => { try { clientsChannel.postMessage({ url: p.url, data }); } catch (e) {} },
+          focus() { return Promise.resolve(this); },
+          navigate: () => Promise.resolve(null),
+        });
+        put(root.clients, "matchAll", async (options) => {
+          const found = [...await matchAll(options)];
+          const type = (options && options.type) || "window";
+          if (type !== "window" && type !== "all") return found;
+          let pages = [];
+          try { pages = (await native("clients.pages", [])) || []; } catch (e) {}
+          const listed = new Set(found.map((c) => c.url));
+          return found.concat(pages.filter((p) => p && typeof p.url === "string" && !listed.has(p.url)).map(client));
+        });
+      } else if (clientsChannel && !background && typeof navigator !== "undefined" && navigator.serviceWorker) {
+        clientsChannel.onmessage = ({ data }) => {
+          if (!data || data.url !== location.href) return;
+          try { navigator.serviceWorker.dispatchEvent(new MessageEvent("message", { data: data.data })); } catch (e) {}
+        };
       }
       // WebKit runs an extension's worker on its web process's main thread,
       // and a worker's WebSocket waits there for the main thread to set up
@@ -701,6 +741,11 @@ enum ExtensionShims {
             if (background) { sendResponse("pong"); return; }
             return true;
           }
+          // Search's own envelopes come from this extension only: another
+          // extension (onMessageExternal) could otherwise speak as one of its
+          // user scripts, or as a frame of its own.
+          const fromHere = !!(sender && sender.id === runtime.id);
+          if (message && (message.__searchUserScript === true || message.__searchToFrame) && !fromHere) return;
           if (message && message.__searchUserScript === true) {
             const route = root.__searchUserScriptMessage;
             return route && route(message.message, sender, sendResponse) && !settled ? true : undefined;
@@ -1345,6 +1390,46 @@ enum ExtensionShims {
         managed: { get: resolve({}), getBytesInUse: resolve(0), onChanged: event() },
         AccessLevel: { TRUSTED_CONTEXTS: "TRUSTED_CONTEXTS", TRUSTED_AND_UNTRUSTED_CONTEXTS: "TRUSTED_AND_UNTRUSTED_CONTEXTS" },
       });
+      // A page at the address of the extension's popup hears no events
+      // from WebKit: WebKit takes it for its own popup, and Search's popup
+      // is a view of Search's. The one that matters, storage.onChanged —
+      // Bitwarden learns a self-hosted server's address from it — is passed
+      // on by the background, which does hear it, to such pages: the popup,
+      // and the same page opened in a tab ("pop out"). They keep their
+      // address, which extensions check (Dark Reader only answers its popup
+      // at its own).
+      {
+        const manifest = (() => { try { return runtime.getManifest() || {}; } catch (e) { return {}; } })();
+        const action = manifest.action || manifest.browser_action || {};
+        let popupPath = null;
+        try { if (typeof action.default_popup === "string" && action.default_popup) popupPath = new URL(action.default_popup, location.origin + "/").pathname; } catch (e) {}
+        const relay = popupPath && !embedded && typeof BroadcastChannel === "function" ? new BroadcastChannel("search-storage") : null;
+        if (relay && background && chrome.storage && chrome.storage.onChanged) {
+          kept.add(chrome.storage.onChanged);
+          chrome.storage.onChanged.addListener((changes, area) => {
+            try { relay.postMessage({ changes, area }); } catch (e) {}
+          });
+        } else if (relay && !background && typeof location !== "undefined" && location.pathname === popupPath && chrome.storage) {
+          const all = new Set(), byArea = {};
+          const mend = (ev, set) => {
+            if (!ev || typeof ev !== "object") return;
+            put(ev, "addListener", (f) => { if (typeof f === "function") set.add(f); });
+            put(ev, "removeListener", (f) => { set.delete(f); });
+            put(ev, "hasListener", (f) => set.has(f));
+            put(ev, "hasListeners", () => set.size > 0);
+          };
+          mend(chrome.storage.onChanged, all);
+          for (const area of ["local", "sync", "session", "managed"]) {
+            const store = chrome.storage[area];
+            if (store && store.onChanged) mend(store.onChanged, byArea[area] = new Set());
+          }
+          relay.onmessage = ({ data }) => {
+            if (!data || !data.changes) return;
+            for (const f of [...all]) { try { f(data.changes, data.area); } catch (e) { console.error(e); } }
+            for (const f of [...(byArea[data.area] || [])]) { try { f(data.changes); } catch (e) { console.error(e); } }
+          };
+        }
+      }
       // Items built with Object.create(null) — Chrome stores them, WebKit
       // throws that an object is expected.
       for (const area of ["local", "sync", "session"]) {
@@ -2463,6 +2548,11 @@ enum ExtensionShims {
         "readingList": "readingList",
         "userScripts": "userScripts",
         "identity": "identity",
+        "search": "search",
+        "notifications": "notifications",
+        "idle": "idle",
+        "power": "power",
+        "tts": "tts",
     ]
 
     /// What this extension asked for: the names in its manifest and any
@@ -2621,6 +2711,7 @@ enum ExtensionShims {
                 // A name it asks for, which may carry folders: only the last part is kept.
                 browser.namedDownloads[url] = (name as NSString).lastPathComponent
             }
+            ExtensionShims.askedDownloads[url] = id
             let download = await web.startDownload(using: URLRequest(url: url))
             browser.keep(download)
             return browser.loot.kept.count + 1
@@ -2633,7 +2724,19 @@ enum ExtensionShims {
         case "downloads.open", "downloads.show":
             guard let index = first as? Int, browser.loot.kept.indices.contains(index - 1) else { return nil }
             let keep = browser.loot.kept[index - 1]
-            if api == "downloads.open" { browser.loot.open(keep) } else { browser.loot.reveal(keep) }
+            if api == "downloads.open" {
+                // As in Chrome, opening asks for its own permission; and only
+                // a file this extension downloaded itself, not any of yours.
+                guard allowed(id, context: context).contains("downloads.open") else {
+                    throw Unsupported(what: "The extension never asked for \u{201C}downloads.open\u{201D}")
+                }
+                guard ExtensionShims.ownDownloads[id]?.contains(keep.path) == true else {
+                    throw Unsupported(what: "Only a download this extension started can be opened by it")
+                }
+                browser.loot.open(keep)
+            } else {
+                browser.loot.reveal(keep)
+            }
             return nil
         case "downloads.showDefaultFolder":
             NSWorkspace.shared.open(browser.prefs.downloads)
@@ -2837,6 +2940,17 @@ enum ExtensionShims {
             owner.noteError(first as? String ?? "?", for: id)
             return nil
 
+        // MARK: its own pages, for clients.matchAll() (see the shim)
+        case "clients.pages":
+            var pages: [[String: Any]] = []
+            if let popup = ExtensionPopup.shared.client(of: id) { pages.append(popup) }
+            for tab in browser.tabs {
+                guard let web = tab.built, let url = web.url, Browser.extensionHost(of: url) == id else { continue }
+                let shown = tab.id == browser.activeID && web.window?.occlusionState.contains(.visible) == true
+                pages.append(["id": tab.id.uuidString, "url": url.absoluteString, "visible": shown, "focused": shown && web.window?.isKeyWindow == true])
+            }
+            return pages
+
         // MARK: the button's popup
         case "action.popup":
             let path = first as? String ?? ""
@@ -2934,7 +3048,9 @@ enum ExtensionShims {
         // MARK: search
         case "search.query":
             let spec = first as? [String: Any] ?? [:]
-            guard let url = browser.destination(for: spec["text"] as? String ?? "") else { return nil }
+            // Words to search for, as in Chrome — never an address, file:
+            // and data: included, which the address field would take.
+            guard let url = browser.searchURL(for: spec["text"] as? String ?? "") else { return nil }
             switch spec["disposition"] as? String {
             case "NEW_TAB", "NEW_WINDOW": browser.open(url, foreground: true)
             default: browser.visit(url)
@@ -3119,6 +3235,10 @@ enum ExtensionShims {
 
     /// Popups extensions set for their buttons: per tab, or "*" for all.
     static var popups: [String: [String: String]] = [:]
+    /// Downloads an extension asked for, by address, until they land; then
+    /// the files they became, which are the only ones it may open.
+    static var askedDownloads: [URL: String] = [:]
+    static var ownDownloads: [String: Set<String>] = [:]
 
     /// Keep-awake assertions, one per extension that asked.
     static var awake: [String: IOPMAssertionID] = [:]

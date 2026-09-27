@@ -25,36 +25,72 @@ enum Chromium {
         let folder: String
         let service: String
         let account: String
+        /// The app itself, to say so when it is on this Mac but its data
+        /// isn't where it should be.
+        let app: String
 
         var id: String { name }
 
-        var root: URL {
-            FileManager.default
-                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent(folder, isDirectory: true)
+        var root: URL { Chromium.base.appendingPathComponent(folder, isDirectory: true) }
+
+        /// Every profile: a folder holding passwords, bookmarks or history.
+        /// Most browsers keep one folder per profile ("Default", "Profile 1");
+        /// Opera keeps its only profile in the browser's folder itself.
+        var profiles: [URL] {
+            let inside = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+            return ([root] + inside).filter { folder in
+                ["Login Data", "Bookmarks", "History"].contains {
+                    FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+                }
+            }
         }
 
-        /// every profile's file, each one directly inside its profile folder.
+        /// Every profile's passwords file.
         var files: [URL] {
-            ((try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? [])
-                .map { $0.appendingPathComponent("Login Data") }
+            profiles.map { $0.appendingPathComponent("Login Data") }
                 .filter { FileManager.default.fileExists(atPath: $0.path) }
+        }
+
+        /// Whether the app is in /Applications or ~/Applications.
+        var appInstalled: Bool {
+            let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
+            return [URL(fileURLWithPath: "/Applications"), home].contains {
+                FileManager.default.fileExists(atPath: $0.appendingPathComponent(app).path)
+            }
         }
     }
 
     static let known: [Source] = [
-        Source(name: "Dia", folder: "Dia/User Data", service: "Dia Safe Storage", account: "Dia"),
-        Source(name: "Chrome", folder: "Google/Chrome", service: "Chrome Safe Storage", account: "Chrome"),
-        Source(name: "Arc", folder: "Arc/User Data", service: "Arc Safe Storage", account: "Arc"),
-        Source(name: "Brave", folder: "BraveSoftware/Brave-Browser", service: "Brave Safe Storage", account: "Brave"),
-        Source(name: "Edge", folder: "Microsoft Edge", service: "Microsoft Edge Safe Storage", account: "Microsoft Edge"),
-        Source(name: "Vivaldi", folder: "Vivaldi", service: "Vivaldi Safe Storage", account: "Vivaldi"),
-        Source(name: "Chromium", folder: "Chromium", service: "Chromium Safe Storage", account: "Chromium"),
+        Source(name: "Dia", folder: "Dia/User Data", service: "Dia Safe Storage", account: "Dia", app: "Dia.app"),
+        Source(name: "Chrome", folder: "Google/Chrome", service: "Chrome Safe Storage", account: "Chrome", app: "Google Chrome.app"),
+        Source(name: "Arc", folder: "Arc/User Data", service: "Arc Safe Storage", account: "Arc", app: "Arc.app"),
+        Source(name: "Brave", folder: "BraveSoftware/Brave-Browser", service: "Brave Safe Storage", account: "Brave", app: "Brave Browser.app"),
+        Source(name: "Edge", folder: "Microsoft Edge", service: "Microsoft Edge Safe Storage", account: "Microsoft Edge", app: "Microsoft Edge.app"),
+        Source(name: "Vivaldi", folder: "Vivaldi", service: "Vivaldi Safe Storage", account: "Vivaldi", app: "Vivaldi.app"),
+        Source(name: "Chromium", folder: "Chromium", service: "Chromium Safe Storage", account: "Chromium", app: "Chromium.app"),
     ]
+
+    /// Where browsers keep their data: ~/Library/Application Support. A test
+    /// run reads made-up profiles from its own folder instead, never a real
+    /// browser's.
+    static var base: URL {
+        if Store.testing { return Store.folder.appendingPathComponent("Import", isDirectory: true) }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    }
 
     /// Only the browsers actually on this Mac, with something to read.
     static func installed() -> [Source] {
-        known.filter { !$0.files.isEmpty }
+        known.filter { !$0.profiles.isEmpty }
+    }
+
+    /// Browsers that are on this Mac with nothing found where their data
+    /// should be — said by name, with where Search looked, rather than
+    /// "no other browser found".
+    static func unreadable() -> [(source: Source, looked: String)] {
+        guard !Store.testing else { return [] }
+        return known.filter { $0.appInstalled && $0.profiles.isEmpty }.map {
+            ($0, $0.root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+        }
     }
 
     enum Trouble: Error {
@@ -104,8 +140,8 @@ enum Chromium {
     /// elsewhere, folders and all. Chromium keeps them as one JSON file.
     static func bookmarks(in source: Source) -> [Bookmark] {
         var out: [Bookmark] = []
-        for file in source.files {
-            let marks = file.deletingLastPathComponent().appendingPathComponent("Bookmarks")
+        for profile in source.profiles {
+            let marks = profile.appendingPathComponent("Bookmarks")
             guard let data = try? Data(contentsOf: marks),
                   let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let roots = top["roots"] as? [String: Any]
@@ -154,13 +190,13 @@ enum Chromium {
         }
         guard !wanted.isEmpty else { return out }
 
-        for file in source.files {
-            let icons = file.deletingLastPathComponent().appendingPathComponent("Favicons")
-            guard FileManager.default.fileExists(atPath: icons.path) else { continue }
-            let temp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("office-import-\(UUID().uuidString).db")
-            guard (try? FileManager.default.copyItem(at: icons, to: temp)) != nil else { continue }
-            defer { try? FileManager.default.removeItem(at: temp) }
+        for profile in source.profiles {
+            let icons = profile.appendingPathComponent("Favicons")
+            guard FileManager.default.fileExists(atPath: icons.path),
+                  let copy = try? Snapshot(of: icons)
+            else { continue }
+            let temp = copy.file
+            defer { withExtendedLifetime(copy) {} }
 
             var db: OpaquePointer?
             guard sqlite3_open_v2(temp.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { continue }
@@ -207,8 +243,8 @@ enum Chromium {
     /// the first day. Same file rules as the passwords: a copy, read once.
     static func places(in source: Source, limit: Int = 3000) -> [Place] {
         var out: [Place] = []
-        for file in source.files {
-            let history = file.deletingLastPathComponent().appendingPathComponent("History")
+        for profile in source.profiles {
+            let history = profile.appendingPathComponent("History")
             guard FileManager.default.fileExists(atPath: history.path) else { continue }
             out += (try? placeRows(in: history, limit: limit)) ?? []
         }
@@ -216,10 +252,10 @@ enum Chromium {
     }
 
     private static func placeRows(in file: URL, limit: Int) throws -> [Place] {
-        let temp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("office-import-\(UUID().uuidString).db")
-        try FileManager.default.copyItem(at: file, to: temp)
-        defer { try? FileManager.default.removeItem(at: temp) }
+        let copy = try Snapshot(of: file)
+        let temp = copy.file
+        // Kept to the end: the copy goes with it, and SQLite is reading it.
+        defer { withExtendedLifetime(copy) {} }
 
         var db: OpaquePointer?
         guard sqlite3_open_v2(temp.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
@@ -255,6 +291,12 @@ enum Chromium {
     // MARK: - the key
 
     private static func safeStorage(_ source: Source) -> String? {
+        // A test run's made-up browser keeps its key beside its profiles,
+        // not in the keychain.
+        if Store.testing {
+            let file = source.root.appendingPathComponent("Safe Storage")
+            return (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         var out: CFTypeRef?
         let status = SecItemCopyMatching([
             kSecClass as String: kSecClassGenericPassword,
@@ -326,10 +368,10 @@ enum Chromium {
 
     private static func rows(in file: URL) throws -> [Row] {
         // A copy, next to nothing the other browser is watching.
-        let temp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("office-import-\(UUID().uuidString).db")
-        try FileManager.default.copyItem(at: file, to: temp)
-        defer { try? FileManager.default.removeItem(at: temp) }
+        let copy = try Snapshot(of: file)
+        let temp = copy.file
+        // Kept to the end: the copy goes with it, and SQLite is reading it.
+        defer { withExtendedLifetime(copy) {} }
 
         var db: OpaquePointer?
         guard sqlite3_open_v2(temp.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
@@ -363,4 +405,33 @@ enum Chromium {
         }
         return out
     }
+}
+
+/// A copy of one of another browser's SQLite files to read from, with the
+/// two files SQLite keeps beside it while the browser runs: what was
+/// written last is often still in "-wal", and a copy without it misses the
+/// newest history and passwords. Gone with the copy.
+final class Snapshot {
+    let file: URL
+    private let folder: URL
+
+    init(of source: URL) throws {
+        folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("office-import-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        file = folder.appendingPathComponent(source.lastPathComponent)
+        do {
+            try FileManager.default.copyItem(at: source, to: file)
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
+        for side in ["-wal", "-shm"] {
+            let beside = URL(fileURLWithPath: source.path + side)
+            guard FileManager.default.fileExists(atPath: beside.path) else { continue }
+            try? FileManager.default.copyItem(at: beside, to: URL(fileURLWithPath: file.path + side))
+        }
+    }
+
+    deinit { try? FileManager.default.removeItem(at: folder) }
 }

@@ -185,7 +185,11 @@ struct Fold: View {
             let onWindow = top == window.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
             let reach = prefs.sidebar ? prefs.sideWidth : Metrics.strip
-            let over = onOwnPanel || (onWindow && inWindow && distance < reach)
+            // An extension's popup hangs from its button in the column: the
+            // column stays out while it is up, or the popup is left hanging
+            // from nothing (see ExtensionPopup).
+            let popup = if #available(macOS 15.4, *) { ExtensionPopup.shared.isUp } else { false }
+            let over = onOwnPanel || popup || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
         } else if inWindow, distance < Fold.edge {

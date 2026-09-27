@@ -81,10 +81,14 @@ struct WelcomePanel: View {
             heading("Bring things over.", "Passwords go into your keychain, bookmarks into the menu, and history means the address field already knows where you go. Nothing in the other browser changes.")
 
             let sources = Chromium.installed()
+            let unreadable = Chromium.unreadable()
             if sources.isEmpty {
-                Text("No other browser found on this Mac — nothing to bring.")
+                Text(unreadable.isEmpty
+                     ? "No other browser found on this Mac — nothing to bring."
+                     : unreadable.map { "\($0.source.name) is on this Mac, but nothing of it was found in \($0.looked)." }.joined(separator: "\n"))
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.faint)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(alignment: .leading, spacing: 14) {
                     if sources.count > 1 {

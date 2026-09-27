@@ -167,8 +167,8 @@ extension Browser {
 
     /// The page's "Add to Search" was pressed: the extension this tab is showing.
     func addFromStore(_ tab: Tab) {
-        guard #available(macOS 15.4, *), let url = tab.address, StoreOffer.isStorePage(url) else { return }
-        Extensions.shared.install(from: url.absoluteString)
+        guard #available(macOS 15.4, *), let url = tab.address, let id = Crx.storeID(of: url) else { return }
+        Extensions.shared.install(from: id)
     }
 
     /// Tells a store page what is installed and what is on its way, so its

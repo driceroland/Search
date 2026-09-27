@@ -148,16 +148,72 @@ final class Bookmarks: ObservableObject {
     }
 
     /// Another browser's, kept apart in a folder of that browser's name
-    /// unless there was nothing here yet.
-    func take(_ nodes: [Bookmark], from name: String) {
-        guard !nodes.isEmpty else { return }
+    /// unless there was nothing here yet. Bringing them in again adds only
+    /// what is new — a page already in the same place is left as it is, a
+    /// folder of the same name is gone into — and never takes away what
+    /// you have added or moved since. Returns how many pages came in, and
+    /// how many were already here.
+    @discardableResult
+    func take(_ nodes: [Bookmark], from name: String) -> (added: Int, already: Int) {
+        guard !nodes.isEmpty else { return (0, 0) }
+        var added = 0, already = 0
         if roots.isEmpty {
             roots = nodes
+            added = Bookmarks.count(nodes)
+            Store.settings.set(name, forKey: Bookmarks.topKey)
+        } else if intoTop(nodes, from: name) {
+            Bookmarks.merge(nodes, into: &roots, added: &added, already: &already)
         } else {
-            roots.removeAll { $0.isFolder && $0.title == name }
-            roots.append(.folder(name, nodes))
+            var kids = roots.first { $0.isFolder && $0.title == name }?.children ?? []
+            Bookmarks.merge(nodes, into: &kids, added: &added, already: &already)
+            if let at = roots.firstIndex(where: { $0.isFolder && $0.title == name }) {
+                roots[at].children = kids
+            } else {
+                roots.append(.folder(name, kids))
+            }
         }
         save()
+        return (added, already)
+    }
+
+    /// Which browser filled the empty top level, the first time.
+    private static let topKey = "bookmarks.top"
+
+    /// Whether this browser's bookmarks belong at the top level: it filled
+    /// it the first time — or, from before that was noted, most of its
+    /// pages are already there.
+    private func intoTop(_ nodes: [Bookmark], from name: String) -> Bool {
+        if let top = Store.settings.string(forKey: Bookmarks.topKey) { return top == name }
+        let theirs = Bookmarks.urls(nodes).map(\.absoluteString)
+        guard !theirs.isEmpty else { return false }
+        let ours = Set(Bookmarks.urls(roots).map(\.absoluteString))
+        let shared = theirs.filter { ours.contains($0) }.count
+        guard shared * 2 >= theirs.count else { return false }
+        Store.settings.set(name, forKey: Bookmarks.topKey)
+        return true
+    }
+
+    /// `incoming` into `nodes`, level by level: a folder into the folder of
+    /// the same name, a page only if the same address isn't already at
+    /// that level.
+    private static func merge(_ incoming: [Bookmark], into nodes: inout [Bookmark], added: inout Int, already: inout Int) {
+        for node in incoming {
+            if node.isFolder {
+                if let at = nodes.firstIndex(where: { $0.isFolder && $0.title == node.title }) {
+                    var kids = nodes[at].children ?? []
+                    merge(node.children ?? [], into: &kids, added: &added, already: &already)
+                    nodes[at].children = kids
+                } else {
+                    nodes.append(node)
+                    added += count([node])
+                }
+            } else if nodes.contains(where: { !$0.isFolder && $0.url == node.url }) {
+                already += 1
+            } else {
+                nodes.append(node)
+                added += 1
+            }
+        }
     }
 
     // MARK: - the file

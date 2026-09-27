@@ -14,6 +14,10 @@ final class Browser: NSObject, ObservableObject {
             // The tab just left is the tab just looked at. Whether a tab has
             // gone unwatched long enough to sleep is counted from here, not
             // from when it was first picked.
+            // A question the page asked while it was in the background.
+            if let id = activeID, id != oldValue, let held = heldDialogs.removeValue(forKey: id) {
+                DispatchQueue.main.async { held.forEach { $0.present() } }
+            }
             guard oldValue != activeID, let old = oldValue else { return }
             linkStatus.dismiss()
             tabs.first { $0.id == old }?.touch()
@@ -64,9 +68,13 @@ final class Browser: NSObject, ObservableObject {
     @discardableResult
     func takeBookmarks(from source: Chromium.Source) -> Int {
         let found = Chromium.bookmarks(in: source)
-        bookmarks.take(found, from: source.name)
-        let count = Bookmarks.count(found)
-        announce(count == 0 ? "No bookmarks in \(source.name)" : "\(count) bookmarks from \(source.name)")
+        let (count, already) = bookmarks.take(found, from: source.name)
+        announce(
+            Bookmarks.count(found) == 0 ? "No bookmarks in \(source.name)"
+                : count == 0 ? "The bookmarks from \(source.name) were all here already"
+                : already == 0 ? "\(count) bookmarks from \(source.name)"
+                : "\(count) new bookmarks from \(source.name), \(already) already here"
+        )
         let urls = Bookmarks.urls(found)
         DispatchQueue.global(qos: .utility).async {
             let icons = Chromium.icons(in: source, for: urls)
@@ -270,6 +278,11 @@ final class Browser: NSObject, ObservableObject {
         /// the clear. A click fills only a page that still is that one.
         let host: String
         let clear: Bool
+        /// When it came up. A page can put the caret in a sign-in box
+        /// itself, an invisible one under the pointer included: a click that
+        /// was already on its way is not a choice, so the list takes none for
+        /// its first half second, as Chrome's does.
+        var shown = Date()
     }
     /// Set once you have picked, so the list doesn't come straight back for
     /// the box you are still in. Cleared when the caret leaves the boxes.
@@ -306,12 +319,13 @@ final class Browser: NSObject, ObservableObject {
     func choose(_ login: Login) {
         lowering?.cancel()
         guard let list = suggesting, let tab = tabs.first(where: { $0.id == list.tab }) else { return }
+        guard Date().timeIntervalSince(list.shown) > 0.5 else { return }
         suggesting = nil
         // The tab may have gone somewhere else while the list was up: a
         // redirect, a script. What was offered for one site is never put
         // into another's page.
-        guard curtain.host(of: tab.address) == list.host,
-              (tab.address?.scheme?.lowercased() == "http") == list.clear
+        guard curtain.host(of: tab.pageAddress) == list.host,
+              (tab.pageAddress?.scheme?.lowercased() == "http") == list.clear
         else { return }
         pickedInto = tab.id
         tab.fill(user: login.user, password: login.password) { [weak self] worked in
@@ -479,6 +493,8 @@ final class Browser: NSObject, ObservableObject {
 
     func clearHistory() {
         history.forget()
+        // The sites' icons are a list of where you have been, too.
+        Favicons.shared.forgetAll()
         announce("History cleared")
     }
 
@@ -508,7 +524,7 @@ final class Browser: NSObject, ObservableObject {
     private func answerCapture(_ decision: WKPermissionDecision) {
         guard let decide else { return }
         // Remembered per site, so a call you take every week asks once.
-        Store.settings.set(decision == .grant, forKey: "capture." + askedAbout)
+        if !askedAbout.isEmpty { Store.settings.set(decision == .grant, forKey: "capture." + askedAbout) }
         decide(decision)
         self.decide = nil
         askedAbout = ""
@@ -606,7 +622,7 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         renamingTab = false
-        tabDraft = Address.pretty(url)
+        tabDraft = Address.editable(url)
         editingTab = tab.id
     }
 
@@ -653,7 +669,7 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         let draft = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if draft.isEmpty || tab.address.map({ Address.pretty($0) == draft }) == true
+        if draft.isEmpty || tab.address.map({ Address.editable($0) == draft }) == true
             || destination(for: draft) == nil {
             cancelTabEdit()
             return
@@ -720,6 +736,11 @@ final class Browser: NSObject, ObservableObject {
     var pressure: DispatchSourceMemoryPressure?
     /// Downloads still under way. See `keep(_:)`.
     var downloading: [WKDownload] = []
+    /// alert(), confirm() and prompt() from tabs that weren't in front,
+    /// waiting for them to be (see Dialogs.swift).
+    var heldDialogs: [Tab.ID: [HeldQuestion]] = [:]
+    /// Downloads from private tabs, which the Downloads list never shows.
+    var unlisted: Set<ObjectIdentifier> = []
     /// The Chrome Web Store's pages, told when installs come and go. See StoreRelay.swift.
     var storeWatch: AnyCancellable?
     private var hush: DispatchWorkItem?
@@ -874,8 +895,16 @@ final class Browser: NSObject, ObservableObject {
         }
         let here = min(max(0, saved.active), tabs.count - 1)
         activeID = tabs[here].id
-        // Only the one you were looking at actually loads.
-        tabs[here].wake()
+        // Only the one you were looking at actually loads. Started hidden,
+        // it waits for the extensions, which load at once then, so that
+        // their scripts meant to run before the page's do (#199); a
+        // visible launch keeps loading it alongside the first frame.
+        let first = tabs[here]
+        if #available(macOS 15.4, *), NSApp.isHidden, Extensions.shared.starting {
+            Extensions.shared.whenStarted(within: 1.5) { [weak first] in _ = first?.wake() }
+        } else {
+            first.wake()
+        }
     }
 
     /// The few settings that something else has to be told about. The rest are
@@ -1119,6 +1148,7 @@ final class Browser: NSObject, ObservableObject {
     /// behind; closing that blank tab closes the window.
     func close(_ tab: Tab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        heldDialogs.removeValue(forKey: tab.id)?.forEach { $0.dismiss() }
 
         // A tab whose page is out in the little window takes the window with
         // it. Left alone, the window would go on holding a page belonging to a
@@ -1302,6 +1332,13 @@ final class Browser: NSObject, ObservableObject {
         } else {
             Tab(bench: tab.bench, configuration: page)
         }
+        // Preserve the sign-in popup's link to the page that opened it —
+        // and, since a website can now start the swap, what you made of the
+        // tab: a pinned one stays pinned, a named one keeps its name.
+        fresh.opener = tab.opener
+        fresh.popup = tab.popup
+        fresh.pin = tab.pin
+        fresh.name = tab.name
         prepare(fresh)
         let wasActive = activeID == tab.id
         tabs[index] = fresh
@@ -1314,7 +1351,7 @@ final class Browser: NSObject, ObservableObject {
     /// An address from before extensions moved to chrome-extension://, as
     /// it is now; any other, as it is.
     static func page(_ url: URL) -> URL {
-        if #available(macOS 15.4, *) { return Extensions.unpopped(Extensions.current(url)) }
+        if #available(macOS 15.4, *) { return Extensions.current(url) }
         return url
     }
 
@@ -1606,13 +1643,13 @@ final class Browser: NSObject, ObservableObject {
             }
             lowering?.cancel()
             guard prefs.fillsPasswords, tab.id == activeID, pickedInto != tab.id,
-                  let host = curtain.host(of: tab.address)
+                  let host = curtain.host(of: tab.pageAddress)
             else { return }
             // A page that came over plain http can have been written by
             // anyone on the way here — a café's network, a hotel's. It is
             // offered only what was kept from plain http too, never an
             // account kept from the https site of the same name.
-            let inTheClear = tab.address?.scheme?.lowercased() == "http"
+            let inTheClear = tab.pageAddress?.scheme?.lowercased() == "http"
             let known = Array(Vault.logins(matching: host).filter { !inTheClear || $0.clear }.prefix(5))
             suggesting = known.isEmpty ? nil : Suggesting(tab: tab.id, spot: spot, logins: known, host: host, clear: inTheClear)
         }
@@ -1918,6 +1955,20 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             return
         }
 
+        // 0.0.0.0, as a dev server prints it: this Mac, as localhost (see
+        // Address.reachable). Only the page itself; a frame goes nowhere.
+        if action.targetFrame?.isMainFrame == true, let local = Address.reachable(url) {
+            decisionHandler(.cancel)
+            webView.load(URLRequest(url: local))
+            return
+        }
+
+        // A website returning to a public extension page needs another view.
+        if #available(macOS 15.4, *), routeExtensionReturn(action, from: webView) {
+            decisionHandler(.cancel)
+            return
+        }
+
         // An extension's page sending its own tab to a website (see
         // replace(_:going:)).
         if #available(macOS 15.4, *), ["http", "https"].contains(scheme),
@@ -1982,6 +2033,49 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             decisionHandler(.cancel)
             handOff(url, scheme: scheme, action: action, from: webView)
         }
+    }
+
+    /// Unlike tabs.update(), a website's navigation must be checked against
+    /// web_accessible_resources before using an extension view.
+    @available(macOS 15.4, *)
+    private func routeExtensionReturn(_ action: WKNavigationAction, from webView: WKWebView) -> Bool {
+        guard let tab = tab(for: webView) else { return false }
+        let source = tab.extensionReturn.source(for: action)
+        guard let requested = action.request.url else { return false }
+        let target = Extensions.current(requested)
+        guard target.scheme == Extensions.scheme, let source else { return false }
+        return handOverExtensionReturn(target, source: source, from: webView, tab: tab)
+    }
+
+    @available(macOS 15.4, *)
+    private func handOverExtensionReturn(_ target: URL, source: URL, from webView: WKWebView, tab: Tab) -> Bool {
+        guard !tab.shy,
+              let context = Extensions.shared.controller.extensionContext(for: target),
+              context.isLoaded, context.webViewConfiguration != nil,
+              ExtensionRedirectPolicy.allows(target: target, sourceOrigin: source, manifest: context.webExtension.manifest)
+        else { return false }
+        let revision = tab.extensionReturn.revision
+        DispatchQueue.main.async { [weak self, weak tab, weak webView] in
+            guard let self, let tab, let webView,
+                  self.tab(for: webView)?.id == tab.id,
+                  tab.extensionReturn.revision == revision else { return }
+            self.replace(tab, going: target)
+        }
+        return true
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard let navigation else { return }
+        tab(for: webView)?.extensionReturn.started(navigation, at: webView.url)
+    }
+
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        guard let navigation, let tab = tab(for: webView) else { return }
+        let redirect = tab.extensionReturn.redirected(navigation, to: webView.url)
+        guard let redirect, #available(macOS 15.4, *),
+              handOverExtensionReturn(Extensions.current(redirect.target), source: redirect.source, from: webView, tab: tab)
+        else { return }
+        webView.stopLoading()
     }
 
     /// An address for another app — mail, a call, a meeting. Only the page
@@ -2087,6 +2181,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     func keep(_ download: WKDownload) {
         download.delegate = self
         downloading.append(download)
+        // Noted now, while its page is still there to ask: a private tab's
+        // download is saved where you say, and left out of the list.
+        if let web = download.webView, tab(for: web)?.shy == true { unlisted.insert(ObjectIdentifier(download)) }
     }
 
     /// Without this WebKit refuses every request out of hand, and a page that
@@ -2099,9 +2196,14 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
         let host = origin.host.isEmpty ? (tab(for: webView)?.address?.host() ?? "This page") : origin.host
-        let key = "\(host)|\(type.rawValue)"
+        // Remembered for the origin that asked — http://site and
+        // https://site, or another port, are other sites — and never for a
+        // private tab, which leaves nothing behind.
+        let site = origin.host.isEmpty ? host : "\(origin.protocol)://\(origin.host)" + (origin.port == 0 ? "" : ":\(origin.port)")
+        let key = "\(site)|\(type.rawValue)"
+        let shy = tab(for: webView)?.shy ?? false
 
-        if let remembered = Store.settings.object(forKey: "capture." + key) as? Bool {
+        if !shy, let remembered = Store.settings.object(forKey: "capture." + key) as? Bool {
             decisionHandler(remembered ? .grant : .deny)
             return
         }
@@ -2113,7 +2215,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         }
 
         decide = decisionHandler
-        askedAbout = key
+        askedAbout = shy ? "" : key
         asking = CaptureAsk(host: host, wants: Browser.name(for: type))
     }
 
@@ -2127,6 +2229,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        tab(for: webView)?.extensionReturn.finished(navigation)
         fail(webView, error)
     }
 
@@ -2135,6 +2238,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
+        tab(for: webView)?.extensionReturn.finished(navigation)
         fail(webView, error)
     }
 
@@ -2158,6 +2262,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard let tab = tab(for: webView) else { return }
+        tab.didCommit()
+        tab.extensionReturn.finished(navigation)
         if tab.id == activeID { linkStatus.dismiss() }
         tab.failure = nil
         tab.typing = false
@@ -2265,9 +2371,18 @@ extension Browser: WKDownloadDelegate {
 
     func downloadDidFinish(_ download: WKDownload) {
         downloading.removeAll { $0 === download }
+        let listed = unlisted.remove(ObjectIdentifier(download)) == nil
         guard let file = download.progress.fileURL else {
             announce("Download finished")
             return
+        }
+        guard listed else {
+            announce("Saved \(file.lastPathComponent)")
+            return
+        }
+        if #available(macOS 15.4, *), let asked = download.originalRequest?.url,
+           let id = ExtensionShims.askedDownloads.removeValue(forKey: asked) {
+            ExtensionShims.ownDownloads[id, default: []].insert(file.path)
         }
         loot.add(
             Keep(
@@ -2286,6 +2401,7 @@ extension Browser: WKDownloadDelegate {
         resumeData: Data?
     ) {
         downloading.removeAll { $0 === download }
+        unlisted.remove(ObjectIdentifier(download))
         announce("Download failed")
     }
 
