@@ -388,10 +388,14 @@ struct ImportPanel: View {
             }
         }
         if marks {
-            let (added, already) = browser.takeBookmarks(from: source, profile: profile, replacing: replaceBookmarks)
-            said[1] = Said(ok: true, text: added == 0 && already == 0 ? "No bookmarks in \(source.name)"
-                           : already == 0 ? "\(added.formatted()) bookmarks"
-                           : "\(added.formatted()) new bookmarks, \(already.formatted()) already here")
+            do {
+                let (added, already) = try browser.takeBookmarks(from: source, profile: profile, replacing: replaceBookmarks)
+                said[1] = Said(ok: true, text: added == 0 && already == 0 ? "No bookmarks in \(source.name)"
+                               : already == 0 ? "\(added.formatted()) bookmarks"
+                               : "\(added.formatted()) new bookmarks, \(already.formatted()) already here")
+            } catch {
+                said[1] = Said(ok: false, text: "Couldn't read bookmarks from \(source.name); imported bookmarks were kept")
+            }
         }
         if places {
             group.enter()

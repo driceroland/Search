@@ -924,7 +924,14 @@ final class Bench {
             var out: [String: Any] = ["found": found.map(\.name), "profiles": source.profiles.map(\.id),
                                       "profile": profile ?? "all"]
             if what.contains("bookmarks") {
-                let (added, already) = browser.takeBookmarks(from: source, profile: profile, replacing: request["replace"] as? Bool == true)
+                let added: Int
+                let already: Int
+                do {
+                    (added, already) = try browser.takeBookmarks(from: source, profile: profile, replacing: request["replace"] as? Bool == true)
+                } catch {
+                    answer(["error": "\(error)"])
+                    return
+                }
                 out["bookmarks"] = ["added": added, "already": already, "total": browser.bookmarks.count,
                                     "top": browser.bookmarks.roots.map(\.title)]
             }

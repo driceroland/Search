@@ -124,10 +124,16 @@ final class Browser: NSObject, ObservableObject {
     /// letter each. Returns how many pages came over, and how many were
     /// here already. `replacing`: what came from this browser before —
     /// as recorded, nothing guessed — is taken out first, and these come
-    /// fresh in its place.
+    /// fresh in its place only after every selected profile reads cleanly.
     @discardableResult
-    func takeBookmarks(from source: ImportSource, profile: String? = nil, replacing: Bool = false) -> (added: Int, already: Int) {
-        let found = source.bookmarks(profile: profile)
+    func takeBookmarks(from source: ImportSource, profile: String? = nil, replacing: Bool = false) throws -> (added: Int, already: Int) {
+        let found: [Bookmark]
+        do {
+            found = try source.bookmarks(profile: profile)
+        } catch {
+            announce("Couldn't read bookmarks from \(source.name); imported bookmarks were kept")
+            throw error
+        }
         if replacing, let earlier = ImportRecords.of(source.name), !earlier.bookmarkIDs.isEmpty {
             bookmarks.withdraw(earlier.bookmarkIDs)
             ImportRecords.forgetBookmarks(source.name)

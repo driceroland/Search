@@ -180,20 +180,22 @@ enum Chromium {
 
     /// The other browser's bookmarks: the bar first, then anything filed
     /// elsewhere, folders and all. Chromium keeps them as one JSON file.
-    static func bookmarks(in source: Source, profile: String? = nil) -> [Bookmark] {
+    static func bookmarks(in source: Source, profile: String? = nil) throws -> [Bookmark] {
+        let profiles = try bookmarkProfiles(in: source, only: profile)
         var out: [Bookmark] = []
-        for profile in source.profiles(only: profile) {
-            let marks = profile.appendingPathComponent("Bookmarks")
+        for folder in profiles {
+            let marks = folder.appendingPathComponent("Bookmarks")
             guard let data = try? Data(contentsOf: marks),
-                  let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let roots = top["roots"] as? [String: Any]
-            else { continue }
-            if let bar = roots["bookmark_bar"] as? [String: Any] {
-                out += nodes(in: bar["children"] as? [[String: Any]] ?? [])
-            }
+                  let object = try? JSONSerialization.jsonObject(with: data),
+                  let top = object as? [String: Any],
+                  let roots = top["roots"] as? [String: Any],
+                  let bar = roots["bookmark_bar"] as? [String: Any]
+            else { throw Trouble.unreadable }
+            out += try nodes(in: children(of: bar))
             for key in ["other", "synced"] {
-                if let more = roots[key] as? [String: Any] {
-                    let kids = nodes(in: more["children"] as? [[String: Any]] ?? [])
+                if let value = roots[key] {
+                    guard let more = value as? [String: Any] else { throw Trouble.unreadable }
+                    let kids = try nodes(in: children(of: more))
                     if !kids.isEmpty { out.append(.folder(key == "other" ? "Other" : "Mobile", kids)) }
                 }
             }
@@ -201,19 +203,63 @@ enum Chromium {
         return out
     }
 
-    private static func nodes(in raw: [[String: Any]]) -> [Bookmark] {
-        raw.compactMap { entry in
+    /// The directory listing is part of an all-profile import: if it cannot
+    /// be read, there is no safe way to know whether another profile was left
+    /// out of the replacement.
+    private static func bookmarkProfiles(in source: Source, only profile: String?) throws -> [URL] {
+        guard try importIsDirectory(source.root) else { throw Trouble.unreadable }
+        let inside: [URL]
+        do {
+            inside = try FileManager.default.contentsOfDirectory(at: source.root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+        } catch {
+            throw Trouble.unreadable
+        }
+        let folders = [source.root] + inside
+        func hasBrowserData(_ folder: URL) throws -> Bool {
+            for name in ["Login Data", "Bookmarks", "History"] {
+                if try importPathExists(folder.appendingPathComponent(name)) { return true }
+            }
+            return false
+        }
+        if let profile {
+            guard let selected = folders.first(where: { $0.lastPathComponent == profile }),
+                  try importIsDirectory(selected), try hasBrowserData(selected)
+            else {
+                throw Trouble.unreadable
+            }
+            return [selected]
+        }
+        var candidates: [URL] = []
+        for folder in folders {
+            guard try importIsDirectory(folder) else { continue }
+            if try hasBrowserData(folder) { candidates.append(folder) }
+        }
+        guard !candidates.isEmpty else { throw Trouble.unreadable }
+        return candidates
+    }
+
+    private static func children(of node: [String: Any]) throws -> [[String: Any]] {
+        guard let raw = node["children"] as? [Any] else { throw Trouble.unreadable }
+        return try raw.map { child in
+            guard let entry = child as? [String: Any] else { throw Trouble.unreadable }
+            return entry
+        }
+    }
+
+    private static func nodes(in raw: [[String: Any]]) throws -> [Bookmark] {
+        try raw.compactMap { entry in
             let name = entry["name"] as? String ?? ""
             switch entry["type"] as? String {
             case "folder":
-                return .folder(name, nodes(in: entry["children"] as? [[String: Any]] ?? []))
+                return .folder(name, try nodes(in: children(of: entry)))
             case "url":
-                guard let text = entry["url"] as? String, let url = URL(string: text),
-                      url.scheme == "http" || url.scheme == "https"
-                else { return nil }
+                guard let text = entry["url"] as? String, let url = URL(string: text) else {
+                    throw Trouble.unreadable
+                }
+                guard url.scheme == "http" || url.scheme == "https" else { return nil }
                 return .site(name, url)
             default:
-                return nil
+                throw Trouble.unreadable
             }
         }
     }
@@ -349,7 +395,7 @@ enum Chromium {
             sum + count("SELECT COUNT(*) FROM logins WHERE blacklisted_by_user = 0 AND length(password_value) > 0", in: file)
         }
         return ImportSource.Preview(
-            bookmarks: Bookmarks.count(bookmarks(in: source, profile: profile)),
+            bookmarks: (try? bookmarks(in: source, profile: profile)).map { Bookmarks.count($0) } ?? 0,
             places: min(limit, places),
             passwords: passwords,
             extensions: extensions(in: source, profile: profile)
@@ -658,12 +704,52 @@ enum Mozilla {
     /// The other browser's bookmarks, every profile's run together; the merge
     /// on the way in leaves out anything already here, so profiles that share
     /// a page don't make two of it.
-    static func bookmarks(in source: Source, profile: String? = nil) -> [Bookmark] {
+    static func bookmarks(in source: Source, profile: String? = nil) throws -> [Bookmark] {
+        let files = try bookmarkFiles(in: source, only: profile)
         var out: [Bookmark] = []
-        for file in source.files(only: profile) {
-            out += (try? bookmarkNodes(in: file)) ?? []
+        for file in files {
+            out += try bookmarkNodes(in: file)
         }
         return out
+    }
+
+    /// Look through every existing profile root without silently skipping a
+    /// directory that could contain another selected profile.
+    private static func bookmarkFiles(in source: Source, only profile: String?) throws -> [URL] {
+        let manager = FileManager.default
+        if let profile {
+            let selected = source.files(only: profile)
+            guard !selected.isEmpty else { throw Trouble.unreadable }
+            return selected
+        }
+
+        var files: [URL] = []
+        for folder in source.folders {
+            let root = Chromium.base.appendingPathComponent(folder, isDirectory: true)
+            guard try importIsDirectory(root) else { continue }
+
+            let direct = root.appendingPathComponent("places.sqlite")
+            if try importPathExists(direct) { files.append(direct) }
+            let inside: [URL]
+            do {
+                inside = try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+            } catch {
+                throw Trouble.unreadable
+            }
+            for subfolder in inside {
+                guard try importIsDirectory(subfolder) else { continue }
+                let places = subfolder.appendingPathComponent("places.sqlite")
+                if try importPathExists(places) { files.append(places) }
+            }
+        }
+        var seen = Set<String>()
+        files = files.filter { seen.insert($0.path).inserted }
+        guard !files.isEmpty else { throw Trouble.unreadable }
+        return files.sorted { a, b in
+            let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            return da > db
+        }
     }
 
     private struct Raw {
@@ -680,12 +766,14 @@ enum Mozilla {
     /// list. The toolbar's pages come first at the top, then the menu's, then
     /// Other and Mobile as folders — the same order Chromium's come in.
     private static func bookmarkNodes(in file: URL) throws -> [Bookmark] {
-        let copy = try Snapshot(of: file)
+        let copy = try Snapshot(of: file, requireSidecars: true)
         let temp = copy.file
         defer { withExtendedLifetime(copy) {} }
 
-        var db: OpaquePointer?
-        guard sqlite3_open_v2(temp.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
+        var handle: OpaquePointer?
+        let status = sqlite3_open_v2(temp.path, &handle, SQLITE_OPEN_READONLY, nil)
+        guard status == SQLITE_OK, let db = handle else {
+            if let handle { sqlite3_close(handle) }
             throw Trouble.unreadable
         }
         defer { sqlite3_close(db) }
@@ -704,7 +792,10 @@ enum Mozilla {
         defer { sqlite3_finalize(statement) }
 
         var items: [Raw] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        while true {
+            let step = sqlite3_step(statement)
+            if step == SQLITE_DONE { break }
+            guard step == SQLITE_ROW else { throw Trouble.unreadable }
             let id = sqlite3_column_int64(statement, 0)
             let type = Int(sqlite3_column_int(statement, 1))
             let parent = sqlite3_column_int64(statement, 2)
@@ -945,7 +1036,7 @@ enum Mozilla {
             }.count
         }
         return ImportSource.Preview(
-            bookmarks: Bookmarks.count(bookmarks(in: source, profile: profile)),
+            bookmarks: (try? bookmarks(in: source, profile: profile)).map { Bookmarks.count($0) } ?? 0,
             places: min(limit, places),
             passwords: passwords
         )
@@ -1199,10 +1290,10 @@ enum ImportSource: Identifiable, Hashable {
         }
     }
 
-    func bookmarks(profile: String? = nil) -> [Bookmark] {
+    func bookmarks(profile: String? = nil) throws -> [Bookmark] {
         switch self {
-        case .chromium(let s): return Chromium.bookmarks(in: s, profile: profile)
-        case .mozilla(let s): return Mozilla.bookmarks(in: s, profile: profile)
+        case .chromium(let s): return try Chromium.bookmarks(in: s, profile: profile)
+        case .mozilla(let s): return try Mozilla.bookmarks(in: s, profile: profile)
         }
     }
 
@@ -1314,6 +1405,26 @@ enum ImportSource: Identifiable, Hashable {
     }
 }
 
+/// FileManager's boolean existence check can also mean "not reachable".
+/// Importing every profile needs that distinguished from a genuinely absent
+/// alternative folder so a selected source is never silently incomplete.
+private func importPathExists(_ url: URL) throws -> Bool {
+    do {
+        _ = try FileManager.default.attributesOfItem(atPath: url.path)
+        return true
+    } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+        return false
+    }
+}
+
+private func importIsDirectory(_ url: URL) throws -> Bool {
+    guard try importPathExists(url) else { return false }
+    let resolved = url.resolvingSymlinksInPath()
+    guard try importPathExists(resolved) else { return false }
+    let values = try resolved.resourceValues(forKeys: [.isDirectoryKey])
+    return values.isDirectory == true
+}
+
 /// A copy of one of another browser's SQLite files to read from, with the
 /// two files SQLite keeps beside it while the browser runs: what was
 /// written last is often still in "-wal", and a copy without it misses the
@@ -1322,21 +1433,32 @@ final class Snapshot {
     let file: URL
     private let folder: URL
 
-    init(of source: URL) throws {
+    init(of source: URL, requireSidecars: Bool = false) throws {
         folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("office-import-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         file = folder.appendingPathComponent(source.lastPathComponent)
         do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try FileManager.default.copyItem(at: source, to: file)
+            for side in ["-wal", "-shm"] {
+                let beside = URL(fileURLWithPath: source.path + side)
+                let exists: Bool
+                if requireSidecars {
+                    exists = try importPathExists(beside)
+                } else {
+                    exists = FileManager.default.fileExists(atPath: beside.path)
+                }
+                guard exists else { continue }
+                let copy = URL(fileURLWithPath: file.path + side)
+                if requireSidecars {
+                    try FileManager.default.copyItem(at: beside, to: copy)
+                } else {
+                    try? FileManager.default.copyItem(at: beside, to: copy)
+                }
+            }
         } catch {
             try? FileManager.default.removeItem(at: folder)
             throw error
-        }
-        for side in ["-wal", "-shm"] {
-            let beside = URL(fileURLWithPath: source.path + side)
-            guard FileManager.default.fileExists(atPath: beside.path) else { continue }
-            try? FileManager.default.copyItem(at: beside, to: URL(fileURLWithPath: file.path + side))
         }
     }
 

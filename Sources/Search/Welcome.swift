@@ -252,7 +252,12 @@ struct WelcomePanel: View {
             }
         }
         if wantsBookmarks {
-            lines.append("\(browser.takeBookmarks(from: source, profile: profile).added) bookmarks")
+            do {
+                let taken = try browser.takeBookmarks(from: source, profile: profile)
+                lines.append("\(taken.added) bookmarks")
+            } catch {
+                lines.append("bookmarks: couldn't read from \(source.name); imported bookmarks were kept")
+            }
         }
         if wantsHistory {
             group.enter()
