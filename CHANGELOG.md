@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- An extension can move and size a window with windows.update, as in Chrome; WebKit refused it as not implemented, and Bitwarden's pop-out logged an error each time it opened.
+
 ## 1.0.4 — 27 September 2026
 
 ### Added

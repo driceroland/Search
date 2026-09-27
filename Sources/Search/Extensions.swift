@@ -1341,6 +1341,12 @@ final class ExtensionWindow: NSObject, WKWebExtensionWindow {
     func close(for context: WKWebExtensionContext) async throws {
         browser?.window?.performClose(nil)
     }
+
+    /// windows.update with a position or size; unset parts come as NaN.
+    func setFrame(_ frame: CGRect, for context: WKWebExtensionContext) async throws {
+        guard [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return }
+        nsWindow?.setFrame(frame, display: true, animate: false)
+    }
 }
 
 // MARK: - the buttons in the row
