@@ -35,6 +35,8 @@ in [ROADMAP.md](ROADMAP.md).
 - An extension's popup window, such as a password manager's vault or an extension's sign-in, opens as a small window of its page, at the size the extension asks for, with the site over it, instead of as another whole browser window. ⌘W closes it; it isn't brought back with the other windows after a restart, and it closes when its extension is turned off or removed. NordPass's vault and Affinity's Connect open this way.
 - In full screen, the tabs across the top and the back, forward and reload buttons in the column start at the edge, where an empty corner was kept for the window's buttons that macOS takes away there.
 - Copy Image works on pictures a page makes itself, such as the photos in WhatsApp Web: it said it couldn't copy them, since they only exist inside the page, and they are now read there.
+- A tab dragged along the row across the top, or down the column, moves itself again and not the window. 1.0.4 let the window be moved between presses so that macOS's Window › Move & Resize would work, and held it still only once a press came in; macOS starts the drag before the app hears of the press, so a tab picked up in the top of the row carried the window with it. The window is held still for good again, and Fill, Center and Move & Resize in the Window menu go grey with it ([#286](https://github.com/driceroland/Search/issues/286), [#60](https://github.com/driceroland/Search/issues/60)).
+- The window is dragged by its strip, or the column's corner, on the first press while Search is behind another app, as any Mac window is by its title bar; before, the first press only brought Search to the front.
 
 ## 1.0.4 — 27 September 2026
 

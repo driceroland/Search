@@ -357,24 +357,6 @@ enum Browsers {
                 }
             })
         }
-        // Movable between presses, for macOS's Move & Resize and tiling;
-        // not during one, so that a tab picked up in the strip — the title
-        // bar — moves itself and not the window (see DragStrip, which moves
-        // the window itself). The flag is set before the window sees the
-        // press, which is when AppKit decides.
-        if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp], handler: { event in
-            MainActor.assumeIsolated {
-                if let window = event.window, browser(for: window) != nil {
-                    window.isMovable = event.type == .leftMouseUp
-                }
-            }
-            return event
-        }) { watching.append(monitor) }
-        // A press whose release something else kept — a menu popped up from
-        // it tracks the mouse itself — leaves no window unmovable for long.
-        watching.append(NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { for browser in all { browser.window?.isMovable = true } }
-        })
         watching.append(NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
             MainActor.assumeIsolated {
                 guard let window = note.object as? NSWindow else { return }

@@ -871,14 +871,16 @@ struct ContentView: View {
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
-        // Nor by its title bar, which the strip is all the way down: AppKit
-        // would move the window on any drag there, a tab picked up to take
-        // it elsewhere in the row included. DragStrip moves it instead. The
-        // window stays movable between clicks, though — macOS's Window ›
-        // Move & Resize, its tiling and the tools that arrange windows ask
-        // for a movable one (#286) — and is made unmovable only while a
-        // press lasts (see Browsers.watchFrames).
-        window.isMovable = true
+        // Nor by its title bar, which the strip is all the way down: macOS
+        // moves a movable window on any drag in its top 32 points, a tab
+        // picked up to take it elsewhere in the row included, and decides
+        // that in the window server before the app sees the press — a flag
+        // turned off on the mouse-down, as 1.0.4 did, comes too late and
+        // the window went with the tab. So the window is never movable,
+        // and DragStrip moves it itself. The price is macOS's Window › Fill,
+        // Center and Move & Resize, which are greyed out for a window that
+        // says it can't be moved (#286).
+        window.isMovable = false
 
         // The traffic lights set in from the corner and centred in the strip's
         // height, in both modes, without a toolbar's rounder corners — see

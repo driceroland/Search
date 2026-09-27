@@ -410,6 +410,12 @@ struct DragStrip: NSViewRepresentable {
         /// the press, here on the release — ends where it started.
         override var mouseDownCanMoveWindow: Bool { false }
 
+        /// A title bar drags its window while the window is behind another
+        /// app's; AppKit does that on its own for a title bar, and did nothing
+        /// for the strip, whose first press only brought Search to the front
+        /// and asked for a second to move it. The first press is taken too.
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
         override func hitTest(_ point: NSPoint) -> NSView? {
             let inside = convert(point, from: superview)
             guard inside.x >= reserved, inside.x <= bounds.width - trailing else { return nil }
@@ -423,11 +429,10 @@ struct DragStrip: NSViewRepresentable {
             moved = false
         }
 
-        /// The window is not movable while a press lasts (see dress in
-        /// App.swift): a tab picked up in the strip would carry the window
-        /// off with it. Here it is let go for the one drag, handed to the
-        /// system's own window drag so it snaps and tiles as any window does,
-        /// and stays movable after it, as between presses.
+        /// The window is not movable on its own (see dress in App.swift): a tab
+        /// picked up in the strip would carry the window off with it. Here
+        /// it is let go for the one drag, handed to the system's own window
+        /// drag so it snaps and tiles as any window does.
         override func mouseDragged(with event: NSEvent) {
             guard let window, let pressed, !moved else { return }
             let dx = event.locationInWindow.x - pressed.locationInWindow.x
@@ -437,6 +442,7 @@ struct DragStrip: NSViewRepresentable {
             moved = true
             window.isMovable = true
             window.performDrag(with: pressed)
+            window.isMovable = false
         }
 
         /// A double-click does what a title bar's does, unless this strip
