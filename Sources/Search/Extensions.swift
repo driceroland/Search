@@ -114,6 +114,9 @@ final class Extensions: NSObject, ObservableObject {
     }
     private static var list: URL { folder.appendingPathComponent("installed.json") }
     static func folder(for id: String) -> URL { folder.appendingPathComponent(id, isDirectory: true) }
+    private static func stagingFolder(for id: String) -> URL {
+        folder.appendingPathComponent(".staging-\(id)-\(UUID().uuidString)", isDirectory: true)
+    }
 
     private override init() {
         WKWebExtension.MatchPattern.registerCustomURLScheme(Extensions.scheme)
@@ -506,11 +509,12 @@ final class Extensions: NSObject, ObservableObject {
         guard !installed.contains(where: { $0.id == id }) else { return }
         busy = id
         defer { busy = nil }
+        let staged = Extensions.stagingFolder(for: id)
+        defer { try? FileManager.default.removeItem(at: staged) }
         do {
             let crx = try await Crx.fetch(id)
             let zip = try Crx.verifiedZip(crx, id: id)
             let target = Extensions.folder(for: id)
-            let staged = Extensions.folder.appendingPathComponent(".staging-\(id)", isDirectory: true)
             try Crx.unpack(zip, into: staged)
             try ExtensionShims.prepare(staged, fresh: true)
             try await admit(staged, as: id, fromStore: true, finalFolder: target, confirm: confirm || !Store.testing)
@@ -537,17 +541,18 @@ final class Extensions: NSObject, ObservableObject {
             return
         }
         let id = "local-" + String(UUID().uuidString.prefix(8)).lowercased()
-        let staged = Extensions.folder.appendingPathComponent(".staging-\(id)", isDirectory: true)
-        do {
-            try FileManager.default.createDirectory(at: Extensions.folder, withIntermediateDirectories: true)
-            try? FileManager.default.removeItem(at: staged)
-            try FileManager.default.copyItem(at: source, to: staged)
-            try ExtensionShims.prepare(staged, fresh: true)
-        } catch {
-            browser?.announce("Couldn't copy the extension")
-            return
+        let staged = Extensions.stagingFolder(for: id)
+        Task {
+            defer { try? FileManager.default.removeItem(at: staged) }
+            do {
+                try FileManager.default.createDirectory(at: Extensions.folder, withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: source, to: staged)
+                try ExtensionShims.prepare(staged, fresh: true)
+                try await admit(staged, as: id, fromStore: false, finalFolder: Extensions.folder(for: id), confirm: confirm || !Store.testing, source: source)
+            } catch {
+                browser?.announce("Couldn't install the extension: \(error.localizedDescription)")
+            }
         }
-        Task { try? await admit(staged, as: id, fromStore: false, finalFolder: Extensions.folder(for: id), confirm: confirm || !Store.testing, source: source) }
     }
 
     /// Takes the extension up again — the way Chrome's reload button does
@@ -555,66 +560,65 @@ final class Extensions: NSObject, ObservableObject {
     /// that folder first, so what its author just saved is what runs.
     func reload(_ id: String) {
         guard let index = installed.firstIndex(where: { $0.id == id }), reloading.insert(id).inserted else { return }
+        let original = installed[index]
         let target = Extensions.folder(for: id)
-        let files = FileManager.default
-        var staged: URL?
-        if let path = installed[index].source {
-            let source = URL(fileURLWithPath: path, isDirectory: true)
-            guard files.fileExists(atPath: source.appendingPathComponent("manifest.json").path) else {
-                reloading.remove(id)
-                browser?.announce("The folder \(installed[index].name) was loaded from is gone")
-                return
-            }
-            let copy = Extensions.folder.appendingPathComponent(".staging-\(id)", isDirectory: true)
-            do {
-                try? files.removeItem(at: copy)
-                try files.copyItem(at: source, to: copy)
-                try ExtensionShims.prepare(copy, fresh: true)
-            } catch {
-                try? files.removeItem(at: copy)
-                reloading.remove(id)
-                browser?.announce("Couldn't copy \(installed[index].name) again")
-                return
-            }
-            staged = copy
-        }
+        let staged = original.source.map { _ in Extensions.stagingFolder(for: id) }
         Task {
-            defer { reloading.remove(id) }
-            guard let item = installed.first(where: { $0.id == id }) else { return }
-            let found = try? await WKWebExtension(resourceBaseURL: staged ?? target)
-            if found == nil, let staged {
-                try? files.removeItem(at: staged)
-                browser?.announce("\(item.name) wasn't reloaded — its manifest couldn't be read")
+            defer {
+                if let staged { try? FileManager.default.removeItem(at: staged) }
+                reloading.remove(id)
+            }
+            guard installed.contains(where: { $0.id == id }) else { return }
+            if let path = original.source, let staged {
+                let source = URL(fileURLWithPath: path, isDirectory: true)
+                guard FileManager.default.fileExists(atPath: source.appendingPathComponent("manifest.json").path) else {
+                    browser?.announce("The folder \(original.name) was loaded from is gone")
+                    return
+                }
+                do {
+                    try FileManager.default.copyItem(at: source, to: staged)
+                    try ExtensionShims.prepare(staged, fresh: true)
+                } catch {
+                    browser?.announce("Couldn't copy \(original.name) again: \(error.localizedDescription)")
+                    return
+                }
+            }
+            let resource = staged ?? target
+            let found = try? await WKWebExtension(resourceBaseURL: resource)
+            if found == nil, staged != nil {
+                browser?.announce("\(original.name) wasn't reloaded — its manifest couldn't be read")
                 return
             }
+            var wants: [String]?
             if let found {
-                let wants = Set(Extensions.grants(found, in: staged ?? target))
-                if !wants.isSubset(of: Set(item.permissions)) {
-                    let name = [found.displayName ?? item.name, found.version].compactMap { $0 }.joined(separator: " ")
-                    guard await ask(install: name, wants: Extensions.describe(found, in: staged ?? target), icon: found.icon(for: CGSize(width: 64, height: 64))) else {
-                        if let staged { try? files.removeItem(at: staged) }
-                        browser?.announce("\(item.name) wasn't reloaded — it asks for more than before")
+                let permissions = Extensions.grants(found, in: resource)
+                wants = permissions
+                if !Set(permissions).isSubset(of: Set(original.permissions)) {
+                    let name = [found.displayName ?? original.name, found.version].compactMap { $0 }.joined(separator: " ")
+                    guard await ask(install: name, wants: Extensions.describe(found, in: resource), icon: found.icon(for: CGSize(width: 64, height: 64))) else {
+                        browser?.announce("\(original.name) wasn't reloaded — it asks for more than before")
                         return
                     }
+                }
+            }
+            // Loading and asking can both suspend. A removed extension must
+            // not be put back by the work that was already in flight.
+            guard installed.contains(where: { $0.id == id }) else { return }
+            if let staged {
+                do {
+                    try ExtensionFiles.replace(staged, at: target)
+                } catch {
+                    browser?.announce("Couldn't replace \(original.name): \(error.localizedDescription)")
+                    return
                 }
             }
             unload(id)
             errors[id] = nil
             workersChanged()
-            if let staged {
-                do {
-                    try? files.removeItem(at: target)
-                    try files.moveItem(at: staged, to: target)
-                } catch {
-                    try? files.removeItem(at: staged)
-                    browser?.announce("Couldn't copy \(item.name) again")
-                    return
-                }
-            }
-            if let found, let index = installed.firstIndex(where: { $0.id == id }) {
+            if let found, let index = installed.firstIndex(where: { $0.id == id }), let wants {
                 installed[index].name = found.displayName ?? installed[index].name
                 installed[index].version = found.version ?? installed[index].version
-                installed[index].permissions = Extensions.grants(found, in: target)
+                installed[index].permissions = wants
                 save()
             }
             guard let item = installed.first(where: { $0.id == id }), item.enabled else { return }
@@ -684,32 +688,24 @@ final class Extensions: NSObject, ObservableObject {
     /// Reads what was unpacked, asks, and — on yes — moves it into place and
     /// loads it. On no, nothing is left behind.
     private func admit(_ staged: URL, as id: String, fromStore: Bool, finalFolder: URL, confirm: Bool = true, source: URL? = nil) async throws {
-        let files = FileManager.default
-        let found: WKWebExtension
-        do {
-            found = try await WKWebExtension(resourceBaseURL: staged)
-        } catch {
-            try? files.removeItem(at: staged)
-            throw error
-        }
+        let found = try await WKWebExtension(resourceBaseURL: staged)
         let name = found.displayName ?? id
         let wants = Extensions.describe(found, in: staged)
         let accepted = confirm ? await ask(install: name, wants: wants, icon: found.icon(for: CGSize(width: 64, height: 64))) : true
-        guard accepted else {
-            try? files.removeItem(at: staged)
-            return
-        }
-        try? files.removeItem(at: finalFolder)
-        try files.moveItem(at: staged, to: finalFolder)
+        guard accepted, !installed.contains(where: { $0.id == id }) else { return }
+        let permissions = Extensions.grants(found, in: staged)
+        try ExtensionFiles.replace(staged, at: finalFolder)
+        unload(id)
+        errors[id] = nil
+        workersChanged()
         let item = Installed(
             id: id, name: name, version: found.version ?? "?", enabled: true, fromStore: fromStore,
-            permissions: Extensions.grants(found, in: finalFolder),
+            permissions: permissions,
             source: source?.path
         )
         installed.removeAll { $0.id == id }
         installed.append(item)
         save()
-        workersChanged()
         if await load(item) {
             browser?.announce("\(name) is installed")
         } else {
@@ -833,29 +829,33 @@ final class Extensions: NSObject, ObservableObject {
         else { return }
         do {
             let zip = try Crx.verifiedZip(try await Crx.fetch(item.id), id: item.id)
-            let staged = Extensions.folder.appendingPathComponent(".staging-\(item.id)", isDirectory: true)
+            let staged = Extensions.stagingFolder(for: item.id)
+            defer { try? FileManager.default.removeItem(at: staged) }
             try Crx.unpack(zip, into: staged)
             try ExtensionShims.prepare(staged, fresh: true)
             let found = try await WKWebExtension(resourceBaseURL: staged)
+            guard let current = installed.first(where: { $0.id == item.id }), current.fromStore,
+                  current.version == item.version else { return }
             // Everything it could do, sites included, against what it was
             // allowed when it was added or last asked about.
             let wants = Set(Extensions.grants(found, in: staged))
-            if !wants.isSubset(of: Set(item.permissions)) {
+            if !wants.isSubset(of: Set(current.permissions)) {
                 guard await ask(install: "An update to \(item.name)", wants: Extensions.describe(found, in: staged), icon: found.icon(for: CGSize(width: 64, height: 64))) else {
-                    try? FileManager.default.removeItem(at: staged)
                     return
                 }
             }
-            unload(item.id)
+            guard let index = installed.firstIndex(where: { $0.id == item.id }), installed[index].fromStore,
+                  installed[index].version == item.version,
+                  installed[index].permissions == current.permissions else { return }
             let target = Extensions.folder(for: item.id)
-            try? FileManager.default.removeItem(at: target)
-            try FileManager.default.moveItem(at: staged, to: target)
-            if let index = installed.firstIndex(where: { $0.id == item.id }) {
-                installed[index].version = found.version ?? version
-                installed[index].permissions = wants.sorted()
-                save()
-                if installed[index].enabled { await load(installed[index]) }
-            }
+            try ExtensionFiles.replace(staged, at: target)
+            unload(item.id)
+            errors[item.id] = nil
+            workersChanged()
+            installed[index].version = found.version ?? version
+            installed[index].permissions = wants.sorted()
+            save()
+            if installed[index].enabled { await load(installed[index]) }
         } catch {
             NSLog("Extensions: update of %@ failed: %@", item.id, error.localizedDescription)
         }
