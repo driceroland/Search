@@ -95,8 +95,14 @@ enum Spaces {
         if id == Space.firstID || sharing.contains(id) { return Store.websites }
         if let made = stores[id] { return made }
         let made = WKWebsiteDataStore(forIdentifier: id)
+        if Store.keepsSignIns { Store.followSignIns(made) }
         stores[id] = made
         return made
+    }
+
+    /// The shared store and every space's own made so far.
+    @MainActor static var everyStore: [WKWebsiteDataStore] {
+        [Store.websites] + stores.values
     }
 
     /// A space's store and everything in it, gone. What it holds — cookies,

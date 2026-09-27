@@ -393,6 +393,10 @@ struct SettingsPanel: View {
                     }
                 }
                 Rule()
+                Line("Keep sign-ins on sites you rarely open", "Safari's tracking prevention signs you out of a site you haven't opened for a week or a month. On, sites keep what they stored, as in Chrome; the blocker above still stops known trackers") {
+                    Switch(on: $prefs.keepsSignIns)
+                }
+                Rule()
                 Line("Camera and microphone", "What each site was allowed or refused") {
                     Pill("Forget choices") { browser.forgetCaptureChoices() }
                 }

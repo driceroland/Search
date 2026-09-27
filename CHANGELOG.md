@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Sites you open only now and then can keep you signed in. WebKit's tracking prevention, as in Safari, clears what a site stored once you haven't opened it for a week or a month of use, and signs you out of the big ones. Turned off, sites keep their sign-ins as they do in Chrome, and the ad blocker still stops known trackers. Off unless you turn it on in Settings › Privacy › Keep sign-ins on sites you rarely open. ([#362](https://github.com/driceroland/Search/issues/362))
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 - ⌥⌘R reloads the page from origin, as Safari's Reload Page From Origin does, checking everything cached with the site again; ⌘R is now an ordinary reload, where it always went back to the site for everything, and ⇧⌘R stays Reading Mode. A page reloaded while in Reading Mode is no longer taken for one, so ⇧⌘R strips it down again instead of only reloading. Thanks [@ductan2](https://github.com/ductan2) ([#179](https://github.com/driceroland/Search/pull/179), [#171](https://github.com/driceroland/Search/issues/171))
 

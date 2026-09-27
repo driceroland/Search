@@ -52,6 +52,29 @@ enum Store {
         return WKWebsiteDataStore(forIdentifier: probeStore(1))
     }
 
+    /// Settings › Privacy › Keep sign-ins on sites you rarely open. WebKit's
+    /// tracking prevention, as in Safari, clears what a site it has seen
+    /// redirect you — a sign-in through Google or Apple, say — left in local
+    /// storage once you haven't opened it for a week or a month of use, and a
+    /// site it counts as a tracker loses its cookies too: you are signed out.
+    /// Off unless asked for; it is WebKit's to decide until then, and its
+    /// flag is not touched.
+    @MainActor static var keepsSignIns = false {
+        didSet {
+            guard keepsSignIns != oldValue else { return }
+            Spaces.everyStore.forEach(followSignIns)
+        }
+    }
+
+    /// The switch through a name outside the public framework — Safari's
+    /// "Prevent cross-site tracking" is the same one.
+    @MainActor static func followSignIns(_ store: WKWebsiteDataStore) {
+        let set = NSSelectorFromString("_setResourceLoadStatisticsEnabled:")
+        guard store.responds(to: set) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(store.method(for: set), to: Setter.self)(store, set, !keepsSignIns)
+    }
+
     /// A test copy of the app under a bundle id of its own has a WebKit
     /// container of its own too, so it can use WebKit's default store and
     /// extension configuration — the ones the real browser uses, which
