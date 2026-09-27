@@ -1998,7 +1998,7 @@ final class Browser: NSObject, ObservableObject {
             }
         }
 
-        // What the arrow keys chose, or, absent that, the top of the list —
+        // What the arrow keys chose, or, absent that, the top of the list:
         // the same row Return would otherwise fall through to.
         let chosen = (picked.flatMap { offers.indices.contains($0) ? offers[$0] : nil }) ?? offers.first
         if case .command(let command) = chosen?.kind {

@@ -22,7 +22,7 @@ struct Suggestion: Identifiable, Equatable {
         case known
         /// Not a place at all — words, and an engine to ask.
         case search
-        /// Not a place either — something the app itself does.
+        /// Not a place either: something the app itself does.
         case command(Command)
 
         var isCommand: Bool { if case .command = self { return true }; return false }
@@ -30,7 +30,7 @@ struct Suggestion: Identifiable, Equatable {
 
     var id: String { key }
 
-    /// A command goes nowhere, but the field still needs *a* URL to carry —
+    /// A command goes nowhere, but the field still needs *a* URL to carry;
     /// `take` and `submit` read the kind first and never follow this one.
     @MainActor
     static func command(_ command: Command) -> Suggestion {

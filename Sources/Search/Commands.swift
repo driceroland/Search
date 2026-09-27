@@ -2,9 +2,10 @@ import Foundation
 
 // The address field doubles as the most basic kind of command line: a
 // handful of words that mean "go here in the app" rather than "go here on
-// the web". Off by default (Settings › General › Address bar commands) —
-// nobody typing "settings" into a browser expects the app to open its own
-// panel instead of asking Google.
+// the web". Only ever the whole of what was typed, so a search that merely
+// starts with one of these words still searches. Off by default (Settings ›
+// General › Address bar commands): nobody typing "settings" into a browser
+// expects the app to open its own panel instead of asking Google.
 
 @MainActor
 enum Command: CaseIterable, Equatable {
@@ -57,13 +58,11 @@ enum Command: CaseIterable, Equatable {
         }
     }
 
-    /// The best match for what was typed, if any — exact before prefix, so
-    /// "sidebar" doesn't lose to "settings" just for being listed first.
+    /// The command whose words are all that was typed, if any. Only the
+    /// whole thing, never a prefix or a near miss: a command must not take a
+    /// search from anyone, so "settings for gmail" or "sett" still searches.
     static func matching(_ typed: String, in browser: Browser) -> Command? {
         let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
-        guard needle.count >= 2 else { return nil }
-        let candidates = allCases.filter { $0.available(in: browser) }
-        if let exact = candidates.first(where: { $0.aliases.contains(needle) }) { return exact }
-        return candidates.first { $0.aliases.contains { $0.hasPrefix(needle) } }
+        return allCases.first { $0.available(in: browser) && $0.aliases.contains(needle) }
     }
 }
