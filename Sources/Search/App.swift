@@ -546,6 +546,29 @@ struct ContentView: View {
             .overlay { field }
             .overlay { panels }
             .overlay { TabSwitcherOverlay(browser: browser, switcher: browser.tabSwitcher) }
+            .overlay(alignment: .topTrailing) {
+                if let job = browser.fileImport {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(job.filename).font(.headline).lineLimit(1)
+                        Text(job.message).font(.subheadline)
+                        if let total = job.total, total > 0 {
+                            ProgressView(value: Double(job.completed), total: Double(total))
+                            Text("\(job.completed.formatted()) of \(total.formatted())").font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            ProgressView()
+                        }
+                        Button(job.cancelling ? "Cancelling…" : "Cancel") { browser.cancelFileImport() }
+                            .disabled(job.cancelling)
+                    }
+                    .padding(14)
+                    .frame(width: 250, alignment: .leading)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .shadow(radius: 10)
+                    .padding(20)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Importing \(job.filename), \(job.message)")
+                }
+            }
             // The field comes on its spring, and goes quickly: once Return
             // is pressed the page is on its way, and the field is not what
             // there is to watch.

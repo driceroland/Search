@@ -268,7 +268,8 @@ final class Bench {
             answered = true
             given(reply)
         }
-        let patience = (request["do"] as? String) == "wait" ? (request["seconds"] as? Double ?? 30) + 5 : 25
+        let patience = (request["do"] as? String) == "wait" ? (request["seconds"] as? Double ?? 30) + 5 :
+            (request["do"] as? String) == "import-file" ? (request["timeout"] as? Double ?? 120) : 25
         DispatchQueue.main.asyncAfter(deadline: .now() + patience) { answer(["error": "no answer within \(Int(patience)) s"]) }
         // --window N: the Nth window's browser, oldest first; the first
         // window's otherwise.
@@ -990,10 +991,31 @@ final class Bench {
             // File… buttons make after their chooser. Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "import-file only works on a --test run"]); return }
             guard let path = request["path"] as? String else { answer(["error": "import-file needs a path"]); return }
-            let took = browser.takeFile(URL(fileURLWithPath: path))
-            answer(["said": took.said, "bookmarks": took.bookmarks, "already": took.already, "places": took.places,
-                    "kept": took.kept, "skipped": took.skipped, "total": browser.bookmarks.count,
-                    "top": browser.bookmarks.roots.map(\.title), "saved": browser.saved.count])
+            Task { @MainActor in
+                let took = await browser.takeFile(URL(fileURLWithPath: path))
+                answer(["said": took.said, "bookmarks": took.bookmarks, "already": took.already, "places": took.places,
+                        "kept": took.kept, "skipped": took.skipped, "cancelled": took.cancelled,
+                        "total": browser.bookmarks.count, "top": browser.bookmarks.roots.map(\.title), "saved": browser.saved.count])
+            }
+
+        case "import-file-start":
+            guard Store.testing else { answer(["error": "import-file only works on a --test run"]); return }
+            guard let path = request["path"] as? String else { answer(["error": "import-file needs a path"]); return }
+            guard browser.fileImport == nil else { answer(["error": "import already running"]); return }
+            Task { @MainActor in _ = await browser.takeFile(URL(fileURLWithPath: path)) }
+            answer(["started": true])
+
+        case "import-file-status":
+            guard Store.testing else { answer(["error": "import-file only works on a --test run"]); return }
+            if let job = browser.fileImport {
+                answer(["running": true, "filename": job.filename, "message": job.message,
+                        "completed": job.completed, "total": job.total ?? -1, "cancelling": job.cancelling])
+            } else { answer(["running": false]) }
+
+        case "import-file-cancel":
+            guard Store.testing else { answer(["error": "import-file only works on a --test run"]); return }
+            browser.cancelFileImport()
+            answer(["cancelling": browser.fileImport?.cancelling ?? false])
 
         case "menu":
             // The Bookmarks menu as it is about to open: the menu bar
@@ -1967,7 +1989,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel",
             ]])
         }
     }

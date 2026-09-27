@@ -17,14 +17,38 @@ import Foundation
 enum BookmarksFile {
     /// The file's bookmarks, folders and all; nil for a file that isn't one.
     static func read(_ url: URL) -> [Bookmark]? {
-        guard let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1),
+        try? read(url, control: ImportFile.Control())
+    }
+
+    /// A cancellable form used by the file importer. The progress closure gets
+    /// stage names and work deltas, never bookmark contents.
+    static func read(
+        _ url: URL,
+        control: ImportFile.Control,
+        progress: (String, Int, Int?) -> Void = { _, _, _ in }
+    ) throws -> [Bookmark]? {
+        let data = try ImportFile.readData(url, control: control) { completed, total in
+            progress("Reading bookmark file", completed, total)
+        }
+        try control.checkCancellation()
+        guard let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1),
               text.range(of: "<DL", options: .caseInsensitive) != nil
         else { return nil }
-        return parse(text)
+        return try parse(text, control: control, progress: progress)
     }
 
     static func parse(_ text: String) -> [Bookmark] {
+        (try? parse(text, control: ImportFile.Control())) ?? []
+    }
+
+    /// Parses matching tags as they are found, so cancellation remains
+    /// responsive even for very large exported bookmark files.
+    static func parse(
+        _ text: String,
+        control: ImportFile.Control,
+        progress: (String, Int, Int?) -> Void = { _, _, _ in }
+    ) throws -> [Bookmark] {
+        try control.checkCancellation()
         // One pass over the tags that matter. A folder's heading is kept
         // until its list opens; a list that closes hands its pages to the
         // folder that holds it.
@@ -43,7 +67,21 @@ enum BookmarksFile {
             if stack.isEmpty { root.append(node) } else { stack[stack.count - 1].nodes.append(node) }
         }
 
-        for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+        var parsedThrough = 0
+        var failure: Error?
+        regex.enumerateMatches(in: text, options: [.reportProgress], range: NSRange(location: 0, length: ns.length)) { match, flags, stop in
+            do {
+                try control.checkCancellation()
+            } catch {
+                failure = error
+                stop.pointee = true
+                return
+            }
+            guard let match else {
+                if flags.contains(.progress) { progress("Parsing bookmarks", parsedThrough, ns.length) }
+                return
+            }
+            parsedThrough = max(parsedThrough, NSMaxRange(match.range))
             if match.range(at: 1).location != NSNotFound {
                 let tag = ns.substring(with: match.range(at: 1)).uppercased()
                 let attributes = ns.substring(with: match.range(at: 2))
@@ -75,9 +113,14 @@ enum BookmarksFile {
                 // </DL>
                 if let title = list.title { append(.folder(title, list.nodes)) } else if stack.isEmpty { root += list.nodes } else { stack[stack.count - 1].nodes += list.nodes }
             }
+            progress("Parsing bookmarks", parsedThrough, ns.length)
         }
+        if let failure { throw failure }
+        try control.checkCancellation()
+        progress("Parsing bookmarks", ns.length, ns.length)
         // A file cut short: what was open still counts.
         while let list = stack.popLast() {
+            try control.checkCancellation()
             if let title = list.title { append(.folder(title, list.nodes)) } else if stack.isEmpty { root += list.nodes } else { stack[stack.count - 1].nodes += list.nodes }
         }
         return root

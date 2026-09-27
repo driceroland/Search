@@ -173,7 +173,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Optional ad-blocking add-on** A stronger blocker as an optional add-on in Settings, downloaded on demand so it only takes space for those who want it. Search's built-in blocker stays as it is meanwhile. *(message)*
 - [ ] **Unsaved text on move to window** A tab moved into a window that shows another space signs in with that space, as Move to Space does; unlike Move to Space, it doesn't first ask about text typed and not sent.
 - [ ] **Little window: blocker and passwords** A page in the small window for outside links doesn't get the ad blocker's per-site settings or the accounts list under a sign-in box until it is moved into your tabs.
-- [ ] **Faster import of huge folders** Picking a very large folder, or a very large bookmarks page, to bring things over from can make Search wait a while before the sheet answers.
 
 ## Pull requests to review
 

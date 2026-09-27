@@ -16,12 +16,34 @@ final class Links: NSObject, NSApplicationDelegate {
     @MainActor static var window: NSWindow? { Browsers.front?.window ?? Browsers.primary?.window }
     /// Whether the window has been asked for on a link's behalf (summon).
     private static var summoned = false
+    /// A first quit waits for an import worker to remove its temporary files.
+    /// AppKit calls us again when that cleanup has finished.
+    private var terminationPending = false
 
     /// Quitting closes every window on the way out; that isn't a window
     /// closed for good, whose tabs would go (see Browsers.closing).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        MainActor.assumeIsolated { Browsers.quitting = true }
-        return .terminateNow
+        let waiting = MainActor.assumeIsolated {
+            Browsers.quitting = true
+            return Browser.cancelAllFileImports()
+        }
+        guard waiting else {
+            terminationPending = false
+            return .terminateNow
+        }
+        if !terminationPending {
+            terminationPending = true
+            Task { @MainActor in
+                while Browser.hasActiveFileImports {
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+                self.terminationPending = false
+                sender.terminate(nil)
+            }
+        }
+        // Returning from AppKit's first terminate call lets MainActor finish
+        // the worker continuation and remove it from Browser's registry.
+        return .terminateCancel
     }
 
     func applicationWillTerminate(_ notification: Notification) {

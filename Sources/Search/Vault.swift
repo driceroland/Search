@@ -292,16 +292,54 @@ enum Vault {
         return (kept, skipped)
     }
 
+    /// Called on the import worker. Parsing finishes before any keychain
+    /// writes; cancellation between writes preserves an exact partial count.
+    static func take(csv text: String, control: ImportFile.Control) -> (kept: Int, skipped: Int) {
+        guard !control.isCancelled else { return (0, 0) }
+        control.report(.init(message: "Reading password CSV…", completed: 0))
+        var rows = parse(csv: text, control: control)
+        guard !rows.isEmpty, !control.isCancelled else { return (0, 0) }
+        let header = rows.removeFirst().map { $0.lowercased() }
+        func column(_ names: [String]) -> Int? { header.firstIndex { names.contains($0) } }
+        guard let urlAt = column(["url", "login_uri", "website", "site"]),
+              let userAt = column(["username", "login_username", "user", "email"]),
+              let passAt = column(["password", "login_password"])
+        else { return (0, rows.count) }
+        var kept = 0, skipped = 0
+        control.report(.init(message: "Saving passwords…", completed: 0, total: rows.count))
+        for (index, row) in rows.enumerated() {
+            if control.isCancelled { break }
+            defer {
+                if (index + 1) % 25 == 0 || index + 1 == rows.count {
+                    control.report(.init(message: "Saving passwords…", completed: index + 1, total: rows.count))
+                }
+            }
+            guard row.count > max(urlAt, max(userAt, passAt)) else { skipped += 1; continue }
+            let host = self.host(of: row[urlAt])
+            let password = row[passAt]
+            guard !host.isEmpty, !password.isEmpty else { skipped += 1; continue }
+            let clear = row[urlAt].trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("http://")
+            save(host: host, user: row[userAt], password: password, clear: clear) ? (kept += 1) : (skipped += 1)
+        }
+        return (kept, skipped)
+    }
+
     /// Quoted fields, doubled quotes inside them, and newlines inside those —
     /// all three turn up in a real export.
-    private static func parse(csv text: String) -> [[String]] {
+    private static func parse(csv text: String, control: ImportFile.Control? = nil) -> [[String]] {
         var rows: [[String]] = []
         var row: [String] = []
         var field = ""
         var quoted = false
         var index = text.startIndex
+        var scanned = 0
 
         while index < text.endIndex {
+            scanned += 1
+            if scanned % 8192 == 0, let control {
+                if control.isCancelled { return [] }
+                control.report(.init(message: "Reading password CSV…", completed: scanned))
+            }
             let c = text[index]
             if quoted {
                 if c == "\"" {
@@ -331,6 +369,10 @@ enum Vault {
         }
         row.append(field)
         if row.contains(where: { !$0.isEmpty }) { rows.append(row) }
+        if let control {
+            if control.isCancelled { return [] }
+            control.report(.init(message: "Reading password CSV…", completed: scanned))
+        }
         return rows
     }
 }

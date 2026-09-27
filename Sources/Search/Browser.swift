@@ -23,6 +23,16 @@ enum Shared {
 
 @MainActor
 final class Browser: NSObject, ObservableObject {
+    private static var activeFileImports: [UUID: ImportFile.Control] = [:]
+    private static var fileImportTerminating = false
+
+    static func cancelAllFileImports() -> Bool {
+        fileImportTerminating = true
+        for control in activeFileImports.values { control.cancel() }
+        return !activeFileImports.isEmpty
+    }
+
+    static var hasActiveFileImports: Bool { !activeFileImports.isEmpty }
     /// With groups on, every change to the row ends with it put back in the
     /// order it is shown in (see arrangeGroupedTabs): a tab made by a link,
     /// Peek, the little window or Move to Space lands wherever its own code
@@ -154,6 +164,23 @@ final class Browser: NSObject, ObservableObject {
     /// The "Bring things over" sheet, open while set: the browser it
     /// starts on by name, or "" for the first one found.
     @Published var bringingIn: String?
+    struct FileImportJob: Identifiable {
+        let id: UUID
+        let filename: String
+        var message: String
+        var completed = 0
+        var total: Int?
+        var cancelling = false
+    }
+    @Published private(set) var fileImport: FileImportJob?
+    private var fileImportControl: ImportFile.Control?
+
+    func cancelFileImport() {
+        guard fileImport != nil else { return }
+        fileImport?.cancelling = true
+        fileImport?.message = "Cancelling…"
+        fileImportControl?.cancel()
+    }
     /// The sheet opened from Settings › Extensions: only the extensions
     /// ticked, on a browser that has some. Read once as it opens.
     var bringingExtensions = false
@@ -542,6 +569,7 @@ final class Browser: NSObject, ObservableObject {
     /// Something another browser exported: a bookmarks page, a passwords
     /// file, or Safari's own export (see ImportFile). Read once, never copied.
     func importFile() {
+        guard fileImport == nil else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.html, .commaSeparatedText, .plainText, .zip, .json]
         panel.canChooseDirectories = true
@@ -549,44 +577,126 @@ final class Browser: NSObject, ObservableObject {
         panel.prompt = "Bring In"
         panel.message = "A file another browser exported: bookmarks (.html), passwords (.csv), or Safari's File › Export Browsing Data (.zip)."
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        announce(takeFile(url).said)
+        Task { announce((await takeFile(url)).said) }
     }
 
     /// The file's bookmarks, history and passwords, taken in as a browser's
     /// are: bookmarks merged without doubles, history counted once. Says
     /// what came in, and after Safari's export, that the file holds your
     /// passwords in the clear.
+    struct FileTake {
+        let said: String
+        let bookmarks: Int
+        let already: Int
+        let places: Int
+        let kept: Int
+        let skipped: Int
+        let cancelled: Bool
+    }
+
     @discardableResult
-    func takeFile(_ url: URL) -> (said: String, bookmarks: Int, already: Int, places: Int, kept: Int, skipped: Int) {
-        let found = ImportFile.read(url)
-        guard !found.isEmpty else {
-            return ("Nothing to bring in from that file", 0, 0, 0, 0, 0)
+    func takeFile(_ url: URL) async -> FileTake {
+        guard !Browser.fileImportTerminating, fileImport == nil else { return FileTake(said: "An import is already running", bookmarks: 0, already: 0, places: 0, kept: 0, skipped: 0, cancelled: false) }
+        let id = UUID()
+        fileImport = FileImportJob(id: id, filename: url.lastPathComponent, message: "Reading…")
+        let control = ImportFile.Control { [weak self] progress in
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.fileImport?.id == id, self.fileImport?.cancelling == false else { return }
+                self.fileImport?.message = progress.message
+                self.fileImport?.completed = progress.completed
+                self.fileImport?.total = progress.total
+            }
         }
-        let name = found.fromSafari ? "Safari" : url.deletingPathExtension().lastPathComponent
-        let (added, already) = bookmarks.take(found.bookmarks, from: name)
-        for place in found.places { history.take(place.url, title: place.title, count: place.count, last: place.last) }
-        if !found.places.isEmpty { history.settle() }
-        var kept = 0, skipped = 0
-        for text in found.passwords {
-            let result = Vault.take(csv: text)
-            kept += result.kept
-            skipped += result.skipped
+        fileImportControl = control
+        Browser.activeFileImports[id] = control
+        defer {
+            Browser.activeFileImports[id] = nil
+            if fileImport?.id == id { fileImport = nil; fileImportControl = nil }
         }
-        if !found.passwords.isEmpty { relist() }
+        var added = 0, already = 0, places = 0, kept = 0, skipped = 0
+        var safari = false
+        var failed = false
+        var mergedBookmarks = false
+        do {
+            let found: ImportFile.Found = try await withCheckedThrowingContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do { continuation.resume(returning: try ImportFile.read(url, control: control)) }
+                    catch { continuation.resume(throwing: error) }
+                }
+            }
+            safari = found.fromSafari
+            try control.checkCancellation()
+            let name = found.fromSafari ? "Safari" : url.deletingPathExtension().lastPathComponent
+            if !found.bookmarks.isEmpty {
+                fileImport?.message = "Merging bookmarks…"
+                fileImport?.completed = 0
+                fileImport?.total = nil
+                let result = try await bookmarks.takeFile(found.bookmarks, from: name, control: control)
+                mergedBookmarks = true
+                added = result.added
+                already = result.already
+            }
+            if !found.places.isEmpty {
+                fileImport?.message = "Adding history…"
+                fileImport?.completed = 0
+                fileImport?.total = found.places.count
+                for batch in stride(from: 0, to: found.places.count, by: 200) {
+                    guard !control.isCancelled else { break }
+                    let end = min(batch + 200, found.places.count)
+                    for place in found.places[batch..<end] {
+                        history.take(place.url, title: place.title, count: place.count, last: place.last)
+                        places += 1
+                    }
+                    fileImport?.completed = places
+                    fileImport?.total = found.places.count
+                    await Task.yield()
+                }
+                if places > 0 { history.settle() }
+            }
+            if !found.passwords.isEmpty && !control.isCancelled {
+                fileImport?.message = "Saving passwords…"
+                fileImport?.completed = 0
+                fileImport?.total = nil
+                for text in found.passwords {
+                    guard !control.isCancelled else { break }
+                    let result = await withCheckedContinuation { continuation in
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            continuation.resume(returning: Vault.take(csv: text, control: control))
+                        }
+                    }
+                    kept += result.kept
+                    skipped += result.skipped
+                }
+            }
+        } catch {
+            failed = !control.isCancelled
+        }
+        if kept > 0 || skipped > 0 {
+            saved = await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .utility).async {
+                    continuation.resume(returning: Vault.all())
+                }
+            }
+        }
         func count(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? "1 \(one)" : "\(n) \(many)" }
         var parts: [String] = []
         if added > 0 || already > 0 {
             parts.append(already == 0 ? count(added, "bookmark", "bookmarks") : "\(count(added, "new bookmark", "new bookmarks")), \(already) already here")
         }
-        if !found.places.isEmpty { parts.append(count(found.places.count, "place", "places")) }
+        if places > 0 { parts.append(count(places, "place", "places")) }
         if kept > 0 || skipped > 0 {
             parts.append(skipped == 0 ? count(kept, "password", "passwords") : "\(count(kept, "password", "passwords")), \(skipped) skipped")
         }
         var said = parts.joined(separator: " · ")
-        if found.fromSafari, kept > 0 {
+        if control.isCancelled {
+            said = said.isEmpty ? (mergedBookmarks ? "Import cancelled after merging bookmarks" : "Import cancelled; nothing was changed") : "Import cancelled after " + said
+        }
+        else if failed { said = said.isEmpty ? "That file couldn't be read" : "Import stopped after " + said }
+        else if said.isEmpty { said = mergedBookmarks ? "Bookmark folders imported" : "Nothing to bring in from that file" }
+        if safari, kept > 0 {
             said += " — the exported file holds your passwords in the clear: delete it now"
         }
-        return (said, added, already, found.places.count, kept, skipped)
+        return FileTake(said: said, bookmarks: added, already: already, places: places, kept: kept, skipped: skipped, cancelled: control.isCancelled)
     }
 
     // MARK: - what is kept, and getting rid of it

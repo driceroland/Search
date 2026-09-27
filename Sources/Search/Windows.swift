@@ -203,6 +203,7 @@ enum Browsers {
 
     static func closing(_ window: NSWindow) {
         guard !quitting, let browser = browser(for: window) else { return }
+        browser.cancelFileImport()
         let others = all.filter { $0 !== browser && $0.isOpen }
         guard !others.isEmpty else {
             // The last one: kept, tabs and all, and written down now.

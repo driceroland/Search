@@ -65,6 +65,9 @@
     ./bench import-preview           test run: each browser found, its profiles, the one used most recently, and what
                                      it holds as the Bring things over sheet counts it — without asking for a key
     ./bench import-file PATH         test run: a bookmarks .html, a passwords .csv or Safari's export .zip, as File… brings it
+    ./bench import-file-start PATH   test run: start file import without waiting for completion
+    ./bench import-file-status       test run: current filename, stage, counts and cancellation state
+    ./bench import-file-cancel       test run: request cancellation of the current file import
     ./bench menu [open]                test run: the Bookmarks menu as it is about to open, and its first
                                        folder (open: its first bookmark picked)
     ./bench bookmark URL [new]         test run: a bookmark picked from the list, timed until it loads
@@ -310,9 +313,11 @@ def main(argv):
         if not args or any(a not in kinds for a in args[1:]): sys.exit("usage: bench import BROWSER [bookmarks] [history] [passwords] [spaces] [--profile NAME|all]")
         request["from"] = args[0]
         request["what"] = args[1:]
-    elif verb == "import-file":
-        if len(args) != 1: sys.exit("usage: bench import-file PATH")
+    elif verb in ("import-file", "import-file-start"):
+        if len(args) != 1: sys.exit(f"usage: bench {verb} PATH")
         request["path"] = os.path.abspath(args[0])
+    elif verb in ("import-file-status", "import-file-cancel"):
+        if args: sys.exit(f"usage: bench {verb}")
     elif verb == "menu":
         if args not in ([], ["open"]): sys.exit("usage: bench menu [open]")
         request["open"] = args == ["open"]

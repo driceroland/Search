@@ -309,6 +309,10 @@ final class History: ObservableObject {
     /// Often, and lately. A month-old visit counts for about a third of a
     /// fresh one, which is roughly how long a habit takes to stop being one.
     private func frecency(_ visit: Visit, now: Date) -> Double {
+        History.score(visit, now: now)
+    }
+
+    nonisolated private static func score(_ visit: Visit, now: Date) -> Double {
         let days = max(0, now.timeIntervalSince(visit.last) / 86_400)
         return Double(visit.count) * exp(-days / 30)
     }
@@ -357,16 +361,11 @@ final class History: ObservableObject {
             let now = Date()
             // A cap, so the file can't grow without end. What goes is what has
             // been visited least and longest ago.
-            let list = self.visits.values
-                .sorted { self.frecency($0, now: now) > self.frecency($1, now: now) }
-                .prefix(2_000)
-                .map { $0 }
-            DispatchQueue.global(qos: .utility).async {
-                guard let data = try? JSONEncoder().encode(list) else { return }
-                try? FileManager.default.createDirectory(
-                    at: History.folder, withIntermediateDirectories: true
-                )
-                try? data.write(to: History.file, options: .atomic)
+            let snapshot = self.visits
+            let file = History.file
+            Disk.write(file) {
+                let list = Array(snapshot.values.sorted { History.score($0, now: now) > History.score($1, now: now) }.prefix(2_000))
+                return try? JSONEncoder().encode(list)
             }
         }
     }

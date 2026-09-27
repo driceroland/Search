@@ -32,8 +32,14 @@ struct Bookmark: Codable, Identifiable, Hashable {
 @MainActor
 final class Bookmarks: ObservableObject {
     @Published private(set) var roots: [Bookmark] = [] {
-        didSet { kept = Set(Bookmarks.urls(roots).map(\.absoluteString)) }
+        didSet {
+            revision &+= 1
+            kept = preparedKept ?? Set(Bookmarks.urls(roots).map(\.absoluteString))
+            preparedKept = nil
+        }
     }
+    private var revision = 0
+    private var preparedKept: Set<String>?
 
     /// Every address kept, for `contains` — asked on every redraw of the
     /// button, which fills in on a page that is kept.
@@ -51,7 +57,7 @@ final class Bookmarks: ObservableObject {
     }
 
     /// Every site in the list, in order, folders opened.
-    static func urls(_ nodes: [Bookmark]) -> [URL] {
+    nonisolated static func urls(_ nodes: [Bookmark]) -> [URL] {
         nodes.flatMap { node -> [URL] in
             if node.isFolder { return urls(node.children ?? []) }
             return node.url.flatMap(URL.init(string:)).map { [$0] } ?? []
@@ -272,6 +278,62 @@ final class Bookmarks: ObservableObject {
         return (added, already, ids)
     }
 
+    /// Prepare a potentially large file merge away from the UI thread. A live
+    /// edit wins: if bookmarks changed while preparing, merge a fresh snapshot.
+    func takeFile(_ incoming: [Bookmark], from name: String, control: ImportFile.Control) async throws -> (added: Int, already: Int) {
+        guard !incoming.isEmpty else { return (0, 0) }
+        while true {
+            try control.checkCancellation()
+            let snapshot = roots
+            let version = revision
+            let top = Store.settings.string(forKey: Bookmarks.topKey)
+            let prepared: (roots: [Bookmark], kept: Set<String>, added: Int, already: Int, top: Bool) = try await withCheckedThrowingContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        try control.checkCancellation()
+                        var output = snapshot
+                        var added = 0, already = 0
+                        var setTop = false
+                        if snapshot.isEmpty {
+                            output = incoming
+                            added = try Bookmarks.fileCount(incoming, control: control)
+                            setTop = true
+                        } else {
+                            let intoTop: Bool
+                            if let top { intoTop = top == name }
+                            else {
+                                let theirs = try Bookmarks.fileURLs(incoming, control: control)
+                                let ours = Set(try Bookmarks.fileURLs(snapshot, control: control))
+                                intoTop = !theirs.isEmpty && theirs.filter { ours.contains($0) }.count * 2 >= theirs.count
+                                setTop = intoTop
+                            }
+                            if intoTop {
+                                try Bookmarks.mergeFile(incoming, into: &output, added: &added, already: &already, control: control)
+                            } else {
+                                var kids = output.first { $0.isFolder && $0.title == name }?.children ?? []
+                                try Bookmarks.mergeFile(incoming, into: &kids, added: &added, already: &already, control: control)
+                                if let at = output.firstIndex(where: { $0.isFolder && $0.title == name }) {
+                                    output[at].children = kids
+                                } else {
+                                    output.append(.folder(name, kids))
+                                }
+                            }
+                        }
+                        try control.checkCancellation()
+                        continuation.resume(returning: (output, Set(try Bookmarks.fileURLs(output, control: control)), added, already, setTop))
+                    } catch { continuation.resume(throwing: error) }
+                }
+            }
+            try control.checkCancellation()
+            guard revision == version, Store.settings.string(forKey: Bookmarks.topKey) == top else { continue }
+            preparedKept = prepared.kept
+            roots = prepared.roots
+            if prepared.top { Store.settings.set(name, forKey: Bookmarks.topKey) }
+            save()
+            return (prepared.added, prepared.already)
+        }
+    }
+
     /// Takes back out what an import added: every bookmark among `ids`
     /// wherever it now sits, then every folder among them left empty. A
     /// folder of theirs that you have put something of your own in stays,
@@ -299,8 +361,70 @@ final class Bookmarks: ObservableObject {
     }
 
     /// Every id in a tree, folders and all.
-    private static func ids(_ nodes: [Bookmark]) -> [Bookmark.ID] {
+    nonisolated private static func ids(_ nodes: [Bookmark]) -> [Bookmark.ID] {
         nodes.flatMap { [$0.id] + ids($0.children ?? []) }
+    }
+
+    nonisolated private static func fileURLs(_ nodes: [Bookmark], control: ImportFile.Control) throws -> [String] {
+        var urls: [String] = []
+        var pending = nodes
+        var scanned = 0
+        while let node = pending.popLast() {
+            scanned += 1
+            if scanned % 256 == 0 {
+                try control.checkCancellation()
+            }
+            if let url = node.url, let canonical = URL(string: url)?.absoluteString { urls.append(canonical) }
+            if let children = node.children { pending.append(contentsOf: children) }
+        }
+        try control.checkCancellation()
+        return urls
+    }
+
+    nonisolated private static func fileCount(_ nodes: [Bookmark], control: ImportFile.Control) throws -> Int {
+        var count = 0
+        var scanned = 0
+        var pending = nodes
+        while let node = pending.popLast() {
+            scanned += 1
+            if scanned % 256 == 0 { try control.checkCancellation() }
+            if node.isFolder { pending.append(contentsOf: node.children ?? []) }
+            else { count += 1 }
+        }
+        try control.checkCancellation()
+        return count
+    }
+
+    nonisolated private static func mergeFile(_ incoming: [Bookmark], into nodes: inout [Bookmark], added: inout Int, already: inout Int, control: ImportFile.Control) throws {
+        var folders: [String: Int] = [:]
+        var pages = Set<String>()
+        for (index, node) in nodes.enumerated() {
+            if index % 256 == 0 { try control.checkCancellation() }
+            if node.isFolder { if folders[node.title] == nil { folders[node.title] = index } }
+            else if let url = node.url { pages.insert(url) }
+        }
+        for (index, node) in incoming.enumerated() {
+            if index % 256 == 0 {
+                try control.checkCancellation()
+            }
+            if node.isFolder {
+                if let at = folders[node.title] {
+                    var kids = nodes[at].children ?? []
+                    try mergeFile(node.children ?? [], into: &kids, added: &added, already: &already, control: control)
+                    nodes[at].children = kids
+                } else {
+                    folders[node.title] = nodes.count
+                    nodes.append(node)
+                    added += try fileCount([node], control: control)
+                }
+            } else if pages.contains(node.url ?? "") {
+                already += 1
+            } else {
+                if let url = node.url { pages.insert(url) }
+                nodes.append(node)
+                added += 1
+            }
+        }
     }
 
     /// Which browser filled the empty top level, the first time.
@@ -323,21 +447,28 @@ final class Bookmarks: ObservableObject {
     /// `incoming` into `nodes`, level by level: a folder into the folder of
     /// the same name, a page only if the same address isn't already at
     /// that level.
-    private static func merge(_ incoming: [Bookmark], into nodes: inout [Bookmark], added: inout Int, already: inout Int, ids: inout [Bookmark.ID]) {
+    nonisolated private static func merge(_ incoming: [Bookmark], into nodes: inout [Bookmark], added: inout Int, already: inout Int, ids: inout [Bookmark.ID]) {
+        var folders: [String: Int] = [:]
+        for (index, node) in nodes.enumerated() where node.isFolder {
+            if folders[node.title] == nil { folders[node.title] = index }
+        }
+        var pages = Set(nodes.compactMap { $0.isFolder ? nil : $0.url })
         for node in incoming {
             if node.isFolder {
-                if let at = nodes.firstIndex(where: { $0.isFolder && $0.title == node.title }) {
+                if let at = folders[node.title] {
                     var kids = nodes[at].children ?? []
                     merge(node.children ?? [], into: &kids, added: &added, already: &already, ids: &ids)
                     nodes[at].children = kids
                 } else {
+                    folders[node.title] = nodes.count
                     nodes.append(node)
                     added += count([node])
                     ids += Bookmarks.ids([node])
                 }
-            } else if nodes.contains(where: { !$0.isFolder && $0.url == node.url }) {
+            } else if pages.contains(node.url ?? "") {
                 already += 1
             } else {
+                if let url = node.url { pages.insert(url) }
                 nodes.append(node)
                 added += 1
                 ids.append(node.id)

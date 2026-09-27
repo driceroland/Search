@@ -72,6 +72,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Large exported files and folders are brought in in the background, with progress and a Cancel button. Folder imports only visit the chosen folder and its immediate subfolders; deeper trees are left alone. Cancelling an import stops further work and says if anything was already brought in.
 - Switching to another app while a video plays full screen no longer leaves Search's window black when you come back: the video stays full screen in its own space, as in Safari, instead of floating out of it. Thanks [@dttdrv](https://github.com/dttdrv) ([#372](https://github.com/driceroland/Search/pull/372))
 - Unpinning a tab puts it back among the tabs every time. Unpinning the only tab, or the last pin, could leave an empty square where the pin was and no row for the tab, until something else changed the column.
 - The floating video comes out and goes back with less jumping. Its page is laid out once, at the size the floating window opens at, where it was laid out at the default size first and stretched to the remembered one after; and going back, the rest of the page returns only once the page has the tab's size, where it came back while the page still had the floating window's, and the tab's first frames could show the video sized for that: YouTube's, a 720×240 strip ([#257](https://github.com/driceroland/Search/issues/257))
