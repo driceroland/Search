@@ -212,13 +212,13 @@ struct HistoryPanel: View {
         var body: some View {
             HStack(spacing: 12) {
                 Mark(icon: Favicons.shared.cached(trace.url.host()?.lowercased() ?? ""),
-                     letter: trace.key.first.map { String($0).uppercased() } ?? "•", size: 16)
+                     letter: trace.address.first.map { String($0).uppercased() } ?? "•", size: 16)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(trace.title.isEmpty ? trace.key : trace.title)
+                    Text(trace.title.isEmpty ? trace.address : trace.title)
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
-                    Text(trace.key)
+                    Text(trace.address)
                         .font(.system(size: 11.5))
                         .foregroundStyle(Palette.muted)
                         .lineLimit(1)

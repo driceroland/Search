@@ -193,7 +193,7 @@ struct SearchApp: App {
                         Button {
                             browser.open(trace.url, foreground: true)
                         } label: {
-                            MenuLine(title: trace.title.isEmpty ? trace.key : trace.title, url: trace.url)
+                            MenuLine(title: trace.title.isEmpty ? trace.address : trace.title, url: trace.url)
                         }
                     }
                 }
