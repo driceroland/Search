@@ -53,6 +53,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Window › Move & Resize and its shortcuts work on Search's window, as on any other: its commands were greyed out and their keys only beeped, because the window is kept from moving so that a tab dragged along the top doesn't take it along. It's now let go for those commands alone: while a menu is open, and while a shortcut with ⌃ is handled. ([#286](https://github.com/driceroland/Search/issues/286))
 - The Figma extension signs in. After the provider's Allow, an extension that watches its sign-in tab for its own chromiumapp.org address, as Chrome allows, now sees it and gets its answer; nothing is loaded from that address, and a tab left there says there is no site, as before.
 - With the tab bar folded away, the window can be moved from a thin band along its top edge, and filled with a double-click there, as with the sidebar folded away; there was nothing to take hold of until the bar came down.
 - A middle-click opens a link in a new tab on pages that stop the click on its way up, where it opened nothing; a page that takes the middle-click for itself still keeps it, as in Chrome.

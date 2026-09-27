@@ -785,8 +785,9 @@ struct ContentView: View {
         window.isMovableByWindowBackground = false
         // Nor by its title bar, which the strip is all the way down: AppKit
         // would move the window on any drag there, a tab picked up to take
-        // it elsewhere in the row included. DragStrip moves it instead.
-        window.isMovable = false
+        // it elsewhere in the row included. DragStrip moves it instead, and
+        // it is let go only for Move & Resize (see HeldStill).
+        HeldStill.keep(window)
 
         // The traffic lights set in from the corner and centred in the strip's
         // height, in both modes, without a toolbar's rounder corners — see

@@ -347,10 +347,10 @@ struct DragStrip: NSViewRepresentable {
             moved = false
         }
 
-        /// The window is not movable on its own (see dress in App.swift): a tab
-        /// picked up in the strip would carry the window off with it. Here
-        /// it is let go for the one drag, handed to the system's own window
-        /// drag so it snaps and tiles as any window does.
+        /// The window is held still (see HeldStill): a tab picked up in the
+        /// strip would carry the window off with it. Here it is let go for
+        /// the one drag, handed to the system's own window drag so it snaps
+        /// and tiles as any window does.
         override func mouseDragged(with event: NSEvent) {
             guard let window, let pressed, !moved else { return }
             let dx = event.locationInWindow.x - pressed.locationInWindow.x
@@ -386,6 +386,69 @@ struct DragStrip: NSViewRepresentable {
     }
 }
 
+/// A browser window, held still, and movable only while macOS may be asking
+/// to move it: Window › Move & Resize, from the menu or from its keys.
+///
+/// The strip's top reaches into the title bar, and there a drag from any
+/// view that lets it moves the window — SwiftUI's own views under the tabs
+/// do — so a tab picked up to go elsewhere in the row carried the whole
+/// window off. So the window doesn't move on its own, and DragStrip moves it
+/// for the empty stretches. But macOS greys out Move & Resize and turns its
+/// shortcuts away from a window that isn't movable (#286), so it is movable
+/// while a menu is open and while a key with ⌃ is handled — every one of
+/// Move & Resize's own shortcuts has fn and ⌃ — and still again the moment
+/// after. Not movable between presses instead: a window that is movable
+/// when a press lands in its title bar is taken by macOS for a drag of the
+/// window before the app hears of the press, and a tab pressed on its top
+/// half never moved. Nor for longer than it takes: a tab dragged just after
+/// ⌘T or a menu would carry the window off again.
+enum HeldStill {
+    @MainActor private static let kept = NSHashTable<NSWindow>.weakObjects()
+    @MainActor private static var watching: [Any] = []
+    /// Menus being tracked: one inside another counts twice.
+    @MainActor private static var menus = 0
+
+    @MainActor static func keep(_ window: NSWindow) {
+        guard !kept.contains(window) else { return }
+        kept.add(window)
+        window.isMovable = false
+        guard watching.isEmpty else { return }
+        let center = NotificationCenter.default
+        watching.append(center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { _ in
+            MainActor.assumeIsolated {
+                menus += 1
+                movable(true)
+            }
+        })
+        watching.append(center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: nil) { _ in
+            MainActor.assumeIsolated {
+                menus = max(0, menus - 1)
+                settle()
+            }
+        })
+        // Before the key reaches the menus, which ask whether the window
+        // can move; still again once it has been handled.
+        if let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in
+            if event.modifierFlags.contains(.control) {
+                movable(true)
+                settle()
+            }
+            return event
+        }) { watching.append(keys) }
+    }
+
+    @MainActor private static func movable(_ on: Bool) {
+        kept.allObjects.forEach { $0.isMovable = on }
+    }
+
+    /// Still again on the next turn of the run loop — once the menu's
+    /// command or the key has done its work — unless a menu is open then.
+    @MainActor private static func settle() {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { if menus == 0 { movable(false) } }
+        }
+    }
+}
 
 /// The three buttons as they look when the app is not the one you are using.
 ///

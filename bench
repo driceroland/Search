@@ -48,6 +48,10 @@
     ./bench hit X Y [double|middle]    what a press at X Y (points from the window's top left) lands on,
                                        and whether a drag from there would move the window;
                                        double: test run, a double-click there (start the probe hidden)
+    ./bench drag X1 Y1 X2 Y2 [STEPS]   test run: a left-button drag through the app's event queue — whether the
+                                       window was movable at rest, held, and after, and how far it moved
+    ./bench tiling                     test run: which Window › Move & Resize commands can be picked for the window
+                                       at rest, with a menu open, while a key with ⌃ is handled, and once settled
     ./bench place ID INDEX             put a tab at another place in the row
     ./bench group [ID new [NAME] | ID NAME | ID none | fold NAME]
                                        test run: the tab groups; a tab into a new group, into one by name,
@@ -262,6 +266,12 @@ def main(argv):
         if len(args) not in (2, 3) or (len(args) == 3 and args[2] not in ("double", "middle")): sys.exit("usage: bench hit X Y [double|middle]")
         request["x"], request["y"] = float(args[0]), float(args[1])
         if len(args) == 3: request[args[2]] = True
+    elif verb == "drag":
+        if len(args) not in (4, 5): sys.exit("usage: bench drag X1 Y1 X2 Y2 [STEPS]")
+        request["x1"], request["y1"], request["x2"], request["y2"] = (float(a) for a in args[:4])
+        if len(args) == 5: request["steps"] = int(args[4])
+    elif verb == "tiling":
+        pass
     elif verb == "place":
         if len(args) != 2: sys.exit("usage: bench place ID INDEX")
         request["id"], request["to"] = args[0], int(args[1])

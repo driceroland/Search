@@ -701,6 +701,103 @@ final class Bench {
             }
             step(1)
 
+        case "drag":
+            // A left-button drag from one point of the window to another,
+            // posted through the app's own event queue: the event monitors,
+            // AppKit and the views under it see it, but the window server
+            // never does, so its own drag of a movable window's title bar
+            // is out of reach — as is the window moving with it, which it
+            // does by the real pointer. Answers whether the window was
+            // movable at rest, while held, and once let go (see HeldStill),
+            // and how far it moved. Test runs only.
+            guard Store.testing else { answer(["error": "drag only works on a --test run"]); return }
+            guard let window = browser.window ?? Links.window,
+                  let x1 = request["x1"] as? Double, let y1 = request["y1"] as? Double,
+                  let x2 = request["x2"] as? Double, let y2 = request["y2"] as? Double
+            else { answer(["error": "drag needs two points"]); return }
+            let steps = max(2, request["steps"] as? Int ?? 12)
+            // A drag only ever happens in the app in front, in its key
+            // window: posted to a window in the back, the press is taken as
+            // the click that brings it forward, and nothing is carried.
+            NSApp.activate()
+            window.makeKeyAndOrderFront(nil)
+            let height = Double(window.frame.height)
+            let before = window.frame
+            let resting = window.isMovable
+            func post(_ type: NSEvent.EventType, _ x: Double, _ y: Double) {
+                guard let event = NSEvent.mouseEvent(
+                    with: type, location: NSPoint(x: x, y: height - y), modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                    context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1
+                ) else { return }
+                NSApp.postEvent(event, atStart: false)
+            }
+            post(.leftMouseDown, x1, y1)
+            func step(_ n: Int) {
+                let t = Double(n) / Double(steps)
+                post(.leftMouseDragged, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)
+                if n < steps {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { step(n + 1) }
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    let held = window.isMovable
+                    post(.leftMouseUp, x2, y2)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        let after = window.frame
+                        answer(["movable": ["resting": resting, "held": held, "after": window.isMovable],
+                                "moved": [Int(after.minX - before.minX), Int(after.maxY - before.maxY)]])
+                    }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { step(1) }
+            return
+
+        case "tiling":
+            // Window › Move & Resize as macOS offers it for this window, and
+            // whether each command could be picked: at rest, with a menu
+            // open, while a key with ⌃ held is handled, and once the window
+            // has settled again (see HeldStill) — greyed out everywhere
+            // while the window was never movable (#286). AppKit adds those
+            // items only as the menu opens, so each is asked of the window
+            // by its action, the way the menu asks. Test runs only.
+            guard Store.testing else { answer(["error": "tiling only works on a --test run"]); return }
+            guard let window = browser.window ?? Links.window, let main = NSApp.mainMenu else { answer(["error": "no window"]); return }
+            let commands = [("Fill", "_zoomFill:"), ("Center", "_zoomCenter:"), ("Left", "_zoomLeft:"), ("Right", "_zoomRight:"),
+                            ("Top", "_zoomTop:"), ("Bottom", "_zoomBottom:"), ("Top Left", "_zoomTopLeft:"),
+                            ("Left & Right", "_zoomLeftAndRight:"), ("Quarters", "_zoomQuarters:")]
+            func open() -> [String] {
+                commands.filter { _, name in
+                    window.validateUserInterfaceItem(NSMenuItem(title: "", action: NSSelectorFromString(name), keyEquivalent: ""))
+                }.map(\.0)
+            }
+            var out: [String: Any] = ["rest": open()]
+            NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: main)
+            out["menu"] = open()
+            NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: main)
+            // ⌃F19, which nothing answers, through the app's own queue —
+            // asked while it is being handled, by a monitor set after
+            // HeldStill's, then again once it has been.
+            var asked: Any?
+            asked = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                guard event.keyCode == 80 else { return event }
+                out["key"] = open()
+                if let monitor = asked { NSEvent.removeMonitor(monitor) }
+                asked = nil
+                return event
+            }
+            if let key = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .control,
+                                          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                          context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 80) {
+                NSApp.postEvent(key, atStart: false)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if let monitor = asked { NSEvent.removeMonitor(monitor) }
+                out["settled"] = open()
+                answer(out)
+            }
+            return
+
         case "hit":
             // What a press at a point of the window lands on, and whether
             // AppKit would carry the window off on a drag from there — the
@@ -944,6 +1041,9 @@ final class Bench {
                let index = folder.items.firstIndex(where: { $0.representedObject is URL }) {
                 folder.performActionForItem(at: index)
             }
+            // Closed again, as the menu bar would: a menu left open for good
+            // keeps every window movable (see HeldStill).
+            NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: main)
             answer(["delegate": wrapped, "before": before, "after": menu.items.count, "ours": BookmarkMenu.shared.count, "fillMs": filled,
                     "titles": menu.items.prefix(8).map { $0.isSeparatorItem ? "—" : $0.title },
                     "firstFolder": folder?.items.prefix(4).map(\.title) ?? [],
@@ -1587,7 +1687,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "pull", "space", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "drag", "tiling", "film", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "pull", "space", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file",
             ]])
         }
     }
