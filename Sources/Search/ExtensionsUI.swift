@@ -194,7 +194,7 @@ struct StoreOffer: View {
         var body: some View {
             // Only where the page's own "Add to Search" isn't in place — a
             // store that has changed its markup still gets a way in.
-            if let url = tab.address, StoreOffer.isStorePage(url), let id = Crx.id(in: url.absoluteString),
+            if let url = tab.address, let id = Crx.storeID(of: url),
                tab.storePlaced != id, !extensions.installed.contains(where: { $0.id == id }) {
                 HStack(spacing: 12) {
                     Image(systemName: "puzzlepiece.extension")
@@ -227,6 +227,7 @@ struct StoreOffer: View {
     }
 
     static func isStorePage(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil else { return false }
         let host = url.host()?.lowercased() ?? ""
         return host == "chromewebstore.google.com"
             || (host == "chrome.google.com" && url.path.hasPrefix("/webstore"))

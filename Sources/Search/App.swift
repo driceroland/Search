@@ -76,6 +76,8 @@ struct SearchApp: App {
                 Divider()
                 Button("Reload Page") { browser.reload() }
                     .keyboardShortcut("r")
+                Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
+                    .keyboardShortcut("r", modifiers: [.command, .option])
                 Button("Reading Mode") { browser.toggleReader() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button("Float Video") { browser.toggleFloat() }
@@ -182,6 +184,8 @@ struct SearchApp: App {
                 Button("Downloads…") { browser.hoarding = true }
                     .keyboardShortcut("j", modifiers: [.command, .shift])
                 Divider()
+                Button("Clear Browsing Data…") { browser.recallMode = .clearing }
+                    .keyboardShortcut(.delete, modifiers: [.command, .shift])
                 Button("Clear History") { browser.clearHistory() }
             }
             CommandGroup(after: .appSettings) {
@@ -373,8 +377,10 @@ struct ContentView: View {
         roomTicket += 1
         var still = Transaction()
         still.disablesAnimations = true
-        withTransaction(still) { room = at }
-        guard arriving.0 || arriving.1 else { return }
+        // With Reduce Motion on, nothing slides: the page takes its new room
+        // with the chrome, not after a slide that isn't there.
+        withTransaction(still) { room = Motion.reduced ? new : at }
+        guard !Motion.reduced, arriving.0 || arriving.1 else { return }
         let ticket = roomTicket
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
             guard ticket == roomTicket else { return }
@@ -779,10 +785,15 @@ struct ContentView: View {
     /// while the page has the keyboard; in the address field or a panel,
     /// Search's keys are Search's. The keys that make and close tabs and move
     /// between them stay Search's first, as Chrome keeps them its own.
+    ///
+    /// ⌘← and ⌘→ are Search's too while nothing is being typed: WebKit takes
+    /// them to scroll the page sideways and never hands them back, so
+    /// passing them on left them dead for going back and forward (#324).
     private func pageFirst(_ event: NSEvent, key: String, shifted: Bool) -> Bool {
         let reserved = (key == "t") || (key == "w" && !shifted) || (key == "n" && shifted)
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
+            || (!shifted && (event.keyCode == 123 || event.keyCode == 124) && !caretIn(event))
         guard !reserved, event.window?.firstResponder is PageView else { return false }
         if let passed = ContentView.passed, PageView.same(passed, event) {
             ContentView.passed = nil
@@ -790,6 +801,16 @@ struct ContentView: View {
         }
         ContentView.passed = event
         return true
+    }
+
+    /// Whether the caret is in something editable: the address field or a
+    /// panel's, or a text box on the page. The page's own word on typing
+    /// misses a click straight into a frame and never reaches into another
+    /// site's, such as an embedded comment box; the web view has an input
+    /// context while the caret is in something editable, in any frame.
+    private func caretIn(_ event: NSEvent) -> Bool {
+        event.window?.firstResponder is NSTextView || browser.active?.typing == true
+            || browser.active?.built?.inputContext != nil
     }
 
     /// The keys of the top row, by where they sit rather than what they type.
@@ -815,6 +836,7 @@ struct ContentView: View {
                 return true
             }
             if browser.makingSpace {
+                browser.cancelSpaceCreation()
                 withAnimation(Motion.glide) { browser.makingSpace = false }
                 return true
             }
@@ -904,7 +926,14 @@ struct ContentView: View {
         guard flags.contains(.command) else { return false }
         let shifted = flags.contains(.shift)
 
-        // Anything with ⌥ or ⌃ on top is somebody else's.
+        if flags.contains(.option), !shifted, !flags.contains(.control),
+           event.characters(byApplyingModifiers: [])?.lowercased() == "r" {
+            if pageFirst(event, key: "r", shifted: false) { return false }
+            browser.reload(fromOrigin: true)
+            return true
+        }
+
+        // Other shortcuts with ⌥ or ⌃ on top are somebody else's.
         guard !flags.contains(.option), !flags.contains(.control) else { return false }
 
         // ⌘1 through ⌘9, and ⌘0, by the key rather than the character it
@@ -918,6 +947,12 @@ struct ContentView: View {
             } else {
                 browser.select(index: number == 9 ? browser.tabs.count - 1 : number - 1)
             }
+            return true
+        }
+
+        // Keep the clearing controls reachable from a focused page editor.
+        if shifted, event.keyCode == 51 {
+            browser.recallMode = .clearing
             return true
         }
 
@@ -1015,9 +1050,7 @@ struct ContentView: View {
         default:
             // Moving or selecting text belongs to the editor, not the page's
             // history — in web forms and in the browser's own fields alike.
-            guard !shifted, browser.active?.typing != true,
-                  !(event.window?.firstResponder is NSTextView)
-            else { return false }
+            guard !shifted, !caretIn(event) else { return false }
             // ⌘← and ⌘→, for hands that never learned the brackets.
             if event.keyCode == 123 { browser.back(); return true }
             if event.keyCode == 124 { browser.forward(); return true }

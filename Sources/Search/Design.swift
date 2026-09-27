@@ -143,10 +143,26 @@ enum Metrics {
 // One spring for anything that moves between two places, one for anything that
 // arrives or leaves. Using the same two everywhere is most of why a thing feels
 // like a single piece of software rather than a pile of views.
+// When macOS Reduce Motion is on in System Settings, transitions become
+// immediate so the interface does not jump or slide.
 enum Motion {
-    static let glide = Animation.spring(response: 0.34, dampingFraction: 0.82)
-    static let settle = Animation.spring(response: 0.30, dampingFraction: 0.86)
-    static let quick = Animation.easeOut(duration: 0.14)
+    /// Whether interface transitions should be immediate, following the
+    /// Mac's own accessibility setting.
+    static var reduced: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    static var glide: Animation? {
+        reduced ? nil : .spring(response: 0.34, dampingFraction: 0.82)
+    }
+
+    static var settle: Animation? {
+        reduced ? nil : .spring(response: 0.30, dampingFraction: 0.86)
+    }
+
+    static var quick: Animation? {
+        reduced ? nil : .easeOut(duration: 0.14)
+    }
 }
 
 /// Search's mark — Drice's Subtract.svg, a pill with an S cut out of it,
@@ -237,6 +253,7 @@ struct Shake: GeometryEffect {
     }
 
     func effectValue(size: CGSize) -> ProjectionTransform {
+        guard !Motion.reduced else { return ProjectionTransform(.identity) }
         // Three there-and-backs, tapering to nothing, so it settles rather than
         // stopping mid-swing.
         let decay = 1 - travel

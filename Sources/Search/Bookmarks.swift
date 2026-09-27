@@ -148,16 +148,72 @@ final class Bookmarks: ObservableObject {
     }
 
     /// Another browser's, kept apart in a folder of that browser's name
-    /// unless there was nothing here yet.
-    func take(_ nodes: [Bookmark], from name: String) {
-        guard !nodes.isEmpty else { return }
+    /// unless there was nothing here yet. Bringing them in again adds only
+    /// what is new — a page already in the same place is left as it is, a
+    /// folder of the same name is gone into — and never takes away what
+    /// you have added or moved since. Returns how many pages came in, and
+    /// how many were already here.
+    @discardableResult
+    func take(_ nodes: [Bookmark], from name: String) -> (added: Int, already: Int) {
+        guard !nodes.isEmpty else { return (0, 0) }
+        var added = 0, already = 0
         if roots.isEmpty {
             roots = nodes
+            added = Bookmarks.count(nodes)
+            Store.settings.set(name, forKey: Bookmarks.topKey)
+        } else if intoTop(nodes, from: name) {
+            Bookmarks.merge(nodes, into: &roots, added: &added, already: &already)
         } else {
-            roots.removeAll { $0.isFolder && $0.title == name }
-            roots.append(.folder(name, nodes))
+            var kids = roots.first { $0.isFolder && $0.title == name }?.children ?? []
+            Bookmarks.merge(nodes, into: &kids, added: &added, already: &already)
+            if let at = roots.firstIndex(where: { $0.isFolder && $0.title == name }) {
+                roots[at].children = kids
+            } else {
+                roots.append(.folder(name, kids))
+            }
         }
         save()
+        return (added, already)
+    }
+
+    /// Which browser filled the empty top level, the first time.
+    private static let topKey = "bookmarks.top"
+
+    /// Whether this browser's bookmarks belong at the top level: it filled
+    /// it the first time — or, from before that was noted, most of its
+    /// pages are already there.
+    private func intoTop(_ nodes: [Bookmark], from name: String) -> Bool {
+        if let top = Store.settings.string(forKey: Bookmarks.topKey) { return top == name }
+        let theirs = Bookmarks.urls(nodes).map(\.absoluteString)
+        guard !theirs.isEmpty else { return false }
+        let ours = Set(Bookmarks.urls(roots).map(\.absoluteString))
+        let shared = theirs.filter { ours.contains($0) }.count
+        guard shared * 2 >= theirs.count else { return false }
+        Store.settings.set(name, forKey: Bookmarks.topKey)
+        return true
+    }
+
+    /// `incoming` into `nodes`, level by level: a folder into the folder of
+    /// the same name, a page only if the same address isn't already at
+    /// that level.
+    private static func merge(_ incoming: [Bookmark], into nodes: inout [Bookmark], added: inout Int, already: inout Int) {
+        for node in incoming {
+            if node.isFolder {
+                if let at = nodes.firstIndex(where: { $0.isFolder && $0.title == node.title }) {
+                    var kids = nodes[at].children ?? []
+                    merge(node.children ?? [], into: &kids, added: &added, already: &already)
+                    nodes[at].children = kids
+                } else {
+                    nodes.append(node)
+                    added += count([node])
+                }
+            } else if nodes.contains(where: { !$0.isFolder && $0.url == node.url }) {
+                already += 1
+            } else {
+                nodes.append(node)
+                added += 1
+            }
+        }
     }
 
     // MARK: - the file
@@ -183,7 +239,8 @@ final class Bookmarks: ObservableObject {
         return node
     }
 
-    /// A new title or address for one that is kept. chrome.bookmarks.update.
+    /// A new title or address for one that is kept. chrome.bookmarks.update,
+    /// and Rename… in the list's right-click menu.
     func update(_ id: Bookmark.ID, title: String?, url: String?) {
         func walk(_ nodes: inout [Bookmark]) -> Bool {
             for i in nodes.indices {
@@ -236,6 +293,7 @@ final class Bookmarks: ObservableObject {
 struct BookmarkOutline: View {
     @ObservedObject var bookmarks: Bookmarks
     let open: (URL) -> Void
+    let openInNewTab: (URL) -> Void
 
     @State private var expanded: Set<Bookmark.ID> = []
     @State private var dragging: Bookmark.ID?
@@ -256,14 +314,22 @@ struct BookmarkOutline: View {
             Row(
                 node: node,
                 depth: depth,
-                open: node.isFolder ? nil : { open(URL(string: node.url!)!) },
+                // An extension can write an address that does not parse,
+                // and the menu below already unwraps this the same way.
+                open: node.isFolder ? nil : { if let text = node.url, let url = URL(string: text) { open(url) } },
                 isOpen: expanded.contains(node.id),
                 dragging: dragging == node.id,
                 toggle: node.isFolder ? { toggle(node.id) } : nil,
                 moveTargets: Bookmarks.folders(bookmarks.roots).filter { !Bookmarks.holds($0.node.id, node) },
                 moveTo: { bookmarks.move(node.id, into: $0) },
+                rename: { rename(node) },
                 remove: { bookmarks.remove(node.id) }
             )
+            .overlay {
+                if let url = node.url.flatMap(URL.init(string:)) {
+                    MiddleClick { openInNewTab(url) }
+                }
+            }
             .onDrag {
                 dragging = node.id
                 return NSItemProvider(object: node.id.uuidString as NSString)
@@ -288,6 +354,16 @@ struct BookmarkOutline: View {
 
     private func toggle(_ id: Bookmark.ID) {
         if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
+
+    /// A name of your own for a bookmark or a folder, asked for the way a
+    /// space's is: the page's title is what a bookmark starts with, and a
+    /// folder brought in from another browser is called after it. The name
+    /// it has arrives in the field; an empty one changes nothing.
+    private func rename(_ node: Bookmark) {
+        Ask.name(node.isFolder ? "Rename Folder" : "Rename Bookmark", placeholder: node.title, initial: node.title, confirm: "Rename") {
+            bookmarks.update(node.id, title: $0, url: nil)
+        }
     }
 
     private func drop(_ providers: [NSItemProvider], into folderID: Bookmark.ID?) -> Bool {
@@ -333,6 +409,7 @@ struct BookmarkOutline: View {
         let toggle: (() -> Void)?
         let moveTargets: [(node: Bookmark, depth: Int)]
         let moveTo: (Bookmark.ID?) -> Void
+        let rename: () -> Void
         let remove: () -> Void
 
         @State private var hovering = false
@@ -379,6 +456,7 @@ struct BookmarkOutline: View {
                     Button("Open", action: open)
                     Divider()
                 }
+                Button("Rename…", action: rename)
                 Menu("Move to") {
                     Button("Top Level", action: { moveTo(nil) })
                     if !moveTargets.isEmpty {
@@ -415,6 +493,8 @@ struct BookmarksDropdown: View {
                 ScrollView {
                     BookmarkOutline(bookmarks: bookmarks) { url in
                         browser.pickBookmark(url)
+                    } openInNewTab: { url in
+                        browser.pickBookmark(url, inNewTab: true)
                     }
                     .padding(6)
                 }
@@ -479,6 +559,8 @@ struct BookmarksPanel: View {
                     Card {
                         BookmarkOutline(bookmarks: bookmarks) { url in
                             browser.pickBookmark(url)
+                        } openInNewTab: { url in
+                            browser.pickBookmark(url, inNewTab: true)
                         }
                         .padding(.horizontal, 6)
                         .padding(.vertical, 6)

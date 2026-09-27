@@ -333,6 +333,8 @@ final class Float {
             CATransaction.commit()
         }
 
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
         /// Everything reaches this layer.
         ///
         /// isMovableByWindowBackground never worked here: the window's whole

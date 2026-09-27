@@ -34,6 +34,9 @@ enum ExtensionNative {
             URL(fileURLWithPath: "/Library/Google/Chrome/NativeMessagingHosts"),
             URL(fileURLWithPath: "/Library/Application Support/Chromium/NativeMessagingHosts"),
             URL(fileURLWithPath: "/Library/Microsoft/Edge/NativeMessagingHosts"),
+            // Read last: a host of the same name that Chrome or the system knows comes first.
+            support.appendingPathComponent("Vivaldi/NativeMessagingHosts"),
+            support.appendingPathComponent("com.operasoftware.Opera/NativeMessagingHosts"),
         ]
     }
 

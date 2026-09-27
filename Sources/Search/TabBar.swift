@@ -541,10 +541,7 @@ private struct TabPill: View {
                 // says nothing about anything — it needs the width of a title
                 // to read as progress at all.
                 if !pinned && !compact && prefs.showsReading {
-                    Rectangle()
-                        .fill(Palette.ink.opacity(0.055))
-                        .frame(width: span * tab.reading)
-                        .animation(.easeOut(duration: 0.15), value: tab.reading)
+                    ReadingFill(meter: tab.meter, width: span)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -755,6 +752,27 @@ struct TabMenu: View {
         } else {
             Button("Change Letter") { browser.editLetter(tab) }
             Button("Unpin") { browser.unpin(tab) }
+        }
+        if browser.prefs.usesSpaces, !tab.bench,
+           tab.address.flatMap({ Browser.extensionHost(of: $0) }) == nil {
+            Menu("Move to Space") {
+                ForEach(browser.spaces.filter { $0.id != browser.spaceID }) { space in
+                    Button {
+                        browser.move(tab, toSpace: space.id)
+                    } label: {
+                        Label(space.name, systemImage: space.symbol)
+                    }
+                }
+                if browser.spaces.count > 1 { Divider() }
+                Button("New Space…") {
+                    browser.askForSpace { space in
+                        browser.move(tab, toSpace: space.id) {
+                            browser.switchSpace(to: space.id)
+                        }
+                    }
+                }
+            }
+            .help("Pages moved to a Space with different sign-ins reopen there.")
         }
         Divider()
         Button("Rename") { browser.beginTabRename(tab) }

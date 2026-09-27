@@ -150,6 +150,30 @@ enum Muter {
     }
 }
 
+/// How far down its page a tab is. Its own object, watched by the fill in
+/// the tab's pill alone: as part of the tab, every percent scrolled re-ran
+/// everything that watches the tab — the page's stage, the buttons, the
+/// row — two to four milliseconds of the window's time each, while WebKit
+/// needed that thread to put the scrolled page on screen.
+@MainActor
+final class Reading: ObservableObject {
+    @Published var value: Double = 0
+}
+
+/// The fill itself: the grey that grows from the left of the tab you are on
+/// as you read down its page, in a width it is given.
+struct ReadingFill: View {
+    @ObservedObject var meter: Reading
+    let width: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .fill(Palette.ink.opacity(0.055))
+            .frame(width: width * meter.value)
+            .animation(.easeOut(duration: 0.15), value: meter.value)
+    }
+}
+
 @MainActor
 final class Tab: ObservableObject, Identifiable {
     let id = UUID()
@@ -166,7 +190,8 @@ final class Tab: ObservableObject, Identifiable {
     /// The web view if there is one yet, for the callers that must not be
     /// the reason there is.
     private(set) var built: PageView?
-    private let configuration: WKWebViewConfiguration
+    private var configuration: WKWebViewConfiguration
+    let extensionReturn = ExtensionReturnNavigation()
 
     /// Whether its page was made with the extension controller in it — every
     /// ordinary tab, and a private one only when extensions were allowed
@@ -188,6 +213,17 @@ final class Tab: ObservableObject, Identifiable {
 
     @Published private(set) var title = ""
     @Published private(set) var address: URL?
+    /// The address of the page that is actually on screen. `address` moves
+    /// to where the tab is going as soon as a load starts, while the page
+    /// and its certificate are still the old one's: what is said about the
+    /// connection, and which passwords a sign-in box is offered, go by this
+    /// one, set when the new page has arrived.
+    @Published private(set) var committed: URL?
+    var pageAddress: URL? { committed ?? address }
+
+    func didCommit() {
+        if let url = built?.url, url.absoluteString != "about:blank" { committed = url }
+    }
     @Published private(set) var progress: Double = 0
     @Published private(set) var loading = false
     @Published private(set) var canGoBack = false
@@ -196,8 +232,13 @@ final class Tab: ObservableObject, Identifiable {
     /// connection. Shown in place of the page rather than in a dialog.
     @Published var failure: String?
     /// How far down the page you are, nought to one. The tab's own pill fills
-    /// with it.
-    @Published var reading: Double = 0
+    /// with it. Kept apart from the rest of the tab (see Reading): it changes
+    /// all the way down a page, and only the fill has any use for it.
+    let meter = Reading()
+    var reading: Double {
+        get { meter.value }
+        set { if meter.value != newValue { meter.value = newValue } }
+    }
 
     /// True while the page has been stripped back to its article.
     @Published private(set) var reader = false
@@ -486,6 +527,11 @@ final class Tab: ObservableObject, Identifiable {
                     guard fresh.absoluteString != "about:blank" else { return }
                     let moved = fresh.host() != self.address?.host()
                     self.address = fresh
+                    // Within the same origin — history.pushState, a fragment —
+                    // the page on screen is the one at the new address.
+                    if let now = self.committed, now.scheme == fresh.scheme, now.host() == fresh.host(), now.port == fresh.port {
+                        self.committed = fresh
+                    }
                     if moved { self.adoptIcon() }
                 }
             },
@@ -643,9 +689,9 @@ final class Tab: ObservableObject, Identifiable {
         // The host now, while the page is still the sign-in page: a moment
         // later it may be somewhere else entirely, and that is not where
         // the password belongs.
-        guard let host = address?.host()?.lowercased() else { return }
+        guard let host = pageAddress?.host()?.lowercased() else { return }
         let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-        sent = (bare, user, password, address?.scheme?.lowercased() == "http", Date())
+        sent = (bare, user, password, pageAddress?.scheme?.lowercased() == "http", Date())
     }
 
     /// The page has moved on — a new document has loaded, or the sign-in
@@ -816,6 +862,21 @@ final class Tab: ObservableObject, Identifiable {
         stale = false
         pull = nil
         discard()
+    }
+
+    /// A page moved to another space must use that space's cookies. WebKit
+    /// binds the store when the view is made, so keep its restorable state
+    /// and build the view again with the destination's store.
+    func rehome(in space: UUID) {
+        guard !shy, !bench, store !== Spaces.store(for: space) else { return }
+        if let built {
+            memory = built.isLoading ? nil : built.interactionState
+            pending = address ?? built.url
+            picture = nil
+            cover = nil
+            discard()
+        }
+        configuration = Web.configuration(space: space)
     }
 
     /// Whether the page holds something typed and not yet sent — a draft, a
@@ -1021,16 +1082,19 @@ final class Tab: ObservableObject, Identifiable {
         return there.absoluteString == "about:blank" && pending == nil && address != nil
     }
 
-    /// Again from the network. A view that has lost its document is given
-    /// the address back instead: there is nothing else for it to reload.
-    func reload() {
+    /// A view that has lost its document is given the address back instead:
+    /// there is nothing else for it to reload.
+    func reload(fromOrigin: Bool = false) {
         // A pin put down with ⌘W has no view left to reload; waking it is
         // the reload.
         guard !wake() else { return }
+        reader = false
         if hollow, let address {
             web.open(address)
-        } else {
+        } else if fromOrigin {
             web.reloadFromOrigin()
+        } else {
+            web.reload()
         }
     }
     func stop() { web.stopLoading() }
@@ -1191,6 +1255,11 @@ final class PageView: WKWebView {
     /// What extensions added to the right-click menu, at the end of it.
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
+        // WebKit names it for a window, but a new window's page arrives here
+        // as a new tab (Browser's createWebViewWith), so it says so.
+        if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierOpenLinkInNewWindow" }) {
+            item.title = "Open Link in New Tab"
+        }
         if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierSearchWeb" }),
            let name = searchName?() {
             webSearch = (item.target, item.action)

@@ -378,8 +378,22 @@ struct AddressField: NSViewRepresentable {
             case #selector(NSResponder.moveUp(_:)):
                 browser.walk(-1)
                 return true
+            case #selector(NSResponder.deleteWordBackward(_:)):
+                // ⌥⌫ over an offered ending lets go of it and takes the last
+                // word typed, as it does with no ending there. Left to the
+                // text view it would only take the selected ending.
+                deleting = true
+                let selected = textView.selectedRange()
+                guard browser.ending != nil, selected.length > 0,
+                      NSMaxRange(selected) == (textView.string as NSString).length
+                else { return false }
+                textView.delete(nil)
+                deleting = true
+                textView.deleteWordBackward(nil)
+                return true
             case #selector(NSResponder.deleteBackward(_:)),
-                 #selector(NSResponder.deleteForward(_:)):
+                 #selector(NSResponder.deleteForward(_:)),
+                 #selector(NSResponder.deleteWordForward(_:)):
                 deleting = true
                 return false
             default:
