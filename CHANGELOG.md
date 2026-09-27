@@ -52,6 +52,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- An external link brings Search to the front and restores its window if minimized in the Dock. (#95)
 - The Figma extension signs in. After the provider's Allow, an extension that watches its sign-in tab for its own chromiumapp.org address, as Chrome allows, now sees it and gets its answer; nothing is loaded from that address, and a tab left there says there is no site, as before.
 - With the tab bar folded away, the window can be moved from a thin band along its top edge, and filled with a double-click there, as with the sidebar folded away; there was nothing to take hold of until the bar came down.
 - A middle-click opens a link in a new tab on pages that stop the click on its way up, where it opened nothing; a page that takes the middle-click for itself still keeps it, as in Chrome.

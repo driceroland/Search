@@ -126,7 +126,9 @@ final class Links: NSObject, NSApplicationDelegate {
             // window is looked for among the app's own too: a reference that
             // lapsed opened a second, empty window behind the other app.
             if let window = window ?? browserWindow() {
+                if window.isMiniaturized { window.deminiaturize(nil) }
                 window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
             } else {
                 _ = NSApp.delegate?.applicationOpenUntitledFile?(NSApp)
             }
@@ -137,6 +139,11 @@ final class Links: NSObject, NSApplicationDelegate {
         waiting = []
         guard let first = early.first else { return }
         onceShown { [weak browser] in
+            if let window = window ?? browserWindow() {
+                if window.isMiniaturized { window.deminiaturize(nil) }
+                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
+            }
             browser?.arrive(first)
             comeForward()
             for (n, url) in early.dropFirst().enumerated() {
@@ -170,6 +177,7 @@ final class Links: NSObject, NSApplicationDelegate {
     /// macOS 14.
     @MainActor
     private static func comeForward() {
+        NSRunningApplication.current.activate(options: .activateIgnoringOtherApps)
         guard #available(macOS 14, *) else {
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -177,6 +185,7 @@ final class Links: NSObject, NSApplicationDelegate {
         NSApp.activate()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             guard !NSApp.isActive else { return }
+            NSRunningApplication.current.activate(options: .activateIgnoringOtherApps)
             NSApp.activate(ignoringOtherApps: true)
         }
     }
