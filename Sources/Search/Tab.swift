@@ -507,6 +507,11 @@ final class Tab: ObservableObject, Identifiable {
     /// what you were just reading is what you are most likely to want back.
     private(set) var touched = Date()
 
+    /// What was typed into this blank tab's field and not sent, kept while
+    /// another tab is in front: the field is one for every tab. Only ever in
+    /// memory, and gone once the tab goes somewhere or closes.
+    var draft = ""
+
     /// Set on a tab brought back from the last session and not yet opened. It
     /// has a name and an address in the row, and costs nothing until you go to
     /// it — which is the difference between a browser that starts in half a
@@ -900,6 +905,7 @@ final class Tab: ObservableObject, Identifiable {
         reader = false
         typing = false
         immersed = false
+        draft = ""
         // Sent somewhere new, a sleeping tab is simply awake again — with
         // nothing of where it was before to bring back.
         pending = nil

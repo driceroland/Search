@@ -344,7 +344,13 @@ struct AddressField: NSViewRepresentable {
                     .backgroundColor: NSColor(Palette.ink.opacity(0.12)),
                     .foregroundColor: Palette.NS.ink,
                 ]
-                editor.selectAll(nil)
+                // A draft come back to its blank tab is carried on, not typed
+                // over: the caret after it. An address ⌘L raises is selected whole.
+                if browser.active?.isBlank == true, !browser.typed.isEmpty {
+                    coordinator.select(from: browser.typed.count, in: field)
+                } else {
+                    editor.selectAll(nil)
+                }
             }
         }
     }
