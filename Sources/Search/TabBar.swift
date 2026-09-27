@@ -950,12 +950,14 @@ struct Carried: ViewModifier {
                             source = finished.source
                             switch finished.drop {
                             case .stage(let target, let onLeft):
+                                Tear.forget()
                                 withAnimation(Motion.settle) {
                                     self.carry = nil
                                     browser.pair(finished.source, with: target, onLeft: onLeft)
                                 }
                                 return
                             case .strip(let target):
+                                Tear.forget()
                                 withAnimation(Motion.settle) {
                                     self.carry = nil
                                     browser.dropTabIntoStrip(finished.source, before: target)
@@ -964,6 +966,7 @@ struct Carried: ViewModifier {
                                 else if finished.source.id == tab.id { onDrop?(value.location) }
                                 return
                             case .cancelled:
+                                Tear.forget()
                                 withAnimation(Motion.settle) { self.carry = nil }
                                 return
                             case .outside:
@@ -972,6 +975,7 @@ struct Carried: ViewModifier {
                         }
                         if let onDropTab, let source { onDropTab(source, value.location) }
                         else { onDrop?(value.location) }
+                        Tear.forget()
                         withAnimation(Motion.settle) {
                             self.carry = nil
                             if carry.to != index { move(carry.to) }
@@ -986,6 +990,7 @@ struct Carried: ViewModifier {
                 if carry?.out == true, let browser, let tab {
                     Tear.home(pill: browser.tabFrames[tab.id]?.width ?? Metrics.tabWidth)
                 }
+                Tear.forget()
                 withAnimation(Motion.settle) { carry = nil }
             }
     }
@@ -995,19 +1000,21 @@ struct Carried: ViewModifier {
     /// it is back in it. The pins never leave, nor the last tab of the only
     /// window (see Tear.can).
     private func follow() {
-        guard let tab, let browser, let carry, Tear.can(tab, leave: browser), let bar = browser.bar else { return }
+        guard let tab, let browser, let carry, let bar = browser.bar else { return }
         let point = NSEvent.mouseLocation
         // The pill's width, for the picture to grow out of and shrink back
         // into a pill that size.
         let pill = browser.tabFrames[tab.id]?.width ?? Metrics.tabWidth
         if carry.out {
+            // Out, it follows the hand whatever has changed meanwhile; where
+            // it can go is settled when it is let go (see Tear.end).
             if bar.contains(point) {
                 Tear.home(pill: pill)
                 withAnimation(Motion.settle) { self.carry?.out = false }
             } else {
                 Tear.move(to: point)
             }
-        } else if !bar.insetBy(dx: -12, dy: -12).contains(point) {
+        } else if Tear.can(tab, leave: browser), !bar.insetBy(dx: -12, dy: -12).contains(point) {
             Tear.begin(tab, from: browser, at: point, pill: pill)
             withAnimation(Motion.settle) { self.carry?.out = true }
         }

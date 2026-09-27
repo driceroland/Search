@@ -121,6 +121,12 @@ enum Tear {
         }
     }
 
+    /// The drag is over without the tab having left: the page's picture
+    /// kept for it is let go, so the next drag takes a fresh one.
+    static func forget() {
+        kept = nil
+    }
+
     /// Back over its own row: the picture shrinks into a pill `pill` wide
     /// under the hand, and the drag carries on as a reorder.
     static func home(pill: CGFloat) {
@@ -142,13 +148,15 @@ enum Tear {
         guard let tab, let source else { return }
         let destination = self.destination
         let place = destination?.arrival
-        self.tab = nil
-        self.source = nil
-        self.destination = nil
         kept = nil
         // Once the drag has let go, not inside it: the row is about to lose
-        // a tab the gesture is still attached to.
+        // a tab the gesture is still attached to. The tab stays known until
+        // then, so the row it is over keeps drawing it under the hand
+        // rather than blinking it out for the turn in between.
         DispatchQueue.main.async {
+            self.tab = nil
+            self.source = nil
+            self.destination = nil
             if let destination, let place {
                 withAnimation(Motion.settle) {
                     destination.arrival = nil

@@ -10,3 +10,5 @@ build/
 *.provisionprofile
 *.p12
 *.mobileprovision
+config.bat
+node_modules
