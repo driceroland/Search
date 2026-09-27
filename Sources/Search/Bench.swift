@@ -1913,6 +1913,9 @@ final class Bench {
                 }
             }
 
+        case "split":
+            splitCommand(request, browser: browser, answer)
+
         case "ui":
             // Open or close the app's own panels, to reproduce what a person
             // did without a person.
@@ -1967,9 +1970,267 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file",
             ]])
         }
+    }
+
+    /// A small model bridge for offline split regressions. The browser model is
+    /// the system under test; this command is deliberately unavailable in the
+    /// browser somebody is using because its actions move and close tabs.
+    private func splitCommand(
+        _ request: [String: Any],
+        browser: Browser,
+        _ answer: @escaping ([String: Any]) -> Void
+    ) {
+        guard Store.testing else {
+            answer(["error": "split only works on a --test run"])
+            return
+        }
+
+        func reply(_ extra: [String: Any] = [:]) {
+            answer(splitState(browser).merging(extra) { _, new in new })
+        }
+        func tab(_ field: String = "id") -> Tab? {
+            guard let id = request[field] as? String else { return nil }
+            return find(["id": id], in: browser)
+        }
+
+        switch request["action"] as? String ?? "state" {
+        case "state":
+            reply()
+
+        case "enabled":
+            guard let on = request["on"] as? Bool else { answer(["error": "split enabled needs on"]); return }
+            browser.prefs.splitView = on
+            reply()
+
+        case "group":
+            guard let page = tab() else { answer(["error": "split group needs id"]); return }
+            if let id = (request["group"] as? String).flatMap(UUID.init) {
+                browser.move(page, toGroup: id)
+            } else if request["group"] as? String == "none" {
+                browser.move(page, toGroup: nil)
+            } else {
+                _ = browser.addTabGroup(containing: page)
+            }
+            reply()
+
+        case "collapse":
+            guard let id = (request["group"] as? String).flatMap(UUID.init) else {
+                answer(["error": "split collapse needs group UUID"]); return
+            }
+            browser.toggleTabGroup(id)
+            reply()
+
+        case "step":
+            browser.step(request["direction"] as? Int ?? 1)
+            reply()
+
+        case "moveSpace":
+            guard let page = tab(), let id = (request["spaceID"] as? String).flatMap(UUID.init) else {
+                answer(["error": "split moveSpace needs id and spaceID"]); return
+            }
+            browser.move(page, toSpace: id) { reply() }
+
+        case "moveWindow":
+            guard let page = tab() else { answer(["error": "split moveWindow needs id"]); return }
+            let target = (request["targetWindow"] as? Int).flatMap { n in
+                Browsers.all.indices.contains(n - 1) ? Browsers.all[n - 1] : nil
+            }
+            browser.moveToWindow(page, target)
+            reply(["windows": Browsers.all.count])
+
+        case "rows":
+            reply(["rows": browser.allRows().mapValues { row in
+                ["tabs": row.tabs.count, "splits": row.splits.count, "active": row.active] as [String: Any]
+            }])
+
+        case "mouse":
+            guard let window = browser.window,
+                  let points = request["points"] as? [[Double]], points.count >= 2,
+                  points.allSatisfy({ $0.count == 2 }) else {
+                answer(["error": "split mouse needs two or more [x,y] window points"]); return
+            }
+            for (index, coordinates) in points.enumerated() {
+                let type: NSEvent.EventType = index == 0 ? .leftMouseDown
+                    : index == points.count - 1 ? .leftMouseUp : .leftMouseDragged
+                let point = NSPoint(x: coordinates[0], y: Double(window.frame.height) - coordinates[1])
+                guard let event = NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: index, clickCount: 1,
+                    pressure: type == .leftMouseUp ? 0 : 1
+                ) else { continue }
+                NSApp.postEvent(event, atStart: false)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { reply() }
+
+        case "open":
+            guard let url = (request["url"] as? String).flatMap(URL.init(string:)) else {
+                answer(["error": "split open needs a URL"])
+                return
+            }
+            let source = request["from"] == nil ? browser.active : tab("from")
+            let page = browser.open(url, foreground: request["foreground"] as? Bool ?? true,
+                                    atEnd: request["atEnd"] as? Bool ?? false, from: source)
+            reply(["resultID": Bench.short(page)])
+
+        case "private":
+            browser.newShyTab()
+            reply()
+
+        case "bench":
+            guard let url = (request["url"] as? String).flatMap(URL.init(string:)) else {
+                answer(["error": "split bench needs a URL"])
+                return
+            }
+            let page = browser.benchOpen(url)
+            house(page)
+            reply(["resultID": Bench.short(page)])
+
+        case "start":
+            browser.startSplit()
+            reply()
+
+        case "pair":
+            guard let dragged = tab(), let target = tab("with") else {
+                answer(["error": "split pair needs id and with"])
+                return
+            }
+            let side = request["side"] as? String ?? "left"
+            guard side == "left" || side == "right" else {
+                answer(["error": "split pair side must be left or right"])
+                return
+            }
+            browser.pair(dragged, with: target, onLeft: side == "left")
+            reply()
+
+        case "focus", "select":
+            guard let page = tab() else { answer(["error": "split focus needs id"]); return }
+            if request["action"] as? String == "select" { browser.select(page) }
+            else { browser.focusPane(page) }
+            reply()
+
+        case "detach":
+            guard let page = tab() else { answer(["error": "split detach needs id"]); return }
+            browser.detachSplit(page)
+            reply()
+
+        case "fraction":
+            guard let pair = request["split"] as? String,
+                  let id = UUID(uuidString: pair),
+                  let fraction = request["fraction"] as? Double
+            else { answer(["error": "split fraction needs split UUID and fraction"]); return }
+            browser.setSplitFraction(id, fraction: fraction)
+            reply()
+
+        case "close":
+            guard let page = tab() else { answer(["error": "split close needs id"]); return }
+            browser.close(page)
+            reply()
+
+        case "newTab":
+            browser.newTab()
+            reply()
+
+        case "reopen":
+            browser.reopen()
+            reply()
+
+        case "insert":
+            guard let url = (request["url"] as? String).flatMap(URL.init(string:)),
+                  let index = request["index"] as? Int
+            else { answer(["error": "split insert needs URL and index"]); return }
+            let page = Tab()
+            browser.prepare(page)
+            browser.insert(page, at: index)
+            page.go(to: url)
+            reply(["resultID": Bench.short(page)])
+
+        case "move":
+            guard let page = tab(), let index = request["to"] as? Int else {
+                answer(["error": "split move needs id and to"])
+                return
+            }
+            browser.move(page, to: index)
+            reply()
+
+        case "drop":
+            guard let page = tab() else { answer(["error": "split drop needs id"]); return }
+            browser.dropTabIntoStrip(page, before: tab("before"))
+            reply()
+
+        case "space":
+            switch request["spaceAction"] as? String {
+            case "new": browser.addSpace(named: request["name"] as? String ?? "Split test")
+            case "go":
+                guard let id = (request["spaceID"] as? String).flatMap(UUID.init) else {
+                    answer(["error": "split space go needs a UUID"])
+                    return
+                }
+                browser.switchSpace(to: id)
+            default:
+                answer(["error": "split space action must be new or go"])
+                return
+            }
+            reply()
+
+        case "sleep":
+            guard let page = tab() else { answer(["error": "split sleep needs id"]); return }
+            browser.sleep(page) { result in reply(["sleepResult": result]) }
+
+        case "save":
+            browser.writeSession(now: true)
+            reply()
+
+        default:
+            answer(["error": "unknown split action"])
+        }
+    }
+
+    private func splitState(_ browser: Browser) -> [String: Any] {
+        func short(_ id: UUID?) -> Any {
+            guard let id, let tab = browser.tabs.first(where: { $0.id == id }) else { return NSNull() }
+            return Bench.short(tab)
+        }
+        return [
+            "tabs": browser.tabs.map { tab in
+                [
+                    "id": Bench.short(tab),
+                    "title": tab.title,
+                    "url": tab.address?.absoluteString ?? "",
+                    "blank": tab.isBlank,
+                    "shy": tab.shy,
+                    "bench": tab.bench,
+                    "asleep": tab.asleep,
+                    "awakeReason": browser.awake(because: tab) ?? "",
+                ] as [String: Any]
+            },
+            "splits": browser.splits.map { pair in
+                [
+                    "id": pair.id.uuidString,
+                    "left": short(pair.left),
+                    "right": short(pair.right),
+                    "fraction": pair.fraction,
+                ] as [String: Any]
+            },
+            "activeID": short(browser.activeID),
+            "displayedIDs": browser.displayedTabs.map { Bench.short($0) },
+            "visibleIDs": browser.tabs.filter { browser.visibleTabIDs.contains($0.id) }.map { Bench.short($0) },
+            "shownIDs": browser.shownTabs.map { Bench.short($0) },
+            "groups": browser.tabGroups.map { ["id": $0.id.uuidString, "collapsed": $0.collapsed] as [String: Any] },
+            "groupIDs": browser.tabs.map { $0.groupID?.uuidString ?? "" },
+            "enabled": browser.prefs.splitView,
+            "paneFrames": browser.tabs.compactMap { tab -> [String: Any]? in
+                guard let web = tab.built, let window = browser.window, web.window === window else { return nil }
+                let frame = web.convert(web.bounds, to: nil)
+                return ["id": Bench.short(tab), "x": Double(frame.minX),
+                        "y": Double(window.frame.height - frame.maxY),
+                        "width": Double(frame.width), "height": Double(frame.height)]
+            },
+            "spaceID": browser.spaceID.uuidString,
+            "spaceIDs": browser.spaces.map { $0.id.uuidString },
+        ]
     }
 
     /// Extensions, from the shell. Installing asks as it always does, except

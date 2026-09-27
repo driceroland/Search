@@ -284,6 +284,10 @@ final class Preferences: ObservableObject {
     @Published var usesTabGroups: Bool {
         didSet { store.set(usesTabGroups, forKey: "tabs.groups") }
     }
+    /// Two pages share one place in the tab row. Off unless asked for.
+    @Published var splitView: Bool {
+        didSet { store.set(splitView, forKey: "splitView") }
+    }
     /// "settings", "new tab" and the like, typed alone in the address field,
     /// reach that part of the app instead of asking a search engine for the
     /// word (see AddressCommands.swift). Off unless asked for.
@@ -362,6 +366,7 @@ final class Preferences: ObservableObject {
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
         usesTabGroups = store.bool(forKey: "tabs.groups")
+        splitView = store.bool(forKey: "splitView")
         commandBar = store.bool(forKey: "commandbar")
         let history = store.bool(forKey: "swipe.history")
         holdsHistory = history

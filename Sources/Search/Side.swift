@@ -90,7 +90,14 @@ struct SideBar: View {
         // Rows on their way to or from another space stay in the column.
         .clipped()
         .onAppear { SpaceSwipe.shared.start(for: browser) }
-        .background(landing ? Palette.hover : Palette.ground)
+        .background {
+            ZStack {
+                landing ? Palette.hover : Palette.ground
+                if prefs.splitView {
+                    SplitDropZone(browser: browser, tab: nil, kind: .strip)
+                }
+            }
+        }
         .overlay(alignment: innerEdge) {
             Rectangle().fill(Palette.hairline).frame(width: 1)
         }
@@ -208,10 +215,13 @@ struct SideBar: View {
                             // ⇧⌘], a link opening beside the one on screen.
                             .onChange(of: browser.activeID) { _, id in
                                 guard let id else { return }
-                                withAnimation(Motion.glide) { proxy.scrollTo(id) }
+                                let representative = browser.activeSplit?.left ?? id
+                                withAnimation(Motion.glide) { proxy.scrollTo(representative) }
                             }
                             .onAppear {
-                                if let id = browser.activeID { proxy.scrollTo(id, anchor: .center) }
+                                if let id = browser.activeID {
+                                    proxy.scrollTo(browser.activeSplit?.left ?? id, anchor: .center)
+                                }
                             }
                         }
                     }
@@ -229,7 +239,9 @@ struct SideBar: View {
     /// it is the one on screen.
     private func preview(_ row: Parked, pill: Namespace.ID) -> some View {
         let pins = row.tabs.filter { $0.pin != nil }
-        let rest = row.tabs.filter { $0.pin == nil }
+        let rest = row.tabs.filter { tab in
+            tab.pin == nil && (!prefs.splitView || !row.splits.contains(where: { $0.right == tab.id }))
+        }
         let cells = pinCells(pins.count)
         return VStack(alignment: .leading, spacing: 0) {
             if !pins.isEmpty {
@@ -245,7 +257,8 @@ struct SideBar: View {
             }
             VStack(spacing: SideBar.gap) {
                 ForEach(rest) { tab in
-                    SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active, pill: pill, close: {})
+                    rowItem(tab, tabs: row.tabs, splits: row.splits, activeID: row.active,
+                            interactive: false, pill: pill, close: {})
                 }
             }
             newTab
@@ -257,21 +270,48 @@ struct SideBar: View {
     /// from what was drawn rather than measured: a measurement would arrive a
     /// frame late, and for one frame the whole column would drag the window.
     private var rowsEnd: CGFloat {
-        let pins = browser.pinnedCount
+        let displayed = browser.displayedTabs
+        let pins = displayed.filter { $0.pin != nil }.count
         let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + 10
         let count = prefs.usesTabGroups
-            ? browser.tabs(in: nil).count + browser.tabGroups.reduce(0) { $0 + browser.visibleTabs(in: $1).count }
-            : browser.tabs.count - pins
+            ? displayed.filter { $0.pin == nil && browser.group(of: $0) == nil }.count
+                + browser.tabGroups.reduce(0) { $0 + browser.visibleTabs(in: $1).count }
+            : displayed.count - pins
         let headings = prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) * (GroupHeading.height + SideBar.gap) : 0
         let loose = CGFloat(count) * (SideBar.row + SideBar.gap) + headings
         return Metrics.strip + pinBlock + loose + SideBar.row + 8
     }
 
+    @ViewBuilder
+    private func rowItem(
+        _ tab: Tab,
+        tabs: [Tab],
+        splits: [TabSplit],
+        activeID: Tab.ID?,
+        interactive: Bool,
+        pill: Namespace.ID,
+        close: @escaping () -> Void
+    ) -> some View {
+        let pair = prefs.splitView ? splits.first(where: { $0.left == tab.id }) : nil
+        if let pair, let right = tabs.first(where: { $0.id == pair.right }) {
+            SplitTabItem(browser: browser, prefs: prefs, left: tab, right: right,
+                         width: nil, height: SideBar.row,
+                         live: activeID.map { pair.contains($0) } ?? false,
+                         focusedID: activeID,
+                         interactive: interactive)
+                .frame(maxWidth: .infinity)
+        } else {
+            SideRow(browser: browser, prefs: prefs, tab: tab,
+                    live: tab.id == activeID, pill: pill, close: close,
+                    interactive: interactive)
+        }
+    }
+
     // MARK: - the pinned squares
 
-    private var pinnedTabs: [Tab] { browser.tabs.filter { $0.pin != nil } }
+    private var pinnedTabs: [Tab] { browser.displayedTabs.filter { $0.pin != nil } }
     private var looseTabs: [Tab] {
-        browser.tabs.filter { $0.pin == nil && (!prefs.usesTabGroups || browser.group(of: $0) == nil) }
+        browser.displayedTabs.filter { $0.pin == nil && (!prefs.usesTabGroups || browser.group(of: $0) == nil) }
     }
 
     /// How many squares go in each row: at most four — fewer only when the
@@ -411,23 +451,18 @@ struct SideBar: View {
             // the row's, so a row that has just moved keeps its bearings.
             ForEach(Array(looseTabs.enumerated()), id: \.element.id) { index, tab in
                 let step = SideBar.row + SideBar.gap
-                SideRow(
-                    browser: browser,
-                    prefs: prefs,
-                    tab: tab,
-                    live: tab.id == browser.activeID,
-                    pill: pill,
-                    close: { browser.close(tab) }
-                )
+                rowItem(tab, tabs: browser.tabs, splits: browser.splits,
+                        activeID: browser.activeID, interactive: true, pill: pill,
+                        close: { browser.close(tab) })
                 // Positions here are among the loose rows; the pinned block
                 // sits in front of them in the real list.
                 .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true,
-                                  space: "rows", onDrop: { point in drop(tab, at: point) },
-                                  outside: { browser.dragOut(tab) }) {
+                                  space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                                  outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
                     if prefs.usesTabGroups {
                         browser.move(tab, within: nil, to: $0)
                     } else {
-                        browser.move(tab, to: $0 + browser.pinnedCount)
+                        browser.moveDisplayedTab(tab, to: $0 + browser.pinnedCount)
                     }
                 })
             }
@@ -447,14 +482,14 @@ struct SideBar: View {
         let members = browser.visibleTabs(in: group)
         return VStack(spacing: SideBar.gap) {
             ForEach(Array(members.enumerated()), id: \.element.id) { index, tab in
-                SideRow(browser: browser, prefs: prefs, tab: tab,
-                        live: tab.id == browser.activeID, pill: pill,
+                rowItem(tab, tabs: browser.tabs, splits: browser.splits,
+                        activeID: browser.activeID, interactive: true, pill: pill,
                         close: { browser.close(tab) })
                     .padding(.leading, 14)
                     .modifier(Carried(index: index, count: members.count,
                                       step: SideBar.row + SideBar.gap, vertical: true,
-                                      space: "rows", onDrop: { point in drop(tab, at: point) },
-                                      outside: { browser.dragOut(tab) }) {
+                                      space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                                      outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
                         browser.move(tab, within: group.id, to: $0)
                     })
             }
@@ -585,6 +620,7 @@ private struct SideRow: View {
     let live: Bool
     let pill: Namespace.ID
     let close: () -> Void
+    var interactive = true
 
     @State private var hovering = false
     @State private var shake: CGFloat = 0
@@ -689,11 +725,17 @@ private struct SideRow: View {
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
+            guard interactive else { return }
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })
-        .overlay { MiddleClick(act: close) }
+        .overlay { if interactive { MiddleClick(act: close) } }
         .onHover { hovering = $0 }
-        .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
+        .contextMenu { if interactive { TabMenu(browser: browser, tab: tab, close: close) } }
+        .background {
+            if interactive && prefs.splitView {
+                SplitDropZone(browser: browser, tab: tab, kind: .strip)
+            }
+        }
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)
         .onChange(of: browser.refusals) { _, _ in

@@ -22,6 +22,7 @@ It was built by a design studio that spends its whole day in a browser and was t
 
 - **One field.** Type an address and you go there; type words and you search. It finishes addresses from your own history and never sends what you type anywhere until you press Return.
 - **Tabs that stay out of the way.** Pin the pages you keep open all day and they shrink to a letter or their icon. Tabs from your last session come back instantly and cost nothing until you click them. `⌘K` lists your open tabs by name.
+- **Two pages side by side.** Turn on Split View in Settings › Tabs, then drag a tab onto a page or choose Tabs › Split Current Page. Drag the divider to resize the panes; the outlined pane receives page commands. Pairs and their widths come back with their Space, including after a restart.
 - **Reading mode.** `⇧⌘R` strips a page down to the article.
 - **Hide anything, for good.** `⇧⌘H`, then click a cookie banner, a newsletter overlay, a rail of "related" nonsense — it goes, and it is still gone on that site next time, before the page has drawn a single frame.
 - **An ad blocker that runs before the page.** Third-party trackers and ad networks are stopped at the network level, so there is nothing to render and nothing to slow down. On by default, off per site if something breaks.
@@ -67,6 +68,8 @@ Apps you allow in System Settings › Privacy & Security › Automation can read
 
 `⌃Tab` and `⌃⇧Tab` walk along the row of tabs; `Tab` stays the page's, for moving through a form. `esc` puts away whatever is open.
 
+With Split View on, `⌃⌘S` splits the current page and `⌃⌘→` focuses the other pane. `⌘W` closes the focused tab and gives the remaining page the whole area. Tabs › Separate Split Tabs keeps both tabs open separately.
+
 ---
 
 ## For developers
@@ -110,6 +113,8 @@ Turn on **Settings › General › Let a script drive Search** and the running a
 ```
 
 Bench tabs are never selected for you, never enter the session or the history, and go when the script says so. It is how this browser is tested while somebody is using it.
+
+`python3 tests/split_view.py` builds and runs Split View regressions in a separate test app, with its own settings, session and local page fixtures. Add `--interactive` to leave that test app open for checking the divider, focus and tab dragging by hand.
 
 ### Contributing
 

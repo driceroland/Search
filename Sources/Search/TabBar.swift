@@ -65,7 +65,7 @@ struct TabBar: View {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: Metrics.tabGap) {
                                         if browser.prefs.usesTabGroups {
-                                            let pins = browser.tabs.filter { $0.pin != nil }
+                                            let pins = browser.displayedTabs.filter { $0.pin != nil }
                                             ForEach(Array(pins.enumerated()), id: \.element.id) { index, tab in
                                                 topTab(tab, index: index, count: pins.count,
                                                        group: nil, strip: geo.size.width)
@@ -79,14 +79,14 @@ struct TabBar: View {
                                                            group: group.id, strip: geo.size.width)
                                                 }
                                             }
-                                            let ungrouped = browser.tabs(in: nil)
+                                            let ungrouped = browser.displayedTabs.filter { $0.pin == nil && browser.group(of: $0) == nil }
                                             ForEach(Array(ungrouped.enumerated()), id: \.element.id) { index, tab in
                                                 topTab(tab, index: index, count: ungrouped.count,
                                                        group: nil, strip: geo.size.width)
                                             }
                                         } else {
-                                            ForEach(Array(browser.tabs.enumerated()), id: \.element.id) { index, tab in
-                                                topTab(tab, index: index, count: browser.tabs.count,
+                                            ForEach(Array(browser.displayedTabs.enumerated()), id: \.element.id) { index, tab in
+                                                topTab(tab, index: index, count: browser.displayedTabs.count,
                                                        group: nil, strip: geo.size.width)
                                             }
                                         }
@@ -175,7 +175,14 @@ struct TabBar: View {
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
             browser.take(providers)
         }
-        .background(landing ? Palette.hover : .clear)
+        .background {
+            ZStack {
+                landing ? Palette.hover : Color.clear
+                if browser.prefs.splitView {
+                    SplitDropZone(browser: browser, tab: nil, kind: .strip)
+                }
+            }
+        }
         .animation(Motion.quick, value: landing)
         .animation(Motion.glide, value: browser.activeID)
         // The row makes room for the field on the same spring as everything
@@ -207,21 +214,15 @@ struct TabBar: View {
         } else {
             let space = browser.spaces[index]
             let row = space.id == browser.spaceID
-                ? Parked(tabs: browser.tabs, active: browser.activeID)
+                ? Parked(tabs: browser.tabs, active: browser.activeID, splits: browser.splits)
                 : browser.parked[space.id] ?? Parked(tabs: [], active: nil)
-            let each = width(in: strip, pinned: row.tabs.filter { $0.pin != nil }.count, count: row.tabs.count)
+            let shown = rowTabs(row.tabs, splits: row.splits)
+            let each = width(in: strip, tabs: shown, splits: row.splits)
             HStack(spacing: Metrics.tabGap) {
-                ForEach(row.tabs) { tab in
-                    TabPill(
-                        browser: browser,
-                        prefs: browser.prefs,
-                        tab: tab,
-                        live: tab.id == row.active,
-                        width: each,
-                        room: strip - Metrics.lights - 12,
-                        pill: pill,
-                        close: {}
-                    )
+                ForEach(shown) { tab in
+                    rowItem(tab, in: row.tabs, splits: row.splits, activeID: row.active,
+                            width: each, room: strip - Metrics.lights - 12,
+                            height: Metrics.strip, interactive: false, pill: pill)
                 }
             }
             .frame(height: Metrics.strip)
@@ -233,7 +234,13 @@ struct TabBar: View {
     /// when the window first shows it, on the strip's spring when you pick
     /// another. A turn of the run loop later, so the run has been laid out.
     private func reveal(_ reader: ScrollViewProxy, in strip: CGFloat, gliding: Bool = false) {
-        guard overflowing(in: strip), let id = browser.activeID else { return }
+        guard overflowing(in: strip), let activeID = browser.activeID else { return }
+        let id: Tab.ID
+        if browser.prefs.splitView, let active = browser.tabs.first(where: { $0.id == activeID }) {
+            id = browser.split(for: active)?.left ?? activeID
+        } else {
+            id = activeID
+        }
         DispatchQueue.main.async {
             if gliding {
                 withAnimation(Motion.glide) { reader.scrollTo(id) }
@@ -244,21 +251,57 @@ struct TabBar: View {
     }
 
     private func topTab(_ tab: Tab, index: Int, count: Int, group: UUID?, strip: CGFloat) -> some View {
-        let step = (tab.pin != nil ? Metrics.pinWidth : width(in: strip)) + Metrics.tabGap
-        return TabPill(browser: browser, prefs: browser.prefs, tab: tab,
-                       live: tab.id == browser.activeID, width: width(in: strip),
-                       room: strip - Metrics.lights - leading - 12, pill: pill,
-                       close: { browser.close(tab) })
+        let pair = browser.prefs.splitView ? browser.split(for: tab) : nil
+        let isPairRepresentative = pair?.left == tab.id
+        let itemWidth = isPairRepresentative ? splitItemWidth(base: width(in: strip)) : width(in: strip)
+        let step = (tab.pin != nil ? Metrics.pinWidth : itemWidth) + Metrics.tabGap
+        return rowItem(tab, in: browser.tabs, splits: browser.splits, activeID: browser.activeID,
+                       width: width(in: strip), room: strip - Metrics.lights - leading - 12,
+                       height: Metrics.strip, interactive: true, pill: pill)
+            .background {
+                if browser.prefs.splitView && !isPairRepresentative {
+                    SplitDropZone(browser: browser, tab: tab, kind: .strip)
+                }
+            }
             .modifier(Carried(index: index, count: count, step: step, vertical: false,
-                              space: "strip", onDrop: { point in drop(tab, at: point) },
-                              outside: { browser.dragOut(tab) }) {
+                              space: "strip", onDropTab: { source, point in drop(source, at: point) },
+                              outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
                 if browser.prefs.usesTabGroups && tab.pin == nil {
                     browser.move(tab, within: group, to: $0)
                 } else {
-                    browser.move(tab, to: $0)
+                    browser.moveDisplayedTab(tab, to: $0)
                 }
             })
             .id(tab.id)
+    }
+
+    @ViewBuilder
+    private func rowItem(
+        _ tab: Tab,
+        in tabs: [Tab],
+        splits: [TabSplit],
+        activeID: Tab.ID?,
+        width: CGFloat,
+        room: CGFloat,
+        height: CGFloat,
+        interactive: Bool,
+        pill: Namespace.ID
+    ) -> some View {
+        let pair = browser.prefs.splitView ? splits.first(where: { $0.left == tab.id }) : nil
+        if let pair, let right = tabs.first(where: { $0.id == pair.right }) {
+            let editingPair = browser.editingTab == tab.id || browser.editingTab == right.id
+            let pairedWidth = splitItemWidth(base: width)
+            let displayedWidth = interactive && editingPair ? min(340, room) : pairedWidth
+            SplitTabItem(browser: browser, prefs: browser.prefs, left: tab, right: right,
+                         width: displayedWidth, height: height,
+                         live: activeID.map { pair.contains($0) } ?? false,
+                         focusedID: activeID,
+                         interactive: interactive)
+        } else {
+            TabPill(browser: browser, prefs: browser.prefs, tab: tab,
+                    live: tab.id == activeID, width: width, room: room, pill: pill,
+                    close: interactive ? { browser.close(tab) } : {})
+        }
     }
 
     private func drop(_ tab: Tab, at point: CGPoint) {
@@ -282,18 +325,23 @@ struct TabBar: View {
     /// field's width for a tab being edited, which grows to take it.
     private func content(in strip: CGFloat) -> CGFloat {
         let each = width(in: strip)
-        let pinned = CGFloat(browser.pinnedCount)
-        let loose = browser.prefs.usesTabGroups
-            ? CGFloat(browser.tabs(in: nil).count + browser.tabGroups.reduce(0) { $0 + browser.visibleTabs(in: $1).count })
-            : CGFloat(browser.tabs.count) - pinned
+        let displayed = browser.displayedTabs
+        let pinned = CGFloat(displayed.filter { $0.pin != nil }.count)
+        let ungrouped = displayed.filter { $0.pin == nil && browser.group(of: $0) == nil }
+        let grouped = browser.tabGroups.flatMap { browser.visibleTabs(in: $0) }
+        let looseTabs = browser.prefs.usesTabGroups ? ungrouped + grouped : displayed.filter { $0.pin == nil }
+        let loose = CGFloat(looseTabs.count)
+        let extra = pairWidthExtra(in: looseTabs, base: each, splits: browser.splits)
         let headers = browser.prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) : 0
         let headingWidth = browser.prefs.usesTabGroups
             ? browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name) } : 0
         let shown = Int(pinned + loose + headers)
-        var total = pinned * Metrics.pinWidth + loose * each
+        var total = pinned * Metrics.pinWidth + loose * each + extra
             + headingWidth + CGFloat(max(0, shown - 1)) * Metrics.tabGap
         if let id = browser.editingTab, let tab = browser.tabs.first(where: { $0.id == id }) {
-            total += min(340, strip - Metrics.lights - leading - 12) - (tab.pin != nil ? Metrics.pinWidth : each)
+            let splitWidth = browser.prefs.splitView ? browser.split(for: tab).map { _ in splitItemWidth(base: each) } : nil
+            let oldWidth = splitWidth ?? (tab.pin != nil ? Metrics.pinWidth : each)
+            total += min(340, strip - Metrics.lights - leading - 12) - oldWidth
         }
         return total
     }
@@ -316,24 +364,51 @@ struct TabBar: View {
     /// mark and its air. Past that, the run scrolls. The pinned squares take
     /// their room off the top.
     private func width(in strip: CGFloat) -> CGFloat {
+        let displayed = browser.displayedTabs
+        let ungrouped = displayed.filter { $0.pin == nil && browser.group(of: $0) == nil }
+        let grouped = browser.prefs.usesTabGroups ? browser.tabGroups.flatMap { browser.visibleTabs(in: $0) } : []
+        let items = browser.prefs.usesTabGroups ? ungrouped + grouped : displayed
+        let pins = displayed.filter { $0.pin != nil }.count
         if browser.prefs.usesTabGroups {
-            let count = browser.tabs(in: nil).count + browser.tabGroups.reduce(0) { $0 + browser.visibleTabs(in: $1).count }
+            let count = items.count
             guard count > 0 else { return Metrics.tabWidth }
-            let spent = CGFloat(browser.pinnedCount) * Metrics.pinWidth
+            let extra = pairWidthExtra(in: items, base: Metrics.tabMinWidth, splits: browser.splits)
+            let spent = CGFloat(pins) * Metrics.pinWidth + extra
                 + browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name) }
-                + CGFloat(max(0, browser.pinnedCount + count + browser.tabGroups.count - 1)) * Metrics.tabGap
+                + CGFloat(max(0, pins + count + browser.tabGroups.count - 1)) * Metrics.tabGap
             return max(Metrics.tabMinWidth, min(Metrics.tabWidth, (room(in: strip) - spent) / CGFloat(count)))
         }
-        return width(in: strip, pinned: browser.pinnedCount, count: browser.tabs.count)
+        return width(in: strip, tabs: displayed, splits: browser.splits)
     }
 
-    private func width(in strip: CGFloat, pinned pins: Int, count: Int) -> CGFloat {
-        let pinned = CGFloat(pins)
-        let loose = CGFloat(count) - pinned
+    private func width(in strip: CGFloat, tabs: [Tab], splits: [TabSplit]) -> CGFloat {
+        let pinned = CGFloat(tabs.filter { $0.pin != nil }.count)
+        let looseTabs = tabs.filter { $0.pin == nil }
+        let loose = CGFloat(looseTabs.count)
         guard loose > 0 else { return Metrics.tabWidth }
+        let extra = pairWidthExtra(in: looseTabs, base: Metrics.tabMinWidth, splits: splits)
         let spent = pinned * Metrics.pinWidth
-            + CGFloat(max(0, count - 1)) * Metrics.tabGap
+            + extra + CGFloat(max(0, tabs.count - 1)) * Metrics.tabGap
         return max(Metrics.tabMinWidth, min(Metrics.tabWidth, (room(in: strip) - spent) / loose))
+    }
+
+    private func rowTabs(_ tabs: [Tab], splits: [TabSplit]) -> [Tab] {
+        guard browser.prefs.splitView else { return tabs }
+        let right = Set(splits.map(\.right))
+        return tabs.filter { !right.contains($0.id) }
+    }
+
+    private func splitItemWidth(base: CGFloat) -> CGFloat {
+        min(210, max(136, base * 1.55))
+    }
+
+    private func pairWidthExtra(in tabs: [Tab], base: CGFloat, splits: [TabSplit]) -> CGFloat {
+        guard browser.prefs.splitView else { return 0 }
+        let ids = Set(tabs.map(\.id))
+        return splits.reduce(CGFloat.zero) { total, pair in
+            guard pair.left != pair.right, ids.contains(pair.left) else { return total }
+            return total + splitItemWidth(base: base) - base
+        }
     }
 }
 
@@ -648,9 +723,13 @@ struct Carried: ViewModifier {
     /// keeps its bearings (see the sidebar's grid).
     let space: String
     var onDrop: ((CGPoint) -> Void)? = nil
+    /// A paired item can be picked up from either half; report that source.
+    var onDropTab: ((Tab, CGPoint) -> Void)? = nil
     /// Let go outside the window: true when the tab was taken elsewhere —
     /// another window, or a new one (see Browser.dragOut).
     var outside: (() -> Bool)? = nil
+    var browser: Browser? = nil
+    var tab: Tab? = nil
     let move: (Int) -> Void
 
     @State private var held = false
@@ -679,19 +758,49 @@ struct Carried: ViewModifier {
                             from = index
                         }
                         travel = vertical ? value.translation.height : value.translation.width
+                        if let browser, let tab, browser.prefs.splitView,
+                           TabDrag.shared.update(browser: browser, tab: tab,
+                                                 translation: value.translation) { return }
                         let target = min(max(0, from + Int((travel / step).rounded())), count - 1)
                         if target != index {
                             withAnimation(Motion.settle) { move(target) }
                         }
                     }
                     .onEnded { value in
-                        if outside?() != true { onDrop?(value.location) }
+                        if let browser, let tab, browser.prefs.splitView {
+                            let finished = TabDrag.shared.finish(browser: browser, tab: tab)
+                            let source = finished.source
+                            switch finished.drop {
+                            case .stage(let target, let onLeft):
+                                browser.pair(source, with: target, onLeft: onLeft)
+                            case .strip(let target):
+                                browser.dropTabIntoStrip(source, before: target)
+                                if let onDropTab { onDropTab(source, value.location) }
+                                else if source.id == tab.id { onDrop?(value.location) }
+                            case .outside:
+                                if !browser.dragOut(source, at: finished.point) {
+                                    if let onDropTab { onDropTab(source, value.location) }
+                                    else if source.id == tab.id { onDrop?(value.location) }
+                                }
+                            case .cancelled:
+                                move(from)
+                            }
+                        } else if outside?() != true {
+                            if let onDropTab, let tab { onDropTab(tab, value.location) }
+                            else { onDrop?(value.location) }
+                        }
                         withAnimation(Motion.settle) {
                             held = false
                             travel = 0
                         }
                     }
             )
+            .onReceive(TabDrag.shared.$cancelledID) { id in
+                guard id == tab?.id, held else { return }
+                move(from)
+                held = false
+                travel = 0
+            }
     }
 }
 
@@ -853,6 +962,17 @@ struct TabMenu: View {
                 }
             }
             .help("Pages moved to a Space with different sign-ins reopen there.")
+        }
+        if browser.prefs.splitView {
+            if browser.split(for: tab) != nil {
+                Button("Separate Split Tabs") { browser.detachSplit(tab) }
+            } else {
+                Button("Split View") {
+                    browser.select(tab)
+                    browser.startSplit()
+                }
+                .disabled(tab.bench)
+            }
         }
         if tab.pin == nil, !tab.bench {
             // Another window, or a new one (see Browser.moveToWindow).

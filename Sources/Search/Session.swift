@@ -25,6 +25,14 @@ enum Session {
         /// Nil in sessions written before tab groups existed. Written whether
         /// or not groups are turned on, so turning them off loses nothing.
         var groups: [TabGroup]? = nil
+        /// Indices in `tabs`, so restored tabs can have new live identities.
+        var splits: [Split] = []
+    }
+
+    struct Split: Codable {
+        var left: Int
+        var right: Int
+        var fraction: Double
     }
 
     /// The first space's is the session there always was; each other space
@@ -83,12 +91,13 @@ extension Session.Entry {
 }
 
 extension Session.Shape {
-    private enum Keys: String, CodingKey { case tabs, active, groups }
+    private enum Keys: String, CodingKey { case tabs, active, groups, splits }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         tabs = try c.decode([Session.Entry].self, forKey: .tabs)
         active = try c.decode(Int.self, forKey: .active)
         groups = try? c.decodeIfPresent([TabGroup].self, forKey: .groups)
+        splits = (try? c.decodeIfPresent([Session.Split].self, forKey: .splits)) ?? []
     }
 }

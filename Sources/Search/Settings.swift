@@ -434,6 +434,10 @@ struct SettingsPanel: View {
             Line("Tab groups", "Named sections in the sidebar. Right-click a tab to start a group; click its heading to hide or show its tabs.") {
                 Switch(on: $prefs.usesTabGroups)
             }
+            Rule()
+            Line("Split View", "Show two tabs side by side. Drag a tab onto a page to pair them.") {
+                Switch(on: $prefs.splitView)
+            }
         }
     }
 

@@ -19,18 +19,18 @@ struct Omnibox: View {
     @State private var refused = false
 
     var body: some View {
-        ZStack {
-            if over {
-                // The page is still there, just out of the way.
-                Rectangle()
-                    .fill(Palette.ground.opacity(0.74))
-                    .ignoresSafeArea()
-                    .onTapGesture { browser.dismiss() }
-                    .transition(.opacity)
-            }
+        GeometryReader { geometry in
+            let width = min(Metrics.fieldWidth, max(0, geometry.size.width - 28))
+            ZStack {
+                if over {
+                    Rectangle()
+                        .fill(Palette.ground.opacity(0.74))
+                        .onTapGesture { browser.dismiss() }
+                        .transition(.opacity)
+                }
 
-            field
-                .frame(width: Metrics.fieldWidth)
+                field
+                    .frame(width: width)
                 // The list hangs below the field rather than stacking with it,
                 // so a list that grows never lifts the field out from under
                 // what is being typed.
@@ -40,7 +40,7 @@ struct Omnibox: View {
                     // keeps that from moving the field.
                     if !browser.offers.isEmpty {
                         list
-                            .frame(width: Metrics.fieldWidth)
+                            .frame(width: width)
                             .offset(y: Self.fieldHeight + 8)
                     }
                 }
@@ -55,6 +55,8 @@ struct Omnibox: View {
                 // keystrokes, they trailed behind the field.
                 .animation(Motion.quick, value: browser.offers.isEmpty)
                 .animation(Motion.settle, value: refused)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

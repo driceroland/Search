@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 // A window, a row of titles, and a field. Typing an address gets you a page;
 // there is nothing else to learn and nothing else to press.
@@ -143,6 +144,20 @@ struct SearchApp: App {
                 Button("Search Tabs…") { browser.summon() }
                     .shortcut("tabs.search")
                 Divider()
+                if browser.prefs.splitView {
+                    Button("Split Current Page") { browser.startSplit() }
+                        .shortcut("tabs.split")
+                        .disabled(browser.active == nil || browser.active?.bench == true)
+                    Button("Focus Other Pane") { browser.focusOtherPane() }
+                        .shortcut("tabs.focusOtherPane")
+                        .disabled(browser.activeSplit == nil)
+                    Button("Separate Split Tabs") {
+                        if let tab = browser.active { browser.detachSplit(tab) }
+                    }
+                    .shortcut("tabs.separateSplit")
+                    .disabled(browser.activeSplit == nil)
+                    Divider()
+                }
                 if let tab = browser.active {
                     if tab.pin == nil {
                         Button("Pin Tab") { browser.pin(tab) }
@@ -305,6 +320,7 @@ struct ContentView: View {
     /// animation (see `make(room:after:)`); nil only before the window is up.
     @State private var room: CGSize?
     @State private var roomTicket = 0
+    @State private var immersionRevision = 0
 
 
     /// The window: room at the top, one stage for the page, and the row when
@@ -313,7 +329,7 @@ struct ContentView: View {
         ZStack(alignment: sideOnRight ? .topTrailing : .topLeading) {
             // Black while a page has the screen, so the frame of our own window
             // that survives the transition is not a white band across the top.
-            (browser.active?.immersed == true ? Color.black : Palette.ground)
+            (fullscreenTab != nil ? Color.black : Palette.ground)
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
@@ -339,7 +355,7 @@ struct ContentView: View {
                     .transition(.move(edge: sideOnRight ? .trailing : .leading))
             }
 
-            if !browser.prefs.sidebar, !browser.folded, browser.active?.immersed != true {
+            if !browser.prefs.sidebar, !browser.folded, fullscreenTab == nil {
                 TabBar(browser: browser)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -354,35 +370,18 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+        .background { fullscreenWatch }
         .animation(Motion.glide, value: browser.prefs.sidebar)
         .animation(Motion.glide, value: browser.prefs.sidePosition)
-        .animation(.easeOut(duration: 0.12), value: browser.active?.immersed)
+        .animation(.easeOut(duration: 0.12), value: fullscreenTab?.id)
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
     }
 
-    @ViewBuilder
     private var stage: some View {
-        if let tab = browser.active {
-            Page(tab: tab)
-                .overlay {
-                    if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
-                }
-                .overlay(alignment: .topTrailing) {
-                    if browser.finding {
-                        FindBar(browser: browser)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
-                .overlay(alignment: .topLeading) {
-                    if let asked = browser.suggesting, asked.tab == tab.id {
-                        AccountList(browser: browser, asked: asked)
-                            .transition(.opacity)
-                    }
-                }
-                .animation(Motion.quick, value: browser.suggesting)
-        } else {
-            Palette.ground
+        BrowserStage(browser: browser) { tab in
+            guard browser.activeSplit != nil, browser.activeID != tab.id else { return }
+            browser.focusPane(tab)
         }
     }
 
@@ -396,7 +395,7 @@ struct ContentView: View {
     /// aren't folded away or under a video filling the screen.
     private var barShown: Bool {
         browser.prefs.bookmarksBar && !browser.bookmarks.isEmpty && !browser.folded
-            && browser.active?.immersed != true
+            && fullscreenTab == nil
     }
 
     /// The room the page is laid out to leave them, which is not animated.
@@ -458,7 +457,7 @@ struct ContentView: View {
     /// own whenever a tab has nowhere to be yet.
     @ViewBuilder
     private var field: some View {
-        if browser.fieldShowing {
+        if browser.fieldShowing, browser.activeSplit == nil {
             Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
@@ -530,7 +529,9 @@ struct ContentView: View {
     var body: some View {
         window_
             // The column folded away, and out again at the edge (see Fold.swift).
-            .overlay(alignment: sideOnRight ? .trailing : .leading) { Fold(browser: browser, prefs: browser.prefs) }
+            .overlay(alignment: sideOnRight ? .trailing : .leading) {
+                if fullscreenTab == nil { Fold(browser: browser, prefs: browser.prefs) }
+            }
             .overlay(alignment: .bottom) { bars }
             .overlay {
                 // Over the page only: the column, the strip and the bookmarks
@@ -618,7 +619,10 @@ struct ContentView: View {
     private func handBack() {
         guard !browser.fieldShowing, browser.editingTab == nil else { return }
         DispatchQueue.main.async {
+            guard !browser.fieldShowing, browser.editingTab == nil else { return }
             guard let web = browser.active?.web, let window = web.window else { return }
+            if let responder = window.firstResponder as? NSView,
+               responder === web || responder.isDescendant(of: web) { return }
             window.makeFirstResponder(web)
         }
     }
@@ -762,15 +766,39 @@ struct ContentView: View {
 
     /// True while the tabs are down the left, and not folded away (see Fold.swift).
     private var sidebar: Bool {
-        browser.prefs.sidebar && !browser.folded && browser.active?.immersed != true
+        browser.prefs.sidebar && !browser.folded && fullscreenTab == nil
     }
 
     /// The column has its own corner for the lights, so the page beside it
     /// starts at the very top; the strip needs a band.
     private var band: CGFloat {
-        guard browser.active?.immersed != true else { return 0 }
+        guard fullscreenTab == nil else { return 0 }
         // Folded, the strip is out of the window and the page has its height.
         return browser.prefs.sidebar || browser.folded ? 0 : Metrics.strip
+    }
+
+    /// Either visible pane may give its page to WebKit's fullscreen window.
+    private var fullscreenTab: Tab? {
+        _ = immersionRevision
+        if let split = browser.activeSplit,
+           let immersed = browser.tabs.first(where: { split.contains($0.id) && $0.immersed }) {
+            return immersed
+        }
+        return browser.active?.immersed == true ? browser.active : nil
+    }
+
+    @ViewBuilder
+    private var fullscreenWatch: some View {
+        if let split = browser.activeSplit {
+            if let left = browser.tabs.first(where: { $0.id == split.left }) {
+                TabImmersionWatch(tab: left) { immersionRevision += 1 }.id(left.id)
+            }
+            if let right = browser.tabs.first(where: { $0.id == split.right }) {
+                TabImmersionWatch(tab: right) { immersionRevision += 1 }.id(right.id)
+            }
+        } else if let active = browser.active {
+            TabImmersionWatch(tab: active) { immersionRevision += 1 }.id(active.id)
+        }
     }
 
     /// Put the resting circles in the title bar, exactly over the buttons.
@@ -1052,6 +1080,17 @@ struct ContentView: View {
             return true
         }
 
+        // Keep split focus ahead of WebKit's arrow-key handling. Its panes
+        // remain native first responders, so the menu shortcut alone would
+        // never see ⌃⌘→ on a page.
+        if browser.prefs.splitView,
+           let combo = KeyCombo(event: event),
+           combo == ShortcutStore.shared.key(for: "tabs.focusOtherPane"),
+           browser.activeSplit != nil {
+            browser.focusOtherPane()
+            return true
+        }
+
         // ⌘Return keeps a peek, as its other button does: Return or the
         // keypad's Enter, by the key rather than what it types, whatever Caps
         // Lock says. Not while typing in the peeked page — a comment box or
@@ -1109,6 +1148,7 @@ struct ContentView: View {
         // changed something.
         if ShortcutStore.shared.anyChanged, let combo = KeyCombo(event: event) {
             if let command = ShortcutStore.shared.changedCommand(on: combo) {
+                if command.id.hasPrefix("tabs.split"), !browser.prefs.splitView { return false }
                 command.run(browser)
                 return true
             }
@@ -1272,6 +1312,23 @@ struct ContentView: View {
             return false
         }
         return true
+    }
+}
+
+/// A page's own fullscreen state changes without changing the Browser's tab
+/// identity. Listen to both visible pages so the surrounding chrome follows.
+private struct TabImmersionWatch: View {
+    let tab: Tab
+    let changed: () -> Void
+    @State private var previous: Bool?
+
+    var body: some View {
+        Color.clear.frame(width: 0, height: 0)
+            .onReceive(tab.$immersed.removeDuplicates()) { value in
+                let didChange = previous != nil && previous != value
+                previous = value
+                if didChange { changed() }
+            }
     }
 }
 

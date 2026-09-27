@@ -41,6 +41,8 @@
                                        world's own account — whether it is there, before and after
     ./bench fold PATH [WIDTH]          test run: the folded strip or column out over the page (ui folded on,
                                        ui peek on), drawn off screen over red — red shows where the page would
+    ./bench split state|start|pair|focus|select|detach|fraction|close|new-tab|move|drop|open|private|bench|sleep|reopen|insert|save|space|mouse
+                                       test run only: exercise split state in the real browser model
     ./bench space [new NAME [fresh]|go N|delete|swipe DX|hold DX|release|move N]
                                        test run: the spaces, a new one (signed in with the others, or fresh),
                                        switch to the Nth, delete this one,
@@ -273,6 +275,65 @@ def main(argv):
         elif args and args[0] == "release": request["action"] = "release"
         elif args and args[0] == "move" and len(args) == 2: request["action"], request["index"] = "move", int(args[1])
         elif args: sys.exit("usage: bench space [new NAME | go N | delete | swipe DX | hold DX | release | move N]")
+    elif verb == "split":
+        if not args: args = ["state"]
+        action, values = args[0], args[1:]
+        actions = {
+            "new-tab": "newTab",
+            "state": "state", "start": "start", "pair": "pair", "focus": "focus",
+            "select": "select", "detach": "detach", "fraction": "fraction", "close": "close",
+            "move": "move", "drop": "drop", "open": "open", "private": "private",
+            "bench": "bench", "sleep": "sleep", "reopen": "reopen", "insert": "insert",
+            "save": "save", "space": "space", "mouse": "mouse",
+        }
+        if action not in actions:
+            sys.exit("usage: bench split state|start|pair DRAGGED TARGET left|right|focus ID|select ID|detach ID|fraction UUID VALUE|close ID|new-tab|move ID INDEX|drop ID [BEFORE]|open URL [FROM_ID] [background]|private|bench URL|sleep ID|save|space new NAME|space go UUID")
+        request["action"] = actions[action]
+        if action == "pair":
+            if len(values) != 3 or values[2] not in ("left", "right"): sys.exit("usage: bench split pair DRAGGED TARGET left|right")
+            request["id"], request["with"], request["side"] = values
+        elif action in ("focus", "select", "detach", "close", "sleep"):
+            if len(values) != 1: sys.exit(f"usage: bench split {action} ID")
+            request["id"] = values[0]
+        elif action == "fraction":
+            if len(values) != 2: sys.exit("usage: bench split fraction UUID VALUE")
+            request["split"], request["fraction"] = values[0], float(values[1])
+        elif action == "move":
+            if len(values) != 2: sys.exit("usage: bench split move ID INDEX")
+            request["id"], request["to"] = values[0], int(values[1])
+        elif action == "drop":
+            if not 1 <= len(values) <= 2: sys.exit("usage: bench split drop ID [BEFORE]")
+            request["id"] = values[0]
+            if len(values) == 2: request["before"] = values[1]
+        elif action == "open":
+            if not 1 <= len(values) <= 4:
+                sys.exit("usage: bench split open URL [FROM_ID] [background] [end]")
+            request["url"] = values[0]
+            extra = values[1:]
+            flags = [value for value in extra if value in ("background", "end")]
+            sources = [value for value in extra if value not in ("background", "end")]
+            if len(sources) > 1 or len(flags) + len(sources) != len(extra):
+                sys.exit("usage: bench split open URL [FROM_ID] [background] [end]")
+            if sources: request["from"] = sources[0]
+            request["foreground"] = "background" not in flags
+            request["atEnd"] = "end" in flags
+        elif action == "bench":
+            if len(values) != 1: sys.exit("usage: bench split bench URL")
+            request["url"] = values[0]
+        elif action == "insert":
+            if len(values) != 2: sys.exit("usage: bench split insert URL INDEX")
+            request["url"], request["index"] = values[0], int(values[1])
+        elif action == "space":
+            if values and values[0] == "new" and len(values) >= 2:
+                request["spaceAction"], request["name"] = "new", " ".join(values[1:])
+            elif values and values[0] == "go" and len(values) == 2:
+                request["spaceAction"], request["spaceID"] = "go", values[1]
+            else: sys.exit("usage: bench split space new NAME|go UUID")
+        elif action == "mouse":
+            if len(values) < 4 or len(values) % 2: sys.exit("usage: bench split mouse X1 Y1 X2 Y2 [X3 Y3 ...]")
+            request["points"] = [[float(values[i]), float(values[i + 1])] for i in range(0, len(values), 2)]
+        elif values:
+            sys.exit(f"usage: bench split {action}")
     elif verb == "hit":
         if len(args) not in (2, 3) or (len(args) == 3 and args[2] not in ("double", "middle")): sys.exit("usage: bench hit X Y [double|middle]")
         request["x"], request["y"] = float(args[0]), float(args[1])

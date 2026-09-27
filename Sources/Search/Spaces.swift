@@ -158,6 +158,7 @@ enum Spaces {
 struct Parked {
     var tabs: [Tab]
     var active: Tab.ID?
+    var splits: [TabSplit] = []
 }
 
 extension Browser {
@@ -185,11 +186,12 @@ extension Browser {
         cancelTabEdit()
         if floater.showing { land() }
         writeSession(now: true)
+        for tab in tabs where visibleTabIDs.contains(tab.id) { tab.touch() }
 
         // The row on screen is parked as it is, sound and all: music or a
         // stream keeps playing in the space you left, as it does in a tab
         // you left. ⌘⇧M, or its speaker, stops it.
-        parked[spaceID] = Parked(tabs: tabs, active: activeID)
+        parked[spaceID] = Parked(tabs: tabs, active: activeID, splits: splits)
 
         spaceID = id
         tabGroups = readRow(id).groups ?? []
@@ -198,8 +200,10 @@ extension Browser {
         if Browsers.front === self || Browsers.front == nil { Spaces.current = id }
         if usesFiles { Store.settings.set(id.uuidString, forKey: "space.current") }
         if let back = parked.removeValue(forKey: id), !back.tabs.isEmpty {
-            showRow(back.tabs, active: back.active)
-            if let active, !active.wake() { active.revive() }
+            showRow(back.tabs, active: back.active, splits: back.splits)
+            for tab in tabs where visibleTabIDs.contains(tab.id) {
+                if !tab.wake() { tab.revive() }
+            }
         } else {
             showRow([], active: nil)
             restoreSession()

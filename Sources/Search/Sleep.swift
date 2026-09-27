@@ -64,7 +64,7 @@ extension Browser {
     /// Why a tab has to stay awake — nil when nothing keeps it. The clock is
     /// the caller's business; this is everything else.
     func awake(because tab: Tab) -> String? {
-        if tab.id == activeID { return "on screen" }
+        if visibleTabIDs.contains(tab.id) { return "on screen" }
         if tab.pin != nil { return "pinned" }
         if tab.bench { return "a bench tab" }
         if tab.isBlank { return "blank" }
@@ -77,7 +77,9 @@ extension Browser {
         if downloading.contains(where: { $0.webView === web }) { return "downloading" }
         if heldDialogs[tab.id]?.isEmpty == false { return "a question waiting" }
         // A sign-in window hands its answer back to the page that opened it.
-        if active?.opener == tab.id { return "the page on screen came from it" }
+        if tabs.contains(where: { visibleTabIDs.contains($0.id) && $0.opener == tab.id }) {
+            return "the page on screen came from it"
+        }
         return nil
     }
 
