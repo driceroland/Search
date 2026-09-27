@@ -66,6 +66,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Switching to another app while a video plays full screen no longer leaves Search's window black: the video stays full screen instead of floating out of it.
 - The floating video comes out and goes back with less jumping. Its page is laid out once, at the size the floating window opens at, where it was laid out at the default size first and stretched to the remembered one after; and going back, the rest of the page returns only once the page has the tab's size, where it came back while the page still had the floating window's, and the tab's first frames could show the video sized for that: YouTube's, a 720×240 strip ([#257](https://github.com/driceroland/Search/issues/257))
 - In full screen, with the sidebar hidden until the pointer reaches the edge, the red, yellow and green buttons are there when the menu bar comes down, and the sidebar no longer comes out over them from the top corner. ([#241](https://github.com/driceroland/Search/issues/241))
 - Window › Move & Resize works, and so do macOS's tiling shortcuts and the apps that arrange windows: the window said it couldn't be moved, so that a tab picked up in the tab bar wouldn't take the window with it. It is movable now except while you press, which keeps that. ([#286](https://github.com/driceroland/Search/issues/286))

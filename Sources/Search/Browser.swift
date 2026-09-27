@@ -2334,7 +2334,9 @@ final class Browser: NSObject, ObservableObject {
     private func lift(_ tab: Tab?, quietly: Bool) {
         // A tab just put down with ⌘W has no page to lift a video out of, and
         // asking it would only build an empty view to ask.
-        guard let tab, !tab.isBlank, !tab.asleep, !floater.showing else { return }
+        // a full-screen page stays in its own space: moving it out left that space black.
+        guard let tab, !tab.isBlank, !tab.asleep, !floater.showing,
+              tab.web.fullscreenState == .notInFullscreen else { return }
         // On its own, only from a site whose video is the point of the site.
         // A hero background on a studio's home page is a video too, and it
         // followed people around the desktop. ⌘⇧P still lifts from anywhere.
