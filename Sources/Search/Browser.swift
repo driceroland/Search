@@ -1498,12 +1498,28 @@ final class Browser: NSObject, ObservableObject {
     /// first. Nothing changes until ⌃ is let go of (`commitTabSwitch`).
     func switchTabs(backwards: Bool) {
         guard let activeID else { return }
-        tabSwitcher.step(row: tabs.map(\.id), current: activeID, backwards: backwards)
+        // With spaces, every space is a row of it, each space's tabs where
+        // they are parked (made now for a space not visited since launch).
+        var rows: [(space: Space, row: [Tab.ID], showing: Tab.ID?)] = []
+        if prefs.usesSpaces, spaces.count > 1 {
+            preloadSpaces()
+            rows = spaces.map { space in
+                space.id == spaceID
+                    ? (space, tabs.map(\.id), activeID)
+                    : (space, parked[space.id]?.tabs.map(\.id) ?? [], parked[space.id]?.active)
+            }
+        }
+        tabSwitcher.step(row: tabs.map(\.id), current: activeID, backwards: backwards, spaces: rows)
     }
 
     func commitTabSwitch(picking id: Tab.ID? = nil) {
-        guard let target = tabSwitcher.finish(picking: id),
-              let tab = tabs.first(where: { $0.id == target }) else { return }
+        guard let target = tabSwitcher.finish(picking: id) else { return }
+        // A card in another space's row: that space, then the tab.
+        if !tabs.contains(where: { $0.id == target }),
+           let space = parked.first(where: { $0.value.tabs.contains { $0.id == target } })?.key {
+            switchSpace(to: space)
+        }
+        guard let tab = tabs.first(where: { $0.id == target }) else { return }
         select(tab)
     }
 

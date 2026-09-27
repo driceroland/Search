@@ -172,6 +172,11 @@ extension Browser {
         cancelTabEdit()
         if floater.showing { land() }
         writeSession(now: true)
+        // The row swaps before `activeID` changes, so the switcher never sees
+        // this tab being left: it is told here, for its order and picture.
+        if prefs.mruSwitcher, let active {
+            tabSwitcher.left(active, alive: Set((tabs + parkedTabs).map(\.id)))
+        }
 
         // The row on screen is parked as it is, sound and all: music or a
         // stream keeps playing in the space you left, as it does in a tab

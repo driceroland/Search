@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- With spaces, the recently used tab switcher shows every space: a row for each, under its icon and name, with its five latest tabs. ⌃↑ and ⌃↓ go to the space above or below, Tab walks the row the pick is in, and letting go of ⌃ on another space's tab, or clicking it, switches space and tab together. Uses the switcher's own switch in Settings › Tabs.
 - A double-click on the pinned tab you are on takes it back to the page it was pinned at, wherever you have wandered since; already there, it changes the pin's letter as before. Thanks [@armin-ahmadii](https://github.com/armin-ahmadii) for the idea ([#141](https://github.com/driceroland/Search/issues/141))
 - A pinned tab shows the loading ring while its page comes, as other tabs do, in the bar and the column.
 - Downloads show while they happen: a small circle beside the other buttons fills as a file comes, turns into an arrow once it is in, and opens Downloads when clicked; it is there only while something downloads and a moment after. The file shows its progress in the Finder and on the Dock's Downloads stack, as Safari's do, and the "Saved" line at the bottom shows it in the Finder when clicked.

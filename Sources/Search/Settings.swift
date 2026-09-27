@@ -301,7 +301,7 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.showsReading)
             }
             Rule()
-            Line("Recently used tab switcher", "⌃Tab shows up to ten tabs as pictures, the last one you were on first. Hold ⌃ and press Tab again to go further back, let go to switch. Off, ⌃Tab walks the row.") {
+            Line("Recently used tab switcher", "⌃Tab shows up to ten tabs as pictures, the last one you were on first. Hold ⌃ and press Tab again to go further back, let go to switch. With spaces, each space is a row of its own. Off, ⌃Tab walks the row.") {
                 Switch(on: $prefs.mruSwitcher)
             }
             Rule()
