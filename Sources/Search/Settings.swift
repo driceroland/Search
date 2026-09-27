@@ -275,7 +275,7 @@ struct SettingsPanel: View {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
             }
             Rule()
-            Line("⌃Tab goes to the tab you were just on", "Hold ⌃ and keep pressing Tab to see your tabs, most recent first; let go to switch. The arrows move through them too, ↑ and ↓ between spaces, once Mission Control's ⌃-arrow shortcuts are off in System Settings › Keyboard. Off, ⌃Tab walks along the row") {
+            Line("⌃Tab goes to the tab you were just on", "Hold ⌃ and keep pressing Tab to see your tabs, most recent first; let go to switch. With spaces, each has a row; point at a card to reach another. Off, ⌃Tab walks along the row") {
                 Switch(on: $prefs.flipsRecent)
             }
             Rule()

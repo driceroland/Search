@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 // ⌃Tab as Arc has it, with Settings › Tabs › ⌃Tab goes to the tab you were
@@ -11,12 +10,13 @@ import SwiftUI
 // one keystroke apart however far apart they sit in the row.
 //
 // With spaces on, every space is a row of its own, in the order ⌃1–⌃9 go,
-// starting on the one you're in. Tab and the side arrows move along a row;
-// the up and down arrows shift into the space above or below, like a gear
-// going into the next slot of the gate, and stop at the end of it rather than
-// coming round. Each row keeps its own place, and one you haven't walked yet
-// starts on the tab that space was showing when you left it, so letting go of
-// ⌃ there is ⌃2 with a look before you jump.
+// each starting on the tab that space was showing when you left it. Tab walks
+// the row you're on; the pointer reaches the others, and letting go of ⌃ on a
+// card in another space's row goes to that space and that tab together.
+//
+// Tab is the only key that moves. ⌃ is held the whole time, and the arrows
+// with ⌃ belong to Mission Control and the desktops unless someone has turned
+// those off, so a switcher that leaned on them would work on hardly any Mac.
 //
 // The order is fixed when ⌃Tab is first pressed and kept for the whole walk,
 // so pressing Tab again moves down a list that stays still under you. Nothing
@@ -83,7 +83,6 @@ extension Browser {
             flipRows = rows
             flipRow = start
             flipAt = 0
-            flipCols = Array(repeating: 0, count: rows.count)
             let show = DispatchWorkItem { [weak self] in
                 MainActor.assumeIsolated {
                     guard let self, self.flipOpen else { return }
@@ -99,27 +98,9 @@ extension Browser {
         flipAt = ((flipAt + direction) % count + count) % count
     }
 
-    /// ↑ and ↓: into the space above or below, where that row was left, and
-    /// nowhere past the first or the last. With one row there is nothing to
-    /// shift into, and they move along it as the side arrows do.
-    func shiftFlip(_ direction: Int) {
-        guard let rows = flipRows else { return }
-        guard rows.count > 1 else { return flip(direction) }
-        let to = flipRow + direction
-        guard rows.indices.contains(to) else { return }
-        flipByPointer = false
-        flipCols[flipRow] = flipAt
-        flipRow = to
-        flipAt = min(flipCols[to], max(0, flipTabs(to).count - 1))
-        // The notch. Felt only with a finger on a Force Touch trackpad, and
-        // nothing at all otherwise, which is the right amount for a keyboard.
-        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
-    }
-
     /// The pointer resting on a card: that card picked, row and all.
     func pointFlip(at spot: FlipSpot) {
         guard flipOpen, spot != FlipSpot(row: flipRow, col: flipAt) else { return }
-        if spot.row != flipRow { flipCols[flipRow] = flipAt }
         flipByPointer = true
         flipRow = spot.row
         flipAt = spot.col
@@ -170,7 +151,6 @@ extension Browser {
         flipRows = nil
         flipRow = 0
         flipAt = 0
-        flipCols = []
         flipByPointer = false
         flipShown = false
         flipPlate = .zero
@@ -191,9 +171,7 @@ extension Browser {
 ///
 /// Only a key scrolls the picked card into view. Scrolling for the pointer
 /// would slide the card out from under it, and put the next one there to be
-/// picked in its place. For the same reason the rows change over quickly
-/// under the pointer, and on the slower spring, the gear going in, only for
-/// the arrows.
+/// picked in its place.
 struct FlipPanel: View {
     @ObservedObject var browser: Browser
     /// Where the pointer was when the panel first felt it, and whether it has
@@ -270,7 +248,7 @@ struct FlipPanel: View {
             }
         }
         .padding(.vertical, rows.count > 1 ? 6 : 0)
-        .animation(browser.flipByPointer ? Motion.quick : Motion.glide, value: browser.flipRow)
+        .animation(Motion.quick, value: browser.flipRow)
     }
 
     /// One space's row, under its icon and name when there are spaces.
@@ -294,7 +272,7 @@ struct FlipPanel: View {
                 ScrollView(.horizontal, showsIndicators: false) { cards(tabs, row: index, here: here) }
             }
         }
-        // The rows not being walked, held back: there, and a notch away.
+        // The rows not being walked, held back.
         .opacity(here ? 1 : 0.45)
     }
 

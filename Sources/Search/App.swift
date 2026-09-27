@@ -825,19 +825,10 @@ struct ContentView: View {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
 
-        // With the ⌃Tab switcher up, the side arrows move along a row as Tab
-        // does, up and down shift into the space above or below, Return takes
-        // the one picked without waiting for ⌃, and Escape puts it away
-        // having chosen nothing. ⌃ is still down, so the arrows arrive only
-        // with Mission Control's ⌃-arrow shortcuts turned off: macOS takes
-        // them first, and nothing short of a system-wide event tap gets them
-        // back, which a browser has no business asking for.
+        // With the ⌃Tab switcher up, Return takes the one picked without
+        // waiting for ⌃, and Escape puts it away having chosen nothing.
         if browser.flipOpen {
             switch event.keyCode {
-            case 123: browser.flip(-1); return true
-            case 124: browser.flip(1); return true
-            case 126: browser.shiftFlip(-1); return true
-            case 125: browser.shiftFlip(1); return true
             case 36, 76: browser.landFlip(); return true
             case 53: browser.endFlip(); return true
             default: break

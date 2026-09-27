@@ -131,8 +131,6 @@ final class Browser: NSObject, ObservableObject {
     @Published var flipRows: [FlipRow]?
     @Published var flipRow = 0
     @Published var flipAt = 0
-    /// The card each row was left on, for coming back to it.
-    var flipCols: [Int] = []
     /// The last move was the pointer's, not a key's (see FlipPanel).
     var flipByPointer = false
     /// The switcher on screen. A beat behind the walk, so a quick ⌃Tab back
