@@ -86,7 +86,7 @@ final class Updater: ObservableObject {
         /// instead — the same as the first time.
         case offered(Release)
         /// Found, and waiting to be asked for: installing on its own is
-        /// switched off in Settings.
+        /// switched off in Settings; Install Update is in the Search menu.
         case waiting(Release)
     }
 
@@ -147,8 +147,8 @@ final class Updater: ObservableObject {
         check { _ in }
     }
 
-    /// Search › Check for Updates…: the answer is said in the line at the
-    /// foot of the window, and Settings stays closed.
+    /// Search › Check for Updates…: the result is said in the line at the
+    /// foot of the window, and an available update is offered in the menu.
     func checkByHand() {
         switch stage {
         case .ready(let next):
@@ -163,9 +163,8 @@ final class Updater: ObservableObject {
         say?("Checking for updates…")
         check { [weak self] found in
             guard let self else { return }
-            guard let found else { self.say?("Search is up to date"); return }
-            if case .waiting = self.stage { return }
-            self.say?("Search \(found.version) is downloading…")
+            if found == nil { self.say?("Search is up to date"); return }
+            // The waiting branch or `take` announces the next state afterward.
         }
     }
 
@@ -195,7 +194,7 @@ final class Updater: ObservableObject {
             case .waiting(let known) where known == found: break
             case .none, .offered, .waiting:
                 stage = .waiting(found)
-                say?("Search \(found.version) is out — it's in Settings")
+                say?("Search \(found.version) is out — choose Install Update in the Search menu")
             }
         }
     }
@@ -245,6 +244,7 @@ final class Updater: ObservableObject {
         case .none, .offered, .waiting: break
         }
         stage = .fetching(release)
+        say?("Search \(release.version) is downloading…")
         Task.detached(priority: .utility) {
             let worked: Bool
             do {
@@ -262,7 +262,7 @@ final class Updater: ObservableObject {
         stage = worked ? .ready(release) : .offered(release)
         say?(worked
             ? "Search \(release.version) is ready — it's there the next time you open it"
-            : "Search \(release.version) is out — it's in Settings")
+            : "Search \(release.version) is out — choose Download Update in the Search menu")
     }
 
     /// Quit, and come back as the new one. A shell waits for this process

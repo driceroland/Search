@@ -219,8 +219,7 @@ struct SearchApp: App {
                 Button("Clear History") { browser.clearHistory() }
                     .shortcut("history.clear")
             }
-            // Search › Check for Updates…, under About, as in any Mac app.
-            CommandGroup(after: .appInfo) { UpdateMenuItem() }
+            UpdateCommands()
             CommandGroup(after: .appSettings) {
                 Button("Settings…") { browser.tuning = true }
                     .shortcut("app.settings")
@@ -1275,17 +1274,32 @@ struct ContentView: View {
     }
 }
 
-/// Check for Updates…, or Restart to Update once a newer build is in place.
-/// Its own view, so only the updater's changes redraw it (see SearchApp.body).
-private struct UpdateMenuItem: View {
+/// The update command follows the updater through each state, including a
+/// release found by the hourly check when installing on its own is off.
+private struct UpdateCommands: Commands {
     @ObservedObject private var updater = Updater.shared
 
-    var body: some View {
-        if case .ready = updater.stage {
-            Button("Restart to Update") { updater.relaunch() }
-        } else {
-            Button("Check for Updates…") { updater.checkByHand() }
+    var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            switch updater.stage {
+            case .none:
+                Button(updater.checking ? "Checking for Updates…" : "Check for Updates…") {
+                    updater.checkByHand()
+                }
                 .disabled(updater.checking)
+            case .waiting:
+                Button("Install Update") { updater.install() }
+            case .fetching:
+                Button("Downloading Update…") {}
+                    .disabled(true)
+            case .ready:
+                Button("Restart to Update") { updater.relaunch() }
+            case .offered:
+                Button(updater.fetchingDisk ? "Downloading Update…" : "Download Update…") {
+                    updater.openDisk()
+                }
+                .disabled(updater.fetchingDisk)
+            }
         }
     }
 }
