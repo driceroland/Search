@@ -3169,7 +3169,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         navigationAction: WKNavigationAction,
         didBecome download: WKDownload
     ) {
-        keep(download)
+        keep(download, from: webView)
         dropEmpty(webView)
     }
 
@@ -3178,7 +3178,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         navigationResponse: WKNavigationResponse,
         didBecome download: WKDownload
     ) {
-        keep(download)
+        keep(download, from: webView)
         dropEmpty(webView)
     }
 
@@ -3204,13 +3204,124 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     /// Every download this window has going, heard from until it ends — and
     /// counted, so a tab still sending one to disk is never put to sleep.
-    func keep(_ download: WKDownload) {
+    func keep(
+        _ download: WKDownload,
+        from suppliedWebView: WKWebView? = nil,
+        continuing entry: FetchEntry? = nil,
+        operationID: UUID? = nil
+    ) {
+        let webView = suppliedWebView ?? download.webView
+        // Find privacy before publishing the entry. A private transfer is
+        // still tracked internally so its delegate and Finder progress clean
+        // up correctly, but it never enters the shared Downloads panel.
+        let isPrivate = entry == nil && webView.map {
+            !$0.configuration.websiteDataStore.isPersistent || anyTab(for: $0)?.shy == true
+        } == true
         download.delegate = self
-        downloading.append(download)
-        fetches.start(download)
-        // Noted now, while its page is still there to ask: a private tab's
-        // download is saved where you say, and left out of the list.
-        if let web = download.webView, tab(for: web)?.shy == true { unlisted.insert(ObjectIdentifier(download)) }
+        if !downloading.contains(where: { $0 === download }) { downloading.append(download) }
+        if isPrivate { unlisted.insert(ObjectIdentifier(download)) }
+        else { unlisted.remove(ObjectIdentifier(download)) }
+        guard fetches.start(
+            download,
+            owner: self,
+            webView: webView,
+            listed: !isPrivate,
+            entry: entry,
+            operationID: operationID
+        ) else {
+            relinquish(download)
+            download.cancel { _ in }
+            return
+        }
+        // A true resume may continue the preserved target without asking its
+        // delegate for a destination again. Publish Finder progress as soon
+        // as the resumed WKDownload is attached; `going` coalesces a later
+        // destination callback for the same URL.
+        if entry != nil, let destination = entry?.destination {
+            fetches.going(download, to: destination, cancel: finderCancellation(for: download))
+        }
+    }
+
+    /// Pause an active download. WebKit's cancellation callback is the
+    /// authoritative source of resume data and also owns cleanup if no
+    /// delegate failure callback arrives.
+    func pauseDownload(_ entry: FetchEntry) {
+        guard let operation = fetches.beginStop(entry, action: .pause) else { return }
+        stopDownload(operation)
+    }
+
+    func resumeDownload(_ entry: FetchEntry) {
+        guard let operation = fetches.beginResume(entry), let data = operation.resumeData else { return }
+        operation.webView.resumeDownload(fromResumeData: data) { download in
+            guard self.fetches.accepts(operation) else {
+                download.cancel { _ in }
+                return
+            }
+            self.keep(download, from: operation.webView, continuing: operation.entry, operationID: operation.operationID)
+        }
+    }
+
+    func retryDownload(_ entry: FetchEntry) {
+        let prior = entry.destination
+        let folder = prior?.deletingLastPathComponent() ?? downloadsFolder
+        let excluded = prior.map { Set([$0]) } ?? []
+        let destination = Self.free(entry.retryName, in: folder, avoiding: excluded)
+        guard let operation = fetches.beginRetry(entry, destination: destination),
+              let request = operation.request else { return }
+        operation.webView.startDownload(using: request) { download in
+            guard self.fetches.accepts(operation) else {
+                download.cancel { _ in }
+                return
+            }
+            self.keep(download, from: operation.webView, continuing: operation.entry, operationID: operation.operationID)
+        }
+    }
+
+    /// Active rows stop; paused and failed rows are removed and release their
+    /// in-memory resume data and retained session web view.
+    func cancelDownload(_ entry: FetchEntry) {
+        switch entry.state {
+        case .downloading:
+            guard let operation = fetches.beginStop(entry, action: .cancel) else { return }
+            stopDownload(operation)
+        case .pausing:
+            _ = fetches.upgradeStopToCancel(entry)
+        case .resuming:
+            fetches.removeStarting(entry)
+        case .paused, .failed:
+            fetches.removeStopped(entry)
+        }
+    }
+
+    private func stopDownload(_ operation: Fetches.StopOperation) {
+        let fetches = self.fetches
+        operation.download.cancel { resumeData in
+            DispatchQueue.main.async {
+                guard let ended = fetches.stopped(operation, resumeData: resumeData) else { return }
+                ended.owner.relinquish(operation.download)
+            }
+        }
+    }
+
+    /// Called for both delegate completion and WKDownload.cancel completion;
+    /// idempotence handles WebKit choosing either callback order.
+    func relinquish(_ download: WKDownload) {
+        downloading.removeAll { $0 === download }
+        unlisted.remove(ObjectIdentifier(download))
+    }
+
+    private func finderCancelled(_ download: WKDownload) {
+        guard let operation = fetches.beginFinderStop(download) else { return }
+        stopDownload(operation)
+    }
+
+    private func finderCancellation(for download: WKDownload) -> @Sendable () -> Void {
+        { [weak self, weak download] in
+            DispatchQueue.main.async {
+                guard let self, let download else { return }
+                self.finderCancelled(download)
+            }
+        }
     }
 
     /// Without this WebKit refuses every request out of hand, and a page that
@@ -3383,19 +3494,30 @@ extension Browser: WKDownloadDelegate {
         completionHandler: @escaping (URL?) -> Void
     ) {
         let asked = response.url.flatMap { namedDownloads.removeValue(forKey: $0) }
-        let file = whereToSave(asked ?? suggestedFilename)
-        completionHandler(file)
-        if let file {
-            fetches.going(download, to: file)
-            announce("Downloading \(file.lastPathComponent)")
+        let file = fetches.destination(for: download) ?? whereToSave(asked ?? suggestedFilename)
+        guard let file else {
+            if let ended = fetches.destinationCancelled(download) {
+                ended.owner.relinquish(download)
+            } else {
+                relinquish(download)
+            }
+            completionHandler(nil)
+            return
         }
+        fetches.going(download, to: file, cancel: finderCancellation(for: download))
+        completionHandler(file)
+        announce("Downloading \(file.lastPathComponent)")
     }
 
     func downloadDidFinish(_ download: WKDownload) {
-        downloading.removeAll { $0 === download }
-        fetches.finish(download, file: download.progress.fileURL)
-        let listed = unlisted.remove(ObjectIdentifier(download)) == nil
-        guard let file = download.progress.fileURL else {
+        let entry = fetches.entry(for: download)
+        let source = download.originalRequest?.url ?? entry?.request?.url
+        let file = download.progress.fileURL ?? entry?.destination
+        let listed = !unlisted.contains(ObjectIdentifier(download))
+        let ended = fetches.finish(download, file: file)
+        (ended?.owner ?? self).relinquish(download)
+        guard ended != nil else { return }
+        guard let file else {
             announce("Download finished")
             return
         }
@@ -3403,11 +3525,11 @@ extension Browser: WKDownloadDelegate {
             announce("Saved \(file.lastPathComponent)")
             return
         }
-        if #available(macOS 15.4, *), let asked = download.originalRequest?.url,
+        if #available(macOS 15.4, *), let asked = source,
            let id = ExtensionShims.askedDownloads.removeValue(forKey: asked) {
             ExtensionShims.ownDownloads[id, default: []].insert(file.path)
         }
-        saved(file, from: download.originalRequest?.url)
+        saved(file, from: source)
     }
 
     /// The download button in the bar WebKit draws over a PDF. WebKit has the
@@ -3457,20 +3579,19 @@ extension Browser: WKDownloadDelegate {
         didFailWithError error: Error,
         resumeData: Data?
     ) {
-        downloading.removeAll { $0 === download }
-        unlisted.remove(ObjectIdentifier(download))
-        fetches.fail(download)
-        announce("Download failed")
+        guard let ended = fetches.fail(download, error: error, resumeData: resumeData) else { return }
+        ended.owner.relinquish(download)
+        if ended.announceFailure { announce("Download failed") }
     }
 
     /// WebKit refuses to write over a file that is already there, so the name
     /// gains a number rather than the download quietly failing.
-    private static func free(_ name: String, in folder: URL) -> URL {
+    private static func free(_ name: String, in folder: URL, avoiding excluded: Set<URL> = []) -> URL {
         let stem = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
         var candidate = folder.appendingPathComponent(name)
         var n = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
+        while excluded.contains(candidate) || FileManager.default.fileExists(atPath: candidate.path) {
             let next = ext.isEmpty ? "\(stem) \(n)" : "\(stem) \(n).\(ext)"
             candidate = folder.appendingPathComponent(next)
             n += 1
