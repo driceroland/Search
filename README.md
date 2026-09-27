@@ -73,7 +73,7 @@ Apps you allow in System Settings › Privacy & Security › Automation can read
 
 ### Why the source is here
 
-So anyone can read exactly what a browser handling their passwords and history is doing, build it themselves, or fix something that bothers them. The code is small enough to actually read — about 12,700 lines of Swift, no dependencies beyond what Apple ships with macOS, one file per concern.
+So anyone can read exactly what a browser handling their passwords and history is doing, build it themselves, or fix something that bothers them. The code is small enough to actually read — about 37,000 lines of Swift, no dependencies beyond what Apple ships with macOS, one file per concern.
 
 ### Building it
 
