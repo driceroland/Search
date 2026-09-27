@@ -751,9 +751,22 @@ enum ExtensionShims {
         const key = channel && keyOf(message);
         if (key) channel.postMessage({ key, from: background ? "worker" : me, verdict, heard, at: Date.now() });
       };
+      // WebKit hands none of the extension's pages a message its worker or another of its pages sent, and Bitwarden's
+      // sync and passkey window wait on those. so each one also goes over the channel, and a page that didn't hear it
+      // from WebKit takes it from there.
+      const heardNatively = new Map();
+      let deliverRelayed = null;
+      const relay = (message) => { if (channel && !inContent) try { channel.postMessage({ relay: message, from: me, url: location.href }); } catch (e) {} };
       if (channel) {
         channel.onmessage = ({ data }) => {
           if (!data || data.from === me) return;
+          if (data.relay !== undefined) {
+            const key = keyOf(data.relay);
+            if (!background && deliverRelayed) setTimeout(() => {
+              if (!key || Date.now() - (heardNatively.get(key) || 0) > 1000) deliverRelayed(data.relay, { id: runtime.id, url: data.url, origin: location.origin });
+            }, 50);
+            return;
+          }
           // The pages that listen, as they come and go.
           if (!background && data.hello) {
             const known = peers.has(data.from);
@@ -806,6 +819,7 @@ enum ExtensionShims {
         const listeners = new Set();
         let attached = false;
         const dispatch = function (message, sender, respond) {
+          if (!background) { const k = keyOf(message); if (k) { if (heardNatively.size > 200) heardNatively.clear(); heardNatively.set(k, Date.now()); } }
           let settled = false, keep = false;
           const sendResponse = (value) => { if (!settled) { settled = true; respond(value); } };
           // Only the worker answers; any other page stays out of it.
@@ -929,7 +943,7 @@ enum ExtensionShims {
         };
         put(event, "addListener", (listener) => {
           listeners.add(listener);
-          if (told) join();
+          if (told) { join(); deliverRelayed = (m, s) => dispatch(m, s, () => {}); }
           if (!attached) { attached = true; add(dispatch); }
         });
         put(event, "removeListener", (listener) => {
@@ -1070,6 +1084,7 @@ enum ExtensionShims {
           if (!inContent) tell(typeof args[0] === "string" && args.length > 1 && typeof args[1] !== "function" ? args[1] : args[0], "passes");
           checkWorker();
           const answer = send(...args).then((r) => { if (r !== undefined) heard = Date.now(); return r; });
+          if (typeof args[0] !== "string" && !(args[0] && Object.keys(args[0]).some((k) => k.startsWith("__search")))) relay(args[0]);
           return replied(answer, callback, "The message port closed before a response was received.");
         });
       }

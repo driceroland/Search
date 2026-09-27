@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Extensions hear what their own background sends their pages. WebKit delivered none of those messages, so Bitwarden's passkey window stayed blank and its sync timed out; each is now passed on to the extension's pages as well.
+
 ## 1.0.4 — 27 September 2026
 
 ### Added
