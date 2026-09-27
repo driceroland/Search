@@ -2610,8 +2610,9 @@ final class Browser: NSObject, ObservableObject {
         }
 
         tab.onCredentials = { [weak self] tab, host, user, password, clear in
+            // an extension's own page isn't a site: Bitwarden's unlock pin was offered as its password.
             guard let self, prefs.savesPasswords, !password.isEmpty, !tab.shy,
-                  !Vault.isNever(host)
+                  !Vault.isNever(host), tab.address.flatMap(Browser.extensionHost(of:)) == nil
             else { return }
             // A password manager extension that asked Chrome's way to do the
             // saving itself.

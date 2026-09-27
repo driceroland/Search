@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Search no longer offers to save a password typed into an extension's own page, such as Bitwarden's unlock PIN.
+
 ## 1.0.4 — 27 September 2026
 
 ### Added
