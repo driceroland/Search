@@ -65,7 +65,14 @@ MINIMUM="14.0"
 # -Osize for a release: 14% less binary (5.39 → 4.65 MB) at the same speed —
 # launch 337 against 338 ms, a scroll frame 0.26 against 0.25 ms, a key typed
 # 0.41 ms either way, measured interleaved on 1.0.4 (27 Sep 2026).
-SWIFTFLAGS=(-c "$CONFIG" --arch "$ARCH")
+#
+# SwiftPM's own build system, not the newer one Swift 6.4 (Xcode 27) picks by
+# default: that one stamps the binary as linked against SDK 14.0 — the
+# deployment target — rather than the SDK it was built with, and macOS 26 and
+# later read the stamp to decide whether an app gets the current look. Stamped
+# 14.0, Search came up in the pre-26 appearance. Checked with
+# otool -l build/Search.app/Contents/MacOS/Search (LC_BUILD_VERSION, sdk).
+SWIFTFLAGS=(-c "$CONFIG" --arch "$ARCH" --build-system native)
 [ "$CONFIG" = "release" ] && SWIFTFLAGS+=(-Xswiftc -Osize)
 swift build "${SWIFTFLAGS[@]}"
 BINARY="$(swift build "${SWIFTFLAGS[@]}" --show-bin-path)/Search"
