@@ -568,7 +568,9 @@ final class Browser: NSObject, ObservableObject {
 
     func pin(_ tab: Tab) {
         if tab.pin == nil {
+            let previousGroup = tab.groupID
             tab.groupID = nil
+            removeEmptyGroup(previousGroup)
             tab.pin = tab.monogram
             // Pinned tabs live at the head of the row, in the order they were
             // pinned, so their letters never move under your hand.
@@ -899,7 +901,9 @@ final class Browser: NSObject, ObservableObject {
     /// The row of tabs the space on screen had last time, or one empty tab.
     func restoreSession() {
         let saved = Session.read(space: spaceID)
-        tabGroups = saved.groups ?? []
+        tabGroups = (saved.groups ?? []).filter { group in
+            saved.tabs.contains { $0.groupID == group.id }
+        }
         guard !saved.tabs.isEmpty else {
             // A blank tab costs nothing until it is asked for its page. Its
             // web view — and with it WebKit's helper processes — is built a
@@ -1098,7 +1102,10 @@ final class Browser: NSObject, ObservableObject {
         if let id, let at = tabs.firstIndex(where: { $0.id == id }), !kept(tabs[at]) {
             active = max(0, tabs[..<at].filter(kept).count - 1)
         }
-        return .init(tabs: entries, active: active, groups: groups)
+        let keptGroups = groups.filter { group in
+            entries.contains { $0.groupID == group.id }
+        }
+        return .init(tabs: entries, active: active, groups: keptGroups)
     }
 
     /// Whether a tab goes into the session: not a private one or the
@@ -1260,6 +1267,7 @@ final class Browser: NSObject, ObservableObject {
                 tabs = [fresh]
                 activeID = fresh.id
                 typed = ""
+                removeEmptyGroup(tab.groupID)
             }
             return
         }
@@ -1267,6 +1275,7 @@ final class Browser: NSObject, ObservableObject {
         remember(tab, at: index)
         tab.close()
         tabs.remove(at: index)
+        removeEmptyGroup(tab.groupID)
         if activeID == tab.id {
             // The neighbour on the right, or the last one if there is no
             // right — through select(), same as everywhere else you land on
@@ -1403,8 +1412,10 @@ final class Browser: NSObject, ObservableObject {
             }
         }
         tabs.remove(at: index)
+        removeEmptyGroup(tab.groupID)
         if tabs.isEmpty { adopt(Tab(configuration: Web.configuration(space: spaceID))) }
 
+        tab.groupID = nil
         tab.rehome(in: id)
         var row = parked[id] ?? loadRow(id)
         let place = tab.pin == nil ? row.tabs.count : (row.tabs.firstIndex { $0.pin == nil } ?? row.tabs.count)
@@ -1420,11 +1431,11 @@ final class Browser: NSObject, ObservableObject {
 
     /// A group starts from a tab's menu.
     @discardableResult
-    func addTabGroup(containing tab: Tab? = nil) -> UUID {
+    func addTabGroup(containing tab: Tab) -> UUID {
         let id = UUID()
         tabGroups.append(TabGroup(id: id, name: "Group \(tabGroups.count + 1)", collapsed: false))
         editingGroupID = id
-        if let tab { move(tab, toGroup: id) }
+        move(tab, toGroup: id)
         writeSession(now: true)
         return id
     }
@@ -1455,7 +1466,9 @@ final class Browser: NSObject, ObservableObject {
     func move(_ tab: Tab, toGroup id: UUID?) {
         guard tabs.contains(where: { $0.id == tab.id }), tab.pin == nil, !tab.shy, !tab.bench,
               id == nil || tabGroups.contains(where: { $0.id == id }) else { return }
+        let previousGroup = tab.groupID
         tab.groupID = id
+        removeEmptyGroup(previousGroup)
         if prefs.usesTabGroups { arrangeGroupedTabs() }
         if let id, let index = tabGroups.firstIndex(where: { $0.id == id }) {
             tabGroups[index].collapsed = false
@@ -1493,8 +1506,13 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func visibleTabs(in group: TabGroup) -> [Tab] {
-        let members = tabs(in: group.id)
-        return group.collapsed ? members.filter { $0.id == activeID } : members
+        group.collapsed ? [] : tabs(in: group.id)
+    }
+
+    private func removeEmptyGroup(_ id: UUID?) {
+        guard let id, !tabs.contains(where: { $0.groupID == id }) else { return }
+        tabGroups.removeAll { $0.id == id }
+        if editingGroupID == id { editingGroupID = nil }
     }
 
     func step(_ direction: Int) {

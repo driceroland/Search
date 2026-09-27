@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Heading positions in the tab row's own coordinate space, so its existing
 /// reorder drag can also land a tab on a group without a second drag gesture.
@@ -10,8 +11,7 @@ struct GroupDropFrames: PreferenceKey {
     }
 }
 
-/// The group heading has the same icon, title and chevron in either tab
-/// layout. Its children live in that layout's own row or column.
+/// A quiet name above the tabs it contains, in either layout.
 struct GroupHeading: View {
     @ObservedObject var browser: Browser
     let group: TabGroup
@@ -25,19 +25,18 @@ struct GroupHeading: View {
 
     private var editing: Bool { browser.editingGroupID == group.id }
 
+    static func width(for name: String) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
+        return ceil((name as NSString).size(withAttributes: [.font: font]).width) + 20
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            if let tab = browser.tabs(in: group.id).first {
-                GroupMark(tab: tab)
-            } else {
-                Image(systemName: "square.stack")
-                    .font(.system(size: 12))
-                    .frame(width: 15)
-            }
             if editing {
                 TextField("Group name", text: $draft)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12.5, weight: .medium))
+                    .frame(width: horizontal ? max(60, Self.width(for: group.name) - 20) : nil)
                     .focused($focused)
                     .onSubmit(commit)
                     .onExitCommand { browser.editingGroupID = nil }
@@ -47,17 +46,19 @@ struct GroupHeading: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            Spacer(minLength: 0)
-            if !editing {
+            if !horizontal { Spacer(minLength: 0) }
+            if !editing && !horizontal {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .medium))
                     .rotationEffect(.degrees(group.collapsed ? -90 : 0))
+                    .opacity(hovering ? 1 : 0)
             }
         }
-        .foregroundStyle(Palette.ink)
+        .foregroundStyle(Palette.muted)
         .padding(.horizontal, 10)
-        .frame(width: horizontal ? 126 : nil, height: 28)
+        .frame(height: horizontal ? 28 : 24)
         .frame(maxWidth: horizontal ? nil : .infinity, alignment: .leading)
+        .fixedSize(horizontal: horizontal, vertical: false)
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
             .fill(dropping ? Palette.wash : (hovering ? Palette.hover : .clear)))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -102,20 +103,12 @@ struct GroupHeading: View {
             Button("Rename Group") { browser.editingGroupID = group.id }
             Button(group.collapsed ? "Expand Group" : "Collapse Group") { browser.toggleTabGroup(group.id) }
             Divider()
-            Button("Remove Group") { browser.removeTabGroup(group.id) }
+            Button("Ungroup Tabs") { browser.removeTabGroup(group.id) }
         }
     }
 
     private func commit() {
         browser.renameTabGroup(group.id, to: draft)
         browser.editingGroupID = nil
-    }
-}
-
-private struct GroupMark: View {
-    @ObservedObject var tab: Tab
-
-    var body: some View {
-        Mark(icon: tab.icon, letter: tab.monogram, size: 15)
     }
 }

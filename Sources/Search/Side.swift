@@ -405,7 +405,7 @@ struct SideBar: View {
             if prefs.usesTabGroups {
                 ForEach(browser.tabGroups) { group in
                     GroupHeading(browser: browser, group: group, dragSpace: "rows")
-                    if !group.collapsed || browser.visibleTabs(in: group).count > 0 {
+                    if !group.collapsed {
                         groupRows(group)
                     }
                 }
@@ -476,9 +476,6 @@ struct SideBar: View {
     private var newTab: some View {
         Quiet(icon: "plus", title: "New tab", height: SideBar.row) { browser.newTab() }
             .padding(.top, SideBar.gap)
-            .contextMenu {
-                if prefs.usesTabGroups { Button("New Group") { browser.addTabGroup() } }
-            }
     }
 
     /// One small door at the bottom: the settings.

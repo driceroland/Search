@@ -287,9 +287,11 @@ struct TabBar: View {
             ? CGFloat(browser.tabs(in: nil).count + browser.tabGroups.reduce(0) { $0 + browser.visibleTabs(in: $1).count })
             : CGFloat(browser.tabs.count) - pinned
         let headers = browser.prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) : 0
+        let headingWidth = browser.prefs.usesTabGroups
+            ? browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name) } : 0
         let shown = Int(pinned + loose + headers)
         var total = pinned * Metrics.pinWidth + loose * each
-            + headers * 126 + CGFloat(max(0, shown - 1)) * Metrics.tabGap
+            + headingWidth + CGFloat(max(0, shown - 1)) * Metrics.tabGap
         if let id = browser.editingTab, let tab = browser.tabs.first(where: { $0.id == id }) {
             total += min(340, strip - Metrics.lights - leading - 12) - (tab.pin != nil ? Metrics.pinWidth : each)
         }
@@ -318,7 +320,7 @@ struct TabBar: View {
             let count = browser.tabs(in: nil).count + browser.tabGroups.reduce(0) { $0 + browser.visibleTabs(in: $1).count }
             guard count > 0 else { return Metrics.tabWidth }
             let spent = CGFloat(browser.pinnedCount) * Metrics.pinWidth
-                + CGFloat(browser.tabGroups.count) * 126
+                + browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name) }
                 + CGFloat(max(0, browser.pinnedCount + count + browser.tabGroups.count - 1)) * Metrics.tabGap
             return max(Metrics.tabMinWidth, min(Metrics.tabWidth, (room(in: strip) - spent) / CGFloat(count)))
         }
