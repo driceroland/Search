@@ -52,6 +52,9 @@ BINARY=".build/$CONFIG/Search"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/$NAME"
+# The AppleScript dictionary (Scripting.swift): read-only, tabs' addresses
+# and titles. The plist below points to it.
+cp Search.sdef "$APP/Contents/Resources/"
 
 # Symbols stay out of the app. The linker leaves every function's name and a
 # map back to the source in the binary — 15,000 entries, more than half of
@@ -68,10 +71,36 @@ fi
 # The icon, drawn fresh each time — it is thirty lines of Swift, not an asset
 # to keep in step with anything.
 ICONSET="build/AppIcon.iconset"
-rm -rf "$ICONSET"
-swift Icon/icon.swift "$ICONSET" > /dev/null
+ICONDOC="build/AppIcon.icon"
+rm -rf "$ICONSET" "$ICONDOC"
+swift Icon/icon.swift "$ICONSET" "$ICONDOC" > /dev/null
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET"
+# macOS 26's Dark, Clear and Tinted Dock styles read the icon from an asset
+# catalog compiled from the Icon Composer document; without one the Dock
+# darkens the flat image and the mark goes black on black (#337). actool
+# comes with Xcode 26 — with anything older, or only the command-line tools,
+# the app keeps the .icns alone, as before. Only Assets.car is kept, not
+# actool's own .icns: the one above goes on being the disk image's icon and
+# the fallback. (macOS 14 and 15 show the flat pictures actool puts in
+# Assets.car, drawn from the same document: the same mark, to within a
+# pixel, on a plate with Apple's own corners.)
+ICONNAME=""
+ICONCAR="build/AppIcon.car"
+rm -rf "$ICONCAR"
+mkdir -p "$ICONCAR"
+# Full paths: actool hands the document to a helper that runs elsewhere, and
+# with "build/…" it finds nothing ("Icon export exited with status 255").
+if xcrun actool "$PWD/$ICONDOC" --compile "$PWD/$ICONCAR" --platform macosx \
+     --minimum-deployment-target "$MINIMUM" --app-icon AppIcon \
+     --output-partial-info-plist "$PWD/$ICONCAR/partial.plist" > /dev/null 2>&1 \
+   && [ -f "$ICONCAR/Assets.car" ]; then
+  cp "$ICONCAR/Assets.car" "$APP/Contents/Resources/Assets.car"
+  ICONNAME="<key>CFBundleIconName</key><string>AppIcon</string>"
+else
+  echo "note: actool from Xcode 26 didn't compile the icon — no Dark or Tinted style this time" >&2
+fi
+rm -rf "$ICONCAR" "$ICONDOC"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -86,10 +115,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  $ICONNAME
   <key>LSMinimumSystemVersion</key><string>$MINIMUM</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHumanReadableCopyright</key><string>© Office Commun · Search</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppleScriptEnabled</key><true/>
+  <key>OSAScriptingDefinition</key><string>Search.sdef</string>
   <!-- Owning http and https is what sends a link clicked in Mail here.
        Appearing in Desktop & Dock → Default web browser also needs the
        XHTML document type below. -->

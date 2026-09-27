@@ -92,18 +92,25 @@ final class Preferences: ObservableObject {
     @Published var customEngine: String {
         didSet { store.set(customEngine, forKey: "search.custom") }
     }
+    /// Shortcuts to a site's own search, ahead of the default engine (see
+    /// Keyword.swift). Empty until someone adds one.
+    @Published var keywords: [Keyword] {
+        didSet { store.set((try? JSONEncoder().encode(keywords)) ?? Data(), forKey: "search.keywords") }
+    }
     /// Tabs nobody has looked at for half an hour give their page back and
     /// keep where they were. On unless turned off.
     @Published var sleepsTabs: Bool {
         didSet { store.set(sleepsTabs, forKey: "tabs.sleep") }
     }
+    /// A tab opened behind the page — ⌘-click, the middle button, a batch
+    /// of links from another app — waits to load until it is gone to, as a
+    /// tab brought back from the last session does (see Browser.open).
+    /// Off unless asked for.
+    @Published var lazyTabs: Bool {
+        didSet { store.set(lazyTabs, forKey: "tabs.lazy") }
+    }
     @Published var showsReading: Bool {
         didSet { store.set(showsReading, forKey: "tabs.reading") }
-    }
-    /// ⌃Tab shows the tabs as pictures, most recently used first. Off unless
-    /// turned on; off, ⌃Tab walks the row.
-    @Published var mruSwitcher: Bool {
-        didSet { store.set(mruSwitcher, forKey: "tabs.mru") }
     }
     /// The ad blocker. On unless turned off; there is nothing else to it.
     @Published var shielded: Bool {
@@ -207,11 +214,6 @@ final class Preferences: ObservableObject {
     @Published var littleLinks: Bool {
         didSet { store.set(littleLinks, forKey: "links.little") }
     }
-    /// In the column, new tabs and links opened beside the page go to the
-    /// top of the loose tabs, under the pins, as in Arc. Off unless asked for.
-    @Published var newTabsOnTop: Bool {
-        didSet { store.set(newTabsOnTop, forKey: "tabs.top") }
-    }
     /// The bookmarks bar above the page (see BookmarksBar.swift). Off
     /// unless asked for.
     @Published var bookmarksBar: Bool {
@@ -223,6 +225,14 @@ final class Preferences: ObservableObject {
         didSet {
             store.set(showsLinks, forKey: "links.show")
             HoveredLink.on = showsLinks
+        }
+    }
+    /// A back or forward swipe held once armed shows the pages that way to
+    /// pick from (see PageView.openList). Off unless asked for.
+    @Published var holdsHistory: Bool {
+        didSet {
+            store.set(holdsHistory, forKey: "swipe.history")
+            PageView.holdsHistory = holdsHistory
         }
     }
     /// Two fingers flick the floating video to a corner (see Float.swift).
@@ -269,6 +279,12 @@ final class Preferences: ObservableObject {
     @Published var usesTabGroups: Bool {
         didSet { store.set(usesTabGroups, forKey: "tabs.groups") }
     }
+    /// "settings", "new tab" and the like, typed alone in the address field,
+    /// reach that part of the app instead of asking a search engine for the
+    /// word (see AddressCommands.swift). Off unless asked for.
+    @Published var commandBar: Bool {
+        didSet { store.set(commandBar, forKey: "commandbar") }
+    }
 
     init() {
         navigationLeft = store.bool(forKey: "toolbar.left")
@@ -299,9 +315,11 @@ final class Preferences: ObservableObject {
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
+        keywords = store.data(forKey: "search.keywords")
+            .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
+        lazyTabs = store.bool(forKey: "tabs.lazy")
         showsReading = store.object(forKey: "tabs.reading") as? Bool ?? true
-        mruSwitcher = store.bool(forKey: "tabs.mru")
         shielded = store.object(forKey: "shield") as? Bool ?? true
         let keeps = store.bool(forKey: "sites.keep")
         keepsSignIns = keeps
@@ -339,6 +357,10 @@ final class Preferences: ObservableObject {
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
         usesTabGroups = store.bool(forKey: "tabs.groups")
+        commandBar = store.bool(forKey: "commandbar")
+        let history = store.bool(forKey: "swipe.history")
+        holdsHistory = history
+        PageView.holdsHistory = history
         // On for everyone who never touched these three switches (Drice,
         // 27 Sep 2026); a choice made before stands.
         let flicks = store.object(forKey: "float.flicks") as? Bool ?? true
@@ -351,7 +373,6 @@ final class Preferences: ObservableObject {
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         littleLinks = store.bool(forKey: "links.little")
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
-        newTabsOnTop = store.bool(forKey: "tabs.top")
         let links = store.object(forKey: "links.show") as? Bool ?? true
         showsLinks = links
         HoveredLink.on = links

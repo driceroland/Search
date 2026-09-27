@@ -57,8 +57,12 @@ enum BookmarksFile {
                 }
             } else if ns.substring(with: match.range(at: 4)).isEmpty {
                 // <DL>: the list of the folder just named — or, the first
-                // time, of the file itself.
-                if heading == nil, stack.isEmpty, root.isEmpty {
+                // time, of the file itself. Past a depth no one files at,
+                // a list's pages join the folder that holds it, so a file
+                // nested without end can't be too deep to keep.
+                if stack.count >= 64 {
+                    stack.append((nil, []))
+                } else if heading == nil, stack.isEmpty, root.isEmpty {
                     stack.append((nil, []))
                 } else if bar, stack.count <= 1 {
                     stack.append((nil, []))

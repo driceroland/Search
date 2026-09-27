@@ -72,11 +72,30 @@ final class Shield: ObservableObject {
     /// The few slots that are reliably an advertisement and nothing else. Kept
     /// deliberately short — a generous cosmetic list is how a blocker starts
     /// eating the page it was meant to clean.
+    ///
+    /// The second half are the boxes a site keeps open for the ad while it
+    /// loads: with the ad blocked they stay, empty, a banner's height of
+    /// nothing (#159). Each is a whole class name from EasyList's generic
+    /// hiding list, matched as a whole word: an element whose class is
+    /// `ad-slot` goes, one whose class merely contains "ad" stays.
     private static let slots = [
         ".adsbygoogle", "ins.adsbygoogle", "[id^=\"google_ads_\"]",
         "[id^=\"div-gpt-ad\"]", "[id^=\"taboola-\"]", "#taboola-below-article",
         "iframe[src*=\"doubleclick.net\"]", "iframe[src*=\"googlesyndication\"]",
         "iframe[src*=\"amazon-adsystem\"]",
+        ".ad-slot", ".ad-slot-container", ".top-banner-ad-container",
+        ".ad-leaderboard", ".ad-billboard", ".ad-giga", ".ad-mpu", ".ad-mrec",
+        ".ad-unit", ".adunit", ".adslot", ".dfp-ad", ".gpt-ad", ".w_ad",
+    ]
+
+    /// Slots with names too plain, or too much a site's own, to hide
+    /// everywhere — AS and El País call theirs just `.ad` — hidden only on
+    /// the sites EasyList's own site rules hide them on.
+    private static let slotsBySite: [(sites: [String], selector: String)] = [
+        (["*as.com", "*elpais.com"], ".ad"),
+        (["*theguardian.com"], ".top-fronts-banner-ad-container"),
+        (["*independent.co.uk", "*the-independent.com"], "#billboard-wrapper"),
+        (["*cnn.com"], ".ad-slot-header__wrapper"),
     ]
 
     func compile() {
@@ -96,6 +115,12 @@ final class Shield: ObservableObject {
             "trigger": ["url-filter": ".*"],
             "action": ["type": "css-display-none", "selector": Shield.slots.joined(separator: ", ")],
         ])
+        rules += Shield.slotsBySite.map { entry in
+            [
+                "trigger": ["url-filter": ".*", "if-domain": entry.sites],
+                "action": ["type": "css-display-none", "selector": entry.selector],
+            ]
+        }
 
         guard let data = try? JSONSerialization.data(withJSONObject: rules),
               let json = String(data: data, encoding: .utf8)

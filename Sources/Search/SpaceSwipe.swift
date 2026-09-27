@@ -53,7 +53,7 @@ final class SpaceSwipe {
 
     /// Where the tabs are: the column, or the bar across the top.
     private func overTabs(_ event: NSEvent, in browser: Browser) -> Bool {
-        guard event.window === Links.window, let window = event.window else { return false }
+        guard let window = event.window, window === browser.window else { return false }
         if browser.prefs.sidebar {
             return browser.prefs.sidePosition == .right
                 ? event.locationInWindow.x >= window.frame.width - browser.prefs.sideWidth
@@ -64,6 +64,11 @@ final class SpaceSwipe {
 
     /// True for an event the swipe keeps for itself.
     private func takes(_ event: NSEvent) -> Bool {
+        // The window the fingers are over, at the start of a gesture or a
+        // turn of the wheel; the rest of a gesture stays with it.
+        if event.phase == .began || !event.hasPreciseScrollingDeltas, let over = Browsers.browser(for: event.window) {
+            browser = over
+        }
         guard let browser, browser.prefs.usesSpaces, !browser.folded || browser.peeking else { return false }
         // A mouse wheel over the tabs: a notch along the spaces' axis — up or down
         // in the bar, sideways in the column — brings one space. In the column

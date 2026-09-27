@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary title="Search Terminology">
+    <!-- Read-only, in Safari's words and codes: a script can ask for the address
+         and title of the tabs, and nothing else. Private tabs are not listed.
+         count is here because "repeat with t in tabs" asks for it. -->
+    <suite name="Search Suite" code="Srch" description="Windows and their tabs, to read.">
+        <command name="count" code="corecnte" description="Return the number of elements of a particular class within an object.">
+            <cocoa class="NSCountCommand"/>
+            <direct-parameter type="specifier" description="The objects to be counted."/>
+            <parameter name="each" code="kocl" type="type" optional="yes" hidden="yes" description="The class of objects to be counted.">
+                <cocoa key="ObjectClass"/>
+            </parameter>
+            <result type="integer" description="The count."/>
+        </command>
+        <class name="application" code="capp" description="Search.">
+            <cocoa class="NSApplication"/>
+            <element type="window" access="r">
+                <cocoa key="orderedWindows"/>
+            </element>
+        </class>
+        <class name="window" code="cwin" description="A browser window.">
+            <cocoa class="NSWindow"/>
+            <!-- A tab is known as "tab N of window id …": without the id, a
+                 tab a script kept hold of couldn't be found again. -->
+            <property name="id" code="ID  " type="integer" access="r" description="The unique identifier of the window.">
+                <cocoa key="uniqueID"/>
+            </property>
+            <element type="tab" access="r">
+                <cocoa key="scriptTabs"/>
+            </element>
+            <property name="current tab" code="cTab" type="tab" access="r" description="The tab showing in the window; missing value when it is a private tab.">
+                <cocoa key="scriptCurrentTab"/>
+            </property>
+        </class>
+        <class name="tab" plural="tabs" code="bTab" description="A tab. Private tabs are never listed.">
+            <cocoa class="ScriptTab"/>
+            <property name="URL" code="pURL" type="text" access="r" description="The address of the page on screen in the tab.">
+                <cocoa key="url"/>
+            </property>
+            <property name="name" code="pnam" type="text" access="r" description="The title of the tab's page.">
+                <cocoa key="name"/>
+            </property>
+        </class>
+    </suite>
+</dictionary>

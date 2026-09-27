@@ -6,51 +6,76 @@ import AppKit
 
 @main
 struct SearchApp: App {
-    @StateObject private var browser = Browser()
+    /// The window in front's browser, for the menus (see Windows.swift).
+    @StateObject private var front = Front.shared
+    /// Your own keys (Settings › Shortcuts): the menus are drawn again when
+    /// one changes, and show it.
+    @ObservedObject private var shortcuts = ShortcutStore.shared
     /// Links from other apps, and the Dock icon.
     @NSApplicationDelegateAdaptor(Links.self) private var links
 
+    /// What the menus act on: the window in front's browser.
+    private var browser: Browser { front.browser ?? SceneSlot.shared.browser }
+
     var body: some Scene {
-        Window("Search", id: "browser") {
-            ContentView(browser: browser)
+        // Where you left it, at the size you left it. SwiftUI saves a
+        // window's frame under its id and puts it back before the window
+        // first shows; set by hand once the window was up, it showed at the
+        // default size first and then jumped (#202). The id is the name the
+        // frame has always been kept under. A test run keeps its own: the
+        // name lives in the app's standard defaults, which every copy
+        // shares, and a probe resized for a test once changed the size the
+        // real window came back at. The other windows' frames are in
+        // windows.json (see Windows.swift).
+        Window("Search", id: Browsers.sceneID) {
+            SceneRoot(slot: SceneSlot.shared)
                 .frame(minWidth: 640, minHeight: 420)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 780)
         .commands {
-            // One window. Tabs are the only kind of "new" there is.
             CommandGroup(replacing: .newItem) {
+                // Another window, with tabs of its own (see Windows.swift).
+                Button("New Window") { Browsers.newWindow() }
+                    .shortcut("file.newWindow")
                 Button("New Tab") { browser.newTab() }
-                    .keyboardShortcut("t")
+                    .shortcut("file.newTab")
                 Button("New Private Tab") { browser.newShyTab() }
-                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                    .shortcut("file.newPrivateTab")
                 Button("Reopen Closed Tab") { browser.reopen() }
-                    .keyboardShortcut("t", modifiers: [.command, .shift])
-                    .disabled(browser.ghosts.isEmpty)
+                    .shortcut("file.reopen")
+                    .disabled(browser.ghosts.isEmpty && Browsers.lastClosedAt == nil)
                 Divider()
                 Button("Open Address…") { browser.edit() }
-                    .keyboardShortcut("l")
+                    .shortcut("file.openAddress")
+                Divider()
+                // Another browser's bookmarks, history, passwords and the
+                // rest, as Safari's File › Import From: the one sheet every
+                // other way in opens too.
+                Button("Bring Things Over…") { browser.bringingIn = "" }
+                    .shortcut("file.import")
                 Divider()
                 Button("Close Tab") { if let tab = browser.active { browser.close(tab) } }
-                    .keyboardShortcut("w")
+                    .shortcut("file.closeTab")
             }
             CommandGroup(replacing: .printItem) {
                 Button("Share…") { browser.share() }
+                    .shortcut("file.share")
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Print…") { browser.printPage() }
-                    .keyboardShortcut("p")
+                    .shortcut("file.print")
                     .disabled(browser.active?.isBlank ?? true)
             }
             CommandGroup(after: .pasteboard) {
                 Divider()
                 Button("Find on Page…") { browser.openFind() }
-                    .keyboardShortcut("f")
+                    .shortcut("edit.find")
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Find Next") { browser.look(forward: true) }
-                    .keyboardShortcut("g")
+                    .shortcut("edit.findNext")
                     .disabled(!browser.finding)
                 Button("Find Previous") { browser.look(forward: false) }
-                    .keyboardShortcut("g", modifiers: [.command, .shift])
+                    .shortcut("edit.findPrevious")
                     .disabled(!browser.finding)
             }
             CommandGroup(replacing: .toolbar) {
@@ -58,13 +83,13 @@ struct SearchApp: App {
                     get: { browser.prefs.sidebar },
                     set: { _ in browser.toggleSidebar() }
                 ))
-                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .shortcut("view.sidebar")
                 // Folded away, not moved (see Fold.swift) — the column, or the
                 // strip across the top.
                 Button(browser.prefs.sidebar
                        ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
                        : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
-                    .keyboardShortcut("s")
+                    .shortcut("view.fold")
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
                     set: { browser.prefs.glyph = $0 }
@@ -75,85 +100,90 @@ struct SearchApp: App {
                 }
                 Divider()
                 Button("Reload Page") { browser.reload() }
-                    .keyboardShortcut("r")
+                    .shortcut("view.reload")
                 Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
-                    .keyboardShortcut("r", modifiers: [.command, .option])
+                    .shortcut("view.reloadOrigin")
                 Button("Reading Mode") { browser.toggleReader() }
-                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                    .shortcut("view.reader")
                 Button("Float Video") { browser.toggleFloat() }
-                    .keyboardShortcut("p", modifiers: [.command, .shift])
+                    .shortcut("view.float")
                 Divider()
                 Button("Hide Elements…") { browser.toggleHiding() }
-                    .keyboardShortcut("h", modifiers: [.command, .shift])
+                    .shortcut("view.hide")
                 Button("Hidden on This Site…") { browser.reviewing.toggle() }
-                    .keyboardShortcut("u", modifiers: [.command, .shift])
+                    .shortcut("view.hidden")
                 Divider()
                 Button("Zoom In") { browser.zoom(by: 1.1) }
-                    .keyboardShortcut("+")
+                    .shortcut("view.zoomIn")
                 Button("Zoom Out") { browser.zoom(by: 1 / 1.1) }
-                    .keyboardShortcut("-")
+                    .shortcut("view.zoomOut")
                 Button("Actual Size") { browser.resetZoom() }
-                    .keyboardShortcut("0")
+                    .shortcut("view.actualSize")
                 Divider()
                 // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
                 Button("Web Inspector") { browser.toggleInspector() }
-                    .keyboardShortcut("i", modifiers: [.command, .option])
+                    .shortcut("view.inspector")
                 Button("JavaScript Console") { browser.showConsole() }
-                    .keyboardShortcut("j", modifiers: [.command, .option])
+                    .shortcut("view.console")
                 Button("Inspect Element") { browser.inspectElement() }
-                    .keyboardShortcut("c", modifiers: [.command, .option])
+                    .shortcut("view.inspect")
             }
             CommandMenu("Tabs") {
                 Button("Back") { browser.back() }
-                    .keyboardShortcut("[")
+                    .shortcut("tabs.back")
                     .disabled(browser.active?.canGoBack != true)
                 Button("Forward") { browser.forward() }
-                    .keyboardShortcut("]")
+                    .shortcut("tabs.forward")
                     .disabled(browser.active?.canGoForward != true)
                 Divider()
                 Button("Next Tab") { browser.step(1) }
-                    .keyboardShortcut("]", modifiers: [.command, .shift])
+                    .shortcut("tabs.next")
                 Button("Previous Tab") { browser.step(-1) }
-                    .keyboardShortcut("[", modifiers: [.command, .shift])
+                    .shortcut("tabs.previous")
                 Button("Search Tabs…") { browser.summon() }
-                    .keyboardShortcut("k")
+                    .shortcut("tabs.search")
                 Divider()
                 if let tab = browser.active {
                     if tab.pin == nil {
                         Button("Pin Tab") { browser.pin(tab) }
-                            .disabled(tab.isBlank)
+                            .disabled(tab.isBlank || tab.shy)
                     } else {
                         Button("Change Letter") { browser.editLetter(tab) }
                         Button("Unpin Tab") { browser.unpin(tab) }
                     }
                 }
                 Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
+                    .shortcut("tabs.rename")
                     .disabled(browser.active == nil)
                 Button("Duplicate Tab") { browser.duplicate() }
-                    .keyboardShortcut("d")
+                    .shortcut("tabs.duplicate")
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Copy Address") { browser.copyAddress() }
-                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                    .shortcut("tabs.copyAddress")
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Copy as Markdown Link") { browser.copyMarkdownLink() }
+                    .shortcut("tabs.copyMarkdown")
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Paste and Go") { browser.pasteAndGo() }
-                    .keyboardShortcut("v", modifiers: [.command, .shift])
+                    .shortcut("tabs.pasteAndGo")
                 Divider()
                 Button("Close Other Tabs") { if let tab = browser.active { browser.closeOthers(but: tab) } }
+                    .shortcut("tabs.closeOthers")
                     .disabled(browser.tabs.count < 2)
                 Button("Stop Sound in Tab") { browser.pauseMedia() }
-                    .keyboardShortcut("m", modifiers: [.command, .shift])
+                    .shortcut("tabs.mute")
             }
             CommandMenu("Bookmarks") {
-                Button("Add This Page") { browser.bookmarkCurrent() }
-                    .keyboardShortcut("b", modifiers: [.command, .shift])
+                Button(browser.pageKept ? "Edit Bookmark\u{2026}" : "Add This Page") { browser.bookmarkCurrent() }
+                    .shortcut("bookmarks.add")
                     .disabled(browser.active?.isBlank ?? true)
                 Button("Show Bookmarks…") { browser.bookmarking = true }
+                    .shortcut("bookmarks.show")
                 Toggle("Show Bookmarks Bar", isOn: Binding(
                     get: { browser.prefs.bookmarksBar },
                     set: { on in withAnimation(Motion.glide) { browser.prefs.bookmarksBar = on } }
                 ))
+                .shortcut("bookmarks.bar")
                 // The bookmarks themselves follow, put in by AppKit (see
                 // BookmarkMenu in Bookmarks.swift).
             }
@@ -180,22 +210,24 @@ struct SearchApp: App {
                 }
                 Divider()
                 Button("Show History…") { browser.recalling = true }
-                    .keyboardShortcut("y")
+                    .shortcut("history.show")
                 Button("Downloads…") { browser.hoarding = true }
-                    .keyboardShortcut("j", modifiers: [.command, .shift])
+                    .shortcut("history.downloads")
                 Divider()
                 Button("Clear Browsing Data…") { browser.recallMode = .clearing }
-                    .keyboardShortcut(.delete, modifiers: [.command, .shift])
+                    .shortcut("history.clearData")
                 Button("Clear History") { browser.clearHistory() }
+                    .shortcut("history.clear")
             }
             // Search › Check for Updates…, under About, as in any Mac app.
             CommandGroup(after: .appInfo) { UpdateMenuItem() }
             CommandGroup(after: .appSettings) {
                 Button("Settings…") { browser.tuning = true }
-                    .keyboardShortcut(",")
+                    .shortcut("app.settings")
                 Button("Welcome…") { browser.welcoming = true }
+                    .shortcut("app.welcome")
                 Button("Passwords…") { browser.managing = true }
-                    .keyboardShortcut("l", modifiers: [.command, .option])
+                    .shortcut("app.passwords")
             }
             CommandGroup(replacing: .help) {
                 Button("Send Feedback…") { Links.writeFeedback() }
@@ -465,6 +497,19 @@ struct ContentView: View {
         if browser.bringingIn != nil {
             sheet { ImportPanel(browser: browser) } close: { browser.bringingIn = nil }
         }
+        // What's new, once after an update, and every version's notes
+        // (see WhatsNew.swift).
+        if browser.newsShowing, let release = WhatsNew.current {
+            sheet {
+                WhatsNewCard(release: release, prefs: browser.prefs, close: { browser.newsShowing = false }) {
+                    browser.newsShowing = false
+                    browser.notesShowing = true
+                }
+            } close: { browser.newsShowing = false }
+        }
+        if browser.notesShowing {
+            sheet { ReleaseNotesPanel { browser.notesShowing = false } } close: { browser.notesShowing = false }
+        }
         if browser.reviewing {
             // No dimming for this one: the whole point is to keep looking at
             // the page while the list offers to put things back on it.
@@ -526,7 +571,7 @@ struct ContentView: View {
                 browser.appLeft()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { Browser.front = browser }
+                if let window, (note.object as? NSWindow) === window { Browsers.becameKey(browser) }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { browser.tabSwitcher.cancel() }
@@ -549,6 +594,8 @@ struct ContentView: View {
             .animation(Motion.settle, value: browser.welcoming)
             .animation(Motion.settle, value: browser.bookmarking)
             .animation(Motion.settle, value: browser.managing)
+            .animation(Motion.settle, value: browser.newsShowing)
+            .animation(Motion.settle, value: browser.notesShowing)
             .animation(Motion.settle, value: browser.bringingIn != nil)
             .animation(Motion.settle, value: browser.reviewing)
         .onAppear {
@@ -557,6 +604,7 @@ struct ContentView: View {
             // Addresses from other apps have somewhere to go from here on.
             Links.hand(to: browser)
             BookmarkMenu.shared.start(for: browser)
+            Browsers.watchFrames()
         }
     }
 
@@ -746,7 +794,8 @@ struct ContentView: View {
     }
 
     private func dress(_ window: NSWindow) {
-        Links.window = window
+        browser.window = window
+        window.tabbingMode = .disallowed
         // Light or dark is the app's to say (Settings › Appearance); the
         // window only has to be the ground colour that goes with it.
         window.titlebarAppearsTransparent = true
@@ -757,13 +806,12 @@ struct ContentView: View {
         window.isMovableByWindowBackground = false
         // Nor by its title bar, which the strip is all the way down: AppKit
         // would move the window on any drag there, a tab picked up to take
-        // it elsewhere in the row included. DragStrip moves it instead.
-        window.isMovable = false
-        // Where you left it, at the size you left it. A test run keeps its
-        // own: the name lives in the app's standard defaults, which every
-        // copy shares, and a probe resized for a test once changed the size
-        // the real window came back at.
-        window.setFrameAutosaveName(Store.world.map { "search (\($0))" } ?? "search")
+        // it elsewhere in the row included. DragStrip moves it instead. The
+        // window stays movable between clicks, though — macOS's Window ›
+        // Move & Resize, its tiling and the tools that arrange windows ask
+        // for a movable one (#286) — and is made unmovable only while a
+        // press lasts (see Browsers.watchFrames).
+        window.isMovable = true
 
         // The traffic lights set in from the corner and centred in the strip's
         // height, in both modes, without a toolbar's rounder corners — see
@@ -802,6 +850,11 @@ struct ContentView: View {
     private func watchKeys() {
         guard keys == nil else { return }
         keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+            // Every window has a monitor, and every monitor hears every key:
+            // each takes only its own window's, and the one in front takes
+            // those of windows that aren't a browser's (a panel, the little
+            // window).
+            guard mine(event) else { return event }
             guard event.type == .keyDown else {
                 // ⌃ let go of switches to the tab the switcher is on.
                 if browser.tabSwitcher.active, !event.modifierFlags.contains(.control) {
@@ -813,12 +866,18 @@ struct ContentView: View {
             }
             return take(event) ? nil : event
         }
-        ContentView.keyHook = { event in take(event) ? nil : event }
+        ContentView.keyHooks[ObjectIdentifier(browser)] = { event in take(event) ? nil : event }
+    }
+
+    /// Whether a key is this window's to act on.
+    private func mine(_ event: NSEvent) -> Bool {
+        if let window = event.window, Browsers.browser(for: window) != nil { return window === self.window }
+        return Browsers.acting === browser
     }
 
     /// The same handling the key monitor gives an event, for the bench to
-    /// put a key through the app's own path.
-    static var keyHook: ((NSEvent) -> NSEvent?)?
+    /// put a key through the app's own path — each window's own.
+    static var keyHooks: [ObjectIdentifier: (NSEvent) -> NSEvent?] = [:]
 
     /// The last key handed to the page before Search acted on it (see
     /// `pageFirst`): if WebKit sends it back unused, it is Search's.
@@ -864,6 +923,13 @@ struct ContentView: View {
             || browser.active?.built?.inputContext != nil
     }
 
+    /// Whether the caret is in the window's address field: its field editor
+    /// answers to the field, and the field to AddressField (Omnibox.swift).
+    private static func inAddressField(_ window: NSWindow) -> Bool {
+        guard let editor = window.firstResponder as? NSTextView else { return false }
+        return (editor.delegate as? NSTextField)?.delegate is AddressField.Coordinator
+    }
+
     /// Whether the tab switcher can come up: in this window, with nothing
     /// over the page it would have to cover.
     private func canSwitchTabs(_ event: NSEvent) -> Bool {
@@ -884,6 +950,8 @@ struct ContentView: View {
     private func take(_ event: NSEvent) -> Bool {
         // A small window's keys are its own (see Little.swift).
         if let little = LittleWindow.owning(event.window) { return little.take(event) }
+        // A key being typed into Settings › Shortcuts is for the box.
+        guard !ShortcutStore.shared.recording else { return false }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         let controlTab = event.keyCode == 48 && flags.contains(.control)
@@ -924,6 +992,14 @@ struct ContentView: View {
             if browser.makingSpace {
                 browser.cancelSpaceCreation()
                 withAnimation(Motion.glide) { browser.makingSpace = false }
+                return true
+            }
+            if browser.notesShowing {
+                browser.notesShowing = false
+                return true
+            }
+            if browser.newsShowing {
+                browser.newsShowing = false
                 return true
             }
             if browser.tuning {
@@ -976,21 +1052,33 @@ struct ContentView: View {
             return true
         }
 
+        // ⌘Return keeps a peek, as its other button does: Return or the
+        // keypad's Enter, by the key rather than what it types, whatever Caps
+        // Lock says. Not while typing in the peeked page — a comment box or
+        // a mail there sends with the same keys — by the page's word or by
+        // the caret being in something editable, in any frame.
+        if event.keyCode == 36 || event.keyCode == 76,
+           flags.intersection([.command, .shift, .option, .control]) == .command,
+           let peek = browser.peekTab, !peek.typing, peek.built?.inputContext == nil {
+            browser.keepPeek()
+            return true
+        }
+
         // Tab is the page's: it moves between a form's fields and a page's
         // links, as in every browser. It used to walk the row of tabs, which
         // took it from anyone filling in a form. ⌃Tab walks the row and comes
         // round to the first again, ⌃⇧Tab the other way — the keys every
         // other browser uses for that.
         //
-        // With the switcher on (Settings › Tabs), ⌃Tab brings it up instead,
-        // most recently used first — whenever there is nothing over the page
-        // it would have to cover; otherwise it walks the row as before.
+        // ⌃Tab brings up the switcher instead, most recently used first —
+        // whenever there is nothing over the page it would have to cover;
+        // otherwise it walks the row as before.
         //
         // While an address is being typed, the list under the field is what
         // there is to move through, and Return takes whatever the walk landed on.
         if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option) {
             if flags.contains(.control) {
-                if browser.prefs.mruSwitcher, canSwitchTabs(event) {
+                if canSwitchTabs(event) {
                     // A Tab held down doesn't race through them.
                     if !event.isARepeat { browser.switchTabs(backwards: flags.contains(.shift)) }
                     return true
@@ -1015,9 +1103,23 @@ struct ContentView: View {
             return true
         }
 
+        // Your own keys (Settings › Shortcuts), before an extension's and the
+        // ones below: a command you moved runs on its new key, and a key you
+        // took off a command goes on to the page. Nothing here unless you
+        // changed something.
+        if ShortcutStore.shared.anyChanged, let combo = KeyCombo(event: event) {
+            if let command = ShortcutStore.shared.changedCommand(on: combo) {
+                command.run(browser)
+                return true
+            }
+            if ShortcutStore.shared.isFreed(combo) { return false }
+        }
+
         // A shortcut an extension registered — ⌥⇧D, ⌃⇧Y — before ours, since
-        // none of ours use those.
+        // none of ours use those. Never one of ours, nor one of the Mac's:
+        // those an extension doesn't get (see ShortcutStore.adopt).
         if #available(macOS 15.4, *), !flags.intersection([.command, .option, .control]).isEmpty,
+           KeyCombo(event: event).map({ !ShortcutStore.shared.keepsFromExtensions($0) }) ?? true,
            Extensions.shared.take(event) {
             return true
         }
@@ -1034,6 +1136,19 @@ struct ContentView: View {
 
         // Other shortcuts with ⌥ or ⌃ on top are somebody else's.
         guard !flags.contains(.option), !flags.contains(.control) else { return false }
+
+        // ⌘Return in the address field: what is typed there in a new tab,
+        // the one you are on left as it was, as in Safari; ⇧⌘Return goes to
+        // it. Here rather than in the field's delegate, which ⌘Return doesn't
+        // reliably reach. Only this window's own address field: ⌘Return in a
+        // page, the peek, or another box (Settings, History's search) is
+        // theirs as before.
+        if event.keyCode == 36 || event.keyCode == 76, browser.fieldShowing,
+           browser.editingTab == nil, let window, event.window === window,
+           ContentView.inAddressField(window) {
+            browser.submit(aside: true, front: shifted)
+            return true
+        }
 
         // ⌘1 through ⌘9, and ⌘0, by the key rather than the character it
         // types. On AZERTY and many other layouts the top row types &, é, "…
@@ -1172,5 +1287,17 @@ private struct UpdateMenuItem: View {
             Button("Check for Updates…") { updater.checkByHand() }
                 .disabled(updater.checking)
         }
+    }
+}
+
+/// SwiftUI's window, around whichever browser it holds now (see SceneSlot):
+/// a fresh one, laid out afresh, when the old one went with its window.
+struct SceneRoot: View {
+    @ObservedObject var slot: SceneSlot
+
+    var body: some View {
+        ContentView(browser: slot.browser)
+            .id(ObjectIdentifier(slot.browser))
+            .onAppear { Browsers.restoreOnce() }
     }
 }

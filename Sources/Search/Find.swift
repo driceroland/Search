@@ -41,8 +41,19 @@ struct FindBar: View {
         .padding(.top, 12)
         .padding(.trailing, 14)
         .animation(Motion.quick, value: browser.missed)
-        .onAppear { focused = true }
-        .onChange(of: browser.findFocus) { _, _ in focused = true }
+        .onAppear(perform: focus)
+        .onChange(of: browser.findFocus) { _, _ in focus() }
+    }
+
+    /// Into the field, and once more a moment later if it didn't take: as
+    /// the bar comes in, the field may not be in the window yet, and with
+    /// the Mac's keyboard navigation on, the keyboard went to the first
+    /// button instead — the back button — until ⌘F was pressed again (#172).
+    private func focus() {
+        focused = true
+        DispatchQueue.main.async {
+            if !focused { focused = true }
+        }
     }
 
     private func step(_ icon: String, action: @escaping () -> Void) -> some View {

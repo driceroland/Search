@@ -58,7 +58,7 @@
                                        until the page is loading
     ./bench pull DX [STEPS] [MS]       test run: two fingers DX points sideways over the page (back is +) — where it went
     ./bench keyeq CHARS CODE [shift]   test run: ⌘CHARS pressed while the page has the keyboard — who took it
-    ./bench import BROWSER [WHAT…] [--profile NAME|all]
+    ./bench import BROWSER [WHAT…] [--profile NAME|all] [--replace]
                                      test run: bookmarks, history, passwords from a made-up profile in the world's Import/
                                      (the one used most recently, unless a profile is named, or all)
     ./bench import-preview           test run: each browser found, its profiles, the one used most recently, and what
@@ -68,6 +68,16 @@
                                        folder (open: its first bookmark picked)
     ./bench bookmark URL [new]         test run: a bookmark picked from the list, timed until it loads
                                        (new: into a new tab, whose page isn't built yet)
+    ./bench windows [list|new|close N|reopen|frame N X Y W H|front N|link URL]
+                                       test run: the windows, oldest first — a new one, the Nth closed,
+                                       the last closed one back (⇧⌘T), the Nth moved, the Nth as if in
+                                       front, a link as another app hands it over; --window N before
+                                       any command aims it at the Nth window
+    ./bench towindow ID N|new|drop X Y test run: a tab to the Nth window, a new one (Move to Window), or let
+                                       go at screen point X Y as a drag out of the row
+    ./bench news PATH [notes] | on     test run: the card after an update, or every version's notes, to a
+                                       PNG; on: the card in the window
+    ./bench quit                       test run: quit the app as ⌘Q does
     ./bench middle ID X Y              test run: the middle button clicked at X Y of a tab's page
     ./bench pin ID [off|home]          test run: pin a tab, unpin it, or double-click it (home)
     ./bench fill [STEPS]               test run: the page reporting its scroll STEPS times, each timed until the window rests
@@ -76,6 +86,15 @@
     ./bench pages on|off               test run: let a hidden probe's pages be painted, off every screen (for picture)
     ./bench picture PATH               test run: the whole window, pages included, drawn to a PNG (start the probe hidden)
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
+    ./bench film float|land PATH [SECS]  the tab in front's video out into its floating window, or back: every
+                                       frame the page draws for SECS (1), its size, the video's box and how much
+                                       of the view it fills → PATH.json; from a probe started hidden, both
+                                       windows kept off every screen — --test runs only
+    ./bench float screens [two] | place X Y | swipe DX DY [STEPS] [MS] | wheel DX DY | click
+                                       test run: the floating window's gestures (after film float, so it is
+                                       off every screen), on a made-up 1440×900 screen, or two side by side:
+                                       where a flick, a pull at a side, a dock or a click on the sliver
+                                       leaves it, and how far it swings on the way
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        import on|off|extensions|BROWSER,
                                        look light|dark|system, sidebar on|off, side left|right, spaces on|off, hides on|off,
@@ -127,6 +146,12 @@ def main(argv):
         world = "".join(c for c in argv[at + 1].lower() if c.isascii() and (c.isalnum() or c == "-"))
         if world in ("", "1"): world = "test"
         argv = argv[:at] + argv[at + 2:]
+    window = None
+    if "--window" in argv:
+        at = argv.index("--window")
+        if at + 1 >= len(argv): sys.exit("usage: bench --window N COMMAND …")
+        window = int(argv[at + 1])
+        argv = argv[:at] + argv[at + 2:]
     yes = "--yes" in argv
     argv = [a for a in argv if a not in ("--test", "--yes")]
     if not argv or argv[0] in ("-h", "--help", "help"):
@@ -134,6 +159,7 @@ def main(argv):
         return 0
     verb, args = argv[0], argv[1:]
     request = {"do": verb}
+    if window is not None: request["window"] = window
     if verb == "open":
         if len(args) != 1: sys.exit("usage: bench open URL")
         request["url"] = args[0]
@@ -271,6 +297,9 @@ def main(argv):
         request["new"] = len(args) == 2
     elif verb == "import":
         kinds = ("bookmarks", "history", "passwords")
+        if "--replace" in args:
+            request["replace"] = True
+            args = [a for a in args if a != "--replace"]
         if "--profile" in args:
             at = args.index("--profile")
             if at + 1 >= len(args): sys.exit("usage: bench import BROWSER [WHAT…] --profile NAME|all")
@@ -288,6 +317,25 @@ def main(argv):
     elif verb == "keyeq":
         if len(args) < 2 or any(a != "shift" for a in args[2:]): sys.exit("usage: bench keyeq CHARS CODE [shift]")
         request["chars"], request["code"], request["mods"] = args[0], int(args[1]), args[2:]
+    elif verb == "news":
+        if not args or (args[0] != "on" and len(args) > 2): sys.exit("usage: bench news PATH [notes] | news on")
+        if args[0] == "on": request["on"] = True
+        else:
+            request["path"] = os.path.abspath(args[0])
+            request["notes"] = args[1:] == ["notes"]
+    elif verb == "towindow":
+        if len(args) not in (2, 4) or (len(args) == 4 and args[1] != "drop"): sys.exit("usage: bench towindow ID N|new|drop X Y")
+        request["id"] = args[0]
+        if args[1] == "drop": request["at"] = [float(args[2]), float(args[3])]
+        elif args[1] != "new": request["to"] = int(args[1])
+    elif verb == "windows":
+        if not args: args = ["list"]
+        if args[0] not in ("list", "new", "close", "reopen", "frame", "front", "link") or (args[0] in ("close", "frame", "front", "link") and len(args) < 2):
+            sys.exit("usage: bench windows [list|new|close N|reopen|frame N X Y W H|front N|link URL]")
+        request["action"] = args[0]
+        if args[0] == "link": request["url"] = args[1]
+        elif len(args) > 1: request["n"] = int(args[1])
+        if args[0] == "frame": request["frame"] = [float(v) for v in args[2:6]]
     elif verb == "middle":
         if len(args) != 3: sys.exit("usage: bench middle ID X Y")
         request["id"], request["x"], request["y"] = args[0], float(args[1]), float(args[2])
@@ -315,13 +363,25 @@ def main(argv):
     elif verb == "picture":
         if len(args) != 1: sys.exit("usage: bench picture PATH")
         request["path"] = os.path.abspath(args[0])
+    elif verb == "float":
+        usage = "usage: bench float screens [two] | place X Y | swipe DX DY [STEPS] [MS] | wheel DX DY | click"
+        if not args or args[0] not in ("screens", "place", "swipe", "wheel", "click", "state"): sys.exit(usage)
+        request["action"] = args[0]
+        if args[0] == "screens":
+            request["two"] = args[1:] == ["two"]
+        else:
+            try: request["args"] = [float(a) for a in args[1:]]
+            except ValueError: sys.exit(usage)
     elif verb == "film":
-        if len(args) not in (2, 3, 4) or args[0] not in ("peek", "unpeek", "fold", "none"):
-            sys.exit("usage: bench film peek|unpeek|fold|none PATH [FRAMES] [EVERY]")
+        if len(args) not in (2, 3, 4) or args[0] not in ("peek", "unpeek", "fold", "none", "float", "land"):
+            sys.exit("usage: bench film peek|unpeek|fold|none|float|land PATH [FRAMES] [EVERY]")
         request["action"], request["path"] = args[0], os.path.abspath(args[1])
-        if len(args) > 2: request["frames"] = int(args[2])
-        if len(args) > 3: request["every"] = float(args[3])
-    elif verb not in ("tabs", "probe", "extensions", "import-preview"):
+        if args[0] in ("float", "land"):
+            if len(args) > 2: request["seconds"] = float(args[2])
+        else:
+            if len(args) > 2: request["frames"] = int(args[2])
+            if len(args) > 3: request["every"] = float(args[3])
+    elif verb not in ("tabs", "probe", "extensions", "import-preview", "quit"):
         sys.exit(f"unknown command “{verb}” — see bench help")
 
     answer = ask(os.path.join(folder(world), "bench.sock"), request)

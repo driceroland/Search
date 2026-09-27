@@ -237,7 +237,9 @@ struct WelcomePanel: View {
                 DispatchQueue.main.async {
                     switch outcome {
                     case .success(let found):
-                        lines.append("\(browser.keep(found)) passwords")
+                        let kept = browser.keep(found)
+                        ImportRecords.note(source.name, passwords: kept)
+                        lines.append("\(kept) passwords")
                     case .failure(Chromium.Trouble.noPassphrase):
                         lines.append("passwords: macOS didn't hand over the key — allow it and try again")
                     case .failure(Mozilla.Trouble.primaryPassword):

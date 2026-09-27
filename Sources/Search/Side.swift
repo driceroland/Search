@@ -230,16 +230,14 @@ struct SideBar: View {
     private func preview(_ row: Parked, pill: Namespace.ID) -> some View {
         let pins = row.tabs.filter { $0.pin != nil }
         let rest = row.tabs.filter { $0.pin == nil }
-        let cols = SideBar.pinColumns(pins.count)
-        let width = pinWidth(for: pins.count)
-        let height = min(SideBar.square, width)
+        let cells = pinCells(pins.count)
         return VStack(alignment: .leading, spacing: 0) {
             if !pins.isEmpty {
                 VStack(spacing: 0) {
-                    PinGrid(columns: cols, width: width, height: height, spacing: SideBar.pinGap) {
-                        ForEach(pins) { tab in
+                    PinGrid(cells: cells) {
+                        ForEach(Array(pins.enumerated()), id: \.element.id) { index, tab in
                             PinSquare(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
-                                      pill: pill, width: width, height: height)
+                                      pill: pill, width: cells[index].width, height: cells[index].height)
                         }
                     }
                 }
@@ -260,10 +258,7 @@ struct SideBar: View {
     /// frame late, and for one frame the whole column would drag the window.
     private var rowsEnd: CGFloat {
         let pins = browser.pinnedCount
-        let cols = SideBar.pinColumns(pins)
-        let pinRows = pins == 0 ? 0 : (pins + cols - 1) / cols
-        let pinBlock = pinRows == 0 ? 0
-            : CGFloat(pinRows) * pinHeight + CGFloat(pinRows - 1) * SideBar.pinGap + 10
+        let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + 10
         let count = prefs.usesTabGroups
             ? browser.tabs(in: nil).count + browser.tabGroups.reduce(0) { $0 + browser.visibleTabs(in: $1).count }
             : browser.tabs.count - pins
@@ -279,49 +274,56 @@ struct SideBar: View {
         browser.tabs.filter { $0.pin == nil && (!prefs.usesTabGroups || browser.group(of: $0) == nil) }
     }
 
-    /// Three columns is the block's own shape — up to six pins, that's two
-    /// full rows, and one or two is just those same three places with a
-    /// couple of them empty rather than a lonely row of its own width. Only
-    /// past six does the block widen, one column at a time, to stay at two
-    /// rows for as long as that's a reasonable shape at all.
-    private static func pinColumns(_ count: Int) -> Int {
-        max(3, (count + 1) / 2)
+    /// How many squares go in each row: at most four — fewer only when the
+    /// column is too narrow for four of the classic width — and as even as
+    /// they go, the fuller rows first. Five are three and two, seven four
+    /// and three, nine three, three and three, ten four, three and three.
+    /// Up to three stay the one row of three places they always were, with
+    /// a place or two empty rather than a lonely button the column's width.
+    static func pinRows(_ count: Int, most: Int) -> [Int] {
+        guard count > 0 else { return [] }
+        let most = max(1, most)
+        let rows = (count + most - 1) / most
+        let base = count / rows
+        let extra = count % rows
+        return (0..<rows).map { $0 < extra ? base + 1 : base }
     }
 
-    /// However many columns the count calls for, they split the row's own
-    /// width between them — the row is what fills edge to edge, not each
-    /// cell on its own, so this grows past 34 just as readily as it shrinks
-    /// below it.
-    private var pinWidth: CGFloat { pinWidth(for: browser.pinnedCount) }
-
-    private func pinWidth(for count: Int) -> CGFloat {
-        let cols = SideBar.pinColumns(count)
-        guard cols > 0 else { return SideBar.square }
-        let available = prefs.sideWidth - 20 - CGFloat(cols - 1) * SideBar.pinGap
-        return max(20, available / CGFloat(cols))
-    }
-
-    /// The one dimension that doesn't chase the sidebar's width: past three
-    /// columns' worth of room a cell would otherwise turn into a big square
-    /// rather than the wide, short button pinned tabs actually look like
-    /// everywhere else in this app. It only shrinks below 34 alongside the
-    /// width, once a narrow column leaves no other choice.
-    private var pinHeight: CGFloat {
-        min(SideBar.square, pinWidth)
+    /// Where each square goes, in the order of the row. Each row splits the
+    /// column's width between its own squares — the row fills edge to edge,
+    /// not each cell on its own — and every row is as tall as the narrowest
+    /// cell allows, never taller than the classic square: past that a cell
+    /// turns into a wide, short button rather than a bigger icon.
+    private func pinCells(_ count: Int) -> [CGRect] {
+        let room = prefs.sideWidth - 20
+        let gap = SideBar.pinGap
+        let fits = Int((room + gap) / (SideBar.square + gap))
+        let rows = SideBar.pinRows(count, most: min(4, max(1, fits)))
+        // A row of fewer than three keeps three places.
+        let slots = rows.map { rows.count == 1 ? max($0, min(3, fits)) : $0 }
+        let widths = slots.map { max(20, (room - CGFloat($0 - 1) * gap) / CGFloat($0)) }
+        let height = min(SideBar.square, widths.min() ?? SideBar.square)
+        var cells: [CGRect] = []
+        for (row, n) in rows.enumerated() {
+            for col in 0..<n {
+                cells.append(CGRect(x: CGFloat(col) * (widths[row] + gap),
+                                    y: CGFloat(row) * (height + gap),
+                                    width: widths[row], height: height))
+            }
+        }
+        return cells
     }
 
     /// The grid itself: fixed-size cells, left-aligned, so a half-empty last
     /// row holds its ground rather than stretching to fill it.
     private var pinned: some View {
         let tabs = pinnedTabs
-        let cols = SideBar.pinColumns(tabs.count)
-        let width = pinWidth
-        let height = pinHeight
+        let cells = pinCells(tabs.count)
         // Measured in the grid's own space, not the square's: a square that
         // has just been moved to a new cell would otherwise report the drag
         // from where it now is, the target would jump back, and the square
         // would shuttle between two cells for as long as the finger stayed.
-        return VStack(spacing: 0) { PinGrid(columns: cols, width: width, height: height, spacing: SideBar.pinGap) {
+        return VStack(spacing: 0) { PinGrid(cells: cells) {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
                 let held = pinDragging == tab.id
                 PinSquare(
@@ -330,15 +332,15 @@ struct SideBar: View {
                     tab: tab,
                     live: tab.id == browser.activeID,
                     pill: pill,
-                    width: width,
-                    height: height
+                    width: cells[index].width,
+                    height: cells[index].height
                 )
-                .offset(pinOffset(held: held, index: index, columns: cols))
+                .offset(pinOffset(held: held, index: index, cells: cells))
                 // Under the hand exactly, as a row is (see the rows below).
                 .transaction { if held { $0.animation = nil } }
                 .zIndex(held ? 1 : 0)
                 .shadow(color: .black.opacity(held ? 0.16 : 0), radius: 10, y: 3)
-                .gesture(pinReorder(tab: tab, index: index, columns: cols, width: width, height: height))
+                .gesture(pinReorder(tab: tab, index: index, cells: cells))
             }
         } }
         .coordinateSpace(name: "pins")
@@ -349,36 +351,30 @@ struct SideBar: View {
     /// put it there — this only cancels out the bit of that same movement
     /// the held square already got for free by changing index underneath
     /// its own drag.
-    private func pinOffset(held: Bool, index: Int, columns: Int) -> CGSize {
-        guard held else { return .zero }
-        let stepX = pinWidth + SideBar.pinGap
-        let stepY = pinHeight + SideBar.pinGap
-        let from = (row: pinFrom / columns, col: pinFrom % columns)
-        let now = (row: index / columns, col: index % columns)
+    private func pinOffset(held: Bool, index: Int, cells: [CGRect]) -> CGSize {
+        guard held, cells.indices.contains(pinFrom), cells.indices.contains(index) else { return .zero }
+        let from = cells[pinFrom], now = cells[index]
         return CGSize(
-            width: pinTravel.width - CGFloat(now.col - from.col) * stepX,
-            height: pinTravel.height - CGFloat(now.row - from.row) * stepY
+            width: pinTravel.width - (now.midX - from.midX),
+            height: pinTravel.height - (now.midY - from.midY)
         )
     }
 
-    /// How many cells the drag has moved, in the grid's own row-major order
-    /// — a straight line through the array a column-major offset would get
-    /// wrong the moment it crossed a row. Row and column travel each measure
-    /// themselves against that axis's own step now that a cell's width and
-    /// height aren't the same number.
-    private func pinDelta(columns: Int, stepX: CGFloat, stepY: CGFloat) -> Int {
-        let col = Int((pinTravel.width / stepX).rounded())
-        let row = Int((pinTravel.height / stepY).rounded())
-        return row * columns + col
-    }
-
-    private func pinTarget(from: Int, moved: Int) -> Int {
-        min(max(0, from + moved), max(0, pinnedTabs.count - 1))
+    /// The cell the held square is over: the one whose centre is nearest to
+    /// where the fingers have taken the square's own centre. Rows of
+    /// different lengths have cells of different widths, so a count of
+    /// steps along one axis would land in the wrong one.
+    private func pinTarget(cells: [CGRect]) -> Int {
+        guard cells.indices.contains(pinFrom) else { return 0 }
+        let start = cells[pinFrom]
+        let point = CGPoint(x: start.midX + pinTravel.width, y: start.midY + pinTravel.height)
+        func distance(_ cell: CGRect) -> CGFloat { hypot(cell.midX - point.x, cell.midY - point.y) }
+        return cells.indices.min { distance(cells[$0]) < distance(cells[$1]) } ?? pinFrom
     }
 
     /// Pick a square up and the others make way — across a row, and down
     /// into the next, exactly as far as the fingers actually moved.
-    private func pinReorder(tab: Tab, index: Int, columns: Int, width: CGFloat, height: CGFloat) -> some Gesture {
+    private func pinReorder(tab: Tab, index: Int, cells: [CGRect]) -> some Gesture {
         DragGesture(minimumDistance: 5, coordinateSpace: .named("pins"))
             .onChanged { value in
                 if pinDragging != tab.id {
@@ -386,9 +382,7 @@ struct SideBar: View {
                     pinFrom = index
                 }
                 pinTravel = value.translation
-                let stepX = width + SideBar.pinGap
-                let stepY = height + SideBar.pinGap
-                let target = pinTarget(from: pinFrom, moved: pinDelta(columns: columns, stepX: stepX, stepY: stepY))
+                let target = pinTarget(cells: cells)
                 if target != index {
                     withAnimation(Motion.settle) {
                         browser.move(tab, to: target)
@@ -428,7 +422,8 @@ struct SideBar: View {
                 // Positions here are among the loose rows; the pinned block
                 // sits in front of them in the real list.
                 .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true,
-                                  space: "rows", onDrop: { point in drop(tab, at: point) }) {
+                                  space: "rows", onDrop: { point in drop(tab, at: point) },
+                                  outside: { browser.dragOut(tab) }) {
                     if prefs.usesTabGroups {
                         browser.move(tab, within: nil, to: $0)
                     } else {
@@ -458,7 +453,8 @@ struct SideBar: View {
                     .padding(.leading, 14)
                     .modifier(Carried(index: index, count: members.count,
                                       step: SideBar.row + SideBar.gap, vertical: true,
-                                      space: "rows", onDrop: { point in drop(tab, at: point) }) {
+                                      space: "rows", onDrop: { point in drop(tab, at: point) },
+                                      outside: { browser.dragOut(tab) }) {
                         browser.move(tab, within: group.id, to: $0)
                     })
             }
@@ -486,10 +482,7 @@ struct SideBar: View {
         HStack(spacing: 2) {
             if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
             ExtensionSlot(edge: .trailing)
-            Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
-                .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .trailing) {
-                    BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
-                }
+            BookmarkDoor(browser: browser, arrowEdge: .trailing)
             // Only while a download is running, and a moment after.
             FetchDoor(browser: browser, fetches: browser.fetches)
             Spacer(minLength: 0)
@@ -506,27 +499,19 @@ struct SideBar: View {
 /// in place while the column came in beneath them. A dozen squares need no
 /// laziness.
 private struct PinGrid: Layout {
-    let columns: Int
-    let width: CGFloat
-    let height: CGFloat
-    let spacing: CGFloat
+    /// Each square's place, worked out by the column (see pinCells).
+    let cells: [CGRect]
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let rows = (subviews.count + columns - 1) / columns
-        return CGSize(
-            width: CGFloat(columns) * width + CGFloat(max(0, columns - 1)) * spacing,
-            height: CGFloat(rows) * height + CGFloat(max(0, rows - 1)) * spacing
-        )
+        CGSize(width: cells.map(\.maxX).max() ?? 0, height: cells.map(\.maxY).max() ?? 0)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        for (index, subview) in subviews.enumerated() {
+        for (index, subview) in subviews.enumerated() where cells.indices.contains(index) {
+            let cell = cells[index]
             subview.place(
-                at: CGPoint(
-                    x: bounds.minX + CGFloat(index % columns) * (width + spacing),
-                    y: bounds.minY + CGFloat(index / columns) * (height + spacing)
-                ),
-                proposal: ProposedViewSize(width: width, height: height)
+                at: CGPoint(x: bounds.minX + cell.minX, y: bounds.minY + cell.minY),
+                proposal: ProposedViewSize(width: cell.width, height: cell.height)
             )
         }
     }

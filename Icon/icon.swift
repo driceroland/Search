@@ -139,3 +139,64 @@ for points in [16, 32, 128, 256, 512] {
     }
 }
 print("drew: \(out.path)")
+
+// The same icon as an Icon Composer document, when a second path is given.
+// macOS 26 lets the Dock show icons Dark, Clear or Tinted, and it can only
+// do that well with an icon that says what each style should be: from the
+// flat image above it made a darkened plate with the black mark still on
+// it, black on black (#337). Here the plate and the mark are separate, so
+// Dark turns them round — a white mark on the ink colour, the S showing the
+// plate through it — and Tinted gets a white mark whose brightness the
+// system tints. The light look is left as it is: the same white, the same
+// ink, the mark at the same size, and no glass, gloss or shadow of its own.
+// build.sh compiles it with actool; the images above stay the .icns.
+if CommandLine.arguments.count > 2 {
+    let doc = URL(fileURLWithPath: CommandLine.arguments[2])
+    let assets = doc.appendingPathComponent("Assets")
+    try? FileManager.default.removeItem(at: doc)
+    try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+
+    // An Icon Composer canvas is the plate, 1024 points across; the mark
+    // takes the same share of it as it does of the plate drawn above.
+    let width = 1024 * 0.754
+    let height = width * canvas.height / canvas.width
+    let svg = """
+    <svg xmlns="http://www.w3.org/2000/svg" width="\(width)" height="\(height)" viewBox="0 0 \(Int(canvas.width)) \(Int(canvas.height))">\
+    <path fill-rule="evenodd" fill="#171717" d="\(markData)"/></svg>
+    """
+    try svg.write(to: assets.appendingPathComponent("mark.svg"), atomically: true, encoding: .utf8)
+
+    let white = #"{ "solid" : "srgb:1.00000,1.00000,1.00000,1.00000" }"#
+    let ink = #"{ "solid" : "srgb:0.09000,0.09000,0.09000,1.00000" }"#
+    let json = """
+    {
+      "fill" : \(white),
+      "fill-specializations" : [
+        { "value" : \(white) },
+        { "appearance" : "dark", "value" : \(ink) }
+      ],
+      "groups" : [
+        {
+          "layers" : [
+            {
+              "name" : "mark",
+              "image-name" : "mark.svg",
+              "glass" : false,
+              "fill-specializations" : [
+                { "value" : \(ink) },
+                { "appearance" : "dark", "value" : \(white) },
+                { "appearance" : "tinted", "value" : \(white) }
+              ]
+            }
+          ],
+          "shadow" : { "kind" : "none", "opacity" : 0.5 },
+          "specular" : false,
+          "translucency" : { "enabled" : false, "value" : 0.5 }
+        }
+      ],
+      "supported-platforms" : { "squares" : [ "macOS" ] }
+    }
+    """
+    try json.write(to: doc.appendingPathComponent("icon.json"), atomically: true, encoding: .utf8)
+    print("wrote: \(doc.path)")
+}

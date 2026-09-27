@@ -17,9 +17,11 @@ enum ImportFile {
         /// A passwords file's text, for Vault.take(csv:).
         var passwords: [String] = []
         /// Safari's export holds passwords in the clear; said once brought in.
+        /// Known by its history file, which only Safari's export has.
         var fromSafari = false
 
         var isEmpty: Bool { bookmarks.isEmpty && places.isEmpty && passwords.isEmpty }
+        fileprivate var safariHistory = false
     }
 
     /// Everything in the file or folder: one file, a folder of them, or a
@@ -29,20 +31,31 @@ enum ImportFile {
         if url.pathExtension.lowercased() == "zip" {
             guard let folder = unzip(url) else { return found }
             defer { try? FileManager.default.removeItem(at: folder) }
-            found.fromSafari = true
             collect(in: folder, into: &found)
+            found.fromSafari = found.safariHistory
         } else if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
             collect(in: url, into: &found)
-        } else {
+        } else if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
             take(url, into: &found)
         }
         return found
     }
 
+    /// The files in a folder and in the folders directly in it — as deep as
+    /// Safari's export goes, a folder per profile — and only files: a link
+    /// in a ZIP, which ditto puts back as one, could point anywhere.
     private static func collect(in folder: URL, into found: inout Found) {
-        let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])?
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
+        let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])?
             .compactMap { $0 as? URL } ?? []
-        for file in files.sorted(by: { $0.path < $1.path }) { take(file, into: &found) }
+        let depth = folder.standardizedFileURL.pathComponents.count
+        for file in files.sorted(by: { $0.path < $1.path }) {
+            guard file.standardizedFileURL.pathComponents.count - depth <= 2,
+                  let values = try? file.resourceValues(forKeys: Set(keys)),
+                  values.isRegularFile == true, values.isSymbolicLink != true
+            else { continue }
+            take(file, into: &found)
+        }
     }
 
     private static func take(_ file: URL, into found: inout Found) {
@@ -52,7 +65,10 @@ enum ImportFile {
         case "csv":
             if let text = try? String(contentsOf: file, encoding: .utf8) { found.passwords.append(text) }
         case "json":
-            found.places += history(in: file)
+            if let places = history(in: file) {
+                found.safariHistory = true
+                found.places += places
+            }
         default:
             break
         }
@@ -63,12 +79,13 @@ enum ImportFile {
     /// title, when it was last seen in microseconds since 1970, and how
     /// often. The first steps of a redirect, and pages that failed to load,
     /// are left out: they aren't places anyone meant to go.
-    private static func history(in file: URL) -> [Chromium.Place] {
+    /// Nil for a file that isn't Safari's history at all.
+    private static func history(in file: URL) -> [Chromium.Place]? {
         guard let data = try? Data(contentsOf: file),
               let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               (top["metadata"] as? [String: Any])?["data_type"] as? String == "history",
               let entries = top["history"] as? [[String: Any]]
-        else { return [] }
+        else { return nil }
         return entries.compactMap { entry in
             guard entry["destination_url"] == nil,
                   entry["latest_visit_was_load_failure"] as? Bool != true,

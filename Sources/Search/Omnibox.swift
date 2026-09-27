@@ -132,9 +132,22 @@ struct Omnibox: View {
             HStack(spacing: 10) {
                 switch offer.kind {
                 case .search:
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Palette.muted)
+                    // The engine's own icon when this Mac already has it: a
+                    // search sent to a site you have been to says so with the
+                    // site rather than a magnifying glass. Nothing is fetched
+                    // for one that isn't known; the glass is what the row
+                    // wears until then.
+                    if let host = offer.url.host()?.lowercased(), let icon = Favicons.shared.cached(host) {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: 14, height: 14)
+                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                    }
                 case .open:
                     // Already open: naming it takes you back to it rather than
                     // opening a second copy.
@@ -142,6 +155,10 @@ struct Omnibox: View {
                         .fill(Palette.ink.opacity(0.55))
                         .frame(width: 5, height: 5)
                         .padding(.horizontal, 2)
+                case .command:
+                    Image(systemName: "command")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Palette.muted)
                 default:
                     EmptyView()
                 }

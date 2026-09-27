@@ -12,18 +12,21 @@ final class Links: NSObject, NSApplicationDelegate {
     private static var deliver: ((URL) -> Void)?
     /// Addresses that arrived first.
     private static var waiting: [URL] = []
-    /// The browser's window, once there is one.
-    static weak var window: NSWindow?
+    /// The window in front's, or the first one's, once there is one.
+    @MainActor static var window: NSWindow? { Browsers.front?.window ?? Browsers.primary?.window }
     /// Whether the window has been asked for on a link's behalf (summon).
     private static var summoned = false
-    /// The session, written now rather than whenever its own debounce was
-    /// going to get to it. ⌘Q, the red button and an update's relaunch all
-    /// end the process the same way, and none of them owed the last 1.2
-    /// seconds of typing anywhere to finish writing it down on their own.
-    private static var flush: (() -> Void)?
+
+    /// Quitting closes every window on the way out; that isn't a window
+    /// closed for good, whose tabs would go (see Browsers.closing).
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated { Browsers.quitting = true }
+        return .terminateNow
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
-        Links.flush?()
+        // Every window, and windows.json (see Windows.swift).
+        Browsers.flush()
         // And the bookmarks or downloads list saved a moment ago, still on
         // their way to the disk.
         Disk.drain()
@@ -98,10 +101,26 @@ final class Links: NSObject, NSApplicationDelegate {
     /// rather than doing nothing, which is what a hidden-title-bar SwiftUI
     /// window does by default.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag, let window = NSApp.windows.first(where: { $0.contentView != nil }) {
-            window.makeKeyAndOrderFront(nil)
-        }
+        if !flag { Browsers.ensureWindow() }
         return true
+    }
+
+    /// Closing the last window leaves the app running, as Safari and Chrome
+    /// do (#327): the Dock icon, ⌘N or a link brings a window back, with its
+    /// tabs. Its session is written as it closes (see Browsers.closing).
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// New Window in the Dock icon's menu, as every browser has it.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let item = NSMenuItem(title: "New Window", action: #selector(newWindow), keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+        return menu
+    }
+
+    @objc private func newWindow() {
+        MainActor.assumeIsolated { Browsers.newWindow() }
     }
 
     /// The browser, once it has a window. Anything that came earlier is
@@ -114,25 +133,25 @@ final class Links: NSObject, NSApplicationDelegate {
     /// it, a few frames apart, in the order they came.
     @MainActor
     static func hand(to browser: Browser) {
-        deliver = { [weak browser] url in
+        // Only the first window's arrival starts the delivery; the others
+        // find it running.
+        guard deliver == nil else { return }
+        deliver = { url in
+            // The window in front's browser, or a window brought back for it:
+            // the link lands where you are, not in the first window.
+            let browser = Browsers.ensureWindow()
             // In a small window of its own, for whoever chose that.
-            if let browser, browser.prefs.littleLinks {
+            if browser.prefs.littleLinks {
                 LittleWindow.show(url, for: browser)
                 return
             }
-            browser?.arrive(url)
-            // The window closed with the app still running: the link brings
-            // it back, rather than landing in a tab nobody can see. The
-            // window is looked for among the app's own too: a reference that
-            // lapsed opened a second, empty window behind the other app.
-            if let window = window ?? browserWindow() {
-                window.makeKeyAndOrderFront(nil)
-            } else {
-                _ = NSApp.delegate?.applicationOpenUntitledFile?(NSApp)
-            }
+            browser.arrive(url)
+            // Put away in the Dock, it stayed there: bringing a window to the
+            // front doesn't take it out (#95).
+            if let window = browser.window, window.isMiniaturized { window.deminiaturize(nil) }
+            browser.window?.makeKeyAndOrderFront(nil)
             comeForward()
         }
-        flush = { [weak browser] in browser?.flushSession() }
         let early = waiting
         waiting = []
         guard let first = early.first else { return }
@@ -141,7 +160,7 @@ final class Links: NSObject, NSApplicationDelegate {
             comeForward()
             for (n, url) in early.dropFirst().enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15 * Double(n + 1)) { [weak browser] in
-                    browser?.open(url, foreground: false, atEnd: true)
+                    browser?.open(url, foreground: false, atEnd: true, mayWait: true)
                 }
             }
         }
@@ -181,14 +200,8 @@ final class Links: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The browser's window, from the app's own list: what `window` points
-    /// at, found again if that reference lapsed.
-    @MainActor
-    private static func browserWindow() -> NSWindow? {
-        let found = NSApp.windows.first { $0.contentView != nil && !($0 is NSPanel) && $0.canBecomeMain }
-        if let found { window = found }
-        return found
-    }
+    /// A link as another app hands one over, for the bench.
+    static func arrived(_ url: URL) { take(url) }
 
     private static func take(_ url: URL) {
         if let deliver {

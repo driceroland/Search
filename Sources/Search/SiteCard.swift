@@ -62,7 +62,7 @@ enum SiteCardPanel {
             guard original != nil, browser.editingTab == tab.id, browser.tabDraft == original else { return }
             // The field with the caret in it is the one on screen; failing
             // that, the latest one made.
-            let focused = (Links.window?.firstResponder as? NSTextView)?.delegate as? NSTextField
+            let focused = ((browser.window ?? Links.window)?.firstResponder as? NSTextView)?.delegate as? NSTextField
             guard let field = focused ?? anchor, field.window != nil else {
                 if tries < 15 { place(tab, browser, tries: tries + 1) }
                 return

@@ -53,6 +53,8 @@ On purpose:
 
 A **private tab** (`⇧⌘N`) has its own cookie jar and leaves nothing behind when it closes.
 
+Apps you allow in System Settings › Privacy & Security › Automation can read the address and title of your tabs with AppleScript; private tabs are never shown.
+
 ## Keyboard
 
 | | |
