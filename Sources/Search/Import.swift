@@ -68,6 +68,15 @@ enum Chromium {
         Source(name: "Edge", folder: "Microsoft Edge", service: "Microsoft Edge Safe Storage", account: "Microsoft Edge", app: "Microsoft Edge.app"),
         Source(name: "Vivaldi", folder: "Vivaldi", service: "Vivaldi Safe Storage", account: "Vivaldi", app: "Vivaldi.app"),
         Source(name: "Chromium", folder: "Chromium", service: "Chromium Safe Storage", account: "Chromium", app: "Chromium.app"),
+        // Chrome's other channels keep their own data, and share Chrome's key.
+        Source(name: "Chrome Beta", folder: "Google/Chrome Beta", service: "Chrome Safe Storage", account: "Chrome", app: "Google Chrome Beta.app"),
+        Source(name: "Chrome Dev", folder: "Google/Chrome Dev", service: "Chrome Safe Storage", account: "Chrome", app: "Google Chrome Dev.app"),
+        Source(name: "Chrome Canary", folder: "Google/Chrome Canary", service: "Chrome Safe Storage", account: "Chrome", app: "Google Chrome Canary.app"),
+        // Opera keeps its one profile in its own folder, not in one inside it.
+        Source(name: "Opera", folder: "com.operasoftware.Opera", service: "Opera Safe Storage", account: "Opera", app: "Opera.app"),
+        Source(name: "Opera GX", folder: "com.operasoftware.OperaGX", service: "Opera Safe Storage", account: "Opera", app: "Opera GX.app"),
+        Source(name: "Helium", folder: "net.imput.helium", service: "Helium Storage Key", account: "Helium", app: "Helium.app"),
+        Source(name: "Comet", folder: "Comet", service: "Comet Safe Storage", account: "Comet", app: "Comet.app"),
     ]
 
     /// Where browsers keep their data: ~/Library/Application Support. A test

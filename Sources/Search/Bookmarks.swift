@@ -275,12 +275,8 @@ final class Bookmarks: ObservableObject {
 
     private func save() {
         let snapshot = roots
-        let file = Bookmarks.file
-        DispatchQueue.global(qos: .utility).async {
-            guard let data = try? JSONEncoder().encode(snapshot) else { return }
-            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: file, options: .atomic)
-        }
+        // One after another, the newest last (see Disk).
+        Disk.write(Bookmarks.file) { try? JSONEncoder().encode(snapshot) }
     }
 }
 

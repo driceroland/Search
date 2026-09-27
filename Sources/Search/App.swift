@@ -568,9 +568,20 @@ struct ContentView: View {
     @ViewBuilder
     private var announcement: some View {
         if let text = browser.announcement {
-            Text(text)
+            HStack(spacing: 8) {
+                Text(text)
+                    .foregroundStyle(Palette.ink)
+                // A file just saved: the line shows it in the Finder.
+                if browser.announcedFile != nil {
+                    Text("Show in Finder")
+                        .foregroundStyle(Palette.muted)
+                }
+            }
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.ink)
+                .contentShape(Capsule())
+                .onTapGesture {
+                    if let file = browser.announcedFile { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+                }
                 .padding(.horizontal, 15)
                 .padding(.vertical, 9)
                 .background(Palette.ground, in: Capsule())

@@ -24,6 +24,9 @@ final class Links: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         Links.flush?()
+        // And the bookmarks or downloads list saved a moment ago, still on
+        // their way to the disk.
+        Disk.drain()
     }
 
     /// The nearest thing to a crash reporter a browser with no server can

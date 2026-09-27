@@ -132,7 +132,9 @@ struct SettingsPanel: View {
                 VStack(alignment: .leading, spacing: 18) {
                     switch page {
                     case .general: general
-                    case .tabs: tabs
+                    case .tabs:
+                        tabs
+                        if !prefs.sidebar { toolbar }
                     case .extensions: ExtensionsPage(browser: browser)
                     case .passwords: passwords
                     case .downloads: downloads
@@ -261,6 +263,17 @@ struct SettingsPanel: View {
 
     // MARK: - tabs
 
+    /// Where back, forward and reload sit with the tabs across the top. With
+    /// the sidebar they are already beside the window's buttons: nothing to
+    /// move, and the line isn't shown.
+    private var toolbar: some View {
+        Card {
+            Line("Back, forward and reload on the left", "Beside the window's buttons, before the tabs") {
+                Switch(on: $prefs.navigationLeft)
+            }
+        }
+    }
+
     private var tabs: some View {
         Card {
             Line("Tabs in a sidebar", "Down the left instead of across the top. Pull its edge to make it wider; double-click the edge to reset.") {
@@ -351,7 +364,7 @@ struct SettingsPanel: View {
                 }
             }
             Card {
-                Line("Bring yours in", "From Dia, Chrome, Arc, Brave or Edge on this Mac — nothing leaves it") {
+                Line("Bring yours in", "From another browser on this Mac — nothing leaves it") {
                     Pill("Import…") {
                         browser.tuning = false
                         browser.managing = true

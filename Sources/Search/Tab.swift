@@ -323,9 +323,6 @@ final class Tab: ObservableObject, Identifiable {
     /// stays as sharp at 200% as it was at 100%.
     @Published private(set) var zoom: CGFloat = 1
 
-    /// Where the page is and which way it just went, for anything that wants
-    /// to follow along.
-    var onScroll: ((Tab, Double, Double) -> Void)?
     var onZoom: ((Tab, CGFloat) -> Void)?
     /// The resolved address under the pointer, or nil when it leaves a link.
     var onLink: ((Tab, String?) -> Void)?
@@ -388,7 +385,6 @@ final class Tab: ObservableObject, Identifiable {
     private let passkeyRelay = PasskeyRelay()
     private let hovered = HoveredLink()
     private let ears = AudioWatch()
-    private var lastY: Double = 0
 
     /// A tab that keeps nothing: its own cookies, no history, no place in the
     /// session. Signed in as nobody, and forgotten when it goes.
@@ -785,9 +781,6 @@ final class Tab: ObservableObject, Identifiable {
         // core on the thread WebKit needs to put the scrolled page on screen.
         let fraction = ceiling > 0 ? (min(1, max(0, y / ceiling)) * 100).rounded() / 100 : 0
         if fraction != reading { reading = fraction }
-        let delta = y - lastY
-        lastY = y
-        onScroll?(self, y, delta)
     }
 
     func go(to url: URL) {
@@ -807,7 +800,6 @@ final class Tab: ObservableObject, Identifiable {
         title = ""
         failure = nil
         reading = 0
-        lastY = 0
         reader = false
         typing = false
         immersed = false
@@ -844,7 +836,6 @@ final class Tab: ObservableObject, Identifiable {
         memory = nil
         picture = nil
         reading = 0
-        lastY = 0
         noisy = false
         stale = false
         pull = nil
@@ -1056,7 +1047,6 @@ final class Tab: ObservableObject, Identifiable {
         pending = nil
         failure = nil
         reading = 0
-        lastY = 0
         reader = false
         typing = false
         immersed = false
@@ -1133,7 +1123,6 @@ final class Tab: ObservableObject, Identifiable {
     /// Called when the tab is thrown away. Without it the view keeps running
     /// whatever the page left behind — timers, video, sockets.
     func close() {
-        onScroll = nil
         onZoom = nil
         onLink = nil
         onPick = nil

@@ -478,6 +478,7 @@ final class Bench {
             }
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
             out["peek"] = browser.peekTab?.address?.absoluteString ?? ""
+            out["fetching"] = ["showing": browser.fetches.showing, "fraction": browser.fetches.fraction ?? -1, "done": browser.fetches.done]
             // Where the peek's page sits in the window, from its top-left corner, in points.
             if let web = browser.peekTab?.built, let window = web.window {
                 let r = web.convert(web.bounds, to: nil)

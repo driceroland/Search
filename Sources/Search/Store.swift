@@ -139,3 +139,45 @@ enum Store {
         fresh.set(true, forKey: "carried")
     }
 }
+
+/// Files written in the background, one at a time and the newest last.
+///
+/// Each save used to go to a concurrent queue on its own: two saves of the
+/// same file a moment apart could land in either order, and the session
+/// written at quit could be overwritten by an older one still on its way —
+/// yesterday's tabs coming back instead of today's. Here every write joins
+/// one serial queue, and a write that a newer one of the same file has
+/// overtaken is dropped, including when the newer one was written at once
+/// on the way out.
+enum Disk {
+    private static let queue = DispatchQueue(label: "search.disk", qos: .utility)
+    private static let lock = NSLock()
+    /// The newest write asked for, by file.
+    nonisolated(unsafe) private static var newest: [URL: Int] = [:]
+    nonisolated(unsafe) private static var count = 0
+
+    /// `encode` runs where the write does. `now` writes on the calling
+    /// thread: quitting doesn't wait for a queue.
+    static func write(_ file: URL, now: Bool = false, _ encode: @escaping @Sendable () -> Data?) {
+        lock.lock()
+        count += 1
+        let turn = count
+        newest[file] = turn
+        lock.unlock()
+        let put: @Sendable () -> Void = {
+            guard let data = encode() else { return }
+            lock.lock()
+            defer { lock.unlock() }
+            // Overtaken: something newer of this file was asked for since.
+            guard newest[file] == turn else { return }
+            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: file, options: .atomic)
+        }
+        if now { put() } else { queue.async(execute: put) }
+    }
+
+    /// Everything asked for so far, written — for the way out.
+    static func drain() {
+        queue.sync {}
+    }
+}

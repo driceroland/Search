@@ -443,6 +443,8 @@ struct SideBar: View {
                 .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .trailing) {
                     BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
                 }
+            // Only while a download is running, and a moment after.
+            FetchDoor(browser: browser, fetches: browser.fetches)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)

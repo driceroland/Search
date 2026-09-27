@@ -291,7 +291,7 @@ final class Browser: NSObject, ObservableObject {
 
     struct Suggesting: Equatable {
         let tab: Tab.ID
-        let spot: CGRect
+        var spot: CGRect
         let logins: [Login]
         /// The page the list was made for: its site, and whether it came in
         /// the clear. A click fills only a page that still is that one.
@@ -310,6 +310,10 @@ final class Browser: NSObject, ObservableObject {
     /// instant: clicking a row can take the caret out of the page first, and
     /// a list that vanished on the way down would never be clicked.
     private var lowering: DispatchWorkItem?
+    /// The page whose accounts were last looked up for the box the caret is
+    /// in. The box reports where it is on every frame of a scroll so the
+    /// list can follow it; the keychain is asked once per box, not per frame.
+    private var looked: (tab: Tab.ID, host: String, clear: Bool)?
 
     func keepOffer() {
         guard let offer = offering else { return }
@@ -709,6 +713,11 @@ final class Browser: NSObject, ObservableObject {
 
     /// A line that rises from the bottom, says one thing, and leaves.
     @Published private(set) var announcement: String?
+    /// The file a "Saved …" line is about: clicked, the line shows it in
+    /// the Finder, and it stays long enough to be clicked.
+    @Published private(set) var announcedFile: URL?
+    /// Downloads while they happen (see Fetching.swift).
+    let fetches = Fetches()
 
     /// ⌘⇧C. The address, in the clipboard, and a line that says as much.
     func copyAddress() {
@@ -733,12 +742,16 @@ final class Browser: NSObject, ObservableObject {
         announce("Link copied")
     }
 
-    func announce(_ text: String) {
+    func announce(_ text: String, file: URL? = nil) {
         announcement = text
+        announcedFile = file
         hush?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.announcement = nil }
+        let work = DispatchWorkItem { [weak self] in
+            self?.announcement = nil
+            self?.announcedFile = nil
+        }
         hush = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.7, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (file == nil ? 1.7 : 4), execute: work)
     }
 
     /// The names extensions asked their downloads to be saved under.
@@ -826,7 +839,7 @@ final class Browser: NSObject, ObservableObject {
         // the one that happened to ask for it.
         Favicons.shared.arrived = { [weak self] host, image in
             guard let self else { return }
-            for tab in tabs where tab.address?.host()?.lowercased() == host {
+            for tab in tabs + parkedTabs where tab.address?.host()?.lowercased() == host {
                 tab.icon = image
             }
         }
@@ -1076,16 +1089,23 @@ final class Browser: NSObject, ObservableObject {
         var entries: [Session.Entry] = []
         var active = 0
         for tab in tabs {
-            guard !tab.shy, !tab.bench,
-                  // A sleeping view is blank, so `pending` must win or its
-                  // page will disappear from the next session.
-                  let url = tab.pending ?? tab.address,
-                  url.scheme?.hasPrefix("http") == true
-            else { continue }
+            guard kept(tab), let url = tab.pending ?? tab.address else { continue }
             if tab.id == id { active = entries.count }
             entries.append(Session.Entry(url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name))
         }
+        // The tab you were on isn't kept — a private or blank one: the one
+        // kept just before it comes back in front, not the first of the row.
+        if let id, let at = tabs.firstIndex(where: { $0.id == id }), !kept(tabs[at]) {
+            active = max(0, tabs[..<at].filter(kept).count - 1)
+        }
         return .init(tabs: entries, active: active)
+    }
+
+    /// Whether a tab goes into the session: not a private one or the
+    /// bench's, and only with a web address. A sleeping view is blank, so
+    /// `pending` must win or its page will disappear from the next session.
+    private func kept(_ tab: Tab) -> Bool {
+        !tab.shy && !tab.bench && (tab.pending ?? tab.address)?.scheme?.hasPrefix("http") == true
     }
 
     private func writeSession(now: Bool, space: UUID, row: Parked) {
@@ -1174,6 +1194,8 @@ final class Browser: NSObject, ObservableObject {
         cancelTabEdit()
         summoning = false
         suggesting = nil
+        // Back on a tab with the caret still in a box, the list may come again.
+        looked = nil
         guard tab.id != activeID else { return }
         // Coming back to the tab whose video is out brings it home first, so
         // it is never lifted and landed in the same breath.
@@ -1754,6 +1776,7 @@ final class Browser: NSObject, ObservableObject {
         tab.onField = { [weak self] tab, spot in
             guard let self else { return }
             guard let spot else {
+                if looked?.tab == tab.id { looked = nil }
                 if pickedInto == tab.id { pickedInto = nil }
                 guard suggesting?.tab == tab.id else { return }
                 lowering?.cancel()
@@ -1774,6 +1797,19 @@ final class Browser: NSObject, ObservableObject {
             // offered only what was kept from plain http too, never an
             // account kept from the https site of the same name.
             let inTheClear = tab.pageAddress?.scheme?.lowercased() == "http"
+            // The same box, moved by a scroll: the list up follows it, keeping
+            // its accounts and the moment it came up (a click is refused for
+            // its first half second, which every frame used to start again);
+            // a box with no accounts stays without, and the keychain isn't
+            // asked again until the caret leaves.
+            if let looked, looked.tab == tab.id, looked.host == host, looked.clear == inTheClear {
+                if var up = suggesting, up.tab == tab.id, up.spot != spot {
+                    up.spot = spot
+                    suggesting = up
+                }
+                return
+            }
+            looked = (tab.id, host, inTheClear)
             let known = Array(Vault.logins(matching: host).filter { !inTheClear || $0.clear }.prefix(5))
             suggesting = known.isEmpty ? nil : Suggesting(tab: tab.id, spot: spot, logins: known, host: host, clear: inTheClear)
         }
@@ -2323,6 +2359,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     func keep(_ download: WKDownload) {
         download.delegate = self
         downloading.append(download)
+        fetches.start(download)
         // Noted now, while its page is still there to ask: a private tab's
         // download is saved where you say, and left out of the list.
         if let web = download.webView, tab(for: web)?.shy == true { unlisted.insert(ObjectIdentifier(download)) }
@@ -2430,7 +2467,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // A page with nothing to lay out never has a first frame. Done is
         // done, and it is shown.
         (webView as? PageView)?.showFirstFrame()
-        guard let tab = tab(for: webView), let url = tab.address else { return }
+        guard let tab = anyTab(for: webView), let url = tab.address else { return }
         tab.uncover()
         tellStore(tab)
         // A page that arrived after a password went out: did the sign-in take?
@@ -2479,6 +2516,13 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     func tab(for webView: WKWebView) -> Tab? {
         tabs.first { $0.built === webView }
     }
+
+    /// The tab a page belongs to, in the space on screen or another: a page
+    /// still loading when you went to another space finishes there, and
+    /// still goes into History with its icon.
+    func anyTab(for webView: WKWebView) -> Tab? {
+        tab(for: webView) ?? parkedTabs.first { $0.built === webView }
+    }
 }
 
 // MARK: - keeping files
@@ -2493,11 +2537,15 @@ extension Browser: WKDownloadDelegate {
         let asked = response.url.flatMap { namedDownloads.removeValue(forKey: $0) }
         let file = whereToSave(asked ?? suggestedFilename)
         completionHandler(file)
-        if let file { announce("Downloading \(file.lastPathComponent)") }
+        if let file {
+            fetches.going(download, to: file)
+            announce("Downloading \(file.lastPathComponent)")
+        }
     }
 
     func downloadDidFinish(_ download: WKDownload) {
         downloading.removeAll { $0 === download }
+        fetches.finish(download, file: download.progress.fileURL)
         let listed = unlisted.remove(ObjectIdentifier(download)) == nil
         guard let file = download.progress.fileURL else {
             announce("Download finished")
@@ -2553,7 +2601,7 @@ extension Browser: WKDownloadDelegate {
 
     private func saved(_ file: URL, from source: URL?) {
         loot.add(Keep(name: file.lastPathComponent, from: source?.host() ?? "", path: file.path, date: Date()))
-        announce("Saved \(file.lastPathComponent)")
+        announce("Saved \(file.lastPathComponent)", file: file)
     }
 
     func download(
@@ -2563,6 +2611,7 @@ extension Browser: WKDownloadDelegate {
     ) {
         downloading.removeAll { $0 === download }
         unlisted.remove(ObjectIdentifier(download))
+        fetches.fail(download)
         announce("Download failed")
     }
 

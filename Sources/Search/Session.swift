@@ -46,18 +46,7 @@ enum Session {
     /// background queue, and a session handed to one on the way out is a
     /// session that may never reach the disk.
     static func write(now: Bool = false, space: UUID = Space.firstID, _ shape: Shape) {
-        let file = file(space)
-        let put = {
-            guard let data = try? JSONEncoder().encode(shape) else { return }
-            try? FileManager.default.createDirectory(
-                at: file.deletingLastPathComponent(), withIntermediateDirectories: true
-            )
-            try? data.write(to: file, options: .atomic)
-        }
-        if now {
-            put()
-        } else {
-            DispatchQueue.global(qos: .utility).async(execute: put)
-        }
+        // One after another, the newest last (see Disk).
+        Disk.write(file(space), now: now) { try? JSONEncoder().encode(shape) }
     }
 }

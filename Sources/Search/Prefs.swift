@@ -27,6 +27,12 @@ enum Glyph: String, CaseIterable, Identifiable {
 final class Preferences: ObservableObject {
     private let store = Store.settings
 
+    /// Back, forward and reload before the tabs rather than after them, with
+    /// the tabs across the top. Off unless asked for.
+    @Published var navigationLeft: Bool {
+        didSet { store.set(navigationLeft, forKey: "toolbar.left") }
+    }
+
     /// A local socket a script can drive the browser through, in tabs of its
     /// own. Off unless asked for — in Settings, which is also what leaves
     /// the mark it needs at launch (see Bench.Consent).
@@ -224,6 +230,7 @@ final class Preferences: ObservableObject {
     }
 
     init() {
+        navigationLeft = store.bool(forKey: "toolbar.left")
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
         // The Mac's own unless asked otherwise — a Mac in dark mode expects

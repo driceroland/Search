@@ -142,6 +142,20 @@ struct Fold: View {
         .onChange(of: browser.editingTab) { _, editing in
             if editing == nil, !inside, browser.peeking { peek(false) }
         }
+        // The bookmarks list closed with the pointer elsewhere: the same.
+        .onChange(of: browser.bookmarksOpen) { _, open in
+            if !open, !inside, browser.peeking { peek(false) }
+        }
+    }
+
+    /// A popover opened from a button in the column, still open: the
+    /// bookmarks list or the extensions menu. Folding the column would take
+    /// it along, so it holds the column out wherever the pointer has gone,
+    /// on the way to a bookmark over the page included (#88).
+    private var holding: Bool {
+        if browser.bookmarksOpen { return true }
+        if #available(macOS 15.4, *), Extensions.shared.menuOpen { return true }
+        return false
     }
 
     /// Folded, and not taken over by a page filling the screen.
@@ -189,7 +203,7 @@ struct Fold: View {
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).
             let popup = if #available(macOS 15.4, *) { ExtensionPopup.shared.isUp } else { false }
-            let over = onOwnPanel || popup || (onWindow && inWindow && distance < reach)
+            let over = onOwnPanel || popup || holding || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
         } else if inWindow, distance < Fold.edge {
@@ -238,7 +252,7 @@ struct Fold: View {
             guard leaving == nil else { return }
             let going = DispatchWorkItem {
                 leaving = nil
-                guard browser.editingTab == nil else { return }
+                guard browser.editingTab == nil, !holding else { return }
                 browser.peek(false)
             }
             leaving = going

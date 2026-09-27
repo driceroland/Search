@@ -16,6 +16,8 @@ struct TabBar: View {
     /// The plus only comes out when the pointer is in the row.
     @State private var nearby = false
     @State private var plussed = false
+    /// The helm's width when it stands before the tabs rather than after them.
+    private var leading: CGFloat { browser.prefs.navigationLeft ? Metrics.helm - 8 + Metrics.tabGap : 0 }
     /// How wide the doors at the far end are, extension buttons included.
     @State private var doors: CGFloat = 0
 
@@ -29,13 +31,15 @@ struct TabBar: View {
             ZStack(alignment: .leading) {
                 // The empty half of the strip is what you grab to move the
                 // window; the tabs keep the run they sit on.
-                DragStrip(reserved: Metrics.lights + dot + (making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width)) + Metrics.tabGap + Metrics.plusWidth, trailing: Metrics.helm + 26 + 24, onDoubleClick: browser.newTab)
+                DragStrip(reserved: Metrics.lights + dot + leading + (making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width)) + Metrics.tabGap + Metrics.plusWidth, trailing: doors + 12, onDoubleClick: browser.newTab)
                 // And the corner the lights sit in, which is title bar too —
                 // the one stretch left to take hold of when tabs fill the row.
                 DragStrip()
                     .frame(width: Metrics.lights)
 
                 HStack(spacing: Metrics.tabGap) {
+                    // Back, forward and reload by the lights, when asked.
+                    if browser.prefs.navigationLeft { Helm(browser: browser) }
                     // The space on screen, first, when there are spaces.
                     if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
 
@@ -67,7 +71,7 @@ struct TabBar: View {
                                                 tab: tab,
                                                 live: tab.id == browser.activeID,
                                                 width: width(in: geo.size.width),
-                                                room: geo.size.width - Metrics.lights - 12,
+                                                room: geo.size.width - Metrics.lights - leading - 12,
                                                 pill: pill,
                                                 close: { browser.close(tab) }
                                             )
@@ -128,9 +132,12 @@ struct TabBar: View {
                     // Back, forward, reload, and the bookmarks, at the far end
                     // of the row. The dropdown hangs from the last one.
                     HStack(spacing: Metrics.tabGap) {
+                        // Only while a download is running, and a moment after.
+                        FetchDoor(browser: browser, fetches: browser.fetches)
                         ExtensionSlot()
-                        Helm(browser: browser)
-                            .padding(.trailing, 8)
+                        if !browser.prefs.navigationLeft {
+                            Helm(browser: browser).padding(.trailing, 8)
+                        }
                         Door(icon: "bookmark", help: "Bookmarks") { browser.bookmarksOpen.toggle() }
                             .popover(isPresented: $browser.bookmarksOpen, arrowEdge: .bottom) {
                                 BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
@@ -247,17 +254,18 @@ struct TabBar: View {
         var total = pinned * Metrics.pinWidth + loose * each
             + CGFloat(max(0, browser.tabs.count - 1)) * Metrics.tabGap
         if let id = browser.editingTab, let tab = browser.tabs.first(where: { $0.id == id }) {
-            total += min(340, strip - Metrics.lights - 12) - (tab.pin != nil ? Metrics.pinWidth : each)
+            total += min(340, strip - Metrics.lights - leading - 12) - (tab.pin != nil ? Metrics.pinWidth : each)
         }
         return total
     }
 
-    /// The strip, less the lights, the plus, the doors at the far end and
-    /// the air around them. The doors are measured; until they have been,
-    /// the three of the helm and the bookmarks stand in for them.
+    /// The strip, less the lights, the helm when it leads, the plus, the
+    /// doors at the far end and the air around them. The doors are measured;
+    /// until they have been, the helm and the bookmarks stand in for them —
+    /// unless the helm leads, when nothing at the far end may be a real zero.
     private func room(in strip: CGFloat) -> CGFloat {
-        let far = doors > 0 ? doors : Metrics.helm + 26
-        return max(0, strip - Metrics.lights - dot - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
+        let far = doors > 0 || browser.prefs.navigationLeft ? doors : Metrics.helm + 26
+        return max(0, strip - Metrics.lights - dot - leading - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
     }
 
     /// What the space's dot takes before the tabs, when there are spaces.
@@ -919,24 +927,79 @@ struct MiddleClick: NSViewRepresentable {
 
 /// An almost-closed ring, turning — the same one the canvas app uses, small
 /// enough to sit inside a tab without becoming the loudest thing in it.
-struct Ring: View {
+///
+/// Turned by Core Animation rather than SwiftUI. A SwiftUI animation that
+/// never ends has the whole window's view tree laid out and redrawn every
+/// frame for as long as it runs — a fifth of a core, all the while a page
+/// in some tab behind was still loading. A layer's own animation is played
+/// by the render server and costs this process nothing.
+struct Ring: NSViewRepresentable {
     var size: CGFloat = 10
-    @State private var angle: Double = 0
 
-    var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.78)
-            .stroke(
-                Palette.muted.opacity(0.7),
-                style: StrokeStyle(lineWidth: 1.4, lineCap: .round)
-            )
-            .frame(width: size, height: size)
-            .rotationEffect(.degrees(angle))
-            .onAppear {
-                withAnimation(.linear(duration: 0.85).repeatForever(autoreverses: false)) {
-                    angle = 360
-                }
+    func makeNSView(context: Context) -> RingView { RingView() }
+    func updateNSView(_ view: RingView, context: Context) {}
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: RingView, context: Context) -> CGSize? {
+        CGSize(width: size, height: size)
+    }
+
+    final class RingView: NSView {
+        private let ring = CAShapeLayer()
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            ring.fillColor = nil
+            ring.lineWidth = 1.4
+            ring.lineCap = .round
+            ring.strokeEnd = 0.78
+            // Nothing but the turn moves: a new size or colour is there at
+            // once, not eased into by Core Animation's own quarter second.
+            ring.actions = ["bounds": NSNull(), "position": NSNull(), "path": NSNull(), "strokeColor": NSNull()]
+            layer?.addSublayer(ring)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        /// Seen, never pressed: it sits in a tab, over the × while the page
+        /// loads and in the middle of a tab down to its mark, and a real view
+        /// would take the click meant for either.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func layout() {
+            super.layout()
+            let inset = ring.lineWidth / 2
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            ring.frame = bounds
+            ring.path = CGPath(ellipseIn: bounds.insetBy(dx: inset, dy: inset), transform: nil)
+            CATransaction.commit()
+        }
+
+        /// The colour is resolved against the window's appearance, so it is
+        /// set again whenever that changes.
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                ring.strokeColor = Palette.NS.muted.withAlphaComponent(0.7).cgColor
             }
+        }
+
+        /// Turning only while it is in a window: a layer animation is dropped
+        /// when the view leaves one, so it is added each time it arrives.
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            viewDidChangeEffectiveAppearance()
+            ring.removeAnimation(forKey: "turn")
+            guard window != nil else { return }
+            let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+            // Clockwise, as the SwiftUI one turned: a layer's positive angle
+            // is anticlockwise in a view that isn't flipped.
+            turn.fromValue = 0
+            turn.toValue = -2 * Double.pi
+            turn.duration = 0.85
+            turn.repeatCount = .infinity
+            ring.add(turn, forKey: "turn")
+        }
     }
 }
 
