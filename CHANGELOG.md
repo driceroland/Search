@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- ⌃Tab can go through your tabs in the order you last used them, as in Arc: hold ⌃ and press Tab to bring up your tabs as cards with a picture of each page, most recent first, and let go to switch. One quick ⌃Tab goes straight back to the tab you were just on. The arrow keys and the pointer move along the cards too, a click takes one at once, Return takes the one picked and Escape puts them away. With spaces, each space is a row of its own, and ↑ and ↓ shift into the space above or below, so letting go there switches space and tab together. Off unless you turn it on in Settings › Tabs › ⌃Tab goes to the tab you were just on; off, ⌃Tab walks along the row as before.
 - Links from other apps can open in a small window of their own: the page, the site and Open in Search (⌘O), which moves it into your tabs as it is, after the pins and without loading it again. Escape or ⌘W closes it. Off unless you turn it on in Settings › General › Open links from other apps in a small window. The idea came from [@K-NRS](https://github.com/K-NRS) ([#227](https://github.com/driceroland/Search/pull/227)), after Arc's Little Arc.
 
 ### Fixed

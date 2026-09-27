@@ -406,6 +406,16 @@ struct ContentView: View {
         .animation(Motion.settle, value: browser.offering)
     }
 
+    /// The ⌃Tab switcher, over the page and centred on it as the field is.
+    @ViewBuilder
+    private var flipper: some View {
+        if browser.flipShown {
+            FlipPanel(browser: browser)
+                .padding(.leading, sidebar ? browser.prefs.sideWidth : 0)
+                .transition(.scale(scale: 0.97).combined(with: .opacity))
+        }
+    }
+
     /// The address field: raised over a page by ⌘L or ⌘K, and standing on its
     /// own whenever a tab has nowhere to be yet.
     @ViewBuilder
@@ -479,6 +489,8 @@ struct ContentView: View {
             }
             .overlay { field }
             .overlay { panels }
+            .overlay { flipper }
+            .animation(Motion.quick, value: browser.flipShown)
             // The field comes on its spring, and goes quickly: once Return
             // is pressed the page is on its way, and the field is not what
             // there is to watch.
@@ -493,6 +505,8 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
                 measureLights()
                 resting?.isHidden = false
+                // ⌘Tab away mid-walk: the ⌃ let go of lands in the other app.
+                browser.endFlip()
                 // Only the window you were in, or every window's video would come.
                 browser.appLeft()
             }
@@ -753,10 +767,18 @@ struct ContentView: View {
     /// keystrokes because this runs first.
     private func watchKeys() {
         guard keys == nil else { return }
-        keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+        keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown]) { event in
+            if event.type == .leftMouseDown {
+                // Into the top-left coordinates SwiftUI's frames are in.
+                let at = event.locationInWindow
+                let height = event.window?.contentView?.bounds.height ?? 0
+                return browser.clickFlip(at: CGPoint(x: at.x, y: height - at.y)) ? nil : event
+            }
             guard event.type == .keyDown else {
-                // ⌘ let go of ends a ⌘K walk, wherever it stopped.
+                // ⌘ let go of ends a ⌘K walk, wherever it stopped, and ⌃
+                // a ⌃Tab one (see Flip.swift).
                 if !event.modifierFlags.contains(.command) { browser.landSummon() }
+                if !event.modifierFlags.contains(.control) { browser.landFlip() }
                 return event
             }
             return take(event) ? nil : event
@@ -802,6 +824,22 @@ struct ContentView: View {
         if let little = LittleWindow.owning(event.window) { return little.take(event) }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+
+        // With the ⌃Tab switcher up, the side arrows move along a row as Tab
+        // does, up and down shift into the space above or below, Return takes
+        // the one picked without waiting for ⌃, and Escape puts it away
+        // having chosen nothing.
+        if browser.flipOpen {
+            switch event.keyCode {
+            case 123: browser.flip(-1); return true
+            case 124: browser.flip(1); return true
+            case 126: browser.shiftFlip(-1); return true
+            case 125: browser.shiftFlip(1); return true
+            case 36, 76: browser.landFlip(); return true
+            case 53: browser.endFlip(); return true
+            default: break
+            }
+        }
 
         // Escape puts the page back. On a blank tab there is no page to put
         // back, so it belongs to whatever else wants it.
@@ -868,13 +906,19 @@ struct ContentView: View {
         // links, as in every browser. It used to walk the row of tabs, which
         // took it from anyone filling in a form. ⌃Tab walks the row and comes
         // round to the first again, ⌃⇧Tab the other way — the keys every
-        // other browser uses for that.
+        // other browser uses for that. Or, with the switcher on, goes through
+        // them in the order you last had them, as Arc does (see Flip.swift).
         //
         // While an address is being typed, the list under the field is what
         // there is to move through, and Return takes whatever the walk landed on.
         if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option) {
             if flags.contains(.control) {
-                browser.step(flags.contains(.shift) ? -1 : 1)
+                let direction = flags.contains(.shift) ? -1 : 1
+                if browser.prefs.flipsRecent {
+                    browser.flip(direction)
+                } else {
+                    browser.step(direction)
+                }
                 return true
             }
             if browser.editingTab != nil { return true }

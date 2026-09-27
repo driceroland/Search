@@ -162,6 +162,12 @@ final class Preferences: ObservableObject {
     @Published var littleLinks: Bool {
         didSet { store.set(littleLinks, forKey: "links.little") }
     }
+    /// ⌃Tab brings up the tabs in the order you last looked at them, and
+    /// letting go of ⌃ goes to the one picked, as in Arc (see Flip.swift).
+    /// Off unless asked for: ⌃Tab then walks along the row.
+    @Published var flipsRecent: Bool {
+        didSet { store.set(flipsRecent, forKey: "tabs.recent") }
+    }
     /// The bookmarks bar above the page (see BookmarksBar.swift). Off
     /// unless asked for.
     @Published var bookmarksBar: Bool {
@@ -277,6 +283,7 @@ final class Preferences: ObservableObject {
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.bool(forKey: "links.peek")
         littleLinks = store.bool(forKey: "links.little")
+        flipsRecent = store.bool(forKey: "tabs.recent")
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         let links = store.bool(forKey: "links.show")
         showsLinks = links

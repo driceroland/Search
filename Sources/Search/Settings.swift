@@ -275,6 +275,10 @@ struct SettingsPanel: View {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
             }
             Rule()
+            Line("⌃Tab goes to the tab you were just on", "Hold ⌃ and keep pressing Tab to see your tabs, most recent first; let go to switch. With spaces, ↑ and ↓ go to the space above or below. Off, ⌃Tab walks along the row") {
+                Switch(on: $prefs.flipsRecent)
+            }
+            Rule()
             Line("Show the bookmarks bar", "Your bookmarks in a row above the page, folders opening as menus. It folds away with the tabs") {
                 Switch(on: $prefs.bookmarksBar)
             }

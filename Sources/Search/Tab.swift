@@ -1013,6 +1013,24 @@ final class Tab: ObservableObject, Identifiable {
 
     func touch() { touched = Date() }
 
+    /// A small picture of the page as you last saw it, for the ⌃Tab switcher
+    /// (see Flip.swift). Kept through sleep, so a tab with no page still has
+    /// a face in the switcher.
+    @Published private(set) var glance: NSImage?
+
+    /// Taken as you leave the tab, and only with the switcher on. Drawn by
+    /// the page's own process, so it works once the view is off screen, and
+    /// small: a few hundred kilobytes a tab, not a screenful.
+    func glimpse() {
+        guard let built, !isBlank else { return }
+        let shot = WKSnapshotConfiguration()
+        shot.snapshotWidth = 240
+        built.takeSnapshot(with: shot) { [weak self] image, _ in
+            guard let image else { return }
+            MainActor.assumeIsolated { self?.glance = image }
+        }
+    }
+
     /// True when the web view holds nothing — never loaded, or emptied —
     /// while the tab still names a page. The white page, in other words.
     var hollow: Bool {

@@ -16,7 +16,9 @@ final class Browser: NSObject, ObservableObject {
             // from when it was first picked.
             guard oldValue != activeID, let old = oldValue else { return }
             linkStatus.dismiss()
-            tabs.first { $0.id == old }?.touch()
+            let left = tabs.first { $0.id == old }
+            left?.touch()
+            if prefs.flipsRecent { left?.glimpse() }
         }
     }
 
@@ -122,6 +124,25 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var summoning = false
     /// True between the first ⌘K and letting go of ⌘.
     var cycling = false
+
+    /// The ⌃Tab switcher (see Flip.swift): a row of tabs for each space, in
+    /// the order they were last looked at, fixed when ⌃Tab was first pressed,
+    /// and which row and card the walk is on. Nil when there is no walk.
+    @Published var flipRows: [FlipRow]?
+    @Published var flipRow = 0
+    @Published var flipAt = 0
+    /// The card each row was left on, for coming back to it.
+    var flipCols: [Int] = []
+    /// The last move was the pointer's, not a key's (see FlipPanel).
+    var flipByPointer = false
+    /// The switcher on screen. A beat behind the walk, so a quick ⌃Tab back
+    /// to the last tab doesn't flash it.
+    @Published var flipShown = false
+    var flipWait: DispatchWorkItem?
+    /// Where the panel and each of its cards are in the window, for a click
+    /// to be matched against (see `clickFlip`).
+    var flipPlate: CGRect = .zero
+    var flipCards: [FlipSpot: CGRect] = [:]
 
     var active: Tab? { tabs.first { $0.id == activeID } }
     var fieldShowing: Bool { editing || active?.isBlank ?? true }
