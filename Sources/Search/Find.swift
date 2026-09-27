@@ -17,15 +17,52 @@ struct FindBar: View {
                 TextField("", text: $browser.needle)
                     .textFieldStyle(.plain)
                     .foregroundStyle(Palette.ink)
+                    .accessibilityLabel("Find on page")
+                    .accessibilityHint("Type text to search this page. Press Return to find the next match.")
                     .focused($focused)
                     .onSubmit { browser.look(forward: true) }
             }
             .font(.system(size: 12.5))
-            .frame(width: 160)
+            .frame(width: 150)
 
-            step("chevron.up") { browser.look(forward: false) }
-            step("chevron.down") { browser.look(forward: true) }
-            step("xmark") { browser.closeFind() }
+            if let status = browser.findStatus {
+                Text(status)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(browser.missed ? Color.red.opacity(0.8) : Palette.muted)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .accessibilityLabel(status)
+                    .accessibilityIdentifier("Find result status")
+            }
+
+            step("chevron.up", label: "Previous match", help: "Find the previous match.") {
+                browser.look(forward: false)
+            }
+            step("chevron.down", label: "Next match", help: "Find the next match.") {
+                browser.look(forward: true)
+            }
+
+            Menu {
+                Toggle("Match case", isOn: $browser.matchCase)
+                    .help("Match uppercase and lowercase letters exactly.")
+                Toggle("Whole words", isOn: $browser.wholeWords)
+                    .disabled(browser.findResult?.nativeFallback == true && !browser.wholeWords)
+                    .help("Match complete words. This option is unavailable for PDF pages.")
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(browser.matchCase || browser.wholeWords ? Palette.ink : Palette.muted)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .accessibilityLabel("Search options")
+            .accessibilityHint("Choose whether to match case or whole words.")
+            .help("Search options")
+
+            step("xmark", label: "Close Find on Page", help: "Close the find field and clear its selection.") {
+                browser.closeFind()
+            }
         }
         .padding(.leading, 16)
         .padding(.trailing, 8)
@@ -56,7 +93,12 @@ struct FindBar: View {
         }
     }
 
-    private func step(_ icon: String, action: @escaping () -> Void) -> some View {
+    private func step(
+        _ icon: String,
+        label: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 9, weight: .semibold))
@@ -65,5 +107,8 @@ struct FindBar: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityHint(help)
+        .help(help)
     }
 }

@@ -44,7 +44,9 @@ final class Browser: NSObject, ObservableObject {
             if let id = activeID, id != oldValue, let held = heldDialogs.removeValue(forKey: id) {
                 DispatchQueue.main.async { held.forEach { $0.present() } }
             }
-            guard oldValue != activeID, let old = oldValue else { return }
+            guard oldValue != activeID else { return }
+            invalidateFindPage(retryOnActiveTab: true)
+            guard let old = oldValue else { return }
             linkStatus.dismiss()
             let left = tabs.first { $0.id == old }
             left?.touch()
@@ -220,10 +222,44 @@ final class Browser: NSObject, ObservableObject {
     // MARK: - looking for something on the page
 
     @Published var finding = false
-    @Published var needle = "" { didSet { look(forward: true) } }
+    @Published var needle = "" {
+        didSet { if !resettingFind { look(forward: true) } }
+    }
+    @Published var matchCase = false {
+        didSet { if !resettingFind, oldValue != matchCase { look(forward: true) } }
+    }
+    @Published var wholeWords = false {
+        didSet { if !resettingFind, oldValue != wholeWords { look(forward: true) } }
+    }
     /// Set when the page doesn't hold what was asked for.
     @Published private(set) var missed = false
     @Published private(set) var findFocus = 0
+    @Published private(set) var findResult: PageFind.Result?
+
+    private let pageFind = PageFind()
+    private struct FindSpec: Equatable {
+        let tab: Tab.ID
+        let query: String
+        let matchCase: Bool
+        let wholeWords: Bool
+    }
+    private var findSpec: FindSpec?
+    private var findGeneration: UInt64 = 0
+    private var findRequest: UInt64 = 0
+    private var resettingFind = false
+    private weak var findWeb: WKWebView?
+
+    var findStatus: String? {
+        guard !needle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let result = findResult else { return nil }
+        guard result.available else { return "Search unavailable" }
+        if result.nativeFallback {
+            if wholeWords && !result.wholeWordsAvailable { return "Whole words unavailable" }
+            return result.found ? "Match found" : "No matches"
+        }
+        guard let index = result.index, let count = result.count, count > 0 else { return "No matches" }
+        return "\(index) of \(count)"
+    }
 
     func openFind() {
         guard active?.isBlank == false else { return }
@@ -232,13 +268,8 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func closeFind() {
-        guard finding else { return }
-        finding = false
-        needle = ""
-        missed = false
-        // There is no public way to call off a find, but letting go of the
-        // selection is what taking the highlight away amounts to.
-        active?.web.evaluateJavaScript("window.getSelection().removeAllRanges()")
+        guard finding || !needle.isEmpty || findResult != nil else { return }
+        resetFindState()
         // The keyboard back to the page, as in Safari. Left with the window,
         // the Mac's keyboard navigation handed it to the first button next.
         if let web = active?.built, let window = web.window,
@@ -248,17 +279,99 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func look(forward: Bool) {
-        guard let web = active?.web, !needle.isEmpty else {
+        guard let tab = active else {
             missed = false
+            findResult = nil
             return
         }
-        let configuration = WKFindConfiguration()
-        configuration.backwards = !forward
-        configuration.caseSensitive = false
-        configuration.wraps = true
-        web.find(needle, configuration: configuration) { [weak self] result in
-            MainActor.assumeIsolated { self?.missed = !result.matchFound }
+
+        guard !needle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            missed = false
+            findResult = nil
+            guard findSpec != nil || findWeb != nil else { return }
+            findGeneration &+= 1
+            findRequest = 0
+            findSpec = nil
+            let generation = findGeneration
+            let web = findWeb ?? tab.built
+            findWeb = nil
+            if let web {
+                Task { [pageFind] in _ = await pageFind.clear(on: web, generation: generation) }
+            }
+            return
         }
+
+        let web = tab.web
+        let spec = FindSpec(tab: tab.id, query: needle, matchCase: matchCase, wholeWords: wholeWords)
+        if findSpec != spec {
+            findGeneration &+= 1
+            findRequest = 0
+            findSpec = spec
+            findResult = nil
+            missed = false
+        }
+        findWeb = web
+        findRequest &+= 1
+        let generation = findGeneration
+        let request = findRequest
+        Task { [weak self, weak web] in
+            guard let self, let web else { return }
+            guard self.activeID == spec.tab, self.findGeneration == generation,
+                  self.findSpec == spec,
+                  self.active?.built === web else { return }
+            let result = await self.pageFind.update(
+                on: web,
+                query: spec.query,
+                matchCase: spec.matchCase,
+                wholeWords: spec.wholeWords,
+                forward: forward,
+                generation: generation
+            )
+            guard !result.stale, self.activeID == spec.tab, self.active?.built === web,
+                  self.findGeneration == generation, self.findRequest == request else { return }
+            self.findResult = result
+            self.missed = result.available && !result.found
+                && (!result.nativeFallback || !spec.wholeWords || result.wholeWordsAvailable)
+        }
+    }
+
+    private func resetFindState() {
+        let web = findWeb
+        findGeneration &+= 1
+        findRequest = 0
+        findSpec = nil
+        findWeb = nil
+        resettingFind = true
+        finding = false
+        needle = ""
+        matchCase = false
+        wholeWords = false
+        resettingFind = false
+        findResult = nil
+        missed = false
+        guard let web else { return }
+        let generation = findGeneration
+        Task { [pageFind] in _ = await pageFind.clear(on: web, generation: generation) }
+    }
+
+    /// A tab or document changed under an open find bar. Keep what was typed,
+    /// but retire every result and callback tied to the page that just left.
+    private func invalidateFindPage(retryOnActiveTab: Bool) {
+        let web = findWeb
+        findGeneration &+= 1
+        findRequest = 0
+        findSpec = nil
+        findWeb = nil
+        findResult = nil
+        missed = false
+        if let web {
+            let generation = findGeneration
+            Task { [pageFind] in _ = await pageFind.clear(on: web, generation: generation) }
+        }
+        guard retryOnActiveTab, finding,
+              !needle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let tab = active, !tab.loading, !tab.isBlank else { return }
+        look(forward: true)
     }
 
     /// ⌘⇧M. Whatever is making noise in this tab stops making noise.
@@ -3291,7 +3404,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         guard let tab = tab(for: webView) else { return }
         tab.didCommit()
         tab.extensionReturn.finished(navigation)
-        if tab.id == activeID { linkStatus.dismiss() }
+        if tab.id == activeID {
+            invalidateFindPage(retryOnActiveTab: false)
+            linkStatus.dismiss()
+        }
         tab.failure = nil
         tab.typing = false
         // Whatever you last set this site to, before it draws a single frame
@@ -3317,6 +3433,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         (webView as? PageView)?.showFirstFrame()
         guard let tab = anyTab(for: webView), let url = tab.address else { return }
         tab.uncover()
+        if tab.id == activeID, finding, findSpec == nil,
+           !needle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            look(forward: true)
+        }
         tellStore(tab)
         // A page that arrived after a password went out: did the sign-in take?
         tab.settleSignIn()
