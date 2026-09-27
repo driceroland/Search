@@ -19,7 +19,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- An extension talking to an app on the Mac finds a host registered with Vivaldi or with Opera: both keep their `NativeMessagingHosts` folder where Chrome, Chromium, Edge, Brave and Arc keep theirs, and Search reads them all now. The two were already browsers it brings passwords and bookmarks in from, so the folders it reads name the same browsers the import list does.
+- An extension talking to an app on the Mac finds a host registered with Vivaldi or with Opera: both keep their `NativeMessagingHosts` folder where Chrome, Chromium, Edge, Brave and Arc keep theirs, and Search reads them all now. The two were already browsers it brings passwords and bookmarks in from, so the folders it reads name the same browsers the import list does. Thanks [@gabrielemeksiz-ui](https://github.com/gabrielemeksiz-ui) ([#302](https://github.com/driceroland/Search/pull/302))
 - "Join from the app" works again on Zoom, Teams, Slack and the like: their pages open the app from a frame of their own, which 1.0.3 ignored along with ads' frames. A frame of the page's own site may ask now, and Search still asks you before opening the app ([#255](https://github.com/driceroland/Search/issues/255)).
 - Started hidden, at login for one, Search loads its extensions before the page it brings back, so their scripts meant to run first run first on it, as they did until 1.0.2. Thanks [@TesterPen0812](https://github.com/TesterPen0812) for the report ([#199](https://github.com/driceroland/Search/issues/199))
 - A link clicked in Notion, or another app built on Electron, brings Search to the front: those apps don't hand the front over as macOS 14 expects, and Search stayed behind them.
