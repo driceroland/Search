@@ -381,6 +381,10 @@ private struct TabPill: View {
                 Group {
                     if browser.editingPin == tab.id {
                         PinField(browser: browser, tab: tab)
+                    } else if tab.loading {
+                        // Its page on the way, as a tab's ring says; the
+                        // letter or icon comes back once it is there.
+                        Ring(size: 11)
                     } else if prefs.glyph == .icons, let icon = tab.icon {
                         Mark(icon: icon, letter: tab.pin ?? "", size: 16, dim: tab.asleep)
                     } else {
@@ -411,11 +415,12 @@ private struct TabPill: View {
         //
         // So each tab carries one gesture. The pinned square you are already
         // on has nothing to do on a single click, so it takes the double one
-        // and edits its letter; everything else answers the first click at
+        // and goes back to the page it was pinned at — or, there already,
+        // edits its letter; everything else answers the first click at
         // once. Change Letter in the menu covers the rest.
         .modifier(OneClick(double: live && pinned) {
             if live && pinned {
-                browser.editLetter(tab)
+                browser.goHome(tab)
             } else if live && !pinned {
                 browser.beginTabEdit(tab)
             } else {

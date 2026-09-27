@@ -63,7 +63,7 @@ A **private tab** (`⇧⌘N`) has its own cookie jar and leaves nothing behind w
 
 `⌘R` reloads the page; `⌥⌘R` reloads it from origin, checking everything cached with the site again, as Safari's Reload Page From Origin.
 
-`⌃Tab` and `⌃⇧Tab` walk along the row of tabs, or, with Settings › Tabs › ⌃Tab goes to the tab you were just on, bring up your tabs most recent first, as in Arc; `Tab` stays the page's, for moving through a form. `esc` puts away whatever is open.
+`⌃Tab` and `⌃⇧Tab` walk along the row of tabs; `Tab` stays the page's, for moving through a form. `esc` puts away whatever is open.
 
 ---
 

@@ -54,11 +54,17 @@
                                        until the page is loading
     ./bench pull DX [STEPS] [MS]       test run: two fingers DX points sideways over the page (back is +) — where it went
     ./bench keyeq CHARS CODE [shift]   test run: ⌘CHARS pressed while the page has the keyboard — who took it
-    ./bench import BROWSER [WHAT…]   test run: bookmarks, history, passwords from a made-up profile in the world's Import/
+    ./bench import BROWSER [WHAT…] [--profile NAME|all]
+                                     test run: bookmarks, history, passwords from a made-up profile in the world's Import/
+                                     (the one used most recently, unless a profile is named, or all)
+    ./bench import-preview           test run: each browser found, its profiles, the one used most recently, and what
+                                     it holds as the Bring things over sheet counts it — without asking for a key
+    ./bench import-file PATH         test run: a bookmarks .html, a passwords .csv or Safari's export .zip, as File… brings it
     ./bench menu [open]                test run: the Bookmarks menu as it is about to open, and its first
                                        folder (open: its first bookmark picked)
     ./bench bookmark URL [new]         test run: a bookmark picked from the list, timed until it loads
                                        (new: into a new tab, whose page isn't built yet)
+    ./bench pin ID [off|home]          test run: pin a tab, unpin it, or double-click it (home)
     ./bench fill [STEPS]               test run: the page reporting its scroll STEPS times, each timed until the window rests
     ./bench peek URL|close             test run: the peek panel over the tab in front, as a shift-click opens it
     ./bench window                     test run: open the browser's window if a hidden probe came up without it
@@ -66,6 +72,7 @@
     ./bench picture PATH               test run: the whole window, pages included, drawn to a PNG (start the probe hidden)
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
+                                       import on|off|BROWSER,
                                        look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
                                        folded on|off, peek on|off, peeklink keep|close, pages120 on|off
 
@@ -155,7 +162,7 @@ def main(argv):
     elif verb == "ui":
         if len(args) != 2: sys.exit("usage: bench ui KEY VALUE")
         key, value = args
-        request[key] = value if key in ("look", "edittab", "peeklink") else value in ("on", "true", "1", "yes")
+        request[key] = value if key in ("look", "edittab", "peeklink", "import") else value in ("on", "true", "1", "yes")
     elif verb in ("ext-add", "ext-press", "ext-remove", "ext-reload"):
         if len(args) != 1: sys.exit(f"usage: bench {verb} ID")
         request["id"] = args[0]
@@ -250,15 +257,28 @@ def main(argv):
         request["new"] = len(args) == 2
     elif verb == "import":
         kinds = ("bookmarks", "history", "passwords")
-        if not args or any(a not in kinds for a in args[1:]): sys.exit("usage: bench import BROWSER [bookmarks] [history] [passwords]")
+        if "--profile" in args:
+            at = args.index("--profile")
+            if at + 1 >= len(args): sys.exit("usage: bench import BROWSER [WHAT…] --profile NAME|all")
+            request["profile"] = args[at + 1]
+            args = args[:at] + args[at + 2:]
+        if not args or any(a not in kinds for a in args[1:]): sys.exit("usage: bench import BROWSER [bookmarks] [history] [passwords] [--profile NAME|all]")
         request["from"] = args[0]
         request["what"] = args[1:]
+    elif verb == "import-file":
+        if len(args) != 1: sys.exit("usage: bench import-file PATH")
+        request["path"] = os.path.abspath(args[0])
     elif verb == "menu":
         if args not in ([], ["open"]): sys.exit("usage: bench menu [open]")
         request["open"] = args == ["open"]
     elif verb == "keyeq":
         if len(args) < 2 or any(a != "shift" for a in args[2:]): sys.exit("usage: bench keyeq CHARS CODE [shift]")
         request["chars"], request["code"], request["mods"] = args[0], int(args[1]), args[2:]
+    elif verb == "pin":
+        if len(args) not in (1, 2) or args[1:] not in ([], ["off"], ["home"]): sys.exit("usage: bench pin ID [off|home]")
+        request["id"] = args[0]
+        request["off"] = args[1:] == ["off"]
+        request["home"] = args[1:] == ["home"]
     elif verb == "fill":
         if len(args) > 1: sys.exit("usage: bench fill [STEPS]")
         if args: request["steps"] = int(args[0])
@@ -284,7 +304,7 @@ def main(argv):
         request["action"], request["path"] = args[0], os.path.abspath(args[1])
         if len(args) > 2: request["frames"] = int(args[2])
         if len(args) > 3: request["every"] = float(args[3])
-    elif verb not in ("tabs", "probe", "extensions"):
+    elif verb not in ("tabs", "probe", "extensions", "import-preview"):
         sys.exit(f"unknown command “{verb}” — see bench help")
 
     answer = ask(os.path.join(folder(world), "bench.sock"), request)

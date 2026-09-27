@@ -82,6 +82,11 @@ final class Preferences: ObservableObject {
     @Published var showsReading: Bool {
         didSet { store.set(showsReading, forKey: "tabs.reading") }
     }
+    /// ⌃Tab shows the tabs as pictures, most recently used first. Off unless
+    /// turned on; off, ⌃Tab walks the row.
+    @Published var mruSwitcher: Bool {
+        didSet { store.set(mruSwitcher, forKey: "tabs.mru") }
+    }
     /// The ad blocker. On unless turned off; there is nothing else to it.
     @Published var shielded: Bool {
         didSet { store.set(shielded, forKey: "shield") }
@@ -175,12 +180,6 @@ final class Preferences: ObservableObject {
     @Published var littleLinks: Bool {
         didSet { store.set(littleLinks, forKey: "links.little") }
     }
-    /// ⌃Tab brings up the tabs in the order you last looked at them, and
-    /// letting go of ⌃ goes to the one picked, as in Arc (see Flip.swift).
-    /// Off unless asked for: ⌃Tab then walks along the row.
-    @Published var flipsRecent: Bool {
-        didSet { store.set(flipsRecent, forKey: "tabs.recent") }
-    }
     /// The bookmarks bar above the page (see BookmarksBar.swift). Off
     /// unless asked for.
     @Published var bookmarksBar: Bool {
@@ -214,7 +213,7 @@ final class Preferences: ObservableObject {
         didSet { store.set(floatsOnLeave, forKey: "float.leave") }
     }
     /// A newer build is fetched, checked and put in place on its own, as it
-    /// always was. Off, Search still looks once a day and says so, and waits
+    /// always was. Off, Search still looks every hour and says so, and waits
     /// for Install in Settings (see Updater.installsOnItsOwn).
     @Published var installsUpdates: Bool {
         didSet {
@@ -259,6 +258,7 @@ final class Preferences: ObservableObject {
         customEngine = store.string(forKey: "search.custom") ?? ""
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         showsReading = store.object(forKey: "tabs.reading") as? Bool ?? true
+        mruSwitcher = store.bool(forKey: "tabs.mru")
         shielded = store.object(forKey: "shield") as? Bool ?? true
         extensionsInPrivate = store.bool(forKey: "extensions.private")
         // Offered by default only in a build that can actually do them —
@@ -301,7 +301,6 @@ final class Preferences: ObservableObject {
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         littleLinks = store.bool(forKey: "links.little")
-        flipsRecent = store.bool(forKey: "tabs.recent")
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         let links = store.object(forKey: "links.show") as? Bool ?? true
         showsLinks = links

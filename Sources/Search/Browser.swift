@@ -22,9 +22,15 @@ final class Browser: NSObject, ObservableObject {
             linkStatus.dismiss()
             let left = tabs.first { $0.id == old }
             left?.touch()
-            if prefs.flipsRecent { left?.glimpse() }
+            // The switcher (Settings › Tabs) keeps its order and pictures
+            // only while it is on; off, a switch records nothing for it.
+            guard prefs.mruSwitcher else { return }
+            tabSwitcher.cancel()
+            if let left { tabSwitcher.left(left, alive: Set((tabs + parkedTabs).map(\.id))) }
         }
     }
+
+    let tabSwitcher = TabSwitcher()
 
     /// The tab whose page is currently out in the little window. Nothing
     /// floating means no window: the two are checked against each other rather
@@ -64,12 +70,14 @@ final class Browser: NSObject, ObservableObject {
         announce("Bookmarked")
     }
 
-    /// Another browser's bookmarks, folders and all — and, behind them, the
-    /// icons it had for those sites, so the menu wears them from the start
-    /// instead of a letter each. Returns how many pages came over.
+    /// Another browser's bookmarks, folders and all — one profile's, or
+    /// every profile's when nil — and, behind them, the icons it had for
+    /// those sites, so the menu wears them from the start instead of a
+    /// letter each. Returns how many pages came over, and how many were
+    /// here already.
     @discardableResult
-    func takeBookmarks(from source: Chromium.Source) -> Int {
-        let found = Chromium.bookmarks(in: source)
+    func takeBookmarks(from source: ImportSource, profile: String? = nil) -> (added: Int, already: Int) {
+        let found = source.bookmarks(profile: profile)
         let (count, already) = bookmarks.take(found, from: source.name)
         announce(
             Bookmarks.count(found) == 0 ? "No bookmarks in \(source.name)"
@@ -79,14 +87,18 @@ final class Browser: NSObject, ObservableObject {
         )
         let urls = Bookmarks.urls(found)
         DispatchQueue.global(qos: .utility).async {
-            let icons = Chromium.icons(in: source, for: urls)
+            let icons = source.icons(profile: profile, for: urls)
             Task { @MainActor in
                 for (host, data) in icons { await Favicons.shared.adopt(data, for: host) }
                 self.objectWillChange.send()
             }
         }
-        return count
+        return (count, already)
     }
+
+    /// The "Bring things over" sheet, open while set: the browser it
+    /// starts on by name, or "" for the first one found.
+    @Published var bringingIn: String?
 
     /// ⇧⌘S. The same tabs, down the left or across the top.
     func toggleSidebar() {
@@ -132,23 +144,6 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var summoning = false
     /// True between the first ⌘K and letting go of ⌘.
     var cycling = false
-
-    /// The ⌃Tab switcher (see Flip.swift): a row of tabs for each space, in
-    /// the order they were last looked at, fixed when ⌃Tab was first pressed,
-    /// and which row and card the walk is on. Nil when there is no walk.
-    @Published var flipRows: [FlipRow]?
-    @Published var flipRow = 0
-    @Published var flipAt = 0
-    /// The last move was the pointer's, not a key's (see FlipPanel).
-    var flipByPointer = false
-    /// The switcher on screen. A beat behind the walk, so a quick ⌃Tab back
-    /// to the last tab doesn't flash it.
-    @Published var flipShown = false
-    var flipWait: DispatchWorkItem?
-    /// Where the panel and each of its cards are in the window, for a click
-    /// to be matched against (see `clickFlip`).
-    var flipPlate: CGRect = .zero
-    var flipCards: [FlipSpot: CGRect] = [:]
 
     var active: Tab? { tabs.first { $0.id == activeID } }
     var fieldShowing: Bool { editing || active?.isBlank ?? true }
@@ -426,32 +421,43 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
-    /// What came back from another browser's store, put in the keychain.
-    func took(_ outcome: Result<Chromium.Found, Error>, from source: Chromium.Source) {
+    /// What came back from another browser's store, put in the keychain,
+    /// with the sites it was told never to ask about. Saving one already
+    /// kept updates it, so bringing the same in again adds nothing twice.
+    /// Returns how many were kept.
+    func keep(_ found: Chromium.Found) -> Int {
+        var kept = 0
+        for login in found.logins
+        where Vault.save(host: login.host, user: login.user, password: login.password, used: login.used, clear: login.clear) {
+            kept += 1
+        }
+        var never = Vault.never
+        found.never.forEach { never.insert($0) }
+        Vault.never = never
+        relist()
+        return kept
+    }
+
+    /// The same, said as it lands.
+    func took(_ outcome: Result<Chromium.Found, Error>, from name: String) {
         switch outcome {
         case .success(let found):
-            var kept = 0
-            for login in found.logins
-            where Vault.save(host: login.host, user: login.user, password: login.password, used: login.used, clear: login.clear) {
-                kept += 1
-            }
-            var never = Vault.never
-            found.never.forEach { never.insert($0) }
-            Vault.never = never
-            relist()
-            announce(kept == 0 ? "Nothing new in \(source.name)" : "\(kept) passwords from \(source.name)")
+            let kept = keep(found)
+            announce(kept == 0 ? "Nothing new in \(name)" : "\(kept) passwords from \(name)")
         case .failure(Chromium.Trouble.noPassphrase):
-            announce("\(source.name) didn't give up its keychain key")
+            announce("\(name) didn't give up its keychain key")
+        case .failure(Mozilla.Trouble.primaryPassword):
+            announce("\(name) has a primary password — export your passwords from it (Settings › Passwords › ⋯ › Export) and bring in the CSV file")
         case .failure:
-            announce("Nothing readable in \(source.name)")
+            announce("Nothing readable in \(name)")
         }
     }
 
     /// The other browser's history, into this one's. Off the main thread for
     /// the reading; the merge itself is a moment.
-    func takePlaces(from source: Chromium.Source, then done: @escaping (Int) -> Void) {
+    func takePlaces(from source: ImportSource, profile: String? = nil, then done: @escaping (Int) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
-            let places = Chromium.places(in: source)
+            let places = source.places(profile: profile)
             DispatchQueue.main.async {
                 for place in places {
                     self.history.take(place.url, title: place.title, count: place.count, last: place.last)
@@ -462,26 +468,54 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
-    /// Takes in a CSV as Google Password Manager exports one. The file is read
-    /// once and never copied.
-    func importPasswords() {
+    /// Something another browser exported: a bookmarks page, a passwords
+    /// file, or Safari's own export (see ImportFile). Read once, never copied.
+    func importFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.commaSeparatedText, .plainText]
+        panel.allowedContentTypes = [.html, .commaSeparatedText, .plainText, .zip, .json]
+        panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Import"
-        panel.message = "A passwords export, as Chrome, Dia or Google Password Manager write it."
+        panel.prompt = "Bring In"
+        panel.message = "A file another browser exported: bookmarks (.html), passwords (.csv), or Safari's File › Export Browsing Data (.zip)."
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-            announce("Couldn't read that file as text")
-            return
+        announce(takeFile(url).said)
+    }
+
+    /// The file's bookmarks, history and passwords, taken in as a browser's
+    /// are: bookmarks merged without doubles, history counted once. Says
+    /// what came in, and after Safari's export, that the file holds your
+    /// passwords in the clear.
+    @discardableResult
+    func takeFile(_ url: URL) -> (said: String, bookmarks: Int, already: Int, places: Int, kept: Int, skipped: Int) {
+        let found = ImportFile.read(url)
+        guard !found.isEmpty else {
+            return ("Nothing to bring in from that file", 0, 0, 0, 0, 0)
         }
-        let result = Vault.take(csv: text)
-        relist()
-        announce(
-            result.skipped == 0
-                ? "\(result.kept) passwords in the keychain"
-                : "\(result.kept) in the keychain, \(result.skipped) skipped"
-        )
+        let name = found.fromSafari ? "Safari" : url.deletingPathExtension().lastPathComponent
+        let (added, already) = bookmarks.take(found.bookmarks, from: name)
+        for place in found.places { history.take(place.url, title: place.title, count: place.count, last: place.last) }
+        if !found.places.isEmpty { history.settle() }
+        var kept = 0, skipped = 0
+        for text in found.passwords {
+            let result = Vault.take(csv: text)
+            kept += result.kept
+            skipped += result.skipped
+        }
+        if !found.passwords.isEmpty { relist() }
+        func count(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? "1 \(one)" : "\(n) \(many)" }
+        var parts: [String] = []
+        if added > 0 || already > 0 {
+            parts.append(already == 0 ? count(added, "bookmark", "bookmarks") : "\(count(added, "new bookmark", "new bookmarks")), \(already) already here")
+        }
+        if !found.places.isEmpty { parts.append(count(found.places.count, "place", "places")) }
+        if kept > 0 || skipped > 0 {
+            parts.append(skipped == 0 ? count(kept, "password", "passwords") : "\(count(kept, "password", "passwords")), \(skipped) skipped")
+        }
+        var said = parts.joined(separator: " · ")
+        if found.fromSafari, kept > 0 {
+            said += " — the exported file holds your passwords in the clear: delete it now"
+        }
+        return (said, added, already, found.places.count, kept, skipped)
     }
 
     // MARK: - what is kept, and getting rid of it
@@ -585,6 +619,7 @@ final class Browser: NSObject, ObservableObject {
     func pin(_ tab: Tab) {
         if tab.pin == nil {
             tab.pin = tab.monogram
+            tab.home = tab.pending ?? tab.address
             // Pinned tabs live at the head of the row, in the order they were
             // pinned, so their letters never move under your hand.
             if let here = tabs.firstIndex(where: { $0.id == tab.id }) {
@@ -601,6 +636,34 @@ final class Browser: NSObject, ObservableObject {
         // address and applied. Changing it is a separate act, for the day it
         // matters — which is why it is not folded into this one.
         writeSession(now: true)
+    }
+
+    /// A pin's page, from the session: the one it was pinned at, or — for a
+    /// pin from before pins kept theirs — where it was when it came back.
+    static func home(of entry: Session.Entry, at url: URL) -> URL? {
+        guard entry.pin != nil else { return nil }
+        return entry.home.flatMap(URL.init(string:)) ?? url
+    }
+
+    /// A double-click on the pin you are on: back to the page it was pinned
+    /// at, as a pin in Arc goes home (#141). Already there, the double-click
+    /// changes its letter, as it always did.
+    func goHome(_ tab: Tab) {
+        guard tab.pin != nil else { return }
+        guard let home = tab.home, !Browser.samePage(home, tab.address) else { return editLetter(tab) }
+        tab.go(to: home)
+        rememberSession()
+    }
+
+    /// The same page, give or take a trailing slash.
+    static func samePage(_ one: URL, _ other: URL?) -> Bool {
+        guard let other else { return false }
+        func bare(_ url: URL) -> String {
+            var text = url.absoluteString
+            while text.hasSuffix("/") { text.removeLast() }
+            return text
+        }
+        return bare(one) == bare(other)
     }
 
     /// Change Letter, or a double-click on the square itself.
@@ -627,6 +690,7 @@ final class Browser: NSObject, ObservableObject {
     func unpin(_ tab: Tab) {
         if editingPin == tab.id { editingPin = nil }
         tab.pin = nil
+        tab.home = nil
         defer { writeSession(now: true) }
         // Back out of the pinned block, to the head of the loose tabs.
         if let here = tabs.firstIndex(where: { $0.id == tab.id }) {
@@ -932,6 +996,7 @@ final class Browser: NSObject, ObservableObject {
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
+            tab.home = Browser.home(of: entry, at: url)
             tabs.append(tab)
         }
         guard !tabs.isEmpty else {
@@ -1036,6 +1101,13 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        prefs.$mruSwitcher
+            .dropFirst()
+            .sink { [weak self] on in
+                if !on { self?.tabSwitcher.reset() }
+            }
+            .store(in: &bag)
+
         prefs.$passkeys
             .dropFirst()
             .sink { [weak self] on in
@@ -1091,7 +1163,8 @@ final class Browser: NSObject, ObservableObject {
         for tab in tabs {
             guard kept(tab), let url = tab.pending ?? tab.address else { continue }
             if tab.id == id { active = entries.count }
-            entries.append(Session.Entry(url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name))
+            entries.append(Session.Entry(url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name,
+                                         home: tab.pin == nil ? nil : tab.home?.absoluteString))
         }
         // The tab you were on isn't kept — a private or blank one: the one
         // kept just before it comes back in front, not the first of the row.
@@ -1421,6 +1494,19 @@ final class Browser: NSObject, ObservableObject {
         select(tabs[index])
     }
 
+    /// ⌃Tab with the switcher on: the space's tabs, the most recently used
+    /// first. Nothing changes until ⌃ is let go of (`commitTabSwitch`).
+    func switchTabs(backwards: Bool) {
+        guard let activeID else { return }
+        tabSwitcher.step(row: tabs.map(\.id), current: activeID, backwards: backwards)
+    }
+
+    func commitTabSwitch(picking id: Tab.ID? = nil) {
+        guard let target = tabSwitcher.finish(picking: id),
+              let tab = tabs.first(where: { $0.id == target }) else { return }
+        select(tab)
+    }
+
     /// A link opened from a page lands next to the page it came from, not at
     /// the far end of the row — unless it is one of a batch, which keeps the
     /// order it came in.
@@ -1634,6 +1720,7 @@ final class Browser: NSObject, ObservableObject {
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
+            tab.home = Browser.home(of: entry, at: url)
             row.append(tab)
         }
         let active = row.indices.contains(saved.active) ? row[saved.active].id : row.first?.id

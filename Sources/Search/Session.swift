@@ -11,6 +11,8 @@ enum Session {
         var pin: String?
         /// The name you gave the tab, when you gave it one.
         var name: String?
+        /// A pin's own page, the one it was pinned at (see Browser.goHome).
+        var home: String?
     }
 
     struct Shape: Codable {

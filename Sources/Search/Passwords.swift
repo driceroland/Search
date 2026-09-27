@@ -9,7 +9,6 @@ struct PasswordsPanel: View {
     @FocusState private var hunting: Bool
     @State private var open: String?
     @State private var adding = false
-    @State private var importing: String?
 
     var body: some View {
         Plate("Passwords", width: 620, close: { browser.managing = false }) {
@@ -56,35 +55,16 @@ struct PasswordsPanel: View {
                     Text("Bring in from")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)
-                    // Only the browsers actually on this Mac.
-                    ForEach(Chromium.installed()) { source in
-                        Pill(source.name) {
-                            importing = source.name
-                            // Off the main thread: four hundred passwords is a
-                            // moment of arithmetic, and the panel stays alive.
-                            DispatchQueue.global(qos: .userInitiated).async {
-                                let outcome = Result { try Chromium.read(source) }
-                                DispatchQueue.main.async {
-                                    importing = nil
-                                    browser.took(outcome, from: source)
-                                }
-                            }
-                        }
-                        .disabled(importing != nil)
+                    // Which browser, which profile and what of it: the sheet.
+                    Pill("Bring in…") {
+                        browser.managing = false
+                        browser.bringingIn = ""
                     }
-                    Pill("CSV file…") { browser.importPasswords() }
-                        .disabled(importing != nil)
+                    Pill("File…") { browser.importFile() }
                     Spacer(minLength: 0)
-                    if let importing {
-                        Ring(size: 10)
-                        Text("Reading \(importing)…")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
-                    } else {
-                        Text(browser.saved.count == 1 ? "1 password" : "\(browser.saved.count) passwords")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Palette.muted)
-                    }
+                    Text(browser.saved.count == 1 ? "1 password" : "\(browser.saved.count) passwords")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
                 }
                 Text("macOS asks once for that browser's keychain key. Nothing is changed there; everything lands in your own keychain, under Search.")
                     .font(.system(size: 11.5))

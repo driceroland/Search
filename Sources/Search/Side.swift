@@ -508,6 +508,9 @@ private struct PinSquare: View {
         Group {
             if browser.editingPin == tab.id {
                 PinField(browser: browser, tab: tab)
+            } else if tab.loading {
+                // Its page on the way, as a row's ring says.
+                Ring(size: scale * 11 / 34)
             } else if prefs.glyph == .icons, let icon = tab.icon {
                 Mark(icon: icon, letter: tab.pin ?? "", size: scale * 16 / 34, dim: tab.asleep)
             } else {
@@ -530,7 +533,7 @@ private struct PinSquare: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
         .modifier(OneClick(double: live) {
-            if live { browser.editLetter(tab) } else { browser.select(tab) }
+            if live { browser.goHome(tab) } else { browser.select(tab) }
         })
         // Put down, like ⌘W: close() is what knows a pin isn't removed.
         .overlay { MiddleClick { browser.close(tab) } }

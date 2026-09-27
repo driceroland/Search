@@ -172,9 +172,6 @@ extension Browser {
         cancelTabEdit()
         if floater.showing { land() }
         writeSession(now: true)
-        // The row swaps before `activeID` changes, so the tab left behind is
-        // never seen leaving; its picture for the ⌃Tab switcher is taken here.
-        if prefs.flipsRecent { active?.glimpse() }
 
         // The row on screen is parked as it is, sound and all: music or a
         // stream keeps playing in the space you left, as it does in a tab

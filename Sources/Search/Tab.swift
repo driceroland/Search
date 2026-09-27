@@ -409,6 +409,9 @@ final class Tab: ObservableObject, Identifiable {
     /// at the head of the row and gives up its title for that letter — which
     /// is all you need for the five or six pages you keep open all day.
     @Published var pin: String?
+    /// For a pin, the page it was pinned at: a double-click on it goes back
+    /// there (Browser.goHome).
+    var home: URL?
 
     /// A name you gave it, in place of whatever the page calls itself. It
     /// stays through navigation: a tab you named is a tab you are keeping for
@@ -907,6 +910,31 @@ final class Tab: ObservableObject, Identifiable {
         }
     }
 
+    /// A small picture of the page for the tab switcher. A sleeping tab's
+    /// comes from the picture kept for waking it; a tab brought back from
+    /// last time and not opened yet has none, rather than a page built for it.
+    func preview(width: CGFloat, _ done: @escaping (NSImage?) -> Void) {
+        if let picture {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let source = CGImageSourceCreateWithData(picture as CFData, nil)
+                let options = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: Int(width * 2)
+                ] as CFDictionary
+                let thumbnail = source.flatMap { CGImageSourceCreateThumbnailAtIndex($0, 0, options) }
+                DispatchQueue.main.async {
+                    let image = thumbnail.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
+                    done(image)
+                }
+            }
+            return
+        }
+        guard let built else { return done(nil) }
+        let configuration = WKSnapshotConfiguration()
+        configuration.snapshotWidth = NSNumber(value: Double(width))
+        built.takeSnapshot(with: configuration) { image, _ in done(image) }
+    }
+
     nonisolated private static func jpeg(_ image: CGImage) -> Data? {
         let data = NSMutableData()
         guard let out = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { return nil }
@@ -1072,24 +1100,6 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     func touch() { touched = Date() }
-
-    /// A small picture of the page as you last saw it, for the ⌃Tab switcher
-    /// (see Flip.swift). Kept through sleep, so a tab with no page still has
-    /// a face in the switcher.
-    @Published private(set) var glance: NSImage?
-
-    /// Taken as you leave the tab, and only with the switcher on. Drawn by
-    /// the page's own process, so it works once the view is off screen, and
-    /// small: a few hundred kilobytes a tab, not a screenful.
-    func glimpse() {
-        guard let built, !isBlank else { return }
-        let shot = WKSnapshotConfiguration()
-        shot.snapshotWidth = 240
-        built.takeSnapshot(with: shot) { [weak self] image, _ in
-            guard let image else { return }
-            MainActor.assumeIsolated { self?.glance = image }
-        }
-    }
 
     /// True when the web view holds nothing — never loaded, or emptied —
     /// while the tab still names a page. The white page, in other words.

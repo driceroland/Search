@@ -188,6 +188,8 @@ struct SearchApp: App {
                     .keyboardShortcut(.delete, modifiers: [.command, .shift])
                 Button("Clear History") { browser.clearHistory() }
             }
+            // Search › Check for Updates…, under About, as in any Mac app.
+            CommandGroup(after: .appInfo) { UpdateMenuItem() }
             CommandGroup(after: .appSettings) {
                 Button("Settings…") { browser.tuning = true }
                     .keyboardShortcut(",")
@@ -412,16 +414,6 @@ struct ContentView: View {
         .animation(Motion.settle, value: browser.offering)
     }
 
-    /// The ⌃Tab switcher, over the page and centred on it as the field is.
-    @ViewBuilder
-    private var flipper: some View {
-        if browser.flipShown {
-            FlipPanel(browser: browser)
-                .padding(.leading, sidebar ? browser.prefs.sideWidth : 0)
-                .transition(.scale(scale: 0.97).combined(with: .opacity))
-        }
-    }
-
     /// The address field: raised over a page by ⌘L or ⌘K, and standing on its
     /// own whenever a tab has nowhere to be yet.
     @ViewBuilder
@@ -461,6 +453,9 @@ struct ContentView: View {
         if browser.managing {
             sheet { PasswordsPanel(browser: browser) } close: { browser.managing = false }
         }
+        if browser.bringingIn != nil {
+            sheet { ImportPanel(browser: browser) } close: { browser.bringingIn = nil }
+        }
         if browser.reviewing {
             // No dimming for this one: the whole point is to keep looking at
             // the page while the list offers to put things back on it.
@@ -495,8 +490,7 @@ struct ContentView: View {
             }
             .overlay { field }
             .overlay { panels }
-            .overlay { flipper }
-            .animation(Motion.quick, value: browser.flipShown)
+            .overlay { TabSwitcherOverlay(browser: browser, switcher: browser.tabSwitcher) }
             // The field comes on its spring, and goes quickly: once Return
             // is pressed the page is on its way, and the field is not what
             // there is to watch.
@@ -509,15 +503,17 @@ struct ContentView: View {
             // buttons, and on a light window they come out nearly white. Ours
             // go on in their place until the app comes back.
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                browser.tabSwitcher.cancel()
                 measureLights()
                 resting?.isHidden = false
-                // ⌘Tab away mid-walk: the ⌃ let go of lands in the other app.
-                browser.endFlip()
                 // Only the window you were in, or every window's video would come.
                 browser.appLeft()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { Browser.front = browser }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
+                if let window, (note.object as? NSWindow) === window { browser.tabSwitcher.cancel() }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
@@ -537,6 +533,7 @@ struct ContentView: View {
             .animation(Motion.settle, value: browser.welcoming)
             .animation(Motion.settle, value: browser.bookmarking)
             .animation(Motion.settle, value: browser.managing)
+            .animation(Motion.settle, value: browser.bringingIn != nil)
             .animation(Motion.settle, value: browser.reviewing)
         .onAppear {
             watchKeys()
@@ -784,18 +781,14 @@ struct ContentView: View {
     /// keystrokes because this runs first.
     private func watchKeys() {
         guard keys == nil else { return }
-        keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown]) { event in
-            if event.type == .leftMouseDown {
-                // Into the top-left coordinates SwiftUI's frames are in.
-                let at = event.locationInWindow
-                let height = event.window?.contentView?.bounds.height ?? 0
-                return browser.clickFlip(at: CGPoint(x: at.x, y: height - at.y)) ? nil : event
-            }
+        keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
             guard event.type == .keyDown else {
-                // ⌘ let go of ends a ⌘K walk, wherever it stopped, and ⌃
-                // a ⌃Tab one (see Flip.swift).
+                // ⌃ let go of switches to the tab the switcher is on.
+                if browser.tabSwitcher.active, !event.modifierFlags.contains(.control) {
+                    browser.commitTabSwitch()
+                }
+                // ⌘ let go of ends a ⌘K walk, wherever it stopped.
                 if !event.modifierFlags.contains(.command) { browser.landSummon() }
-                if !event.modifierFlags.contains(.control) { browser.landFlip() }
                 return event
             }
             return take(event) ? nil : event
@@ -851,6 +844,18 @@ struct ContentView: View {
             || browser.active?.built?.inputContext != nil
     }
 
+    /// Whether the tab switcher can come up: in this window, with nothing
+    /// over the page it would have to cover.
+    private func canSwitchTabs(_ event: NSEvent) -> Bool {
+        guard let window, event.window === window else { return false }
+        return !browser.tuning && !browser.recalling && !browser.hoarding &&
+            !browser.bookmarking && !browser.welcoming && !browser.managing &&
+            !browser.reviewing && !browser.finding && !browser.bookmarksOpen &&
+            !browser.veiling && !browser.summoning && !browser.makingSpace &&
+            browser.peekTab == nil && browser.editingTab == nil &&
+            browser.asking == nil && browser.offering == nil && browser.suggesting == nil
+    }
+
     /// The keys of the top row, by where they sit rather than what they type.
     static let digits: [UInt16: Int] = [
         18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9, 29: 0,
@@ -861,15 +866,28 @@ struct ContentView: View {
         if let little = LittleWindow.owning(event.window) { return little.take(event) }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let controlTab = event.keyCode == 48 && flags.contains(.control)
+            && flags.isDisjoint(with: [.command, .option])
 
-        // With the ⌃Tab switcher up, Return takes the one picked without
-        // waiting for ⌃, and Escape puts it away having chosen nothing.
-        if browser.flipOpen {
-            switch event.keyCode {
-            case 36, 76: browser.landFlip(); return true
-            case 53: browser.endFlip(); return true
-            default: break
+        // While the tab switcher is up, ⌃ and the arrows move through it and
+        // ⌃Tab goes on below; any other key puts it away, and Escape does
+        // nothing else.
+        if browser.tabSwitcher.active, !controlTab {
+            if flags.contains(.control), flags.isDisjoint(with: [.command, .option]) {
+                let direction: TabSwitcher.Direction? = switch event.keyCode {
+                case 123: .left
+                case 124: .right
+                case 125: .down
+                case 126: .up
+                default: nil
+                }
+                if let direction {
+                    browser.tabSwitcher.move(direction)
+                    return true
+                }
             }
+            browser.tabSwitcher.cancel()
+            if event.keyCode == 53 { return true }
         }
 
         // Escape puts the page back. On a blank tab there is no page to put
@@ -898,6 +916,10 @@ struct ContentView: View {
             }
             if browser.managing {
                 browser.managing = false
+                return true
+            }
+            if browser.bringingIn != nil {
+                browser.bringingIn = nil
                 return true
             }
             if browser.recalling {
@@ -938,19 +960,22 @@ struct ContentView: View {
         // links, as in every browser. It used to walk the row of tabs, which
         // took it from anyone filling in a form. ⌃Tab walks the row and comes
         // round to the first again, ⌃⇧Tab the other way — the keys every
-        // other browser uses for that. Or, with the switcher on, goes through
-        // them in the order you last had them, as Arc does (see Flip.swift).
+        // other browser uses for that.
+        //
+        // With the switcher on (Settings › Tabs), ⌃Tab brings it up instead,
+        // most recently used first — whenever there is nothing over the page
+        // it would have to cover; otherwise it walks the row as before.
         //
         // While an address is being typed, the list under the field is what
         // there is to move through, and Return takes whatever the walk landed on.
         if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option) {
             if flags.contains(.control) {
-                let direction = flags.contains(.shift) ? -1 : 1
-                if browser.prefs.flipsRecent {
-                    browser.flip(direction)
-                } else {
-                    browser.step(direction)
+                if browser.prefs.mruSwitcher, canSwitchTabs(event) {
+                    // A Tab held down doesn't race through them.
+                    if !event.isARepeat { browser.switchTabs(backwards: flags.contains(.shift)) }
+                    return true
                 }
+                browser.step(flags.contains(.shift) ? -1 : 1)
                 return true
             }
             if browser.editingTab != nil { return true }
@@ -1111,5 +1136,20 @@ struct ContentView: View {
             return false
         }
         return true
+    }
+}
+
+/// Check for Updates…, or Restart to Update once a newer build is in place.
+/// Its own view, so only the updater's changes redraw it (see SearchApp.body).
+private struct UpdateMenuItem: View {
+    @ObservedObject private var updater = Updater.shared
+
+    var body: some View {
+        if case .ready = updater.stage {
+            Button("Restart to Update") { updater.relaunch() }
+        } else {
+            Button("Check for Updates…") { updater.checkByHand() }
+                .disabled(updater.checking)
+        }
     }
 }

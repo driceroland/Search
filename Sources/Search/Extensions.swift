@@ -373,19 +373,26 @@ final class Extensions: NSObject, ObservableObject {
             return
         }
         busy = id
-        Task {
-            defer { busy = nil }
-            do {
-                let crx = try await Crx.fetch(id)
-                let zip = try Crx.verifiedZip(crx, id: id)
-                let target = Extensions.folder(for: id)
-                let staged = Extensions.folder.appendingPathComponent(".staging-\(id)", isDirectory: true)
-                try Crx.unpack(zip, into: staged)
-                try ExtensionShims.prepare(staged, fresh: true)
-                try await admit(staged, as: id, fromStore: true, finalFolder: target, confirm: confirm || !Store.testing)
-            } catch {
-                browser?.announce(error.localizedDescription)
-            }
+        Task { await install(id: id, confirm: confirm) }
+    }
+
+    /// One from the store by its id, done — asked about, and installed or
+    /// not — before it returns, so several brought over from another
+    /// browser go one after another.
+    func install(id: String, confirm: Bool = true) async {
+        guard !installed.contains(where: { $0.id == id }) else { return }
+        busy = id
+        defer { busy = nil }
+        do {
+            let crx = try await Crx.fetch(id)
+            let zip = try Crx.verifiedZip(crx, id: id)
+            let target = Extensions.folder(for: id)
+            let staged = Extensions.folder.appendingPathComponent(".staging-\(id)", isDirectory: true)
+            try Crx.unpack(zip, into: staged)
+            try ExtensionShims.prepare(staged, fresh: true)
+            try await admit(staged, as: id, fromStore: true, finalFolder: target, confirm: confirm || !Store.testing)
+        } catch {
+            browser?.announce(error.localizedDescription)
         }
     }
 
