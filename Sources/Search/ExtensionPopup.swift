@@ -30,13 +30,22 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
     private(set) var extensionID: String?
     /// The extension's own button, when the popup hangs from it.
     private weak var button: NSView?
-    /// The popup a click on its own button just closed: the popover goes
-    /// on that click's mouse-down, and the button's press comes after, on
-    /// its mouse-up — which would open it again.
+    /// The popup a click on its own button just closed: the popover can go
+    /// on mouse-down or mouse-up, before the button's press arrives — which
+    /// would open it again.
     private var closedByButton: (id: String, at: Date)?
 
     /// The popup's web view, while one is up — for the bench.
     var view: WKWebView? { web }
+
+    /// On screen now.
+    var isUp: Bool { popover?.isShown == true }
+
+    /// The popup as its extension's worker finds it in clients.matchAll().
+    func client(of id: String) -> [String: Any]? {
+        guard extensionID == id, let url = web?.url else { return nil }
+        return ["id": "popup", "url": url.absoluteString, "visible": isUp, "focused": isUp && web?.window?.isKeyWindow == true]
+    }
 
     func show(_ url: URL, for context: WKWebExtensionContext, from anchor: NSView?) {
         close()
@@ -52,7 +61,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         // background unset, and their dark text over the popover's dark
         // material would vanish.
         web.alphaValue = 0
-        web.load(URLRequest(url: Extensions.unpopped(url)))
+        web.load(URLRequest(url: url))
 
         let stage = NSView(frame: NSRect(origin: .zero, size: ExtensionPopup.lastSize[context.uniqueIdentifier] ?? NSSize(width: 360, height: 240)))
         stage.addSubview(web)
@@ -81,8 +90,17 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         if let anchor, anchor.window != nil {
             popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
         } else if let content = (NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain && $0.frame.minX > -10_000 }))?.contentView {
-            let spot = NSRect(x: content.bounds.maxX - 60, y: content.bounds.maxY - 40, width: 1, height: 1)
-            popover.show(relativeTo: spot, of: content, preferredEdge: .minY)
+            // No button to hang from — the column or the strip folded away:
+            // where the buttons would be, the column's foot or the strip's
+            // far end. The window's content is SwiftUI's, a flipped view,
+            // whose top is at minY: measured from maxY, "the top right" was
+            // the bottom right, across the window from the column's buttons.
+            let bounds = content.bounds, flipped = content.isFlipped
+            let column = Extensions.shared.browser?.prefs.sidebar == true
+            let spot = column
+                ? NSRect(x: bounds.minX + 24, y: flipped ? bounds.maxY - 24 : bounds.minY + 24, width: 1, height: 1)
+                : NSRect(x: bounds.maxX - 60, y: flipped ? bounds.minY + 40 : bounds.maxY - 40, width: 1, height: 1)
+            popover.show(relativeTo: spot, of: content, preferredEdge: column ? .maxX : (flipped ? .maxY : .minY))
         }
         // Sized once loaded — or after a moment regardless, for a page that
         // never finishes loading.
@@ -153,7 +171,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
     /// A press on the button of an extension whose popup is up closes it,
     /// as in Chrome — whether the popover is still there (a click on the
     /// view it hangs from doesn't close it) or went on this click's
-    /// mouse-down. Closed, it is not opened again.
+    /// mouse-down or mouse-up. Closed, it is not opened again.
     func closes(_ id: String) -> Bool {
         defer { closedByButton = nil }
         if popover != nil, extensionID == id {
@@ -309,11 +327,14 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         return nil
     }
 
-    /// Closing on a mouse-down over the popup's own button.
+    /// The click being handled, not the live mouse state: AppKit can close
+    /// the popover on mouse-up, when no button is pressed any more. The
+    /// event also keeps its location if the pointer has since moved.
     func popoverWillClose(_ notification: Notification) {
         guard (notification.object as? NSPopover) === popover, let id = extensionID,
-              let button, let window = button.window, NSEvent.pressedMouseButtons & 1 != 0 else { return }
-        let spot = button.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+              let button, let window = button.window, let event = NSApp.currentEvent,
+              event.window === window, event.type == .leftMouseDown || event.type == .leftMouseUp else { return }
+        let spot = button.convert(event.locationInWindow, from: nil)
         if button.bounds.contains(spot) { closedByButton = (id, Date()) }
     }
 

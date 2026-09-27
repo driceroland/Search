@@ -48,6 +48,25 @@ enum Crx {
         return text[found].lowercased()
     }
 
+    /// The extension a store page is about: the id in its /detail/ path
+    /// and nowhere else — the listing the page shows is that one. Only on
+    /// the store itself, over https, with nothing before its host.
+    static func storeID(of url: URL) -> String? {
+        guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil else { return nil }
+        let host = url.host()?.lowercased() ?? ""
+        let pattern: String
+        switch host {
+        case "chromewebstore.google.com": pattern = #"^/detail/(?:[^/]+/)?([a-p]{32})(?:/.*)?$"#
+        case "chrome.google.com": pattern = #"^/webstore/detail/(?:[^/]+/)?([a-p]{32})(?:/.*)?$"#
+        default: return nil
+        }
+        let path = url.path
+        guard let match = try? NSRegularExpression(pattern: pattern).firstMatch(in: path, range: NSRange(path.startIndex..., in: path)),
+              let found = Range(match.range(at: 1), in: path)
+        else { return nil }
+        return String(path[found])
+    }
+
     static func downloadURL(for id: String) -> URL {
         var parts = URLComponents(string: "https://clients2.google.com/service/update2/crx")!
         parts.queryItems = [

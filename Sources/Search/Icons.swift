@@ -24,6 +24,14 @@ final class Favicons {
     private var absent: Set<String> = []
 
     private static var folder: URL { Store.folder.appendingPathComponent("icons", isDirectory: true) }
+
+    /// Clear History: every icon kept on disk goes. The tabs open now keep
+    /// theirs until they are closed.
+    func forgetAll() {
+        try? FileManager.default.removeItem(at: Favicons.folder)
+        missing.removeAll()
+        absent.removeAll()
+    }
     private static func file(_ key: String) -> URL { folder.appendingPathComponent(key + ".png") }
 
     /// Whether the chrome is dark right now. A site that declares an icon

@@ -159,14 +159,21 @@ final class Links: NSObject, NSApplicationDelegate {
     }
 
     /// In front of the app the link was clicked in, the way a browser comes
-    /// forward for Mail. Since macOS 14 an app is let in front when it is
-    /// asked to open something, and asks with `activate()`; the old call's
-    /// "ignoring other apps" is ignored.
+    /// forward for Mail. Since macOS 14 an app is let in front when the app
+    /// it is asked by hands the front over, and asks with `activate()`.
+    /// Not every app hands it over: a link clicked in Notion, and in other
+    /// apps built on Electron, left Search behind them. So if Search still
+    /// isn't in front a moment later, it asks again the way it did before
+    /// macOS 14.
     @MainActor
     private static func comeForward() {
-        if #available(macOS 14, *) {
-            NSApp.activate()
-        } else {
+        guard #available(macOS 14, *) else {
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        NSApp.activate()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            guard !NSApp.isActive else { return }
             NSApp.activate(ignoringOtherApps: true)
         }
     }

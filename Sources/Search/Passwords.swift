@@ -100,11 +100,11 @@ struct PasswordsPanel: View {
     /// A site, and under it its accounts once opened.
     private struct Site: View {
         let host: String
-        let logins: [Login]
+        let logins: [Kept]
         let open: Bool
         let toggle: () -> Void
-        let copy: (Login) -> Void
-        let forget: (Login) -> Void
+        let copy: (Kept) -> Void
+        let forget: (Kept) -> Void
 
         @State private var hovering = false
 
@@ -159,12 +159,15 @@ struct PasswordsPanel: View {
     /// One account: the name, the password as dots, and the three things to
     /// do with it. Show asks the Mac who you are first.
     private struct Account: View {
-        let login: Login
+        let login: Kept
         let copy: () -> Void
         let forget: () -> Void
 
         @State private var hovering = false
         @State private var shown = false
+        /// The secret, from the moment it is shown to the moment it is hidden
+        /// again. Read on that click rather than with the list: see `Kept`.
+        @State private var secret: String?
         @State private var hide: DispatchWorkItem?
 
         var body: some View {
@@ -176,7 +179,10 @@ struct PasswordsPanel: View {
                     .truncationMode(.middle)
                     .frame(minWidth: 120, alignment: .leading)
 
-                Text(shown ? login.password : String(repeating: "•", count: min(12, max(6, login.password.count))))
+                // Ten dots whatever it is: the row does not know the length
+                // until the secret is read, and a count that changed with it
+                // told anyone looking over a shoulder how long it was.
+                Text(shown ? (secret ?? "") : String(repeating: "•", count: 10))
                     .font(.system(size: shown ? 12.5 : 10, design: .monospaced))
                     .foregroundStyle(shown ? Palette.ink : Palette.muted)
                     .lineLimit(1)
@@ -202,19 +208,25 @@ struct PasswordsPanel: View {
 
         private func reveal() {
             Vault.prove("show the password for \(login.host)") { ok in
-                guard ok else { return }
+                // Read after the Mac has said who this is, not before: the
+                // secret is asked for here and let go with the row.
+                guard ok, let password = Vault.secret(of: login) else { return }
+                secret = password
                 shown = true
                 // Long enough to read or type across, and not a minute more.
-                let work = DispatchWorkItem { shown = false }
+                let work = DispatchWorkItem { conceal() }
                 hide?.cancel()
                 hide = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: work)
             }
         }
 
+        /// Hidden again, and the secret with it: this is the only place it is
+        /// held, and only while it is on screen.
         private func conceal() {
             hide?.cancel()
             shown = false
+            secret = nil
         }
     }
 

@@ -54,6 +54,7 @@
                                        until the page is loading
     ./bench pull DX [STEPS] [MS]       test run: two fingers DX points sideways over the page (back is +) — where it went
     ./bench keyeq CHARS CODE [shift]   test run: ⌘CHARS pressed while the page has the keyboard — who took it
+    ./bench import BROWSER [WHAT…]   test run: bookmarks, history, passwords from a made-up profile in the world's Import/
     ./bench menu [open]                test run: the Bookmarks menu as it is about to open, and its first
                                        folder (open: its first bookmark picked)
     ./bench bookmark URL [new]         test run: a bookmark picked from the list, timed until it loads
@@ -77,6 +78,12 @@ import json
 import os
 import socket
 import sys
+
+def clean(text):
+    """A page chooses its title: nothing in it may move the terminal's cursor,
+    change its colours, or turn the line around."""
+    import re
+    return re.sub(r"[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]", "", str(text or ""))
 
 def folder(world):
     name = f"Search ({world})" if world else "Search"
@@ -240,6 +247,11 @@ def main(argv):
         if len(args) not in (1, 2) or (len(args) == 2 and args[1] != "new"): sys.exit("usage: bench bookmark URL [new]")
         request["url"] = args[0]
         request["new"] = len(args) == 2
+    elif verb == "import":
+        kinds = ("bookmarks", "history", "passwords")
+        if not args or any(a not in kinds for a in args[1:]): sys.exit("usage: bench import BROWSER [bookmarks] [history] [passwords]")
+        request["from"] = args[0]
+        request["what"] = args[1:]
     elif verb == "menu":
         if args not in ([], ["open"]): sys.exit("usage: bench menu [open]")
         request["open"] = args == ["open"]
@@ -289,7 +301,7 @@ def main(argv):
         for tab in answer.get("tabs", []):
             mark = "⚗" if tab.get("bench") else ("●" if tab.get("active") else " ")
             state = " …" if tab.get("loading") else (" z" if tab.get("asleep") else "")
-            print(f"{mark} {tab['id']}  {tab.get('title') or '—'}  {tab.get('url')}{state}")
+            print(f"{mark} {tab['id']}  {clean(tab.get('title')) or '—'}  {clean(tab.get('url'))}{state}")
     else:
         print(json.dumps(answer, ensure_ascii=False, indent=2))
     return 0
