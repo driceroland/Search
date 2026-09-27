@@ -161,7 +161,10 @@ enum Browsers {
     }
 
     /// A window around `browser`, made here rather than by SwiftUI.
-    static func open(_ browser: Browser, frame: NSRect?) {
+    /// `unveiled`: false for a window that arrives on its own animation (a
+    /// tab dragged out, see Tear), which is put up unseen and shown by its
+    /// caller.
+    static func open(_ browser: Browser, frame: NSRect?, unveiled: Bool = true) {
         register(browser)
         let popup = browser.extensionPopup != nil
         let host: NSView
@@ -200,6 +203,11 @@ enum Browsers {
         }
         frames[ObjectIdentifier(browser)] = window
         Bench.keepOff(window)
+        // Known to its browser from here on, not only once its view has
+        // come up and dressed it: a caller showing the window itself asks
+        // for it as soon as this returns.
+        browser.window = window
+        if !unveiled { window.alphaValue = 0 }
         window.makeKeyAndOrderFront(nil)
         comeForward()
     }

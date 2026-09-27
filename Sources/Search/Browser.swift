@@ -1273,6 +1273,16 @@ final class Browser: NSObject, ObservableObject {
     /// whether the card for a new space stands in for them (see SpaceSwipe).
     @Published var spaceSwipe: CGFloat = 0
     @Published var makingSpace = false
+    /// A tab from another window held over this one's row (see Tear): where
+    /// it would land among the loose tabs, which make way there. Nil otherwise.
+    @Published var arrival: Int?
+    /// Where the hand holding it is, in the window's own coordinates, for
+    /// the row to draw the tab under it while it is over the row.
+    @Published var arrivalHand: CGPoint?
+    /// Where each tab of the row is drawn, in the window's own coordinates,
+    /// as the tabs report it (see TabFrames), for a carried tab to find its
+    /// place among them.
+    var tabFrames: [Tab.ID: CGRect] = [:]
     /// A tab being sent into the Space being made from its context menu.
     var afterSpaceCreated: ((Space) -> Void)?
     /// A link's page, peeked at over this one (see Peek.swift).
@@ -2453,13 +2463,16 @@ final class Browser: NSObject, ObservableObject {
     /// tab it's on, in front there; into a space with other sign-ins it
     /// reopens with those, as Move to Space does. Not a pin: pins are
     /// already in every window.
-    func moveToWindow(_ tab: Tab, _ target: Browser?, at point: NSPoint? = nil) {
+    /// `unveiled`: false when the new window is to be shown by the caller,
+    /// on its own animation (see Tear). The window the tab went to.
+    @discardableResult
+    func moveToWindow(_ tab: Tab, _ target: Browser?, at point: NSPoint? = nil, place: Int? = nil, unveiled: Bool = true) -> Browser? {
         guard tab.pin == nil, !tab.bench, target !== self, tabs.contains(where: { $0.id == tab.id }),
               target != nil || tabs.count > 1 || !tab.isBlank
-        else { return }
+        else { return nil }
         let destination = target ?? Browser(record: WindowRecord(space: spaceID))
-        detach(tab)
-        destination.receive(tab)
+        detach(tab, orClose: target != nil && place != nil)
+        destination.receive(tab, place: place)
         if target == nil {
             // Dragged out: the new window where the tab was let go, its row
             // under the hand.
@@ -2467,10 +2480,11 @@ final class Browser: NSObject, ObservableObject {
                 let size = window?.frame.size ?? NSSize(width: 1180, height: 780)
                 return NSRect(x: p.x - 120, y: p.y - size.height + 20, width: size.width, height: size.height)
             }
-            Browsers.open(destination, frame: frame)
+            Browsers.open(destination, frame: frame, unveiled: unveiled)
         } else {
             destination.window?.makeKeyAndOrderFront(nil)
         }
+        return destination
     }
 
     /// A tab dragged out of the row and let go outside this window: into
@@ -2489,7 +2503,10 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Out of this row, not closed: it is on its way to another window.
-    private func detach(_ tab: Tab) {
+    /// `orClose`: a window this leaves with no tabs closes, as Safari's does
+    /// when its last tab is dragged into another window — rather than
+    /// keeping an empty tab, as it does for a tab sent away from its menu.
+    private func detach(_ tab: Tab, orClose: Bool = false) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         detachSplit(tab)
         if floating == tab.id { land() }
@@ -2504,17 +2521,35 @@ final class Browser: NSObject, ObservableObject {
         tabs.remove(at: index)
         removeEmptyGroup(tab.groupID)
         tab.groupID = nil
-        if tabs.isEmpty { adopt(Tab(configuration: Web.configuration(space: spaceID))) }
+        if tabs.isEmpty {
+            if orClose, let window, Browsers.all.contains(where: { $0 !== self && $0.isOpen }) {
+                // Once the tab is in its new row and that window in front.
+                DispatchQueue.main.async { window.close() }
+            } else {
+                adopt(Tab(configuration: Web.configuration(space: spaceID)))
+            }
+        }
         writeSession(now: true)
     }
 
     /// A tab from another window, in front here. The empty tab a new window
     /// starts with makes way for it.
-    func receive(_ tab: Tab) {
+    /// `place`: where it was let go, among the loose tabs (see Tear), rather
+    /// than after the tab in front.
+    func receive(_ tab: Tab, place: Int? = nil) {
         prepare(tab)
         if !tab.shy { tab.rehome(in: spaceID) }
         let blanks = tabs.filter { $0.isBlank && !$0.bench && split(for: $0) == nil }
         tabs.insert(tab, at: placeForNew())
+        if let place {
+            if prefs.usesTabGroups {
+                move(tab, within: nil, to: place)
+            } else {
+                // Counted among the items the row shows, where a Split View
+                // pair is one.
+                moveDisplayedTab(tab, to: place + pinnedCount)
+            }
+        }
         select(tab, floatPrevious: false)
         if tabs.count - blanks.count == 1 + pinnedCount {
             for blank in blanks { tabs.removeAll { $0 === blank }; blank.close() }

@@ -24,6 +24,8 @@ struct SideBar: View {
     @Namespace private var before
     @Namespace private var after
 
+    /// The row being carried down the column, if one is (see Carried).
+    @State private var carry: Carry?
     @State private var pinDragging: Tab.ID?
     @State private var groupFrames: [UUID: CGRect] = [:]
     @State private var pinFrom = 0
@@ -91,6 +93,7 @@ struct SideBar: View {
         }
         .frame(width: prefs.sideWidth)
         .frame(maxHeight: .infinity)
+        .overlay(alignment: .topLeading) { arriving }
         // Rows on their way to or from another space stay in the column.
         .clipped()
         .onAppear { SpaceSwipe.shared.start(for: browser) }
@@ -114,6 +117,19 @@ struct SideBar: View {
         .animation(Motion.glide, value: browser.editingTab)
         .animation(Motion.settle, value: browser.tabs.map(\.id))
         .animation(Motion.settle, value: browser.pinnedCount)
+    }
+
+    /// A tab from another window, held over this column: drawn as a row
+    /// under the hand, over the rows, while they make way for it (see Tear).
+    @ViewBuilder
+    private var arriving: some View {
+        if browser.arrival != nil, let hand = browser.arrivalHand, let tab = Tear.tab {
+            SideRow(browser: browser, prefs: prefs, tab: tab, live: false, pill: pill, close: {})
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Palette.hover))
+                .frame(width: prefs.sideWidth - 20)
+                .allowsHitTesting(false)
+                .offset(x: 10, y: hand.y - SideBar.row / 2)
+        }
     }
 
     /// The column's edge: pull it to make the column wider or narrower,
@@ -383,7 +399,6 @@ struct SideBar: View {
                 // Under the hand exactly, as a row is (see the rows below).
                 .transaction { if held { $0.animation = nil } }
                 .zIndex(held ? 1 : 0)
-                .shadow(color: .black.opacity(held ? 0.16 : 0), radius: 10, y: 3)
                 .gesture(pinReorder(tab: tab, index: index, cells: cells))
             }
         } }
@@ -461,8 +476,10 @@ struct SideBar: View {
                 // Positions here are among the loose rows; the pinned block
                 // sits in front of them in the real list.
                 .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true,
-                                  space: "rows", onDropTab: { source, point in drop(source, at: point) },
-                                  outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
+                                  space: "rows", run: "rows", arrival: browser.arrival,
+                                  tab: tab, browser: browser,
+                                  onDrop: { point in drop(tab, at: point) },
+                                  onDropTab: { source, point in drop(source, at: point) }, carry: $carry) {
                     if prefs.usesTabGroups {
                         browser.move(tab, within: nil, to: $0)
                     } else {
@@ -473,6 +490,7 @@ struct SideBar: View {
         }
         .coordinateSpace(name: "rows")
         .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
+        .onPreferenceChange(TabFrames.self) { browser.tabFrames = $0 }
     }
 
     private func drop(_ tab: Tab, at point: CGPoint) {
@@ -492,8 +510,10 @@ struct SideBar: View {
                     .padding(.leading, 14)
                     .modifier(Carried(index: index, count: members.count,
                                       step: SideBar.row + SideBar.gap, vertical: true,
-                                      space: "rows", onDropTab: { source, point in drop(source, at: point) },
-                                      outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
+                                      space: "rows", run: group.id.uuidString,
+                                      tab: tab, browser: browser,
+                                      onDrop: { point in drop(tab, at: point) },
+                                      onDropTab: { source, point in drop(source, at: point) }, carry: $carry) {
                         browser.move(tab, within: group.id, to: $0)
                     })
             }
@@ -504,7 +524,14 @@ struct SideBar: View {
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
             loose
+            // The row for a new tab follows the rows: up into the place a
+            // row carried out of the column leaves, down to make way for one
+            // arriving from another window (see Carried).
+            let step = SideBar.row + SideBar.gap
+            let shift: CGFloat = (carry?.out == true ? -step : 0) + (browser.arrival != nil ? step : 0)
             newTab
+                .offset(y: shift)
+                .animation(Motion.settle, value: shift)
         }
     }
 
