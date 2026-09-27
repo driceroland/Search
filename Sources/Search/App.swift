@@ -1083,6 +1083,17 @@ struct ContentView: View {
                 browser.picked = nil
                 return true
             }
+            // A new tab never sent anywhere is itself what is open: Escape
+            // takes it away, back to the tab you were on, which is the one
+            // touched last. Chosen before closing, so close() doesn't wake a
+            // neighbour on the way. Anything typed keeps it; so does being
+            // the last tab, where closing it would close the window.
+            if let blank = browser.active, blank.isBlank, browser.typed.isEmpty,
+               let back = browser.tabs.filter({ $0.id != blank.id }).max(by: { $0.touched < $1.touched }) {
+                browser.select(back)
+                browser.close(blank)
+                return true
+            }
             guard browser.editing, browser.active?.isBlank == false else { return false }
             browser.dismiss()
             return true

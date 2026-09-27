@@ -22,6 +22,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Escape on a new tab you haven't typed in or gone anywhere from closes it and takes you back to the tab you were on. It did nothing there before. ([#389](https://github.com/driceroland/Search/issues/389))
 - Search weighs less again: 5.3 MB where 1.0.4 had grown to 6.1. The app is now built for size, at the same speed (launch, scrolling and typing measured side by side), and its icon catalog is packed tighter with every Dock style kept.
 - Pages that change constantly stay quick: a chat writing out its answer, a feed filling as you scroll. Search looked through the whole page for a sign-in form each time the page changed, and a long conversation got slower with every word it wrote (3,000 words took up to 3.7 s instead of 0.3 s, climbing as it went). It now looks a quarter of a second after changes, at most four times a second, and no longer on every frame of a scroll unless the caret is in a box.
 - Extensions hear what their own background sends their pages. WebKit delivered none of those messages, so Bitwarden's passkey window stayed blank and its sync timed out; each is now passed on to the extension's pages as well. Thanks [@dttdrv](https://github.com/dttdrv) ([#383](https://github.com/driceroland/Search/pull/383), [#388](https://github.com/driceroland/Search/issues/388))
