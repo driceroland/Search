@@ -61,6 +61,19 @@ final class Bookmarks: ObservableObject {
         }
     }
 
+    /// The folders `id` sits in, outermost first; empty at the top level,
+    /// nil when it isn't here at all.
+    func path(to id: Bookmark.ID) -> [Bookmark]? {
+        func walk(_ nodes: [Bookmark], _ above: [Bookmark]) -> [Bookmark]? {
+            for node in nodes {
+                if node.id == id { return above }
+                if let kids = node.children, let found = walk(kids, above + [node]) { return found }
+            }
+            return nil
+        }
+        return walk(roots, [])
+    }
+
     // MARK: - changing
 
     /// The page, at the end of the list. Nothing is asked: the title is the
