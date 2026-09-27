@@ -31,6 +31,9 @@ extension Browser {
     func keepPeek() {
         guard let page = peekTab else { return }
         let place = placeForNew()
+        // Kept from a grouped tab, it joins that group, as a link opened
+        // from there does (see open).
+        if prefs.usesTabGroups, !page.shy, let from = active { page.groupID = from.groupID }
         withAnimation(Motion.quick) { peekTab = nil }
         insert(page, at: place)
         select(page)

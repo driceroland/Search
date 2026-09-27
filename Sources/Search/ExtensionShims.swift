@@ -1134,6 +1134,49 @@ enum ExtensionShims {
           // Read as the worker starts: Claude's lists its colours in a class.
           Color: { GREY: "grey", BLUE: "blue", RED: "red", YELLOW: "yellow", GREEN: "green",
             PINK: "pink", PURPLE: "purple", CYAN: "cyan", ORANGE: "orange" } });
+      // Groups change in Search's hands, where no event reaches the
+      // extension: while it listens, they are asked for every few seconds
+      // and what changed is told as Chrome tells it — and at once after the
+      // extension changes one itself.
+      let groupsChanged = () => {};
+      if (chrome.tabGroups && chrome.tabGroups.onCreated && chrome.tabGroups.onCreated.listeners) {
+        const groups = chrome.tabGroups, told = ["onCreated", "onRemoved", "onUpdated"];
+        let known = null, timer = null;
+        // What an update changes; the order of the keys is the browser's.
+        const shape = (g) => JSON.stringify([g.title, g.collapsed, g.color]);
+        const tell = (name, group) => {
+          for (const f of groups[name].listeners) try { f(group); } catch (e) { setTimeout(() => { throw e; }); }
+        };
+        groupsChanged = () => {
+          if (!told.some((name) => groups[name].listeners.size)) return;
+          native("tabGroups.query", [{}]).then((now) => {
+            const next = new Map((now || []).map((g) => [g.id, g]));
+            if (known) {
+              for (const [id, g] of next) {
+                if (!known.has(id)) tell("onCreated", g);
+                else if (shape(known.get(id)) !== shape(g)) tell("onUpdated", g);
+              }
+              for (const [id, g] of known) if (!next.has(id)) tell("onRemoved", g);
+            }
+            known = next;
+          }, () => {});
+        };
+        for (const name of told) {
+          const add = groups[name].addListener;
+          groups[name].addListener = (f) => {
+            add(f);
+            if (timer) return;
+            groupsChanged();
+            timer = setInterval(groupsChanged, 3000);
+          };
+        }
+        put(groups, "update", (id, props, callback) => {
+          if (typeof props === "function") { callback = props; props = {}; }
+          const p = native("tabGroups.update", [id, props || {}]).then((g) => { groupsChanged(); return g; });
+          if (typeof callback !== "function") return p;
+          p.then((g) => callback(g), (e) => withLastError(e, callback));
+        });
+      }
       define("fontSettings",
         ["getFontList", "getFont", "setFont", "clearFont", "getDefaultFontSize", "setDefaultFontSize",
          "clearDefaultFontSize", "getDefaultFixedFontSize", "setDefaultFixedFontSize", "clearDefaultFixedFontSize",
@@ -1392,7 +1435,6 @@ enum ExtensionShims {
         getZoomSettings: resolve({ mode: "automatic", scope: "per-origin", defaultZoomFactor: 1 }),
         setZoomSettings: resolve(undefined), onZoomChange: event(),
         onSelectionChanged: event(), onActiveChanged: event(), onHighlightChanged: event(),
-        group: refuse("tabs.group"), ungroup: resolve(undefined),
         getSelected: (windowId, callback) => {
           const f = typeof windowId === "function" ? windowId : callback;
           chrome.tabs.query({ active: true, currentWindow: true }).then((t) => f && f(t[0]));
@@ -1422,7 +1464,19 @@ enum ExtensionShims {
           if (!callback) return p;
           p.then((v) => callback(v), (e) => withLastError(e, callback));
         };
+        const indexes = (ids) => Promise.all((Array.isArray(ids) ? ids : [ids]).map((id) => chrome.tabs.get(id).then((t) => t.index)));
         fill("tabs", {
+          // Into a group, a new one or one named by its number, or out of
+          // one. A group left with no tab is gone, as in Chrome.
+          group: withCallback(async (options = {}) => {
+            const id = await native("tabs.group", [await indexes(options.tabIds), options.groupId ?? -1]);
+            groupsChanged();
+            return id;
+          }),
+          ungroup: withCallback(async (ids) => {
+            await native("tabs.ungroup", [await indexes(ids)]);
+            groupsChanged();
+          }),
           move: withCallback(async (ids, props = {}) => {
             const list = Array.isArray(ids) ? ids : [ids];
             const out = [];
@@ -1666,27 +1720,38 @@ enum ExtensionShims {
         });
       }
 
-      // Tabs as Chrome describes them. Every tab has a groupId (-1 when in
-      // no group — Search has none), which code tests before anything else;
-      // and with the "tabs" permission an extension sees every tab's address
-      // and title, where WebKit shows them only for sites it has host
-      // access to.
+      // Tabs as Chrome describes them. Every tab has a groupId, which code
+      // tests before anything else: -1 when in no group, and the group's
+      // number, asked of the browser, for an extension that asked for
+      // "tabGroups" — only those have any use for it, so the others are
+      // spared the question. With the "tabs" permission an extension sees
+      // every tab's address and title, where WebKit shows them only for
+      // sites it has host access to.
       if (chrome.tabs) {
-        const seesTabs = (() => { try { return (runtime.getManifest().permissions || []).includes("tabs"); } catch (e) { return false; } })();
+        const permissions = (() => { try { return runtime.getManifest().permissions || []; } catch (e) { return []; } })();
+        const seesTabs = permissions.includes("tabs"), seesGroups = permissions.includes("tabGroups");
         const isTab = (t) => t && typeof t === "object" && typeof t.id === "number";
         // Mends in place; a promise only when the browser has to be asked.
         const mend = (list) => {
           const tabs = list.filter(isTab);
           for (const t of tabs) if (t.groupId === undefined) try { t.groupId = -1; } catch (e) {}
           const blind = seesTabs ? tabs.filter((t) => !t.url && t.index >= 0) : [];
-          if (!blind.length) return null;
-          return native("tabs.describe", [blind.map((t) => t.index)]).then((info) => {
-            blind.forEach((t, i) => {
-              const d = info && info[i];
-              if (!d) return;
-              try { if (d.url) t.url = d.url; if (d.title && !t.title) t.title = d.title; } catch (e) {}
-            });
-          }, () => {});
+          const placed = seesGroups ? tabs.filter((t) => t.index >= 0) : [];
+          if (!blind.length && !placed.length) return null;
+          return Promise.all([
+            blind.length && native("tabs.describe", [blind.map((t) => t.index)]).then((info) => {
+              blind.forEach((t, i) => {
+                const d = info && info[i];
+                if (!d) return;
+                try { if (d.url) t.url = d.url; if (d.title && !t.title) t.title = d.title; } catch (e) {}
+              });
+            }, () => {}),
+            placed.length && native("tabs.groups", [placed.map((t) => t.index)]).then((ids) => {
+              placed.forEach((t, i) => {
+                if (ids && typeof ids[i] === "number") try { t.groupId = ids[i]; } catch (e) {}
+              });
+            }, () => {}),
+          ]);
         };
         const tabsIn = (value) => Array.isArray(value) ? value.flatMap(tabsIn)
           : isTab(value) ? [value] : value && Array.isArray(value.tabs) ? value.tabs : [];
@@ -1701,6 +1766,24 @@ enum ExtensionShims {
           });
         };
         for (const name of ["query", "get", "getCurrent", "create", "update", "duplicate", "move", "reload"]) mendResult(chrome.tabs, name);
+        // A query for a group's tabs: WebKit knows no groupId, so it is asked
+        // without one and the tabs are sorted out after.
+        if (seesGroups && typeof chrome.tabs.query === "function") {
+          const query = chrome.tabs.query.bind(chrome.tabs);
+          put(chrome.tabs, "query", (info, callback) => {
+            if (typeof info === "function") { callback = info; info = {}; }
+            const wanted = info && info.groupId;
+            let p;
+            if (wanted === undefined) p = query(info || {});
+            else {
+              const rest = Object.assign({}, info);
+              delete rest.groupId;
+              p = Promise.resolve(query(rest)).then((tabs) => tabs.filter((t) => t.groupId === wanted));
+            }
+            if (typeof callback !== "function") return p;
+            p.then((r) => callback(r), (e) => withLastError(e, callback));
+          });
+        }
         for (const name of ["get", "getAll", "getCurrent", "getLastFocused", "create"]) mendResult(chrome.windows, name);
         // Listeners given a tab: the tab is mended before they see it.
         const mendArgs = (target, positions) => {
@@ -2612,6 +2695,27 @@ enum ExtensionShims {
         }
     }
 
+    /// The groups an extension is shown: none while groups are off, and
+    /// never one without a tab.
+    private static func listedGroups(_ browser: Browser) -> [TabGroup] {
+        guard browser.prefs.usesTabGroups else { return [] }
+        return browser.tabGroups.filter { !browser.tabs(in: $0.id).isEmpty }
+    }
+
+    private static func listedGroup(_ number: Any?, in browser: Browser) throws -> TabGroup {
+        guard let number = number as? Int,
+              let group = listedGroups(browser).first(where: { TabGroup.number($0.id) == number })
+        else { throw Unsupported(what: "No group with id: \(number.map { "\($0)" } ?? "none").") }
+        return group
+    }
+
+    /// A group as Chrome describes it. Search's groups have no colour; grey
+    /// is Chrome's first.
+    private static func chromeGroup(_ group: TabGroup) -> [String: Any] {
+        ["id": TabGroup.number(group.id), "title": group.name, "collapsed": group.collapsed,
+         "color": "grey", "windowId": 1, "shared": false]
+    }
+
     struct Unsupported: LocalizedError {
         let what: String
         var errorDescription: String? { what }
@@ -2636,6 +2740,7 @@ enum ExtensionShims {
         "idle": "idle",
         "power": "power",
         "tts": "tts",
+        "tabGroups": "tabGroups",
     ]
 
     /// What this extension asked for: the names in its manifest and any
@@ -3241,11 +3346,58 @@ enum ExtensionShims {
                         "workArea": ["left": v.minX, "top": v.minY, "width": v.width, "height": v.height]] as [String: Any]
             }
 
-        // MARK: tab groups — there are none
+        // MARK: tab groups
+        // Only while they are on (Settings › Tabs): off, they sleep, for
+        // extensions as on screen. A group without a tab is never shown.
+        case "tabs.groups":
+            let visible = owner.visibleTabs
+            return ((first as? [Int]) ?? []).map { index -> Int in
+                guard browser.prefs.usesTabGroups, visible.indices.contains(index),
+                      let group = browser.group(of: visible[index]) else { return -1 }
+                return TabGroup.number(group)
+            }
         case "tabGroups.query":
-            return []
-        case "tabGroups.get", "tabGroups.update", "tabGroups.move":
-            throw Unsupported(what: "Search has no tab groups")
+            let spec = first as? [String: Any] ?? [:]
+            return listedGroups(browser).filter { group in
+                (spec["title"] as? String).map { $0 == group.name } ?? true
+                    && (spec["collapsed"] as? Bool).map { $0 == group.collapsed } ?? true
+                    && (spec["color"] as? String).map { $0 == "grey" } ?? true
+            }.map(chromeGroup)
+        case "tabGroups.get":
+            return chromeGroup(try listedGroup(first, in: browser))
+        case "tabGroups.update":
+            let group = try listedGroup(first, in: browser)
+            let props = args.dropFirst().first as? [String: Any] ?? [:]
+            if let title = props["title"] as? String { browser.renameTabGroup(group.id, to: title) }
+            if let collapsed = props["collapsed"] as? Bool, collapsed != group.collapsed { browser.toggleTabGroup(group.id) }
+            return chromeGroup(browser.tabGroups.first { $0.id == group.id } ?? group)
+        case "tabGroups.move":
+            throw Unsupported(what: "Search can't move a tab group for an extension")
+        case "tabs.group":
+            guard browser.prefs.usesTabGroups else { throw Unsupported(what: "Tab groups are off in Search's settings") }
+            let visible = owner.visibleTabs
+            let tabs = ((first as? [Int]) ?? []).compactMap { visible.indices.contains($0) ? visible[$0] : nil }
+            guard !tabs.isEmpty else { throw Unsupported(what: "No tabs to group") }
+            // Pins and private tabs are never in a group in Search.
+            guard tabs.allSatisfy({ $0.pin == nil && !$0.shy }) else {
+                throw Unsupported(what: "Pinned and private tabs can't be grouped")
+            }
+            let target: UUID
+            if let number = args.dropFirst().first as? Int, number != -1 {
+                target = try listedGroup(number, in: browser).id
+            } else {
+                // A new group, as its menu makes one, without its name to type.
+                target = browser.addTabGroup(containing: tabs[0])
+                browser.editingGroupID = nil
+            }
+            for tab in tabs { browser.move(tab, toGroup: target) }
+            return TabGroup.number(target)
+        case "tabs.ungroup":
+            guard browser.prefs.usesTabGroups else { return nil }
+            let visible = owner.visibleTabs
+            let tabs = ((first as? [Int]) ?? []).compactMap { visible.indices.contains($0) ? visible[$0] : nil }
+            for tab in tabs { browser.move(tab, toGroup: nil) }
+            return nil
 
         // MARK: identity
         case "identity.launchWebAuthFlow":

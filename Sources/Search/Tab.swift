@@ -413,6 +413,9 @@ final class Tab: ObservableObject, Identifiable {
     /// there (Browser.goHome).
     var home: URL?
 
+    /// The group that holds this ordinary tab in the sidebar.
+    @Published var groupID: UUID?
+
     /// A name you gave it, in place of whatever the page calls itself. It
     /// stays through navigation: a tab you named is a tab you are keeping for
     /// a job, not for a page.

@@ -972,6 +972,45 @@ final class Bench {
             browser.move(tab, to: to)
             answer(["at": browser.tabs.firstIndex { $0.id == tab.id } ?? -1])
 
+        case "group":
+            // Tab groups, as their menus make and change them (TabGroups.swift):
+            // a tab into a new group or an existing one, or out; a group
+            // folded or opened. Test runs only: it rearranges your tabs.
+            guard Store.testing else { answer(["error": "group only works on a --test run"]); return }
+            let named = request["name"] as? String ?? ""
+            let group = browser.tabGroups.first { $0.name == named || $0.id.uuidString.lowercased().hasPrefix(named.lowercased()) && !named.isEmpty }
+            if let id = request["id"] as? String {
+                guard let tab = browser.tabs.first(where: { Bench.short($0) == id }) else { answer(["error": "no tab “\(id)” — see tabs"]); return }
+                if request["new"] as? Bool == true {
+                    let made = browser.addTabGroup(containing: tab)
+                    if !named.isEmpty { browser.renameTabGroup(made, to: named) }
+                    browser.editingGroupID = nil
+                } else if named == "none" {
+                    browser.move(tab, toGroup: nil)
+                } else if let group {
+                    browser.move(tab, toGroup: group.id)
+                } else {
+                    answer(["error": "no group “\(named)”"]); return
+                }
+            } else if request["fold"] as? Bool == true {
+                guard let group else { answer(["error": "no group “\(named)”"]); return }
+                browser.toggleTabGroup(group.id)
+            }
+            answer(["on": browser.prefs.usesTabGroups, "groups": browser.tabGroups.map { group in
+                ["id": String(group.id.uuidString.prefix(8)).lowercased(), "name": group.name, "collapsed": group.collapsed,
+                 "tabs": browser.tabs(in: group.id).map(Bench.short)] as [String: Any]
+            }])
+
+        case "tospace":
+            // Move to Space from a tab's menu, to the Nth space. Test runs only.
+            guard Store.testing else { answer(["error": "tospace only works on a --test run"]); return }
+            guard let id = request["id"] as? String, let index = request["index"] as? Int,
+                  let tab = browser.tabs.first(where: { Bench.short($0) == id }),
+                  browser.spaces.indices.contains(index - 1)
+            else { answer(["error": "tospace needs a tab id and a space number"]); return }
+            browser.move(tab, toSpace: browser.spaces[index - 1].id)
+            answer(["space": browser.spaces[index - 1].name, "tabs": browser.tabs.map(Bench.short)])
+
         case "window":
             // The browser's window, when a probe started hidden came up
             // without one: the Window menu's own item for it.
@@ -1448,7 +1487,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "field", "bookmark", "menu", "keyeq", "fill", "pin", "pull", "space", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "pull", "space", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file",
             ]])
         }
     }
@@ -1581,6 +1620,8 @@ final class Bench {
             "page": tab.pageAddress?.absoluteString ?? "",
             "title": tab.title,
             "name": tab.name ?? "",
+            // The group it is in, by name, whether or not groups are on.
+            "group": browser?.group(of: tab).flatMap { id in browser?.tabGroups.first { $0.id == id }?.name } ?? "",
             "loading": tab.loading,
             "hollow": tab.hollow,
             "view": tab.built?.url?.absoluteString ?? "",

@@ -184,6 +184,7 @@ extension Browser {
         parked[spaceID] = Parked(tabs: tabs, active: activeID)
 
         spaceID = id
+        tabGroups = Session.read(space: id).groups ?? []
         Spaces.current = id
         Store.settings.set(id.uuidString, forKey: "space.current")
         if let back = parked.removeValue(forKey: id), !back.tabs.isEmpty {
@@ -196,7 +197,9 @@ extension Browser {
         editing = active?.isBlank ?? true
         typed = ""
         askFocus()
-        announce(space.name)
+        // Beside the space's icon when the tabs are on screen (SpaceDot);
+        // folded away, at the bottom.
+        if folded && !peeking { announce(space.name) }
     }
 
     /// Every other space's row, made ahead of time, so the column can show
@@ -316,6 +319,9 @@ struct SpaceDot: View {
     /// frame with nothing animated (see SpaceSwipe.slide), and the icon
     /// turns over just after, on a change of its own.
     @State private var shown: (key: String, symbol: String)?
+    /// The space's name, for a moment after a switch (see naming()).
+    @State private var named: String?
+    @State private var naming = 0
 
     static let width: CGFloat = 26
 
@@ -352,7 +358,42 @@ struct SpaceDot: View {
                 withAnimation(.easeOut(duration: 0.22)) { shown = (now, symbol) }
             }
         }
+        .onChange(of: browser.spaceID) { _, _ in name() }
+        // The name, beside the icon that stands for it, the moment you get
+        // there — right of it in the bar, over the first tabs (below, the
+        // page would cover it), above it at the column's foot — and
+        // gone again: the icon alone is what stays. Over whatever is there,
+        // taking no click and moving nothing.
+        .overlay(alignment: browser.prefs.sidebar ? .bottomLeading : .leading) {
+            if let named {
+                Text(named)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Palette.ground, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+                    .shadow(color: .black.opacity(0.10), radius: 10, y: 3)
+                    .offset(x: browser.prefs.sidebar ? 0 : SpaceDot.width + 4, y: browser.prefs.sidebar ? -30 : 0)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: browser.prefs.sidebar ? .bottomLeading : .leading)))
+            }
+        }
         .animation(Motion.quick, value: hovering)
+        .animation(Motion.quick, value: named)
+    }
+
+    private func name() {
+        guard !browser.makingSpace else { return }
+        naming += 1
+        let turn = naming
+        named = browser.space.name
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            guard turn == naming else { return }
+            named = nil
+        }
     }
 }
 

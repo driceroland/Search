@@ -287,6 +287,10 @@ struct SettingsPanel: View {
                 Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its left edge for the tabs. ⌘S keeps them out.") {
                     Switch(on: $prefs.sideHides)
                 }
+                Rule()
+                Line("New tabs at the top", "New tabs, and links opened beside the page, go to the top of the sidebar, under the pinned ones, instead of the bottom") {
+                    Switch(on: $prefs.newTabsOnTop)
+                }
             }
             Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {
@@ -311,6 +315,10 @@ struct SettingsPanel: View {
             Rule()
             Line("Spaces", "Separate sets of tabs, signed in where the others are or starting afresh, switched with ⌃1–⌃9, two fingers sideways over the column, or the space's icon. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
                 Switch(on: $prefs.usesSpaces)
+            }
+            Rule()
+            Line("Tab groups", "Named sections in the sidebar. Right-click a tab to start a group; click its heading to hide or show its tabs.") {
+                Switch(on: $prefs.usesTabGroups)
             }
         }
     }

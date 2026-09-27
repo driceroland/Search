@@ -180,6 +180,11 @@ final class Preferences: ObservableObject {
     @Published var littleLinks: Bool {
         didSet { store.set(littleLinks, forKey: "links.little") }
     }
+    /// In the column, new tabs and links opened beside the page go to the
+    /// top of the loose tabs, under the pins, as in Arc. Off unless asked for.
+    @Published var newTabsOnTop: Bool {
+        didSet { store.set(newTabsOnTop, forKey: "tabs.top") }
+    }
     /// The bookmarks bar above the page (see BookmarksBar.swift). Off
     /// unless asked for.
     @Published var bookmarksBar: Bool {
@@ -226,6 +231,10 @@ final class Preferences: ObservableObject {
     /// Off unless asked for.
     @Published var usesSpaces: Bool {
         didSet { store.set(usesSpaces, forKey: "spaces") }
+    }
+    /// Named, collapsible sections in the sidebar. Off unless asked for.
+    @Published var usesTabGroups: Bool {
+        didSet { store.set(usesTabGroups, forKey: "tabs.groups") }
     }
 
     init() {
@@ -291,6 +300,7 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
+        usesTabGroups = store.bool(forKey: "tabs.groups")
         // On for everyone who never touched these three switches (Drice,
         // 27 Sep 2026); a choice made before stands.
         let flicks = store.object(forKey: "float.flicks") as? Bool ?? true
@@ -302,6 +312,7 @@ final class Preferences: ObservableObject {
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         littleLinks = store.bool(forKey: "links.little")
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
+        newTabsOnTop = store.bool(forKey: "tabs.top")
         let links = store.object(forKey: "links.show") as? Bool ?? true
         showsLinks = links
         HoveredLink.on = links
