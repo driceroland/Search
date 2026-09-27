@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- An extension's popup follows the width its page asks for, narrower as well as wider: Bitwarden set to narrow no longer leaves an empty strip down the popup's side.
+
 ## 1.0.4 — 27 September 2026
 
 ### Added
