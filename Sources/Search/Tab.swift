@@ -108,10 +108,18 @@ enum Web {
         // works only from a click or a key, as Safari's pop-up blocking has
         // it; a sign-in window opened by its button still opens.
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
-        config.mediaTypesRequiringUserActionForPlayback = .audio
+        // Sound waits for a click, as everywhere; video too when Settings
+        // says videos wait (Never Auto-Play, in Safari's words).
+        config.mediaTypesRequiringUserActionForPlayback = Web.playback
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
         inspector(config.preferences)
         return config
+    }
+
+    /// What a page may not play until it is clicked or a key pressed: sound,
+    /// and video as well with Settings › General › Videos wait for a click.
+    static var playback: WKAudiovisualMediaTypes {
+        Store.settings.bool(forKey: Preferences.waitsKey) ? .all : .audio
     }
 
     /// Every page view there is, for the bench.
@@ -883,6 +891,13 @@ final class Tab: ObservableObject, Identifiable {
             discard()
         }
         configuration = Web.configuration(space: space)
+    }
+
+    /// Settings › Videos wait for a click, changed: the page's next view
+    /// is made the new way. One already made keeps what it was made with —
+    /// WebKit fixes it then — until the tab closes or sleeps.
+    func playbackChanged() {
+        configuration.mediaTypesRequiringUserActionForPlayback = Web.playback
     }
 
     /// Whether the page holds something typed and not yet sent — a draft, a

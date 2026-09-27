@@ -91,6 +91,15 @@ final class Preferences: ObservableObject {
     @Published var shielded: Bool {
         didSet { store.set(shielded, forKey: "shield") }
     }
+    /// Settings › Privacy › Prevent cross-site tracking, turned off: WebKit's
+    /// tracking prevention off, as Safari's same switch does (see
+    /// Store.keepsSignIns). On unless turned off.
+    @Published var keepsSignIns: Bool {
+        didSet {
+            store.set(keepsSignIns, forKey: "sites.keep")
+            Store.keepsSignIns = keepsSignIns
+        }
+    }
     /// A private tab gets extensions too, not just every other page. Off
     /// unless asked for - a private tab keeps nothing by default, extensions
     /// included, and some watch what a page does.
@@ -211,6 +220,12 @@ final class Preferences: ObservableObject {
     @Published var floatsAway: Bool {
         didSet { store.set(floatsAway, forKey: "float.away") }
     }
+    /// Videos wait for a click instead of starting by themselves, as Safari's
+    /// Never Auto-Play has it (see Web.configuration). Off unless asked for.
+    @Published var waitsForPlay: Bool {
+        didSet { store.set(waitsForPlay, forKey: Preferences.waitsKey) }
+    }
+    nonisolated static let waitsKey = "media.click"
     /// A video playing on a video site comes out into the floating window
     /// when you go to another tab (Browser.leaving). On, as it always was;
     /// the switch is for turning it off.
@@ -269,6 +284,10 @@ final class Preferences: ObservableObject {
         showsReading = store.object(forKey: "tabs.reading") as? Bool ?? true
         mruSwitcher = store.bool(forKey: "tabs.mru")
         shielded = store.object(forKey: "shield") as? Bool ?? true
+        let keeps = store.bool(forKey: "sites.keep")
+        keepsSignIns = keeps
+        // Before the first page is loaded into the store.
+        Store.keepsSignIns = keeps
         extensionsInPrivate = store.bool(forKey: "extensions.private")
         // Offered by default only in a build that can actually do them —
         // one with Apple's browser entitlement and its profile embedded. A
@@ -308,6 +327,7 @@ final class Preferences: ObservableObject {
         Float.flicks = flicks
         floatsAway = store.bool(forKey: "float.away")
         floatsOnLeave = store.object(forKey: "float.leave") as? Bool ?? true
+        waitsForPlay = store.bool(forKey: Preferences.waitsKey)
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         littleLinks = store.bool(forKey: "links.little")

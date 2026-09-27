@@ -110,6 +110,9 @@ final class Browser: NSObject, ObservableObject {
     /// The "Bring things over" sheet, open while set: the browser it
     /// starts on by name, or "" for the first one found.
     @Published var bringingIn: String?
+    /// The sheet opened from Settings › Extensions: only the extensions
+    /// ticked, on a browser that has some. Read once as it opens.
+    var bringingExtensions = false
 
     /// ⇧⌘S. The same tabs, down the left or across the top.
     func toggleSidebar() {
@@ -1159,6 +1162,15 @@ final class Browser: NSObject, ObservableObject {
         // changes what they show has to be heard here.
         prefs.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &bag)
+
+        // Videos waiting for a click: every tab's next page view follows.
+        prefs.$waitsForPlay
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                DispatchQueue.main.async { for tab in self.tabs + self.parkedTabs { tab.playbackChanged() } }
+            }
             .store(in: &bag)
 
         // WebKit read the defaults once at the start and keeps its own copy.

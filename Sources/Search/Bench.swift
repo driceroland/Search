@@ -1452,9 +1452,12 @@ final class Bench {
             if let on = request["history"] as? Bool { browser.recalling = on }
             if let on = request["downloads"] as? Bool { browser.hoarding = on }
             if let on = request["bookmarks"] as? Bool { browser.bookmarking = on }
-            // The Bring things over sheet: on, off, or on at a browser by name.
+            // The Bring things over sheet: on, off, on at a browser by name,
+            // or on for the extensions alone, as Settings › Extensions opens it.
             if let text = request["import"] as? String {
-                browser.bringingIn = ["off", "false", "0", "no"].contains(text) ? nil : ["on", "true", "1", "yes"].contains(text) ? "" : text
+                browser.bringingExtensions = text == "extensions"
+                browser.bringingIn = ["off", "false", "0", "no"].contains(text) ? nil
+                    : ["on", "true", "1", "yes", "extensions"].contains(text) ? "" : text
             }
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }

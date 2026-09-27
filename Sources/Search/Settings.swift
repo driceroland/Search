@@ -239,6 +239,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.floatFlicks)
             }
             Rule()
+            Line("Videos wait for a click", "Videos don't start by themselves, even without sound; they play when you press play. Tabs already open follow once closed and opened again, or after they've slept") {
+                Switch(on: $prefs.waitsForPlay)
+            }
+            Rule()
             Line("Float the video when you switch tabs", "A video playing on YouTube and the like comes out into its floating window when you go to another tab, and back when you return. ⇧⌘P still floats one by hand") {
                 Switch(on: $prefs.floatsOnLeave)
             }
@@ -421,6 +425,10 @@ struct SettingsPanel: View {
                             }
                         ))
                     }
+                }
+                Rule()
+                Line("Prevent cross-site tracking", "As in Safari. Off, sites you rarely open keep their sign-ins, and trackers inside other sites can follow you across them again, as in Chrome. Private tabs keep it on") {
+                    Switch(on: Binding(get: { !prefs.keepsSignIns }, set: { prefs.keepsSignIns = !$0 }))
                 }
                 Rule()
                 Line("Camera and microphone", "What each site was allowed or refused") {

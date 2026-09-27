@@ -67,6 +67,16 @@ struct ExtensionsPage: View {
                 }
 
                 Card {
+                    Line("From another browser", "What Chrome, Arc, Brave and the others added from the Chrome Web Store — installed fresh from the store, you say yes to each one") {
+                        Pill("Bring them over…") {
+                            browser.tuning = false
+                            browser.bringingExtensions = true
+                            browser.bringingIn = ""
+                        }
+                    }
+                }
+
+                Card {
                     Line("Allow on private tabs", "Off by default - a private tab keeps nothing, extensions included") {
                         Switch(on: Binding(
                             get: { browser.prefs.extensionsInPrivate },

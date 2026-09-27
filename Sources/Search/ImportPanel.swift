@@ -3,7 +3,8 @@ import SwiftUI
 /// Bringing things over from another browser, all in one place: which
 /// browser, which of its profiles, and what of it. Opened from Settings ›
 /// Passwords and from Bring in… in Bookmarks and Passwords; the Welcome has
-/// the short version of it.
+/// the short version of it. From Settings › Extensions it opens on the
+/// extensions alone.
 ///
 /// What each browser holds is counted as the sheet opens, off the main
 /// thread and from its files alone — no key is asked for and nothing is
@@ -28,6 +29,9 @@ struct ImportPanel: View {
     @State private var wantsBookmarks = true
     @State private var wantsHistory = true
     @State private var wantsExtensions = false
+    /// Opened for the extensions: the first browser counted with some is
+    /// picked, until you pick one yourself.
+    @State private var forExtensions = false
     @State private var bringing = false
     @State private var brought: [Said]?
 
@@ -57,6 +61,7 @@ struct ImportPanel: View {
                         Row(name: source.name, detail: detail(of: source), chosen: pick == source) {
                             guard !bringing else { return }
                             pick = source
+                            forExtensions = false
                             brought = nil
                         }
                     }
@@ -122,7 +127,22 @@ struct ImportPanel: View {
         }
         .animation(Motion.settle, value: brought)
         .animation(Motion.settle, value: pick)
-        .onAppear(perform: look)
+        .onAppear {
+            if browser.bringingExtensions {
+                browser.bringingExtensions = false
+                forExtensions = true
+                wantsExtensions = true
+                wantsPasswords = false
+                wantsBookmarks = false
+                wantsHistory = false
+            }
+            look()
+        }
+        .onChange(of: previews) { _, _ in
+            guard forExtensions, let pick, fresh(pick).isEmpty,
+                  let other = sources.first(where: { !fresh($0).isEmpty }) else { return }
+            self.pick = other
+        }
         // Asked for again at another browser while still open.
         .onChange(of: browser.bringingIn) { _, name in
             guard !bringing, let found = sources.first(where: { $0.name == name }) else { return }
