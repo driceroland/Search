@@ -688,6 +688,8 @@ final class Browser: NSObject, ObservableObject {
     var pinnedCount: Int { tabs.filter { $0.pin != nil }.count }
 
     func pin(_ tab: Tab) {
+        // Drawn again even when the tab stays where it is (see unpin).
+        objectWillChange.send()
         // Pins are the space's, kept on disk and shown in every window: a
         // private tab can't be one, or its page would outlive it there.
         guard !tab.shy else { return }
@@ -766,6 +768,12 @@ final class Browser: NSObject, ObservableObject {
 
     func unpin(_ tab: Tab) {
         if editingPin == tab.id { editingPin = nil }
+        // The row is drawn again whether or not the tab moves. Unpinning the
+        // only tab, or the last pin, leaves it where it is; `tabs` didn't
+        // change, only the tab did, and the column went on drawing it as a
+        // pinned square — with no letter left, an empty tile — and never as
+        // a row (from X).
+        objectWillChange.send()
         tab.pin = nil
         tab.home = nil
         tab.pinID = nil
@@ -1370,6 +1378,8 @@ final class Browser: NSObject, ObservableObject {
     /// Another window changed a space's pins: this window's row there follows.
     func pinsChanged(in space: UUID) {
         if space == spaceID {
+            // Drawn again even when only a pin's letter or name changed.
+            objectWillChange.send()
             let row = reconcilePins(tabs, space: space)
             if row.map(\.id) != tabs.map(\.id) { tabs = row }
             if !tabs.contains(where: { $0.id == activeID }) {
@@ -1434,45 +1444,81 @@ final class Browser: NSObject, ObservableObject {
         return (made, pins, added)
     }
 
-    /// Arc's pinned list, folders opened out in their order.
-    private static func opened(_ nodes: [ArcSidebar.Node]) -> [ArcSidebar.Item] {
-        nodes.flatMap { node -> [ArcSidebar.Item] in
+    /// Arc's pinned list, folders opened out in their order, each page with
+    /// the top folder it came from: a tab group's name, when groups are on.
+    private static func opened(_ nodes: [ArcSidebar.Node], in folder: String? = nil) -> [(item: ArcSidebar.Item, folder: String?)] {
+        nodes.flatMap { node -> [(item: ArcSidebar.Item, folder: String?)] in
             switch node {
-            case .item(let item): [item]
-            case .folder(let folder): opened(folder.items)
+            case .item(let item): [(item, folder)]
+            case .folder(let inner): opened(inner.items, in: folder ?? inner.title)
             }
         }
     }
 
     /// Pages as tabs at the end of a space's row, asleep: the row on
     /// screen, a parked one, or the one saved for a space not brought up.
-    private func takeAsleep(_ items: [ArcSidebar.Item], into space: UUID) -> Int {
+    /// With tab groups on, a page from one of Arc's folders goes into the
+    /// group of that name in the space, made if there is none; with them
+    /// off, the folders stay opened out. Groups are never turned on here.
+    private func takeAsleep(_ items: [(item: ArcSidebar.Item, folder: String?)], into space: UUID) -> Int {
+        let grouping = prefs.usesTabGroups
         func asleep(_ item: ArcSidebar.Item) -> Tab {
             let tab = Tab(configuration: Web.configuration(space: space))
             prepare(tab)
             tab.restore(url: item.url, title: item.title)
             return tab
         }
-        func fresh(_ have: [String]) -> [ArcSidebar.Item] {
+        func fresh(_ have: [String]) -> [(item: ArcSidebar.Item, folder: String?)] {
             var seen = Set(have)
-            return items.filter { seen.insert($0.url.absoluteString).inserted }
+            return items.filter { seen.insert($0.item.url.absoluteString).inserted }
+        }
+        /// The group a folder's pages go into, by name, made if missing.
+        func group(_ folder: String?, in groups: inout [TabGroup]) -> UUID? {
+            guard grouping, let folder else { return nil }
+            if let same = groups.first(where: { $0.name == folder }) { return same.id }
+            let made = TabGroup(id: UUID(), name: folder, collapsed: false)
+            groups.append(made)
+            return made.id
         }
         if space == spaceID {
             let new = fresh(tabs.compactMap { ($0.pending ?? $0.address)?.absoluteString })
-            tabs += new.map(asleep)
+            var groups = tabGroups
+            tabs += new.map { page in
+                let tab = asleep(page.item)
+                tab.groupID = group(page.folder, in: &groups)
+                return tab
+            }
+            if groups != tabGroups {
+                tabGroups = groups
+                arrangeGroupedTabs()
+            }
             writeRow(spaceID, session(tabs, active: activeID, groups: tabGroups), now: true)
             return new.count
         }
+        // A parked row's groups are the ones saved for it (see allRows).
+        var saved = readRow(space)
+        var groups = saved.groups ?? []
         if var row = parked[space] {
             let new = fresh(row.tabs.compactMap { ($0.pending ?? $0.address)?.absoluteString })
-            row.tabs += new.map(asleep)
+            row.tabs += new.map { page in
+                let tab = asleep(page.item)
+                tab.groupID = group(page.folder, in: &groups)
+                return tab
+            }
             parked[space] = row
+            if groups != (saved.groups ?? []) {
+                saved.groups = groups
+                writeRow(space, saved, now: true)
+            }
             return new.count
         }
-        var row = readRow(space)
-        let new = fresh(row.tabs.map(\.url))
-        row.tabs += new.map { Session.Entry(url: $0.url.absoluteString, title: $0.title) }
-        writeRow(space, row, now: true)
+        let new = fresh(saved.tabs.map(\.url))
+        saved.tabs += new.map { page in
+            Session.Entry(url: page.item.url.absoluteString, title: page.item.title,
+                          groupID: group(page.folder, in: &groups))
+        }
+        if grouping { saved.groups = groups }
+        writeRow(space, saved, now: true)
         return new.count
     }
 
@@ -2250,11 +2296,11 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// A page for the bench: at the end of the row, behind whatever you are
-    /// looking at, and marked as not yours.
+    /// looking at, and marked as not yours. `shy`: a private one, for a test run.
     @discardableResult
-    func benchOpen(_ url: URL) -> Tab {
+    func benchOpen(_ url: URL, shy: Bool = false) -> Tab {
         let url = Browser.page(url)
-        let tab = Tab(bench: true, configuration: Browser.extensionConfiguration(for: url))
+        let tab = Tab(shy: shy, bench: true, configuration: shy ? nil : Browser.extensionConfiguration(for: url))
         prepare(tab)
         tabs.append(tab)
         tab.go(to: url)
@@ -2456,6 +2502,11 @@ final class Browser: NSObject, ObservableObject {
         // A tab just put down with ⌘W has no page to lift a video out of, and
         // asking it would only build an empty view to ask.
         guard let tab, !tab.isBlank, !tab.asleep, !floater.showing else { return }
+        // A video filling the screen stays in its own space, as in Safari.
+        // Its page is lent to WebKit's full-screen window, and moving it out
+        // into the floating one left that window up, empty and black, to
+        // come back to.
+        guard tab.web.fullscreenState == .notInFullscreen else { return }
         // On its own, only from a site whose video is the point of the site.
         // A hero background on a studio's home page is a video too, and it
         // followed people around the desktop. ⌘⇧P still lifts from anywhere.
@@ -2870,11 +2921,30 @@ final class Browser: NSObject, ObservableObject {
 // MARK: - WebKit
 
 extension Browser: WKNavigationDelegate, WKUIDelegate {
-    /// Links the window has no business showing — mail, calls, an app's own
-    /// scheme — are handed to whoever does own them.
+    /// Every navigation is decided in `decide` below; this form of the
+    /// question also hands over the page's preferences, the only place a
+    /// site allowed to play sound by itself can say so (see Autoplay). Only
+    /// a page that is allowed to load, in the tab's own frame, is touched.
     func webView(
         _ webView: WKWebView,
         decidePolicyFor action: WKNavigationAction,
+        preferences: WKWebpagePreferences,
+        decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+    ) {
+        decide(webView, action) { [weak self] policy in
+            if policy == .allow, action.targetFrame?.isMainFrame ?? true, let url = action.request.url {
+                let shy = self?.tab(for: webView)?.shy == true || !webView.configuration.websiteDataStore.isPersistent
+                Autoplay.apply(to: preferences, for: url, shy: shy)
+            }
+            decisionHandler(policy, preferences)
+        }
+    }
+
+    /// Links the window has no business showing — mail, calls, an app's own
+    /// scheme — are handed to whoever does own them.
+    private func decide(
+        _ webView: WKWebView,
+        _ action: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
         // "Download Image", "Download Linked File" from the page's own

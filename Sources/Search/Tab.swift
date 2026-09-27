@@ -158,6 +158,46 @@ enum Muter {
     }
 }
 
+/// Sites you let play sound by themselves, from the site card: Safari's
+/// per-site Allow All Auto-Play (#223). Every other site keeps the default,
+/// sound waiting for a click. Remembered for the site, as its zoom is, and
+/// never from a private tab. Settings › Videos wait for a click wins: with
+/// it on, no site plays by itself.
+///
+/// WebKit takes it for each page as it loads, through the page's own
+/// preferences, under a name outside the public framework — asked for
+/// first, as `Muter` asks, so a WebKit without it only leaves the site
+/// waiting for a click. Its values, checked on macOS 26: 0 the default,
+/// 1 allow, 2 allow without sound, 3 deny. Allow lets video play whatever
+/// `mediaTypesRequiringUserActionForPlayback` says, which is why the
+/// global switch is asked here and not left to that.
+enum Autoplay {
+    private static func key(_ host: String) -> String { "autoplay." + host }
+
+    static func allowed(_ host: String) -> Bool {
+        Store.settings.bool(forKey: key(host))
+    }
+
+    /// Off keeps nothing, as a site at the usual zoom keeps nothing.
+    static func set(_ on: Bool, for host: String) {
+        if on {
+            Store.settings.set(true, forKey: key(host))
+        } else {
+            Store.settings.removeObject(forKey: key(host))
+        }
+    }
+
+    /// For a page about to load at `url`: allowed to play, or left alone.
+    static func apply(to preferences: WKWebpagePreferences, for url: URL, shy: Bool) {
+        guard !shy, let host = url.host(), allowed(host),
+              !Store.settings.bool(forKey: Preferences.waitsKey) else { return }
+        let set = NSSelectorFromString("_setAutoplayPolicy:")
+        guard preferences.responds(to: set) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Int) -> Void
+        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, 1)
+    }
+}
+
 /// How far down its page a tab is. Its own object, watched by the fill in
 /// the tab's pill alone: as part of the tab, every percent scrolled re-ran
 /// everything that watches the tab — the page's stage, the buttons, the

@@ -214,6 +214,11 @@ final class Preferences: ObservableObject {
     @Published var littleLinks: Bool {
         didSet { store.set(littleLinks, forKey: "links.little") }
     }
+    /// The downloads button always in the chrome, not only while something
+    /// downloads (see Fetching.swift). Off unless asked for.
+    @Published var alwaysShowsDownloads: Bool {
+        didSet { store.set(alwaysShowsDownloads, forKey: "downloads.button") }
+    }
     /// The bookmarks bar above the page (see BookmarksBar.swift). Off
     /// unless asked for.
     @Published var bookmarksBar: Bool {
@@ -373,6 +378,7 @@ final class Preferences: ObservableObject {
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         littleLinks = store.bool(forKey: "links.little")
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
+        alwaysShowsDownloads = store.bool(forKey: "downloads.button")
         let links = store.object(forKey: "links.show") as? Bool ?? true
         showsLinks = links
         HoveredLink.on = links

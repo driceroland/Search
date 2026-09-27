@@ -149,14 +149,28 @@ final class Fetches: ObservableObject {
 struct FetchDoor: View {
     @ObservedObject var browser: Browser
     @ObservedObject var fetches: Fetches
+    @ObservedObject var prefs: Preferences
 
     @State private var hovering = false
 
+    init(browser: Browser, fetches: Fetches) {
+        self.browser = browser
+        self.fetches = fetches
+        self.prefs = browser.prefs
+    }
+
     var body: some View {
-        if fetches.showing {
+        // Always there with Settings › Downloads › Always show the downloads
+        // button: an arrow at rest, the circle while a file comes in.
+        if fetches.showing || prefs.alwaysShowsDownloads {
             Button { browser.hoarding = true } label: {
                 ZStack {
-                    if fetches.done {
+                    if !fetches.showing {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
+                            .transition(.opacity)
+                    } else if fetches.done {
                         Image(systemName: "arrow.down")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Palette.ink.opacity(0.75))
@@ -187,6 +201,7 @@ struct FetchDoor: View {
             .help("Downloads (⇧⌘J)")
             .transition(.scale(scale: 0.6).combined(with: .opacity))
             .animation(Motion.quick, value: fetches.done)
+            .animation(Motion.quick, value: fetches.showing)
             .animation(Motion.quick, value: hovering)
         }
     }

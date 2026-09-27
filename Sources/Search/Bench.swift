@@ -291,7 +291,10 @@ final class Bench {
                 answer(["error": "open needs a url"])
                 return
             }
-            let tab = browser.benchOpen(url)
+            // private: a private tab, on a SEARCH_PROBE run only.
+            let shy = request["private"] as? Bool == true
+            guard !shy || Store.testing else { answer(["error": "open private only works on a --test run"]); return }
+            let tab = browser.benchOpen(url, shy: shy)
             house(tab)
             answer(describe(tab))
 

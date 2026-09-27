@@ -507,6 +507,10 @@ struct SettingsPanel: View {
             Line("Ask where to save each file") {
                 Switch(on: $prefs.asksWhereToSave)
             }
+            Rule()
+            Line("Always show the downloads button", "Beside the other buttons, even with nothing downloading. Off, it shows only while a file comes in") {
+                Switch(on: $prefs.alwaysShowsDownloads)
+            }
         }
     }
 

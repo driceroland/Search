@@ -5,13 +5,13 @@ import SwiftUI
 // New features start off, so someone who never opens Settings never meets
 // them (a reply on X). The first time a newer version opens, a small card
 // shows its new switches, each with a line of what it does and the switch
-// itself, a line or two for what needs no switch, and — so nothing gets lost
-// — the switches from earlier versions that are still off. Closed, it
+// itself, and — so nothing gets lost — the switches from earlier versions
+// that are still off. Nothing else: few words (Drice). Closed, it
 // doesn't come back for that version. Not after a fresh install: the welcome
 // is for that. Every version's notes are in Settings › About › What's New…
 //
 // A release edits `toggles` (its new switches, marked with its version),
-// `releases` (its card's lines) and `notes` (what it brought).
+// `releases` (that it has a card) and `notes` (what it brought).
 
 enum WhatsNew {
     /// A switch the card offers: the same setting as in Settings.
@@ -24,11 +24,9 @@ enum WhatsNew {
         let set: @MainActor (Preferences, Bool) -> Void
     }
 
-    /// A version's card: its line under the title, and what needs no switch.
+    /// A version that has a card.
     struct Release {
         let version: String
-        let line: String
-        let also: [String]
     }
 
     /// Every switch worth meeting, oldest last. The card shows this
@@ -44,6 +42,8 @@ enum WhatsNew {
                }),
         Toggle(title: "Videos wait for a click", detail: "Videos don't start by themselves, even without sound.",
                since: "1.0.4", get: { $0.waitsForPlay }, set: { $0.waitsForPlay = $1 }),
+        Toggle(title: "Always show the downloads button", detail: "Your downloads one click away, beside the other buttons.",
+               since: "1.0.4", get: { $0.alwaysShowsDownloads }, set: { $0.alwaysShowsDownloads = $1 }),
 
         Toggle(title: "Spaces", detail: "Separate sets of tabs, each with its own sign-ins. ⌃1–⌃9 to switch.",
                since: "1.0.1", get: { $0.usesSpaces }, set: { $0.usesSpaces = $1 }),
@@ -64,15 +64,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
-        Release(
-            version: "1.0.4",
-            line: "Three new things to turn on, here or in Settings, and a few that are simply there.",
-            also: [
-                "⌃Tab shows your recent tabs as pictures, the last one first.",
-                "Several windows: ⌘N, or drag a tab out of the row.",
-                "Your own keyboard shortcuts, in Settings › Shortcuts.",
-            ]
-        ),
+        Release(version: "1.0.4"),
     ]
 
     /// This version's card, when it has one.
@@ -129,7 +121,7 @@ enum WhatsNew {
                 "Tab groups, and a sidebar on the right.",
                 "⌃Tab shows your recent tabs as pictures, the last one first: a quick ⌃Tab goes back to the tab you were on.",
                 "Your own keyboard shortcuts, in Settings › Shortcuts.",
-                "Downloads show while they happen: a small circle fills beside the other buttons, and the Finder and the Dock show the progress too.",
+                "Downloads show while they happen: a small circle fills beside the other buttons, and the Finder and the Dock show the progress too. The button can stay there for good.",
                 "Bring things over from Firefox, Zen, Helium, Comet, Opera and Chrome's other channels, or from an exported file.",
                 "Site shortcuts: a word of your own before a search sends it to that site, like yt cats to YouTube.",
                 "Bookmarks in the order you choose, folders of your own, and a card to name a bookmark as you add it.",
@@ -240,23 +232,7 @@ struct WhatsNewCard: View {
         Plate("New in Search \(release.version)", width: 460, close: close) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text(release.line)
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(Palette.muted)
-                        .fixedSize(horizontal: false, vertical: true)
                     rows(fresh)
-                    if !release.also.isEmpty {
-                        VStack(alignment: .leading, spacing: 5) {
-                            ForEach(release.also, id: \.self) { line in
-                                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                                    Text("·").foregroundStyle(Palette.faint)
-                                    Text(line).foregroundStyle(Palette.ink)
-                                }
-                                .font(.system(size: 12.5))
-                            }
-                        }
-                        .padding(.leading, 2)
-                    }
                     if let earlier, !earlier.isEmpty {
                         Caption("From earlier versions, in case you missed them")
                             .padding(.top, 6)

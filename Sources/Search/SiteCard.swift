@@ -6,9 +6,9 @@ import SwiftUI
 // The site card: what a click on the tab you are on shows under its address,
 // in the column and in the bar across the top alike — whether the connection
 // is private, and the few things that belong to the page (copy its address,
-// print it, its zoom). Right-click › Site Information… opens the same. It
-// goes as soon as you type, when the address is left, or when one of its
-// lines is used. From #56, whose bar it came with; the bar itself stayed out,
+// print it, its zoom, whether it may play sound by itself). Right-click ›
+// Site Information… opens the same. It goes as soon as you type, when the
+// address is left, or when one of its lines is used. From #56, whose bar it came with; the bar itself stayed out,
 // since Search has the column or the strip, never a second row over the page.
 
 /// The card's own small window, under the tab's address. It never takes the
@@ -217,6 +217,18 @@ struct SiteCard: View {
             Separator()
             Row("Print…", keys: "⌘P") { after { browser.printPage() } }
             zoom
+            sound
+        }
+    }
+
+    /// Whether the site may play sound by itself (see Autoplay), a switch at
+    /// the end of its line. Not in a private tab, which remembers nothing,
+    /// nor with Settings › Videos wait for a click on, which lets no site.
+    @ViewBuilder private var sound: some View {
+        if !tab.shy, !Store.settings.bool(forKey: Preferences.waitsKey),
+           let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased()),
+           let host = url.host() {
+            Sound(host: host)
         }
     }
 
@@ -245,6 +257,42 @@ struct SiteCard: View {
         .padding(.leading, MenuMetrics.text)
         .padding(.trailing, MenuMetrics.inset + 4)
         .frame(height: MenuMetrics.row)
+    }
+
+    /// The line itself. WebKit takes it as a page loads, so a page already
+    /// open stays as it came, and the line says so once flipped.
+    private struct Sound: View {
+        let host: String
+        private let was: Bool
+        @State private var on: Bool
+
+        init(host: String) {
+            self.host = host
+            was = Autoplay.allowed(host)
+            _on = State(initialValue: was)
+        }
+
+        var body: some View {
+            HStack(spacing: 0) {
+                Text("Play Sound by Itself")
+                    .font(MenuMetrics.font)
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .fixedSize()
+                Spacer(minLength: 24)
+                if on != was {
+                    Text("from the next page")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .fixedSize()
+                        .padding(.trailing, 8)
+                }
+                Switch(on: $on)
+            }
+            .padding(.leading, MenuMetrics.text)
+            .padding(.trailing, MenuMetrics.trailing)
+            .frame(height: MenuMetrics.row)
+            .onChange(of: on) { _, value in Autoplay.set(value, for: host) }
+        }
     }
 
     // MARK: - one step in

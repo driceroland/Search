@@ -2,7 +2,8 @@
 """Drive the Search you already have open, from the shell.
 
     ./bench tabs                       every tab, yours and the bench's
-    ./bench open URL                   a bench tab at the end of the row → its id
+    ./bench open URL [private]         a bench tab at the end of the row → its id; private: a private one,
+                                       --test runs only
     ./bench go ID URL                  send a bench tab somewhere else
     ./bench wait ID [SECONDS]          until the page has loaded
     ./bench sleep ID                   put a tab to sleep now, or say what keeps it awake
@@ -161,8 +162,9 @@ def main(argv):
     request = {"do": verb}
     if window is not None: request["window"] = window
     if verb == "open":
-        if len(args) != 1: sys.exit("usage: bench open URL")
+        if len(args) not in (1, 2) or args[1:] not in ([], ["private"]): sys.exit("usage: bench open URL [private]")
         request["url"] = args[0]
+        if args[1:] == ["private"]: request["private"] = True
     elif verb == "go":
         if len(args) != 2: sys.exit("usage: bench go ID URL")
         request["id"], request["url"] = args
