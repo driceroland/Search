@@ -32,6 +32,10 @@ struct ImportPanel: View {
     /// What came from this browser before goes, and its bookmarks come
     /// fresh. Off unless asked for; passwords are never taken out.
     @State private var replaceBookmarks = false
+    /// Arc's spaces, their pinned tabs and its favourites (see takeArc).
+    @State private var wantsArc = true
+    /// How many spaces and pinned things Arc has, by browser and profile.
+    @State private var arcCounts: [String: (spaces: Int, pinned: Int)] = [:]
     /// Opened for the extensions: the first browser counted with some is
     /// picked, until you pick one yourself.
     @State private var forExtensions = false
@@ -120,7 +124,8 @@ struct ImportPanel: View {
                         }
                     } else if let source = pick {
                         Pill(bringing ? "Bringing…" : "Bring them in", filled: true) { bring(from: source) }
-                            .disabled(bringing || !(wantsPasswords || wantsBookmarks || wantsHistory || (wantsExtensions && !fresh(source).isEmpty)))
+                            .disabled(bringing || !(wantsPasswords || wantsBookmarks || wantsHistory || (wantsExtensions && !fresh(source).isEmpty)
+                                                     || (wantsArc && arcCounts[key(source, profile(of: source))] != nil)))
                         if bringing { Ring(size: 10) }
                     }
                     Spacer(minLength: 8)
@@ -231,6 +236,14 @@ struct ImportPanel: View {
             Line("History", preview?.places == 0 ? "None in \(source.name)" : "The last \((preview.map { $0.places } ?? 3000).formatted()) places") {
                 option($wantsHistory, none: preview?.places == 0)
             }
+            // Arc's own: its spaces, what is pinned in them, its favourites.
+            if let arc = arcCounts[key(source, profile(of: source))], arc.spaces + arc.pinned > 0 {
+                Rule()
+                Line("Spaces and pinned tabs",
+                     "\(arc.spaces == 1 ? "1 space" : "\(arc.spaces) spaces"), \(arc.pinned) pinned — each a space here, its pinned tabs asleep in it, the favourites as pins") {
+                    Switch(on: $wantsArc)
+                }
+            }
             if !extensions.isEmpty {
                 Rule()
                 Line("Extensions", "\(extensions.count) found — installed fresh from the Chrome Web Store, you say yes to each one") {
@@ -262,6 +275,9 @@ struct ImportPanel: View {
         for (n, one) in [(preview.bookmarks, "bookmark"), (preview.places, "place"), (preview.passwords, "password")] where n > 0 {
             parts.append(count(n, one))
         }
+        if let arc = arcCounts[key(source, profile(of: source))], arc.spaces > 0 {
+            parts.append(count(arc.spaces, "space"))
+        }
         if let record = ImportRecords.of(source.name) {
             parts.append("brought \(record.date.formatted(.dateTime.day().month()))")
         }
@@ -272,7 +288,8 @@ struct ImportPanel: View {
     /// places and 58 passwords, 27 Sep".
     private func broughtBefore(_ record: ImportRecord) -> String {
         func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
-        let parts = [(record.bookmarks, "bookmark"), (record.places, "place"), (record.passwords, "password")]
+        let parts = [(record.bookmarks, "bookmark"), (record.places, "place"), (record.passwords, "password"),
+                     (record.spaces ?? 0, "space"), (record.pinned ?? 0, "pinned tab")]
             .filter { $0.0 > 0 }.map { count($0.0, $0.1) }
         let what = parts.isEmpty ? "Nothing new" : ListFormatter.localizedString(byJoining: parts)
         return "\(what), \(record.date.formatted(.dateTime.day().month()))"
@@ -325,7 +342,11 @@ struct ImportPanel: View {
         guard previews[key] == nil else { return }
         DispatchQueue.global(qos: .userInitiated).async {
             let preview = source.preview(profile: profile)
-            DispatchQueue.main.async { previews[key] = preview }
+            let arc = source.arcCounts(profile: profile)
+            DispatchQueue.main.async {
+                if let arc { arcCounts[key] = arc }
+                previews[key] = preview
+            }
         }
     }
 
@@ -383,6 +404,13 @@ struct ImportPanel: View {
             // Each from the store, fresh and checked, one question at a time.
             Task { for id in extensions { await Extensions.shared.install(id: id) } }
             said[3] = Said(ok: true, text: extensions.count == 1 ? "1 extension to confirm" : "\(extensions.count) extensions to confirm")
+        }
+        if wantsArc, arcCounts[key(source, profile)] != nil, let sidebar = source.arcSidebar(profile: profile) {
+            let (spaces, pins, tabs) = browser.takeArc(sidebar)
+            ImportRecords.note(source.name, spaces: spaces, pinned: pins + tabs)
+            func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
+            said[4] = Said(ok: true, text: spaces + pins + tabs == 0 ? "Arc's spaces and pins were all here already"
+                           : "\(count(spaces, "new space")), \(count(pins, "pin")), \(count(tabs, "pinned tab"))")
         }
         group.notify(queue: .main) {
             bringing = false

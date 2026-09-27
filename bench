@@ -296,7 +296,7 @@ def main(argv):
         request["url"] = args[0]
         request["new"] = len(args) == 2
     elif verb == "import":
-        kinds = ("bookmarks", "history", "passwords")
+        kinds = ("bookmarks", "history", "passwords", "spaces")
         if "--replace" in args:
             request["replace"] = True
             args = [a for a in args if a != "--replace"]
@@ -305,7 +305,7 @@ def main(argv):
             if at + 1 >= len(args): sys.exit("usage: bench import BROWSER [WHAT…] --profile NAME|all")
             request["profile"] = args[at + 1]
             args = args[:at] + args[at + 2:]
-        if not args or any(a not in kinds for a in args[1:]): sys.exit("usage: bench import BROWSER [bookmarks] [history] [passwords] [--profile NAME|all]")
+        if not args or any(a not in kinds for a in args[1:]): sys.exit("usage: bench import BROWSER [bookmarks] [history] [passwords] [spaces] [--profile NAME|all]")
         request["from"] = args[0]
         request["what"] = args[1:]
     elif verb == "import-file":

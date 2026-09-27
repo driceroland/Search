@@ -35,6 +35,9 @@ struct ArcSidebar: Equatable {
     }
     /// The icons at the top, shared by every space of their profile.
     var favorites: [Item]
+    /// The same, by the profile they belong to ("Default", "Profile 1"),
+    /// for giving each space only its own profile's.
+    var favoritesByProfile: [String: [Item]] = [:]
     var spaces: [Space]
 
     var pinnedCount: Int { spaces.reduce(0) { $0 + Arc.count($1.pinned) } }
@@ -114,14 +117,19 @@ enum Arc {
 
         // The favourites: a profile followed by its container's id.
         var favorites: [ArcSidebar.Item] = []
+        var byProfile: [String: [ArcSidebar.Item]] = [:]
         let tops = (main["topAppsContainerIDs"] as? [Any]) ?? []
         for (index, entry) in tops.enumerated() where !(entry is String) {
-            guard index + 1 < tops.count, let id = tops[index + 1] as? String, inProfile(profileName(entry)) else { continue }
+            let profile = profileName(entry)
+            guard index + 1 < tops.count, let id = tops[index + 1] as? String, inProfile(profile) else { continue }
             for node in nodes(under: id, depth: 0) {
-                if case .item(let item) = node { favorites.append(item) }
+                if case .item(let item) = node {
+                    favorites.append(item)
+                    byProfile[profile, default: []].append(item)
+                }
             }
         }
-        return ArcSidebar(favorites: favorites, spaces: spaces)
+        return ArcSidebar(favorites: favorites, favoritesByProfile: byProfile, spaces: spaces)
     }
 
     /// The id after `label` in a space's list of containers. Arc has written

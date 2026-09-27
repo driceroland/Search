@@ -1368,7 +1368,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Another window changed a space's pins: this window's row there follows.
-    private func pinsChanged(in space: UUID) {
+    func pinsChanged(in space: UUID) {
         if space == spaceID {
             let row = reconcilePins(tabs, space: space)
             if row.map(\.id) != tabs.map(\.id) { tabs = row }
@@ -1382,6 +1382,98 @@ final class Browser: NSObject, ObservableObject {
             if !row.tabs.contains(where: { $0.id == row.active }) { row.active = row.tabs.first?.id }
             parked[space] = row
         }
+    }
+
+    /// Arc's sidebar brought over (see ImportArc.swift). Each of its spaces
+    /// becomes a space here — the one of the same name if there is one,
+    /// signed in with the others when Arc's used its first profile — its
+    /// pinned list the space's tabs, asleep until gone to, folders opened
+    /// out in their order; the favourites, the icons above every space of
+    /// a profile in Arc, become the pins of that profile's spaces. A lone space, with spaces off, comes
+    /// into the one there is; more than one turns spaces on. Nothing twice:
+    /// a page already in the row, or a pin already there, isn't added again.
+    @discardableResult
+    func takeArc(_ sidebar: ArcSidebar) -> (spaces: Int, pins: Int, tabs: Int) {
+        var made = 0, pins = 0, added = 0
+        var targets: [(id: UUID, space: ArcSidebar.Space?)] = []
+        if sidebar.spaces.count > 1 || (prefs.usesSpaces && !sidebar.spaces.isEmpty) {
+            if !prefs.usesSpaces { prefs.usesSpaces = true }
+            var list = spaces
+            for arc in sidebar.spaces {
+                if let same = list.first(where: { $0.name.localizedCaseInsensitiveCompare(arc.name) == .orderedSame }) {
+                    targets.append((same.id, arc))
+                } else {
+                    let space = Space(id: UUID(), name: arc.name, colour: 0, icon: arc.symbol,
+                                      sharesSignIns: arc.profile == "Default")
+                    list.append(space)
+                    targets.append((space.id, arc))
+                    made += 1
+                }
+            }
+            if made > 0 {
+                spaces = list
+                Spaces.write(list)
+            }
+        } else {
+            targets = [(spaceID, sidebar.spaces.first)]
+        }
+        for target in targets {
+            var defs = Pins.defs(target.id)
+            // A space's own profile's favourites, as Arc shows them above it.
+            let favourites = target.space.flatMap { sidebar.favoritesByProfile[$0.profile] } ?? sidebar.favorites
+            for favourite in favourites where !defs.contains(where: { $0.home == favourite.url.absoluteString }) {
+                let host = favourite.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+                defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
+                                   home: favourite.url.absoluteString, title: favourite.title, name: nil))
+                pins += 1
+            }
+            Pins.set(target.id, defs, from: self)
+            pinsChanged(in: target.id)
+            added += takeAsleep(Browser.opened(target.space?.pinned ?? []), into: target.id)
+        }
+        return (made, pins, added)
+    }
+
+    /// Arc's pinned list, folders opened out in their order.
+    private static func opened(_ nodes: [ArcSidebar.Node]) -> [ArcSidebar.Item] {
+        nodes.flatMap { node -> [ArcSidebar.Item] in
+            switch node {
+            case .item(let item): [item]
+            case .folder(let folder): opened(folder.items)
+            }
+        }
+    }
+
+    /// Pages as tabs at the end of a space's row, asleep: the row on
+    /// screen, a parked one, or the one saved for a space not brought up.
+    private func takeAsleep(_ items: [ArcSidebar.Item], into space: UUID) -> Int {
+        func asleep(_ item: ArcSidebar.Item) -> Tab {
+            let tab = Tab(configuration: Web.configuration(space: space))
+            prepare(tab)
+            tab.restore(url: item.url, title: item.title)
+            return tab
+        }
+        func fresh(_ have: [String]) -> [ArcSidebar.Item] {
+            var seen = Set(have)
+            return items.filter { seen.insert($0.url.absoluteString).inserted }
+        }
+        if space == spaceID {
+            let new = fresh(tabs.compactMap { ($0.pending ?? $0.address)?.absoluteString })
+            tabs += new.map(asleep)
+            writeRow(spaceID, session(tabs, active: activeID, groups: tabGroups), now: true)
+            return new.count
+        }
+        if var row = parked[space] {
+            let new = fresh(row.tabs.compactMap { ($0.pending ?? $0.address)?.absoluteString })
+            row.tabs += new.map(asleep)
+            parked[space] = row
+            return new.count
+        }
+        var row = readRow(space)
+        let new = fresh(row.tabs.map(\.url))
+        row.tabs += new.map { Session.Entry(url: $0.url.absoluteString, title: $0.title) }
+        writeRow(space, row, now: true)
+        return new.count
     }
 
     // MARK: - this window's rows, wherever they are kept

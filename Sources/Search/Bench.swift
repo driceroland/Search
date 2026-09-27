@@ -941,6 +941,16 @@ final class Bench {
                 browser.took(outcome, from: source.name)
                 out["saved"] = browser.saved.count
             }
+            if what.contains("spaces") {
+                if let sidebar = source.arcSidebar(profile: profile) {
+                    let (spaces, pins, tabs) = browser.takeArc(sidebar)
+                    ImportRecords.note(source.name, spaces: spaces, pinned: pins + tabs)
+                    out["arc"] = ["spaces": spaces, "pins": pins, "tabs": tabs,
+                                  "names": browser.spaces.map(\.name), "usesSpaces": browser.prefs.usesSpaces]
+                } else {
+                    out["arc"] = "no Arc sidebar"
+                }
+            }
             // What is now recorded from it, as the sheet shows it.
             if let record = ImportRecords.of(source.name) {
                 out["record"] = ["bookmarks": record.bookmarks, "places": record.places, "passwords": record.passwords,
