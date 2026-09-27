@@ -12,6 +12,8 @@ struct SettingsPanel: View {
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shield = Shield.shared
     @State private var isDefault = Links.isDefault
+    /// A site shortcut being written, kept out of Preferences until it's saved.
+    @State private var draft: Keyword?
     @State private var page: Page = Page(rawValue: Store.settings.string(forKey: "settings.page") ?? "") ?? .general
 
     enum Page: String, CaseIterable, Identifiable {
@@ -200,17 +202,51 @@ struct SettingsPanel: View {
                 .padding(.bottom, 11)
             }
             Rule()
-            Line("Site shortcuts", "A word before your search goes straight to that site, whatever engine you've picked - \"yt cats\" to YouTube") {
-                Pill("Add") { prefs.keywords.append(Keyword()) }
+            Line("Site shortcuts", keywordDetail) {
+                if draft == nil {
+                    Pill("Add") { draft = Keyword() }
+                } else {
+                    HStack(spacing: 6) {
+                        Pill("Cancel") { draft = nil }
+                        Pill("Save", filled: true) { saveDraft() }
+                            .disabled(draftProblem != nil)
+                            .opacity(draftProblem == nil ? 1 : 0.4)
+                    }
+                }
             }
-            ForEach($prefs.keywords) { $entry in
+            if let current = draft {
                 HStack(spacing: 8) {
-                    TextField("yt", text: $entry.keyword)
-                        .textFieldStyle(.plain)
-                        .frame(width: 50)
+                    TextField("yt", text: Binding(
+                        get: { current.keyword },
+                        set: { draft?.keyword = $0 }
+                    ))
+                    .textFieldStyle(.plain)
+                    .frame(width: 50)
                     Text("→").foregroundStyle(Palette.muted)
-                    TextField("https://www.youtube.com/results?search_query=%s", text: $entry.template)
-                        .textFieldStyle(.plain)
+                    TextField("https://www.youtube.com/results?search_query=%s", text: Binding(
+                        get: { current.template },
+                        set: { draft?.template = $0 }
+                    ))
+                    .textFieldStyle(.plain)
+                    .onSubmit(saveDraft)
+                }
+                .font(.system(size: 12.5))
+                .foregroundStyle(Palette.ink)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .padding(.horizontal, 14)
+                .padding(.bottom, 6)
+            }
+            ForEach(prefs.keywords) { entry in
+                HStack(spacing: 8) {
+                    Text(entry.keyword)
+                        .frame(width: 50, alignment: .leading)
+                    Text("→").foregroundStyle(Palette.muted)
+                    Text(entry.template)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Button {
                         prefs.keywords.removeAll { $0.id == entry.id }
                     } label: {
@@ -277,6 +313,32 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.bench)
             }
         }
+    }
+
+    /// Checked when it's saved, not as it's typed into the list: a shortcut
+    /// only exists once its address is one it's safe to send words to.
+    private var draftProblem: String? {
+        guard let draft else { return nil }
+        return Keyword.problem(word: draft.keyword, template: draft.template, among: prefs.keywords)
+    }
+
+    private var keywordDetail: String {
+        guard let draft else {
+            return "A word before your search goes straight to that site, whatever engine you've picked - \"yt cats\" to YouTube"
+        }
+        if draft.keyword.isEmpty, draft.template.isEmpty {
+            return "A word, then the site's search address with %s where the words go"
+        }
+        return draftProblem ?? "\(draft.keyword.trimmingCharacters(in: .whitespacesAndNewlines)) will search \(draft.name)"
+    }
+
+    private func saveDraft() {
+        guard let current = draft, draftProblem == nil else { return }
+        prefs.keywords.append(Keyword(
+            keyword: current.keyword.trimmingCharacters(in: .whitespacesAndNewlines),
+            template: current.template.trimmingCharacters(in: .whitespacesAndNewlines)
+        ))
+        draft = nil
     }
 
     private var searchDetail: String {
