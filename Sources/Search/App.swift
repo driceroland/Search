@@ -849,7 +849,16 @@ struct ContentView: View {
     /// keystrokes because this runs first.
     private func watchKeys() {
         guard keys == nil else { return }
-        keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+        keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown]) { event in
+            // A click on the tab switcher, in this window only (see
+            // Browser.clickTabSwitcher), turned into the top-left coordinates
+            // SwiftUI's frames are in.
+            if event.type == .leftMouseDown {
+                guard let window, event.window === window, let height = window.contentView?.bounds.height
+                else { return event }
+                let at = event.locationInWindow
+                return browser.clickTabSwitcher(at: CGPoint(x: at.x, y: height - at.y)) ? nil : event
+            }
             // Every window has a monitor, and every monitor hears every key:
             // each takes only its own window's, and the one in front takes
             // those of windows that aren't a browser's (a panel, the little

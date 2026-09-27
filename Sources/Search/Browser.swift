@@ -2118,6 +2118,23 @@ final class Browser: NSObject, ObservableObject {
         tabSwitcher.step(row: tabs.map(\.id), current: activeID, backwards: backwards, spaces: rows)
     }
 
+    /// A click while the switcher is up, at a point in the window's own
+    /// top-left coordinates: on a card, that card; outside the panel, the
+    /// switcher goes. True when the click was the switcher's. Taken before any
+    /// view sees it, because ⌃ is held for as long as the switcher is up, and
+    /// a ⌃-click is a right-click to AppKit, not a click the card's button
+    /// can be counted on to take.
+    func clickTabSwitcher(at point: CGPoint) -> Bool {
+        guard tabSwitcher.visible else { return false }
+        guard tabSwitcher.panelFrame.contains(point) else {
+            tabSwitcher.cancel()
+            return true
+        }
+        // Between two cards: the switcher's, and nothing happens.
+        if let id = tabSwitcher.card(at: point) { commitTabSwitch(picking: id) }
+        return true
+    }
+
     func commitTabSwitch(picking id: Tab.ID? = nil) {
         guard let target = tabSwitcher.finish(picking: id) else { return }
         // A card in another space's row: that space, then the tab.

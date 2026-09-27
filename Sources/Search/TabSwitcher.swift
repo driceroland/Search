@@ -29,6 +29,34 @@ final class TabSwitcher: ObservableObject {
     /// Every tab on show: the space on screen's, or every space's.
     private var shown: [Tab.ID] { shelves.isEmpty ? candidates : shelves.flatMap(\.ids) }
 
+    /// Where the panel and each card are in the window, for the pointer to be
+    /// matched against (see `hover(at:)` and Browser.clickTabSwitcher).
+    var panelFrame: CGRect = .zero
+    var cardFrames: [Tab.ID: CGRect] = [:]
+    /// Where the pointer was when the panel first felt it, and whether it has
+    /// gone anywhere since.
+    private var rest: CGPoint?
+    private var moved = false
+
+    /// The pointer over the panel picks the card under it, once it has moved.
+    /// The panel comes up wherever the pointer happens to be, and a card that
+    /// lands under a still pointer would otherwise take the pick from the keys
+    /// before anyone reached for the mouse.
+    func hover(at point: CGPoint) {
+        guard visible else { return }
+        if !moved {
+            guard let rest else { return self.rest = point }
+            guard abs(point.x - rest.x) + abs(point.y - rest.y) > 2 else { return }
+            moved = true
+        }
+        if let id = card(at: point), id != selectedID { selectedID = id }
+    }
+
+    /// The card at a point in the window, if any.
+    func card(at point: CGPoint) -> Tab.ID? {
+        cardFrames.first { $0.value.contains(point) && shown.contains($0.key) }?.key
+    }
+
     private var previewRequests: [Tab.ID: UUID] = [:]
     private var reveal: DispatchWorkItem?
     private var previewRequested = false
@@ -143,6 +171,10 @@ final class TabSwitcher: ObservableObject {
         shelves = []
         selectedID = nil
         visible = false
+        panelFrame = .zero
+        cardFrames = [:]
+        rest = nil
+        moved = false
         prune { kept($0) }
         previewRequested = false
     }
@@ -270,6 +302,18 @@ struct TabSwitcherOverlay: View {
                     .padding(12)
                     .background(Palette.ground, in: RoundedRectangle(cornerRadius: 12))
                     .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.hairline))
+                    .background(GeometryReader { box in
+                        Color.clear.preference(key: PanelFrame.self, value: box.frame(in: .global))
+                    })
+                    .onPreferenceChange(PanelFrame.self) { frame in
+                        MainActor.assumeIsolated { switcher.panelFrame = frame }
+                    }
+                    .onPreferenceChange(CardFrames.self) { frames in
+                        MainActor.assumeIsolated { switcher.cardFrames = frames }
+                    }
+                    .onContinuousHover(coordinateSpace: .global) { phase in
+                        if case .active(let point) = phase { switcher.hover(at: point) }
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -325,6 +369,25 @@ struct TabSwitcherOverlay: View {
         .animation(Motion.glide, value: switcher.selectedID)
     }
 
+    /// Where the panel is, and each card by its tab, in the window's own
+    /// top-left coordinates, the ones a click is turned into.
+    private struct PanelFrame: PreferenceKey {
+        static let defaultValue: CGRect = .zero
+        static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+            let next = nextValue()
+            if next != .zero { value = next }
+        }
+    }
+
+    private struct CardFrames: PreferenceKey {
+        static let defaultValue: [Tab.ID: CGRect] = [:]
+        static func reduce(value: inout [Tab.ID: CGRect], nextValue: () -> [Tab.ID: CGRect]) {
+            value.merge(nextValue()) { $1 }
+        }
+    }
+
+    /// A card. Its button is for VoiceOver and the like; a pointer's click is
+    /// taken before it gets here (see Browser.clickTabSwitcher).
     private func card(_ tab: Tab, width: CGFloat, previewHeight: CGFloat, height: CGFloat) -> some View {
         Button { browser.commitTabSwitch(picking: tab.id) } label: {
             VStack(spacing: 7) {
@@ -359,6 +422,9 @@ struct TabSwitcherOverlay: View {
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .background(GeometryReader { box in
+            Color.clear.preference(key: CardFrames.self, value: [tab.id: box.frame(in: .global)])
+        })
         .accessibilityLabel("Switch to \(tab.label)")
         .accessibilityValue(tab.id == switcher.selectedID ? "Selected" : "")
     }
