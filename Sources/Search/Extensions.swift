@@ -70,6 +70,10 @@ final class Extensions: NSObject, ObservableObject {
     private var order: [Tab.ID] = []
     private var watching: [Tab.ID: [AnyCancellable]] = [:]
     private var bag = Set<AnyCancellable>()
+    /// Every extension switched on has loaded, at launch.
+    private(set) var started = false
+    /// Waiting for that (see whenStarted).
+    private var onStarted: [() -> Void] = []
     private(set) lazy var window = ExtensionWindow(owner: self)
     /// Where each extension's button is on screen, for its popup to hang from.
     var anchors: [String: WeakView] = [:]
@@ -139,23 +143,85 @@ final class Extensions: NSObject, ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] pair in self?.activated(from: pair.0, to: pair.1) }
             .store(in: &bag)
-        // Once the window is up: loading one takes the main thread for tens
-        // of milliseconds (uBlock Origin Lite, 45), and the first frame
-        // waited behind it.
-        Links.onceShown { [weak self] in
-            Task { [weak self] in
+        let begin: @MainActor () -> Void = { [weak self] in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
+                await forgetWorkersIfChanged()
                 // One after another, a moment apart: started all at once, WebKit
                 // fails some of their workers and never tries them again.
-                for item in installed where item.enabled {
+                let enabled = installed.filter(\.enabled)
+                for (n, item) in enabled.enumerated() {
                     await load(item)
-                    if contexts[item.id]?.webExtension.hasBackgroundContent == true {
+                    if n < enabled.count - 1, contexts[item.id]?.webExtension.hasBackgroundContent == true {
                         try? await Task.sleep(for: .milliseconds(400))
                     }
                 }
+                markStarted()
                 checkForUpdates()
             }
         }
+        // Once the window is up: loading one takes the main thread for tens
+        // of milliseconds (uBlock Origin Lite, 45), and the first frame
+        // waited behind it. A launch started hidden has no frame to wait
+        // for, and waited a second or so for a window that doesn't show
+        // while the page it restored loaded without its extensions (#199).
+        if NSApp.isHidden { begin() } else { Links.onceShown(begin) }
+    }
+
+    /// Whether a page loaded now would miss extensions still to load.
+    var starting: Bool { !started && installed.contains(where: \.enabled) }
+
+    /// Runs once every extension switched on has loaded, or after `limit`
+    /// seconds, whichever comes first — for a page that should have its
+    /// extensions' early scripts, and shouldn't wait forever for them.
+    func whenStarted(within limit: TimeInterval, _ then: @escaping () -> Void) {
+        guard starting else { return then() }
+        var done = false
+        let once: @MainActor () -> Void = {
+            guard !done else { return }
+            done = true
+            then()
+        }
+        onStarted.append(once)
+        DispatchQueue.main.asyncAfter(deadline: .now() + limit) { MainActor.assumeIsolated { once() } }
+    }
+
+    private func markStarted() {
+        started = true
+        let waiting = onStarted
+        onStarted = []
+        waiting.forEach { $0() }
+    }
+
+    // MARK: - workers WebKit remembers
+
+    /// WebKit keeps each extension's service worker registered from one
+    /// launch to the next, with the scripts it fetched then, and may start
+    /// that copy rather than what is on disk now. A copy from another build
+    /// of the shim or another version of the extension can leave the worker
+    /// dead for good — reinstalling, reloading and restarting all bring the
+    /// same stale copy back (Vimium's keys stopped working, for one). WebKit
+    /// lists no records for extension origins, so there is no clearing one
+    /// extension's alone; clearing them all stops the workers that run. So
+    /// it is done at launch, before any extension loads, and only when what
+    /// they would run has changed since. Websites' workers go with them and
+    /// are registered again on the next visit.
+    private static let workersKey = "extensions.workers"
+
+    private var workers: String {
+        ([ExtensionShims.version] + installed.map { "\($0.id) \($0.version)" }.sorted()).joined(separator: "\n")
+    }
+
+    private func forgetWorkersIfChanged() async {
+        guard Store.settings.string(forKey: Extensions.workersKey) != workers else { return }
+        await Store.websites.removeData(ofTypes: [WKWebsiteDataTypeServiceWorkerRegistrations], modifiedSince: .distantPast)
+        Store.settings.set(workers, forKey: Extensions.workersKey)
+    }
+
+    /// An extension put in again, reloaded or found with its worker dead:
+    /// the version alone doesn't tell, so the next launch clears regardless.
+    private func workersChanged() {
+        Store.settings.removeObject(forKey: Extensions.workersKey)
     }
 
     // MARK: - the row, as WebKit sees it
@@ -251,6 +317,15 @@ final class Extensions: NSObject, ObservableObject {
             for pattern in found.allRequestedMatchPatterns {
                 context.setPermissionStatus(.grantedExplicitly, for: pattern)
             }
+            // Other extensions' pages are never among "all sites": with
+            // chrome-extension registered as a scheme, WebKit counts them in
+            // <all_urls>, which Chrome doesn't. Refused outright, which WebKit
+            // puts before any grant; its own pages stay its own.
+            for scheme in Set([Extensions.scheme, Extensions.formerScheme, "webkit-extension"]) {
+                if let pages = try? WKWebExtension.MatchPattern(string: "\(scheme)://*/*") {
+                    context.setPermissionStatus(.deniedExplicitly, for: pages)
+                }
+            }
             try controller.load(context)
             watch(context)
             if contexts[item.id] == nil, loadsThisRun.contains(item.id) { loadedBefore.insert(item.id) }
@@ -267,6 +342,10 @@ final class Extensions: NSObject, ObservableObject {
     private func unload(_ id: String) {
         guard let context = contexts[id] else { return }
         try? controller.unload(context)
+        // What it kept going outside WebKit goes with it: its offscreen
+        // page, and a Mac kept awake on its behalf.
+        ExtensionShims.offscreen[id] = nil
+        if let held = ExtensionShims.awake.removeValue(forKey: id) { IOPMAssertionRelease(held) }
         // Its ports read as gone only once WebKit has had a turn.
         DispatchQueue.main.async { ExtensionNative.stopOrphans() }
         contexts[id] = nil
@@ -391,6 +470,7 @@ final class Extensions: NSObject, ObservableObject {
             }
             unload(id)
             errors[id] = nil
+            workersChanged()
             if let staged {
                 do {
                     try? files.removeItem(at: target)
@@ -428,14 +508,16 @@ final class Extensions: NSObject, ObservableObject {
         guard let item = installed.first(where: { $0.id == id }), item.enabled,
               Date().timeIntervalSince(revived[id] ?? .distantPast) > 60 else { return }
         revived[id] = Date()
+        workersChanged()
         noteError("restarted the extension: \(reason)", for: id)
         // Its popup goes with it; it is opened again once the extension is back.
         let popup = ExtensionPopup.shared.extensionID == id ? ExtensionPopup.shared.view?.url : nil
-        let anchor = anchors[id]?.view?.window != nil ? anchors[id]?.view : anchors[Extensions.menuAnchor]?.view
         unload(id)
         Task {
             guard await load(item), let popup, let context = contexts[id] else { return }
-            ExtensionPopup.shared.show(popup, for: context, from: anchor)
+            // Its button as it is now: the one it hung from may have gone
+            // with a folded column meanwhile.
+            ExtensionPopup.shared.show(popup, for: context, from: anchor(for: id))
         }
     }
 
@@ -497,6 +579,7 @@ final class Extensions: NSObject, ObservableObject {
         installed.removeAll { $0.id == id }
         installed.append(item)
         save()
+        workersChanged()
         if await load(item) {
             browser?.announce("\(name) is installed")
         } else {
@@ -646,40 +729,6 @@ final class Extensions: NSObject, ObservableObject {
         } catch {
             NSLog("Extensions: update of %@ failed: %@", item.id, error.localizedDescription)
         }
-    }
-
-    /// The copy an extension's popup page is loaded from, beside it.
-    ///
-    /// WebKit takes any page at the path of an extension's popup for its own
-    /// popup, and a popup that isn't in WebKit's own view (Search's is its
-    /// own, see ExtensionPopup) is sent no events: no storage.onChanged, no
-    /// tabs.onUpdated. Bitwarden's popup never heard that its server had
-    /// changed to a self-hosted one, and signed in to bitwarden.com, where
-    /// that account doesn't exist. Its "pop out" tab had the same trouble.
-    /// So the page is loaded from a copy under another name, in the same
-    /// folder: the same file, the same files around it, and none of WebKit's
-    /// rules for popups. Anything else is loaded as it is.
-    static let popupCopy = ".search-popup"
-
-    static func unpopped(_ url: URL) -> URL {
-        guard url.scheme == scheme, let id = url.host, let context = shared.contexts[id],
-              !url.lastPathComponent.contains(popupCopy)
-        else { return url }
-        let named = [popupURL(for: context)] + (ExtensionShims.popups[id]?.values.map { URL(string: $0, relativeTo: context.baseURL)?.absoluteURL } ?? [])
-        guard named.contains(where: { $0?.path == url.path }) else { return url }
-        let folder = Extensions.folder(for: id)
-        guard let original = ExtensionShims.inside(url.path, of: folder),
-              let data = try? Data(contentsOf: original)
-        else { return url }
-        let ext = original.pathExtension
-        let name = original.deletingPathExtension().lastPathComponent + popupCopy + (ext.isEmpty ? "" : "." + ext)
-        let copy = original.deletingLastPathComponent().appendingPathComponent(name)
-        if (try? Data(contentsOf: copy)) != data {
-            guard (try? data.write(to: copy, options: .atomic)) != nil else { return url }
-        }
-        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
-        parts.path = (url.path as NSString).deletingLastPathComponent.appending("/" + name).replacingOccurrences(of: "//", with: "/")
-        return parts.url ?? url
     }
 
     /// The page the manifest names for the button, when WebKit hasn't said.
@@ -853,11 +902,17 @@ final class Extensions: NSObject, ObservableObject {
         // a popup of its own first, and closing that one in favour of
         // Search's lost the new popup's first messages to its worker.
         if context.action(for: activeAdapter)?.presentsPopup == true, let url = popupURL(for: context) {
-            let own = anchors[id]?.view
-            ExtensionPopup.shared.show(url, for: context, from: own?.window != nil ? own : anchors[Extensions.menuAnchor]?.view)
+            ExtensionPopup.shared.show(url, for: context, from: anchor(for: id))
             return
         }
         context.performAction(for: activeAdapter)
+    }
+
+    /// What an extension's popup hangs from: its own button in the row,
+    /// else the puzzle button — whichever is in the window now.
+    func anchor(for id: String) -> NSView? {
+        let own = anchors[id]?.view
+        return own?.window != nil ? own : anchors[Extensions.menuAnchor]?.view
     }
 
     /// The page the button's popup is now: one the extension set for this
@@ -898,9 +953,20 @@ extension Extensions: WKWebExtensionControllerDelegate {
         window
     }
 
+    /// Where an extension may send a tab. Not to javascript:, which would run
+    /// its code in whatever page the tab shows — an extension with no access
+    /// to that site at all — nor to a file on this Mac. Chrome refuses both.
+    static func mayOpen(_ url: URL) throws {
+        let scheme = url.scheme?.lowercased() ?? ""
+        guard scheme != "javascript", scheme != "file" else {
+            throw NSError(domain: "Search", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot navigate to a \(scheme): URL."])
+        }
+    }
+
     func webExtensionController(_ controller: WKWebExtensionController, openNewTabUsing configuration: WKWebExtension.TabConfiguration, for extensionContext: WKWebExtensionContext) async throws -> (any WKWebExtensionTab)? {
         guard let browser else { return nil }
         let url = configuration.url ?? URL(string: "about:blank")!
+        try Extensions.mayOpen(url)
         let tab = browser.open(url, foreground: configuration.shouldBeActive, atEnd: true)
         if configuration.shouldBePinned { browser.pin(tab) }
         return adapter(for: tab)
@@ -909,6 +975,7 @@ extension Extensions: WKWebExtensionControllerDelegate {
     /// One window, on purpose. A new window's pages become tabs in this one.
     func webExtensionController(_ controller: WKWebExtensionController, openNewWindowUsing configuration: WKWebExtension.WindowConfiguration, for extensionContext: WKWebExtensionContext) async throws -> (any WKWebExtensionWindow)? {
         guard let browser else { return nil }
+        for url in configuration.tabURLs { try Extensions.mayOpen(url) }
         for (index, url) in configuration.tabURLs.enumerated() {
             browser.open(url, foreground: index == 0 && configuration.shouldBeFocused, atEnd: true)
         }
@@ -952,9 +1019,7 @@ extension Extensions: WKWebExtensionControllerDelegate {
         let url = action.popupWebView?.url ?? Extensions.popupURL(for: context)
         action.closePopup()
         guard let url else { return }
-        let own = anchors[context.uniqueIdentifier]?.view
-        let anchor = own?.window != nil ? own : anchors[Extensions.menuAnchor]?.view
-        ExtensionPopup.shared.show(url, for: context, from: anchor)
+        ExtensionPopup.shared.show(url, for: context, from: anchor(for: context.uniqueIdentifier))
     }
 
     /// `runtime.sendNativeMessage`. To "search" — the APIs WebKit doesn't
@@ -1041,6 +1106,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
 
     func loadURL(_ url: URL, for context: WKWebExtensionContext) async throws {
         guard let tab else { return }
+        try Extensions.mayOpen(url)
         // A website's tab sent to one of an extension's own pages — 1Password
         // does, once a sign-in in its tab has added the account. The page
         // can only be served to a view built from that extension's
@@ -1054,7 +1120,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
         }
         tab.go(to: url)
     }
-    func reload(fromOrigin: Bool, for context: WKWebExtensionContext) async throws { tab?.reload() }
+    func reload(fromOrigin: Bool, for context: WKWebExtensionContext) async throws { tab?.reload(fromOrigin: fromOrigin) }
     func goBack(for context: WKWebExtensionContext) async throws { tab?.back() }
     func goForward(for context: WKWebExtensionContext) async throws { tab?.forward() }
 

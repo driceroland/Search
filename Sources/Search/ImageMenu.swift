@@ -71,6 +71,9 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
 }
 
 extension Browser {
+    /// For Copy Image: no cookies kept, nothing cached on disk.
+    static let fetcher = URLSession(configuration: .ephemeral)
+
     /// The menu itself, popped where the pointer already is — the click that
     /// asked for this one happened a moment ago, in JavaScript, with no
     /// native event left to hang an NSMenu off of.
@@ -107,7 +110,9 @@ extension Browser {
     /// promise doesn't always give it back on a paste.
     func copyImage(at url: URL) {
         Task {
-            guard let (data, _) = try? await URLSession.shared.data(from: url),
+            // Fetched without a cache on disk: the picture may be a private
+            // tab's, and a copy is not a visit.
+            guard let (data, _) = try? await Browser.fetcher.data(from: url),
                   let image = NSImage(data: data)
             else {
                 announce("Couldn't copy that image")

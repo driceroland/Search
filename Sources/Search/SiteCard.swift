@@ -202,7 +202,7 @@ struct SiteCard: View {
 
     private var front: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let url = tab.address {
+            if let url = tab.pageAddress {
                 Header(title: SiteCard.site(url))
             }
             if let safety {
@@ -246,7 +246,7 @@ struct SiteCard: View {
 
     private func security(_ safety: Safety) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let url = tab.address {
+            if let url = tab.pageAddress {
                 Header(title: SiteCard.site(url))
             }
             Text(safety.title)
@@ -288,7 +288,7 @@ struct SiteCard: View {
     /// Asked when the card opens: a page that pulls in something over plain
     /// http after that is not worth a card that changes under you.
     private var safety: Safety? {
-        switch tab.address?.scheme {
+        switch tab.pageAddress?.scheme {
         case "https":
             let trust = tab.built?.serverTrust
             // Only a certificate this Mac refused and you let through anyway
