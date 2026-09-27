@@ -68,6 +68,7 @@
                                        folder (open: its first bookmark picked)
     ./bench bookmark URL [new]         test run: a bookmark picked from the list, timed until it loads
                                        (new: into a new tab, whose page isn't built yet)
+    ./bench middle ID X Y              test run: the middle button clicked at X Y of a tab's page
     ./bench pin ID [off|home]          test run: pin a tab, unpin it, or double-click it (home)
     ./bench fill [STEPS]               test run: the page reporting its scroll STEPS times, each timed until the window rests
     ./bench peek URL|close             test run: the peek panel over the tab in front, as a shift-click opens it
@@ -77,7 +78,7 @@
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        import on|off|extensions|BROWSER,
-                                       look light|dark|system, sidebar on|off, spaces on|off, hides on|off,
+                                       look light|dark|system, sidebar on|off, side left|right, spaces on|off, hides on|off,
                                        folded on|off, peek on|off, peeklink keep|close, pages120 on|off
 
 Needs Settings › General › "Let a script drive Search" switched on in the
@@ -166,7 +167,8 @@ def main(argv):
     elif verb == "ui":
         if len(args) != 2: sys.exit("usage: bench ui KEY VALUE")
         key, value = args
-        request[key] = value if key in ("look", "edittab", "peeklink", "import") else value in ("on", "true", "1", "yes")
+        if key == "side" and value not in ("left", "right"): sys.exit("usage: bench ui side left|right")
+        request[key] = value if key in ("look", "edittab", "peeklink", "import", "side") else value in ("on", "true", "1", "yes")
     elif verb in ("ext-add", "ext-press", "ext-remove", "ext-reload"):
         if len(args) != 1: sys.exit(f"usage: bench {verb} ID")
         request["id"] = args[0]
@@ -286,6 +288,9 @@ def main(argv):
     elif verb == "keyeq":
         if len(args) < 2 or any(a != "shift" for a in args[2:]): sys.exit("usage: bench keyeq CHARS CODE [shift]")
         request["chars"], request["code"], request["mods"] = args[0], int(args[1]), args[2:]
+    elif verb == "middle":
+        if len(args) != 3: sys.exit("usage: bench middle ID X Y")
+        request["id"], request["x"], request["y"] = args[0], float(args[1]), float(args[2])
     elif verb == "pin":
         if len(args) not in (1, 2) or args[1:] not in ([], ["off"], ["home"]): sys.exit("usage: bench pin ID [off|home]")
         request["id"] = args[0]

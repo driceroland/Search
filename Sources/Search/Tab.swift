@@ -1117,6 +1117,14 @@ final class Tab: ObservableObject, Identifiable {
         adoptIcon()
     }
 
+    /// A new tab again: where it was going turned out to be a file, not a
+    /// page, and an address kept for it downloads the file once more
+    /// whenever the tab is opened (see Browser.dropEmpty).
+    func forget() {
+        address = nil
+        icon = nil
+    }
+
     func touch() { touched = Date() }
 
     /// True when the web view holds nothing — never loaded, or emptied —
@@ -1254,8 +1262,21 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
     (function () {
       if (window.__officeMiddle) return;
       window.__officeMiddle = true;
-      document.addEventListener('auxclick', function (e) {
-        if (e.button !== 1 || !e.isTrusted || e.defaultPrevented) return;
+      // Heard on the way down, before the page's own handlers, since some
+      // stop the event there — YouTube's links did, and a middle-click on
+      // them opened nothing, only some of the time. Whether the page wanted
+      // the click for itself is asked once they have all run: a page that
+      // prevented it keeps it, as in Chrome.
+      // The link is found now: once the event is over its path is empty.
+      window.addEventListener('auxclick', function (e) {
+        if (e.button !== 1 || !e.isTrusted) return;
+        var href = link(e);
+        if (!href) return;
+        setTimeout(function () {
+          if (!e.defaultPrevented) window.webkit.messageHandlers.officeMiddle.postMessage({ href: href });
+        }, 0);
+      }, true);
+      function link(e) {
         // The path, not the parents: a link inside an open shadow root is
         // on it too. An <area> of an image map is a link, and so is an SVG
         // <a>, whose href is an object that holds the address as written.
@@ -1269,10 +1290,10 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
             try { href = href.baseVal ? new URL(href.baseVal, el.baseURI).href : ''; } catch (_) { href = ''; }
           }
           if (!href) continue;
-          window.webkit.messageHandlers.officeMiddle.postMessage({ href: href });
-          return;
+          return href;
         }
-      });
+        return '';
+      }
     })();
     """
 

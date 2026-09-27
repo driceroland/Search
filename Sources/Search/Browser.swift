@@ -2656,6 +2656,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         didBecome download: WKDownload
     ) {
         keep(download)
+        dropEmpty(webView)
     }
 
     func webView(
@@ -2664,6 +2665,27 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         didBecome download: WKDownload
     ) {
         keep(download)
+        dropEmpty(webView)
+    }
+
+    /// A tab that has shown nothing, and whose first page turned out to be a
+    /// file: a download link that opens in a new tab, as a course site's
+    /// attachments do. The file goes on arriving without it. Kept, the tab
+    /// held the file's address, came back with the session, and downloaded
+    /// the file again each time it was opened. It forgets the address; and
+    /// when a page's link opened it, it closes, as in Safari and Chrome, and
+    /// you are back on that page. A tab you opened yourself stays, as a new
+    /// tab, and so does a window's only tab: closing it would close the
+    /// window.
+    private func dropEmpty(_ webView: WKWebView) {
+        guard let tab = tab(for: webView), tab.committed == nil, tab.pin == nil else { return }
+        // Without its address, it is not offered back by ⇧⌘T either.
+        tab.forget()
+        guard let opener = tab.opener, tabs.count > 1 else { return }
+        if tab.id == activeID, let home = tabs.first(where: { $0.id == opener }) {
+            select(home)
+        }
+        close(tab)
     }
 
     /// Every download this window has going, heard from until it ends — and

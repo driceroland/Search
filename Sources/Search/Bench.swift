@@ -435,6 +435,35 @@ final class Bench {
                 }
             }
 
+        case "middle":
+            // The middle button pressed and let go at X Y of a tab's page (its
+            // own points from the top left), handed to its view as AppKit
+            // would: the page sees trusted mousedown, mouseup and auxclick.
+            // Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "middle only works on a --test run"]); return }
+            guard let tab = find(request, in: browser), let x = request["x"] as? Double, let y = request["y"] as? Double
+            else { answer(missing(request)); return }
+            house(tab)
+            let web = tab.web
+            let before = browser.tabs.count
+            let inView = NSPoint(x: x, y: web.isFlipped ? y : web.bounds.height - y)
+            let point = web.convert(inView, to: nil)
+            for type in [NSEvent.EventType.otherMouseDown, .otherMouseUp] {
+                guard let event = NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: web.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1,
+                    pressure: type == .otherMouseDown ? 1 : 0
+                ) else { continue }
+                // A made event is button 0; the middle is 2, set on its CG form.
+                guard let cg = event.cgEvent else { continue }
+                cg.setIntegerValueField(.mouseEventButtonNumber, value: 2)
+                let middle = NSEvent(cgEvent: cg) ?? event
+                if type == .otherMouseDown { web.otherMouseDown(with: middle) } else { web.otherMouseUp(with: middle) }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                answer(["tabsBefore": before, "tabsAfter": browser.tabs.count])
+            }
+
         case "shot":
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             house(tab)
@@ -460,6 +489,9 @@ final class Bench {
                 "offering": browser.offering != nil,
                 "modal": NSApp.modalWindow.map { "\(type(of: $0)) “\($0.title)”" } ?? "",
                 "look": browser.prefs.look.rawValue,
+                "sidebar": browser.prefs.sidebar,
+                "sidePosition": browser.prefs.sidePosition.rawValue,
+                "sideWidth": Double(browser.prefs.sideWidth),
                 "appearance": NSApp.appearance?.name.rawValue ?? "system",
                 "key": NSApp.keyWindow.map { "\(type(of: $0)) “\($0.title)”" } ?? "",
             ]
@@ -474,6 +506,13 @@ final class Bench {
                 ]
             }
             if let window = Links.window { out["lights"] = Bench.lights(of: window) }
+            if let tab = browser.active, let web = tab.built, let window = Links.window, web.window === window {
+                let frame = web.convert(web.bounds, to: nil)
+                out["activePageFrame"] = [
+                    Int(frame.minX), Int(window.frame.height - frame.maxY),
+                    Int(frame.width), Int(frame.height),
+                ]
+            }
             out["keysQuieted"] = PageView.quieted
             // Settings › General › Web Inspector, as each page's WebKit has it.
             let asked = NSSelectorFromString("_developerExtrasEnabled")
@@ -1461,6 +1500,13 @@ final class Bench {
             }
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
+            if let side = request["side"] as? String {
+                guard let position = SidebarPosition(rawValue: side) else {
+                    answer(["error": "side needs left or right"])
+                    return
+                }
+                browser.prefs.sidePosition = position
+            }
             if let on = request["pages120"] as? Bool { browser.prefs.fastPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
@@ -1490,7 +1536,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "pull", "space", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "pull", "space", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file",
             ]])
         }
     }

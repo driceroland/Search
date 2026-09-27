@@ -54,7 +54,11 @@ final class SpaceSwipe {
     /// Where the tabs are: the column, or the bar across the top.
     private func overTabs(_ event: NSEvent, in browser: Browser) -> Bool {
         guard event.window === Links.window, let window = event.window else { return false }
-        if browser.prefs.sidebar { return event.locationInWindow.x < browser.prefs.sideWidth }
+        if browser.prefs.sidebar {
+            return browser.prefs.sidePosition == .right
+                ? event.locationInWindow.x >= window.frame.width - browser.prefs.sideWidth
+                : event.locationInWindow.x < browser.prefs.sideWidth
+        }
         return event.locationInWindow.y > window.frame.height - Metrics.strip
     }
 
