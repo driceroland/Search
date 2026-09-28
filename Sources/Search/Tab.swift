@@ -730,6 +730,7 @@ final class Tab: ObservableObject, Identifiable {
         guard let built else { return }
         let controller = built.configuration.userContentController
         controller.removeAllUserScripts()
+        controller.addUserScript(GmailRendering.userScript)
         controller.addUserScript(
             WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
