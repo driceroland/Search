@@ -1026,6 +1026,31 @@ final class Bench {
                 }
             }
 
+        case "dropdown":
+            // The bookmark button's list, laid out off every screen, never in
+            // a popover: its height as it opens, the list's part of it, and
+            // how tall the tree is with every folder open.
+            let dropdown = BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
+            let whole = NSHostingView(rootView: dropdown).fittingSize
+            let all = Set(Bookmarks.folders(browser.bookmarks.roots).map(\.node.id))
+            let outline = BookmarkOutline(bookmarks: browser.bookmarks, expanded: .constant(all), open: { _ in }, openInNewTab: { _ in })
+                .padding(6)
+                .frame(width: 280)
+            // As it opens, folders closed: what the list was once sized by.
+            let closed = BookmarkOutline(bookmarks: browser.bookmarks, expanded: .constant([]), open: { _ in }, openInNewTab: { _ in })
+                .padding(6)
+                .frame(width: 280)
+            // And as it opens now, with what opens with it.
+            let opening = BookmarksDropdown.opening(browser.bookmarks.roots)
+            let shown = BookmarkOutline(bookmarks: browser.bookmarks, expanded: .constant(opening), open: { _ in }, openInNewTab: { _ in })
+                .padding(6)
+                .frame(width: 280)
+            answer(["height": Double(whole.height), "width": Double(whole.width), "list": Double(dropdown.listHeight),
+                    "allOpen": Double(NSHostingView(rootView: outline).fittingSize.height),
+                    "closed": Double(NSHostingView(rootView: closed).fittingSize.height),
+                    "shown": Double(NSHostingView(rootView: shown).fittingSize.height),
+                    "opening": opening.count])
+
         case "import":
             // Another browser's passwords, bookmarks and history, brought in
             // through the same calls the Welcome and the panels make. Only on

@@ -865,9 +865,12 @@ struct ContentView: View {
     }
 
     /// Either visible pane may give its page to WebKit's fullscreen window.
+    /// Read through immersionRevision: a tab's going full screen and coming
+    /// back are the tab's changes, not the browser's, and this view watches
+    /// only the browser (see fullscreenWatch).
     private var fullscreenTab: Tab? {
-        guard browser.prefs.splitView else { return browser.active?.immersed == true ? browser.active : nil }
         _ = immersionRevision
+        guard browser.prefs.splitView else { return browser.active?.immersed == true ? browser.active : nil }
         if let split = browser.activeSplit,
            let immersed = browser.tabs.first(where: { split.contains($0.id) && $0.immersed }) {
             return immersed
@@ -875,11 +878,13 @@ struct ContentView: View {
         return browser.active?.immersed == true ? browser.active : nil
     }
 
+    /// The pages on screen, watched for full screen. The page alone too: left
+    /// unwatched, a video's full screen ended with nothing to draw the window
+    /// again, and the column stayed away until something else did — until
+    /// the column was switched off and on again, as it was reported.
     @ViewBuilder
     private var fullscreenWatch: some View {
-        if !browser.prefs.splitView {
-            // Nothing to watch: the page on screen is the only one.
-        } else if let split = browser.activeSplit {
+        if browser.prefs.splitView, let split = browser.activeSplit {
             if let left = browser.tabs.first(where: { $0.id == split.left }) {
                 TabImmersionWatch(tab: left) { immersionRevision += 1 }.id(left.id)
             }
