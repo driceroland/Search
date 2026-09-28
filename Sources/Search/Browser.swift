@@ -1126,7 +1126,7 @@ final class Browser: NSObject, ObservableObject {
     /// change your mind.
     func forgetCaptureChoices() {
         for key in Store.settings.dictionaryRepresentation().keys
-        where key.hasPrefix("capture.") {
+        where key.hasPrefix("capture.") || key.hasPrefix(Grounded.prefix) {
             Store.settings.removeObject(forKey: key)
         }
         SiteNotifications.shared.objectWillChange.send()
@@ -3459,8 +3459,9 @@ final class Browser: NSObject, ObservableObject {
         guard tab.web.fullscreenState == .notInFullscreen else { return }
         // On its own, only from a site whose video is the point of the site.
         // A hero background on a studio's home page is a video too, and it
-        // followed people around the desktop. ⌘⇧P still lifts from anywhere.
-        if quietly, !Players.knows(tab.address) {
+        // followed people around the desktop. Nor from one you grounded in
+        // its site card. ⌘⇧P still lifts from anywhere.
+        if quietly, !Players.knows(tab.address) || tab.pageAddress?.host().map(Grounded.holds) == true {
             if let otherwise { lift(otherwise, quietly: quietly) }
             return
         }
