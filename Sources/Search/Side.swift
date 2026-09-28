@@ -30,6 +30,8 @@ struct SideBar: View {
     private static let gap: CGFloat = 2
     private static let square: CGFloat = 34
     private static let pinGap: CGFloat = 4
+    private static let groupDividerHeight: CGFloat = 1
+    private static let groupDividerBreathingRoom: CGFloat = 6
 
     private var onRight: Bool { prefs.sidePosition == .right }
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
@@ -297,8 +299,12 @@ struct SideBar: View {
         // A pair is two lines (see SplitTabItem).
         let pairs = rows.filter { browser.split(for: $0) != nil }.count
         let headings = prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) * (GroupHeading.height + SideBar.gap) : 0
+        let groupDividers = prefs.usesTabGroups
+            ? CGFloat(browser.tabGroups.filter { !$0.collapsed }.count)
+                * (SideBar.groupDividerHeight + 2 * SideBar.groupDividerBreathingRoom + SideBar.gap)
+            : 0
         let loose = CGFloat(rows.count) * (SideBar.row + SideBar.gap) + CGFloat(pairs) * SideBar.row + headings
-        return Metrics.strip + pinBlock + listBlock + loose + SideBar.row + 8
+        return Metrics.strip + pinBlock + listBlock + loose + groupDividers + SideBar.row + 8
     }
 
     @ViewBuilder
@@ -439,6 +445,15 @@ struct SideBar: View {
                 ForEach(browser.tabGroups) { group in
                     GroupHeading(browser: browser, group: group, dragSpace: "rows")
                     groupRows(group)
+                    if !group.collapsed {
+                        Rectangle()
+                            .fill(Palette.hairline)
+                            .frame(height: SideBar.groupDividerHeight)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, SideBar.groupDividerBreathingRoom)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
                 }
             }
             // See the grid: the drag is measured in the column's space, not
