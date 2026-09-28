@@ -354,10 +354,13 @@ final class Bench {
             // Pin a tab, or unpin it with "off". Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "pin only works on a --test run"]); return }
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            // "listed": pinned as a row, or an existing pin made a row
+            // (true) or a square (false).
             if request["off"] as? Bool == true { browser.unpin(tab) }
             else if request["home"] as? Bool == true { browser.goHome(tab) }
-            else { browser.pin(tab) }
-            answer(["pin": tab.pin ?? "", "pinned": browser.pinnedCount, "home": tab.home?.absoluteString ?? "",
+            else if let listed = request["listed"] as? Bool, tab.pin != nil { browser.setListed(tab, listed) }
+            else { browser.pin(tab, listed: request["listed"] as? Bool ?? false) }
+            answer(["pin": tab.pin ?? "", "listed": tab.listed, "pinned": browser.pinnedCount, "home": tab.home?.absoluteString ?? "",
                     "address": tab.address?.absoluteString ?? "", "editingLetter": browser.editingPin == tab.id])
 
         case "select":
@@ -2548,6 +2551,11 @@ final class Bench {
             browser.dropTabIntoStrip(page, before: tab("before"))
             reply()
 
+        case "clear":
+            // The line's Clear, with the pinned rows on (Browser.clearTabs).
+            browser.clearTabs()
+            reply()
+
         case "space":
             switch request["spaceAction"] as? String {
             case "new": browser.addSpace(named: request["name"] as? String ?? "Split test")
@@ -2695,6 +2703,8 @@ final class Bench {
             "needle": browser.needle,
             "findStatus": browser.findStatus ?? "",
             "pins": browser.tabs.filter { $0.pin != nil }.map { Bench.short($0) },
+            // Every pin kept as a row, drawn so or not (Tab.listed).
+            "listed": browser.tabs.filter { $0.pin != nil && $0.listed }.map { Bench.short($0) },
             // What pages of the pair asked, oldest first (see PaneQuestion).
             "questions": browser.paneQuestions.map { question in
                 ["tab": short(question.tab), "host": question.host, "message": question.message,

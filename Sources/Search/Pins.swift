@@ -17,6 +17,9 @@ struct PinDef: Codable, Equatable {
     var home: String
     var title: String
     var name: String?
+    /// A row, not a square (see Tab.listed). Nil rather than false, so a
+    /// pins file with no rows in it is written as it always was.
+    var listed: Bool? = nil
 }
 
 @MainActor
