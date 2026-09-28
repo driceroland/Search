@@ -35,7 +35,76 @@ final class HeldQuestion {
     deinit { drop?() }
 }
 
+/// A question from a page of the pair on screen, drawn over that page alone
+/// (see PaneQuestionCard), so the other page goes on working. Answered
+/// exactly once, whatever happens to it: WebKit wants every one answered,
+/// and answering twice would crash the page. Let go unanswered — the page
+/// closed, gone elsewhere, Split View turned off — it answers as dismissed.
+@MainActor
+final class PaneQuestion: Identifiable {
+    enum Kind: Equatable { case alert, confirm, prompt(String) }
+
+    let id = UUID()
+    let tab: Tab.ID
+    /// The site asking: the frame's own origin, never the page's address,
+    /// so a frame from another site is named as itself.
+    let host: String
+    let message: String
+    let kind: Kind
+    let asked = Date()
+    private var reply: ((Bool, String?) -> Void)?
+
+    init(tab: Tab.ID, host: String, message: String, kind: Kind, reply: @escaping (Bool, String?) -> Void) {
+        self.tab = tab
+        self.host = host
+        self.message = message
+        self.kind = kind
+        self.reply = reply
+    }
+
+    var open: Bool { reply != nil }
+
+    func answer(ok: Bool, text: String? = nil) {
+        let reply = reply
+        self.reply = nil
+        reply?(ok, text)
+    }
+
+    deinit { reply?(false, nil) }
+}
+
 extension Browser {
+    // MARK: - asked over one page of a pair
+
+    /// The tab asking, when it is a page of the pair on screen: its question
+    /// goes over it, not over the window.
+    private func paneAsking(_ webView: WKWebView) -> Tab? {
+        guard let pair = activeSplit,
+              let tab = tabs.first(where: { $0.built === webView }), pair.contains(tab.id) else { return nil }
+        return tab
+    }
+
+    private func askInPane(_ tab: Tab, frame: WKFrameInfo, message: String, kind: PaneQuestion.Kind,
+                           reply: @escaping (Bool, String?) -> Void) {
+        let host = frame.securityOrigin.host
+        paneQuestions.append(PaneQuestion(tab: tab.id, host: host, message: message, kind: kind, reply: reply))
+    }
+
+    /// The card's buttons, and the bench.
+    func answer(_ question: PaneQuestion, ok: Bool, text: String? = nil) {
+        question.answer(ok: ok, text: text)
+        paneQuestions.removeAll { $0.id == question.id }
+    }
+
+    /// A page closed, gone to another address, or out of Split View: what it
+    /// asked is answered as dismissed.
+    func dropQuestions(for tab: Tab.ID? = nil) {
+        let dropping = paneQuestions.filter { tab == nil || $0.tab == tab }
+        guard !dropping.isEmpty else { return }
+        paneQuestions.removeAll { question in dropping.contains { $0.id == question.id } }
+        for question in dropping { question.answer(ok: false) }
+    }
+
     // MARK: - alert, confirm, prompt
 
     /// A page's question goes over its own page only. One from a tab in the
@@ -62,6 +131,9 @@ extension Browser {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping () -> Void
     ) {
+        if let tab = paneAsking(webView) {
+            return askInPane(tab, frame: frame, message: message, kind: .alert) { _, _ in completionHandler() }
+        }
         ask(from: webView, show: {
             let alert = Dialogs.alert(from: frame, saying: message)
             alert.addButton(withTitle: "OK")
@@ -75,6 +147,9 @@ extension Browser {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping (Bool) -> Void
     ) {
+        if let tab = paneAsking(webView) {
+            return askInPane(tab, frame: frame, message: message, kind: .confirm) { ok, _ in completionHandler(ok) }
+        }
         ask(from: webView, show: {
             let alert = Dialogs.alert(from: frame, saying: message)
             alert.addButton(withTitle: "OK")
@@ -92,6 +167,11 @@ extension Browser {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping (String?) -> Void
     ) {
+        if let tab = paneAsking(webView) {
+            return askInPane(tab, frame: frame, message: prompt, kind: .prompt(defaultText ?? "")) { ok, text in
+                completionHandler(ok ? (text ?? "") : nil)
+            }
+        }
         ask(from: webView, show: {
             let alert = Dialogs.alert(from: frame, saying: prompt)
             alert.addButton(withTitle: "OK")
@@ -114,19 +194,33 @@ extension Browser {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping ([URL]?) -> Void
     ) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = parameters.allowsDirectories
-        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
-        panel.resolvesAliases = true
-        let finish: (NSApplication.ModalResponse) -> Void = { answer in
-            completionHandler(answer == .OK ? panel.urls : nil)
+        // Over its own page only, as its other questions are (see ask): a
+        // page behind, or the other page of a pair, choosing a file would
+        // have it chosen under the page you are looking at. A test run never
+        // shows one — it would be a window on the screen of whoever is
+        // working beside it — and is answered as cancelled.
+        if Store.testing {
+            Dialogs.askedInTest.append("Choose a file (\(frame.securityOrigin.host))")
+            return completionHandler(nil)
         }
-        if let window = Dialogs.window(for: webView) {
-            panel.beginSheetModal(for: window, completionHandler: finish)
-        } else {
-            finish(panel.runModal())
-        }
+        ask(from: webView, show: {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = parameters.allowsDirectories
+            panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+            panel.resolvesAliases = true
+            // The site the file goes to, named.
+            let host = frame.securityOrigin.host
+            panel.message = host.isEmpty ? "Choose a file for this page" : "Choose a file for \(host)"
+            let finish: (NSApplication.ModalResponse) -> Void = { answer in
+                completionHandler(answer == .OK ? panel.urls : nil)
+            }
+            if let window = Dialogs.window(for: webView) {
+                panel.beginSheetModal(for: window, completionHandler: finish)
+            } else {
+                finish(panel.runModal())
+            }
+        }, drop: { completionHandler(nil) })
     }
 
     // MARK: - a site that asks who you are, or can't prove who it is
@@ -182,20 +276,23 @@ extension Browser {
             completionHandler(.performDefaultHandling, nil)
             return
         }
-        let alert = NSAlert()
-        alert.messageText = "\(host) can't prove who it is"
-        alert.informativeText = "Its certificate isn't trusted by this Mac. Someone could be reading what you send. Continue only if you know why it looks like this."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Go Back")
-        alert.addButton(withTitle: "Continue Anyway")
-        Dialogs.show(alert, over: webView) { answer in
-            guard answer == .alertSecondButtonReturn else {
-                completionHandler(.cancelAuthenticationChallenge, nil)
-                return
+        // Over its own tab only, as a page's own questions are (see ask).
+        ask(from: webView, show: {
+            let alert = NSAlert()
+            alert.messageText = "\(host) can't prove who it is"
+            alert.informativeText = "Its certificate isn't trusted by this Mac. Someone could be reading what you send. Continue only if you know why it looks like this."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Go Back")
+            alert.addButton(withTitle: "Continue Anyway")
+            Dialogs.show(alert, over: webView) { answer in
+                guard answer == .alertSecondButtonReturn else {
+                    completionHandler(.cancelAuthenticationChallenge, nil)
+                    return
+                }
+                Dialogs.excused.insert(host)
+                completionHandler(.useCredential, URLCredential(trust: trust))
             }
-            Dialogs.excused.insert(host)
-            completionHandler(.useCredential, URLCredential(trust: trust))
-        }
+        }, drop: { completionHandler(.cancelAuthenticationChallenge, nil) })
     }
 
     /// A site behind a name and a password — a staging server, a router. One
@@ -209,6 +306,19 @@ extension Browser {
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
+        // A tab behind yours asking for a name and a password would put the
+        // question over the page you are looking at, where it would pass for
+        // that page's. It waits for its own tab, as a page's questions do.
+        ask(from: webView, show: { [weak self] in
+            self?.askSignIn(webView, challenge, completionHandler)
+        }, drop: { completionHandler(.cancelAuthenticationChallenge, nil) })
+    }
+
+    private func askSignIn(
+        _ webView: WKWebView,
+        _ challenge: URLAuthenticationChallenge,
+        _ completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
         let space = challenge.protectionSpace
         let alert = NSAlert()
         alert.messageText = "\(space.host) asks you to sign in"
@@ -250,6 +360,7 @@ extension Browser {
     /// one thing worth offering, is what the failure view is for.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard let tab = tab(for: webView) else { return }
+        dropQuestions(for: tab.id)
         // In front of you: straight back, a reload beats a white page with a
         // button on it. Behind another tab: the moment you come back to it.
         if tab.id == activeID, !tab.isBlank {
@@ -281,11 +392,23 @@ enum Dialogs {
         webView.window ?? NSApp.mainWindow ?? NSApp.windows.first { $0.contentView != nil && $0.isVisible }
     }
 
+    /// A test run's questions, in the order they would have been shown.
+    static var askedInTest: [String] = []
+
     static func show(
         _ alert: NSAlert,
         over webView: WKWebView,
         then finish: @escaping (NSApplication.ModalResponse) -> Void
     ) {
+        // A test run never shows one — a sheet, or a window of its own for a
+        // page without one, would be on the screen of whoever is working
+        // beside it. What it would have asked is written down (bench probe),
+        // and it is answered as if cancelled.
+        if Store.testing {
+            askedInTest.append(alert.messageText)
+            finish(.cancel)
+            return
+        }
         if let window = window(for: webView) {
             alert.beginSheetModal(for: window, completionHandler: finish)
         } else {

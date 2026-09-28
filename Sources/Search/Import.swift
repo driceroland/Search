@@ -181,13 +181,28 @@ enum Chromium {
     /// The other browser's bookmarks: the bar first, then anything filed
     /// elsewhere, folders and all. Chromium keeps them as one JSON file.
     static func bookmarks(in source: Source, profile: String? = nil) -> [Bookmark] {
+        bookmarkRead(in: source, profile: profile).nodes
+    }
+
+    /// The same, and whether every profile asked for read cleanly: false
+    /// when there was no profile to read, or a Bookmarks file there didn't
+    /// read. A profile with no Bookmarks file has none — Chromium writes it
+    /// with the first — and reads cleanly. Replace takes nothing out unless
+    /// this is true (#375).
+    static func bookmarkRead(in source: Source, profile: String? = nil) -> (nodes: [Bookmark], complete: Bool) {
         var out: [Bookmark] = []
-        for profile in source.profiles(only: profile) {
+        let profiles = source.profiles(only: profile)
+        var complete = !profiles.isEmpty
+        for profile in profiles {
             let marks = profile.appendingPathComponent("Bookmarks")
+            guard FileManager.default.fileExists(atPath: marks.path) else { continue }
             guard let data = try? Data(contentsOf: marks),
                   let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let roots = top["roots"] as? [String: Any]
-            else { continue }
+            else {
+                complete = false
+                continue
+            }
             if let bar = roots["bookmark_bar"] as? [String: Any] {
                 out += nodes(in: bar["children"] as? [[String: Any]] ?? [])
             }
@@ -198,7 +213,7 @@ enum Chromium {
                 }
             }
         }
-        return out
+        return (out, complete)
     }
 
     private static func nodes(in raw: [[String: Any]]) -> [Bookmark] {
@@ -659,11 +674,19 @@ enum Mozilla {
     /// on the way in leaves out anything already here, so profiles that share
     /// a page don't make two of it.
     static func bookmarks(in source: Source, profile: String? = nil) -> [Bookmark] {
+        bookmarkRead(in: source, profile: profile).nodes
+    }
+
+    /// The same, and whether every profile's places.sqlite read (see
+    /// Chromium.bookmarkRead).
+    static func bookmarkRead(in source: Source, profile: String? = nil) -> (nodes: [Bookmark], complete: Bool) {
         var out: [Bookmark] = []
-        for file in source.files(only: profile) {
-            out += (try? bookmarkNodes(in: file)) ?? []
+        let files = source.files(only: profile)
+        var complete = !files.isEmpty
+        for file in files {
+            do { out += try bookmarkNodes(in: file) } catch { complete = false }
         }
-        return out
+        return (out, complete)
     }
 
     private struct Raw {
@@ -1200,9 +1223,14 @@ enum ImportSource: Identifiable, Hashable {
     }
 
     func bookmarks(profile: String? = nil) -> [Bookmark] {
+        bookmarkRead(profile: profile).nodes
+    }
+
+    /// The bookmarks, and whether every profile read cleanly.
+    func bookmarkRead(profile: String? = nil) -> (nodes: [Bookmark], complete: Bool) {
         switch self {
-        case .chromium(let s): return Chromium.bookmarks(in: s, profile: profile)
-        case .mozilla(let s): return Mozilla.bookmarks(in: s, profile: profile)
+        case .chromium(let s): return Chromium.bookmarkRead(in: s, profile: profile)
+        case .mozilla(let s): return Mozilla.bookmarkRead(in: s, profile: profile)
         }
     }
 

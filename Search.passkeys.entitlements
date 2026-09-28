@@ -6,6 +6,9 @@
        app says up front that pages may ask for them. -->
   <key>com.apple.security.device.camera</key><true/>
   <key>com.apple.security.device.audio-input</key><true/>
+  <!-- Likewise for a page asking where you are, which Search puts to you
+       first, site by site (see Browser.askedForLocation). -->
+  <key>com.apple.security.personal-information.location</key><true/>
   <!-- Passkeys, for any site. Apple grants this to browsers on request; it
        only works with the matching Developer ID provisioning profile
        embedded in the app, which build.sh does when Search.provisionprofile

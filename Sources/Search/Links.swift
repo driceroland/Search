@@ -103,6 +103,9 @@ final class Links: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handle(getURL event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
+        // A test run takes nothing from outside it: an address from another
+        // app would bring a window forward. The bench hands links in itself.
+        guard !Store.testing else { return }
         guard let text = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: text), url.scheme?.lowercased().hasPrefix("http") == true
         else { return }
@@ -114,6 +117,7 @@ final class Links: NSObject, NSApplicationDelegate {
     /// once Search is the Mac's browser (it says it can open them, see
     /// build.sh), which this used to drop without a word.
     func application(_ application: NSApplication, open urls: [URL]) {
+        guard !Store.testing else { return }
         for url in urls where url.isFileURL || url.scheme?.lowercased().hasPrefix("http") == true {
             Links.take(url)
         }
@@ -123,6 +127,10 @@ final class Links: NSObject, NSApplicationDelegate {
     /// rather than doing nothing, which is what a hidden-title-bar SwiftUI
     /// window does by default.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // A test run started hidden stays so: another launch of the same app
+        // (`open -n` of a second probe) can reach it as a reopen, and nothing
+        // is brought back, made or brought forward for it.
+        guard !Store.testing else { return false }
         if !flag { Browsers.ensureWindow() }
         return true
     }
@@ -211,6 +219,8 @@ final class Links: NSObject, NSApplicationDelegate {
     /// macOS 14.
     @MainActor
     private static func comeForward() {
+        // Never a test run's: a probe started hidden stays off every screen.
+        guard !Store.testing else { return }
         guard #available(macOS 14, *) else {
             NSApp.activate(ignoringOtherApps: true)
             return

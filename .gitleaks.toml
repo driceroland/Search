@@ -1,0 +1,24 @@
+# Secret scanning for Search: gitleaks' own rules, and three more for keys
+# the AI add-on may be given. Run before each commit (see CONTRIBUTING.md)
+# and on the whole history with `gitleaks git`.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "openrouter-api-key"
+description = "OpenRouter API key"
+regex = '''\bsk-or-v1-[0-9a-f]{64}\b'''
+keywords = ["sk-or-v1-"]
+
+[[rules]]
+id = "groq-api-key"
+description = "Groq API key"
+regex = '''\bgsk_[A-Za-z0-9]{52}\b'''
+keywords = ["gsk_"]
+
+[[rules]]
+id = "gemini-auth-key"
+description = "Google AI Studio auth key (the newer AQ. form)"
+regex = '''\bAQ\.[A-Za-z0-9_\-]{30,}'''
+keywords = ["AQ."]

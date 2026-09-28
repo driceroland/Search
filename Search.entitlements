@@ -6,5 +6,8 @@
        app says up front that pages may ask for them. -->
   <key>com.apple.security.device.camera</key><true/>
   <key>com.apple.security.device.audio-input</key><true/>
+  <!-- Likewise for a page asking where you are, which Search puts to you
+       first, site by site (see Browser.askedForLocation). -->
+  <key>com.apple.security.personal-information.location</key><true/>
 </dict>
 </plist>

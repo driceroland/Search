@@ -25,12 +25,14 @@ import WebKit
 // or a password app, an iPhone nearby over the QR code, or a security key.
 // What comes back goes to the page as the credential WebKit would have made.
 //
-// Not yet: the Mac's passkeys offered under the name field as a sign-in page
-// loads. Pages are told the field has none to offer, so they show their own
-// passkey button — unless a password manager extension that keeps passkeys
-// is there to offer its own. A request made that way is the extension's to
-// answer; what it leaves to Search just waits, as it does while nobody picks
-// one, never reaching macOS.
+// A sign-in page that offers your passkey under its name field (conditional
+// mediation) gets the same, carried the same way: the request is checked and
+// kept, waiting, and the Mac is asked only which passkeys it holds for the
+// site — a question with no sheet, no operation left open. They are offered
+// in the list under the field, beside the passwords, and nothing reaches the
+// page until you pick one: then the Mac's sheet, for that passkey alone, and
+// the page's waiting request is answered with it. A new page, the page
+// letting it go, or the page asking again ends the wait.
 @MainActor
 final class Passkeys: NSObject {
     static let shared = Passkeys()
@@ -93,31 +95,182 @@ final class Passkeys: NSObject {
         /// The host of the page the frame is in.
         let pageHost: String?
         let window: NSWindow?
+        /// The page's view, for a request that waits under its field.
+        weak var web: WKWebView?
     }
 
     func cancel(token: String?) {
         guard let token else { return }
+        if let (key, waiting) = conditional.first(where: { $0.value.token == token }) {
+            conditional[key] = nil
+            waiting.answer(Passkeys.failure("AbortError", "The operation was aborted."))
+            Passkeys.changed(waiting.web)
+            return
+        }
         if token == self.token { controller?.cancel() } else { withdrawn = token }
+    }
+
+    // MARK: - offered under the field
+
+    /// A passkey the Mac holds for the site whose page is waiting for one.
+    struct Offered: Identifiable, Equatable {
+        let id: Data
+        /// The account's name, as the site made it.
+        let name: String
+        /// Where it is kept: iCloud Keychain, a password app.
+        let provider: String?
+    }
+
+    /// A page's request for a passkey from under its field, checked and
+    /// waiting: what the Mac is asked with once you have picked one.
+    private struct Waiting {
+        let token: String?
+        let rp: String
+        let origin: String
+        let clientData: ASPublicKeyCredentialClientData
+        let body: [String: Any]
+        let answer: ([String: Any]) -> Void
+        weak var web: WKWebView?
+        var offered: [Offered] = []
+    }
+
+    /// One per page, by its view.
+    private var conditional: [ObjectIdentifier: Waiting] = [:]
+
+    /// Said when what a page is offered changes, with its view.
+    static let offeredChanged = Notification.Name("search.passkeys.offered")
+
+    private static func changed(_ web: WKWebView?) {
+        NotificationCenter.default.post(name: offeredChanged, object: web)
+    }
+
+    /// The passkeys to offer under the fields of this page, and the site
+    /// they are for; none when the page isn't waiting for one.
+    func offered(in web: WKWebView?) -> [Offered] {
+        guard let web, FormRelay.passkeysOffered, let waiting = conditional[ObjectIdentifier(web)], waiting.web === web,
+              waiting.origin == Passkeys.origin(of: web.url)
+        else { return [] }
+        return waiting.offered
+    }
+
+    /// The page is gone — a new document, or the tab — and its request with
+    /// it. The answer asks the page to keep waiting, which a page that is
+    /// gone never hears.
+    func forget(_ web: WKWebView) {
+        conditional[ObjectIdentifier(web)].map { $0.answer(Passkeys.failure("Wait", "")) }
+        conditional[ObjectIdentifier(web)] = nil
+        for (key, waiting) in conditional where waiting.web == nil {
+            waiting.answer(Passkeys.failure("Wait", ""))
+            conditional[key] = nil
+        }
+    }
+
+    /// "scheme://host[:port]" for an address, as `perform` writes the origin.
+    private static func origin(of url: URL?) -> String? {
+        guard let url, let scheme = url.scheme?.lowercased(), let host = url.host()?.lowercased() else { return nil }
+        return "\(scheme)://\(host.contains(":") ? "[\(host)]" : host)" + (url.port.map { ":\($0)" } ?? "")
+    }
+
+    private func wait(_ body: [String: Any], rp: String, origin: String, clientData: ASPublicKeyCredentialClientData,
+                      in web: WKWebView, answer: @escaping ([String: Any]) -> Void) {
+        let key = ObjectIdentifier(web)
+        // Asked again: the one before is over, as in any browser.
+        conditional[key].map { $0.answer(Passkeys.failure("NotAllowedError", "A newer request took its place.")) }
+        conditional[key] = Waiting(token: body["token"] as? String, rp: rp, origin: origin, clientData: clientData,
+                                   body: body, answer: answer, web: web)
+        let allowed = Set(Passkeys.descriptors(body["allowCredentials"]).map(\.id))
+        // A test run never asks the Mac: it would list the passkeys of
+        // whoever is working beside it. One made up, for the site.
+        if Store.testing {
+            return settle(key, token: body["token"] as? String, [Offered(id: Passkeys.rehearsalID, name: "probe@\(rp)", provider: "Test")])
+        }
+        // Not asked for here: a site loading is no time for macOS's question.
+        // Until it has been answered, the field offers none.
+        guard Passkeys.access == .authorized else { return }
+        let token = body["token"] as? String
+        Task { @MainActor in
+            let found = await ASAuthorizationWebBrowserPublicKeyCredentialManager().platformCredentials(forRelyingParty: rp)
+            let offered = found
+                .filter { allowed.isEmpty || allowed.contains($0.credentialID) }
+                .prefix(8)
+                .map { found in
+                    Offered(id: found.credentialID, name: found.name.isEmpty ? "Passkey" : String(found.name.prefix(200)),
+                            provider: found.providerName.isEmpty ? nil : found.providerName)
+                }
+            self.settle(key, token: token, Array(offered))
+        }
+    }
+
+    /// What the Mac holds, for the request that is still the page's.
+    private func settle(_ key: ObjectIdentifier, token: String?, _ offered: [Offered]) {
+        guard var waiting = conditional[key], waiting.token == token else { return }
+        waiting.offered = offered
+        conditional[key] = waiting
+        Passkeys.log.notice("\(offered.count, privacy: .public) offered under the field for \(waiting.rp, privacy: .public)")
+        Passkeys.changed(waiting.web)
+    }
+
+    /// One of the passkeys under the field, picked: the Mac's sheet for it
+    /// alone, and the page's waiting request answered with what it gives.
+    func sign(in web: WKWebView, with id: Data) {
+        let key = ObjectIdentifier(web)
+        guard FormRelay.passkeysOffered, let waiting = conditional[key], waiting.web === web,
+              waiting.offered.contains(where: { $0.id == id }),
+              waiting.origin == Passkeys.origin(of: web.url),
+              Store.testing || (NSApp.isActive && web.window?.isKeyWindow == true)
+        else { return }
+        conditional[key] = nil
+        Passkeys.changed(web)
+        Passkeys.asked += 1
+        Passkeys.last = ["kind": "get", "rp": waiting.rp, "origin": waiting.origin, "requests": 1, "conditional": true]
+        Passkeys.log.notice("picked under the field for \(waiting.rp, privacy: .public)")
+        if Store.testing {
+            var reply = Passkeys.rehearsal("get", rp: waiting.rp, origin: waiting.origin, challenge: waiting.clientData.challenge)
+            if waiting.body["prf"] is [String: Any] {
+                reply["prf"] = Passkeys.prfReply(enabled: nil, first: SymmetricKey(data: SHA256.hash(data: Data("rehearsal".utf8))),
+                                                 second: nil, for: Passkeys.pageKey(waiting.body))
+            }
+            return waiting.answer(reply)
+        }
+        let request = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: waiting.rp)
+            .createCredentialAssertionRequest(clientData: waiting.clientData)
+        request.allowedCredentials = [ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: id)]
+        request.userVerificationPreference = Passkeys.verification(waiting.body["userVerification"])
+        if #available(macOS 15.0, *) { request.prf = Passkeys.prfAssertion(waiting.body["prf"], allowed: [id]) }
+        Passkeys.ensure { [weak self] in
+            guard let self else { return }
+            self.begin([request], token: waiting.token, in: web.window, answer: waiting.answer)
+            self.prfKey = Passkeys.pageKey(waiting.body)
+        }
     }
 
     func perform(_ body: [String: Any], from caller: Caller, answer: @escaping ([String: Any]) -> Void) {
         // Switched off in Settings: what reaches here came through an
         // extension's page script, which the patch runs ahead of whatever the
         // setting — the site hears no, as it would from a browser without them.
+        let kind = body["kind"] as? String ?? ""
         guard FormRelay.passkeysOffered else {
+            // One from under the field is never refused: it waits.
+            if kind == "get", body["conditional"] as? Bool == true { return answer(Passkeys.failure("Wait", "")) }
             return refuse(answer, "NotAllowedError", "The operation either timed out or was not allowed.")
         }
-        let kind = body["kind"] as? String ?? ""
         let scheme = caller.origin.protocol.lowercased()
         let host = caller.origin.host.lowercased()
         let local = host == "localhost" || host.hasSuffix(".localhost") || host == "127.0.0.1" || host == "::1"
         guard !host.isEmpty, scheme == "https" || (scheme == "http" && local) else {
             return refuse(answer, "NotAllowedError", "Passkeys need a secure page.")
         }
+        // From under the field: nothing comes up until you pick, so a page
+        // still loading, or behind, may ask. Its own page only — a frame's
+        // request waits, offered nothing, as does any with no view to hang on.
+        let underField = kind == "get" && body["conditional"] as? Bool == true
+        if underField, !caller.mainFrame || caller.web == nil {
+            return answer(Passkeys.failure("Wait", ""))
+        }
         // The page in front of you only: a tab behind, a window behind, or
         // Search itself behind doesn't get to bring up the Mac's sheet over
         // what you're looking at. A test run is always behind.
-        guard Store.testing || (NSApp.isActive && caller.window?.isKeyWindow == true) else {
+        guard underField || Store.testing || (NSApp.isActive && caller.window?.isKeyWindow == true) else {
             return refuse(answer, "NotAllowedError", "The document is not focused.")
         }
         // A frame from another site can't ask on the page's behalf.
@@ -135,6 +288,16 @@ final class Passkeys: NSObject {
         let port = caller.origin.port
         let origin = "\(scheme)://\(host.contains(":") ? "[\(host)]" : host)" + (port == 0 ? "" : ":\(port)")
         let clientData = ASPublicKeyCredentialClientData(challenge: challenge, origin: origin)
+
+        if underField, let web = caller.web {
+            return wait(body, rp: rp, origin: origin, clientData: clientData, in: web, answer: answer)
+        }
+        // A request of the page's own, with a sheet: the one waiting under
+        // the field is over, as in any browser.
+        if let web = caller.web, caller.mainFrame, let waiting = conditional.removeValue(forKey: ObjectIdentifier(web)) {
+            waiting.answer(Passkeys.failure("NotAllowedError", "A newer request took its place."))
+            Passkeys.changed(web)
+        }
 
         let requests: [ASAuthorizationRequest]
         switch kind {
@@ -379,11 +542,13 @@ final class Passkeys: NSObject {
         return reply
     }
 
+    static let rehearsalID = Data((0..<16).map { UInt8($0) })
+
     /// For a test run: a credential in the shape the sheet gives, made up
     /// from the request — a P-256 key and all, with nothing signed.
     private static func rehearsal(_ kind: String, rp: String, origin: String, challenge: Data) -> [String: Any] {
         let client = Data(#"{"type":"webauthn.\#(kind)","challenge":"\#(text(challenge))","origin":"\#(origin)","crossOrigin":false}"#.utf8)
-        let id = Data((0..<16).map { UInt8($0) })
+        let id = rehearsalID
         // Where the relying party's hash would be, then the flags and the count.
         var auth = Data(count: 32) + Data([kind == "get" ? 0x05 : 0x45]) + Data(count: 4)
         guard kind == "create" else {
@@ -435,7 +600,7 @@ final class Passkeys: NSObject {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    private static func descriptors(_ value: Any?) -> [(id: Data, transports: [ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor.Transport])] {
+    fileprivate static func descriptors(_ value: Any?) -> [(id: Data, transports: [ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor.Transport])] {
         (value as? [[String: Any]] ?? []).compactMap { item in
             guard let id = data(item["id"]) else { return nil }
             let named = (item["transports"] as? [String] ?? []).compactMap { name -> ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor.Transport? in
@@ -450,7 +615,7 @@ final class Passkeys: NSObject {
         }
     }
 
-    private static func verification(_ value: Any?) -> ASAuthorizationPublicKeyCredentialUserVerificationPreference {
+    fileprivate static func verification(_ value: Any?) -> ASAuthorizationPublicKeyCredentialUserVerificationPreference {
         switch value as? String {
         case "required": return .required
         case "discouraged": return .discouraged
@@ -671,7 +836,8 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
                 origin: message.frameInfo.securityOrigin,
                 mainFrame: message.frameInfo.isMainFrame,
                 pageHost: message.webView?.url?.host(),
-                window: message.webView?.window
+                window: message.webView?.window,
+                web: message.webView
             )
             Passkeys.shared.perform(body, from: caller) { replyHandler($0, nil) }
         }
@@ -876,6 +1042,9 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
               reject(aborted(signal));
             }, { once: true });
             ask(request).then(function (reply) {
+              // Nothing to offer under the field here: it waits, as it does
+              // while nobody picks one, until the page lets it go.
+              if (reply && reply.error === 'Wait') return;
               if (!reply || reply.error) {
                 var name = (reply && reply.error) || 'NotAllowedError';
                 var message = (reply && reply.message) || refused;
@@ -897,19 +1066,11 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
       replace(proto, 'get', function get(options) {
         if (!options || !options.publicKey) return nativeGet.apply(this, arguments);
         var signal = options.signal, pk = options.publicKey, request;
-        if (options.mediation === 'conditional') {
-          // Nothing of the Mac's is offered under the field yet: the request
-          // waits, as it does while nobody picks a passkey, until the page
-          // lets it go.
-          return new Promise(function (resolve, reject) {
-            if (!signal) return;
-            if (signal.aborted) return reject(aborted(signal));
-            signal.addEventListener('abort', function () { reject(aborted(signal)); }, { once: true });
-          });
-        }
+        // From under the name field: offered there, answered once you pick.
+        var underField = options.mediation === 'conditional';
         try {
           request = {
-            kind: 'get', challenge: encode(pk.challenge), rpId: pk.rpId || null,
+            kind: 'get', conditional: underField, challenge: encode(pk.challenge), rpId: pk.rpId || null,
             allowCredentials: descriptors(pk.allowCredentials),
             userVerification: pk.userVerification || 'preferred',
             prf: prfInput(pk.extensions, pk.allowCredentials)
@@ -941,36 +1102,21 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         return send(request, options.signal, pk.extensions);
       });
 
-      // A password manager that keeps passkeys — 1Password, Bitwarden — puts
-      // its own get and create on navigator.credentials, or asks from its own
-      // script, and offers its passkeys under the name field to the sites that
-      // ask for them that way. Once one is there, pages hear the field can.
-      var claimed = false;
-      function extensionAnswers() {
-        if (claimed) return true;
-        try {
-          if (navigator.credentials && Object.getOwnPropertyDescriptor(navigator.credentials, 'get')) claimed = true;
-          else if ((new Error().stack || '').indexOf('-extension://') >= 0) claimed = true;
-        } catch (e) {}
-        return claimed;
-      }
-
       // What this browser can and can't do, for the pages that ask first:
-      // passkeys from the Mac, a phone or a key — not yet under the field,
-      // and none of what WebKit would have answered for itself.
+      // passkeys from the Mac, a phone or a key, under the field too, and
+      // none of what WebKit would have answered for itself.
       var P = PublicKeyCredential;
       replace(P, 'isUserVerifyingPlatformAuthenticatorAvailable', function () { return Promise.resolve(true); });
-      replace(P, 'isConditionalMediationAvailable', function () { return Promise.resolve(extensionAnswers()); });
+      replace(P, 'isConditionalMediationAvailable', function () { return Promise.resolve(true); });
       var nativeCapabilities = P.getClientCapabilities;
       if (typeof nativeCapabilities === 'function') {
         replace(P, 'getClientCapabilities', function () {
-          var field = extensionAnswers();
           function ours(c) {
             c = Object.assign({}, c);
             Object.keys(c).forEach(function (k) { if (k.indexOf('extension:') === 0 && k !== 'extension:credProps') c[k] = false; });
             c['extension:prf'] = \(Passkeys.prfAvailable);
             return Object.assign(c, {
-              conditionalCreate: false, conditionalGet: field, conditionalMediation: field, relatedOrigins: false,
+              conditionalCreate: false, conditionalGet: true, conditionalMediation: true, relatedOrigins: false,
               signalAllAcceptedCredentials: false, signalCurrentUserDetails: false, signalUnknownCredential: false,
               hybridTransport: true, passkeyPlatformAuthenticator: true, userVerifyingPlatformAuthenticator: true
             });

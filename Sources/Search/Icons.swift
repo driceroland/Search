@@ -1,3 +1,4 @@
+import ImageIO
 import SwiftUI
 import WebKit
 
@@ -183,13 +184,43 @@ final class Favicons {
         missing.insert(host)
     }
 
+    /// The kinds of picture a site's icon may be. Anything else a site sends
+    /// — a PDF, a TIFF, an icns, PostScript — isn't opened at all: every
+    /// kind is one more decoder a site can reach in this process.
+    private static let kinds: Set<String> = [
+        "public.png", "com.microsoft.ico", "public.jpeg", "com.compuserve.gif", "org.webmproject.webp", "com.microsoft.bmp",
+    ]
+
     /// Decoded and drawn into a square off the main thread — an .ico can hold
-    /// a dozen sizes and take a moment to unpack.
+    /// a dozen sizes and take a moment to unpack. Only the kinds above, no
+    /// larger than 4096 pixels a side, and decoded straight to the small size
+    /// a tab needs.
     private static func square(_ data: Data) async -> NSImage? {
         await Task.detached(priority: .utility) { () -> NSImage? in
-            guard let image = NSImage(data: data), image.isValid,
-                  image.size.width > 0, image.size.height > 0
+            guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+                  let kind = CGImageSourceGetType(source) as String?, Favicons.kinds.contains(kind)
             else { return nil }
+            // The frame nearest 64 pixels from above, for an .ico of many.
+            var best = 0, bestSide = 0
+            for index in 0..<min(CGImageSourceGetCount(source), 32) {
+                let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
+                let w = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
+                let h = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
+                guard w > 0, h > 0, w <= 4096, h <= 4096 else { continue }
+                let side = max(w, h)
+                if bestSide == 0 || (side >= 64 && (bestSide < 64 || side < bestSide)) || (bestSide < 64 && side > bestSide) {
+                    best = index
+                    bestSide = side
+                }
+            }
+            guard bestSide > 0,
+                  let decoded = CGImageSourceCreateThumbnailAtIndex(source, best, [
+                      kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceThumbnailMaxPixelSize: 128,
+                      kCGImageSourceCreateThumbnailWithTransform: true,
+                  ] as CFDictionary)
+            else { return nil }
+            let image = NSImage(cgImage: decoded, size: NSSize(width: decoded.width, height: decoded.height))
             let side: CGFloat = 64
             let out = NSImage(size: NSSize(width: side, height: side))
             out.lockFocus()

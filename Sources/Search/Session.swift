@@ -25,6 +25,18 @@ enum Session {
         /// Nil in sessions written before tab groups existed. Written whether
         /// or not groups are turned on, so turning them off loses nothing.
         var groups: [TabGroup]? = nil
+        /// Indices in `tabs`, so restored tabs can have new live identities.
+        /// Written whether or not Split View is on, as groups are.
+        var splits: [Split] = []
+    }
+
+    /// A split (see TabSplit), its pages by their place in `tabs`.
+    struct Split: Codable {
+        var tabs: [Int]
+        var axis: TabSplit.Axis = .horizontal
+        var sizes: [Double]
+        /// The page last focused, by its place in `tabs`.
+        var focused: Int?
     }
 
     /// The first space's is the session there always was; each other space
@@ -83,12 +95,44 @@ extension Session.Entry {
 }
 
 extension Session.Shape {
-    private enum Keys: String, CodingKey { case tabs, active, groups }
+    private enum Keys: String, CodingKey { case tabs, active, groups, splits }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         tabs = try c.decode([Session.Entry].self, forKey: .tabs)
         active = try c.decode(Int.self, forKey: .active)
         groups = try? c.decodeIfPresent([TabGroup].self, forKey: .groups)
+        splits = (try? c.decodeIfPresent([Session.Split].self, forKey: .splits)) ?? []
+    }
+}
+
+extension Session.Split {
+    private enum Keys: String, CodingKey { case tabs, axis, sizes, focused, left, right, fraction }
+
+    /// Leniently: an axis this version doesn't know is drawn side by side,
+    /// and the first shape Split View was written in on main — a left, a
+    /// right and a fraction — still reads.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        if let tabs = try? c.decode([Int].self, forKey: .tabs) {
+            self.tabs = tabs
+            sizes = (try? c.decode([Double].self, forKey: .sizes)) ?? TabSplit.even(tabs.count)
+        } else {
+            let left = try c.decode(Int.self, forKey: .left)
+            let right = try c.decode(Int.self, forKey: .right)
+            let fraction = (try? c.decode(Double.self, forKey: .fraction)) ?? 0.5
+            tabs = [left, right]
+            sizes = [fraction, 1 - fraction]
+        }
+        axis = (try? c.decodeIfPresent(TabSplit.Axis.self, forKey: .axis)) ?? .horizontal
+        focused = try? c.decodeIfPresent(Int.self, forKey: .focused)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Keys.self)
+        try c.encode(tabs, forKey: .tabs)
+        try c.encode(axis, forKey: .axis)
+        try c.encode(sizes, forKey: .sizes)
+        try c.encodeIfPresent(focused, forKey: .focused)
     }
 }

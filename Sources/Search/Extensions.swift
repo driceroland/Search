@@ -114,6 +114,9 @@ final class Extensions: NSObject, ObservableObject {
     }
     private static var list: URL { folder.appendingPathComponent("installed.json") }
     static func folder(for id: String) -> URL { folder.appendingPathComponent(id, isDirectory: true) }
+    private static func stagingFolder(for id: String) -> URL {
+        folder.appendingPathComponent(".staging-\(id)-\(UUID().uuidString)", isDirectory: true)
+    }
 
     private override init() {
         WKWebExtension.MatchPattern.registerCustomURLScheme(Extensions.scheme)
@@ -423,7 +426,9 @@ final class Extensions: NSObject, ObservableObject {
                 context.setPermissionStatus(.grantedExplicitly, for: permission)
             }
             context.setPermissionStatus(.grantedExplicitly, for: .nativeMessaging)
-            for pattern in found.allRequestedMatchPatterns {
+            // Never one for extension pages, another's or all of them (see
+            // `fence`).
+            for pattern in found.allRequestedMatchPatterns where !Extensions.reachesExtensions(pattern) {
                 context.setPermissionStatus(.grantedExplicitly, for: pattern)
             }
             // Its own sign-in address, https://<id>.chromiumapp.org, which
@@ -435,15 +440,8 @@ final class Extensions: NSObject, ObservableObject {
                let own = try? WKWebExtension.MatchPattern(string: "https://\(item.id).chromiumapp.org/*") {
                 context.setPermissionStatus(.grantedExplicitly, for: own)
             }
-            // Other extensions' pages are never among "all sites": with
-            // chrome-extension registered as a scheme, WebKit counts them in
-            // <all_urls>, which Chrome doesn't. Refused outright, which WebKit
-            // puts before any grant; its own pages stay its own.
-            for scheme in Set([Extensions.scheme, Extensions.formerScheme, "webkit-extension"]) {
-                if let pages = try? WKWebExtension.MatchPattern(string: "\(scheme)://*/*") {
-                    context.setPermissionStatus(.deniedExplicitly, for: pages)
-                }
-            }
+            Extensions.fence(context)
+            Extensions.watchTouches()
             try controller.load(context)
             watch(context)
             if contexts[item.id] == nil, loadsThisRun.contains(item.id) { loadedBefore.insert(item.id) }
@@ -461,6 +459,7 @@ final class Extensions: NSObject, ObservableObject {
 
     private func unload(_ id: String) {
         guard let context = contexts[id] else { return }
+        Browsers.closePopups(of: id)
         try? controller.unload(context)
         // What it kept going outside WebKit goes with it: its offscreen
         // page, and a Mac kept awake on its behalf.
@@ -506,11 +505,12 @@ final class Extensions: NSObject, ObservableObject {
         guard !installed.contains(where: { $0.id == id }) else { return }
         busy = id
         defer { busy = nil }
+        let staged = Extensions.stagingFolder(for: id)
+        defer { try? FileManager.default.removeItem(at: staged) }
         do {
             let crx = try await Crx.fetch(id)
             let zip = try Crx.verifiedZip(crx, id: id)
             let target = Extensions.folder(for: id)
-            let staged = Extensions.folder.appendingPathComponent(".staging-\(id)", isDirectory: true)
             try Crx.unpack(zip, into: staged)
             try ExtensionShims.prepare(staged, fresh: true)
             try await admit(staged, as: id, fromStore: true, finalFolder: target, confirm: confirm || !Store.testing)
@@ -537,17 +537,18 @@ final class Extensions: NSObject, ObservableObject {
             return
         }
         let id = "local-" + String(UUID().uuidString.prefix(8)).lowercased()
-        let staged = Extensions.folder.appendingPathComponent(".staging-\(id)", isDirectory: true)
-        do {
-            try FileManager.default.createDirectory(at: Extensions.folder, withIntermediateDirectories: true)
-            try? FileManager.default.removeItem(at: staged)
-            try FileManager.default.copyItem(at: source, to: staged)
-            try ExtensionShims.prepare(staged, fresh: true)
-        } catch {
-            browser?.announce("Couldn't copy the extension")
-            return
+        let staged = Extensions.stagingFolder(for: id)
+        Task {
+            defer { try? FileManager.default.removeItem(at: staged) }
+            do {
+                try FileManager.default.createDirectory(at: Extensions.folder, withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: source, to: staged)
+                try ExtensionShims.prepare(staged, fresh: true)
+                try await admit(staged, as: id, fromStore: false, finalFolder: Extensions.folder(for: id), confirm: confirm || !Store.testing, source: source)
+            } catch {
+                browser?.announce("Couldn't install the extension: \(error.localizedDescription)")
+            }
         }
-        Task { try? await admit(staged, as: id, fromStore: false, finalFolder: Extensions.folder(for: id), confirm: confirm || !Store.testing, source: source) }
     }
 
     /// Takes the extension up again — the way Chrome's reload button does
@@ -555,66 +556,65 @@ final class Extensions: NSObject, ObservableObject {
     /// that folder first, so what its author just saved is what runs.
     func reload(_ id: String) {
         guard let index = installed.firstIndex(where: { $0.id == id }), reloading.insert(id).inserted else { return }
+        let original = installed[index]
         let target = Extensions.folder(for: id)
-        let files = FileManager.default
-        var staged: URL?
-        if let path = installed[index].source {
-            let source = URL(fileURLWithPath: path, isDirectory: true)
-            guard files.fileExists(atPath: source.appendingPathComponent("manifest.json").path) else {
-                reloading.remove(id)
-                browser?.announce("The folder \(installed[index].name) was loaded from is gone")
-                return
-            }
-            let copy = Extensions.folder.appendingPathComponent(".staging-\(id)", isDirectory: true)
-            do {
-                try? files.removeItem(at: copy)
-                try files.copyItem(at: source, to: copy)
-                try ExtensionShims.prepare(copy, fresh: true)
-            } catch {
-                try? files.removeItem(at: copy)
-                reloading.remove(id)
-                browser?.announce("Couldn't copy \(installed[index].name) again")
-                return
-            }
-            staged = copy
-        }
+        let staged = original.source.map { _ in Extensions.stagingFolder(for: id) }
         Task {
-            defer { reloading.remove(id) }
-            guard let item = installed.first(where: { $0.id == id }) else { return }
-            let found = try? await WKWebExtension(resourceBaseURL: staged ?? target)
-            if found == nil, let staged {
-                try? files.removeItem(at: staged)
-                browser?.announce("\(item.name) wasn't reloaded — its manifest couldn't be read")
+            defer {
+                if let staged { try? FileManager.default.removeItem(at: staged) }
+                reloading.remove(id)
+            }
+            guard installed.contains(where: { $0.id == id }) else { return }
+            if let path = original.source, let staged {
+                let source = URL(fileURLWithPath: path, isDirectory: true)
+                guard FileManager.default.fileExists(atPath: source.appendingPathComponent("manifest.json").path) else {
+                    browser?.announce("The folder \(original.name) was loaded from is gone")
+                    return
+                }
+                do {
+                    try FileManager.default.copyItem(at: source, to: staged)
+                    try ExtensionShims.prepare(staged, fresh: true)
+                } catch {
+                    browser?.announce("Couldn't copy \(original.name) again: \(error.localizedDescription)")
+                    return
+                }
+            }
+            let resource = staged ?? target
+            let found = try? await WKWebExtension(resourceBaseURL: resource)
+            if found == nil, staged != nil {
+                browser?.announce("\(original.name) wasn't reloaded — its manifest couldn't be read")
                 return
             }
+            var wants: [String]?
             if let found {
-                let wants = Set(Extensions.grants(found, in: staged ?? target))
-                if !wants.isSubset(of: Set(item.permissions)) {
-                    let name = [found.displayName ?? item.name, found.version].compactMap { $0 }.joined(separator: " ")
-                    guard await ask(install: name, wants: Extensions.describe(found, in: staged ?? target), icon: found.icon(for: CGSize(width: 64, height: 64))) else {
-                        if let staged { try? files.removeItem(at: staged) }
-                        browser?.announce("\(item.name) wasn't reloaded — it asks for more than before")
+                let permissions = Extensions.grants(found, in: resource)
+                wants = permissions
+                if !Set(permissions).isSubset(of: Set(original.permissions)) {
+                    let name = [found.displayName ?? original.name, found.version].compactMap { $0 }.joined(separator: " ")
+                    guard await ask(install: name, wants: Extensions.describe(found, in: resource), icon: found.icon(for: CGSize(width: 64, height: 64))) else {
+                        browser?.announce("\(original.name) wasn't reloaded — it asks for more than before")
                         return
                     }
+                }
+            }
+            // Loading and asking can both suspend. A removed extension must
+            // not be put back by the work that was already in flight.
+            guard installed.contains(where: { $0.id == id }) else { return }
+            if let staged {
+                do {
+                    try ExtensionFiles.replace(staged, at: target)
+                } catch {
+                    browser?.announce("Couldn't replace \(original.name): \(error.localizedDescription)")
+                    return
                 }
             }
             unload(id)
             errors[id] = nil
             workersChanged()
-            if let staged {
-                do {
-                    try? files.removeItem(at: target)
-                    try files.moveItem(at: staged, to: target)
-                } catch {
-                    try? files.removeItem(at: staged)
-                    browser?.announce("Couldn't copy \(item.name) again")
-                    return
-                }
-            }
-            if let found, let index = installed.firstIndex(where: { $0.id == id }) {
+            if let found, let index = installed.firstIndex(where: { $0.id == id }), let wants {
                 installed[index].name = found.displayName ?? installed[index].name
                 installed[index].version = found.version ?? installed[index].version
-                installed[index].permissions = Extensions.grants(found, in: target)
+                installed[index].permissions = wants
                 save()
             }
             guard let item = installed.first(where: { $0.id == id }), item.enabled else { return }
@@ -684,32 +684,24 @@ final class Extensions: NSObject, ObservableObject {
     /// Reads what was unpacked, asks, and — on yes — moves it into place and
     /// loads it. On no, nothing is left behind.
     private func admit(_ staged: URL, as id: String, fromStore: Bool, finalFolder: URL, confirm: Bool = true, source: URL? = nil) async throws {
-        let files = FileManager.default
-        let found: WKWebExtension
-        do {
-            found = try await WKWebExtension(resourceBaseURL: staged)
-        } catch {
-            try? files.removeItem(at: staged)
-            throw error
-        }
+        let found = try await WKWebExtension(resourceBaseURL: staged)
         let name = found.displayName ?? id
         let wants = Extensions.describe(found, in: staged)
         let accepted = confirm ? await ask(install: name, wants: wants, icon: found.icon(for: CGSize(width: 64, height: 64))) : true
-        guard accepted else {
-            try? files.removeItem(at: staged)
-            return
-        }
-        try? files.removeItem(at: finalFolder)
-        try files.moveItem(at: staged, to: finalFolder)
+        guard accepted, !installed.contains(where: { $0.id == id }) else { return }
+        let permissions = Extensions.grants(found, in: staged)
+        try ExtensionFiles.replace(staged, at: finalFolder)
+        unload(id)
+        errors[id] = nil
+        workersChanged()
         let item = Installed(
             id: id, name: name, version: found.version ?? "?", enabled: true, fromStore: fromStore,
-            permissions: Extensions.grants(found, in: finalFolder),
+            permissions: permissions,
             source: source?.path
         )
         installed.removeAll { $0.id == id }
         installed.append(item)
         save()
-        workersChanged()
         if await load(item) {
             browser?.announce("\(name) is installed")
         } else {
@@ -833,29 +825,33 @@ final class Extensions: NSObject, ObservableObject {
         else { return }
         do {
             let zip = try Crx.verifiedZip(try await Crx.fetch(item.id), id: item.id)
-            let staged = Extensions.folder.appendingPathComponent(".staging-\(item.id)", isDirectory: true)
+            let staged = Extensions.stagingFolder(for: item.id)
+            defer { try? FileManager.default.removeItem(at: staged) }
             try Crx.unpack(zip, into: staged)
             try ExtensionShims.prepare(staged, fresh: true)
             let found = try await WKWebExtension(resourceBaseURL: staged)
+            guard let current = installed.first(where: { $0.id == item.id }), current.fromStore,
+                  current.version == item.version else { return }
             // Everything it could do, sites included, against what it was
             // allowed when it was added or last asked about.
             let wants = Set(Extensions.grants(found, in: staged))
-            if !wants.isSubset(of: Set(item.permissions)) {
+            if !wants.isSubset(of: Set(current.permissions)) {
                 guard await ask(install: "An update to \(item.name)", wants: Extensions.describe(found, in: staged), icon: found.icon(for: CGSize(width: 64, height: 64))) else {
-                    try? FileManager.default.removeItem(at: staged)
                     return
                 }
             }
-            unload(item.id)
+            guard let index = installed.firstIndex(where: { $0.id == item.id }), installed[index].fromStore,
+                  installed[index].version == item.version,
+                  installed[index].permissions == current.permissions else { return }
             let target = Extensions.folder(for: item.id)
-            try? FileManager.default.removeItem(at: target)
-            try FileManager.default.moveItem(at: staged, to: target)
-            if let index = installed.firstIndex(where: { $0.id == item.id }) {
-                installed[index].version = found.version ?? version
-                installed[index].permissions = wants.sorted()
-                save()
-                if installed[index].enabled { await load(installed[index]) }
-            }
+            try ExtensionFiles.replace(staged, at: target)
+            unload(item.id)
+            errors[item.id] = nil
+            workersChanged()
+            installed[index].version = found.version ?? version
+            installed[index].permissions = wants.sorted()
+            save()
+            if installed[index].enabled { await load(installed[index]) }
         } catch {
             NSLog("Extensions: update of %@ failed: %@", item.id, error.localizedDescription)
         }
@@ -886,6 +882,46 @@ final class Extensions: NSObject, ObservableObject {
         return out.sorted()
     }
 
+    /// Extension pages, as a pattern names them: another extension's
+    /// (chrome-extension://<its id>/*) or every one's. No extension is ever
+    /// given them — not from its manifest, not asked for later — whatever
+    /// the question said; its own pages are its own without asking.
+    nonisolated static func reachesExtensions(_ pattern: WKWebExtension.MatchPattern) -> Bool {
+        guard let scheme = pattern.scheme?.lowercased() else { return false }
+        return [Extensions.scheme, Extensions.formerScheme, "webkit-extension"].contains(scheme)
+    }
+
+    /// Other extensions' pages are never among "all sites" either: with
+    /// chrome-extension registered as a scheme, WebKit counts them in
+    /// <all_urls>, which Chrome doesn't, so they are refused outright. A
+    /// refusal for all hosts doesn't outweigh a grant naming one — WebKit
+    /// looks at those first — which is why none is ever made (see
+    /// `reachesExtensions`). Set again after anything is granted.
+    static func fence(_ context: WKWebExtensionContext) {
+        for scheme in Set([Extensions.scheme, Extensions.formerScheme, "webkit-extension"]) {
+            if let pages = try? WKWebExtension.MatchPattern(string: "\(scheme)://*/*") {
+                context.setPermissionStatus(.deniedExplicitly, for: pages)
+            }
+        }
+    }
+
+    /// Its manifest asks to talk to apps on this Mac ("nativeMessaging"),
+    /// required or optional, which WebKit's own grant — given to all, see
+    /// `load` — doesn't say.
+    static func asksForNative(_ context: WKWebExtensionContext) -> Bool {
+        context.webExtension.requestedPermissions.contains(.nativeMessaging)
+            || context.webExtension.optionalPermissions.contains(.nativeMessaging)
+    }
+
+    /// Whether this address is a page of an extension other than the one
+    /// asking — which it never gets to see into.
+    static func othersPage(_ url: URL?, for context: WKWebExtensionContext) -> Bool {
+        guard let url, let scheme = url.scheme?.lowercased(),
+              [Extensions.scheme, Extensions.formerScheme, "webkit-extension"].contains(scheme)
+        else { return false }
+        return url.host()?.lowercased() != context.uniqueIdentifier.lowercased()
+    }
+
     /// Chrome's own APIs, which Search answers itself, and what each lets an
     /// extension do.
     static let searchAnswered: [(String, String)] = [
@@ -894,7 +930,7 @@ final class Extensions: NSObject, ObservableObject {
         ("privacy", "Change your privacy settings"), ("browsingData", "Clear your browsing data"),
         ("management", "See your other extensions"), ("notifications", "Show notifications"),
         ("sessions", "See your recently closed tabs"), ("topSites", "See your most visited sites"),
-        ("readingList", "Read and change your reading list"),
+        ("readingList", "Read and change your reading list"), ("downloads.open", "Open files it downloads"),
     ]
 
     /// What an extension wants, in words.
@@ -942,7 +978,7 @@ final class Extensions: NSObject, ObservableObject {
         await ask("asks for more access", detail: names, context: context)
     }
 
-    private func ask(_ question: String, detail: String, context: WKWebExtensionContext) async -> Bool {
+    func ask(_ question: String, detail: String, context: WKWebExtensionContext) async -> Bool {
         await ask(
             "\(context.webExtension.displayName ?? "An extension") \(question)",
             detail: detail, icon: context.webExtension.icon(for: CGSize(width: 64, height: 64)),
@@ -1020,8 +1056,43 @@ final class Extensions: NSObject, ObservableObject {
         }
     }
 
+    /// When you last clicked each extension's button or its line in the
+    /// menu: a permissions.request made from that click is one you asked
+    /// for, even once WebKit no longer sees the click (see
+    /// ExtensionShims, "permissions.afterClick").
+    static var clicked: [String: Date] = [:]
+
+    /// When you last clicked or typed in one of each extension's own pages —
+    /// its popup, or a page of its in a tab. Real events only: a page's
+    /// script can dispatch one, but it never reaches here.
+    static var touched: [String: Date] = [:]
+    private static var touching: Any?
+
+    static func watchTouches() {
+        guard touching == nil else { return }
+        touching = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .keyDown]) { event in
+            var view: NSView? = event.type == .keyDown
+                ? event.window?.firstResponder as? NSView
+                : event.window?.contentView?.superview?.hitTest(event.locationInWindow)
+            while let found = view, !(found is WKWebView) { view = found.superview }
+            if let url = (view as? WKWebView)?.url, url.scheme?.lowercased() == Extensions.scheme, let id = url.host() {
+                Extensions.touched[id] = Date()
+            }
+            return event
+        }
+    }
+
+    /// You just did something in this extension — its button, its menu
+    /// line, a click or a key in one of its pages — as Chrome's "user
+    /// gesture" means: within the last few seconds.
+    static func justUsed(_ id: String) -> Bool {
+        let latest = [clicked[id], touched[id]].compactMap { $0 }.max()
+        return latest.map { Date().timeIntervalSince($0) < 5 } ?? false
+    }
+
     func press(_ id: String) {
         guard let context = contexts[id], !ExtensionPopup.shared.closes(id) else { return }
+        Extensions.clicked[id] = Date()
         if let tab = activeAdapter { context.userGesturePerformed(in: tab) }
         // An extension that asked for its button to open its side panel.
         if ExtensionShims.panelOnClick.contains(id), context.action(for: activeAdapter)?.presentsPopup != true {
@@ -1116,7 +1187,25 @@ extension Extensions: WKWebExtensionControllerDelegate {
             throw NSError(domain: "Search", code: 2, userInfo: [NSLocalizedDescriptionKey: "Private windows can't be opened by extensions."])
         }
         for url in configuration.tabURLs { try Extensions.mayOpen(url) }
+        // A popup has no address bar, only the site over the page: a website,
+        // or this extension's own page. Not a data: or blob: page, which
+        // could draw anything and name no site, nor another extension's.
+        if configuration.windowType == .popup {
+            for url in configuration.tabURLs {
+                let scheme = url.scheme?.lowercased() ?? ""
+                let own = [Extensions.scheme, Extensions.formerScheme].contains(scheme)
+                    && url.host()?.lowercased() == extensionContext.uniqueIdentifier.lowercased()
+                guard scheme == "https" || scheme == "http" || own || url.absoluteString == "about:blank" else {
+                    throw NSError(domain: "Search", code: 3, userInfo: [NSLocalizedDescriptionKey: "A popup window shows a website or the extension's own page."])
+                }
+            }
+        }
         let fresh = Browser(record: WindowRecord(space: browser?.spaceID ?? Space.firstID))
+        // A popup, as a password manager's vault or a sign-in opens: a small
+        // window of the page, not another browser window.
+        if configuration.windowType == .popup {
+            fresh.extensionPopup = contexts.first { $0.value === extensionContext }?.key ?? extensionContext.uniqueIdentifier
+        }
         for (index, url) in configuration.tabURLs.enumerated() {
             fresh.open(url, foreground: index == 0, atEnd: true)
         }
@@ -1129,9 +1218,41 @@ extension Extensions: WKWebExtensionControllerDelegate {
         let asked = configuration.frame
         let usable = !asked.isNull && [asked.minX, asked.minY, asked.width, asked.height].allSatisfy(\.isFinite)
             && asked.width >= 200 && asked.height >= 150
-        Browsers.open(fresh, frame: usable ? asked : nil)
+        var frame: NSRect? = usable ? Extensions.onScreen(asked) : nil
+        if frame == nil, fresh.extensionPopup != nil, let screen = (browser?.window?.screen ?? NSScreen.main)?.visibleFrame {
+            frame = Self.popupFrame(asked: asked, on: screen)
+        }
+        Browsers.open(fresh, frame: frame)
         if !configuration.shouldBeFocused { Browsers.front?.window?.makeKeyAndOrderFront(nil) }
         return window(of: fresh)
+    }
+
+    /// A popup given its size without a place (Affinity's sign-in): that
+    /// size, in the middle of the screen. Nil when the size isn't one either.
+    /// A frame an extension asked for, kept where you can see it: no larger
+    /// than the screen it is mostly on, and with a good part of it on one —
+    /// never a window pushed off every screen, or one bigger than all of them.
+    @MainActor
+    static func onScreen(_ asked: NSRect) -> NSRect {
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        guard let home = screens.max(by: { $0.intersection(asked).area < $1.intersection(asked).area })
+                ?? NSScreen.main?.visibleFrame
+        else { return asked }
+        var frame = asked
+        frame.size.width = min(frame.width, home.width)
+        frame.size.height = min(frame.height, home.height)
+        let seen = screens.map { $0.intersection(frame) }.max { $0.area < $1.area } ?? .zero
+        if seen.width < min(160, frame.width) || seen.height < min(120, frame.height) {
+            frame.origin.x = min(max(frame.minX, home.minX), home.maxX - frame.width)
+            frame.origin.y = min(max(frame.minY, home.minY), home.maxY - frame.height)
+        }
+        return frame
+    }
+
+    nonisolated static func popupFrame(asked: CGRect, on screen: CGRect) -> CGRect? {
+        guard !asked.isNull, asked.width.isFinite, asked.height.isFinite, asked.width >= 200, asked.height >= 150 else { return nil }
+        let width = min(asked.width, screen.width), height = min(asked.height, screen.height)
+        return CGRect(x: screen.midX - width / 2, y: screen.midY - height / 2, width: width, height: height)
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, openOptionsPageFor extensionContext: WKWebExtensionContext) async throws {
@@ -1156,9 +1277,15 @@ extension Extensions: WKWebExtensionControllerDelegate {
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, promptForPermissionMatchPatterns matchPatterns: Set<WKWebExtension.MatchPattern>, in tab: (any WKWebExtensionTab)?, for extensionContext: WKWebExtensionContext) async -> (Set<WKWebExtension.MatchPattern>, Date?) {
-        let all = matchPatterns.contains { $0.matchesAllHosts || $0.matchesAllURLs }
-        let what = all ? "every website" : matchPatterns.map(\.string).sorted().joined(separator: ", ")
-        return await ask("wants to read and change \(what)", detail: "Until you remove the extension.", context: extensionContext) ? (matchPatterns, nil) : ([], nil)
+        // Extension pages are never given, so never asked about.
+        let wanted = matchPatterns.filter { !Extensions.reachesExtensions($0) }
+        guard !wanted.isEmpty else { return ([], nil) }
+        let all = wanted.contains { $0.matchesAllHosts || $0.matchesAllURLs }
+        let what = all ? "every website" : wanted.map(\.string).sorted().joined(separator: ", ")
+        guard await ask("wants to read and change \(what)", detail: "Until you remove the extension.", context: extensionContext) else { return ([], nil) }
+        // Given only once this returns: fenced again right after.
+        DispatchQueue.main.async { Extensions.fence(extensionContext) }
+        return (wanted, nil)
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, didUpdate action: WKWebExtension.Action, forExtensionContext context: WKWebExtensionContext) {
@@ -1182,6 +1309,12 @@ extension Extensions: WKWebExtensionControllerDelegate {
             return try await ExtensionShims.answer(message, from: extensionContext, owner: self)
         }
         let id = extensionContext.uniqueIdentifier, host = applicationIdentifier!
+        // WebKit's nativeMessaging is granted to every extension, for the
+        // line to Search above; an app on this Mac only to one whose
+        // manifest asks for it, as in Chrome.
+        guard Extensions.asksForNative(extensionContext) else {
+            throw ExtensionNative.Refused(why: "Access to native messaging requires the nativeMessaging permission.")
+        }
         do {
             return try await ExtensionNative.send(message, to: host, from: id)
         } catch {
@@ -1203,6 +1336,9 @@ extension Extensions: WKWebExtensionControllerDelegate {
         // The port a worker's shim opens only to find what ports share; it
         // lets go at once.
         if port.applicationIdentifier == ExtensionShims.application { return }
+        guard Extensions.asksForNative(extensionContext) else {
+            throw ExtensionNative.Refused(why: "Access to native messaging requires the nativeMessaging permission.")
+        }
         try ExtensionNative.connect(port, from: extensionContext.uniqueIdentifier)
     }
 }
@@ -1236,9 +1372,16 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
         return owner.visibleTabs(of: browser).firstIndex { $0.id == tab.id } ?? NSNotFound
     }
 
-    func webView(for context: WKWebExtensionContext) -> WKWebView? { tab?.built }
+    /// A tab showing another extension's page gives an extension nothing of
+    /// it: no view to run a script in, no address, no picture — whatever it
+    /// was granted (see Extensions.reachesExtensions).
+    private func sealed(_ context: WKWebExtensionContext) -> Bool {
+        Extensions.othersPage(tab?.built?.url, for: context) || Extensions.othersPage(tab?.address, for: context)
+    }
+
+    func webView(for context: WKWebExtensionContext) -> WKWebView? { sealed(context) ? nil : tab?.built }
     func title(for context: WKWebExtensionContext) -> String? { tab?.title }
-    func url(for context: WKWebExtensionContext) -> URL? { tab?.address }
+    func url(for context: WKWebExtensionContext) -> URL? { sealed(context) ? nil : tab?.address }
     func isLoadingComplete(for context: WKWebExtensionContext) -> Bool { !(tab?.loading ?? false) }
     func isSelected(for context: WKWebExtensionContext) -> Bool { tab?.id == browser?.activeID }
     func isPinned(for context: WKWebExtensionContext) -> Bool { tab?.pin != nil }
@@ -1279,7 +1422,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
 
     func activate(for context: WKWebExtensionContext) async throws {
         guard let tab, let browser else { return }
-        browser.select(tab)
+        browser.activateForExtension(tab)
     }
 
     func close(for context: WKWebExtensionContext) async throws {
@@ -1288,7 +1431,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
     }
 
     func takeSnapshot(using configuration: WKSnapshotConfiguration, for context: WKWebExtensionContext) async throws -> NSImage? {
-        guard let web = tab?.built else { return nil }
+        guard let web = tab?.built, !sealed(context) else { return nil }
         return try await web.takeSnapshot(configuration: configuration)
     }
 }
@@ -1312,7 +1455,9 @@ final class ExtensionWindow: NSObject, WKWebExtensionWindow {
     }
 
     func activeTab(for context: WKWebExtensionContext) -> (any WKWebExtensionTab)? { browser.flatMap(owner.activeAdapter(of:)) }
-    func windowType(for context: WKWebExtensionContext) -> WKWebExtension.WindowType { .normal }
+    func windowType(for context: WKWebExtensionContext) -> WKWebExtension.WindowType {
+        browser?.extensionPopup != nil ? .popup : .normal
+    }
     func isPrivate(for context: WKWebExtensionContext) -> Bool { false }
 
     func windowState(for context: WKWebExtensionContext) -> WKWebExtension.WindowState {
@@ -1333,6 +1478,18 @@ final class ExtensionWindow: NSObject, WKWebExtensionWindow {
     /// windows.remove.
     func close(for context: WKWebExtensionContext) async throws {
         browser?.window?.performClose(nil)
+    }
+
+    /// windows.update with a position or size; unset parts come as NaN and
+    /// stay as they are, and the window never goes below its smallest size.
+    func setFrame(_ frame: CGRect, for context: WKWebExtensionContext) async throws {
+        guard let window = nsWindow else { return }
+        let now = window.frame
+        func or(_ value: CGFloat, _ current: CGFloat) -> CGFloat { value.isFinite ? value : current }
+        let size = NSSize(width: max(window.minSize.width, or(frame.size.width, now.width)),
+                          height: max(window.minSize.height, or(frame.size.height, now.height)))
+        let origin = NSPoint(x: or(frame.origin.x, now.origin.x), y: or(frame.origin.y, now.origin.y))
+        window.setFrame(Extensions.onScreen(NSRect(origin: origin, size: size)), display: true, animate: false)
     }
 }
 
@@ -1631,4 +1788,8 @@ private struct ExtensionMenu: View {
             .onHover { hovering = $0 }
         }
     }
+}
+
+private extension CGRect {
+    var area: CGFloat { isNull ? 0 : width * height }
 }

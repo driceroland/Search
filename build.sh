@@ -9,12 +9,22 @@
 #                                if there is one in the keychain
 #   ./build.sh release ship    + both notarised, the DMG stapled
 #
+#   SEARCH_ARCH=x86_64 ./build.sh release ship
+#                              the same for Intel Macs, into build/intel/
+#
 # Same shape as the one next door: SwiftPM builds the executable, and a macOS
 # app bundle is just a folder with a plist and the binary in the right place.
 #
 # The three files keep the same names from release to release, so the site
 # links to them once and the updater reads one address forever. ./publish.sh
 # copies them into the site.
+#
+# Two builds from 1.0.5, each for one kind of Mac: Apple Silicon, in build/,
+# and Intel, in build/intel/, served from the site's search/intel/ folder
+# with an appcast of its own. A single universal app would have weighed
+# twice as much for everyone (10.9 MB of binary instead of 5.4). The app's
+# updater reads the feed for the chip it was built for (Updater.feed).
+# SEARCH_ARCH picks the chip; without it, the Mac's own.
 #
 # "dmg" lays the disk image's window out with dmgbuild, installed into .build
 # on first use (Python 3 and a network, once).
@@ -36,7 +46,13 @@ set -euo pipefail
 cd "$(dirname "$0")"
 CONFIG="${1:-release}"
 STEP="${2:-app}"
-APP="build/Search.app"
+ARCH="${SEARCH_ARCH:-$(uname -m)}"
+case "$ARCH" in
+  arm64) OUT="build"; SUBFOLDER="" ;;
+  x86_64) OUT="build/intel"; SUBFOLDER="/intel" ;;
+  *) echo "SEARCH_ARCH is arm64 or x86_64, not “$ARCH”" >&2; exit 1 ;;
+esac
+APP="$OUT/Search.app"
 NAME="Search"
 VERSION="$(tr -d '[:space:]' < VERSION)"
 # A build number that only ever goes up, so the updater can tell newer from
@@ -46,8 +62,14 @@ BUILD="$(date +%Y%m%d%H%M)"
 # older Mac is not handed a build it can't open.
 MINIMUM="14.0"
 
-swift build -c "$CONFIG"
-BINARY=".build/$CONFIG/Search"
+# -Osize for a release: 14% less binary (5.39 → 4.65 MB) at the same speed —
+# launch 337 against 338 ms, a scroll frame 0.26 against 0.25 ms, a key typed
+# 0.41 ms either way, measured interleaved on 1.0.4 (27 Sep 2026).
+SWIFTFLAGS=(-c "$CONFIG" --arch "$ARCH")
+[ "$CONFIG" = "release" ] && SWIFTFLAGS+=(-Xswiftc -Osize)
+swift build "${SWIFTFLAGS[@]}"
+BINARY="$(swift build "${SWIFTFLAGS[@]}" --show-bin-path)/Search"
+[ "$(lipo -archs "$BINARY")" = "$ARCH" ] || { echo "$BINARY is not a $ARCH binary" >&2; exit 1; }
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -84,7 +106,9 @@ rm -rf "$ICONSET"
 # actool's own .icns: the one above goes on being the disk image's icon and
 # the fallback. (macOS 14 and 15 show the flat pictures actool puts in
 # Assets.car, drawn from the same document: the same mark, to within a
-# pixel, on a plate with Apple's own corners.)
+# pixel, on a plate with Apple's own corners.) --optimization space keeps
+# those pictures zipped rather than lzfse'd: 666 KB of catalog instead of
+# 800, every style still in it.
 ICONNAME=""
 ICONCAR="build/AppIcon.car"
 rm -rf "$ICONCAR"
@@ -92,7 +116,7 @@ mkdir -p "$ICONCAR"
 # Full paths: actool hands the document to a helper that runs elsewhere, and
 # with "build/…" it finds nothing ("Icon export exited with status 255").
 if xcrun actool "$PWD/$ICONDOC" --compile "$PWD/$ICONCAR" --platform macosx \
-     --minimum-deployment-target "$MINIMUM" --app-icon AppIcon \
+     --minimum-deployment-target "$MINIMUM" --app-icon AppIcon --optimization space \
      --output-partial-info-plist "$PWD/$ICONCAR/partial.plist" > /dev/null 2>&1 \
    && [ -f "$ICONCAR/Assets.car" ]; then
   cp "$ICONCAR/Assets.car" "$APP/Contents/Resources/Assets.car"
@@ -162,6 +186,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <string>Websites you visit can ask to use your camera. Search asks you the first time each site does and keeps your answer; Settings › Privacy forgets them.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Websites you visit can ask to use your microphone. Search asks you the first time each site does and keeps your answer; Settings › Privacy forgets them.</string>
+  <key>NSLocationUsageDescription</key>
+  <string>Websites you visit can ask for your location. Search asks you each time a site does, unless you choose Always allow for it; Settings › Privacy forgets those choices.</string>
   <key>NSDownloadsFolderUsageDescription</key>
   <string>Files you download are saved to your Downloads folder.</string>
 </dict>
@@ -197,7 +223,7 @@ else
   [ "$STEP" != "app" ] && echo "no Developer ID certificate found — the DMG will only open on this Mac" >&2
 fi
 
-echo "built: $APP ($VERSION, build $BUILD)"
+echo "built: $APP ($VERSION, $ARCH, build $BUILD)"
 [ "$STEP" = "app" ] && exit 0
 
 # The disk image: the app beside a shortcut to Applications, on a white
@@ -206,7 +232,7 @@ echo "built: $APP ($VERSION, build $BUILD)"
 # layout file itself, so no Finder is scripted and no window opens mid-build.
 # dmgbuild is installed into .build the first time, and needs Python 3 and a
 # network then; without it the image is the plain one it always was.
-DMG="build/$NAME.dmg"
+DMG="$OUT/$NAME.dmg"
 ART="build/installer"
 rm -rf "$ART" "$DMG"
 DMGBUILD=".build/dmgbuild/bin/dmgbuild"
@@ -236,7 +262,7 @@ echo "packed: $DMG"
 
 # The ZIP is what the updater fetches, and its hash is what the updater
 # checks before opening it.
-ZIP="build/$NAME.zip"
+ZIP="$OUT/$NAME.zip"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 SHA="$(shasum -a 256 "$ZIP" | cut -d' ' -f1)"
@@ -247,7 +273,7 @@ echo "packed: $ZIP"
 # Written last — after notarisation has stapled its ticket to the DMG, which
 # changes it — so the DMG's hash is the one people download.
 BASE="${SEARCH_DOWNLOAD_URL:-https://officecommun.com/search}"
-BASE="${BASE%/}"
+BASE="${BASE%/}$SUBFOLDER"
 NOTES=""
 if [ -f NOTES.md ]; then
   NOTES="$(awk 'NF { printf "%s%s", (n++ ? " " : ""), $0; next } n { exit }' NOTES.md \
@@ -256,7 +282,7 @@ fi
 write_appcast() {
   local DMGSHA
   DMGSHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
-  cat > build/appcast.json <<JSON
+  cat > "$OUT/appcast.json" <<JSON
 {
   "version": "$VERSION",
   "build": $BUILD,
@@ -268,20 +294,20 @@ write_appcast() {
   "minimumSystemVersion": "$MINIMUM"
 }
 JSON
-  echo "wrote: build/appcast.json ($VERSION, build $BUILD)"
+  echo "wrote: $OUT/appcast.json ($VERSION, $ARCH, build $BUILD)"
   # The same file, signed with the Developer ID that signs the app (codesign
   # keeps the signature in the file's extended attributes, ditto carries them
   # in the ZIP). Builds from 1.0.4 read only this one; older ones read the
   # plain file beside it. No key of its own to keep, or to lose.
-  rm -f build/appcast.json.zip
+  rm -f "$OUT/appcast.json.zip"
   if [ -n "$IDENTITY" ]; then
     local SIGNED
     SIGNED="$(mktemp -d)"
-    cp build/appcast.json "$SIGNED/appcast.json"
+    cp "$OUT/appcast.json" "$SIGNED/appcast.json"
     codesign --force --timestamp --sign "$IDENTITY" --identifier com.officecommun.search.appcast "$SIGNED/appcast.json"
-    ditto -c -k --sequesterRsrc "$SIGNED/appcast.json" build/appcast.json.zip
+    ditto -c -k --sequesterRsrc "$SIGNED/appcast.json" "$OUT/appcast.json.zip"
     rm -rf "$SIGNED"
-    echo "signed: build/appcast.json.zip"
+    echo "signed: $OUT/appcast.json.zip"
   fi
 }
 if [ "$STEP" = "dmg" ]; then write_appcast; exit 0; fi
@@ -295,4 +321,4 @@ for FILE in "$DMG" "$ZIP"; do
 done
 xcrun stapler staple "$DMG"
 write_appcast
-echo "shipped: $DMG, $ZIP, build/appcast.json and its signed ZIP — ./publish.sh <folder> puts them on the site"
+echo "shipped: $DMG, $ZIP, $OUT/appcast.json and its signed ZIP — ./publish.sh <folder> puts them on the site"

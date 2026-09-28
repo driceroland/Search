@@ -109,6 +109,11 @@ enum Address {
         return full
     }
 
+    /// An address as a row shows it: without a leading www.
+    static func withoutWWW(_ address: String) -> String {
+        address.lowercased().hasPrefix("www.") ? String(address.dropFirst(4)) : address
+    }
+
     /// What the tab says before the page has told us its title: the address,
     /// with the parts nobody reads taken off.
     static func pretty(_ url: URL) -> String {

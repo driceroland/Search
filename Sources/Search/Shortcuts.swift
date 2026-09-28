@@ -167,6 +167,8 @@ struct Command: Identifiable {
         Command("view.reloadOrigin", "Reload Page From Origin", .view, KeyCombo("r", option: true)) { $0.reload(fromOrigin: true) },
         Command("view.reader", "Reading Mode", .view, KeyCombo("r", shift: true)) { $0.toggleReader() },
         Command("view.float", "Float Video", .view, KeyCombo("p", shift: true)) { $0.toggleFloat() },
+        Command("view.summarize", "Summarize Page", .view, nil) { $0.summarizePage() },
+        Command("view.ask", "Ask About This Page…", .view, nil) { $0.askAboutPage() },
         Command("view.hide", "Hide Elements…", .view, KeyCombo("h", shift: true)) { $0.toggleHiding() },
         Command("view.hidden", "Hidden on This Site…", .view, KeyCombo("u", shift: true)) { $0.reviewing.toggle() },
         Command("view.zoomIn", "Zoom In", .view, KeyCombo("+")) { $0.zoom(by: 1.1) },
@@ -182,6 +184,32 @@ struct Command: Identifiable {
         Command("tabs.previous", "Previous Tab", .tabs, KeyCombo("[", shift: true)) { $0.step(-1) },
         Command("tabs.search", "Search Tabs…", .tabs, KeyCombo("k")) { browser in
             if browser.editing, !browser.offers.isEmpty { browser.stepSummon() } else { browser.summon() }
+        },
+        // ⌥⌘N, Chrome's on the Mac: ⌃⌘S is the Mac's own Show Sidebar, and
+        // sits beside ⌘S, which folds the tabs away.
+        Command("tabs.split", "Split Current Page", .tabs, KeyCombo("n", option: true)) { browser in
+            guard browser.prefs.splitView else { return }
+            browser.startSplit()
+        },
+        Command("tabs.focusLeftPane", "Focus Left Page", .tabs, KeyCombo("left", control: true)) { browser in
+            guard browser.prefs.splitView else { return }
+            browser.focusPane(onLeft: true)
+        },
+        Command("tabs.focusRightPane", "Focus Right Page", .tabs, KeyCombo("right", control: true)) { browser in
+            guard browser.prefs.splitView else { return }
+            browser.focusPane(onLeft: false)
+        },
+        Command("tabs.focusOtherPane", "Focus Other Page", .tabs, nil) { browser in
+            guard browser.prefs.splitView else { return }
+            browser.focusOtherPane()
+        },
+        Command("tabs.swapSplit", "Swap Pages", .tabs, nil) { browser in
+            guard browser.prefs.splitView else { return }
+            browser.swapSplit()
+        },
+        Command("tabs.separateSplit", "Separate Split Tabs", .tabs, nil) { browser in
+            guard browser.prefs.splitView, let tab = browser.active else { return }
+            browser.detachSplit(tab)
         },
         Command("tabs.rename", "Rename Tab", .tabs, nil) { browser in
             if let tab = browser.active { browser.beginTabRename(tab) }
@@ -399,4 +427,13 @@ extension View {
     func shortcut(_ id: String) -> some View {
         keyboardShortcut(ShortcutStore.shared.key(for: id)?.swiftUI)
     }
+}
+
+extension Command {
+    /// Split View's commands: with it off, not listed, and their keys go on
+    /// to the page.
+    static let split: Set<String> = ["tabs.split", "tabs.focusLeftPane", "tabs.focusRightPane", "tabs.focusOtherPane",
+                                     "tabs.swapSplit", "tabs.separateSplit"]
+    /// The AI add-on's: with it off, not listed.
+    static let ai: Set<String> = ["view.summarize", "view.ask"]
 }

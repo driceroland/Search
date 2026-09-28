@@ -270,6 +270,9 @@ final class Tab: ObservableObject, Identifiable {
     var pageAddress: URL? { committed ?? address }
 
     func didCommit() {
+        // A new document: whatever the old one waited for under its field
+        // went with it.
+        if let built { Passkeys.shared.forget(built) }
         if let url = built?.url, url.absoluteString != "about:blank" { committed = url }
         // A page arrived after all: the address is its own again.
         if held != nil, let url = built?.url, url.absoluteString != "about:blank" {
@@ -403,6 +406,8 @@ final class Tab: ObservableObject, Identifiable {
     var onZoom: ((Tab, CGFloat) -> Void)?
     /// The resolved address under the pointer, or nil when it leaves a link.
     var onLink: ((Tab, String?) -> Void)?
+    /// The page took the keys (see PageView.onKeys).
+    var onKeys: ((Tab) -> Void)?
 
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
@@ -426,7 +431,7 @@ final class Tab: ObservableObject, Identifiable {
     var onSignIn: ((Tab) -> Void)?
     /// The caret has entered or left one of the sign-in boxes; where the box
     /// is, in the web view's points, or nil when it has left.
-    var onField: ((Tab, CGRect?) -> Void)?
+    var onField: ((Tab, CGRect?, Bool) -> Void)?
     /// The site the sign-in was sent from — not the one it landed on —
     /// then the name and the password, and whether that page came over
     /// plain http.
@@ -437,6 +442,8 @@ final class Tab: ObservableObject, Identifiable {
     /// download it and then, on at least some sites, does neither — see
     /// ImageMenu.swift for why this is built rather than patched.
     var onImageMenu: ((Tab, URL) -> Void)?
+    /// Where the last image right-clicked came from (see ImageMenu.swift).
+    var imageFrame: WKFrameInfo? { images.frame }
     var searchName: (() -> String?)?
     var onSearch: ((Tab, String) -> Void)?
     /// "Add to Search" was pressed on the Chrome Web Store page this tab shows.
@@ -563,6 +570,7 @@ final class Tab: ObservableObject, Identifiable {
         Swipe.calm(web)
         web.onPull = { [weak self] pull in self?.pull = pull }
         web.onTouch = { [weak self] in self?.uncover() }
+        web.onKeys = { [weak self] in if let self { self.onKeys?(self) } }
         web.searchName = { [weak self] in self?.searchName?() }
         web.onSearch = { [weak self] text in
             guard let self else { return }
@@ -763,16 +771,18 @@ final class Tab: ObservableObject, Identifiable {
 
     /// From the page, in CSS pixels; passed on in points. Page zoom is the
     /// only scale between the two that matters here.
-    func fieldFocused(_ rect: CGRect?) {
+    /// `passwords`: a box of a sign-in with a password, not one only for
+    /// passkeys.
+    func fieldFocused(_ rect: CGRect?, passwords: Bool = true) {
         guard let rect else {
-            onField?(self, nil)
+            onField?(self, nil, false)
             return
         }
         let zoom = built?.pageZoom ?? 1
         onField?(self, CGRect(
             x: rect.minX * zoom, y: rect.minY * zoom,
             width: rect.width * zoom, height: rect.height * zoom
-        ))
+        ), passwords)
     }
 
     /// A name and password the page has just sent — held, not yet offered.
@@ -1258,11 +1268,13 @@ final class Tab: ObservableObject, Identifiable {
         ears.stop()
         guard let web = built else { return }
         built = nil
+        Passkeys.shared.forget(web)
         let controller = web.configuration.userContentController
         Web.release(controller)
         controller.removeAllUserScripts()
         web.onPull = nil
         web.onTouch = nil
+        web.onKeys = nil
         web.searchName = nil
         web.onSearch = nil
         web.stopLoading()
@@ -1469,6 +1481,20 @@ final class PageView: WKWebView {
     /// Told the moment the page is reached for — a click, a scroll — so the
     /// picture of a tab waking up never stands between you and the page.
     var onTouch: (() -> Void)?
+    /// Told when the keys come to this page, however they got here — a
+    /// click, or Tab walked past the other page's last field. With two
+    /// pages up it makes this one the focused page (Browser.prepare), which
+    /// is safe only because a page can't ask for the keys itself: Search
+    /// doesn't implement WebKit's focus request, so element.focus() and
+    /// window.focus() never make this view first responder. If that is ever
+    /// added, it must not do so for the page that isn't focused.
+    var onKeys: (() -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let took = super.becomeFirstResponder()
+        if took { onKeys?() }
+        return took
+    }
 
     override func mouseDown(with event: NSEvent) {
         onTouch?()

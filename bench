@@ -2,6 +2,9 @@
 """Drive the Search you already have open, from the shell.
 
     ./bench tabs                       every tab, yours and the bench's
+    ./bench find TEXT [next N] [back N] [case] [words]
+                                       test run: Find on Page as typed into the bar, then Next or Previous
+                                       N times → what the bar says, and how long the page took
     ./bench open URL [private]         a bench tab at the end of the row → its id; private: a private one,
                                        --test runs only
     ./bench go ID URL                  send a bench tab somewhere else
@@ -41,6 +44,8 @@
                                        world's own account — whether it is there, before and after
     ./bench fold PATH [WIDTH]          test run: the folded strip or column out over the page (ui folded on,
                                        ui peek on), drawn off screen over red — red shows where the page would
+    ./bench split state|start|pair|focus|select|detach|fraction|close|new-tab|move|drop|open|private|bench|sleep|reopen|insert|save|space|mouse
+                                       test run only: exercise split state in the real browser model
     ./bench space [new NAME [fresh]|go N|delete|swipe DX|hold DX|release|move N]
                                        test run: the spaces, a new one (signed in with the others, or fresh),
                                        switch to the Nth, delete this one,
@@ -57,6 +62,13 @@
     ./bench field TEXT [type] [go]     test run: TEXT pasted into the address field (type: a key at a time),
                                        each timed until the window has caught up; go: then Return, timed
                                        until the page is loading
+    ./bench visible ID                 switched off: it made a window (off screen), and no verb makes one for now
+    ./bench ai mock URL | key PROVIDER KEY | ask PROVIDER MODEL TEXT | read ID | check TEXT | signin | engine [PATH MODELS] | use PROVIDER [MODEL] | summarize ID | question ID TEXT | agree | state | picture DIR
+                                       test run: the AI add-on's requests, against a stand-in on this Mac;
+                                       what of a page would go to the model, and an answer checked against it
+    ./bench answer once|always|no     test run: the card of a page asking for the camera, microphone or location
+    ./bench accounts [ROW]             test run: the list under the sign-in box the caret is in (passkeys,
+                                       then passwords); ROW: a click on that row, from 0
     ./bench pull DX [STEPS] [MS]       test run: two fingers DX points sideways over the page (back is +) — where it went
     ./bench keyeq CHARS CODE [shift]   test run: ⌘CHARS pressed while the page has the keyboard — who took it
     ./bench import BROWSER [WHAT…] [--profile NAME|all] [--replace]
@@ -175,7 +187,7 @@ def main(argv):
         if not args: sys.exit("usage: bench wait ID [SECONDS]")
         request["id"] = args[0]
         if len(args) > 1: request["seconds"] = float(args[1])
-    elif verb in ("text", "close", "sleep", "select"):
+    elif verb in ("text", "close", "sleep", "select", "visible"):
         if len(args) != 1: sys.exit(f"usage: bench {verb} ID")
         request["id"] = args[0]
     elif verb == "eval":
@@ -276,6 +288,65 @@ def main(argv):
         elif args and args[0] == "release": request["action"] = "release"
         elif args and args[0] == "move" and len(args) == 2: request["action"], request["index"] = "move", int(args[1])
         elif args: sys.exit("usage: bench space [new NAME | go N | delete | swipe DX | hold DX | release | move N]")
+    elif verb == "split":
+        if not args: args = ["state"]
+        action, values = args[0], args[1:]
+        actions = {
+            "new-tab": "newTab",
+            "state": "state", "start": "start", "pair": "pair", "focus": "focus",
+            "select": "select", "detach": "detach", "fraction": "fraction", "close": "close",
+            "move": "move", "drop": "drop", "open": "open", "private": "private",
+            "bench": "bench", "sleep": "sleep", "reopen": "reopen", "insert": "insert",
+            "save": "save", "space": "space", "mouse": "mouse",
+        }
+        if action not in actions:
+            sys.exit("usage: bench split state|start|pair DRAGGED TARGET left|right|focus ID|select ID|detach ID|fraction UUID VALUE|close ID|new-tab|move ID INDEX|drop ID [BEFORE]|open URL [FROM_ID] [background]|private|bench URL|sleep ID|save|space new NAME|space go UUID")
+        request["action"] = actions[action]
+        if action == "pair":
+            if len(values) != 3 or values[2] not in ("left", "right"): sys.exit("usage: bench split pair DRAGGED TARGET left|right")
+            request["id"], request["with"], request["side"] = values
+        elif action in ("focus", "select", "detach", "close", "sleep"):
+            if len(values) != 1: sys.exit(f"usage: bench split {action} ID")
+            request["id"] = values[0]
+        elif action == "fraction":
+            if len(values) != 2: sys.exit("usage: bench split fraction UUID VALUE")
+            request["split"], request["fraction"] = values[0], float(values[1])
+        elif action == "move":
+            if len(values) != 2: sys.exit("usage: bench split move ID INDEX")
+            request["id"], request["to"] = values[0], int(values[1])
+        elif action == "drop":
+            if not 1 <= len(values) <= 2: sys.exit("usage: bench split drop ID [BEFORE]")
+            request["id"] = values[0]
+            if len(values) == 2: request["before"] = values[1]
+        elif action == "open":
+            if not 1 <= len(values) <= 4:
+                sys.exit("usage: bench split open URL [FROM_ID] [background] [end]")
+            request["url"] = values[0]
+            extra = values[1:]
+            flags = [value for value in extra if value in ("background", "end")]
+            sources = [value for value in extra if value not in ("background", "end")]
+            if len(sources) > 1 or len(flags) + len(sources) != len(extra):
+                sys.exit("usage: bench split open URL [FROM_ID] [background] [end]")
+            if sources: request["from"] = sources[0]
+            request["foreground"] = "background" not in flags
+            request["atEnd"] = "end" in flags
+        elif action == "bench":
+            if len(values) != 1: sys.exit("usage: bench split bench URL")
+            request["url"] = values[0]
+        elif action == "insert":
+            if len(values) != 2: sys.exit("usage: bench split insert URL INDEX")
+            request["url"], request["index"] = values[0], int(values[1])
+        elif action == "space":
+            if values and values[0] == "new" and len(values) >= 2:
+                request["spaceAction"], request["name"] = "new", " ".join(values[1:])
+            elif values and values[0] == "go" and len(values) == 2:
+                request["spaceAction"], request["spaceID"] = "go", values[1]
+            else: sys.exit("usage: bench split space new NAME|go UUID")
+        elif action == "mouse":
+            if len(values) < 4 or len(values) % 2: sys.exit("usage: bench split mouse X1 Y1 X2 Y2 [X3 Y3 ...]")
+            request["points"] = [[float(values[i]), float(values[i + 1])] for i in range(0, len(values), 2)]
+        elif values:
+            sys.exit(f"usage: bench split {action}")
     elif verb == "hit":
         if len(args) not in (2, 3) or (len(args) == 3 and args[2] not in ("double", "middle")): sys.exit("usage: bench hit X Y [double|middle]")
         request["x"], request["y"] = float(args[0]), float(args[1])
@@ -388,10 +459,54 @@ def main(argv):
         else:
             if len(args) > 2: request["frames"] = int(args[2])
             if len(args) > 3: request["every"] = float(args[3])
+    elif verb == "image-data":
+        if len(args) not in (1, 2): sys.exit("usage: bench image-data URL [ID]")
+        request["url"] = args[0]
+        if len(args) == 2: request["id"] = args[1]
+    elif verb == "find":
+        if not args: sys.exit("usage: bench find TEXT [next N] [back N] [case] [words]")
+        request["text"] = args[0]
+        rest = args[1:]
+        while rest:
+            word = rest.pop(0)
+            if word in ("next", "back") and rest and rest[0].isdigit(): request[word] = int(rest.pop(0))
+            elif word == "case": request["case"] = True
+            elif word == "words": request["words"] = True
+            else: sys.exit("usage: bench find TEXT [next N] [back N] [case] [words]")
+    elif verb == "ai":
+        usage = "usage: bench ai mock URL | key PROVIDER KEY | ask PROVIDER MODEL TEXT | read ID | check TEXT | signin | engine [PATH MODELS] | use PROVIDER [MODEL] | summarize ID | question ID TEXT | agree | state | picture DIR"
+        if not args: sys.exit(usage)
+        request["action"] = args[0]
+        if args[0] == "mock" and len(args) == 2: request["url"] = args[1]
+        elif args[0] == "key" and len(args) == 3: request["provider"], request["key"] = args[1], args[2]
+        elif args[0] == "ask" and len(args) == 4: request["provider"], request["model"], request["text"] = args[1], args[2], args[3]
+        elif args[0] == "read" and len(args) == 2: request["id"] = args[1]
+        elif args[0] == "signin" and len(args) == 1: pass
+        elif args[0] == "engine" and len(args) in (1, 3):
+            if len(args) == 3: request["path"], request["models"] = args[1], args[2]
+        elif args[0] == "use" and len(args) in (2, 3):
+            request["provider"] = args[1]
+            if len(args) == 3: request["model"] = args[2]
+        elif args[0] == "summarize" and len(args) == 2: request["id"] = args[1]
+        elif args[0] == "question" and len(args) == 3: request["id"], request["text"] = args[1], args[2]
+        elif args[0] in ("agree", "state") and len(args) == 1: pass
+        elif args[0] == "picture" and len(args) == 2: request["path"] = args[1]
+        elif args[0] == "check" and len(args) == 2: request["text"] = args[1]
+        else: sys.exit(usage)
+    elif verb == "answer":
+        if args not in (["once"], ["always"], ["no"]): sys.exit("usage: bench answer once|always|no")
+        request["with"] = args[0]
+    elif verb == "accounts":
+        if len(args) not in (0, 1) or (args and not args[0].isdigit()): sys.exit("usage: bench accounts [ROW]")
+        if args: request["pick"] = int(args[0])
     elif verb not in ("tabs", "probe", "extensions", "import-preview", "quit"):
         sys.exit(f"unknown command “{verb}” — see bench help")
 
     answer = ask(os.path.join(folder(world), "bench.sock"), request)
+    # A test run that let a window onto a screen has failed, whatever it was doing.
+    if answer.get("onScreen"):
+        print("error: a window came onto a screen in this test run — stop the probe: " + "; ".join(answer["onScreen"]), file=sys.stderr)
+        sys.exit(3)
     if "error" in answer:
         sys.exit("error: " + str(answer["error"]))
     if verb == "text":

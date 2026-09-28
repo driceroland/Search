@@ -212,13 +212,13 @@ struct HistoryPanel: View {
         var body: some View {
             HStack(spacing: 12) {
                 Mark(icon: Favicons.shared.cached(trace.url.host()?.lowercased() ?? ""),
-                     letter: trace.key.first.map { String($0).uppercased() } ?? "•", size: 16)
+                     letter: trace.address.first.map { String($0).uppercased() } ?? "•", size: 16)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(trace.title.isEmpty ? trace.key : trace.title)
+                    Text(trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title)
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
-                    Text(trace.key)
+                    Text(Address.withoutWWW(trace.address))
                         .font(.system(size: 11.5))
                         .foregroundStyle(Palette.muted)
                         .lineLimit(1)
@@ -248,22 +248,54 @@ struct HistoryPanel: View {
 struct DownloadsPanel: View {
     @ObservedObject var browser: Browser
     @ObservedObject var loot: Loot
+    @ObservedObject var fetches: Fetches
+
+    init(browser: Browser, loot: Loot) {
+        self.browser = browser
+        self.loot = loot
+        self.fetches = browser.fetches
+    }
 
     var body: some View {
         Plate("Downloads", width: 560, close: { browser.hoarding = false }) {
-            if loot.kept.isEmpty {
+            if fetches.entries.isEmpty && loot.kept.isEmpty {
                 Card { Nothing("Nothing downloaded yet.") }
             } else {
                 ScrollView(showsIndicators: false) {
-                    Card {
-                        ForEach(Array(loot.kept.enumerated()), id: \.element.id) { index, keep in
-                            if index > 0 { Rule() }
-                            Row(
-                                keep: keep,
-                                open: { loot.open(keep) },
-                                reveal: { loot.reveal(keep) },
-                                forget: { loot.forget(keep) }
-                            )
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        if !fetches.entries.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Caption("Current downloads")
+                                Card {
+                                    ForEach(Array(fetches.entries.enumerated()), id: \.element.id) { index, entry in
+                                        if index > 0 { Rule() }
+                                        FetchRow(
+                                            entry: entry,
+                                            pause: { browser.pauseDownload(entry) },
+                                            resume: { browser.resumeDownload(entry) },
+                                            retry: { browser.retryDownload(entry) },
+                                            cancel: { browser.cancelDownload(entry) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if !loot.kept.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Caption("Completed")
+                                Card {
+                                    ForEach(Array(loot.kept.enumerated()), id: \.element.id) { index, keep in
+                                        if index > 0 { Rule() }
+                                        KeptRow(
+                                            keep: keep,
+                                            open: { loot.open(keep) },
+                                            reveal: { loot.reveal(keep) },
+                                            forget: { loot.forget(keep) }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     .padding(.bottom, 2)
@@ -284,7 +316,129 @@ struct DownloadsPanel: View {
         }
     }
 
-    private struct Row: View {
+    private struct FetchRow: View {
+        @ObservedObject var entry: FetchEntry
+        let pause: () -> Void
+        let resume: () -> Void
+        let retry: () -> Void
+        let cancel: () -> Void
+
+        private var bytes: String {
+            let received = ByteCountFormatter.string(fromByteCount: entry.completedBytes, countStyle: .file)
+            guard entry.totalBytes > 0 else { return received + " downloaded" }
+            let total = ByteCountFormatter.string(fromByteCount: entry.totalBytes, countStyle: .file)
+            return "\(received) of \(total)"
+        }
+
+        private var stateLabel: String {
+            switch entry.state {
+            case .downloading: return "Downloading"
+            case .pausing: return "Pausing…"
+            case .paused: return "Paused"
+            case .resuming: return "Resuming…"
+            case .failed: return "Failed"
+            }
+        }
+
+        private var icon: String {
+            switch entry.state {
+            case .downloading, .pausing, .resuming: return "arrow.down.circle"
+            case .paused: return "pause.circle"
+            case .failed: return "exclamationmark.circle"
+            }
+        }
+
+        var body: some View {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 18)
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.name)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    HStack(spacing: 7) {
+                        if let fraction = entry.fraction {
+                            // Grey, as the ring in the chrome is.
+                            Capsule()
+                                .fill(Palette.hairline)
+                                .overlay(alignment: .leading) {
+                                    Capsule()
+                                        .fill(Palette.ink.opacity(0.6))
+                                        .frame(width: 68 * min(1, max(0, fraction)))
+                                }
+                                .frame(width: 68, height: 3)
+                        }
+                        Text("\(stateLabel) · \(bytes)")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Palette.muted)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    if case .failed = entry.state {
+                        Text(entry.errorDescription ?? "The download failed.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                }
+                Spacer(minLength: 4)
+                controls
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+        }
+
+        @ViewBuilder
+        private var controls: some View {
+            switch entry.state {
+            case .downloading:
+                HStack(spacing: 4) {
+                    if entry.canPause { Quick("Pause", act: pause) }
+                    Quick("Cancel", act: cancel)
+                }
+            case .pausing:
+                HStack(spacing: 4) {
+                    Quick("Pausing…", act: {})
+                        .disabled(true)
+                    Quick("Cancel", act: cancel)
+                }
+            case .paused:
+                HStack(spacing: 4) {
+                    if entry.canResume {
+                        Quick("Resume", act: resume)
+                    } else if entry.canRetry {
+                        Quick("Retry", act: retry)
+                            .help("Start the download again from the beginning")
+                    }
+                    Quick("Remove", act: cancel)
+                }
+            case .resuming:
+                HStack(spacing: 4) {
+                    Quick("Resuming…", act: {})
+                        .disabled(true)
+                    Quick("Cancel", act: cancel)
+                }
+            case .failed:
+                HStack(spacing: 4) {
+                    if entry.canResume { Quick("Resume", act: resume) }
+                    if entry.canRetry {
+                        Quick("Retry", act: retry)
+                            .help("Start the download again from the beginning")
+                    }
+                    Quick("Remove", act: cancel)
+                }
+            }
+        }
+    }
+
+    private struct KeptRow: View {
         let keep: Keep
         let open: () -> Void
         let reveal: () -> Void

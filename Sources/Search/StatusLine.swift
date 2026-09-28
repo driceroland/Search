@@ -76,6 +76,9 @@ final class HoveredLink: NSObject, WKScriptMessageHandler {
 final class LinkStatus: ObservableObject {
     @Published private(set) var destination: String?
     @Published private(set) var onRight = false
+    /// The page the link is on — with two pages up, the bubble stands over
+    /// that one (see PaneLayers).
+    @Published private(set) var page: ObjectIdentifier?
     private var hiding: DispatchWorkItem?
 
     /// `page`: the view the page is drawn in, to learn where the pointer is.
@@ -88,6 +91,8 @@ final class LinkStatus: ObservableObject {
             return
         }
         if destination != address { destination = address }
+        let id = page.map(ObjectIdentifier.init)
+        if self.page != id { self.page = id }
         if let page { place(over: page) }
     }
 
@@ -115,10 +120,13 @@ final class LinkStatus: ObservableObject {
 /// pointer is there, it sits at the other corner instead.
 struct LinkBubble: View {
     @ObservedObject var status: LinkStatus
+    /// With two pages up, the one this bubble stands over: it shows only a
+    /// link on that page.
+    var page: NSView? = nil
 
     var body: some View {
         GeometryReader { space in
-            if let address = status.destination {
+            if let address = status.destination, page.map({ status.page == ObjectIdentifier($0) }) ?? true {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
                     HStack(spacing: 0) {

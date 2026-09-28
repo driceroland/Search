@@ -24,10 +24,7 @@ struct SideBar: View {
     @Namespace private var before
     @Namespace private var after
 
-    @State private var pinDragging: Tab.ID?
     @State private var groupFrames: [UUID: CGRect] = [:]
-    @State private var pinFrom = 0
-    @State private var pinTravel: CGSize = .zero
 
     private static let row: CGFloat = 28
     private static let gap: CGFloat = 2
@@ -36,6 +33,10 @@ struct SideBar: View {
 
     private var onRight: Bool { prefs.sidePosition == .right }
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
+
+    /// The window's buttons' corner: gone in full screen, where macOS takes
+    /// them away, and back, forward and reload move up to the edge (idea 184).
+    private var lights: CGFloat { browser.fullScreen ? 0 : Metrics.sideLights }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -49,7 +50,7 @@ struct SideBar: View {
             // clicks. The lights are the title bar's own and answer first.
             HStack(spacing: 0) {
                 DragStrip()
-                    .frame(width: 10 + Metrics.sideLights)
+                    .frame(width: 10 + lights)
                 Color.clear
                     .frame(width: Metrics.helm)
                     .allowsHitTesting(false)
@@ -63,7 +64,7 @@ struct SideBar: View {
                 // bar, moved beside the lights since there's no far end of a
                 // row to put them at in this mode.
                 HStack(spacing: 0) {
-                    Color.clear.frame(width: Metrics.sideLights)
+                    Color.clear.frame(width: lights)
                     Helm(browser: browser)
                     Spacer(minLength: 0)
                 }
@@ -90,7 +91,14 @@ struct SideBar: View {
         // Rows on their way to or from another space stay in the column.
         .clipped()
         .onAppear { SpaceSwipe.shared.start(for: browser) }
-        .background(landing ? Palette.hover : Palette.ground)
+        .background {
+            ZStack {
+                landing ? Palette.hover : Palette.ground
+                if prefs.splitView {
+                    SplitDropZone(browser: browser, tab: nil, kind: .strip)
+                }
+            }
+        }
         .overlay(alignment: innerEdge) {
             Rectangle().fill(Palette.hairline).frame(width: 1)
         }
@@ -208,10 +216,13 @@ struct SideBar: View {
                             // ⇧⌘], a link opening beside the one on screen.
                             .onChange(of: browser.activeID) { _, id in
                                 guard let id else { return }
-                                withAnimation(Motion.glide) { proxy.scrollTo(id) }
+                                let representative = browser.activeSplit?.left ?? id
+                                withAnimation(Motion.glide) { proxy.scrollTo(representative) }
                             }
                             .onAppear {
-                                if let id = browser.activeID { proxy.scrollTo(id, anchor: .center) }
+                                if let id = browser.activeID {
+                                    proxy.scrollTo(browser.activeSplit?.left ?? id, anchor: .center)
+                                }
                             }
                         }
                     }
@@ -229,7 +240,9 @@ struct SideBar: View {
     /// it is the one on screen.
     private func preview(_ row: Parked, pill: Namespace.ID) -> some View {
         let pins = row.tabs.filter { $0.pin != nil }
-        let rest = row.tabs.filter { $0.pin == nil }
+        let rest = row.tabs.filter { tab in
+            tab.pin == nil && (!prefs.splitView || !row.splits.contains(where: { $0.right == tab.id }))
+        }
         let cells = pinCells(pins.count)
         return VStack(alignment: .leading, spacing: 0) {
             if !pins.isEmpty {
@@ -245,7 +258,8 @@ struct SideBar: View {
             }
             VStack(spacing: SideBar.gap) {
                 ForEach(rest) { tab in
-                    SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active, pill: pill, close: {})
+                    rowItem(tab, tabs: row.tabs, splits: row.splits, activeID: row.active,
+                            interactive: false, pill: pill, close: {})
                 }
             }
             newTab
@@ -257,21 +271,50 @@ struct SideBar: View {
     /// from what was drawn rather than measured: a measurement would arrive a
     /// frame late, and for one frame the whole column would drag the window.
     private var rowsEnd: CGFloat {
-        let pins = browser.pinnedCount
+        let displayed = browser.displayedTabs
+        let pins = displayed.filter { $0.pin != nil }.count
         let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + 10
-        let count = prefs.usesTabGroups
-            ? browser.tabs(in: nil).count + browser.tabGroups.reduce(0) { $0 + browser.visibleTabs(in: $1).count }
-            : browser.tabs.count - pins
+        let rows = prefs.usesTabGroups
+            ? displayed.filter { $0.pin == nil && browser.group(of: $0) == nil }
+                + browser.tabGroups.flatMap { browser.visibleTabs(in: $0) }
+            : displayed.filter { $0.pin == nil }
+        // A pair is two lines (see SplitTabItem).
+        let pairs = rows.filter { browser.split(for: $0) != nil }.count
         let headings = prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) * (GroupHeading.height + SideBar.gap) : 0
-        let loose = CGFloat(count) * (SideBar.row + SideBar.gap) + headings
+        let loose = CGFloat(rows.count) * (SideBar.row + SideBar.gap) + CGFloat(pairs) * SideBar.row + headings
         return Metrics.strip + pinBlock + loose + SideBar.row + 8
+    }
+
+    @ViewBuilder
+    private func rowItem(
+        _ tab: Tab,
+        tabs: [Tab],
+        splits: [TabSplit],
+        activeID: Tab.ID?,
+        interactive: Bool,
+        pill: Namespace.ID,
+        close: @escaping () -> Void
+    ) -> some View {
+        let pair = prefs.splitView ? splits.first(where: { $0.left == tab.id }) : nil
+        if let pair, let right = tabs.first(where: { $0.id == pair.right }) {
+            SplitTabItem(browser: browser, prefs: prefs, left: tab, right: right,
+                         width: nil, height: SideBar.row,
+                         live: activeID.map { pair.contains($0) } ?? false,
+                         focusedID: activeID,
+                         interactive: interactive, pill: pill)
+                .frame(maxWidth: .infinity)
+        } else {
+            SideRow(browser: browser, prefs: prefs, tab: tab,
+                    live: tab.id == activeID, pill: pill, close: close,
+                    interactive: interactive)
+        }
     }
 
     // MARK: - the pinned squares
 
-    private var pinnedTabs: [Tab] { browser.tabs.filter { $0.pin != nil } }
+    private var pinnedTabs: [Tab] { browser.displayedTabs.filter { $0.pin != nil } }
     private var looseTabs: [Tab] {
-        browser.tabs.filter { $0.pin == nil && (!prefs.usesTabGroups || browser.group(of: $0) == nil) }
+        browser.displayedTabs.filter { $0.pin == nil && (!prefs.usesTabGroups || browser.group(of: $0) == nil) }
     }
 
     /// How many squares go in each row: at most four — fewer only when the
@@ -325,7 +368,6 @@ struct SideBar: View {
         // would shuttle between two cells for as long as the finger stayed.
         return VStack(spacing: 0) { PinGrid(cells: cells) {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
-                let held = pinDragging == tab.id
                 PinSquare(
                     browser: browser,
                     prefs: prefs,
@@ -335,66 +377,13 @@ struct SideBar: View {
                     width: cells[index].width,
                     height: cells[index].height
                 )
-                .offset(pinOffset(held: held, index: index, cells: cells))
-                // Under the hand exactly, as a row is (see the rows below).
-                .transaction { if held { $0.animation = nil } }
-                .zIndex(held ? 1 : 0)
-                .shadow(color: .black.opacity(held ? 0.16 : 0), radius: 10, y: 3)
-                .gesture(pinReorder(tab: tab, index: index, cells: cells))
+                // The hand's travel is the square's own, as a row's is
+                // (Carried): a move redraws the one square being carried,
+                // not the column (idea 31).
+                .modifier(PinCarried(index: index, cells: cells) { browser.move(tab, to: $0) })
             }
         } }
         .coordinateSpace(name: "pins")
-    }
-
-    /// The one square actually held stays glued to the fingers; every other
-    /// square is already exactly where it belongs, because `browser.move`
-    /// put it there — this only cancels out the bit of that same movement
-    /// the held square already got for free by changing index underneath
-    /// its own drag.
-    private func pinOffset(held: Bool, index: Int, cells: [CGRect]) -> CGSize {
-        guard held, cells.indices.contains(pinFrom), cells.indices.contains(index) else { return .zero }
-        let from = cells[pinFrom], now = cells[index]
-        return CGSize(
-            width: pinTravel.width - (now.midX - from.midX),
-            height: pinTravel.height - (now.midY - from.midY)
-        )
-    }
-
-    /// The cell the held square is over: the one whose centre is nearest to
-    /// where the fingers have taken the square's own centre. Rows of
-    /// different lengths have cells of different widths, so a count of
-    /// steps along one axis would land in the wrong one.
-    private func pinTarget(cells: [CGRect]) -> Int {
-        guard cells.indices.contains(pinFrom) else { return 0 }
-        let start = cells[pinFrom]
-        let point = CGPoint(x: start.midX + pinTravel.width, y: start.midY + pinTravel.height)
-        func distance(_ cell: CGRect) -> CGFloat { hypot(cell.midX - point.x, cell.midY - point.y) }
-        return cells.indices.min { distance(cells[$0]) < distance(cells[$1]) } ?? pinFrom
-    }
-
-    /// Pick a square up and the others make way — across a row, and down
-    /// into the next, exactly as far as the fingers actually moved.
-    private func pinReorder(tab: Tab, index: Int, cells: [CGRect]) -> some Gesture {
-        DragGesture(minimumDistance: 5, coordinateSpace: .named("pins"))
-            .onChanged { value in
-                if pinDragging != tab.id {
-                    pinDragging = tab.id
-                    pinFrom = index
-                }
-                pinTravel = value.translation
-                let target = pinTarget(cells: cells)
-                if target != index {
-                    withAnimation(Motion.settle) {
-                        browser.move(tab, to: target)
-                    }
-                }
-            }
-            .onEnded { _ in
-                withAnimation(Motion.settle) {
-                    pinDragging = nil
-                    pinTravel = .zero
-                }
-            }
     }
 
     // MARK: - the rows
@@ -411,23 +400,18 @@ struct SideBar: View {
             // the row's, so a row that has just moved keeps its bearings.
             ForEach(Array(looseTabs.enumerated()), id: \.element.id) { index, tab in
                 let step = SideBar.row + SideBar.gap
-                SideRow(
-                    browser: browser,
-                    prefs: prefs,
-                    tab: tab,
-                    live: tab.id == browser.activeID,
-                    pill: pill,
-                    close: { browser.close(tab) }
-                )
+                rowItem(tab, tabs: browser.tabs, splits: browser.splits,
+                        activeID: browser.activeID, interactive: true, pill: pill,
+                        close: { browser.close(tab) })
                 // Positions here are among the loose rows; the pinned block
                 // sits in front of them in the real list.
                 .modifier(Carried(index: index, count: looseTabs.count, step: step, vertical: true,
-                                  space: "rows", onDrop: { point in drop(tab, at: point) },
-                                  outside: { browser.dragOut(tab) }) {
+                                  space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                                  outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
                     if prefs.usesTabGroups {
                         browser.move(tab, within: nil, to: $0)
                     } else {
-                        browser.move(tab, to: $0 + browser.pinnedCount)
+                        browser.moveDisplayedTab(tab, to: $0 + browser.pinnedCount)
                     }
                 })
             }
@@ -447,14 +431,14 @@ struct SideBar: View {
         let members = browser.visibleTabs(in: group)
         return VStack(spacing: SideBar.gap) {
             ForEach(Array(members.enumerated()), id: \.element.id) { index, tab in
-                SideRow(browser: browser, prefs: prefs, tab: tab,
-                        live: tab.id == browser.activeID, pill: pill,
+                rowItem(tab, tabs: browser.tabs, splits: browser.splits,
+                        activeID: browser.activeID, interactive: true, pill: pill,
                         close: { browser.close(tab) })
                     .padding(.leading, 14)
                     .modifier(Carried(index: index, count: members.count,
                                       step: SideBar.row + SideBar.gap, vertical: true,
-                                      space: "rows", onDrop: { point in drop(tab, at: point) },
-                                      outside: { browser.dragOut(tab) }) {
+                                      space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                                      outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
                         browser.move(tab, within: group.id, to: $0)
                     })
             }
@@ -555,8 +539,11 @@ private struct PinSquare: View {
         .frame(width: width, height: height)
         .background {
             if live {
+                // Darker than the resting squares' grey by as much as a live
+                // row is darker than the white it sits on (Drice: the live
+                // pin barely showed among the others).
                 RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
-                    .fill(Palette.wash)
+                    .fill(Palette.pinLive)
                     .matchedGeometryEffect(id: "live", in: pill)
             } else {
                 RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
@@ -585,6 +572,7 @@ private struct SideRow: View {
     let live: Bool
     let pill: Namespace.ID
     let close: () -> Void
+    var interactive = true
 
     @State private var hovering = false
     @State private var shake: CGFloat = 0
@@ -689,11 +677,17 @@ private struct SideRow: View {
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
+            guard interactive else { return }
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })
-        .overlay { MiddleClick(act: close) }
+        .overlay { if interactive { MiddleClick(act: close) } }
         .onHover { hovering = $0 }
-        .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
+        .contextMenu { if interactive { TabMenu(browser: browser, tab: tab, close: close) } }
+        .background {
+            if interactive && prefs.splitView {
+                SplitDropZone(browser: browser, tab: tab, kind: .strip)
+            }
+        }
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)
         .onChange(of: browser.refusals) { _, _ in
@@ -815,5 +809,72 @@ struct Door: View {
         .help(help)
         .animation(Motion.quick, value: hovering)
         .animation(Motion.quick, value: on)
+    }
+}
+
+/// A pinned square picked up and carried across the grid, its travel its
+/// own: only the square being carried redraws as the hand moves, and the
+/// grid only when it changes place.
+struct PinCarried: ViewModifier {
+    let index: Int
+    let cells: [CGRect]
+    let move: (Int) -> Void
+
+    @State private var held = false
+    @State private var from = 0
+    @State private var travel: CGSize = .zero
+
+    func body(content: Content) -> some View {
+        content
+            .offset(held ? PinCarried.offset(travel: travel, from: from, index: index, cells: cells) : .zero)
+            // Under the hand exactly, as a row is (see Carried).
+            .transaction { if held { $0.animation = nil } }
+            .zIndex(held ? 1 : 0)
+            .shadow(color: .black.opacity(held ? 0.16 : 0), radius: 10, y: 3)
+            // Measured in the grid's own space, not the square's: a square
+            // that has just been moved to a new cell would otherwise report
+            // the drag from where it now is, and shuttle between two cells.
+            .gesture(
+                DragGesture(minimumDistance: 5, coordinateSpace: .named("pins"))
+                    .onChanged { value in
+                        if !held {
+                            held = true
+                            from = index
+                        }
+                        travel = value.translation
+                        let target = PinCarried.target(travel: travel, from: from, cells: cells)
+                        if target != index {
+                            withAnimation(Motion.settle) { move(target) }
+                        }
+                    }
+                    .onEnded { _ in
+                        withAnimation(Motion.settle) {
+                            held = false
+                            travel = .zero
+                        }
+                    }
+            )
+    }
+
+    /// The held square stays glued to the fingers; every other square is
+    /// already where it belongs, because the move put it there. This only
+    /// takes off what the held square got for free by changing cell under
+    /// its own drag.
+    static func offset(travel: CGSize, from: Int, index: Int, cells: [CGRect]) -> CGSize {
+        guard cells.indices.contains(from), cells.indices.contains(index) else { return .zero }
+        let start = cells[from], now = cells[index]
+        return CGSize(width: travel.width - (now.midX - start.midX), height: travel.height - (now.midY - start.midY))
+    }
+
+    /// The cell the held square is over: the one whose centre is nearest to
+    /// where the fingers have taken the square's own centre. Rows of
+    /// different lengths have cells of different widths, so a count of
+    /// steps along one axis would land in the wrong one.
+    static func target(travel: CGSize, from: Int, cells: [CGRect]) -> Int {
+        guard cells.indices.contains(from) else { return 0 }
+        let start = cells[from]
+        let point = CGPoint(x: start.midX + travel.width, y: start.midY + travel.height)
+        func distance(_ cell: CGRect) -> CGFloat { hypot(cell.midX - point.x, cell.midY - point.y) }
+        return cells.indices.min { distance(cells[$0]) < distance(cells[$1]) } ?? from
     }
 }

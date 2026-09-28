@@ -1387,6 +1387,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
             let item: NSMenuItem
             if node.isFolder {
                 item = NSMenuItem(title: node.title, action: nil, keyEquivalent: "")
+                item.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
                 let sub = NSMenu(title: node.title)
                 sub.delegate = self
                 folders[ObjectIdentifier(sub)] = node.children ?? []
@@ -1395,6 +1396,13 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
                 item = NSMenuItem(title: node.title, action: #selector(open(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = url
+                // The site's icon, as the bar wears it: a folder opened from
+                // the bar, or the Bookmarks menu, had none (idea 183).
+                if let icon = Favicons.shared.cached(node.host ?? "") {
+                    let small = icon.copy() as? NSImage ?? icon
+                    small.size = NSSize(width: 16, height: 16)
+                    item.image = small
+                }
             } else {
                 return nil
             }

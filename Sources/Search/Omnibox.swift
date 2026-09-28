@@ -18,43 +18,57 @@ struct Omnibox: View {
     @State private var shake: CGFloat = 0
     @State private var refused = false
 
+    /// Sized to a pane of a split rather than to the window.
+    var fitted = false
+
     var body: some View {
+        if fitted {
+            GeometryReader { geometry in
+                content(width: min(Metrics.fieldWidth, max(0, geometry.size.width - 28)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        } else {
+            content(width: Metrics.fieldWidth)
+        }
+    }
+
+    private func content(width: CGFloat) -> some View {
         ZStack {
             if over {
                 // The page is still there, just out of the way.
                 Rectangle()
                     .fill(Palette.ground.opacity(0.74))
-                    .ignoresSafeArea()
+                    .ignoresSafeArea(.all, edges: fitted ? [] : .all)
                     .onTapGesture { browser.dismiss() }
                     .transition(.opacity)
             }
 
             field
-                .frame(width: Metrics.fieldWidth)
-                // The list hangs below the field rather than stacking with it,
-                // so a list that grows never lifts the field out from under
-                // what is being typed.
-                .overlay(alignment: .top) {
-                    // Present or gone, not always-on-and-hidden: the list keeps
-                    // the appear and disappear it had, and the overlay is what
-                    // keeps that from moving the field.
-                    if !browser.offers.isEmpty {
-                        list
-                            .frame(width: Metrics.fieldWidth)
-                            .offset(y: Self.fieldHeight + 8)
-                    }
+                .frame(width: width)
+            // The list hangs below the field rather than stacking with it,
+            // so a list that grows never lifts the field out from under
+            // what is being typed.
+            .overlay(alignment: .top) {
+                // Present or gone, not always-on-and-hidden: the list keeps
+                // the appear and disappear it had, and the overlay is what
+                // keeps that from moving the field.
+                if !browser.offers.isEmpty {
+                    list
+                        .frame(width: width)
+                        .offset(y: Self.fieldHeight + 8)
                 }
-                // Lifted a little above centre: dead centre reads as low,
-                // because the strip at the top isn't part of what the eye is
-                // measuring.
-                .padding(.bottom, 60)
-                // The list's arrival and its leaving are animated from here,
-                // briefly: nothing that changes the suggestions does it inside
-                // an animation of its own. Its rows follow what was typed or
-                // pasted at once — sliding into place on a spring between
-                // keystrokes, they trailed behind the field.
-                .animation(Motion.quick, value: browser.offers.isEmpty)
-                .animation(Motion.settle, value: refused)
+            }
+            // Lifted a little above centre: dead centre reads as low,
+            // because the strip at the top isn't part of what the eye is
+            // measuring.
+            .padding(.bottom, 60)
+            // The list's arrival and its leaving are animated from here,
+            // briefly: nothing that changes the suggestions does it inside
+            // an animation of its own. Its rows follow what was typed or
+            // pasted at once — sliding into place on a spring between
+            // keystrokes, they trailed behind the field.
+            .animation(Motion.quick, value: browser.offers.isEmpty)
+            .animation(Motion.settle, value: refused)
         }
     }
 
@@ -162,7 +176,9 @@ struct Omnibox: View {
                 default:
                     EmptyView()
                 }
-                Text(offer.key)
+                // The row reads as 1.0.4's did, without the www; the key
+                // itself keeps it, for completing and going there.
+                Text(Address.withoutWWW(offer.key))
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.ink)
                     .lineLimit(1)

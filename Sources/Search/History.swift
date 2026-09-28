@@ -5,7 +5,7 @@ import Foundation
 // rather than on every keystroke.
 
 struct Suggestion: Identifiable, Equatable {
-    /// What you would have typed to get here: no scheme, no www.
+    /// What you could type to get here, kept reversible for completion.
     let key: String
     let title: String
     let url: URL
@@ -30,7 +30,11 @@ struct Suggestion: Identifiable, Equatable {
 
     /// A command's row can read the same as the search for the same word
     /// ("Settings" typed with its capital), and two rows can't share a name.
-    var id: String { kind.isCommand ? "command " + key : key }
+    var id: String {
+        if kind.isCommand { return "command " + key }
+        if case .visited = kind { return History.identity(for: url) }
+        return key
+    }
 
     /// A command goes nowhere, but the field still needs *a* URL to carry;
     /// `take` and `submit` read the kind first and never follow this one.
@@ -48,6 +52,13 @@ private struct Visit: Codable {
     var last: Date
 }
 
+private struct PageText {
+    let address: String
+    let searchable: String
+    let host: String
+    let homepage: Bool
+}
+
 @MainActor
 final class History: ObservableObject {
     private var visits: [String: Visit] = [:] {
@@ -62,41 +73,125 @@ final class History: ObservableObject {
     /// it each time cost more than everything else a key press does.
     private var recentCache: [Trace]?
     private var saving = false
+    /// Visits counted at most: far more than anyone makes, and room to add.
+    static let mostVisits = 1_000_000_000
+    /// These are derived once when a visit enters memory. Suggestions run on
+    /// every keystroke, so neither URL parsing nor address formatting belongs
+    /// in that loop.
+    private var pageText: [String: PageText] = [:]
+    private var visitedHosts: Set<String> = []
 
     init() { load() }
 
-    // A short display address drops the query, but it can be the whole
-    // identity of a page: two videos or articles must not overwrite each
-    // other. Query values are case-sensitive.
-    private static func key(for url: URL) -> String {
-        let address = Address.pretty(url).lowercased()
-        guard let query = url.query(percentEncoded: true) else { return address }
-        return address + "?" + query
+    /// URL identity ignores fragments, normalizes only the scheme and host,
+    /// and keeps the spelling and encoding of the path and query intact.
+    nonisolated static func identity(for url: URL) -> String {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.absoluteString
+        }
+        parts.scheme = parts.scheme?.lowercased()
+        parts.host = parts.host?.lowercased()
+        parts.user = nil
+        parts.password = nil
+        parts.fragment = nil
+        // An absent path and a lone slash have always meant the same home page.
+        if parts.percentEncodedPath.isEmpty { parts.percentEncodedPath = "/" }
+        return parts.string ?? url.absoluteString
+    }
+
+    /// A page as it is kept: without a name and password written into its
+    /// address. They were never part of which page it is, and the history
+    /// file is no place for a password. Nil if they can't be taken off.
+    nonisolated static func kept(_ url: URL) -> URL? {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        guard parts.user != nil || parts.password != nil else { return url }
+        parts.user = nil
+        parts.password = nil
+        return parts.url
+    }
+
+    private static func isWeb(_ url: URL) -> Bool {
+        ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+    }
+
+    private static func pageText(for url: URL) -> PageText {
+        var shownURL = url
+        if var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            parts.fragment = nil
+            shownURL = parts.url ?? url
+        }
+        let address = Address.editable(shownURL)
+        let searchable = stripped(address)
+        let host = (shownURL.host()?.lowercased() ?? "")
+        let bareHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        let path = shownURL.path()
+        return PageText(
+            address: address,
+            searchable: searchable,
+            host: bareHost,
+            homepage: path.isEmpty || path == "/"
+        )
+    }
+
+    private static func stripped(_ address: String) -> String {
+        var text = address.trimmingCharacters(in: .whitespaces).lowercased()
+        for scheme in ["https://", "http://"] where text.hasPrefix(scheme) {
+            text = String(text.dropFirst(scheme.count))
+        }
+        if text.hasPrefix("www.") { text = String(text.dropFirst(4)) }
+        return text
+    }
+
+    private func remember(_ visit: Visit, url: URL? = nil) {
+        guard let page = url ?? URL(string: visit.url) else { return }
+        let text = History.pageText(for: page)
+        pageText[visit.key] = text
+        if !text.host.isEmpty { visitedHosts.insert(text.host) }
+    }
+
+    private func forgetText(for key: String) {
+        let host = pageText.removeValue(forKey: key)?.host
+        guard let host, !host.isEmpty,
+              !pageText.values.contains(where: { $0.host == host })
+        else { return }
+        visitedHosts.remove(host)
+    }
+
+    nonisolated private static func homepage(of url: URL) -> URL? {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        parts.user = nil
+        parts.password = nil
+        parts.percentEncodedPath = "/"
+        parts.percentEncodedQuery = nil
+        parts.fragment = nil
+        return parts.url
     }
 
     // MARK: - writing
 
     func record(_ url: URL, title: String) {
-        guard url.scheme == "http" || url.scheme == "https" else { return }
-        let key = History.key(for: url)
+        guard History.isWeb(url), let url = History.kept(url) else { return }
+        let key = History.identity(for: url)
         guard !key.isEmpty else { return }
+        let text = History.pageText(for: url)
 
         // Reading a deep page is also, in the way that matters here, another
         // visit to the site. Without this, typing three letters offers the
         // article you happened to open last week rather than the front page —
         // and nobody types a domain meaning to land halfway down it.
-        if let host = url.host(), key.contains("/") {
-            let root = (host.hasPrefix("www.") ? String(host.dropFirst(4)) : host).lowercased()
+        if !text.homepage, let homeURL = History.homepage(of: url) {
+            let root = History.identity(for: homeURL)
             var home = visits[root] ?? Visit(
-                url: "https://" + root + "/", key: root, title: "", count: 0, last: Date()
+                url: homeURL.absoluteString, key: root, title: "", count: 0, last: Date()
             )
-            home.count += 1
+            home.count = min(History.mostVisits, home.count + 1)
             home.last = Date()
             visits[root] = home
+            remember(home, url: homeURL)
         }
 
         if var seen = visits[key] {
-            seen.count += 1
+            seen.count = min(History.mostVisits, seen.count + 1)
             seen.last = Date()
             seen.url = url.absoluteString
             if !title.isEmpty { seen.title = title }
@@ -110,6 +205,7 @@ final class History: ObservableObject {
                 last: Date()
             )
         }
+        if let seen = visits[key] { remember(seen, url: url) }
         save()
     }
 
@@ -117,18 +213,20 @@ final class History: ObservableObject {
     /// so a site visited daily for a year outranks one seen once — the day
     /// you switch, the field already knows you.
     func take(_ url: URL, title: String, count: Int, last: Date) {
-        guard url.scheme == "http" || url.scheme == "https" else { return }
-        let key = History.key(for: url)
+        guard History.isWeb(url), let url = History.kept(url) else { return }
+        let key = History.identity(for: url)
         guard !key.isEmpty else { return }
         if var seen = visits[key] {
             // The larger of the two, not their sum: the same browser brought
             // in again must not count every visit twice.
-            seen.count = max(seen.count, count)
+            seen.count = min(History.mostVisits, max(seen.count, count))
             if last > seen.last { seen.last = last }
             if seen.title.isEmpty { seen.title = title }
             visits[key] = seen
         } else {
-            visits[key] = Visit(url: url.absoluteString, key: key, title: title, count: count, last: last)
+            let visit = Visit(url: url.absoluteString, key: key, title: title, count: min(max(count, 0), History.mostVisits), last: last)
+            visits[key] = visit
+            remember(visit, url: url)
         }
     }
 
@@ -137,7 +235,7 @@ final class History: ObservableObject {
 
     /// A page's title usually lands a beat after the page does.
     func retitle(_ url: URL, _ title: String) {
-        let key = History.key(for: url)
+        let key = History.identity(for: url)
         guard !title.isEmpty, var seen = visits[key], seen.title != title else { return }
         seen.title = title
         visits[key] = seen
@@ -146,12 +244,16 @@ final class History: ObservableObject {
 
     func forget() {
         visits = [:]
+        pageText = [:]
+        visitedHosts = []
         save()
     }
 
     /// Everywhere you have been, newest first, for the window that shows it.
     struct Trace: Identifiable, Equatable {
         let key: String
+        /// A reversible address for display; `key` is the stable URL identity.
+        let address: String
         let title: String
         let url: URL
         let last: Date
@@ -167,10 +269,12 @@ final class History: ObservableObject {
             // field can offer the front door. Those credits have no title of
             // their own, and in a list of where you have been they are a second
             // copy of every line.
-            .filter { !($0.title.isEmpty && !$0.key.contains("/")) }
+            .filter { visit in
+                !(visit.title.isEmpty && pageText[visit.key]?.homepage == true)
+            }
             .filter {
                 needle.isEmpty
-                    || $0.key.contains(needle)
+                    || pageText[$0.key]?.searchable.contains(needle) == true
                     || $0.title.lowercased().contains(needle)
             }
             .sorted { $0.last > $1.last }
@@ -178,6 +282,7 @@ final class History: ObservableObject {
                 URL(string: visit.url).map {
                     Trace(
                         key: visit.key,
+                        address: pageText[visit.key]?.address ?? visit.key,
                         title: visit.title,
                         url: $0,
                         last: visit.last,
@@ -189,6 +294,7 @@ final class History: ObservableObject {
 
     func forget(_ key: String) {
         visits[key] = nil
+        forgetText(for: key)
         save()
     }
 
@@ -233,18 +339,20 @@ final class History: ObservableObject {
         }
 
         for visit in visits.values {
-            guard let rank = rank(visit.key, against: needle, ascii: ascii) else { continue }
+            guard let text = pageText[visit.key],
+                  let rank = rank(text.searchable, against: needle, ascii: ascii)
+            else { continue }
             // The front door before the room inside it: a bare domain is
             // what a bare domain typed into a field means.
-            let score = rank + 4 + frecency(visit, now: now) + (visit.key.contains("/") ? 0 : 1.5)
-            offer(visit.key, score) {
-                URL(string: visit.url).map { Suggestion(key: visit.key, title: visit.title, url: $0, kind: .visited) }
+            let score = rank + 4 + frecency(visit, now: now) + (text.homepage ? 1.5 : 0)
+            offer(text.address, score) {
+                URL(string: visit.url).map { Suggestion(key: text.address, title: visit.title, url: $0, kind: .visited) }
             }
         }
 
         // Only where memory has nothing to offer. A list of famous websites is
         // a poor substitute for knowing where someone actually goes.
-        for known in History.known where visits[known.0] == nil {
+        for known in History.known where !visitedHosts.contains(known.0) {
             guard let rank = rank(known.0, against: needle, ascii: ascii) else { continue }
             offer(known.0, rank) {
                 URL(string: "https://" + known.0).map { Suggestion(key: known.0, title: known.1, url: $0, kind: .known) }
@@ -257,17 +365,42 @@ final class History: ObservableObject {
     /// What the field should draw greyed out after the caret: the rest of the
     /// best match, or nothing if it doesn't carry on from what was typed.
     func completion(for typed: String, among options: [Suggestion]) -> String? {
-        let lower = typed.lowercased()
-        guard !lower.isEmpty, lower.count >= 2 else { return nil }
-        guard let hit = options.first(where: { $0.key.hasPrefix(lower) }) else { return nil }
-        let rest = String(hit.key.dropFirst(lower.count))
-        return rest.isEmpty ? nil : rest
+        guard !typed.isEmpty, typed.count >= 2 else { return nil }
+        for option in options {
+            for (key, target) in History.endings(of: option) {
+                guard key.count >= typed.count else { continue }
+                let prefix = String(key.prefix(typed.count))
+                guard prefix.caseInsensitiveCompare(typed) == .orderedSame else { continue }
+                let rest = String(key.dropFirst(typed.count))
+                guard let completed = Address.url(from: typed + rest),
+                      History.identity(for: completed) == target
+                else { continue }
+                return rest.isEmpty ? nil : rest
+            }
+        }
+        return nil
+    }
+
+    /// What a row can be finished as, and the page that has to come of it.
+    /// Its address as shown; and for a www site, the name without the www,
+    /// as the field always finished it: "app" still becomes apple.com, and
+    /// the site sends you on to its www. Only the www is let go of: the
+    /// scheme, the port and the path's case still have to come out the same.
+    private static func endings(of option: Suggestion) -> [(String, String)] {
+        var found = [(option.key, identity(for: option.url))]
+        if option.key.lowercased().hasPrefix("www."),
+           var parts = URLComponents(url: option.url, resolvingAgainstBaseURL: false),
+           let host = parts.host, host.lowercased().hasPrefix("www.") {
+            parts.host = String(host.dropFirst(4))
+            if let bare = parts.url { found.append((String(option.key.dropFirst(4)), identity(for: bare))) }
+        }
+        return found
     }
 
     /// Frecency, plus the same preference for a front door over a room inside
     /// it that the search uses.
     private func standing(_ visit: Visit, now: Date) -> Double {
-        frecency(visit, now: now) + (visit.key.contains("/") ? 0 : 1.5)
+        frecency(visit, now: now) + (pageText[visit.key]?.homepage == true ? 1.5 : 0)
     }
 
     /// Where the match falls decides most of the ordering: the start of the
@@ -280,7 +413,8 @@ final class History: ObservableObject {
            let score = key.utf8.withContiguousStorageIfAvailable({ bytes -> Double? in
                guard bytes.allSatisfy({ $0 >= 0x20 && $0 < 0x7F }) else { return nil }
                if bytes.starts(with: ascii) { return 6 }
-               let host = bytes[..<(bytes.firstIndex(of: 0x2F) ?? bytes.endIndex)]
+               let hostEnd = bytes.firstIndex(where: { $0 == 0x2F || $0 == 0x3F || $0 == 0x23 }) ?? bytes.endIndex
+               let host = bytes[..<hostEnd]
                if let dot = host.firstIndex(of: 0x2E), host[(dot + 1)...].starts(with: ascii) { return 3 }
                if ascii.count >= 2, ascii.count <= host.count {
                    for start in 0...(host.count - ascii.count) {
@@ -294,7 +428,8 @@ final class History: ObservableObject {
         if key.hasPrefix(needle) { return 6 }
         // Read in place: this runs for every place in the history on every
         // key, and splitting each key into new strings was most of its cost.
-        let host = key[..<(key.firstIndex(of: "/") ?? key.endIndex)]
+        let hostEnd = key.firstIndex(where: { "/?#".contains($0) }) ?? key.endIndex
+        let host = key[..<hostEnd]
         // "google" finding mail.google.com without the subdomain.
         if let dot = host.firstIndex(of: "."), host[host.index(after: dot)...].hasPrefix(needle) { return 3 }
         // Only from two letters up. A single letter matching anywhere inside
@@ -317,14 +452,7 @@ final class History: ObservableObject {
         return Double(visit.count) * exp(-days / 30)
     }
 
-    private func strip(_ typed: String) -> String {
-        var text = typed.trimmingCharacters(in: .whitespaces).lowercased()
-        for scheme in ["https://", "http://"] where text.hasPrefix(scheme) {
-            text = String(text.dropFirst(scheme.count))
-        }
-        if text.hasPrefix("www.") { text = String(text.dropFirst(4)) }
-        return text
-    }
+    private func strip(_ typed: String) -> String { History.stripped(typed) }
 
     // MARK: - the file
 
@@ -339,15 +467,69 @@ final class History: ObservableObject {
         }
         // Keys written by an older Search can meet under the new rule:
         // they are merged, never trusted to be unique.
-        visits = Dictionary(list.map { saved in
+        var cleaned = false
+        var loaded = Dictionary(list.map { saved in
             var visit = saved
-            if let url = URL(string: visit.url) { visit.key = History.key(for: url) }
+            // A count from a file edited by hand is held to a sane range,
+            // so adding to it can't overflow.
+            visit.count = min(max(visit.count, 0), History.mostVisits)
+            if let url = URL(string: visit.url) {
+                // An address kept with a name and password in it, by a Search
+                // from before they were taken off, loses them here.
+                if let clean = History.kept(url), clean.absoluteString != visit.url {
+                    visit.url = clean.absoluteString
+                    cleaned = true
+                }
+                visit.key = History.identity(for: url)
+            }
             return (visit.key, visit)
-        }, uniquingKeysWith: { a, b in
-            var kept = a.last >= b.last ? a : b
-            kept.count = a.count + b.count
-            return kept
-        })
+        }, uniquingKeysWith: History.merged)
+        History.rehomeCredits(&loaded)
+        visits = loaded
+        for visit in visits.values { remember(visit) }
+        // And written without them now, not at the next visit (Security).
+        if cleaned { save() }
+    }
+
+    /// The same page twice: its visits added up, the latest date, and a
+    /// title if either had one.
+    private static func merged(_ a: Visit, _ b: Visit) -> Visit {
+        var kept = a.last >= b.last ? a : b
+        kept.count = min(History.mostVisits, a.count.addingReportingOverflow(b.count).overflow ? History.mostVisits : a.count + b.count)
+        if kept.title.isEmpty { kept.title = a.last >= b.last ? b.title : a.title }
+        return kept
+    }
+
+    /// Before 1.0.4, every deep page also credited https:// and its host
+    /// without www, whatever the scheme, port or www the page was on. Such a
+    /// credit, with no title and nothing else on its own origin, moves to the
+    /// front door its pages actually used: left where it was, it would be
+    /// offered next to the one new visits credit, the same site twice.
+    private static func rehomeCredits(_ visits: inout [String: Visit]) {
+        // Visits per front door, by host without www, from the deeper pages.
+        var doors: [String: [String: Int]] = [:]
+        for visit in visits.values {
+            guard let url = URL(string: visit.url), let host = url.host()?.lowercased(),
+                  !(url.path().isEmpty || url.path() == "/"),
+                  let home = homepage(of: url)
+            else { continue }
+            let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            doors[bare, default: [:]][identity(for: home), default: 0] += visit.count
+        }
+        for (key, credit) in visits {
+            guard credit.title.isEmpty,
+                  let url = URL(string: credit.url),
+                  url.scheme == "https", url.port == nil, url.query() == nil,
+                  url.path().isEmpty || url.path() == "/",
+                  let host = url.host()?.lowercased(), !host.hasPrefix("www."),
+                  let used = doors[host], used[key] == nil,
+                  let door = used.max(by: { $0.value == $1.value ? $0.key > $1.key : $0.value < $1.value })?.key,
+                  let doorURL = URL(string: door)
+            else { continue }
+            visits[key] = nil
+            let moved = Visit(url: doorURL.absoluteString, key: door, title: "", count: credit.count, last: credit.last)
+            visits[door] = visits[door].map { merged($0, moved) } ?? moved
+        }
     }
 
     /// Coalesced: a busy minute of browsing writes the file once, not thirty

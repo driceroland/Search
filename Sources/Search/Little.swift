@@ -31,7 +31,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         let little = LittleWindow(tab: tab, browser: browser)
         open.append(little)
         little.window.center()
-        guard front else { return }
+        // Never a test run's in front: a probe started hidden stays off every screen.
+        guard front, !Store.testing else { return }
         little.window.makeKeyAndOrderFront(nil)
         if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
     }
@@ -101,10 +102,11 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     }
 }
 
-/// The page, and the line over it.
-private struct LittleView: View {
+/// The page, and the line over it: the site, and Open in Search when there
+/// is somewhere to keep it (an extension's popup window has no such button).
+struct LittleView: View {
     @ObservedObject var tab: Tab
-    let keep: () -> Void
+    let keep: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -117,8 +119,12 @@ private struct LittleView: View {
                     .foregroundStyle(Palette.muted)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                Pill("Open in Search", action: keep)
-                    .help("Open in Search   ⌘O")
+                if let keep {
+                    Pill("Open in Search", action: keep)
+                        .help("Open in Search   ⌘O")
+                } else {
+                    Spacer().frame(width: 64)
+                }
             }
             .padding(.horizontal, 10)
             .frame(height: 34)
@@ -128,8 +134,31 @@ private struct LittleView: View {
         .ignoresSafeArea()
     }
 
+    /// The page on screen — not one still on its way, which a page can
+    /// start and never finish — named as the site, or as what it is when
+    /// it isn't a website, and marked when it came over plain http.
     private var site: String {
-        guard let url = tab.address else { return "" }
-        return SiteCard.site(url)
+        guard let url = tab.pageAddress else { return "" }
+        switch url.scheme?.lowercased() {
+        case "https": return SiteCard.site(url)
+        case "http": return "Not secure — " + SiteCard.site(url)
+        case "chrome-extension", "webkit-extension": return "Extension page"
+        default: return url.absoluteString == "about:blank" ? "" : "Not a website"
+        }
+    }
+}
+
+/// An extension's popup window (windows.create with type "popup"): the
+/// browser's tab on screen as the small window shows a page, the site over
+/// it. Its tabs, checks and passwords are the browser's, as in any window.
+struct ExtensionPopupView: View {
+    @ObservedObject var browser: Browser
+
+    var body: some View {
+        if let tab = browser.active {
+            LittleView(tab: tab, keep: nil).id(tab.id)
+        } else {
+            Palette.ground
+        }
     }
 }

@@ -107,6 +107,7 @@ final class Bench {
     func start(for browser: Browser) {
         guard !running else { return }
         self.browser = browser
+        if Store.testing { Bench.watchScreens() }
         // Nor App Nap, which a test run behind other windows falls into.
         if Store.testing, !Store.measuring, awake == nil {
             awake = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Bench")
@@ -234,6 +235,10 @@ final class Bench {
         private func say(_ answer: [String: Any]) {
             guard !answered else { return }
             answered = true
+            var answer = answer
+            // The socket's queue is the main one.
+            let caught = MainActor.assumeIsolated { Bench.caught }
+            if !caught.isEmpty { answer["onScreen"] = caught }
             var out = (try? JSONSerialization.data(withJSONObject: answer)) ?? Data("{\"error\":\"unwritable answer\"}".utf8)
             out.append(0x0A)
             out.withUnsafeBytes { raw in
@@ -280,6 +285,17 @@ final class Bench {
             return
         }
         let verb = request["do"] as? String ?? ""
+
+        // With pages shown (`pages on`) the app is no longer hidden: whatever
+        // opens or brings back a window would put it on the screen. Refused
+        // until `pages off`; listing and closing windows stay.
+        if Bench.pagesShown {
+            let action = request["action"] as? String ?? "list"
+            if ["little", "towindow"].contains(verb) || (verb == "windows" && !["list", "close"].contains(action)) {
+                answer(["error": "pages are on: run `pages off` before opening or bringing back a window"])
+                return
+            }
+        }
 
         switch verb {
         case "tabs":
@@ -654,6 +670,9 @@ final class Bench {
             case .denied: out["passkeyAccess"] = "denied"
             default: out["passkeyAccess"] = "notDetermined"
             }
+            out["dialogs"] = Dialogs.askedInTest
+            out["asking"] = browser.asking.map { "\($0.host) \($0.wants)" + ($0.once ? " once" : "") + ($0.keeps ? "" : " unkept") } ?? ""
+            out["locationAnswered"] = Browser.locationAnswered ?? ""
             out["passkeyAsks"] = Passkeys.asked
             out["handedOff"] = Browser.handedOff
             out["passkeyLast"] = Passkeys.last
@@ -925,8 +944,8 @@ final class Bench {
             var out: [String: Any] = ["found": found.map(\.name), "profiles": source.profiles.map(\.id),
                                       "profile": profile ?? "all"]
             if what.contains("bookmarks") {
-                let (added, already) = browser.takeBookmarks(from: source, profile: profile, replacing: request["replace"] as? Bool == true)
-                out["bookmarks"] = ["added": added, "already": already, "total": browser.bookmarks.count,
+                let (added, already, kept) = browser.takeBookmarks(from: source, profile: profile, replacing: request["replace"] as? Bool == true)
+                out["bookmarks"] = ["added": added, "already": already, "kept": kept, "total": browser.bookmarks.count,
                                     "top": browser.bookmarks.roots.map(\.title)]
             }
             if what.contains("history") {
@@ -1041,6 +1060,7 @@ final class Bench {
             answer(["delegate": wrapped, "before": before, "after": menu.items.count, "ours": BookmarkMenu.shared.count, "fillMs": filled,
                     "titles": menu.items.prefix(8).map { $0.isSeparatorItem ? "—" : $0.title },
                     "firstFolder": folder?.items.prefix(4).map(\.title) ?? [],
+                    "firstFolderImages": folder?.items.prefix(4).map { $0.image != nil } ?? [],
                     "active": browser.active?.address?.absoluteString ?? ""])
 
         case "keyeq":
@@ -1076,6 +1096,199 @@ final class Bench {
                     }
                 }
             }
+
+        case "image-data":
+            // What Copy Image would put on the pasteboard, without putting it
+            // there: the picture at an address, read as the menu reads it.
+            guard Store.testing else { answer(["error": "image-data only works on a --test run"]); return }
+            guard let tab = (request["id"] as? String).flatMap({ id in browser.tabs.first { $0.id.uuidString.lowercased().hasPrefix(id) } }) ?? browser.active,
+                  let text = request["url"] as? String, let url = URL(string: text)
+            else { answer(["error": "image-data needs a url"]); return }
+            Task {
+                let data = await browser.imageData(at: url, in: tab)
+                let image = data.flatMap { NSImage(data: $0) }
+                answer(["bytes": data?.count ?? 0, "image": image.map { [Int($0.size.width), Int($0.size.height)] } ?? []])
+            }
+
+        case "find":
+            // Find on Page as typed into its bar, then Next or Previous
+            // pressed, and what the bar says once the page has answered.
+            guard Store.testing else { answer(["error": "find only works on a --test run"]); return }
+            let start = Date()
+            browser.finding = true
+            browser.matchCase = request["case"] as? Bool ?? false
+            browser.wholeWords = request["words"] as? Bool ?? false
+            // The same words again would count as Next, as they do in the bar.
+            let text = request["text"] as? String ?? ""
+            if browser.needle != text { browser.needle = text }
+            for _ in 0..<(request["next"] as? Int ?? 0) { browser.look(forward: true) }
+            for _ in 0..<(request["back"] as? Int ?? 0) { browser.look(forward: false) }
+            func settled(_ tries: Int) {
+                let status = browser.findStatus
+                if (status != nil && !browser.findBusy) || tries > 200 {
+                    answer(["status": status ?? "", "ms": Int(Date().timeIntervalSince(start) * 1000)])
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { settled(tries + 1) }
+            }
+            settled(0)
+        case "visible":
+            // Refused: it lent the tab to a window of its own, off every
+            // screen, so that WebKit would count the page as seen. No bench
+            // verb makes a window for now, off screen or not, after windows
+            // reached a screen during test runs; what needs a page to be
+            // seen is checked on a release candidate instead.
+            answer(["error": "visible is switched off: it made a window, and no bench verb makes one for now — check this on a release candidate"])
+
+        case "ai":
+            // The AI add-on's requests against a stand-in on this Mac: "mock"
+            // points every provider at it, "key" keeps a made-up key for the
+            // run (in memory), "ask" sends one question and gives back the
+            // whole answer or the error. Only on a SEARCH_PROBE run, and only
+            // ever to the loopback address.
+            guard Store.testing else { answer(["error": "ai only works on a --test run"]); return }
+            switch request["action"] as? String {
+            case "mock":
+                guard let url = (request["url"] as? String).flatMap(URL.init(string:)),
+                      ["127.0.0.1", "localhost", "::1"].contains(url.host() ?? "")
+                else { answer(["error": "ai mock needs an address on this Mac"]); return }
+                AIProvider.mock = url
+                answer(["mock": url.absoluteString])
+            case "key":
+                guard let provider = (request["provider"] as? String).flatMap(AIProvider.init(rawValue:)),
+                      let key = request["key"] as? String
+                else { answer(["error": "ai key PROVIDER KEY"]); return }
+                let saved = AIKeys.save(key, for: provider)
+                answer(["saved": "\(saved)", "hint": AIKeys.hint(for: provider) ?? ""])
+            case "ask":
+                guard let provider = (request["provider"] as? String).flatMap(AIProvider.init(rawValue:)) else {
+                    answer(["error": "ai ask PROVIDER MODEL TEXT"]); return
+                }
+                let model = request["model"] as? String ?? provider.defaultModel
+                let stream = AIClient.shared.stream(provider, model: model, system: "You are a test.",
+                                                    messages: [AIMessage(role: .user, text: request["text"] as? String ?? "")],
+                                                    key: AIKeys.key(for: provider))
+                Task { @MainActor in
+                    var text = "", pieces = 0
+                    do {
+                        for try await piece in stream { text += piece; pieces += 1 }
+                        answer(["text": text, "pieces": pieces])
+                    } catch {
+                        answer(["error": error.localizedDescription, "text": text])
+                    }
+                }
+            case "signin":
+                // OpenRouter's sign-in, against the stand-in: the tab it opens,
+                // and a moment later whether a key is kept.
+                AISignIn.start(in: browser)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                    answer(["kept": AIKeys.hint(for: .openRouter) ?? "", "waiting": AISignIn.waiting, "tabs": browser.tabs.count])
+                }
+            case "engine":
+                // A test run's engine (engine.sh, signed ad-hoc) and a folder
+                // of models shared between test worlds; then the state.
+                if let path = request["path"] as? String {
+                    AIEngine.shared.stop()
+                    AIEngine.testEngine = URL(fileURLWithPath: path)
+                }
+                if let models = request["models"] as? String { AIEngine.testModels = URL(fileURLWithPath: models, isDirectory: true) }
+                AIEngine.shared.refreshState()
+                let running = AIEngine.shared.running
+                answer(["state": "\(AIEngine.shared.state)", "available": AIEngine.shared.available,
+                        "trusted": AIEngine.testEngine.map { AIEngine.trusted($0) } ?? false,
+                        "pid": Int(running.pid), "ready": running.ready])
+            case "use":
+                // The add-on on, answered by this provider (and model).
+                guard let provider = (request["provider"] as? String).flatMap(AIProvider.init(rawValue:)) else {
+                    answer(["error": "ai use PROVIDER [MODEL]"]); return
+                }
+                browser.prefs.ai = true
+                browser.prefs.aiProvider = provider
+                if let model = request["model"] as? String { browser.prefs.setAIModel(model, for: provider) }
+                answer(["provider": provider.rawValue, "model": browser.prefs.aiModel(for: provider)])
+            case "summarize", "question":
+                // The menu's Summarize Page or Ask About This Page… on a tab,
+                // then — for a question — the question typed and sent.
+                guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+                browser.select(tab)
+                if request["action"] as? String == "summarize" { browser.summarizePage() } else { browser.askAboutPage() }
+                if let text = request["text"] as? String {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        browser.assisting?.draft = text
+                        browser.assisting?.submit()
+                    }
+                }
+                answer(["open": browser.assisting != nil])
+            case "agree":
+                browser.assisting?.agree()
+                answer(["open": browser.assisting != nil])
+            case "state":
+                guard let assistant = browser.assisting else { answer(["open": false]); return }
+                answer([
+                    "open": true, "reading": assistant.reading, "notice": assistant.notice ?? "", "trouble": assistant.trouble ?? "",
+                    "addressed": assistant.addressed,
+                    "place": assistant.place,
+                    "turns": assistant.turns.map { ["question": $0.question ?? "", "answer": $0.answer, "done": $0.done,
+                                                     "failed": $0.failed ?? "", "strays": $0.strays] as [String: Any] },
+                ])
+            case "picture":
+                // The panel as it stands, and Settings › AI, drawn off screen
+                // to PNGs — no window.
+                guard let path = request["path"] as? String else { answer(["error": "ai picture PATH"]); return }
+                var made: [String] = []
+                func draw<V: View>(_ view: V, _ file: String) {
+                    let renderer = ImageRenderer(content: view.padding(20).background(Palette.wash))
+                    renderer.scale = 2
+                    guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                          let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return }
+                    let url = URL(fileURLWithPath: path).appendingPathComponent(file)
+                    if (try? png.write(to: url)) != nil { made.append(url.path) }
+                }
+                if let assistant = browser.assisting { draw(AssistantPanel(browser: browser, assistant: assistant, drawn: true), "ai-panel.png") }
+                draw(AISettings(browser: browser, prefs: browser.prefs, drawn: true).frame(width: 440), "ai-settings.png")
+                answer(["made": made])
+            case "read":
+                // What of the page would go to the model, and nothing sent.
+                guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+                Task { @MainActor in
+                    guard let read = await AIPage.read(tab) else { answer(["error": "nothing to read"]); return }
+                    Bench.aiRead = read
+                    answer(["title": read.title, "text": read.text, "links": read.links.count, "cut": read.cut])
+                }
+            case "check":
+                // The last page read, and an answer checked against it.
+                guard let read = Bench.aiRead, let text = request["text"] as? String else {
+                    answer(["error": "ai read a page first, then ai check TEXT"]); return
+                }
+                answer(["strays": AIPage.strays(in: text, from: read)])
+            default:
+                answer(["error": "ai mock URL | key PROVIDER KEY | ask PROVIDER MODEL TEXT | read ID | check TEXT"])
+            }
+
+        case "answer":
+            // The card of a page asking for the camera, microphone or your
+            // location: once, always or no. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "answer only works on a --test run"]); return }
+            switch request["with"] as? String {
+            case "once": browser.allowCaptureOnce()
+            case "always": browser.allowCapture()
+            case "no": browser.denyCapture()
+            default: answer(["error": "answer once|always|no"]); return
+            }
+            answer(["asking": browser.asking.map { "\($0.host) \($0.wants)" } ?? "", "locationAnswered": Browser.locationAnswered ?? ""])
+
+        case "accounts":
+            // The list under the sign-in box the caret is in — passkeys, then
+            // passwords — and, with "pick", a click on its row by number,
+            // counted from 0. Only on a SEARCH_PROBE run: it would sign in.
+            guard Store.testing else { answer(["error": "accounts only works on a --test run"]); return }
+            guard let list = browser.suggesting else { answer(["shown": false]); return }
+            let rows = list.passkeys.map { ["passkey": $0.name] } + list.logins.map { ["login": $0.user] }
+            if let pick = request["pick"] as? Int {
+                guard rows.indices.contains(pick) else { answer(["error": "no row \(pick)"]); return }
+                if pick < list.passkeys.count { browser.choose(list.passkeys[pick]) } else { browser.choose(list.logins[pick - list.passkeys.count]) }
+            }
+            answer(["shown": true, "rows": rows, "spot": [list.spot.minX, list.spot.minY, list.spot.width, list.spot.height]])
 
         case "fill":
             // What the window spends on the page scrolling: the page's report
@@ -1225,6 +1438,7 @@ final class Bench {
                 _ = room ?? makeRoom()
                 window.orderOut(nil)
                 for other in NSApp.windows where other !== room && onScreen(other) { other.orderOut(nil) }
+                Bench.pagesShown = true
                 NSApp.unhideWithoutActivation()
                 let showing = NSApp.windows.filter { $0.isVisible && onScreen($0) }
                 if !showing.isEmpty {
@@ -1235,6 +1449,7 @@ final class Bench {
                 answer(["pages": true])
             } else {
                 NSApp.hide(nil)
+                Bench.pagesShown = false
                 window.orderFront(nil)
                 answer(["pages": false])
             }
@@ -1935,6 +2150,9 @@ final class Bench {
                 }
             }
 
+        case "split":
+            splitCommand(request, browser: browser, answer)
+
         case "ui":
             // Open or close the app's own panels, to reproduce what a person
             // did without a person.
@@ -1965,6 +2183,9 @@ final class Bench {
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
+            // The window's own full screen as the chrome sees it, without
+            // the window going there: a test run never takes the screen.
+            if let on = request["fullscreen"] as? Bool, Store.testing { browser.fullScreen = on }
             if let on = request["peek"] as? Bool { browser.peeking = on }
             // A peek at a link (Peek.swift): its two buttons.
             if let what = request["peeklink"] as? String {
@@ -1989,9 +2210,364 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "accounts", "find", "answer", "visible", "ai",
             ]])
         }
+    }
+
+    /// A small model bridge for offline split regressions. The browser model is
+    /// the system under test; this command is deliberately unavailable in the
+    /// browser somebody is using because its actions move and close tabs.
+    /// The view a `split mouse … to: view` press landed on, for the rest of it.
+    private weak var pressed: NSView?
+
+    private func splitCommand(
+        _ request: [String: Any],
+        browser: Browser,
+        _ answer: @escaping ([String: Any]) -> Void
+    ) {
+        guard Store.testing else {
+            answer(["error": "split only works on a --test run"])
+            return
+        }
+
+        func reply(_ extra: [String: Any] = [:]) {
+            answer(splitState(browser).merging(extra) { _, new in new })
+        }
+        func tab(_ field: String = "id") -> Tab? {
+            guard let id = request[field] as? String else { return nil }
+            return find(["id": id], in: browser)
+        }
+
+        switch request["action"] as? String ?? "state" {
+        case "state":
+            reply()
+
+        case "enabled":
+            guard let on = request["on"] as? Bool else { answer(["error": "split enabled needs on"]); return }
+            browser.prefs.splitView = on
+            reply()
+
+        case "group":
+            guard let page = tab() else { answer(["error": "split group needs id"]); return }
+            if let id = (request["group"] as? String).flatMap(UUID.init) {
+                browser.move(page, toGroup: id)
+            } else if request["group"] as? String == "none" {
+                browser.move(page, toGroup: nil)
+            } else {
+                _ = browser.addTabGroup(containing: page)
+            }
+            reply()
+
+        case "collapse":
+            guard let id = (request["group"] as? String).flatMap(UUID.init) else {
+                answer(["error": "split collapse needs group UUID"]); return
+            }
+            browser.toggleTabGroup(id)
+            reply()
+
+        case "step":
+            browser.step(request["direction"] as? Int ?? 1)
+            reply()
+
+        case "moveSpace":
+            guard let page = tab(), let id = (request["spaceID"] as? String).flatMap(UUID.init) else {
+                answer(["error": "split moveSpace needs id and spaceID"]); return
+            }
+            browser.move(page, toSpace: id) { reply() }
+
+        case "moveWindow":
+            guard let page = tab() else { answer(["error": "split moveWindow needs id"]); return }
+            let target = (request["targetWindow"] as? Int).flatMap { n in
+                Browsers.all.indices.contains(n - 1) ? Browsers.all[n - 1] : nil
+            }
+            browser.moveToWindow(page, target)
+            reply(["windows": Browsers.all.count])
+
+        case "rows":
+            reply(["rows": browser.allRows().mapValues { row in
+                ["tabs": row.tabs.count, "splits": row.splits.count, "active": row.active] as [String: Any]
+            }])
+
+        case "mouse":
+            guard let window = browser.window,
+                  let points = request["points"] as? [[Double]], !points.isEmpty,
+                  points.allSatisfy({ $0.count == 2 }) else {
+                answer(["error": "split mouse needs two or more [x,y] window points"]); return
+            }
+            // "hold": the button stays down after the last point; "resume":
+            // it was already down, so the first point is a drag — a drag in
+            // two calls, looked at in between. "clicks": 2 for a double-click.
+            let hold = request["hold"] as? Bool == true
+            let resume = request["resume"] as? Bool == true
+            let clicks = request["clicks"] as? Int ?? 1
+            let direct = request["to"] as? String == "view"
+            for (index, coordinates) in points.enumerated() {
+                let type: NSEvent.EventType = index == 0 && !resume ? .leftMouseDown
+                    : index == points.count - 1 && !hold ? .leftMouseUp : .leftMouseDragged
+                let point = NSPoint(x: coordinates[0], y: Double(window.frame.height) - coordinates[1])
+                guard let event = NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: index, clickCount: clicks,
+                    pressure: type == .leftMouseUp ? 0 : 1
+                ) else { continue }
+                // Through the app, as a hand's arrive, one turn of the run
+                // loop apart: its monitors see them, though a hidden window
+                // hands them to no view. "view": straight to the view under
+                // the press instead, as `tap` does, for what the view itself
+                // does with them.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02 * Double(index)) {
+                    guard direct else { NSApp.sendEvent(event); return }
+                    if type == .leftMouseDown {
+                        let root = window.contentView?.superview
+                        self.pressed = root.flatMap { $0.hitTest($0.convert(point, from: nil)) }
+                    }
+                    switch type {
+                    case .leftMouseDown: self.pressed?.mouseDown(with: event)
+                    case .leftMouseDragged: self.pressed?.mouseDragged(with: event)
+                    default: self.pressed?.mouseUp(with: event)
+                    }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02 * Double(points.count) + 0.4) { reply() }
+
+        case "open":
+            guard let url = (request["url"] as? String).flatMap(URL.init(string:)) else {
+                answer(["error": "split open needs a URL"])
+                return
+            }
+            let source = request["from"] == nil ? browser.active : tab("from")
+            let page = browser.open(url, foreground: request["foreground"] as? Bool ?? true,
+                                    atEnd: request["atEnd"] as? Bool ?? false, from: source)
+            reply(["resultID": Bench.short(page)])
+
+        case "private":
+            browser.newShyTab()
+            reply()
+
+        case "bench":
+            guard let url = (request["url"] as? String).flatMap(URL.init(string:)) else {
+                answer(["error": "split bench needs a URL"])
+                return
+            }
+            let page = browser.benchOpen(url)
+            house(page)
+            reply(["resultID": Bench.short(page)])
+
+        case "start":
+            browser.startSplit()
+            reply()
+
+        case "pair":
+            guard let dragged = tab(), let target = tab("with") else {
+                answer(["error": "split pair needs id and with"])
+                return
+            }
+            let side = request["side"] as? String ?? "left"
+            guard side == "left" || side == "right" else {
+                answer(["error": "split pair side must be left or right"])
+                return
+            }
+            browser.pair(dragged, with: target, onLeft: side == "left")
+            reply()
+
+        case "focus", "select":
+            guard let page = tab() else { answer(["error": "split focus needs id"]); return }
+            if request["action"] as? String == "select" { browser.select(page) }
+            else { browser.focusPane(page) }
+            reply()
+
+        case "detach":
+            guard let page = tab() else { answer(["error": "split detach needs id"]); return }
+            browser.detachSplit(page)
+            reply()
+
+        case "fraction":
+            guard let pair = request["split"] as? String,
+                  let id = UUID(uuidString: pair),
+                  let fraction = request["fraction"] as? Double
+            else { answer(["error": "split fraction needs split UUID and fraction"]); return }
+            browser.setSplitFraction(id, fraction: fraction)
+            reply()
+
+        case "close":
+            guard let page = tab() else { answer(["error": "split close needs id"]); return }
+            browser.close(page)
+            reply()
+
+        case "newTab":
+            browser.newTab()
+            reply()
+
+        case "reopen":
+            browser.reopen()
+            reply()
+
+        case "insert":
+            guard let url = (request["url"] as? String).flatMap(URL.init(string:)),
+                  let index = request["index"] as? Int
+            else { answer(["error": "split insert needs URL and index"]); return }
+            let page = Tab()
+            browser.prepare(page)
+            browser.insert(page, at: index)
+            page.go(to: url)
+            reply(["resultID": Bench.short(page)])
+
+        case "move":
+            guard let page = tab(), let index = request["to"] as? Int else {
+                answer(["error": "split move needs id and to"])
+                return
+            }
+            browser.move(page, to: index)
+            reply()
+
+        case "drop":
+            guard let page = tab() else { answer(["error": "split drop needs id"]); return }
+            browser.dropTabIntoStrip(page, before: tab("before"))
+            reply()
+
+        case "space":
+            switch request["spaceAction"] as? String {
+            case "new": browser.addSpace(named: request["name"] as? String ?? "Split test")
+            case "go":
+                guard let id = (request["spaceID"] as? String).flatMap(UUID.init) else {
+                    answer(["error": "split space go needs a UUID"])
+                    return
+                }
+                browser.switchSpace(to: id)
+            default:
+                answer(["error": "split space action must be new or go"])
+                return
+            }
+            reply()
+
+        case "sleep":
+            guard let page = tab() else { answer(["error": "split sleep needs id"]); return }
+            browser.sleep(page) { result in reply(["sleepResult": result]) }
+
+        case "save":
+            browser.writeSession(now: true)
+            reply()
+
+        case "closeOthers":
+            guard let page = tab() else { answer(["error": "split closeOthers needs id"]); return }
+            browser.closeOthers(but: page)
+            reply()
+        case "keys":
+            // The keys handed to a page's view, as the key-view loop would.
+            guard let page = tab(), let web = page.built, let window = web.window else {
+                answer(["error": "split keys needs the id of a page on screen"]); return
+            }
+            window.makeFirstResponder(web)
+            reply()
+        case "motion":
+            // The pictures moving on the stage now (see PaneStage.animate).
+            func stage(in view: NSView) -> PaneStage? {
+                if let stage = view as? PaneStage { return stage }
+                for sub in view.subviews { if let found = stage(in: sub) { return found } }
+                return nil
+            }
+            guard let root = browser.window?.contentView?.superview, let found = stage(in: root) else {
+                answer(["error": "no split stage in this window"]); return
+            }
+            reply(["motion": found.motionNow])
+        case "pose":
+            // A card as a page's question would put up, with no page waiting
+            // on it: a page that asks is held by WebKit until it is answered,
+            // and a picture of the window would wait on it too.
+            guard let page = tab() else { answer(["error": "split pose needs id"]); return }
+            browser.paneQuestions.append(PaneQuestion(
+                tab: page.id, host: request["host"] as? String ?? "example.com",
+                message: request["message"] as? String ?? "", kind: .confirm, reply: { _, _ in }
+            ))
+            reply()
+        case "answer":
+            // The first question the page asked, answered as its card would.
+            guard let page = tab(), let question = browser.paneQuestions.first(where: { $0.tab == page.id }) else {
+                answer(["error": "split answer needs the id of a page with a question"]); return
+            }
+            browser.answer(question, ok: request["ok"] as? Bool ?? true, text: request["text"] as? String)
+            reply()
+        case "swap": browser.swapSplit(); reply()
+        case "even": browser.evenSplit(); reply()
+        case "closeBoth": browser.closeSplit(); reply()
+        case "dismiss": browser.dismiss(); reply()
+        case "side":
+            browser.focusPane(onLeft: request["left"] as? Bool ?? true)
+            reply()
+        case "openIn":
+            guard let page = tab() else { answer(["error": "split openIn needs id"]); return }
+            browser.openInSplit(page)
+            reply()
+        case "fill":
+            guard let blank = tab(), let page = tab("with") else { answer(["error": "split fill needs id and with"]); return }
+            browser.fill(blank, with: page)
+            reply()
+
+        default:
+            answer(["error": "unknown split action"])
+        }
+    }
+
+    private func splitState(_ browser: Browser) -> [String: Any] {
+        func short(_ id: UUID?) -> Any {
+            guard let id, let tab = browser.tabs.first(where: { $0.id == id }) else { return NSNull() }
+            return Bench.short(tab)
+        }
+        return [
+            "tabs": browser.tabs.map { tab in
+                [
+                    "id": Bench.short(tab),
+                    "title": tab.title,
+                    "url": tab.address?.absoluteString ?? "",
+                    "blank": tab.isBlank,
+                    "shy": tab.shy,
+                    "bench": tab.bench,
+                    "asleep": tab.asleep,
+                    "awakeReason": browser.awake(because: tab) ?? "",
+                ] as [String: Any]
+            },
+            "splits": browser.splits.map { pair in
+                [
+                    "id": pair.id.uuidString,
+                    "left": short(pair.left),
+                    "right": short(pair.right),
+                    "fraction": pair.fraction,
+                    "tabs": pair.tabs.map { short($0) },
+                    "sizes": pair.sizes,
+                    "axis": pair.axis.rawValue,
+                    "focused": short(pair.focused),
+                ] as [String: Any]
+            },
+            "activeID": short(browser.activeID),
+            "displayedIDs": browser.displayedTabs.map { Bench.short($0) },
+            "visibleIDs": browser.tabs.filter { browser.visibleTabIDs.contains($0.id) }.map { Bench.short($0) },
+            "shownIDs": browser.shownTabs.map { Bench.short($0) },
+            "groups": browser.tabGroups.map { ["id": $0.id.uuidString, "collapsed": $0.collapsed] as [String: Any] },
+            "groupIDs": browser.tabs.map { $0.groupID?.uuidString ?? "" },
+            "enabled": browser.prefs.splitView,
+            "finding": browser.finding,
+            "needle": browser.needle,
+            "findStatus": browser.findStatus ?? "",
+            "pins": browser.tabs.filter { $0.pin != nil }.map { Bench.short($0) },
+            // What pages of the pair asked, oldest first (see PaneQuestion).
+            "questions": browser.paneQuestions.map { question in
+                ["tab": short(question.tab), "host": question.host, "message": question.message,
+                 "kind": { switch question.kind { case .alert: "alert"; case .confirm: "confirm"; case .prompt: "prompt" } }()]
+            },
+            "held": browser.heldDialogs.mapValues(\.count).reduce(into: [String: Int]()) { out, entry in
+                if let tab = browser.tabs.first(where: { $0.id == entry.key }) { out[Bench.short(tab)] = entry.value }
+            },
+            "paneFrames": browser.tabs.compactMap { tab -> [String: Any]? in
+                guard let web = tab.built, let window = browser.window, web.window === window else { return nil }
+                let frame = web.convert(web.bounds, to: nil)
+                return ["id": Bench.short(tab), "x": Double(frame.minX),
+                        "y": Double(window.frame.height - frame.maxY),
+                        "width": Double(frame.width), "height": Double(frame.height)]
+            },
+            "spaceID": browser.spaceID.uuidString,
+            "spaceIDs": browser.spaces.map { $0.id.uuidString },
+        ]
     }
 
     /// Extensions, from the shell. Installing asks as it always does, except
@@ -2189,6 +2765,62 @@ final class Bench {
     // MARK: - the room off screen
 
     private var room: NSWindow?
+
+    // MARK: - nothing on a screen
+
+    /// Set once `pages on` has shown a hidden probe again, so WebKit paints
+    /// its pages: from then on the app is no longer hidden, and a window
+    /// ordered in would come onto the screen.
+    static var pagesShown = false
+    /// Windows a test run let onto a screen. Every answer names them from
+    /// then on, and ./bench fails: a test must never show a window there.
+    private(set) static var caught: [String] = []
+    private static var watching: [NSObjectProtocol] = []
+
+    static func onScreen(_ window: NSWindow) -> Bool {
+        NSScreen.screens.contains { $0.frame.intersects(window.frame) }
+    }
+
+    /// A window about to be ordered in during a test run with pages shown
+    /// (Windows.open, Windows.show): the app hidden again first, so it
+    /// waits unseen. Moving it off the screen isn't enough — AppKit pulls a
+    /// titled window back onto one as it comes in. `pages on` again puts
+    /// every window away before it shows the app.
+    static func keepOff(_ window: NSWindow) {
+        guard Store.testing, pagesShown else { return }
+        NSApp.hide(nil)
+        pagesShown = false
+    }
+
+    /// Any other window that comes onto a screen in a test run — a sheet, a
+    /// panel, one made by a path nobody thought of: taken off at once and
+    /// named in every answer.
+    static func watchScreens() {
+        guard watching.isEmpty else { return }
+        // The app itself shown or brought forward by anything but `pages on`
+        // (which never activates it): hidden again at once.
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didUnhideNotification] {
+            watching.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { note in
+                MainActor.assumeIsolated {
+                    if note.name == NSApplication.didUnhideNotification, pagesShown { return }
+                    caught.append("the app \(note.name == NSApplication.didUnhideNotification ? "shown" : "brought forward")")
+                    NSApp.hide(nil)
+                    pagesShown = false
+                }
+            })
+        }
+        watching.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: .main
+        ) { note in
+            MainActor.assumeIsolated {
+                guard let window = note.object as? NSWindow, window.isVisible,
+                      window.occlusionState.contains(.visible), onScreen(window) else { return }
+                caught.append("\(type(of: window)) “\(window.title)” at \(NSStringFromRect(window.frame))")
+                NSApp.hide(nil)
+                pagesShown = false
+            }
+        })
+    }
     /// Where `film float` lends the tab's stage, off every screen.
     private var hall: NSWindow?
 
@@ -2202,6 +2834,9 @@ final class Bench {
         tab.web.autoresizingMask = [.width, .height]
         window.contentView?.addSubview(tab.web)
     }
+
+    /// The last page `ai read` read, for `ai check`.
+    static var aiRead: AIPage.Read?
 
     private func makeRoom() -> NSWindow {
         // Off every screen, and never key or main: it exists so that a web

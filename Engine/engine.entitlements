@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- The App Sandbox, and nothing added to it: no network, no files of its
+       own. The model it reads is a file Search opened for it (descriptor 3). -->
+  <key>com.apple.security.app-sandbox</key><true/>
+</dict>
+</plist>

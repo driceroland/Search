@@ -388,8 +388,10 @@ struct ImportPanel: View {
             }
         }
         if marks {
-            let (added, already) = browser.takeBookmarks(from: source, profile: profile, replacing: replaceBookmarks)
-            said[1] = Said(ok: true, text: added == 0 && already == 0 ? "No bookmarks in \(source.name)"
+            let (added, already, kept) = browser.takeBookmarks(from: source, profile: profile, replacing: replaceBookmarks)
+            said[1] = kept
+                ? Said(ok: false, text: "Couldn't read all of \(source.name)'s bookmarks: what came from it before was kept, \(added.formatted()) new")
+                : Said(ok: true, text: added == 0 && already == 0 ? "No bookmarks in \(source.name)"
                            : already == 0 ? "\(added.formatted()) bookmarks"
                            : "\(added.formatted()) new bookmarks, \(already.formatted()) already here")
         }

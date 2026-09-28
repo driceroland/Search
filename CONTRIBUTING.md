@@ -34,6 +34,7 @@ Fixes and things every browser is expected to do (Tab moving between a form's fi
 - Rewrites of things that already work, for style reasons alone.
 - Anything that phones home, adds analytics, or changes what leaves the app over the network — see the [privacy page](https://officecommun.com/search/privacy) for what that boundary currently is.
 - Vendoring Chromium or any other engine. This is a WebKit browser on purpose.
+- A real key or token anywhere: in code, a test, an issue, a pull request or a pasted log. Tests use keys that are obviously made up. `gitleaks git --pre-commit --staged` with the repo's `.gitleaks.toml` catches most of them before a commit; it is worth running as a pre-commit hook.
 
 ## Review
 

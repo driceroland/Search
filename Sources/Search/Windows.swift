@@ -141,6 +141,7 @@ enum Browsers {
     static func show(_ browser: Browser) {
         browser.shut = false
         if let window = browser.window {
+            Bench.keepOff(window)
             window.makeKeyAndOrderFront(nil)
         } else if browser.inScene {
             _ = NSApp.delegate?.applicationOpenUntitledFile?(NSApp)
@@ -153,7 +154,7 @@ enum Browsers {
     @discardableResult
     static func ensureWindow() -> Browser {
         if let front, front.isOpen { return front }
-        if let open = all.last(where: { $0.isOpen }) { return open }
+        if let open = all.last(where: { $0.isOpen && $0.extensionPopup == nil }) { return open }
         let kept = all.first ?? SceneSlot.shared.browser
         show(kept)
         return kept
@@ -162,9 +163,18 @@ enum Browsers {
     /// A window around `browser`, made here rather than by SwiftUI.
     static func open(_ browser: Browser, frame: NSRect?) {
         register(browser)
-        let host = NSHostingView(rootView: ContentView(browser: browser).frame(minWidth: 640, minHeight: 420))
-        host.sizingOptions = [.minSize]
-        let size = front?.window?.frame.size ?? NSSize(width: 1180, height: 780)
+        let popup = browser.extensionPopup != nil
+        let host: NSView
+        if popup {
+            let view = NSHostingView(rootView: ExtensionPopupView(browser: browser).frame(minWidth: 200, minHeight: 150))
+            view.sizingOptions = [.minSize]
+            host = view
+        } else {
+            let view = NSHostingView(rootView: ContentView(browser: browser).frame(minWidth: 640, minHeight: 420))
+            view.sizingOptions = [.minSize]
+            host = view
+        }
+        let size = popup ? NSSize(width: 480, height: 600) : front?.window?.frame.size ?? NSSize(width: 1180, height: 780)
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -173,8 +183,15 @@ enum Browsers {
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
         window.contentView = host
+        if popup {
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.minSize = NSSize(width: 200, height: 150)
+        }
         if let frame {
             window.setFrame(frame, display: false)
+        } else if popup {
+            window.center()
         } else if let beside = front?.window {
             // Down and to the right of the window in front, as new windows go.
             window.setFrameTopLeftPoint(window.cascadeTopLeft(from: NSPoint(x: beside.frame.minX, y: beside.frame.maxY)))
@@ -182,8 +199,15 @@ enum Browsers {
             window.center()
         }
         frames[ObjectIdentifier(browser)] = window
+        Bench.keepOff(window)
         window.makeKeyAndOrderFront(nil)
         comeForward()
+    }
+
+    /// An extension unloaded, turned off or removed: the popup windows it
+    /// opened go with it.
+    static func closePopups(of id: String) {
+        for browser in all where browser.extensionPopup == id { browser.window?.close() }
     }
 
     private static func comeForward() {
@@ -204,7 +228,12 @@ enum Browsers {
     static func closing(_ window: NSWindow) {
         guard !quitting, let browser = browser(for: window) else { return }
         browser.cancelFileImport()
-        let others = all.filter { $0 !== browser && $0.isOpen }
+        // An extension's popup goes, and isn't one ⇧⌘T brings back.
+        if browser.extensionPopup != nil {
+            retire(browser, remembered: false)
+            return
+        }
+        let others = all.filter { $0 !== browser && $0.isOpen && $0.extensionPopup == nil }
         guard !others.isEmpty else {
             // The last one: kept, tabs and all, and written down now.
             browser.shut = true
@@ -215,15 +244,19 @@ enum Browsers {
         retire(browser)
     }
 
-    private static func retire(_ browser: Browser) {
+    private static func retire(_ browser: Browser, remembered: Bool = true) {
         let wasPrimary = browser === primary
-        closed.append((record(of: browser, rows: true), Date()))
-        if closed.count > 10 { closed.removeFirst(closed.count - 10) }
+        if remembered {
+            closed.append((record(of: browser, rows: true), Date()))
+            if closed.count > 10 { closed.removeFirst(closed.count - 10) }
+        }
         all.removeAll { $0 === browser }
         if #available(macOS 15.4, *) { Extensions.shared.detach(browser) }
         browser.closeAll()
         frames[ObjectIdentifier(browser)] = nil
-        if Front.shared.browser === browser { Front.shared.set(all.last { $0.isOpen } ?? all.last) }
+        if Front.shared.browser === browser {
+            Front.shared.set(all.last { $0.isOpen && $0.extensionPopup == nil } ?? all.last { $0.extensionPopup == nil })
+        }
         if browser.inScene { SceneSlot.shared.refresh() }
         if wasPrimary, let next = primary { next.becomePrimary() }
         save(now: true)
@@ -257,13 +290,17 @@ enum Browsers {
 
     private static var file: URL { Store.file("windows.json") }
 
+    /// The windows that are written down, the oldest first: every one but an
+    /// extension's popups, which never come back.
+    static var saved: [Browser] { all.enumerated().filter { $0.offset == 0 || $0.element.extensionPopup == nil }.map(\.element) }
+
     /// windows.json: the oldest window's frame and space first, then every
     /// other window whole.
     static func save(now: Bool = false) {
         guard let primary else { return }
         var records = [record(of: primary, rows: false)]
         records[0].rows = [:]
-        for browser in all.dropFirst() { records.append(record(of: browser, rows: true)) }
+        for browser in saved.dropFirst() { records.append(record(of: browser, rows: true)) }
         // Frozen before it goes to the Disk queue.
         let snapshot = records
         Disk.write(file, now: now) { try? JSONEncoder().encode(snapshot) }

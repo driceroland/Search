@@ -17,7 +17,7 @@ struct SettingsPanel: View {
     @State private var page: Page = Page(rawValue: Store.settings.string(forKey: "settings.page") ?? "") ?? .general
 
     enum Page: String, CaseIterable, Identifiable {
-        case general, tabs, shortcuts, extensions, passwords, downloads, privacy, about
+        case general, tabs, shortcuts, extensions, passwords, downloads, privacy, ai, about
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -28,6 +28,7 @@ struct SettingsPanel: View {
             case .passwords: return "Passwords"
             case .downloads: return "Downloads"
             case .privacy: return "Privacy"
+            case .ai: return "AI"
             case .about: return "About"
             }
         }
@@ -40,6 +41,7 @@ struct SettingsPanel: View {
             case .passwords: return "key"
             case .downloads: return "arrow.down.circle"
             case .privacy: return "hand.raised"
+            case .ai: return "sparkles"
             case .about: return "info.circle"
             }
         }
@@ -144,6 +146,7 @@ struct SettingsPanel: View {
                     case .passwords: passwords
                     case .downloads: downloads
                     case .privacy: privacy
+                    case .ai: AISettings(browser: browser, prefs: prefs)
                     case .about: about
                     }
                 }
@@ -434,6 +437,10 @@ struct SettingsPanel: View {
             Line("Tab groups", "Named sections in the sidebar. Right-click a tab to start a group; click its heading to hide or show its tabs.") {
                 Switch(on: $prefs.usesTabGroups)
             }
+            Rule()
+            Line("Split View", "Show two tabs side by side. Drag a tab onto a page to pair them.") {
+                Switch(on: $prefs.splitView)
+            }
         }
     }
 
@@ -545,7 +552,7 @@ struct SettingsPanel: View {
                     Switch(on: Binding(get: { !prefs.keepsSignIns }, set: { prefs.keepsSignIns = !$0 }))
                 }
                 Rule()
-                Line("Camera and microphone", "What each site was allowed or refused") {
+                Line("Camera, microphone and location", "What each site was allowed or refused") {
                     Pill("Forget choices") { browser.forgetCaptureChoices() }
                 }
             }

@@ -751,9 +751,44 @@ enum ExtensionShims {
         const key = channel && keyOf(message);
         if (key) channel.postMessage({ key, from: background ? "worker" : me, verdict, heard, at: Date.now() });
       };
+      // WebKit hands none of the extension's pages a message its worker or another of its pages sent, and Bitwarden's
+      // sync and passkey window wait on those. so each one also goes over the channel, and a page that didn't hear it
+      // from WebKit takes it from there.
+      // Each message's copies are paired by count, keyed on all of it, and
+      // only with what the extension's own pages and worker sent: one WebKit
+      // delivered cancels one relayed copy still to come, and one relayed
+      // cancels a late one from WebKit. A content script's message, however
+      // alike, is never taken for one, and an unpaired copy is forgotten
+      // after a few seconds (Security).
+      const relayKey = (message) => {
+        try { const text = JSON.stringify(message); return text === undefined ? null : text; } catch (e) { return null; }
+      };
+      const ownPlace = (() => { try { return runtime.getURL(""); } catch (e) { return ""; } })();
+      const fromOwnPages = (sender) => !!sender && sender.id === runtime.id && typeof sender.url === "string" && !!ownPlace
+        && (sender.url + "/").startsWith(ownPlace.replace(/\/$/, "") + "/");
+      const heardNatively = new Map(), heardRelayed = new Map();
+      const count = (map, key, by) => {
+        const now = Date.now();
+        for (const [k, v] of map) if (now - v.at > 5000) map.delete(k);
+        const n = ((map.get(key) || {}).n || 0) + by;
+        if (n > 0) { if (map.size > 200) map.clear(); map.set(key, { n, at: now }); } else map.delete(key);
+      };
+      const pending = (map, key) => { const v = map.get(key); return !!v && Date.now() - v.at <= 5000 && v.n > 0; };
+      let deliverRelayed = null, relaying = false;
+      const relay = (message) => { if (channel && !inContent) try { channel.postMessage({ relay: message, from: me, url: location.href }); } catch (e) {} };
       if (channel) {
         channel.onmessage = ({ data }) => {
           if (!data || data.from === me) return;
+          if (data.relay !== undefined) {
+            const key = relayKey(data.relay);
+            if (!background && deliverRelayed) setTimeout(() => {
+              if (key && pending(heardNatively, key)) { count(heardNatively, key, -1); return; }
+              if (key) count(heardRelayed, key, 1);
+              relaying = true;
+              try { deliverRelayed(data.relay, { id: runtime.id, url: data.url, origin: location.origin }); } finally { relaying = false; }
+            }, 50);
+            return;
+          }
           // The pages that listen, as they come and go.
           if (!background && data.hello) {
             const known = peers.has(data.from);
@@ -806,6 +841,11 @@ enum ExtensionShims {
         const listeners = new Set();
         let attached = false;
         const dispatch = function (message, sender, respond) {
+          if (!background && !relaying && fromOwnPages(sender)) {
+            const k = relayKey(message);
+            if (k && pending(heardRelayed, k)) { count(heardRelayed, k, -1); return; }
+            if (k) count(heardNatively, k, 1);
+          }
           let settled = false, keep = false;
           const sendResponse = (value) => { if (!settled) { settled = true; respond(value); } };
           // Only the worker answers; any other page stays out of it.
@@ -929,7 +969,7 @@ enum ExtensionShims {
         };
         put(event, "addListener", (listener) => {
           listeners.add(listener);
-          if (told) join();
+          if (told) { join(); deliverRelayed = (m, s) => dispatch(m, s, () => {}); }
           if (!attached) { attached = true; add(dispatch); }
         });
         put(event, "removeListener", (listener) => {
@@ -1070,6 +1110,7 @@ enum ExtensionShims {
           if (!inContent) tell(typeof args[0] === "string" && args.length > 1 && typeof args[1] !== "function" ? args[1] : args[0], "passes");
           checkWorker();
           const answer = send(...args).then((r) => { if (r !== undefined) heard = Date.now(); return r; });
+          if (typeof args[0] !== "string" && !(args[0] && Object.keys(args[0]).some((k) => k.startsWith("__search")))) relay(args[0]);
           return replied(answer, callback, "The message port closed before a response was received.");
         });
       }
@@ -1873,21 +1914,30 @@ enum ExtensionShims {
           if (typeof callback !== "function") return pr;
           pr.then((v) => callback(v), (e) => withLastError(e, callback));
         };
+        // Extension pages are never an extension's to reach, as in Chrome,
+        // where such a pattern isn't even valid (see
+        // Extensions.reachesExtensions): never held, never asked for.
+        const extensionPages = (origins) => origins.some((o) => /^(chrome|webkit)-extension:/i.test(String(o)));
         put(p, "contains", withCb(async ({ permissions = [], origins = [] }) => {
           const { theirs, mine, unknown } = split(permissions);
-          if (unknown.length) return false;
+          if (unknown.length || extensionPages(origins)) return false;
           if (mine.length) { const have = await granted(); if (!mine.every((m) => have.has(m))) return false; }
           return theirs.length || origins.length ? contains({ permissions: theirs, origins }) : true;
         }));
         put(p, "request", withCb(async ({ permissions = [], origins = [] }) => {
           const { theirs, mine, unknown } = split(permissions);
-          if (unknown.length) return false;
+          if (unknown.length || extensionPages(origins)) return false;
           if (mine.length) {
             const have = await granted();
             const missing = mine.filter((m) => !have.has(m));
             if (missing.length && !(await native("permissions.request", [missing]))) return false;
           }
-          return theirs.length || origins.length ? request({ permissions: theirs, origins }) : true;
+          if (!theirs.length && !origins.length) return true;
+          // Asked from a click on the extension's button: when filling in
+          // the tab it was given (mend) cost WebKit the click, Search
+          // knows it was one and asks the same question.
+          return Promise.resolve(request({ permissions: theirs, origins })).catch((e) =>
+            /user gesture/i.test(String(e && e.message)) ? native("permissions.afterClick", [theirs, origins]) : Promise.reject(e));
         }));
         put(p, "getAll", (callback) => {
           const pr = (async () => {
@@ -2999,6 +3049,11 @@ enum ExtensionShims {
                 guard allowed(id, context: context).contains("downloads.open") else {
                     throw Unsupported(what: "The extension never asked for \u{201C}downloads.open\u{201D}")
                 }
+                // Only when you have just done something in it, as Chrome
+                // asks: never on its own, from its worker.
+                guard Extensions.justUsed(id) else {
+                    throw Unsupported(what: "downloads.open() may only be called in response to a user gesture.")
+                }
                 guard ExtensionShims.ownDownloads[id]?.contains(keep.path) == true else {
                     throw Unsupported(what: "Only a download this extension started can be opened by it")
                 }
@@ -3288,6 +3343,39 @@ enum ExtensionShims {
             let had = Store.settings.stringArray(forKey: "extensions.granted.\(id)") ?? []
             Store.settings.set(Array(Set(had + wanted)).sorted(), forKey: "extensions.granted.\(id)")
             return true
+        case "permissions.afterClick":
+            // permissions.request for WebKit's own permissions and sites,
+            // made from a click on the extension's button whose moment
+            // WebKit lost while the shim filled in the tab it was given
+            // (see `mend`). Only within seconds of that click, once, and
+            // only what the manifest names, asked as WebKit would ask it.
+            guard let when = Extensions.clicked[id], Date().timeIntervalSince(when) < 10 else {
+                throw Unsupported(what: "Invalid call to permissions.request(). Must be called during a user gesture.")
+            }
+            Extensions.clicked[id] = nil
+            let found = context.webExtension
+            let wanted = ((first as? [String]) ?? []).map { WKWebExtension.Permission(rawValue: $0) }
+            let origins = ((args.dropFirst().first as? [String]) ?? []).compactMap { try? WKWebExtension.MatchPattern(string: $0) }
+                .filter { !Extensions.reachesExtensions($0) }
+            let named = found.requestedPermissions.union(found.optionalPermissions)
+            // Sites as the manifest names them, optional ones included —
+            // which allRequestedMatchPatterns leaves out.
+            let places = Set(found.allRequestedMatchPatterns.union(found.optionalPermissionMatchPatterns).map(\.string))
+            guard wanted.allSatisfy(named.contains), origins.allSatisfy({ places.contains($0.string) }) else {
+                throw Unsupported(what: "Only permissions specified in the manifest may be requested.")
+            }
+            let missing = wanted.filter { context.permissionStatus(for: $0) != .grantedExplicitly }
+            let unreached = origins.filter { context.permissionStatus(for: $0) != .grantedExplicitly }
+            guard !missing.isEmpty || !unreached.isEmpty else { return true }
+            let every = unreached.contains { $0.matchesAllHosts || $0.matchesAllURLs }
+            let sites = every ? "every website" : unreached.map(\.string).sorted().joined(separator: ", ")
+            let question = unreached.isEmpty ? "asks for more access" : "wants to read and change \(sites)"
+            let detail = missing.isEmpty ? "Until you remove the extension." : missing.map(\.rawValue).sorted().joined(separator: ", ")
+            guard await owner.ask(question, detail: detail, context: context) else { return false }
+            for permission in missing { context.setPermissionStatus(.grantedExplicitly, for: permission) }
+            for pattern in unreached { context.setPermissionStatus(.grantedExplicitly, for: pattern) }
+            Extensions.fence(context)
+            return true
         case "permissions.remove":
             let gone = Set((first as? [String]) ?? [])
             let had = Store.settings.stringArray(forKey: "extensions.granted.\(id)") ?? []
@@ -3320,7 +3408,7 @@ enum ExtensionShims {
             case "tabs.discard":
                 if tab.id != browser.activeID { browser.sleep(tab) }
             default:
-                browser.select(tab)
+                browser.activateForExtension(tab)
             }
             return nil
 
@@ -3419,8 +3507,13 @@ enum ExtensionShims {
 
         // MARK: system
         case "system.cpu.getInfo":
-            return ["numOfProcessors": ProcessInfo.processInfo.processorCount, "archName": "arm64",
-                    "modelName": "Apple silicon", "features": [], "processors": [], "temperatures": []]
+            #if arch(x86_64)
+            let (arch, model) = ("x86_64", "Intel")
+            #else
+            let (arch, model) = ("arm64", "Apple silicon")
+            #endif
+            return ["numOfProcessors": ProcessInfo.processInfo.processorCount, "archName": arch,
+                    "modelName": model, "features": [], "processors": [], "temperatures": []]
         case "system.memory.getInfo":
             return ["capacity": Double(ProcessInfo.processInfo.physicalMemory), "availableCapacity": Double(ProcessInfo.processInfo.physicalMemory) / 2]
         case "system.storage.getInfo":
@@ -3730,13 +3823,16 @@ enum ExtensionAuth {
             // Closing the tab is saying no. Moved to another window, or to
             // a space not on screen, it is still there.
             watches[id]?.invalidate()
+            let started = Date()
             watches[id] = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
                 MainActor.assumeIsolated {
                     guard let entry = waiting[id], entry.tab == tab.id else {
                         watches.removeValue(forKey: id)?.invalidate()
                         return
                     }
-                    guard !exists(entry.tab) else { return }
+                    // So is ten minutes with nobody finishing: its address is
+                    // no longer watched for.
+                    guard !exists(entry.tab) || Date().timeIntervalSince(started) > 600 else { return }
                     waiting[id] = nil
                     watches.removeValue(forKey: id)?.invalidate()
                     entry.finish(.failure(Declined()))
