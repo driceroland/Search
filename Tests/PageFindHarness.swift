@@ -133,6 +133,10 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         expect(wrapsBack, count: 17, index: 17, "Previous wraps from the first hit to the last")
         let wrapsForward = await update("orchid")
         expect(wrapsForward, count: 17, index: 1, "Next wraps from the last hit to the first")
+        let painted = (try? await evaluate(
+            "[CSS.highlights.get('search-find-match')?.size ?? 0, CSS.highlights.get('search-find-current')?.size ?? 0]"
+        )) as? [Int]
+        check((painted?[0] ?? 0) > 1 && painted?[1] == 1, "Matches are painted, the current one on its own (got \(painted ?? []))")
 
         await checkRapidNextRequests()
 
@@ -323,6 +327,10 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         let mainSelection = (try? await evaluate("window.getSelection().toString()")) as? String
         let frameSelection = (try? await evaluate("document.querySelector('#frame').contentWindow.getSelection().toString()")) as? String
         check(mainSelection?.isEmpty == true && frameSelection?.isEmpty == true, "Clear leaves no stale highlight in either document")
+        let unpainted = (try? await evaluate(
+            "[window, document.querySelector('#frame').contentWindow].reduce((sum, win) => sum + [...win.CSS.highlights.values()].reduce((n, h) => n + h.size, 0), 0)"
+        )) as? Int
+        check(unpainted == 0, "Clear takes the painted matches away in either document")
     }
 
     private func checkRapidNextRequests() async {

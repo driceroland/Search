@@ -162,7 +162,9 @@ final class PageFind {
 
     /// `callAsyncJavaScript` supplies these names as arguments; the query is
     /// never interpolated into source. State and ranges live only in Search's
-    /// isolated content world, so the page's nodes and styles stay untouched.
+    /// isolated content world, so the page's nodes stay untouched. The matches
+    /// are painted with `CSS.highlights` and one adopted style sheet, which the
+    /// page can read back, but not the list the count comes from.
     ///
     /// The page's text is read once and kept, as runs of text with a map back
     /// to the nodes, until a mutation, a changed field or another frame says
@@ -179,7 +181,7 @@ final class PageFind {
         state = {
             generation: -1, query: null, matchCase: false, wholeWords: false,
             index: -1, matches: [], complete: true, cursor: null, expression: null,
-            runs: null, current: null, savedSelections: [],
+            runs: null, current: null, savedSelections: [], painted: [], highlights: new WeakMap(),
             observers: [], documents: [], controls: [], dirty: true
         };
         Object.defineProperty(globalThis, key, { value: state, configurable: true });
@@ -228,6 +230,7 @@ final class PageFind {
 
     function clearState() {
         unmarkCurrent();
+        unpaint();
         state.savedSelections = [];
         state.matches = [];
         state.complete = true;
@@ -629,6 +632,70 @@ final class PageFind {
         state.current = match;
     }
 
+    // The selection alone is drawn pale grey while the find bar has the keys,
+    // so every match is painted too: yellow, the current one orange. Matches
+    // in fields and shadow trees keep only their selection.
+    // Each window gets its two highlights once; after that they are only
+    // cleared and added to. A highlight repaints the ranges it gains or
+    // loses, whereas one set into or deleted from `CSS.highlights` could
+    // stay on screen, or stay off it, until something else was drawn.
+    function unpaint() {
+        for (const highlights of state.painted) {
+            try { highlights.all.clear(); highlights.current.clear(); } catch (_) {}
+        }
+        state.painted = [];
+    }
+
+    function highlightsIn(win) {
+        const doc = win.document;
+        let highlights = state.highlights.get(win);
+        if (!highlights) {
+            const sheet = new win.CSSStyleSheet();
+            sheet.replaceSync(
+                "::highlight(search-find-match) { background-color: #ffff00; color: #000; }"
+                + "::highlight(search-find-current) { background-color: #ff9632; color: #000; }"
+            );
+            const current = new win.Highlight();
+            current.priority = 1;
+            highlights = { sheet, all: new win.Highlight(), current };
+            state.highlights.set(win, highlights);
+        }
+        // A page may set its own sheets, or these names, again at any time.
+        if (!doc.adoptedStyleSheets.includes(highlights.sheet)) {
+            doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, highlights.sheet];
+        }
+        if (win.CSS.highlights.get("search-find-match") !== highlights.all) {
+            win.CSS.highlights.set("search-find-match", highlights.all);
+        }
+        if (win.CSS.highlights.get("search-find-current") !== highlights.current) {
+            win.CSS.highlights.set("search-find-current", highlights.current);
+        }
+        return highlights;
+    }
+
+    function paint() {
+        unpaint();
+        // WebKit before macOS 14.2 has no highlights: the selection is all.
+        if (typeof Highlight !== "function") return;
+        const painted = new Map();
+        for (const match of state.matches) {
+            if (match.kind !== "range") continue;
+            try {
+                let highlights = painted.get(match.win);
+                if (!highlights) {
+                    highlights = highlightsIn(match.win);
+                    painted.set(match.win, highlights);
+                    state.painted.push(highlights);
+                }
+                highlights.all.add(match.range);
+            } catch (_) {}
+        }
+        const current = state.matches[state.index];
+        if (current?.kind === "range") {
+            try { painted.get(current.win)?.current.add(current.range); } catch (_) {}
+        }
+    }
+
     function scrollRange(range, win) {
         const target = range.startContainer;
         const element = target.nodeType === 1 ? target : target.parentElement;
@@ -732,6 +799,7 @@ final class PageFind {
 
     if (state.matches.length === 0) {
         unmarkCurrent();
+        unpaint();
         state.savedSelections = [];
         state.index = -1;
         return answer("ok", 0, 0);
@@ -755,6 +823,7 @@ final class PageFind {
     const total = state.matches.length;
     state.index = ((target % total) + total) % total;
     mark(state.matches[state.index]);
+    paint();
     return answer("ok", total, state.index + 1, !state.complete || !!state.cut);
     """#
 }
