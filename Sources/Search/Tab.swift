@@ -512,7 +512,9 @@ final class Tab: ObservableObject, Identifiable {
     /// One letter, when the tab has been pinned. A pinned tab keeps its place
     /// at the head of the row and gives up its title for that letter — which
     /// is all you need for the five or six pages you keep open all day.
-    @Published var pin: String?
+    @Published var pin: String? {
+        didSet { if pin == nil, oldValue != nil { touch() } }
+    }
     /// For a pin, the page it was pinned at: a double-click on it goes back
     /// there (Browser.goHome).
     var home: URL?
@@ -520,15 +522,24 @@ final class Tab: ObservableObject, Identifiable {
     var pinID: UUID?
 
     /// The group that holds this ordinary tab in the sidebar.
-    @Published var groupID: UUID?
+    @Published var groupID: UUID? {
+        didSet { if groupID == nil, oldValue != nil { touch() } }
+    }
 
     /// A name you gave it, in place of whatever the page calls itself. It
     /// stays through navigation: a tab you named is a tab you are keeping for
     /// a job, not for a page.
-    @Published var name: String?
+    ///
+    /// Pinned, grouped and named are the three ways of keeping a tab when
+    /// tabs close themselves (see Closing.swift). A tab let go from any of
+    /// them starts its time from then, not from whenever it was last left.
+    @Published var name: String? {
+        didSet { if name == nil, oldValue != nil { touch() } }
+    }
 
     /// When you last looked at it. The summon lists pages by this, because
     /// what you were just reading is what you are most likely to want back.
+    /// Written into the session, so a tab's time away counts across quits.
     private(set) var touched = Date()
 
     /// What was typed into this blank tab's field and not sent, kept while
@@ -1252,7 +1263,7 @@ final class Tab: ObservableObject, Identifiable {
         icon = nil
     }
 
-    func touch() { touched = Date() }
+    func touch(at when: Date = Date()) { touched = when }
 
     /// True when the web view holds nothing — never loaded, or emptied —
     /// while the tab still names a page. The white page, in other words.

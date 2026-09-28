@@ -2567,6 +2567,27 @@ final class Bench {
             guard let page = tab() else { answer(["error": "split sleep needs id"]); return }
             browser.sleep(page) { result in reply(["sleepResult": result]) }
 
+        case "age":
+            // As if the tab had been left `seconds` ago (see Closing.swift).
+            guard let page = tab() ?? browser.parkedTabs.first(where: { Bench.short($0) == request["id"] as? String }),
+                  let seconds = request["seconds"] as? Double else {
+                answer(["error": "split age needs id and seconds"])
+                return
+            }
+            page.touch(at: Date().addingTimeInterval(-seconds))
+            reply()
+
+        case "name":
+            // Named, or its name taken away with none.
+            guard let page = tab() else { answer(["error": "split name needs id"]); return }
+            page.name = request["name"] as? String
+            reply()
+
+        case "tidy":
+            browser.closeLeftAlone()
+            // Each close waits for the page to say it holds nothing typed.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { reply() }
+
         case "save":
             browser.writeSession(now: true)
             reply()
@@ -2647,6 +2668,8 @@ final class Bench {
                     "bench": tab.bench,
                     "asleep": tab.asleep,
                     "awakeReason": browser.awake(because: tab) ?? "",
+                    "staysReason": browser.stays(because: tab) ?? "",
+                    "idle": Date().timeIntervalSince(tab.touched),
                 ] as [String: Any]
             },
             "splits": browser.splits.map { pair in
