@@ -2581,6 +2581,11 @@ final class Bench {
             browser.clearTabs()
             reply()
 
+        case "reopen":
+            // ⇧⌘T: the last tab closed, or everything the last Clear closed.
+            browser.reopen()
+            reply()
+
         case "space":
             switch request["spaceAction"] as? String {
             case "new": browser.addSpace(named: request["name"] as? String ?? "Split test")
@@ -2707,6 +2712,9 @@ final class Bench {
             "pins": browser.tabs.filter { $0.pin != nil }.map { Bench.short($0) },
             // Every pin kept as a row, drawn so or not (Tab.listed).
             "listed": browser.tabs.filter { $0.pin != nil && $0.listed }.map { Bench.short($0) },
+            // What ⇧⌘T would bring back, as its menu item says it.
+            "reopenTitle": browser.reopenTitle,
+            "ghosts": browser.ghosts.count,
             // What pages of the pair asked, oldest first (see PaneQuestion).
             "questions": browser.paneQuestions.map { question in
                 ["tab": short(question.tab), "host": question.host, "message": question.message,
