@@ -418,7 +418,7 @@ struct ContentView: View {
                 }
                 .overlay(alignment: .topTrailing) {
                     if browser.finding {
-                        FindBar(browser: browser)
+                        FindBar(find: browser.finder)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }

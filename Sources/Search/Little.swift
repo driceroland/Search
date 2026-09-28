@@ -26,6 +26,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     private var kept = false
     /// What it says for a moment at its foot: "Address copied".
     private let note = LittleNote()
+    /// ⌘F on its page, in a bar of its own under the line (see FindSession).
+    let find: FindSession
     /// The three buttons as they look with the app behind another, drawn
     /// by hand as the browser's window draws them (see RestingLights).
     private let resting = RestingLights()
@@ -66,6 +68,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
 
     private init(tab: Tab) {
         self.tab = tab
+        find = FindSession { [weak tab] in tab }
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
             styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
@@ -77,7 +80,11 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 420, height: 320)
         window.delegate = self
-        window.contentView = NSHostingView(rootView: LittleView(tab: tab, note: note, keep: { [weak self] in self?.keep() }))
+        window.contentView = NSHostingView(rootView: LittleView(tab: tab, note: note, find: find, keep: { [weak self] in self?.keep() }))
+        // A zoom said at this window's foot, not the browser's behind it,
+        // where Browser.prepare pointed it; kept, the tab is prepared again
+        // and says it there.
+        tab.onZoom = { [weak note] _, value in note?.say("\(Int((value * 100).rounded()))%") }
         // The lights centred on the line, as far in from the side as down
         // from the top, as the button is at the other end (see Lights.swift).
         let centre = LittleView.line / 2
@@ -123,9 +130,11 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Its keys, before the browser's: ⌘O keeps it, Escape and ⌘W close it,
-    /// and the page's own commands — copying its address, reloading it —
-    /// act on this page, on whatever keys Settings › Shortcuts gives them.
+    /// Its keys, before the browser's: ⌘O keeps it, Escape and ⌘W close it
+    /// (Escape its find bar first, when that is open), and the page's own
+    /// commands — finding on it, zooming it, copying its address,
+    /// reloading it — act on this page, on whatever keys Settings ›
+    /// Shortcuts gives them.
     /// Left to the menus, they acted on the browser's tab, in a window
     /// behind this one or none, and said so there if anywhere. Everything
     /// else is the page's.
@@ -136,9 +145,21 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             if combo == keys.key(for: "tabs.copyMarkdown") { copy(markdown: true); return true }
             if combo == keys.key(for: "view.reload") { tab.reload(fromOrigin: false); return true }
             if combo == keys.key(for: "view.reloadOrigin") { tab.reload(fromOrigin: true); return true }
+            if combo == keys.key(for: "edit.find") { find.open(); return true }
+            if find.finding, combo == keys.key(for: "edit.findNext") { find.look(forward: true); return true }
+            if find.finding, combo == keys.key(for: "edit.findPrevious") { find.look(forward: false); return true }
+            // By the same factor as the browser's window, and remembered
+            // for the site the same way (see Tab.magnify).
+            if combo == keys.key(for: "view.zoomIn") { tab.magnify(by: 1.1); return true }
+            if combo == keys.key(for: "view.zoomOut") { tab.magnify(by: 1 / 1.1); return true }
+            if combo == keys.key(for: "view.actualSize") { tab.resetZoom(); return true }
         }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        if event.keyCode == 53, flags.isEmpty, find.finding {
+            find.close()
+            return true
+        }
         if event.keyCode == 53 && flags.isEmpty || key == "w" && flags == .command {
             window.performClose(nil)
             return true
@@ -196,8 +217,10 @@ final class LittleWindow: NSObject, NSWindowDelegate {
 /// under Safari's bar.
 struct LittleView: View {
     @ObservedObject var tab: Tab
-    /// Its window's line at the foot; an extension's popup has none.
+    /// Its window's line at the foot, and its find bar; an extension's
+    /// popup has neither.
     var note: LittleNote? = nil
+    var find: FindSession? = nil
     let keep: (() -> Void)?
     @StateObject private var tint = PageTint()
 
@@ -212,9 +235,17 @@ struct LittleView: View {
         stage
             .background(tint.ground)
             .overlay(alignment: .bottom) { if let note { LittleToast(note: note) } }
+            .overlay(alignment: .topTrailing) { if let find { LittleFind(find: find) } }
             .ignoresSafeArea()
             .onAppear { settle(page) }
             .onChange(of: ObjectIdentifier(page)) { _, _ in settle(page) }
+            // What was found belongs to the page just left; the words typed
+            // are looked for again on the one that comes in, as in the
+            // browser's window (which hears it from WebKit's delegate — the
+            // browser's, which knows this tab isn't one of its own).
+            .onChange(of: tab.loading) { _, loading in
+                if loading { find?.pageLeft(retry: false) } else { find?.pageArrived() }
+            }
     }
 
     @ViewBuilder
@@ -328,6 +359,22 @@ final class LittleNote: ObservableObject {
         let work = DispatchWorkItem { [weak self] in self?.text = nil }
         hush = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.7, execute: work)
+    }
+}
+
+/// The browser's find bar, under the line.
+private struct LittleFind: View {
+    @ObservedObject var find: FindSession
+
+    var body: some View {
+        ZStack {
+            if find.finding {
+                FindBar(find: find)
+                    .padding(.top, LittleView.line)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(Motion.settle, value: find.finding)
     }
 }
 

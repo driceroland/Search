@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""A link's small window (Little.swift) and its keys, in a hidden probe.
+"""A link's small window (Little.swift) and its keys, in a hidden probe:
+copying its address, finding and zooming on its page, closing and keeping it.
 
 Build first (`./build.sh`), then `python3 Tests/little_window.py`. The small
 windows are made unseen by `./bench little`, and keys are pressed on them
@@ -58,6 +59,12 @@ def cmd(req):
 def little(what): return cmd({"do": "little", "what": what})
 def press(code, chars, *mods): cmd({"do": "press", "code": code, "chars": chars, "mods": list(mods), "little": True}); time.sleep(0.3)
 def paste(): return subprocess.run(["pbpaste"], capture_output=True, text=True).stdout
+def found():
+    for _ in range(80):
+        status = little("look")["findStatus"]
+        if status: return status
+        time.sleep(0.05)
+    return ""
 
 
 class T:
@@ -99,6 +106,36 @@ try:
     little(f"{BASE}/escaped"); time.sleep(1.5)
     press(53, "\u001b")
     t.ok("Escape closes it", little("look")["littles"] == [])
+
+    # ⌘F: a bar of its own, on its own page; Escape puts the bar away
+    # before it closes the window.
+    little(f"{BASE}/findme"); time.sleep(1.5)
+    press(3, "f", "cmd")
+    t.ok("⌘F opens the small window's find bar", little("look")["finding"])
+    little("find:findme")
+    t.ok("it finds on the small window's page", found() == "1 of 1", little("look"))
+    press(53, "\u001b")
+    st = little("look")
+    t.ok("Escape closes the find bar, not the window", not st["finding"] and len(st["littles"]) == 1, st)
+
+    # Zoom: its page, by the browser's steps, said at its own foot.
+    press(24, "=", "cmd")
+    st = little("look")
+    t.ok("⌘+ zooms the small window's page", abs(st["zoom"] - 1.1) < 0.01, st["zoom"])
+    t.ok("and says so there", st["said"] == "110%", st["said"])
+    press(27, "-", "cmd"); press(27, "-", "cmd")
+    t.ok("⌘- zooms it out", little("look")["zoom"] < 1, little("look")["zoom"])
+    press(29, "0", "cmd")
+    t.ok("⌘0 puts it back", abs(little("look")["zoom"] - 1) < 0.01, little("look")["zoom"])
+    press(53, "\u001b")
+
+    # The browser's own find bar, now a FindSession of its own, as before.
+    row = cmd({"do": "open", "url": f"{BASE}/inrow"})["id"]
+    cmd({"do": "wait", "id": row}); cmd({"do": "select", "id": row})
+    r = cmd({"do": "find", "text": "inrow"})
+    t.ok("the browser's find bar still finds on its tab", r["status"] == "1 of 1", r)
+    t.ok("and the small window's find is its own", not little("look")["finding"])
+    cmd({"do": "close", "id": row})
 
     # Kept: into the row, the small window gone.
     little(f"{BASE}/kept"); time.sleep(1.5)

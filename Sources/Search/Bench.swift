@@ -2145,6 +2145,9 @@ final class Bench {
             case "keep": LittleWindow.all.last?.keep()
             case "close": LittleWindow.all.last?.close()
             case "look": break
+            case let words where words.hasPrefix("find:"):
+                // Typed into the small window's find bar, as the field does.
+                LittleWindow.all.last?.find.needle = String(words.dropFirst(5))
             default:
                 guard let text = request["what"] as? String, let url = URL(string: text) else { answer(["error": "little needs a url, keep or close"]); return }
                 LittleWindow.show(url, for: browser, front: false)
@@ -2152,6 +2155,9 @@ final class Bench {
             answer([
                 "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" },
                 "said": LittleWindow.all.last?.said ?? "",
+                "finding": LittleWindow.all.last?.find.finding ?? false,
+                "findStatus": LittleWindow.all.last?.find.findStatus ?? "",
+                "zoom": LittleWindow.all.last?.tab.built.map { Double($0.pageZoom) } ?? 0,
                 "tabs": browser.tabs.map { ($0.pin != nil ? "PIN " : "") + ($0.address?.host() ?? "blank") },
                 "active": browser.active?.address?.host() ?? "",
             ])
