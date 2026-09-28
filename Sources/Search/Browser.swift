@@ -1147,7 +1147,16 @@ final class Browser: NSObject, ObservableObject {
 
     var pinnedCount: Int { tabs.filter { $0.pin != nil }.count }
 
-    func pin(_ tab: Tab) {
+    /// The pins drawn as squares: those not kept as rows, and every pin
+    /// while the rows are off. They come first among the pins, so a
+    /// square's place in the grid is its place in the row.
+    var squarePins: [Tab] { tabs.filter { $0.pin != nil && !($0.listed && prefs.showsPinRows) } }
+    /// The pins kept as rows, under the squares (see Tab.listed). None
+    /// while the rows are off: they are drawn as squares then.
+    var listedPins: [Tab] { prefs.showsPinRows ? tabs.filter { $0.pin != nil && $0.listed } : [] }
+
+    /// `listed`: as a row under the squares rather than as a square.
+    func pin(_ tab: Tab, listed: Bool = false) {
         // Drawn again even when the tab stays where it is (see unpin).
         objectWillChange.send()
         // Pins are the space's, kept on disk and shown in every window: a
@@ -1161,21 +1170,46 @@ final class Browser: NSObject, ObservableObject {
             tab.pin = tab.monogram
             tab.home = tab.pending ?? tab.address
             // Pinned tabs live at the head of the row, in the order they were
-            // pinned, so their letters never move under your hand.
-            if let here = tabs.firstIndex(where: { $0.id == tab.id }) {
-                let home = max(0, pinnedCount - 1)
-                if here != home {
-                    tabs.move(
-                        fromOffsets: IndexSet(integer: here),
-                        toOffset: home > here ? home + 1 : home
-                    )
-                }
-            }
+            // pinned, so their letters never move under your hand: a square
+            // after the squares, a row after the rows.
+            tab.listed = listed
+            settlePin(tab)
         }
         // No dialog and no waiting cursor: the letter is taken from the
         // address and applied. Changing it is a separate act, for the day it
         // matters — which is why it is not folded into this one.
         writeSession(now: true)
+    }
+
+    /// A square made a row, or a row a square: it keeps its letter, its
+    /// page and its home, and moves to the nearer end of its new kind (the
+    /// top of the rows, or the end of the squares), so it travels no
+    /// further than the line between them.
+    func setListed(_ tab: Tab, _ listed: Bool) {
+        guard tab.pin != nil, tab.listed != listed else { return }
+        objectWillChange.send()
+        if editingPin == tab.id { editingPin = nil }
+        tab.listed = listed
+        settlePin(tab, first: listed)
+        writeSession(now: true)
+    }
+
+    /// A pin put in its place: the squares, then the rows, then everything
+    /// else. `first`: at the head of its kind rather than the end.
+    private func settlePin(_ tab: Tab, first: Bool = false) {
+        guard let here = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        var row = tabs
+        row.remove(at: here)
+        let squares = row.filter { $0.pin != nil && !$0.listed }.count
+        let pins = row.filter { $0.pin != nil }.count
+        row.insert(tab, at: tab.listed ? (first ? squares : pins) : squares)
+        if !row.elementsEqual(tabs, by: { $0.id == $1.id }) { tabs = row }
+    }
+
+    /// The squares ahead of the rows, each kind in its own order. Pins
+    /// only; everything else is left as it is.
+    static func tiered(_ pins: [Tab]) -> [Tab] {
+        pins.filter { !$0.listed } + pins.filter(\.listed)
     }
 
     /// A pin's page, from the session: the one it was pinned at, or — for a
@@ -1236,6 +1270,7 @@ final class Browser: NSObject, ObservableObject {
         // a row (from X).
         objectWillChange.send()
         tab.pin = nil
+        tab.listed = false
         tab.home = nil
         tab.pinID = nil
         defer { writeSession(now: true) }
@@ -1835,7 +1870,7 @@ final class Browser: NSObject, ObservableObject {
             if tab.pinID == nil { tab.pinID = UUID() }
             return PinDef(id: tab.pinID ?? UUID(), letter: letter,
                           home: (tab.home ?? tab.pending ?? tab.address)?.absoluteString ?? "",
-                          title: tab.title, name: tab.name)
+                          title: tab.title, name: tab.name, listed: tab.listed ? true : nil)
         }
     }
 
@@ -1865,11 +1900,14 @@ final class Browser: NSObject, ObservableObject {
             tab.pinID = def.id
             if tab.pin != def.letter { tab.pin = def.letter }
             if tab.name != def.name { tab.name = def.name }
+            if tab.listed != (def.listed == true) { tab.listed = def.listed == true }
             tab.home = URL(string: def.home)
             out.append(tab)
         }
         for gone in pinned { gone.close() }
-        return out + loose
+        // In the order they were written, which already holds it; a file
+        // put together by hand, or an import, may not.
+        return Browser.tiered(out) + loose
     }
 
     /// Another window changed a space's pins: this window's row there follows.
@@ -2094,7 +2132,8 @@ final class Browser: NSObject, ObservableObject {
             entries.append(Session.Entry(
                 url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name,
                 home: tab.pin == nil ? nil : tab.home?.absoluteString, groupID: tab.groupID,
-                pinID: tab.pin == nil ? nil : tab.pinID
+                pinID: tab.pin == nil ? nil : tab.pinID,
+                listed: tab.pin != nil && tab.listed ? true : nil
             ))
         }
         // The tab you were on isn't kept — a private or blank one: the one
@@ -2346,7 +2385,7 @@ final class Browser: NSObject, ObservableObject {
               let from = shown.firstIndex(where: { $0.id == representative }), from != index else { return }
         let anchor = shown[index]
         let moving = split(for: tab).map { pair in tabs.filter { pair.contains($0.id) } } ?? [tab]
-        guard moving.allSatisfy({ ($0.pin == nil) == (anchor.pin == nil) }) else { return }
+        guard moving.allSatisfy({ ($0.pin == nil) == (anchor.pin == nil) }), joins(tab, kindOf: anchor) else { return }
         let ids = Set(moving.map(\.id))
         var row = tabs.filter { !ids.contains($0.id) }
         guard let target = row.firstIndex(where: { $0.id == anchor.id }) else { return }
@@ -2356,13 +2395,25 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
+    /// Whether a pin carried onto another may land there. With the rows
+    /// shown, a square goes among squares and a row among rows; the menu
+    /// moves one between them. With them off every pin is drawn a square,
+    /// so one carried across the hidden line becomes the kind it landed
+    /// among, which keeps the squares ahead of the rows (see settlePin).
+    private func joins(_ tab: Tab, kindOf anchor: Tab) -> Bool {
+        guard tab.pin != nil, anchor.pin != nil, tab.listed != anchor.listed else { return true }
+        if prefs.showsPinRows { return false }
+        tab.listed = anchor.listed
+        return true
+    }
+
     func dropTabIntoStrip(_ tab: Tab, before target: Tab?) {
         guard let sourceIndex = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         if let target {
             guard target.id != tab.id,
                   let targetIndex = tabs.firstIndex(where: { $0.id == target.id }),
                   split(for: tab)?.contains(target.id) != true,
-                  (tab.pin == nil) == (target.pin == nil) else { return }
+                  (tab.pin == nil) == (target.pin == nil), joins(tab, kindOf: target) else { return }
             let targetStart = split(for: target).flatMap { pair in tabs.firstIndex { $0.id == pair.left } } ?? targetIndex
             detachSplit(tab)
             let previousGroup = tab.groupID
@@ -2375,7 +2426,7 @@ final class Browser: NSObject, ObservableObject {
             detachSplit(tab)
             var row = tabs
             row.remove(at: sourceIndex)
-            row.insert(tab, at: tab.pin == nil ? row.count : row.filter { $0.pin != nil }.count)
+            row.insert(tab, at: tab.pin == nil ? row.count : row.filter { $0.pin != nil && (tab.listed || !$0.listed) }.count)
             tabs = row
         }
         rememberSession()
@@ -2559,6 +2610,22 @@ final class Browser: NSObject, ObservableObject {
             close(tab)
         }
         select(keep)
+    }
+
+    /// Arc's Clear, on the line above the tabs that come and go: each of
+    /// them closed as ⌘W closes it, so ⇧⌘T brings the last dozen back. Pins
+    /// stay, and so does a tab group: a section you named is one you are
+    /// keeping. The page on screen goes last, once an empty tab has taken
+    /// its place: closed first, a neighbour would wake only to be closed.
+    func clearTabs() {
+        let going = tabs.filter { $0.pin == nil && !$0.bench && group(of: $0) == nil }
+        for tab in going where !visibleTabIDs.contains(tab.id) { close(tab) }
+        let onScreen = going.filter { visibleTabIDs.contains($0.id) }
+        // Already an empty tab in front: that is where Clear leaves you.
+        guard !onScreen.isEmpty, !(onScreen.count == 1 && onScreen[0].isBlank) else { return }
+        // After the others went, so it can't reuse an empty one among them.
+        newTab()
+        for tab in onScreen where tab.id != activeID { close(tab) }
     }
 
     /// A link let go of over the tabs becomes a tab among them.
@@ -3051,6 +3118,7 @@ final class Browser: NSObject, ObservableObject {
         fresh.opener = tab.opener
         fresh.popup = tab.popup
         fresh.pin = tab.pin
+        fresh.listed = tab.listed
         fresh.name = tab.name
         prepare(fresh)
         fresh.groupID = tab.groupID
@@ -3239,6 +3307,7 @@ final class Browser: NSObject, ObservableObject {
             tab.restore(url: url, title: entry.title, name: entry.name)
             tab.pin = entry.pin
             tab.pinID = entry.pin == nil ? nil : entry.pinID
+            tab.listed = entry.pin != nil && entry.listed == true
             tab.home = Browser.home(of: entry, at: url)
             tab.groupID = entry.pin == nil && groups.contains(where: { $0.id == entry.groupID })
                 ? entry.groupID : nil

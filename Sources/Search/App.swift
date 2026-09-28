@@ -186,11 +186,21 @@ struct SearchApp: App {
                     Divider()
                 }
                 if let tab = browser.active {
+                    let rows = browser.prefs.showsPinRows
                     if tab.pin == nil {
                         Button("Pin Tab") { browser.pin(tab) }
                             .disabled(tab.isBlank || tab.shy)
+                        if rows {
+                            Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
+                                .disabled(tab.isBlank || tab.shy)
+                        }
                     } else {
-                        Button("Change Letter") { browser.editLetter(tab) }
+                        if rows {
+                            Button(tab.listed ? "Show Pin as Square" : "Show Pin as Row") { browser.setListed(tab, !tab.listed) }
+                        }
+                        if !(rows && tab.listed) {
+                            Button("Change Letter") { browser.editLetter(tab) }
+                        }
                         Button("Unpin Tab") { browser.unpin(tab) }
                     }
                 }
