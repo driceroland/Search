@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 // A small window for a link from another app: the page, and a thin line over
 // it with the site, Open in Search and nothing else — to read and close, or
@@ -10,6 +11,10 @@ import SwiftUI
 // The page is a tab of its own, as a peek is (see Peek.swift), only in a
 // window of its own: Open in Search moves it into the browser's row, where
 // the space on screen is, loaded as it is and nothing loaded twice.
+//
+// It comes alone. The browser's window stays where it was — closed, in the
+// Dock, behind another app — until Open in Search asks for it (see
+// Links.little).
 
 @MainActor
 final class LittleWindow: NSObject, NSWindowDelegate {
@@ -17,7 +22,6 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     private static var open: [LittleWindow] = []
 
     let tab: Tab
-    private weak var browser: Browser?
     private let window: NSWindow
     private var kept = false
 
@@ -28,8 +32,9 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         let tab = Tab(configuration: Web.configuration(space: browser.spaceID))
         browser.prepare(tab)
         tab.go(to: url)
-        let little = LittleWindow(tab: tab, browser: browser)
+        let little = LittleWindow(tab: tab)
         open.append(little)
+        watchKeys()
         little.window.center()
         // Never a test run's in front: a probe started hidden stays off every screen.
         guard front, !Store.testing else { return }
@@ -49,9 +54,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         return open.first { $0.window === window }
     }
 
-    private init(tab: Tab, browser: Browser) {
+    private init(tab: Tab) {
         self.tab = tab
-        self.browser = browser
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
             styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
@@ -64,6 +68,23 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         window.minSize = NSSize(width: 420, height: 320)
         window.delegate = self
         window.contentView = NSHostingView(rootView: LittleView(tab: tab, keep: { [weak self] in self?.keep() }))
+        // The lights centred on the line, as far in from the side as down
+        // from the top, as the button is at the other end (see Lights.swift).
+        let centre = LittleView.line / 2
+        Lights.keep(window, centreX: { centre }, centreY: centre, height: LittleView.line) {}
+    }
+
+    /// Its own key monitor. A browser window's (see ContentView.watchKeys)
+    /// hands it these too, but a link that launched the app has no browser
+    /// window to lend one any more, and ⌘W went on to close a tab in a
+    /// window nobody could see.
+    private static var keys: Any?
+
+    private static func watchKeys() {
+        guard keys == nil else { return }
+        keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            owning(event.window)?.take(event) == true ? nil : event
+        }
     }
 
     /// Its keys, before the browser's: ⌘O keeps it, Escape and ⌘W close it.
@@ -83,20 +104,26 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     }
 
     /// Into the browser's row, after the tab on screen (never among the
-    /// pins), and in front; the small window goes.
+    /// pins), and in front; the small window goes. The one time a link in
+    /// a small window brings the browser's window: the window in front, or
+    /// one brought back for it.
     func keep() {
-        // Into the window in front, whichever that is now.
-        guard let browser = Browsers.front ?? browser else { return }
+        let browser = Browsers.ensureWindow()
         kept = true
+        // The browser's window has no line over its page to leave room for.
+        if #available(macOS 26, *) { tab.built?.obscuredContentInsets = NSEdgeInsetsZero }
         // As a tab moved from another window is: this window's delegate,
         // and this window's space, with its sign-ins.
         browser.receive(tab)
         window.close()
-        (browser.window ?? NSApp.windows.first { $0.contentView != nil && !($0 is NSPanel) && $0 !== window })?
-            .makeKeyAndOrderFront(nil)
+        guard let front = browser.window else { return }
+        // Put away in the Dock, it stayed there (#95).
+        if front.isMiniaturized { front.deminiaturize(nil) }
+        front.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
+        Lights.forget(window)
         if !kept { tab.close() }
         LittleWindow.open.removeAll { $0 === self }
     }
@@ -104,34 +131,113 @@ final class LittleWindow: NSObject, NSWindowDelegate {
 
 /// The page, and the line over it: the site, and Open in Search when there
 /// is somewhere to keep it (an extension's popup window has no such button).
+///
+/// The line wears the page's own colour, found as Safari finds it (see
+/// PageTint), so the window reads as the page and not as a frame around it. On macOS 26 the page runs to the top edge, under the line,
+/// which is glass: what scrolls up goes on showing through it, blurred, as
+/// under Safari's bar.
 struct LittleView: View {
     @ObservedObject var tab: Tab
     let keep: (() -> Void)?
+    @StateObject private var tint = PageTint()
+
+    /// The line's height: Open in Search with the same room above, below
+    /// and beside it, and the window's own buttons moved down to sit
+    /// centred on it (see LittleWindow.init).
+    static let line: CGFloat = KeepButton.height + 2 * LittleView.inset
+    /// The room around Open in Search, the same on its three open sides.
+    static let inset: CGFloat = 6
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                // Room for the window's own buttons, which sit on this line.
-                Spacer().frame(width: 64)
-                Spacer(minLength: 0)
-                Text(site)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(Palette.muted)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if let keep {
-                    Pill("Open in Search", action: keep)
-                        .help("Open in Search   ⌘O")
-                } else {
-                    Spacer().frame(width: 64)
-                }
+        stage
+            .background(tint.ground)
+            .ignoresSafeArea()
+            .onAppear { settle(page) }
+            .onChange(of: ObjectIdentifier(page)) { _, _ in settle(page) }
+    }
+
+    @ViewBuilder
+    private var stage: some View {
+        if #available(macOS 26, *) {
+            ZStack(alignment: .top) {
+                WebStage(page: page)
+                bar.background(alignment: .top) { band }
             }
-            .padding(.horizontal, 10)
-            .frame(height: 34)
-            WebStage(page: tab.built ?? tab.web)
+        } else {
+            VStack(spacing: 0) {
+                bar.background(tint.ground)
+                WebStage(page: page)
+            }
         }
-        .background(Palette.ground)
-        .ignoresSafeArea()
+    }
+
+    private var page: PageView { tab.built ?? tab.web }
+
+    /// The site in the middle, the button at the end, and the rest of the
+    /// line a title bar: it drags the window and zooms it on a double-click.
+    private var bar: some View {
+        HStack(spacing: 10) {
+            // Room for the window's own buttons, which sit on this line.
+            Spacer().frame(width: 64)
+            Spacer(minLength: 0)
+            Text(site)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            if let keep {
+                KeepButton(action: keep)
+                    .help("Open in Search   ⌘O")
+            } else {
+                Spacer().frame(width: 64)
+            }
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, LittleView.inset)
+        .frame(height: LittleView.line)
+        // Under the button, not on it: a real view takes the click first.
+        .background { DragStrip(trailing: keep == nil ? 0 : 124) }
+        .environment(\.colorScheme, tint.scheme ?? colorScheme)
+    }
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// Behind the line: the page, blurred, under a thin wash of its own
+    /// colour, as macOS 26's soft scroll edge is — no rule, and no colour
+    /// the page doesn't have: it eases out over the first points below the
+    /// line, so what scrolls up goes soft before it goes under.
+    @available(macOS 26, *)
+    private var band: some View {
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+            Rectangle().fill(tint.ground.opacity(0.5))
+        }
+        .frame(height: LittleView.line + LittleView.fade)
+        .mask {
+            LinearGradient(stops: [
+                .init(color: .black, location: 0),
+                .init(color: .black, location: 0.55),
+                .init(color: .black.opacity(0.6), location: 0.75),
+                .init(color: .black.opacity(0.2), location: 0.9),
+                .init(color: .clear, location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+        }
+        .environment(\.colorScheme, tint.scheme ?? colorScheme)
+        .allowsHitTesting(false)
+    }
+
+    /// How far below the line the soft edge reaches.
+    static let fade: CGFloat = 18
+
+    /// Watches the page's colour, and on macOS 26 tells it the line covers
+    /// its top: it lays out below the line and keeps fixed headers there,
+    /// while what scrolls goes on up underneath.
+    private func settle(_ page: PageView) {
+        tint.watch(page)
+        if #available(macOS 26, *) {
+            page.obscuredContentInsets = NSEdgeInsets(top: LittleView.line, left: 0, bottom: 0, right: 0)
+        }
     }
 
     /// The page on screen — not one still on its way, which a page can
@@ -145,6 +251,150 @@ struct LittleView: View {
         case "chrome-extension", "webkit-extension": return "Extension page"
         default: return url.absoluteString == "about:blank" ? "" : "Not a website"
         }
+    }
+}
+
+/// Open in Search: a drop of glass on macOS 26, as the system's own buttons
+/// are there; a quiet capsule before it. Either way it takes the line's
+/// light or dark from the page, not from the app.
+private struct KeepButton: View {
+    static let height: CGFloat = 24
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        if #available(macOS 26, *) {
+            Button(action: action) { label }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            Button(action: action) {
+                label.background(.primary.opacity(hovering ? 0.14 : 0.08), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .animation(Motion.quick, value: hovering)
+        }
+    }
+
+    private var label: some View {
+        Text("Open in Search")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .frame(height: KeepButton.height)
+            .contentShape(Capsule())
+    }
+}
+
+/// The page's colour, as Safari finds it for its bar: the colour along
+/// the page's top edge, when the top edge is one colour, and the colour the
+/// page is on otherwise.
+///
+/// WebKit samples that edge itself (PageColorSampler, a handful of points
+/// across the top, kept only if they agree), but hands the answer only to
+/// Safari, through a private property. So it is done again here the same
+/// way, from a snapshot of a thin strip at the top of the page, once a page
+/// has drawn. A site's theme-color is not asked: GitHub names a near-black
+/// one over a white page, and the line came out dark over it.
+@MainActor
+private final class PageTint: ObservableObject {
+    @Published private(set) var colour: NSColor?
+    private weak var page: WKWebView?
+    private var watching: [NSKeyValueObservation] = []
+    /// The top edge's colour when it has one, from the last snapshot.
+    private var edge: NSColor?
+    private var ticket = 0
+
+    /// Where across the edge it is looked at, as fractions of the width.
+    private static let spots: [CGFloat] = [0.03, 0.25, 0.5, 0.75, 0.97]
+    /// How far apart, in sRGB, two spots may be and still be one colour.
+    private static let tolerance: CGFloat = 0.06
+
+    var ground: Color { colour.map(Color.init(nsColor:)) ?? Palette.ground }
+
+    /// Dark or light to go on it: whichever of white and black text reads
+    /// better on it, by the WCAG contrast ratio, the measure the system's
+    /// own accessibility checks use. Nil until there is a page, and the
+    /// app's own until then.
+    var scheme: ColorScheme? {
+        guard let rgb = colour?.usingColorSpace(.sRGB) else { return nil }
+        // Relative luminance, from the gamma-encoded components.
+        func linear(_ c: CGFloat) -> CGFloat { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        let lum = 0.2126 * linear(rgb.redComponent) + 0.7152 * linear(rgb.greenComponent) + 0.0722 * linear(rgb.blueComponent)
+        let onWhite = 1.05 / (lum + 0.05), onBlack = (lum + 0.05) / 0.05
+        return onWhite > onBlack ? .dark : .light
+    }
+
+    func watch(_ page: WKWebView) {
+        guard page !== self.page else { return }
+        self.page = page
+        edge = nil
+        // A page finishing, and a page changing its own background, are
+        // when its top can have changed colour.
+        watching = [
+            page.observe(\.isLoading) { [weak self] _, _ in
+                DispatchQueue.main.async { self?.lookSoon() }
+            },
+            page.observe(\.underPageBackgroundColor) { [weak self] _, _ in
+                DispatchQueue.main.async { self?.lookSoon() }
+            },
+        ]
+        lookSoon()
+    }
+
+    /// A moment after the page settles, so it has drawn what it loaded;
+    /// only the last of several asks in a row looks.
+    private func lookSoon() {
+        settle()
+        ticket += 1
+        let ticket = ticket
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self, ticket == self.ticket else { return }
+            self.look()
+        }
+    }
+
+    private func look() {
+        guard let page, page.bounds.width > 40, page.bounds.height > 40 else { return }
+        var top: CGFloat = 0
+        if #available(macOS 26, *) { top = page.obscuredContentInsets.top }
+        let strip = WKSnapshotConfiguration()
+        strip.rect = CGRect(x: 0, y: top, width: page.bounds.width, height: 4)
+        strip.afterScreenUpdates = false
+        page.takeSnapshot(with: strip) { [weak self, weak page] image, _ in
+            guard let self, page === self.page else { return }
+            self.edge = image.flatMap(PageTint.oneColour)
+            self.settle()
+        }
+    }
+
+    private func settle() {
+        guard let page else { return }
+        let now = edge ?? page.underPageBackgroundColor
+        if now != colour { colour = now }
+    }
+
+    /// The strip's colour, if every spot across it is the same one.
+    private static func oneColour(_ image: NSImage) -> NSColor? {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let bitmap = NSBitmapImageRep(cgImage: cg)
+        guard bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0 else { return nil }
+        let row = bitmap.pixelsHigh / 2
+        let seen = spots.compactMap { at -> NSColor? in
+            let x = min(bitmap.pixelsWide - 1, Int(CGFloat(bitmap.pixelsWide) * at))
+            return bitmap.colorAt(x: x, y: row)?.usingColorSpace(.sRGB)
+        }
+        guard seen.count == spots.count else { return nil }
+        let n = CGFloat(seen.count)
+        let mean = (r: seen.map(\.redComponent).reduce(0, +) / n,
+                    g: seen.map(\.greenComponent).reduce(0, +) / n,
+                    b: seen.map(\.blueComponent).reduce(0, +) / n)
+        for colour in seen {
+            let dr = colour.redComponent - mean.r, dg = colour.greenComponent - mean.g, db = colour.blueComponent - mean.b
+            if (dr * dr + dg * dg + db * db).squareRoot() > tolerance { return nil }
+        }
+        return NSColor(srgbRed: mean.r, green: mean.g, blue: mean.b, alpha: 1)
     }
 }
 

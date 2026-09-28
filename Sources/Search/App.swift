@@ -904,6 +904,12 @@ struct ContentView: View {
     private func dress(_ window: NSWindow) {
         browser.window = window
         window.tabbingMode = .disallowed
+        // Not put back by macOS at launch: Search opens its window itself
+        // whenever a launch wants one (see Links), and macOS putting it back
+        // too brought it up behind a link's small window when the link was
+        // what launched the app. Its frame is kept apart from this, under
+        // the scene's id, and still comes back.
+        window.isRestorable = false
         // Light or dark is the app's to say (Settings › Appearance); the
         // window only has to be the ground colour that goes with it.
         window.titlebarAppearsTransparent = true

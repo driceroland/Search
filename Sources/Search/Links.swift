@@ -177,11 +177,6 @@ final class Links: NSObject, NSApplicationDelegate {
             // The window in front's browser, or a window brought back for it:
             // the link lands where you are, not in the first window.
             let browser = Browsers.ensureWindow()
-            // In a small window of its own, for whoever chose that.
-            if browser.prefs.littleLinks {
-                LittleWindow.show(url, for: browser)
-                return
-            }
             browser.arrive(url)
             // Put away in the Dock, it stayed there: bringing a window to the
             // front doesn't take it out (#95).
@@ -243,12 +238,29 @@ final class Links: NSObject, NSApplicationDelegate {
     static func arrived(_ url: URL) { take(url) }
 
     private static func take(_ url: URL) {
+        if MainActor.assumeIsolated({ little(url) }) { return }
         if let deliver {
             deliver(url)
         } else {
             waiting.append(url)
             DispatchQueue.main.async { summon() }
         }
+    }
+
+    /// In a small window of its own, for whoever chose that (see
+    /// Little.swift), and nothing else: the browser's window stays where it
+    /// is — closed, in the Dock, behind another app, or never opened by a
+    /// launch this link made. It went through `deliver`, which brings a
+    /// window back first, so the browser came up behind the small window
+    /// every time. Open in Search is what brings it now.
+    @MainActor
+    private static func little(_ url: URL) -> Bool {
+        guard Shared.prefs.littleLinks else { return false }
+        // The space and sign-ins of the window in front, on screen or not.
+        let browser = Browsers.front.flatMap { $0.extensionPopup == nil ? $0 : nil }
+            ?? Browsers.primary ?? SceneSlot.shared.browser
+        LittleWindow.show(url, for: browser)
+        return true
     }
 
     /// A link that launches the app arrives as an Apple Event, taken above,
