@@ -204,6 +204,11 @@ final class Preferences: ObservableObject {
             FrameRate.fast = fastPages
         }
     }
+    /// A thin line across a page while it loads (see Stage.swift). Off
+    /// unless asked for in Settings.
+    @Published var showsLoadLine: Bool {
+        didSet { store.set(showsLoadLine, forKey: "pages.loadline") }
+    }
     /// Shift-click on a link opens it in a panel over the page (see
     /// Peek.swift). On unless turned off.
     @Published var peeksLinks: Bool {
@@ -425,6 +430,7 @@ final class Preferences: ObservableObject {
         let fast = store.bool(forKey: "pages.120")
         fastPages = fast
         FrameRate.fast = fast
+        showsLoadLine = store.bool(forKey: "pages.loadline")
         // Left behind by the Web Inspector's switch, from before it was
         // always there.
         store.removeObject(forKey: "inspector")

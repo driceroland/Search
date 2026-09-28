@@ -3790,7 +3790,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard let navigation else { return }
-        tab(for: webView)?.extensionReturn.started(navigation, at: webView.url)
+        guard let tab = tab(for: webView) else { return }
+        tab.completedLoadID = nil
+        tab.extensionReturn.started(navigation, at: webView.url)
     }
 
     func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
@@ -4236,6 +4238,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // done, and it is shown.
         (webView as? PageView)?.showFirstFrame()
         guard let tab = anyTab(for: webView), let url = tab.address else { return }
+        tab.completedLoadID = UUID()
         tab.uncover()
         // The find bar still open over a page that has just come in: look
         // for the same words on it.
@@ -4255,6 +4258,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     private func fail(_ webView: WKWebView, _ error: Error) {
+        tab(for: webView)?.completedLoadID = nil
         tab(for: webView)?.uncover()
         let nsError = error as NSError
         let code = nsError.code
