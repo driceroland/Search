@@ -234,6 +234,22 @@ final class StageView: NSView {
         settle()
     }
 
+    /// A key the page didn't use, stopped here. The page view keeps quiet the
+    /// keys WebKit hands back to it, but in a window that is really key it
+    /// hands back none: it gives the key to the view's superclass, which
+    /// walks it up from the page, so nothing of PageView's is asked again.
+    /// Nothing above a page wants a plain key either, since Search's own are
+    /// taken by the window's key monitor before the page sees them and the
+    /// menus take theirs as key equivalents, so it goes all the way up and
+    /// falls off the end of the responder chain, where macOS plays its
+    /// "can't do that" sound. A page that reads the arrows itself without
+    /// taking them from the page, as a game or a map does, beeped on every
+    /// press (#402); Safari keeps them quiet. The stage is the page's frame,
+    /// and the first thing of ours the key meets, so it stops here.
+    override func keyDown(with event: NSEvent) {
+        guard wanted != nil else { return super.keyDown(with: event) }
+    }
+
     func show(_ page: NSView?) {
         if let leaving = wanted, leaving !== page, let dock = subviews.first(where: Self.isInspector) {
             Self.docks.setObject(dock, forKey: leaving)
