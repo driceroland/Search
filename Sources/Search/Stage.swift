@@ -11,6 +11,7 @@ import WebKit
 /// what turns that into a redraw.
 struct Page: View {
     @ObservedObject var tab: Tab
+    @ObservedObject private var prefs = Shared.prefs
     /// False where the page itself is held elsewhere (see PaneStage.swift)
     /// and only what goes over it is wanted here.
     var holdsPage = true
@@ -78,11 +79,62 @@ struct Page: View {
                     // let go.
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
+
+            if prefs.showsLoadLine {
+                LoadLine(tab: tab)
+                    .id(tab.id)
+            }
         }
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
         .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
         .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
+    }
+}
+
+/// The page's progress, just under the top edge and out of the way of clicks.
+private struct LoadLine: View {
+    @ObservedObject var tab: Tab
+    @State private var settling = false
+
+    private var visible: Bool {
+        !tab.isBlank && !tab.asleep && !tab.floating && (tab.loading || settling)
+    }
+
+    /// WebKit can report zero for a moment even after the request has begun.
+    /// Starting with a little length makes the line visible at once.
+    private var progress: CGFloat {
+        guard !settling else { return 1 }
+        return min(1, max(0.06, CGFloat(tab.progress)))
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            Rectangle()
+                .fill(Palette.muted)
+                .frame(width: geometry.size.width * progress)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .animation(Motion.reduced ? nil : .easeOut(duration: 0.12), value: progress)
+        }
+        .frame(height: 2)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .opacity(visible ? 1 : 0)
+        .animation(Motion.reduced ? nil : .easeOut(duration: 0.18), value: visible)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onChange(of: tab.completedLoadID) { _, completed in
+            guard let completed else {
+                settling = false
+                return
+            }
+            settling = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                guard tab.completedLoadID == completed else { return }
+                withAnimation(Motion.reduced ? nil : .easeOut(duration: 0.18)) {
+                    settling = false
+                }
+            }
+        }
     }
 }
 

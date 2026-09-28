@@ -298,6 +298,9 @@ final class Tab: ObservableObject, Identifiable {
     }
     @Published private(set) var progress: Double = 0
     @Published private(set) var loading = false
+    /// Set only when WebKit says a navigation finished successfully. A stopped
+    /// or failed load also turns `loading` off, so that alone cannot finish the line.
+    @Published var completedLoadID: UUID?
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
     /// Set when the page never arrived — no host, no network, a refused
@@ -1240,7 +1243,10 @@ final class Tab: ObservableObject, Identifiable {
             web.reload()
         }
     }
-    func stop() { web.stopLoading() }
+    func stop() {
+        completedLoadID = nil
+        web.stopLoading()
+    }
     /// Straight through, every time. A page that has to be fetched again is
     /// fetched again — nothing is kept behind to make that look otherwise.
     func back() { web.goBack() }

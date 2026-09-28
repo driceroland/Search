@@ -290,6 +290,10 @@ struct SettingsPanel: View {
                 Steps(stops: Preferences.zooms, value: $prefs.pageZoom, home: 1) { "\(Int(($0 * 100).rounded()))%" }
             }
             Rule()
+            Line("Show page load progress", "A thin line at the top of a page shows how far it has loaded") {
+                Switch(on: $prefs.showsLoadLine)
+            }
+            Rule()
             Line("Correct spelling as you type", "macOS's autocorrect inside pages — the one that capitalises for you") {
                 Switch(on: $prefs.autocorrect)
             }
