@@ -101,10 +101,10 @@ enum Browsers {
     /// The browser to act on when a menu or a link needs one.
     static var acting: Browser { front ?? SceneSlot.shared.browser }
 
-    static func register(_ browser: Browser) {
+    static func register(_ browser: Browser, focusIfEmpty: Bool = true) {
         guard !all.contains(where: { $0 === browser }) else { return }
         all.append(browser)
-        if Front.shared.browser == nil { Front.shared.set(browser) }
+        if Front.shared.browser == nil && focusIfEmpty { Front.shared.set(browser) }
         // Extensions see every window (windows.getAll, a tab's windowId).
         if #available(macOS 15.4, *) { Extensions.shared.attach(browser) }
     }
@@ -161,8 +161,9 @@ enum Browsers {
     }
 
     /// A window around `browser`, made here rather than by SwiftUI.
-    static func open(_ browser: Browser, frame: NSRect?) {
-        register(browser)
+    /// `present` is false for model tests that must exercise a real frame unseen.
+    static func open(_ browser: Browser, frame: NSRect?, shouldBeFocused: Bool = true, present: Bool = true) {
+        let previouslyFocused = shouldBeFocused ? nil : Front.shared.browser
         let popup = browser.extensionPopup != nil
         let host: NSView
         if popup {
@@ -180,9 +181,10 @@ enum Browsers {
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false
         )
+        // A popup has no ContentView.dress() to bind this weak reference.
+        browser.window = window
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
-        window.contentView = host
         if popup {
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
@@ -198,10 +200,26 @@ enum Browsers {
         } else {
             window.center()
         }
+        // Extensions learn about a new window in register(). Keep the real
+        // frame ready before WebKit can report it or the view appears.
         frames[ObjectIdentifier(browser)] = window
-        Bench.keepOff(window)
-        window.makeKeyAndOrderFront(nil)
-        comeForward()
+        register(browser, focusIfEmpty: shouldBeFocused)
+        // WebKit's didOpenWindow moves a new window to the front of its own
+        // order even when AppKit leaves it unfocused. Restore its focus model
+        // to the actual front window (or nil) without changing Front.
+        if !shouldBeFocused, #available(macOS 15.4, *) {
+            Extensions.shared.focused(previouslyFocused)
+        }
+        window.contentView = host
+        if present {
+            Bench.keepOff(window)
+            if shouldBeFocused {
+                window.makeKeyAndOrderFront(nil)
+                comeForward()
+            } else {
+                window.orderFront(nil)
+            }
+        }
     }
 
     /// An extension unloaded, turned off or removed: the popup windows it
@@ -370,6 +388,14 @@ enum Browsers {
             }
             return event
         }) { watching.append(monitor) }
+        // Popups use ExtensionPopupView, so there is no ContentView to relay
+        // their key-window change to the extension controller.
+        watching.append(NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { note in
+            MainActor.assumeIsolated {
+                guard let browser = browser(for: note.object as? NSWindow), browser.extensionPopup != nil else { return }
+                becameKey(browser)
+            }
+        })
         // A press whose release something else kept — a menu popped up from
         // it tracks the mouse itself — leaves no window unmovable for long.
         watching.append(NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { _ in

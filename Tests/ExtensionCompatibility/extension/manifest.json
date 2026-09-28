@@ -1,0 +1,6 @@
+{
+  "manifest_version": 3,
+  "name": "Search Extension Compatibility Fixture",
+  "version": "1.0.0",
+  "background": { "service_worker": "background.js" }
+}

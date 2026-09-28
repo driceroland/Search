@@ -761,7 +761,21 @@ enum ExtensionShims {
       // alike, is never taken for one, and an unpaired copy is forgotten
       // after a few seconds (Security).
       const relayKey = (message) => {
-        try { const text = JSON.stringify(message); return text === undefined ? null : text; } catch (e) { return null; }
+        try {
+          // WebKit can reorder keys between native and BroadcastChannel
+          // copies. Round-trip JSON first to keep Date/undefined and other
+          // wire semantics, then sort every object recursively.
+          const text = JSON.stringify(message);
+          if (text === undefined) return null;
+          const ordered = (value) => {
+            if (Array.isArray(value)) return value.map(ordered);
+            if (value === null || typeof value !== "object") return value;
+            const copy = Object.create(null);
+            for (const key of Object.keys(value).sort()) copy[key] = ordered(value[key]);
+            return copy;
+          };
+          return JSON.stringify(ordered(JSON.parse(text)));
+        } catch (e) { return null; }
       };
       const ownPlace = (() => { try { return runtime.getURL(""); } catch (e) { return ""; } })();
       const fromOwnPages = (sender) => !!sender && sender.id === runtime.id && typeof sender.url === "string" && !!ownPlace
@@ -1843,6 +1857,32 @@ enum ExtensionShims {
           });
         }
         for (const name of ["get", "getAll", "getCurrent", "getLastFocused", "create"]) mendResult(chrome.windows, name);
+        // WebKit's windows.getCurrent ignores which extension page called
+        // it and returns the frontmost window. In a top-level extension page
+        // opened in a tab, find that page's current tab each time and ask for
+        // its window instead. When there is no real tab, as in a toolbar
+        // action popup or an offscreen page, keep WebKit's answer; workers
+        // and content scripts never enter here.
+        if (!inContent && !embedded && typeof document !== "undefined"
+            && chrome.windows && typeof chrome.windows.getCurrent === "function"
+            && typeof chrome.windows.get === "function" && typeof chrome.tabs.getCurrent === "function") {
+          const getCurrentWindow = chrome.windows.getCurrent.bind(chrome.windows);
+          const getWindow = chrome.windows.get.bind(chrome.windows);
+          const getCurrentTab = chrome.tabs.getCurrent.bind(chrome.tabs);
+          put(chrome.windows, "getCurrent", (...args) => {
+            const callback = typeof args[args.length - 1] === "function" ? args.pop() : null;
+            const getInfo = typeof args[0] === "function" ? undefined : args[0];
+            const options = getInfo === undefined ? [] : [getInfo];
+            const p = Promise.resolve().then(() => getCurrentTab()).then((tab) => {
+              const windowId = tab && tab.windowId;
+              const hasPlace = tab && Number.isInteger(tab.index) && tab.index >= 0 && tab.index < 1e6
+                && Number.isInteger(windowId) && windowId >= 0;
+              return hasPlace ? getWindow(windowId, ...options) : getCurrentWindow(...options);
+            }, () => getCurrentWindow(...options));
+            if (!callback) return p;
+            p.then((window) => callback(window), (error) => withLastError(error, callback));
+          });
+        }
         // Listeners given a tab: the tab is mended before they see it.
         const mendArgs = (target, positions, told) => {
           if (!target || typeof target.addListener !== "function") return;

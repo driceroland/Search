@@ -335,9 +335,9 @@ final class Extensions: NSObject, ObservableObject {
     }
 
     /// A window came to the front (windows.onFocusChanged).
-    func focused(_ browser: Browser) {
-        guard following[ObjectIdentifier(browser)] != nil else { return }
-        controller.didFocusWindow(window(of: browser))
+    func focused(_ browser: Browser?) {
+        if let browser, following[ObjectIdentifier(browser)] == nil { return }
+        controller.didFocusWindow(browser.map(window(of:)))
     }
 
     private func follow(_ tabs: [Tab], in browser: Browser) {
@@ -1152,7 +1152,7 @@ extension Extensions: WKWebExtensionControllerDelegate {
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, focusedWindowFor extensionContext: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
-        window
+        Front.shared.browser.map(window(of:))
     }
 
     /// Where an extension may send a tab. Not to javascript:, which would run
@@ -1222,8 +1222,7 @@ extension Extensions: WKWebExtensionControllerDelegate {
         if frame == nil, fresh.extensionPopup != nil, let screen = (browser?.window?.screen ?? NSScreen.main)?.visibleFrame {
             frame = Self.popupFrame(asked: asked, on: screen)
         }
-        Browsers.open(fresh, frame: frame)
-        if !configuration.shouldBeFocused { Browsers.front?.window?.makeKeyAndOrderFront(nil) }
+        Browsers.open(fresh, frame: frame, shouldBeFocused: configuration.shouldBeFocused)
         return window(of: fresh)
     }
 
