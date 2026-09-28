@@ -46,7 +46,10 @@ One process per world. Quit a process only after its executable path is this rep
 
 If `./bench tabs` (no flag) is not listening, ask them to turn on **Settings › General › Let a script drive Search**. Do not write defaults for the installed app.
 
-`./fresh.sh` builds `build/Search.app` when that bundle is missing.
+`./fresh.sh` builds `build/Search.app` when that bundle is missing. It opens a world
+whose `bench` switch is on hidden, since a test run that comes to the front trips the
+probe's guard and then refuses every command for the rest of that run. Write the switch
+before launching, not after, or the world opens in front and has to be thrown away.
 
 ## Tabs that are not theirs
 

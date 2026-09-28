@@ -37,4 +37,14 @@ if [ "${1:-}" != "again" ]; then
 fi
 
 [ -d "build/Search.app" ] || ./build.sh release
-open -n --env SEARCH_PROBE="$WORLD" "build/Search.app"
+
+# A world the bench is going to drive opens hidden. A test run that comes to
+# the front trips the probe's own guard, which hides the app and then refuses
+# every command for the rest of that run, as it should: a run that showed a
+# window is one to throw away. A world with the switch off is opened to be
+# looked at, so it opens as before.
+HIDDEN=""
+if [ "$(defaults read "$SUITE" bench 2>/dev/null || true)" = 1 ]; then
+  HIDDEN="-g -j"
+fi
+open -n $HIDDEN --env SEARCH_PROBE="$WORLD" "build/Search.app"
