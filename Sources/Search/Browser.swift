@@ -3790,9 +3790,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard let navigation else { return }
-        guard let tab = tab(for: webView) else { return }
-        tab.completedLoadID = nil
-        tab.extensionReturn.started(navigation, at: webView.url)
+        loadLineTab(for: webView)?.completedLoadID = nil
+        tab(for: webView)?.extensionReturn.started(navigation, at: webView.url)
     }
 
     func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
@@ -4237,8 +4236,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // A page with nothing to lay out never has a first frame. Done is
         // done, and it is shown.
         (webView as? PageView)?.showFirstFrame()
+        loadLineTab(for: webView)?.completedLoadID = UUID()
         guard let tab = anyTab(for: webView), let url = tab.address else { return }
-        tab.completedLoadID = UUID()
         tab.uncover()
         // The find bar still open over a page that has just come in: look
         // for the same words on it.
@@ -4258,7 +4257,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     private func fail(_ webView: WKWebView, _ error: Error) {
-        tab(for: webView)?.completedLoadID = nil
+        loadLineTab(for: webView)?.completedLoadID = nil
         tab(for: webView)?.uncover()
         let nsError = error as NSError
         let code = nsError.code
@@ -4300,6 +4299,12 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// still goes into History with its icon.
     func anyTab(for webView: WKWebView) -> Tab? {
         tab(for: webView) ?? parkedTabs.first { $0.built === webView }
+    }
+
+    /// Peek owns a page without putting its tab in the row. It still needs
+    /// the same finish signal as a regular page.
+    private func loadLineTab(for webView: WKWebView) -> Tab? {
+        anyTab(for: webView) ?? (peekTab?.built === webView ? peekTab : nil)
     }
 }
 
