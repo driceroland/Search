@@ -1906,8 +1906,11 @@ final class Browser: NSObject, ObservableObject {
     /// into the one there is; more than one turns spaces on. Nothing twice:
     /// a page already in the row, or a pin already there, isn't added again.
     @discardableResult
-    func takeArc(_ sidebar: ArcSidebar) -> (spaces: Int, pins: Int, tabs: Int) {
+    func takeArc(_ sidebar: ArcSidebar, from source: ImportSource? = nil, profile: String? = nil)
+        -> (spaces: Int, pins: Int, tabs: Int) {
         var made = 0, pins = 0, added = 0
+        // Every address this brings in, for its icon below.
+        var brought: [URL] = []
         var targets: [(id: UUID, space: ArcSidebar.Space?)] = []
         if sidebar.spaces.count > 1 || (prefs.usesSpaces && !sidebar.spaces.isEmpty) {
             if !prefs.usesSpaces { prefs.usesSpaces = true }
@@ -1939,12 +1942,36 @@ final class Browser: NSObject, ObservableObject {
                 defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
                                    home: favourite.url.absoluteString, title: favourite.title, name: nil))
                 pins += 1
+                brought.append(favourite.url)
             }
             Pins.set(target.id, defs, from: self)
             pinsChanged(in: target.id)
-            added += takeAsleep(Browser.opened(target.space?.pinned ?? []), into: target.id)
+            let pinned = Browser.opened(target.space?.pinned ?? [])
+            brought += pinned.map(\.item.url)
+            added += takeAsleep(pinned, into: target.id)
         }
+        adoptIcons(for: brought, from: source, profile: profile)
         return (made, pins, added)
+    }
+
+    /// The icons for what Arc's side of the import brought in, from Arc's own
+    /// cache, as the bookmarks take theirs (see takeBookmarks). A pin and a
+    /// tab read the icon cache as they are made, and these were made a moment
+    /// ago, when nothing had been put there for them yet: without this every
+    /// one of them wears a letter until its page is opened, which is the only
+    /// other way an icon arrives (see Favicons.fetch).
+    private func adoptIcons(for urls: [URL], from source: ImportSource?, profile: String?) {
+        guard let source, !urls.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async {
+            let icons = source.icons(profile: profile, for: urls)
+            guard !icons.isEmpty else { return }
+            Task { @MainActor in
+                for (host, data) in icons { await Favicons.shared.adopt(data, for: host) }
+                // The ones made before the icons arrived, now that they are here.
+                for tab in self.tabs + self.parkedTabs where tab.icon == nil { tab.adoptIcon() }
+                self.objectWillChange.send()
+            }
+        }
     }
 
     /// Arc's pinned list, folders opened out in their order, each page with

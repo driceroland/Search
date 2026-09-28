@@ -369,7 +369,7 @@ final class Tab: ObservableObject, Identifiable {
         return host.first.map { String($0).uppercased() } ?? "•"
     }
 
-    private func adoptIcon() {
+    func adoptIcon() {
         guard let site = address.flatMap(Favicons.site) else {
             icon = nil
             return
