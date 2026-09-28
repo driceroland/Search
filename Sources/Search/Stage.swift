@@ -78,11 +78,66 @@ struct Page: View {
                     // let go.
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
+
+            LoadLine(tab: tab)
         }
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
         .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
         .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
+    }
+}
+
+/// The page's progress, just under the top edge and out of the way of clicks.
+private struct LoadLine: View {
+    @ObservedObject var tab: Tab
+    @State private var settling = false
+    @State private var finishID: UUID?
+
+    private var visible: Bool {
+        !tab.isBlank && !tab.asleep && !tab.floating && (tab.loading || settling)
+    }
+
+    /// WebKit can report zero for a moment even after the request has begun.
+    /// Starting with a little length makes the line visible at once.
+    private var progress: CGFloat {
+        guard tab.loading else { return 1 }
+        return min(1, max(0.06, CGFloat(tab.progress)))
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            Rectangle()
+                .fill(Palette.muted)
+                .frame(width: geometry.size.width * progress)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .animation(.easeOut(duration: 0.12), value: progress)
+        }
+        .frame(height: 2)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .opacity(visible ? 1 : 0)
+        .animation(.easeOut(duration: 0.18), value: visible)
+        .allowsHitTesting(false)
+        .onChange(of: tab.loading) { _, loading in
+            if loading {
+                // A new request owns the line now. An earlier completion must
+                // not fade this one, even if it finishes before that timer.
+                finishID = nil
+                settling = false
+                return
+            }
+
+            settling = true
+            let finished = UUID()
+            finishID = finished
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                guard finishID == finished, !tab.loading else { return }
+                withAnimation(.easeOut(duration: 0.18)) {
+                    settling = false
+                }
+                finishID = nil
+            }
+        }
     }
 }
 
