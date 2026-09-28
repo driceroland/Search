@@ -898,7 +898,15 @@ enum ExtensionShims {
             if (space === "tabs" && method === "getCurrent") { sendResponse({ value: sender.tab }); return; }
             let ns; try { ns = chrome[space]; } catch (e) {}
             if (!ns || typeof ns[method] !== "function") { sendResponse({ error: "chrome." + space + "." + method + " isn't available" }); return; }
-            Promise.resolve().then(() => ns[method](...(args || [])))
+            Promise.resolve().then(async () => {
+              if (space === "scripting" && method === "executeScript" && typeof args?.[0]?.__searchFunction === "string") {
+                const { __searchFunction, args: functionArgs, ...details } = args[0];
+                if (details.files) throw new Error("Cannot specify both 'func' and 'files'");
+                const file = await native("scripting.file", [__searchFunction, functionArgs || []]);
+                return ns[method]({ ...details, files: [file] });
+              }
+              return ns[method](...(args || []));
+            })
               .then((value) => sendResponse({ value }), (e) => sendResponse({ error: String(e && e.message || e) }));
             return true;
           }
@@ -1003,6 +1011,11 @@ enum ExtensionShims {
         const direct = new Set(["runtime", "storage", "i18n", "extension", "permissions", "dom", "test"]);
         const ask = (space, method, args) => {
           while (args.length && args[args.length - 1] === undefined) args.pop();
+          // A function cannot cross the message channel. Keep its source
+          // separately so the worker can inject it from an extension file.
+          if (space === "scripting" && method === "executeScript" && typeof (args[0] && args[0].func) === "function") {
+            args = [{ ...args[0], func: undefined, __searchFunction: args[0].func.toString() }, ...args.slice(1)];
+          }
           let payload;
           try { payload = JSON.parse(JSON.stringify(args)); } catch (e) { return Promise.reject(e); }
           return Promise.resolve(chrome.runtime.sendMessage({ __searchCall: { space, method, args: payload } })).then((reply) => {
@@ -3290,7 +3303,9 @@ enum ExtensionShims {
             }
             return nil
 
-        // MARK: user scripts
+        // MARK: script injection and user scripts
+        case "scripting.file":
+            return try scriptingFile(first as? String ?? "", arguments: args.dropFirst().first as? [Any] ?? [], in: Extensions.folder(for: id))
         case "userScripts.file":
             return try userScriptFile(first as? [String: Any] ?? [:], in: Extensions.folder(for: id))
         case "userScripts.list":
@@ -3603,6 +3618,28 @@ enum ExtensionShims {
     }
 
     // MARK: - the side panel
+
+    /// A function sent by an extension page inside a website's frame cannot
+    /// survive the JSON message to its worker. Write it as a file for WebKit's
+    /// scripting API, with its JSON arguments and final result intact.
+    static func scriptingFile(_ function: String, arguments: [Any], in folder: URL) throws -> String {
+        guard !function.isEmpty, JSONSerialization.isValidJSONObject(arguments),
+              let data = try? JSONSerialization.data(withJSONObject: arguments),
+              let args = String(data: data, encoding: .utf8)
+        else { throw Unsupported(what: "Invalid script function or arguments") }
+        let source = "(\(function))(...\(args))\n"
+        let name = "script-" + SHA256.hash(data: Data(source.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + ".js"
+        let dir = folder.appendingPathComponent("_search", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent(name)
+        if !FileManager.default.fileExists(atPath: url.path) { try source.write(to: url, atomically: true, encoding: .utf8) }
+        for old in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        where old.lastPathComponent.hasPrefix("script-") && old != url {
+            let age = (try? old.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate).map { -$0.timeIntervalSinceNow } ?? 0
+            if age > 60 { try? FileManager.default.removeItem(at: old) }
+        }
+        return "_search/" + name
+    }
 
     /// A user script as a file WebKit can inject: its code — inline, or read
     /// from the extension's own files — inside a block that leaves at once
