@@ -2903,6 +2903,20 @@ final class Browser: NSObject, ObservableObject {
         writeSession(now: true)
     }
 
+    func setTabGroupIcon(_ id: UUID, to icon: TabGroupIcon?) {
+        guard let index = tabGroups.firstIndex(where: { $0.id == id }) else { return }
+        let next: TabGroupIcon?
+        if let icon {
+            guard let validated = icon.validated else { return }
+            next = validated
+        } else {
+            next = nil
+        }
+        guard tabGroups[index].icon != next else { return }
+        tabGroups[index].icon = next
+        writeSession(now: true)
+    }
+
     func toggleTabGroup(_ id: UUID) {
         guard let index = tabGroups.firstIndex(where: { $0.id == id }) else { return }
         tabGroups[index].collapsed.toggle()

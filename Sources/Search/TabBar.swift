@@ -346,7 +346,9 @@ struct TabBar: View {
         let extra = pairWidthExtra(in: looseTabs, base: each, splits: browser.splits)
         let headers = browser.prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) : 0
         let headingWidth = browser.prefs.usesTabGroups
-            ? browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name) } : 0
+            ? browser.tabGroups.reduce(CGFloat.zero) {
+                $0 + GroupHeading.width(for: $1, editing: browser.editingGroupID == $1.id)
+            } : 0
         let shown = Int(pinned + loose + headers)
         var total = pinned * Metrics.pinWidth + loose * each + extra
             + headingWidth + CGFloat(max(0, shown - 1)) * Metrics.tabGap
@@ -386,7 +388,9 @@ struct TabBar: View {
             guard count > 0 else { return Metrics.tabWidth }
             let extra = pairWidthExtra(in: items, base: Metrics.tabMinWidth, splits: browser.splits)
             let spent = CGFloat(pins) * Metrics.pinWidth + extra
-                + browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name) }
+                + browser.tabGroups.reduce(CGFloat.zero) {
+                    $0 + GroupHeading.width(for: $1, editing: browser.editingGroupID == $1.id)
+                }
                 + CGFloat(max(0, pins + count + browser.tabGroups.count - 1)) * Metrics.tabGap
             return max(Metrics.tabMinWidth, min(Metrics.tabWidth, (room(in: strip) - spent) / CGFloat(count)))
         }
@@ -957,8 +961,19 @@ struct TabMenu: View {
                 Button("New Group") { browser.addTabGroup(containing: tab) }
                 if !browser.tabGroups.isEmpty { Divider() }
                 ForEach(browser.tabGroups) { group in
-                    Button(group.name) { browser.move(tab, toGroup: group.id) }
+                    if let icon = group.icon?.validated, let image = GroupMenuIcon.image(for: icon) {
+                        Button { browser.move(tab, toGroup: group.id) } label: {
+                            Label {
+                                Text(group.name)
+                            } icon: {
+                                Image(nsImage: image)
+                            }
+                        }
                         .disabled(tab.groupID == group.id)
+                    } else {
+                        Button(group.name) { browser.move(tab, toGroup: group.id) }
+                            .disabled(tab.groupID == group.id)
+                    }
                 }
                 if tab.groupID != nil {
                     Divider()
