@@ -65,6 +65,20 @@ try:
     st = sv.sp("reopen")
     t.ok("⇧⌘T brings the closed tab back", at(st, "old") is not None, urls(st))
 
+    # Something typed and not sent keeps a tab however long it is left. Typed
+    # as real keys: Search's form watch is in its own content world, out of
+    # eval's reach, and counts only what a person would have typed.
+    ty = sv.page("typed")
+    sv.ev(ty, "var box = document.createElement('textarea'); document.body.appendChild(box); box.focus(); true")
+    sv.cmd({"do": "key", "id": ty, "text": "half a reply"})
+    sv.page("away2"); sv.sp("age", id=ty, seconds=2 * HOUR)
+    sv.sp("tidy"); time.sleep(1); st = sv.sp("state")
+    t.ok("typed: a tab holding something typed stays", by(st, ty) is not None, urls(st))
+    # The same box emptied: nothing keeps it now.
+    sv.ev(ty, "document.querySelector('textarea').value = ''; true")
+    sv.sp("tidy"); time.sleep(1); st = sv.sp("state")
+    t.ok("typed: once its box is empty, it closes", by(st, ty) is None, urls(st))
+
     # A pair goes whole or not at all.
     l = sv.page("left"); r = sv.page("right"); sv.sp("pair", id=r, **{"with": l}, side="right"); sv.page("away")
     sv.sp("age", id=l, seconds=2 * HOUR); st = sv.sp("tidy")
