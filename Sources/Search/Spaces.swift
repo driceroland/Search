@@ -509,7 +509,7 @@ enum Ask {
     @MainActor static var testing: Bool?
 
     /// `empty`: an empty name is an answer too (a bookmark's, see
-    /// BookmarkOutline.rename); otherwise it is taken as no answer.
+    /// Bookmarks.askRename); otherwise it is taken as no answer.
     static func name(_ title: String, detail: String? = nil, placeholder: String, initial: String = "", confirm: String, empty: Bool = false, then: @escaping (String) -> Void) {
         let alert = NSAlert()
         alert.messageText = title
