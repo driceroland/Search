@@ -249,6 +249,14 @@ final class Preferences: ObservableObject {
             HoveredLink.on = showsLinks
         }
     }
+    /// A drag on an empty part of a site's top bar moves the window (see
+    /// Grab.swift). Off unless asked for.
+    @Published var pageMovesWindow: Bool {
+        didSet {
+            store.set(pageMovesWindow, forKey: "window.bypage")
+            GrabRelay.on = pageMovesWindow
+        }
+    }
     /// A back or forward swipe held once armed shows the pages that way to
     /// pick from (see PageView.openList). Off unless asked for.
     @Published var holdsHistory: Bool {
@@ -439,6 +447,9 @@ final class Preferences: ObservableObject {
         let links = store.object(forKey: "links.show") as? Bool ?? true
         showsLinks = links
         HoveredLink.on = links
+        let grabs = store.bool(forKey: "window.bypage")
+        pageMovesWindow = grabs
+        GrabRelay.on = grabs
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls

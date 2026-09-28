@@ -310,6 +310,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.showsLinks)
             }
             Rule()
+            Line("Move the window by the top of a page", "Drag an empty part of a site's top bar, or of any page's top edge, and the window comes with it, as by its title bar. Links, buttons and words stay the page's") {
+                Switch(on: $prefs.pageMovesWindow)
+            }
+            Rule()
             Line("Scroll with the middle button", "Click the wheel on a page, then move the mouse up or down to scroll, as on Windows. Click again to stop") {
                 Switch(on: $prefs.autoScroll)
             }

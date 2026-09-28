@@ -28,7 +28,7 @@ enum Web {
     /// included, and registering a name twice is a hard crash.
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name,
-                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name] {
+                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, GrabRelay.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
@@ -486,6 +486,7 @@ final class Tab: ObservableObject, Identifiable {
     private let shop = StoreRelay()
     private let iconChanges = IconRelay()
     private let middles = MiddleRelay()
+    private let grabs = GrabRelay()
     private let passkeyRelay = PasskeyRelay()
     private let hovered = HoveredLink()
     private let ears = AudioWatch()
@@ -631,6 +632,7 @@ final class Tab: ObservableObject, Identifiable {
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
+        controller.add(grabs, contentWorld: Web.world, name: GrabRelay.name)
         Shield.shared.protect(controller)
         built = web
         // A tab muted before it went to sleep wakes muted.
@@ -769,6 +771,13 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: MiddleRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
         )
+        // Only while Settings says so, and in the main frame only (see
+        // Grab.swift).
+        if GrabRelay.on {
+            controller.addUserScript(
+                WKUserScript(source: GrabRelay.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
+            )
+        }
         // Every frame, in the page's own world and ahead of its scripts: a
         // live player's speed nudges go through it (see LiveRate.swift).
         controller.addUserScript(
@@ -1536,7 +1545,59 @@ final class PageView: WKWebView {
 
     override func mouseDown(with event: NSEvent) {
         onTouch?()
+        held = nil
+        if grabs(event) {
+            held = event
+            carried = false
+            return
+        }
         super.mouseDown(with: event)
+    }
+
+    // MARK: - the window by the top of the page
+
+    /// Whether the pointer is on empty ground in the page's top bar, as the
+    /// page last said (see GrabRelay).
+    var grabbable = false
+    /// A press on that ground, kept from the page until it is known to be a
+    /// click, which the page is then given whole, or a drag, which it never
+    /// hears of: given the press straight away, it would start a selection
+    /// the window then carries off.
+    private var held: NSEvent?
+    private var carried = false
+
+    /// A plain first press, in a window that can move. A second press of a
+    /// double-click is the page's, and so is anything with a key held: a
+    /// shift-click extends a selection, a control-click opens the menu.
+    private func grabs(_ event: NSEvent) -> Bool {
+        guard GrabRelay.on, grabbable, event.clickCount == 1,
+              event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+              let window, !window.styleMask.contains(.fullScreen)
+        else { return false }
+        return true
+    }
+
+    /// As in the strip (see DragStrip): past a little slack the drag is the
+    /// window's, handed to the system's own window drag so it snaps and tiles
+    /// as any window does, the window let move for it.
+    override func mouseDragged(with event: NSEvent) {
+        guard let held else { return super.mouseDragged(with: event) }
+        guard let window, !carried else { return }
+        let dx = event.locationInWindow.x - held.locationInWindow.x
+        let dy = event.locationInWindow.y - held.locationInWindow.y
+        if abs(dx) < 3 && abs(dy) < 3 { return }
+        carried = true
+        window.isMovable = true
+        window.performDrag(with: held)
+    }
+
+    /// Let go without moving: it was a click after all, and the page gets it.
+    override func mouseUp(with event: NSEvent) {
+        guard let pressed = held else { return super.mouseUp(with: event) }
+        held = nil
+        if carried { return }
+        super.mouseDown(with: pressed)
+        super.mouseUp(with: event)
     }
 
     /// The side buttons a mouse has for back and forward — button 3 and 4.

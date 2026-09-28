@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- The window moves by the top of the page, as in Arc and Dia: drag an empty part of a site's top bar, or of any page's top edge, and the window comes with it, snapping and tiling as it does by its title bar. With the tabs down the side, the page runs up to the window's top, and only the column's part of that edge moved the window before. Links, buttons, fields and words you can select stay the page's, and a click on the empty part still reaches the page. Off unless you turn it on in Settings › General › Move the window by the top of a page
 - The ⌃Tab switcher takes the pointer: resting on a card picks it once the pointer has moved, and a click takes it, ⌃ held or not; a click outside puts the switcher away. Thanks [@oddharsh](https://github.com/oddharsh) ([#358](https://github.com/driceroland/Search/pull/358))
 - Search a site from the address field, as in Arc: type the start of a site's name, like red or yout, press Tab, and what you type next searches that site. Reddit, YouTube, X, ChatGPT, Claude, Perplexity, Wikipedia, GitHub and a few others come built in, and a site you visit that says where its search is joins them by itself. Your own site shortcuts work as before. Off unless you turn it on in Settings › General › Search a site from the address field
 - Search can start with a fresh window: your pinned tabs are there and last time's other tabs aren't. Off unless you turn it on in Settings › General › Start with a fresh window ([#406](https://github.com/driceroland/Search/issues/406))

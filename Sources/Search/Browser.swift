@@ -1753,6 +1753,18 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // The same for the window's grab by the top of the page.
+        prefs.$pageMovesWindow
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self else { return }
+                for tab in tabs + parkedTabs {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.built?.evaluateInSearch(on ? GrabRelay.script : GrabRelay.off)
+                }
+            }
+            .store(in: &bag)
+
         // Every open page that hasn't a size of its own takes the new one.
         // Asleep, a tab has no page to resize; it takes it on waking.
         prefs.$pageZoom

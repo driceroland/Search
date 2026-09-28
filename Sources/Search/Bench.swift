@@ -1239,6 +1239,12 @@ final class Bench {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { settled(tries + 1) }
             }
             settled(0)
+        case "grab":
+            // What the page last told its view about the ground under the
+            // pointer, and whether presses there are taken (see Grab.swift).
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            answer(["grabbable": tab.web.grabbable, "on": GrabRelay.on])
+
         case "visible":
             // Refused: it lent the tab to a window of its own, off every
             // screen, so that WebKit would count the page as seen. No bench
