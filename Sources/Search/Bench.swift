@@ -697,11 +697,13 @@ final class Bench {
             }
             // "repeat": the press a key held down sends again and again.
             let repeats = (request["mods"] as? [String] ?? []).contains("repeat")
+            // "little": on the newest small window instead (see Little.swift).
+            let little = request["little"] as? Bool == true ? LittleWindow.all.last?.windowNumber : nil
             for type in [NSEvent.EventType.keyDown, .keyUp] {
                 guard let event = NSEvent.keyEvent(
                     with: type, location: .zero, modifierFlags: flags,
                     timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: (browser.window ?? Links.window)?.windowNumber ?? 0, context: nil,
+                    windowNumber: little ?? (browser.window ?? Links.window)?.windowNumber ?? 0, context: nil,
                     characters: chars, charactersIgnoringModifiers: chars,
                     isARepeat: repeats && type == .keyDown, keyCode: UInt16(code)
                 ) else { continue }
@@ -2142,12 +2144,14 @@ final class Bench {
             switch request["what"] as? String ?? "" {
             case "keep": LittleWindow.all.last?.keep()
             case "close": LittleWindow.all.last?.close()
+            case "look": break
             default:
                 guard let text = request["what"] as? String, let url = URL(string: text) else { answer(["error": "little needs a url, keep or close"]); return }
                 LittleWindow.show(url, for: browser, front: false)
             }
             answer([
                 "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" },
+                "said": LittleWindow.all.last?.said ?? "",
                 "tabs": browser.tabs.map { ($0.pin != nil ? "PIN " : "") + ($0.address?.host() ?? "blank") },
                 "active": browser.active?.address?.host() ?? "",
             ])

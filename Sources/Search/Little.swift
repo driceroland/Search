@@ -24,6 +24,12 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     let tab: Tab
     private let window: NSWindow
     private var kept = false
+    /// What it says for a moment at its foot: "Address copied".
+    private let note = LittleNote()
+    /// The three buttons as they look with the app behind another, drawn
+    /// by hand as the browser's window draws them (see RestingLights).
+    private let resting = RestingLights()
+    private var watching: [Any] = []
 
     /// A link from another app, in a small window in front of it.
     /// `front: false` makes it without showing it — for the bench, which
@@ -48,6 +54,10 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// Closed as its button closes it — for the bench.
     func close() { window.performClose(nil) }
 
+    /// Its window, for the bench to press keys on, and what its foot says.
+    var windowNumber: Int { window.windowNumber }
+    var said: String? { note.text }
+
     /// The small window a key was pressed in, if it was one.
     static func owning(_ window: NSWindow?) -> LittleWindow? {
         guard let window else { return nil }
@@ -67,11 +77,37 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 420, height: 320)
         window.delegate = self
-        window.contentView = NSHostingView(rootView: LittleView(tab: tab, keep: { [weak self] in self?.keep() }))
+        window.contentView = NSHostingView(rootView: LittleView(tab: tab, note: note, keep: { [weak self] in self?.keep() }))
         // The lights centred on the line, as far in from the side as down
         // from the top, as the button is at the other end (see Lights.swift).
         let centre = LittleView.line / 2
-        Lights.keep(window, centreX: { centre }, centreY: centre, height: LittleView.line) {}
+        Lights.keep(window, centreX: { centre }, centreY: centre, height: LittleView.line) { [weak self] in
+            self?.rest()
+        }
+        // macOS's own, with the app behind another, come out nearly white
+        // on a light page: the small window's line is the page, so it is
+        // light as often as the page is.
+        for name in [NSApplication.didResignActiveNotification, NSApplication.didBecomeActiveNotification] {
+            watching.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.rest() }
+            })
+        }
+        DispatchQueue.main.async { [weak self] in self?.rest() }
+    }
+
+    /// The resting circles in the title bar, exactly over the buttons, and
+    /// showing only while the app is behind another.
+    private func rest() {
+        guard let close = window.standardWindowButton(.closeButton), let titlebar = close.superview else { return }
+        if resting.superview !== titlebar {
+            resting.frame = titlebar.bounds
+            resting.autoresizingMask = [.width, .height]
+            titlebar.addSubview(resting, positioned: .above, relativeTo: nil)
+        }
+        resting.spots = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
+            .compactMap { window.standardWindowButton($0) }
+            .map { $0.convert($0.bounds, to: titlebar) }
+        resting.isHidden = NSApp.isActive
     }
 
     /// Its own key monitor. A browser window's (see ContentView.watchKeys)
@@ -87,9 +123,20 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Its keys, before the browser's: ⌘O keeps it, Escape and ⌘W close it.
-    /// Everything else is the page's.
+    /// Its keys, before the browser's: ⌘O keeps it, Escape and ⌘W close it,
+    /// and the page's own commands — copying its address, reloading it —
+    /// act on this page, on whatever keys Settings › Shortcuts gives them.
+    /// Left to the menus, they acted on the browser's tab, in a window
+    /// behind this one or none, and said so there if anywhere. Everything
+    /// else is the page's.
     func take(_ event: NSEvent) -> Bool {
+        if let combo = KeyCombo(event: event) {
+            let keys = ShortcutStore.shared
+            if combo == keys.key(for: "tabs.copyAddress") { copy(markdown: false); return true }
+            if combo == keys.key(for: "tabs.copyMarkdown") { copy(markdown: true); return true }
+            if combo == keys.key(for: "view.reload") { tab.reload(fromOrigin: false); return true }
+            if combo == keys.key(for: "view.reloadOrigin") { tab.reload(fromOrigin: true); return true }
+        }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         if event.keyCode == 53 && flags.isEmpty || key == "w" && flags == .command {
@@ -101,6 +148,15 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             return true
         }
         return false
+    }
+
+    /// Its page's address on the pasteboard, plain or as a Markdown link,
+    /// said at the foot of the window as the browser's window says it.
+    private func copy(markdown: Bool) {
+        guard let url = tab.address else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(markdown ? Browser.markdownLink(tab.label, url) : url.absoluteString, forType: .string)
+        note.say(markdown ? "Link copied" : "Address copied")
     }
 
     /// Into the browser's row, after the tab on screen (never among the
@@ -124,6 +180,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         Lights.forget(window)
+        for observer in watching { NotificationCenter.default.removeObserver(observer) }
+        watching = []
         if !kept { tab.close() }
         LittleWindow.open.removeAll { $0 === self }
     }
@@ -138,6 +196,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
 /// under Safari's bar.
 struct LittleView: View {
     @ObservedObject var tab: Tab
+    /// Its window's line at the foot; an extension's popup has none.
+    var note: LittleNote? = nil
     let keep: (() -> Void)?
     @StateObject private var tint = PageTint()
 
@@ -151,6 +211,7 @@ struct LittleView: View {
     var body: some View {
         stage
             .background(tint.ground)
+            .overlay(alignment: .bottom) { if let note { LittleToast(note: note) } }
             .ignoresSafeArea()
             .onAppear { settle(page) }
             .onChange(of: ObjectIdentifier(page)) { _, _ in settle(page) }
@@ -251,6 +312,45 @@ struct LittleView: View {
         case "chrome-extension", "webkit-extension": return "Extension page"
         default: return url.absoluteString == "about:blank" ? "" : "Not a website"
         }
+    }
+}
+
+/// A line said for a moment, as the browser's window says it (see
+/// ContentView.announcement): an address copied.
+@MainActor
+final class LittleNote: ObservableObject {
+    @Published private(set) var text: String?
+    private var hush: DispatchWorkItem?
+
+    func say(_ text: String) {
+        self.text = text
+        hush?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.text = nil }
+        hush = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.7, execute: work)
+    }
+}
+
+private struct LittleToast: View {
+    @ObservedObject var note: LittleNote
+
+    var body: some View {
+        ZStack {
+            if let text = note.text {
+                Text(text)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.ink)
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 9)
+                    .background(Palette.ground, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+                    .shadow(color: .black.opacity(0.10), radius: 18, y: 6)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .padding(.bottom, 24)
+        .animation(Motion.settle, value: note.text)
+        .allowsHitTesting(false)
     }
 }
 

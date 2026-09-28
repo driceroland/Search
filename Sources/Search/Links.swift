@@ -16,6 +16,10 @@ final class Links: NSObject, NSApplicationDelegate {
     @MainActor static var window: NSWindow? { Browsers.front?.window ?? Browsers.primary?.window }
     /// Whether the window has been asked for on a link's behalf (summon).
     private static var summoned = false
+    /// Launched by a link for a small window: the browser's window isn't
+    /// wanted, until something asks for it after the launch.
+    private static var littleLaunch = false
+    private static var launched = false
     /// A first quit waits for an import worker to remove its temporary files.
     /// AppKit calls us again when that cleanup has finished.
     private var terminationPending = false
@@ -97,6 +101,21 @@ final class Links: NSObject, NSApplicationDelegate {
     /// window is asked for here instead; started hidden, it stays hidden
     /// with the app until the app is shown.
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // SwiftUI opens its window at launch, a link's launch included, and
+        // asks nobody first (applicationShouldOpenUntitledFile isn't
+        // consulted). A launch made for a small window came to be read
+        // alone (see little), so the browser's window is closed again as
+        // it comes, here before it is drawn and once more a turn later, and
+        // left as a window closed by hand is: kept, and brought back by
+        // Open in Search, the Dock or ⌘N.
+        if Links.littleLaunch { MainActor.assumeIsolated { Links.putAwayBrowserWindows() } }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                if Links.littleLaunch { Links.putAwayBrowserWindows() }
+                Links.launched = true
+                Links.littleLaunch = false
+            }
+        }
         // What an import left in the temporary folder when Search stopped
         // in the middle of it — a Safari export's passwords in the clear
         // among it — goes (Security).
@@ -256,11 +275,21 @@ final class Links: NSObject, NSApplicationDelegate {
     @MainActor
     private static func little(_ url: URL) -> Bool {
         guard Shared.prefs.littleLinks else { return false }
+        if !launched { littleLaunch = true }
         // The space and sign-ins of the window in front, on screen or not.
         let browser = Browsers.front.flatMap { $0.extensionPopup == nil ? $0 : nil }
             ?? Browsers.primary ?? SceneSlot.shared.browser
         LittleWindow.show(url, for: browser)
         return true
+    }
+
+    /// Every window on screen but the small ones and panels.
+    @MainActor
+    private static func putAwayBrowserWindows() {
+        for window in NSApp.windows where window.isVisible && window.contentView != nil
+            && !(window is NSPanel) && LittleWindow.owning(window) == nil {
+            window.close()
+        }
     }
 
     /// A link that launches the app arrives as an Apple Event, taken above,
