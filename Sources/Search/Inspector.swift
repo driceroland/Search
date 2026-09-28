@@ -34,6 +34,12 @@ extension Browser {
         send(inspector, "toggleElementSelection")
     }
 
+    /// ⌃⌘R: the tab in front as a phone would lay it out, or as it was
+    /// (Devices.swift).
+    func toggleResponsive() {
+        active?.toggleEmulation()
+    }
+
     /// The inspector of the tab in front — none for a blank tab, which has
     /// no page to look at.
     private func inspector() -> NSObject? {

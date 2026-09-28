@@ -79,6 +79,12 @@ struct Page: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
         }
+        // Over everything else, the picture of a page waking included.
+        .overlay {
+            if tab.emulation != nil, !tab.floating {
+                DeviceBar(tab: tab)
+            }
+        }
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
         .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
@@ -290,7 +296,7 @@ final class StageView: NSView {
             Self.docks.removeObject(forKey: wanted)
             // Full size, which WebKit, with its inspector back, cuts down to
             // make room for it again at the stage's size now.
-            wanted.frame = bounds
+            place(wanted, in: bounds)
             // A web view coming back into a window sometimes keeps the last
             // picture it had — which, after a while out of one, is nothing.
             // Asking it to draw again is cheap and is what brings it back.
@@ -301,9 +307,55 @@ final class StageView: NSView {
         // With the inspector docked, WebKit lays the page and it out side by
         // side as this view changes size; setting the page's frame here would
         // cover the inspector.
-        if !(docked && subviews.contains(where: Self.isInspector)) {
-            wanted.frame = bounds
+        if let dock = docked ? subviews.first(where: Self.isInspector) : nil {
+            // A device beside the inspector goes in what it leaves of the
+            // stage; a page at full size is WebKit's to lay out.
+            if (wanted as? PageView)?.emulated != nil { place(wanted, in: room(beside: dock)) }
+        } else {
+            place(wanted, in: bounds)
         }
+    }
+
+    /// The whole of `room`, or a device's frame in the middle of it
+    /// (Devices.swift).
+    private func place(_ view: NSView, in room: NSRect) {
+        guard let page = view as? PageView, let emulation = page.emulated else {
+            view.frame = room
+            if let page = view as? PageView { page.viewScale = 1 }
+            return
+        }
+        let (frame, scale) = DeviceFrame.place(emulation, in: room)
+        // The scale before the frame: the other way round, WebKit sized the
+        // part of the page it paints for the old scale, and left the rest of
+        // the device white.
+        page.fit(scale)
+        if page.frame != frame { page.frame = frame }
+        needsDisplay = true
+    }
+
+    /// What the docked inspector leaves of the stage: WebKit puts it along
+    /// the bottom or down one side.
+    private func room(beside dock: NSView) -> NSRect {
+        let dock = dock.frame
+        if dock.width >= bounds.width - 1 {
+            return NSRect(x: 0, y: dock.maxY, width: bounds.width, height: bounds.height - dock.maxY)
+        }
+        if dock.minX > bounds.midX {
+            return NSRect(x: 0, y: 0, width: dock.minX, height: bounds.height)
+        }
+        return NSRect(x: dock.maxX, y: 0, width: bounds.width - dock.maxX, height: bounds.height)
+    }
+
+    /// Behind a device, the stage is a table it lies on, with a hairline
+    /// round the device's edge.
+    override func draw(_ dirtyRect: NSRect) {
+        guard let page = wanted as? PageView, page.emulated != nil, page.superview === self else { return }
+        Palette.NS.wash.setFill()
+        dirtyRect.fill()
+        Palette.NS.faint.setStroke()
+        let edge = NSBezierPath(rect: page.frame.insetBy(dx: -0.5, dy: -0.5))
+        edge.lineWidth = 1
+        edge.stroke()
     }
 
     /// Whether the page on show has its Web Inspector up. WebKit answers only

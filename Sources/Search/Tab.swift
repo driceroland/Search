@@ -331,6 +331,16 @@ final class Tab: ObservableObject, Identifiable {
 
     /// True while the page has been stripped back to its article.
     @Published private(set) var reader = false
+    /// Responsive Design Mode on this tab, and which device (Devices.swift).
+    /// A tab asleep keeps it, for the page it wakes up with.
+    @Published var emulation: Emulation? {
+        didSet {
+            if let emulation { Emulation.last = emulation }
+            guard emulation != oldValue, let web = built else { return }
+            // A new user agent is only read by a page as it loads.
+            if web.emulate(emulation), web.url != nil { reload() }
+        }
+    }
 
     /// Leaving reading mode reloads rather than putting the old markup back:
     /// restoring the HTML gives you a page that looks right and does nothing,
@@ -631,6 +641,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
         Shield.shared.protect(controller)
         built = web
+        if let emulation { web.emulate(emulation) }
         // A tab muted before it went to sleep wakes muted.
         if muted { Muter.set(true, on: web) }
         arm(hiding: veils)
@@ -1436,6 +1447,18 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 
 /// A web view that reads the two-finger swipe for itself.
 final class PageView: WKWebView {
+    /// Set by emulate (Devices.swift): the stage lays the page out as that
+    /// device rather than across the whole of itself.
+    /// The pixel density handed to WebKit for it; 0 for the screen's.
+    var density: CGFloat = 0
+    var emulated: Emulation? {
+        didSet {
+            guard emulated != oldValue else { return }
+            superview?.needsLayout = true
+            superview?.needsDisplay = true
+        }
+    }
+
     /// What extensions added to the right-click menu, at the end of it.
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)

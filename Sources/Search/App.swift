@@ -140,13 +140,23 @@ struct SearchApp: App {
                 Button("Actual Size") { browser.resetZoom() }
                     .shortcut("view.actualSize")
                 Divider()
-                // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
-                Button("Web Inspector") { browser.toggleInspector() }
-                    .shortcut("view.inspector")
-                Button("JavaScript Console") { browser.showConsole() }
-                    .shortcut("view.console")
-                Button("Inspect Element") { browser.inspectElement() }
-                    .shortcut("view.inspect")
+                // The tools for building sites, in a group of their own: the
+                // menu stops at twenty items, and a twentieth never showed.
+                Group {
+                    // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
+                    Button("Web Inspector") { browser.toggleInspector() }
+                        .shortcut("view.inspector")
+                    Button("JavaScript Console") { browser.showConsole() }
+                        .shortcut("view.console")
+                    Button("Inspect Element") { browser.inspectElement() }
+                        .shortcut("view.inspect")
+                    // A phone or a tablet's layout of the page (see Devices.swift).
+                    Button(browser.active?.emulation == nil ? "Enter Responsive Design Mode" : "Leave Responsive Design Mode") {
+                        browser.toggleResponsive()
+                    }
+                    .shortcut("view.responsive")
+                    .disabled(browser.active == nil)
+                }
             }
             CommandMenu("Tabs") {
                 Button("Back") { browser.back() }

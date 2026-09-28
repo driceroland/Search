@@ -177,6 +177,7 @@ struct Command: Identifiable {
         Command("view.inspector", "Web Inspector", .view, KeyCombo("i", option: true)) { $0.toggleInspector() },
         Command("view.console", "JavaScript Console", .view, KeyCombo("j", option: true)) { $0.showConsole() },
         Command("view.inspect", "Inspect Element", .view, KeyCombo("c", option: true)) { $0.inspectElement() },
+        Command("view.responsive", "Responsive Design Mode", .view, KeyCombo("r", control: true)) { $0.toggleResponsive() },
 
         Command("tabs.back", "Back", .tabs, KeyCombo("[")) { $0.back() },
         Command("tabs.forward", "Forward", .tabs, KeyCombo("]")) { $0.forward() },
