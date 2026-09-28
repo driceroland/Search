@@ -281,6 +281,10 @@ enum ExtensionShims {
       // any more. Made fixed accessors, they can't be taken away, and code
       // that assigns its own polyfill to them still can.
       for (const key of ["browser", "chrome"]) {
+        // SingleFile installs its own browser getter with __defineGetter__.
+        // Keep chrome fixed for WebKit's listeners, but leave browser open
+        // for that getter to replace it without killing the worker.
+        if (key === "browser" && root.chrome?.runtime?.id === "mpiodijhokgodhhofbcjdecpffjipkle") continue;
         const d = Object.getOwnPropertyDescriptor(root, key);
         if (!d || !d.configurable) continue;
         let value = root[key];
@@ -1176,6 +1180,48 @@ enum ExtensionShims {
       define("downloads",
         ["download", "search", "pause", "resume", "cancel", "open", "show", "showDefaultFolder", "erase", "removeFile", "getFileIcon"],
         ["onCreated", "onChanged", "onErased", "onDeterminingFilename"]);
+      // A blob URL made in an extension worker belongs to that worker. The
+      // page WebKit uses to perform downloads cannot read it. Hand WebKit a
+      // data URL instead, then tell the extension when Search has saved it.
+      // SingleFile waits for downloads.onChanged before ending its save task.
+      if (chrome.downloads?.onChanged?.listeners) {
+        const downloads = chrome.downloads;
+        const start = downloads.download;
+        const search = downloads.search;
+        put(downloads, "download", (options, ...rest) => {
+          const callback = typeof rest[rest.length - 1] === "function" ? rest.pop() : null;
+          const pending = (async () => {
+            let request = options;
+            if (typeof options?.url === "string" && options.url.startsWith("blob:")) {
+              const blob = await (await fetch(options.url)).blob();
+              const bytes = new Uint8Array(await blob.arrayBuffer());
+              let binary = "";
+              for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+              request = { ...options, url: "data:" + (blob.type || "application/octet-stream") + ";base64," + btoa(binary) };
+            }
+            const id = await start.call(downloads, request, ...rest);
+            const deadline = Date.now() + 120000;
+            const completed = async () => {
+              try {
+                const items = await search.call(downloads, { id });
+                if (items?.some((item) => item.id === id && item.state === "complete" && item.exists)) {
+                  for (const listener of [...downloads.onChanged.listeners]) listener({ id, state: { current: "complete", previous: "in_progress" } });
+                  return;
+                }
+              } catch (e) {}
+              if (Date.now() >= deadline) {
+                for (const listener of [...downloads.onChanged.listeners]) listener({ id, state: { current: "interrupted", previous: "in_progress" }, error: { current: "NETWORK_FAILED" } });
+                return;
+              }
+              setTimeout(completed, 250);
+            };
+            setTimeout(completed, 0);
+            return id;
+          })();
+          if (!callback) return pending;
+          pending.then((id) => callback(id), (error) => withLastError(error, callback));
+        });
+      }
       define("sidePanel", ["open", "setOptions", "getOptions", "setPanelBehavior", "getPanelBehavior"]);
       define("offscreen", ["createDocument", "closeDocument", "hasDocument"], [],
         { Reason: new Proxy({}, { get: (_, key) => String(key) }) });
