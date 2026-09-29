@@ -111,8 +111,8 @@ struct Fold: View {
                 // tabs, and the shadow fell from every title and icon rather
                 // than from the row's edge.
                 TabBar(browser: browser)
-                    .transition(.move(edge: .top)
-                        .combined(with: .casting(FoldShadow(y: 4, behind: true))))
+                    .transition(.casting(FoldShadow(y: 4, behind: true))
+                        .combined(with: .move(edge: .top)))
             }
             ZStack(alignment: onRight ? .trailing : .leading) {
                 Color.clear.frame(width: 0)
@@ -125,8 +125,8 @@ struct Fold: View {
                     // The column's own ground is opaque, so it is the same
                     // rectangle either way.
                     SideBar(browser: browser, prefs: prefs)
-                        .transition(.move(edge: onRight ? .trailing : .leading)
-                            .combined(with: .casting(FoldShadow(x: onRight ? -4 : 4, behind: true))))
+                        .transition(.casting(FoldShadow(x: onRight ? -4 : 4, behind: true))
+                            .combined(with: .move(edge: onRight ? .trailing : .leading)))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity,
@@ -453,6 +453,10 @@ private struct FoldShadow: ViewModifier {
     var y: CGFloat = 0
     /// Cast from a ground laid behind: the strip has no ground of its own,
     /// and a shadow from the row itself fell from every title and icon.
+    /// Combined with the slide, this comes first and the move second: the
+    /// move's offset moves only what it wraps, and a ground laid outside it
+    /// stayed where the column or the strip had been, a blank band over the
+    /// page until the slide was over.
     var behind = false
     var strength: Double = 1
 
