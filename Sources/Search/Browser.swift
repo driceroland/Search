@@ -1424,9 +1424,22 @@ final class Browser: NSObject, ObservableObject {
         /// page's left: ⇧⌘T puts it back beside it, while that page is alone.
         var partner: Tab.ID? = nil
         var onLeft = false
+        /// The tab it was, so a pair closed together finds its other half
+        /// again when both come back (see reopen(batch:)).
+        var was: Tab.ID? = nil
+        /// The Clear it went with: one ⇧⌘T brings back the whole of it.
+        var batch: UUID? = nil
+        /// Of a Clear's tabs, the one you were on, which comes back in front.
+        var front = false
 
         var label: String { title.isEmpty ? Address.pretty(url) : title }
     }
+
+    /// The Clear under way, whose tabs are remembered together.
+    private var clearing: UUID?
+    /// The last Clear, and the empty tab it left in front: an undo takes
+    /// that tab away again while it is still empty.
+    private var lastClear: (batch: UUID, blank: Tab.ID?)?
 
     private var bag = Set<AnyCancellable>()
     /// The minute-by-minute look for tabs to put to sleep, and the ear for
@@ -2645,18 +2658,31 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Arc's Clear, on the line above the tabs that come and go: each of
-    /// them closed as ⌘W closes it, so ⇧⌘T brings the last dozen back. Pins
-    /// stay, and so does a tab group: a section you named is one you are
-    /// keeping. The page on screen goes last, once an empty tab has taken
-    /// its place: closed first, a neighbour would wake only to be closed.
+    /// them closed as ⌘W closes it, and all of it remembered as one, so a
+    /// single ⇧⌘T puts every tab back. Pins stay, and so does a tab group:
+    /// a section you named is one you are keeping. The page on screen goes
+    /// last, once an empty tab has taken its place: closed first, a
+    /// neighbour would wake only to be closed.
     func clearTabs() {
         let going = tabs.filter { $0.pin == nil && !$0.bench && group(of: $0) == nil }
+        guard !going.isEmpty else { return }
+        let batch = UUID(), was = activeID
+        clearing = batch
+        defer {
+            clearing = nil
+            if let at = ghosts.lastIndex(where: { $0.batch == batch && $0.was == was }) { ghosts[at].front = true }
+        }
+        lastClear = (batch, nil)
         for tab in going where !visibleTabIDs.contains(tab.id) { close(tab) }
         let onScreen = going.filter { visibleTabIDs.contains($0.id) }
         // Already an empty tab in front: that is where Clear leaves you.
         guard !onScreen.isEmpty, !(onScreen.count == 1 && onScreen[0].isBlank) else { return }
         // After the others went, so it can't reuse an empty one among them.
+        // It may still reuse one of yours, in a group: that one is yours to
+        // keep, and only a tab Clear made is taken away again by the undo.
+        let had = Set(tabs.map(\.id))
         newTab()
+        lastClear = (batch, activeID.flatMap { had.contains($0) ? nil : $0 })
         for tab in onScreen where tab.id != activeID { close(tab) }
     }
 
@@ -2693,7 +2719,55 @@ final class Browser: NSObject, ObservableObject {
         // in Safari and Chrome (see Windows.swift).
         if let window = Browsers.lastClosedAt, window > (ghosts.last?.at ?? .distantPast), Browsers.reopenWindow() { return }
         guard let ghost = ghosts.last else { return }
-        reopen(ghost)
+        if let batch = ghost.batch { reopen(batch: batch) } else { reopen(ghost) }
+    }
+
+    /// What ⇧⌘T brings back, for its menu items: a Clear's tabs, by how
+    /// many, or the one tab (or the window) it always did.
+    var reopenTitle: String {
+        guard let last = ghosts.last, let batch = last.batch,
+              (Browsers.lastClosedAt ?? .distantPast) <= last.at else { return "Reopen Closed Tab" }
+        let count = ghosts.filter { $0.batch == batch }.count
+        return count == 1 ? "Reopen Cleared Tab" : "Reopen \(count) Cleared Tabs"
+    }
+
+    /// Everything one Clear closed, back as it was: each tab at its place,
+    /// the newest closed first, so each goes into the row as it stood just
+    /// before that tab left it. They come back asleep, as last session's
+    /// tabs do, but for the one you were on, which comes back in front; the
+    /// empty tab Clear left there goes, if nothing has been typed into it.
+    /// A Clear made from a pin leaves you on the pin.
+    private func reopen(batch: UUID) {
+        let members = ghosts.filter { $0.batch == batch }
+        ghosts.removeAll { $0.batch == batch }
+        var back: [Tab.ID: Tab] = [:]
+        var front: Tab?
+        for ghost in members.reversed() {
+            let tab = Tab(configuration: Web.configuration(space: spaceID))
+            prepare(tab)
+            // No group to put it back in, as reopen(_:) does for a tab from
+            // a closed group (closedGroups): Clear never takes a tab that is
+            // in a group (see clearTabs), so none of these was in one.
+            tab.restore(url: ghost.url, title: ghost.title)
+            tabs.insert(tab, at: safeInsertionIndex(ghost.index))
+            if let was = ghost.was { back[was] = tab }
+            if ghost.front { front = tab }
+            // A pair cleared together: its other half came back just before,
+            // beside it already. Made a pair again as it stands, not through
+            // pair(), which would take the focus and wake both pages.
+            if let id = ghost.partner, let partner = back[id],
+               split(for: partner) == nil, canSplit(tab, with: partner) {
+                let pair = TabSplit(tabs: ghost.onLeft ? [tab.id, partner.id] : [partner.id, tab.id], focused: tab.id)
+                if Browser.holds(pair, in: tabs) { splits.append(pair) }
+            }
+        }
+        if let front { select(front) }
+        if let clear = lastClear, clear.batch == batch, let id = clear.blank,
+           let blank = tabs.first(where: { $0.id == id }), blank.isBlank, blank.draft.isEmpty, activeID != id {
+            close(blank)
+        }
+        lastClear = nil
+        rememberSession()
     }
 
     /// One of them by name, from the History menu.
@@ -2728,8 +2802,17 @@ final class Browser: NSObject, ObservableObject {
     private func remember(_ tab: Tab, at index: Int, partner: Tab.ID? = nil, onLeft: Bool = false) {
         guard !tab.shy, let url = tab.address else { return }
         ghosts.append(Ghost(url: url, title: tab.title, index: index, groupID: tab.groupID,
-                            partner: partner, onLeft: onLeft))
-        if ghosts.count > 12 { ghosts.removeFirst() }
+                            partner: partner, onLeft: onLeft, was: tab.id, batch: clearing))
+        // Twelve steps back, a Clear counting as one: its tabs come back
+        // together or not at all, however many there were.
+        var steps = Set<UUID>()
+        let count = ghosts.reduce(0) { total, ghost in
+            guard let batch = ghost.batch else { return total + 1 }
+            return steps.insert(batch).inserted ? total + 1 : total
+        }
+        if count > 12, let oldest = ghosts.first {
+            if let batch = oldest.batch { ghosts.removeAll { $0.batch == batch } } else { ghosts.removeFirst() }
+        }
         closedGroups = closedGroups.filter { id, _ in ghosts.contains { $0.groupID == id } }
     }
 

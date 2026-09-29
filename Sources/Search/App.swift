@@ -52,7 +52,7 @@ struct SearchApp: App {
                     .shortcut("file.newTab")
                 Button("New Private Tab") { browser.newShyTab() }
                     .shortcut("file.newPrivateTab")
-                Button("Reopen Closed Tab") { browser.reopen() }
+                Button(browser.reopenTitle) { browser.reopen() }
                     .shortcut("file.reopen")
                     .disabled(browser.ghosts.isEmpty && Browsers.lastClosedAt == nil)
                 Divider()

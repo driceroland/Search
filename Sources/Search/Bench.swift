@@ -2741,6 +2741,9 @@ final class Bench {
             "pins": browser.tabs.filter { $0.pin != nil }.map { Bench.short($0) },
             // Every pin kept as a row, drawn so or not (Tab.listed).
             "listed": browser.tabs.filter { $0.pin != nil && $0.listed }.map { Bench.short($0) },
+            // What ⇧⌘T would bring back, as its menu item says it.
+            "reopenTitle": browser.reopenTitle,
+            "ghosts": browser.ghosts.count,
             // What pages of the pair asked, oldest first (see PaneQuestion).
             "questions": browser.paneQuestions.map { question in
                 ["tab": short(question.tab), "host": question.host, "message": question.message,
