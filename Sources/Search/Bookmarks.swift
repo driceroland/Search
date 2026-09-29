@@ -239,7 +239,7 @@ final class Bookmarks: ObservableObject {
 
     /// `id` is `node` itself, or somewhere inside it — also used by the
     /// outline to keep a folder out of its own "move to" list.
-    fileprivate static func holds(_ id: Bookmark.ID, _ node: Bookmark) -> Bool {
+    static func holds(_ id: Bookmark.ID, _ node: Bookmark) -> Bool {
         node.id == id || (node.children ?? []).contains { holds(id, $0) }
     }
 
@@ -524,6 +524,32 @@ final class Bookmarks: ObservableObject {
         }
     }
 
+    /// A name of your own for a bookmark or a folder, asked for the way a
+    /// space's is: the page's title is what a bookmark starts with, and a
+    /// folder brought in from another browser is called after it. The name
+    /// it has arrives in the field; an empty one changes nothing.
+    func askRename(_ node: Bookmark) {
+        Ask.name(node.isFolder ? "Rename Folder" : "Rename Bookmark", placeholder: node.title, initial: node.title, confirm: "Rename") {
+            self.update(node.id, title: $0, url: nil)
+        }
+    }
+
+    /// A bookmark's address, changed by hand and read the way the address
+    /// field reads what is typed. What that refuses, a bookmarklet or a
+    /// word, isn't saved: the question comes back with it in the field and a
+    /// line on why, and Cancel keeps the address the bookmark had.
+    func askAddress(_ node: Bookmark, typed: String? = nil) {
+        guard let current = node.url else { return }
+        let detail = typed.map { "Search can\u{2019}t open \u{201C}\($0)\u{201D} as a page. Cancel keeps the address the bookmark has." }
+        Ask.name("Edit Address", placeholder: "https://example.com", initial: typed ?? current, detail: detail, confirm: "Save") { typed in
+            guard let url = Address.url(from: typed) else {
+                DispatchQueue.main.async { self.askAddress(node, typed: typed) }
+                return
+            }
+            self.update(node.id, title: nil, url: url.absoluteString)
+        }
+    }
+
     /// A new title or address for one that is kept. chrome.bookmarks.update,
     /// and Rename… in the list's right-click menu.
     func update(_ id: Bookmark.ID, title: String?, url: String?) {
@@ -629,7 +655,7 @@ struct BookmarkOutline: View {
                 toggle: node.isFolder ? { toggle(node.id) } : nil,
                 moveTargets: Bookmarks.folders(bookmarks.roots).filter { !Bookmarks.holds($0.node.id, node) },
                 moveTo: { bookmarks.move(node.id, into: $0) },
-                rename: { rename(node) },
+                rename: { bookmarks.askRename(node) },
                 newFolder: node.isFolder ? {
                     bookmarks.askNewFolder(in: node.id) { _ in expanded.insert(node.id) }
                 } : nil,
@@ -692,16 +718,6 @@ struct BookmarkOutline: View {
 
     private func toggle(_ id: Bookmark.ID) {
         if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
-    }
-
-    /// A name of your own for a bookmark or a folder, asked for the way a
-    /// space's is: the page's title is what a bookmark starts with, and a
-    /// folder brought in from another browser is called after it. The name
-    /// it has arrives in the field; an empty one changes nothing.
-    private func rename(_ node: Bookmark) {
-        Ask.name(node.isFolder ? "Rename Folder" : "Rename Bookmark", placeholder: node.title, initial: node.title, confirm: "Rename") {
-            bookmarks.update(node.id, title: $0, url: nil)
-        }
     }
 
     /// A folder can't go above, below or into anything inside itself.

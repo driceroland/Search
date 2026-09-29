@@ -3266,6 +3266,57 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// Pages in a window of their own, in this window's space, the first in
+    /// front. The empty tab a new window starts with goes once they are in,
+    /// as it does for a window an extension opens. Used, for one, by the
+    /// bookmarks bar's Open in New Window and Open All in New Window.
+    func openInNewWindow(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let fresh = Browser(record: WindowRecord(space: spaceID))
+        for (index, url) in urls.enumerated() {
+            fresh.open(url, foreground: index == 0, atEnd: true, mayWait: true)
+        }
+        for blank in fresh.tabs where blank.isBlank && !blank.bench { fresh.close(blank) }
+        Browsers.open(fresh, frame: nil)
+    }
+
+    /// A page in a new tab, paired with the one on screen as a tab's Open in
+    /// Split View pairs it. Used, for one, by the bookmarks bar's Open in
+    /// Split View.
+    func openInSplit(_ url: URL) {
+        guard prefs.splitView else { return }
+        openInSplit(open(url, foreground: false, from: active))
+    }
+
+    /// A page in a tab that keeps nothing, as ⌘⇧N makes one, already on its
+    /// way there. Not `open(_:foreground:)`, whose tab is private only when
+    /// the one it comes from is. Used, for one, by the bookmarks bar's Open
+    /// in Private Tab.
+    func openShy(_ url: URL) {
+        let tab = Tab(shy: true)
+        adopt(tab)
+        tab.go(to: url)
+        leaving()
+        activeID = tab.id
+        typed = ""
+        editing = false
+    }
+
+    /// Pages in a tab group of their own, under `name`. A group made from a
+    /// tab's menu opens with its name ready to be typed; this one is named
+    /// already, so it doesn't. Used, for one, by the bookmarks bar's Open All
+    /// in Tab Group.
+    func openInTabGroup(_ urls: [URL], named name: String) {
+        guard prefs.usesTabGroups, !urls.isEmpty else { return }
+        let opened = urls.enumerated().map { index, url in
+            open(url, foreground: index == 0, atEnd: true, mayWait: true)
+        }
+        let id = addTabGroup(containing: opened[0])
+        renameTabGroup(id, to: name)
+        editingGroupID = nil
+        for tab in opened.dropFirst() { move(tab, toGroup: id) }
+    }
+
     /// ⌘⇧N. A tab that keeps nothing — its own cookies, its own sign-ins, no
     /// history, and no place in tomorrow's session.
     func newShyTab() {

@@ -500,9 +500,10 @@ enum SpaceMenu {
 /// bookmarks list borrows `name` for Rename….
 @MainActor
 enum Ask {
-    static func name(_ title: String, placeholder: String, initial: String = "", confirm: String, then: @escaping (String) -> Void) {
+    static func name(_ title: String, placeholder: String, initial: String = "", detail: String? = nil, confirm: String, then: @escaping (String) -> Void) {
         let alert = NSAlert()
         alert.messageText = title
+        if let detail { alert.informativeText = detail }
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         field.placeholderString = placeholder
         field.stringValue = initial

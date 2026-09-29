@@ -30,15 +30,86 @@ struct BookmarksBar: View {
                             MiddleClick { browser.pickBookmark(url, inNewTab: true) }
                         }
                     }
+                    .contextMenu {
+                        if node.isFolder {
+                            folderMenu(node)
+                        } else if let url = node.url.flatMap(URL.init(string:)) {
+                            bookmarkMenu(node, url)
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 10)
         }
         .frame(height: BookmarksBar.height)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("New Folder…") { bookmarks.askNewFolder(in: nil) }
+            Divider()
+            Button("Show Bookmarks…") { browser.bookmarking = true }
+            Button("Hide Bookmarks Bar") {
+                withAnimation(Motion.glide) { browser.prefs.bookmarksBar = false }
+            }
+        }
         .background(Palette.ground)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Palette.hairline).frame(height: 1)
+        }
+    }
+
+    @ViewBuilder
+    private func bookmarkMenu(_ node: Bookmark, _ url: URL) -> some View {
+        Button("Open in New Tab") { browser.pickBookmark(url, inNewTab: true) }
+        Button("Open in New Window") { browser.openInNewWindow([url]) }
+        if browser.prefs.splitView {
+            Button("Open in Split View") { browser.openInSplit(url) }
+        }
+        Button("Open in Private Tab") { browser.openShy(url) }
+        Divider()
+        Button("Rename…") { bookmarks.askRename(node) }
+        Button("Edit Address…") { bookmarks.askAddress(node) }
+        Button("Copy Link") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        }
+        Divider()
+        moveMenu(node)
+        Button("Remove", role: .destructive) { bookmarks.askRemove(node) }
+    }
+
+    @ViewBuilder
+    private func folderMenu(_ node: Bookmark) -> some View {
+        let urls = (node.children ?? []).compactMap { $0.url.flatMap(URL.init(string:)) }
+        Button("Open All in New Tabs") {
+            for url in urls { browser.open(url, foreground: false, atEnd: true, from: browser.active, mayWait: true) }
+        }
+        .disabled(urls.isEmpty)
+        Button("Open All in New Window") { browser.openInNewWindow(urls) }
+            .disabled(urls.isEmpty)
+        if browser.prefs.usesTabGroups {
+            Button("Open All in Tab Group") { browser.openInTabGroup(urls, named: node.title) }
+                .disabled(urls.isEmpty)
+        }
+        Divider()
+        Button("Rename…") { bookmarks.askRename(node) }
+        Button("New Folder Inside…") { bookmarks.askNewFolder(in: node.id) }
+        Divider()
+        moveMenu(node)
+        Button("Remove", role: .destructive) { bookmarks.askRemove(node) }
+    }
+
+    @ViewBuilder
+    private func moveMenu(_ node: Bookmark) -> some View {
+        let targets = Bookmarks.folders(bookmarks.roots).filter { !Bookmarks.holds($0.node.id, node) }
+        if !targets.isEmpty {
+            Menu("Move to") {
+                ForEach(targets, id: \.node.id) { target in
+                    Button(String(repeating: "   ", count: target.depth) + target.node.title) {
+                        bookmarks.move(node.id, into: target.node.id)
+                    }
+                }
+            }
         }
     }
 
