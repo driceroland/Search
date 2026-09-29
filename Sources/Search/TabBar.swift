@@ -551,12 +551,13 @@ private struct TabPill: View {
         // on has nothing to do on a single click, so it takes the double one
         // and goes back to the page it was pinned at — or, there already,
         // edits its letter; everything else answers the first click at
-        // once. Change Letter in the menu covers the rest.
+        // once. Change Letter in the menu covers the rest. The tab you are
+        // on renames on a click, its mark edits the address (AddressClick).
         .modifier(OneClick(double: live && pinned) {
             if live && pinned {
                 browser.goHome(tab)
             } else if live && !pinned {
-                browser.beginTabEdit(tab)
+                browser.beginTabClick(tab)
             } else {
                 browser.select(tab)
             }
@@ -603,6 +604,7 @@ private struct TabPill: View {
             } else {
                 if prefs.glyph == .icons, !tab.isBlank {
                     Mark(icon: tab.icon, letter: tab.monogram, size: 15)
+                        .modifier(AddressClick(armed: live) { browser.beginTabEdit(tab) })
                 }
                 if tab.bench {
                     // A script's tab, not yours.
@@ -1100,6 +1102,23 @@ struct OneClick: ViewModifier {
         } else {
             content.onTapGesture(perform: act)
         }
+    }
+}
+
+/// The site's mark in the tab you are on: a click on it edits the address in
+/// the tab, with the site card under it, while a click anywhere else on the
+/// tab renames it (Browser.beginTabClick). On any other tab the mask hands
+/// the click on to the tab's own gesture, which picks it. The mask rather
+/// than an if, so the mark keeps its identity and doesn't fade when the tab
+/// comes forward.
+struct AddressClick: ViewModifier {
+    let armed: Bool
+    let act: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .gesture(TapGesture().onEnded(act), including: armed ? .all : .subviews)
     }
 }
 
