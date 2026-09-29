@@ -39,16 +39,11 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         }
         open.append(little)
         watch()
-        // Never a benched run's in front: a probe started hidden stays off every screen.
-        guard front, !benched else { return }
+        // Never a test run's in front: a probe started hidden stays off every screen.
+        guard front, !Store.testing else { return }
         little.window.makeKeyAndOrderFront(nil)
         if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
     }
-
-    /// A test run the bench is driving, which must never put a window on a
-    /// screen. A test world opened to be looked at, with the bench off (see
-    /// fresh.sh), shows its small windows as anyone's does.
-    private static var benched: Bool { Store.testing && Shared.prefs.bench }
 
     /// The small windows open now, newest last — for the bench.
     static var all: [LittleWindow] { open }
@@ -94,13 +89,13 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// in front, as Open in Search takes.
     private(set) static weak var planet: Browser?
 
-    /// The last one brought forward on a benched run, which never puts one
+    /// The last one brought forward on a test run, which never puts one
     /// on a screen — for the bench.
     private(set) static var fronted: Tab.ID?
 
     /// In front, with the keys, as a click on it would leave it.
     func front() {
-        guard !LittleWindow.benched else { return LittleWindow.fronted = tab.id }
+        guard !Store.testing else { return LittleWindow.fronted = tab.id }
         if window.isMiniaturized { window.deminiaturize(nil) }
         window.makeKeyAndOrderFront(nil)
         if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }

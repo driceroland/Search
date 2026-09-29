@@ -3209,12 +3209,11 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// A tab picked in a small window's switcher: that tab, in this window,
-    /// in front. A run the bench is driving goes to the tab and puts nothing
-    /// on a screen.
+    /// in front. A test run goes to the tab and puts nothing on a screen.
     func bringForward(_ id: Tab.ID) {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
         select(entry(tab))
-        guard !(Store.testing && prefs.bench), let window else { return }
+        guard !Store.testing, let window else { return }
         if window.isMiniaturized { window.deminiaturize(nil) }
         window.makeKeyAndOrderFront(nil)
     }
