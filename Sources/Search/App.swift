@@ -117,6 +117,21 @@ struct SearchApp: App {
                     .shortcut("view.reader")
                 Button("Float Video") { browser.toggleFloat() }
                     .shortcut("view.float")
+                // Dark pages, only once they are on (Settings › Appearance).
+                if browser.prefs.darkensPages {
+                    Divider()
+                    Toggle("Darken This Site", isOn: Binding(
+                        get: { browser.active?.dusked ?? false },
+                        set: { _ in browser.toggleDusk() }
+                    ))
+                    .shortcut("view.dusk")
+                    .disabled(!browser.canDusk)
+                    Toggle("Pause Darkening", isOn: Binding(
+                        get: { Dusk.shared.paused },
+                        set: { _ in browser.pauseDusk() }
+                    ))
+                    .shortcut("view.duskPause")
+                }
                 // The AI add-on's, only once it is on (Settings › AI).
                 if browser.prefs.ai {
                     Divider()
@@ -1253,6 +1268,7 @@ struct ContentView: View {
             if let command = ShortcutStore.shared.changedCommand(on: combo) {
                 if Command.split.contains(command.id), !browser.prefs.splitView { return false }
                 if Command.ai.contains(command.id), !browser.prefs.ai { return false }
+                if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
                 command.run(browser)
                 return true
             }
@@ -1275,6 +1291,15 @@ struct ContentView: View {
            event.characters(byApplyingModifiers: [])?.lowercased() == "r" {
             if pageFirst(event, key: "r", shifted: false) { return false }
             browser.reload(fromOrigin: true)
+            return true
+        }
+
+        // ⌥⇧⌘D, dark pages paused (see Dusk.swift), here rather than left to
+        // the View menu: its line only exists while dark pages are on, and a
+        // menu line that appears after launch doesn't take its key.
+        if flags.contains(.option), shifted, !flags.contains(.control), browser.prefs.darkensPages,
+           event.characters(byApplyingModifiers: [])?.lowercased() == "d" {
+            browser.pauseDusk()
             return true
         }
 
@@ -1327,6 +1352,11 @@ struct ContentView: View {
             browser.copyAddress()
         case "d" where !shifted:
             browser.duplicate()
+        // Dark pages, the site you're on (see Dusk.swift). Off, the key is
+        // the page's.
+        case "d" where shifted:
+            guard browser.prefs.darkensPages else { return false }
+            browser.toggleDusk()
         case "n" where shifted:
             browser.newShyTab()
         case "y" where !shifted:
