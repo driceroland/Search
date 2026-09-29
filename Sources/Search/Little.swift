@@ -65,7 +65,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         window.delegate = self
         window.contentView = NSHostingView(rootView: LittleView(tab: tab, keep: { [weak self] in self?.keep() }))
         // Back from the page it opened on is back to before it opened: a
-        // swipe, or a mouse's back button, closes it.
+        // swipe closes it (see PageView.leave).
         tab.leave = { [weak self] in self?.close() }
     }
 

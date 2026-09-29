@@ -1524,9 +1524,12 @@ final class PageView: WKWebView {
 
     /// Told where a sideways swipe has got to, and nil when there is none.
     var onPull: ((Pull?) -> Void)?
-    /// What back means with nothing to go back to, where it means anything:
-    /// a small window's first page was, a step back, no window at all (see
-    /// Little.swift). Nil everywhere else, where back there does nothing.
+    /// What a swipe back means with nothing to go back to, where it means
+    /// anything: a small window's first page was, a step back, no window at
+    /// all (see Little.swift). Nil everywhere else, where back there does
+    /// nothing. Only the swipe: it shows the disc and can be drawn back
+    /// before letting go, and a mouse's back button can't, so a stray press
+    /// would lose the page with no way to reopen it.
     var leave: (() -> Void)?
     /// Told the moment the page is reached for — a click, a scroll — so the
     /// picture of a tab waking up never stands between you and the page.
@@ -1559,7 +1562,6 @@ final class PageView: WKWebView {
     override func otherMouseDown(with event: NSEvent) {
         switch event.buttonNumber {
         case 3 where canGoBack: goBack()
-        case 3 where leave != nil: leaveSoon()
         case 4 where canGoForward: goForward()
         default: super.otherMouseDown(with: event)
         }
@@ -1569,7 +1571,6 @@ final class PageView: WKWebView {
     /// 3 and 4 — deltaX 1 for back, -1 for forward, as Safari reads it.
     override func swipe(with event: NSEvent) {
         if event.deltaX > 0, canGoBack { goBack() }
-        else if event.deltaX > 0, leave != nil { leaveSoon() }
         else if event.deltaX < 0, canGoForward { goForward() }
         else { super.swipe(with: event) }
     }
