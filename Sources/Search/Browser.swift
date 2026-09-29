@@ -1269,6 +1269,13 @@ final class Browser: NSObject, ObservableObject {
         // pinned square — with no letter left, an empty tile — and never as
         // a row (from X).
         objectWillChange.send()
+        if tab.everywhere, let id = tab.pinID {
+            // One every space shows: out of them all, as unpinning in one
+            // window is out of every window.
+            tab.everywhere = false
+            Pins.setShared(Pins.shared.filter { $0.id != id }, from: self)
+            for space in Array(parked.keys) { pinsChanged(in: space) }
+        }
         tab.pin = nil
         tab.listed = false
         tab.home = nil
@@ -1563,7 +1570,9 @@ final class Browser: NSObject, ObservableObject {
         // So are the pins.
         NotificationCenter.default.publisher(for: Pins.changed)
             .sink { [weak self] note in
-                guard let self, (note.object as? Browser) !== self, let space = note.userInfo?["space"] as? UUID else { return }
+                guard let self, (note.object as? Browser) !== self else { return }
+                if note.userInfo?["shared"] as? Bool == true { return sharedPinsChanged() }
+                guard let space = note.userInfo?["space"] as? UUID else { return }
                 pinsChanged(in: space)
             }
             .store(in: &bag)
@@ -1705,6 +1714,15 @@ final class Browser: NSObject, ObservableObject {
         prefs.$usesSpaces
             .dropFirst()
             .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
+            .store(in: &bag)
+        // Pins in every space, or Spaces, switched: every row takes the
+        // shared pins or lets them go. Received on the next turn of the run
+        // loop, once the setting has changed, so the rows are built from
+        // what it is now.
+        prefs.$sharesPins.dropFirst().map { _ in () }
+            .merge(with: prefs.$usesSpaces.dropFirst().map { _ in () })
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.sharedPinsChanged() }
             .store(in: &bag)
         prefs.$usesTabGroups
             .dropFirst()
@@ -1861,8 +1879,18 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func writeSession(now: Bool = false) {
-        // The pins as they are here, for the other windows (see Pins.swift).
-        Pins.set(spaceID, pinDefs(tabs), from: self)
+        // The pins as they are here, for the other windows (see Pins.swift):
+        // the space's own, and the ones every space shows (only from a row
+        // that holds them: see Pins.sharedToWrite).
+        if prefs.showsSharedPins { keepBlocks() }
+        let defs = pinDefs(tabs)
+        let everywhere = Set(tabs.filter(\.everywhere).compactMap(\.pinID))
+        let parts = Pins.split(defs, shared: everywhere)
+        Pins.set(spaceID, parts.own, from: self)
+        if let shared = Pins.sharedToWrite(parts.shared, showing: prefs.showsSharedPins),
+           Pins.setShared(shared, from: self) {
+            for space in Array(parked.keys) { pinsChanged(in: space) }
+        }
         writeRow(spaceID, session(tabs, active: activeID, groups: tabGroups, splits: splits), now: now)
     }
 
@@ -1885,7 +1913,10 @@ final class Browser: NSObject, ObservableObject {
     /// pinned tab from before pins had ids is matched by letter and page,
     /// then by place.
     func reconcilePins(_ row: [Tab], space: UUID) -> [Tab] {
-        let defs = Pins.defs(space)
+        let showing = prefs.showsSharedPins
+        let shared = showing ? Pins.shared : []
+        let sharedIDs = Set(shared.map(\.id))
+        let defs = Pins.row(own: Pins.defs(space), shared: shared, showing: showing)
         var pinned = row.filter { $0.pin != nil && !$0.shy }
         let loose = row.filter { $0.pin == nil || $0.shy }
         var out: [Tab] = []
@@ -1903,6 +1934,7 @@ final class Browser: NSObject, ObservableObject {
                 tab.restore(url: URL(string: def.home) ?? URL(string: "about:blank")!, title: def.title, name: def.name)
             }
             tab.pinID = def.id
+            tab.everywhere = sharedIDs.contains(def.id)
             if tab.pin != def.letter { tab.pin = def.letter }
             if tab.name != def.name { tab.name = def.name }
             if tab.listed != (def.listed == true) { tab.listed = def.listed == true }
@@ -1938,6 +1970,52 @@ final class Browser: NSObject, ObservableObject {
             if !row.tabs.contains(where: { $0.id == row.active }) { row.active = row.tabs.first?.id }
             parked[space] = row
         }
+    }
+
+    /// The shared pins ahead of the space's own, squares ahead of rows (see
+    /// Browser.tiered): a drag or a Show as Row that crossed the line goes
+    /// back to its side of it, where pins.json, every other space and the
+    /// next launch have it.
+    private func keepBlocks() {
+        let pinned = tabs.filter { $0.pin != nil && !$0.shy }
+        let loose = tabs.filter { $0.pin == nil || $0.shy }
+        let blocked = Browser.tiered(pinned.filter(\.everywhere) + pinned.filter { !$0.everywhere })
+        if !blocked.elementsEqual(pinned, by: { $0.id == $1.id }) { tabs = blocked + loose }
+    }
+
+    /// The shared pins changed, here or in another window: every row this
+    /// window holds follows, the one on screen and every space parked.
+    func sharedPinsChanged() {
+        for space in Array(parked.keys) { pinsChanged(in: space) }
+        pinsChanged(in: spaceID)
+    }
+
+    /// Pin menu › Keep in Every Space: this space's pin, shown by every
+    /// space from now on, after the shared ones. This tab stays as it is;
+    /// the other spaces make theirs, asleep at the pin's page.
+    func shareEverywhere(_ tab: Tab) {
+        guard prefs.showsSharedPins, tab.pin != nil, !tab.everywhere, !tab.shy else { return }
+        writeSession(now: true)
+        guard let id = tab.pinID else { return }
+        let moved = Pins.share(id, own: Pins.defs(spaceID), shared: Pins.shared)
+        // The shared list first: in between, the pin is in both lists, which
+        // Pins.row counts once, so every other window keeps its tab for it.
+        // The other way round it was in neither, and they closed theirs.
+        Pins.setShared(moved.shared, from: self)
+        Pins.set(spaceID, moved.own, from: self)
+        sharedPinsChanged()
+        writeSession(now: true)
+    }
+
+    /// Pin menu › Only in This Space: a shared pin kept by this space alone,
+    /// first among its own. The other spaces close theirs.
+    func keepHere(_ tab: Tab) {
+        guard tab.everywhere, let id = tab.pinID else { return }
+        let moved = Pins.unshare(id, own: Pins.defs(spaceID), shared: Pins.shared)
+        Pins.set(spaceID, moved.own, from: self)
+        Pins.setShared(moved.shared, from: self)
+        sharedPinsChanged()
+        writeSession(now: true)
     }
 
     /// Arc's sidebar brought over (see ImportArc.swift). Each of its spaces
@@ -2806,6 +2884,13 @@ final class Browser: NSObject, ObservableObject {
         // Its group stays behind: the space it goes to has groups of its own.
         tab.groupID = nil
         var row = parked[id] ?? loadRow(id)
+        // A pin is that space's pin from now on, in pins.json too: kept only
+        // in its row, the next look at the space's pins — another window's
+        // change, a change to the shared pins — found it in no list and
+        // closed it.
+        if tab.pin != nil, !tab.everywhere, let pin = pinDefs([tab]).first {
+            Pins.set(id, Pins.defs(id).filter { $0.id != pin.id } + [pin], from: self)
+        }
         let place = tab.pin == nil ? row.tabs.count : (row.tabs.firstIndex { $0.pin == nil } ?? row.tabs.count)
         row.tabs.insert(tab, at: place)
         if row.active == nil { row.active = tab.id }

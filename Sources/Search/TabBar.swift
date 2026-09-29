@@ -987,9 +987,15 @@ struct TabMenu: View {
             } else {
                 Button("Change Letter") { browser.editLetter(tab) }
             }
+            if browser.prefs.showsSharedPins {
+                Button(tab.everywhere ? "Only in This Space" : "Keep in Every Space") {
+                    if tab.everywhere { browser.keepHere(tab) } else { browser.shareEverywhere(tab) }
+                }
+            }
             Button("Unpin") { browser.unpin(tab) }
         }
-        if browser.prefs.usesSpaces, !tab.bench,
+        // A shared pin is in every space already: nowhere to move it.
+        if browser.prefs.usesSpaces, !tab.bench, !tab.everywhere,
            tab.address.flatMap({ Browser.extensionHost(of: $0) }) == nil {
             Menu("Move to Space") {
                 ForEach(browser.spaces.filter { $0.id != browser.spaceID }) { space in

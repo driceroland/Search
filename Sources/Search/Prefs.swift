@@ -310,6 +310,14 @@ final class Preferences: ObservableObject {
     /// Whether the pinned rows are drawn as rows: asked for, and with the
     /// tabs down the side. Across the top every pin is a square.
     var showsPinRows: Bool { listsPins && sidebar }
+    /// Pins every space shows above its own, as Arc's favourites sit above
+    /// every space (see Pins.shared). Off unless asked for.
+    @Published var sharesPins: Bool {
+        didSet { store.set(sharesPins, forKey: "pins.shared") }
+    }
+    /// Whether the shared pins are in the rows: asked for, and with Spaces
+    /// on. Off, they wait in pins.json for the switch to come back.
+    var showsSharedPins: Bool { sharesPins && usesSpaces }
     /// The AI add-on: summaries of the page and questions about it (see
     /// AIAssist). Off unless asked for; nothing is sent until you ask.
     @Published var ai: Bool {
@@ -425,6 +433,7 @@ final class Preferences: ObservableObject {
         usesSpaces = store.bool(forKey: "spaces")
         usesTabGroups = store.bool(forKey: "tabs.groups")
         listsPins = store.bool(forKey: "pins.list")
+        sharesPins = store.bool(forKey: "pins.shared")
         splitView = store.bool(forKey: "splitView")
         ai = store.bool(forKey: "ai")
         aiProvider = store.string(forKey: "ai.provider").flatMap(AIProvider.init(rawValue:))
