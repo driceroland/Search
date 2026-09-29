@@ -1163,12 +1163,6 @@ final class Extensions: NSObject, ObservableObject {
         return false
     }
 
-    /// Right-click items an extension added, for the page's menu.
-    func menuItems(for tab: Tab) -> [NSMenuItem] {
-        guard seen(tab) else { return [] }
-        let adapter = adapter(for: tab)
-        return contexts.values.flatMap { $0.menuItems(for: adapter) }
-    }
 }
 
 // MARK: - WebKit asks, the browser answers
