@@ -657,6 +657,11 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { browser.fullScreen = false }
             }
+            // A window macOS restores straight into full screen was there
+            // before anything here was listening for it going.
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
+                if let window, (note.object as? NSWindow) === window { browser.fullScreen = true }
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
                 browser.appBack()
@@ -921,6 +926,7 @@ struct ContentView: View {
 
     private func dress(_ window: NSWindow) {
         browser.window = window
+        browser.fullScreen = window.styleMask.contains(.fullScreen)
         window.tabbingMode = .disallowed
         // Light or dark is the app's to say (Settings › Appearance); the
         // window only has to be the ground colour that goes with it.
@@ -947,7 +953,9 @@ struct ContentView: View {
             browser.prefs.sidebar && browser.prefs.sidePosition == .right
                 ? window.frame.width - browser.prefs.sideWidth + Lights.centre.x
                 : Lights.centre.x
-        }) { measureLights() }
+        }, moved: { measureLights() }, fullScreen: {
+            Fold.fullScreen(window, column: browser.prefs.sidebar)
+        })
         DispatchQueue.main.async { measureLights() }
 
         // The traffic lights are drawn — measured, they paint themselves — but
