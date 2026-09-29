@@ -790,6 +790,8 @@ final class Browser: NSObject, ObservableObject {
     /// The list, without secrets: see `Kept` and `Vault.all()`.
     @Published private(set) var saved: [Kept] = []
     @Published var hunting = ""
+    /// A Remove All… under way, off the main thread (see `forgetShown`).
+    @Published private(set) var forgetting = false
 
     struct SiteRow {
         let host: String
@@ -822,6 +824,40 @@ final class Browser: NSObject, ObservableObject {
     func forget(_ login: Kept) {
         Vault.forget(host: login.host, user: login.user)
         relist()
+    }
+
+    /// The panel's Remove All…, or Remove N… while its search narrows the
+    /// list: every account the list shows, out of the keychain, once asked.
+    /// Only what is shown, so a search for one site never takes the rest
+    /// with it. For moving what is kept to a manager of one's own: all at
+    /// once, rather than one Remove at a time (#469). Asked, then proved the
+    /// way showing one is, since it can't be undone; Return is Cancel's.
+    func forgetShown() {
+        let shown = shownSites.flatMap(\.logins)
+        guard !shown.isEmpty, !forgetting else { return }
+        let count = shown.count
+        let many = count == 1 ? "1 password" : "\(count) passwords"
+        Ask.sure(
+            count == 1 ? "Remove 1 Password?" : "Remove \(count) Passwords?",
+            detail: "They're taken out of your keychain. Only the passwords Search keeps are removed: password managers, other apps and other browsers keep theirs. This can't be undone.",
+            confirm: "Remove",
+            returnCancels: true
+        ) { [weak self] in
+            Vault.prove("remove \(many)") { ok in
+                guard ok, let self, !self.forgetting else { return }
+                // A keychain delete is a few milliseconds, a few hundred of
+                // them a second: off the main thread, as imports are (#380).
+                self.forgetting = true
+                DispatchQueue.global(qos: .userInitiated).async {
+                    for login in shown { Vault.forget(host: login.host, user: login.user) }
+                    DispatchQueue.main.async {
+                        self.forgetting = false
+                        self.relist()
+                        self.announce("Removed \(many)")
+                    }
+                }
+            }
+        }
     }
 
     /// A password copied is asked for the way one shown is. It goes on this
