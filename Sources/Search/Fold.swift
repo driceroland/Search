@@ -76,10 +76,6 @@ struct Fold: View {
     private static let overshoot: CGFloat = 48
     /// The grace before the column goes back in.
     private static let grace: TimeInterval = 0.3
-    /// How far down from the top, in full screen, the edge leaves the
-    /// window's buttons alone: the menu bar and the title bar macOS brings
-    /// down with it.
-    static let fullScreenCorner: CGFloat = 60
     /// The band along the top that is the title bar over the page.
     private static let top: CGFloat = 8
     /// How long the pointer rests on the edge before a column folded for
@@ -142,18 +138,22 @@ struct Fold: View {
         // A column folded for good is folded before there is a window to
         // hide the lights of; they go once there is one.
         .background(WindowSetup { window in
-            window.standardWindowButton(.closeButton)?.superview?.isHidden = lightsOff && !window.styleMask.contains(.fullScreen)
+            window.standardWindowButton(.closeButton)?.superview?.isHidden = window.styleMask.contains(.fullScreen)
+                ? prefs.sidebar : lightsOff
             pointer.window = window
             watch()
         })
         .onChange(of: lightsOff) { _, _ in hideLights() }
-        // Into full screen, the buttons are given back to macOS; out of it,
-        // they go the way the fold says again.
+        // Into full screen, the buttons are the column's, or macOS's with
+        // the strip; out of it, they go the way the fold says again — at
+        // once, not slid in from wherever full screen left them.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
             if (note.object as? NSWindow) === browser.window { hideLights() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
-            if (note.object as? NSWindow) === browser.window { hideLights() }
+            if (note.object as? NSWindow) === browser.window, let bar = Fold.titlebar(of: browser.window) {
+                Fold.reset(bar, hidden: lightsOff)
+            }
         }
         .onChange(of: folding) { _, _ in
             resetPending()
@@ -166,6 +166,7 @@ struct Fold: View {
             resetPending()
             browser.folded = prefs.sidebar && prefs.sideHides
             browser.peeking = false
+            if browser.fullScreen { hideLights() }
         }
         .onChange(of: prefs.sidePosition) { _, _ in
             resetPending()
@@ -272,11 +273,7 @@ struct Fold: View {
             let over = onOwnPanel || popup || holding || overshot || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
-        } else if inWindow, distance < Fold.edge,
-                  // In full screen, not from the corner where macOS brings
-                  // the window's buttons down with the menu bar: the column
-                  // came out over them there, on the way to the red one (#241).
-                  !(prefs.sidebar && window.styleMask.contains(.fullScreen) && size.height - point.y < Fold.fullScreenCorner) {
+        } else if inWindow, distance < Fold.edge {
             // Which window is under the pointer is asked only here, at the
             // edge: another app's window over it doesn't bring the column out.
             guard NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber
@@ -339,13 +336,15 @@ struct Fold: View {
     /// circles drawn over them while the app is behind (see RestingLights),
     /// so hiding it hides both, and hidden buttons take no clicks.
     private func hideLights() {
-        guard let bar = browser.window?.standardWindowButton(.closeButton)?.superview else { return }
-        // In full screen the buttons are macOS's to show, in the bar that
-        // comes down with the menu bar; hidden or slid away here, they were
-        // missing from it, or out of reach behind the column (#241).
+        guard let bar = Fold.titlebar(of: browser.window) else { return }
+        // In full screen macOS shows the buttons in the bar that comes down
+        // with the menu bar. With the strip they stay there: slid away with
+        // it, they were missing from that bar (#241). The column has buttons
+        // of its own in its corner instead (FullScreenLights), and macOS's
+        // go, or a second three came down over them with the menu bar.
         if browser.window?.styleMask.contains(.fullScreen) == true {
             bar.layer?.removeAnimation(forKey: "fold")
-            bar.isHidden = false
+            bar.isHidden = prefs.sidebar
             return
         }
         if prefs.sidebar {
@@ -356,8 +355,11 @@ struct Fold: View {
     }
 
     /// The window in front's title bar, for the bench.
-    static var titlebar: NSView? {
-        Links.window?.standardWindowButton(.closeButton)?.superview
+    static var titlebar: NSView? { titlebar(of: Links.window) }
+
+    /// The view holding a window's three buttons.
+    static func titlebar(of window: NSWindow?) -> NSView? {
+        window?.standardWindowButton(.closeButton)?.superview
     }
 
     /// Bumped by every slide, so one that was overtaken doesn't hide the

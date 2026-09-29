@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 // The traffic lights, where a Mac app with a toolbar has them — set in from the
 // corner and centred in the strip's height — without the toolbar.
@@ -104,5 +105,73 @@ final class Lights: NSObject {
             if button.frame.origin != origin { button.setFrameOrigin(origin) }
         }
         moved()
+    }
+}
+
+extension Lights {
+    /// AppKit's spacing between a window's buttons, as its Lights read it.
+    static func spacing(of window: NSWindow) -> CGFloat {
+        kept[ObjectIdentifier(window)]?.spacing ?? 20
+    }
+}
+
+/// The three buttons in the column's corner while the window is full screen.
+///
+/// Full screen takes a window's own buttons into a bar of macOS's that comes
+/// down only with the menu bar, so the column's corner stood empty and the
+/// lights were nowhere until the pointer went up for them. These are fresh
+/// buttons of the system's own make, so they look and answer the pointer as
+/// the real ones do, set where the real ones sit out of full screen. The real
+/// ones are hidden meanwhile (see Fold.hideLights), or both came down at once.
+struct FullScreenLights: NSViewRepresentable {
+    func makeNSView(context: Context) -> Row { Row() }
+    func updateNSView(_ row: Row, context: Context) {}
+
+    final class Row: NSView {
+        private var buttons: [NSButton] = []
+        private var hovering = false
+
+        override var isFlipped: Bool { true }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window, buttons.isEmpty else { return }
+            let spacing = Lights.spacing(of: window)
+            let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+            for (index, type) in types.enumerated() {
+                guard let button = NSWindow.standardWindowButton(type, for: [.titled, .closable, .miniaturizable, .resizable])
+                else { continue }
+                let size = button.frame.size
+                button.setFrameOrigin(NSPoint(
+                    x: Lights.centre.x - size.width / 2 + CGFloat(index) * spacing,
+                    y: Lights.centre.y - size.height / 2
+                ))
+                button.target = window
+                switch type {
+                case .closeButton: button.action = #selector(NSWindow.performClose(_:))
+                case .zoomButton: button.action = #selector(NSWindow.toggleFullScreen(_:))
+                // A full-screen window can't go to the Dock; macOS's own
+                // yellow is greyed out there too.
+                default: button.isEnabled = false
+                }
+                addSubview(button)
+                buttons.append(button)
+            }
+            let area = buttons.reduce(NSRect.null) { $0.union($1.frame) }
+            addTrackingArea(NSTrackingArea(rect: area, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
+        }
+
+        override func mouseEntered(with event: NSEvent) { hover(true) }
+        override func mouseExited(with event: NSEvent) { hover(false) }
+
+        private func hover(_ on: Bool) {
+            hovering = on
+            for button in buttons { button.needsDisplay = true }
+        }
+
+        /// Asked by each button of the row it sits in: the pointer over any
+        /// one of the three shows the ×, − and arrows on all of them, as it
+        /// does in a title bar.
+        @objc func _mouseInGroup(_ button: NSButton) -> Bool { hovering }
     }
 }
