@@ -2047,7 +2047,6 @@ final class Browser: NSObject, ObservableObject {
     /// group of that name in the space, made if there is none; with them
     /// off, the folders stay opened out. Groups are never turned on here.
     private func takeAsleep(_ items: [(item: ArcSidebar.Item, folder: String?)], into space: UUID) -> Int {
-        let grouping = prefs.usesTabGroups
         func asleep(_ item: ArcSidebar.Item) -> Tab {
             let tab = Tab(configuration: Web.configuration(space: space))
             prepare(tab)
@@ -2059,8 +2058,12 @@ final class Browser: NSObject, ObservableObject {
             return items.filter { seen.insert($0.item.url.absoluteString).inserted }
         }
         /// The group a folder's pages go into, by name, made if missing.
+        /// Kept whether or not tab groups are turned on, as the session keeps
+        /// them (see Session.Shape.groups): a folder Arc had is a name this
+        /// import is the only chance to learn, and turning groups on later
+        /// finds it waiting rather than gone.
         func group(_ folder: String?, in groups: inout [TabGroup]) -> UUID? {
-            guard grouping, let folder else { return nil }
+            guard let folder else { return nil }
             if let same = groups.first(where: { $0.name == folder }) { return same.id }
             let made = TabGroup(id: UUID(), name: folder, collapsed: false)
             groups.append(made)
@@ -2104,7 +2107,7 @@ final class Browser: NSObject, ObservableObject {
             Session.Entry(url: page.item.url.absoluteString, title: page.item.title,
                           groupID: group(page.folder, in: &groups))
         }
-        if grouping { saved.groups = groups }
+        saved.groups = groups
         writeRow(space, saved, now: true)
         return new.count
     }
