@@ -14,6 +14,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
 
+# A world of its own: another checkout running the split suite at the same
+# time answers on split-tests' socket, with its own build.
+sv.W = "close-group"
+sv.SUPPORT = f"{sv.HOME}/Library/Application Support/Search ({sv.W})"
+sv.SUITE = f"com.officecommun.search.test.{sv.W}"
+sv.SOCK = f"{sv.SUPPORT}/bench.sock"
+
 
 def groups():
     return sv.cmd({"do": "group"})["groups"]
