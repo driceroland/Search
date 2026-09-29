@@ -538,6 +538,13 @@ private struct TabPill: View {
             }
         }
         .background { ground }
+        .overlay {
+            if browser.selectedTabIDs.contains(tab.id) {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         // Never both at once.
@@ -553,6 +560,7 @@ private struct TabPill: View {
         // edits its letter; everything else answers the first click at
         // once. Change Letter in the menu covers the rest.
         .modifier(OneClick(double: live && pinned) {
+            browser.clearTabSelection()
             if live && pinned {
                 browser.goHome(tab)
             } else if live && !pinned {
@@ -561,6 +569,7 @@ private struct TabPill: View {
                 browser.select(tab)
             }
         })
+        .overlay { if !editing { ModifiedTabClick { browser.extendTabSelection(to: tab, modifiers: $0) } } }
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
@@ -703,6 +712,9 @@ private struct TabPill: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .matchedGeometryEffect(id: "live", in: pill)
+        } else if browser.selectedTabIDs.contains(tab.id) {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Palette.wash)
         } else if hovering {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.hover)
@@ -952,6 +964,16 @@ struct TabMenu: View {
     let close: () -> Void
 
     var body: some View {
+        if browser.selectedTabIDs.contains(tab.id) && browser.visibleSelectedTabCount > 1 {
+            Button("Copy Links") { browser.copySelectedTabLinks() }
+                .disabled(browser.selectedTabLinkCount == 0)
+        } else {
+            singleMenu
+        }
+    }
+
+    @ViewBuilder
+    private var singleMenu: some View {
         if browser.prefs.usesTabGroups && tab.pin == nil && !tab.shy && !tab.bench {
             Menu("Move to Group") {
                 Button("New Group") { browser.addTabGroup(containing: tab) }
@@ -1086,6 +1108,48 @@ struct TabMenu: View {
         // look for it: here too, where tabs are closed.
         Button(browser.reopenTitle) { browser.reopen() }
             .disabled(browser.ghosts.isEmpty)
+    }
+}
+
+/// Takes only modified left clicks, leaving ordinary clicks, drags and the
+/// context menu with the tab's existing SwiftUI gestures.
+struct ModifiedTabClick: NSViewRepresentable {
+    let act: (NSEvent.ModifierFlags) -> Void
+
+    func makeNSView(context: Context) -> NSView { Catch() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        (view as? Catch)?.act = act
+    }
+
+    private final class Catch: NSView {
+        var act: (NSEvent.ModifierFlags) -> Void = { _ in }
+        private var pressed = false
+        private var modifiers: NSEvent.ModifierFlags = []
+
+        override var mouseDownCanMoveWindow: Bool { false }
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent, event.type == .leftMouseDown,
+                  !event.modifierFlags.intersection([.command, .shift]).isEmpty
+            else { return nil }
+            return super.hitTest(point)
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            pressed = true
+            modifiers = event.modifierFlags
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            if !bounds.contains(convert(event.locationInWindow, from: nil)) { pressed = false }
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            guard pressed else { return }
+            pressed = false
+            if bounds.contains(convert(event.locationInWindow, from: nil)) { act(modifiers) }
+        }
     }
 }
 
