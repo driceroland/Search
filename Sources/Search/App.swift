@@ -52,7 +52,7 @@ struct SearchApp: App {
                     .shortcut("file.newTab")
                 Button("New Private Tab") { browser.newShyTab() }
                     .shortcut("file.newPrivateTab")
-                Button("Reopen Closed Tab") { browser.reopen() }
+                Button(browser.reopenTitle) { browser.reopen() }
                     .shortcut("file.reopen")
                     .disabled(browser.ghosts.isEmpty && Browsers.lastClosedAt == nil)
                 Divider()
@@ -65,7 +65,7 @@ struct SearchApp: App {
                 Button("Bring Things Over…") { browser.bringingIn = "" }
                     .shortcut("file.import")
                 Divider()
-                Button("Close Tab") { if let tab = browser.active { browser.close(tab) } }
+                Button("Close Tab") { browser.closeFront() }
                     .shortcut("file.closeTab")
             }
             CommandGroup(replacing: .printItem) {
@@ -1137,38 +1137,8 @@ struct ContentView: View {
                 withAnimation(Motion.glide) { browser.makingSpace = false }
                 return true
             }
-            if browser.notesShowing {
-                browser.notesShowing = false
-                return true
-            }
-            if browser.newsShowing {
-                browser.newsShowing = false
-                return true
-            }
-            if browser.tuning {
-                browser.tuning = false
-                return true
-            }
-            if browser.bookmarking {
-                browser.bookmarking = false
-                return true
-            }
-            if browser.managing {
-                browser.managing = false
-                return true
-            }
-            if browser.bringingIn != nil {
-                browser.bringingIn = nil
-                return true
-            }
-            if browser.recalling {
-                browser.recalling = false
-                return true
-            }
-            if browser.hoarding {
-                browser.hoarding = false
-                return true
-            }
+            // The same panels in the same order as ⌘W (Browser.closeFront).
+            if browser.closePanel() { return true }
             if browser.suggesting != nil {
                 browser.dropChoice()
                 return true
@@ -1421,11 +1391,7 @@ struct ContentView: View {
         case "0":
             browser.resetZoom()
         case "w" where !shifted:
-            if browser.peekTab != nil {
-                browser.closePeek()
-            } else if let tab = browser.active {
-                browser.close(tab)
-            }
+            browser.closeFront()
         case "l" where !shifted:
             browser.edit()
         case "r" where !shifted:

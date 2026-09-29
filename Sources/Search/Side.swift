@@ -850,7 +850,7 @@ struct KeepLine: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Close the tabs under the line. Pins and groups stay; ⇧⌘T brings a tab back.")
+                .help("Close the tabs under the line. Pins and groups stay; ⇧⌘T brings them all back.")
                 .transition(.opacity)
             }
         }
