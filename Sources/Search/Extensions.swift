@@ -20,7 +20,8 @@ import Combine
 
 /// One installed extension, as the list in Settings shows it.
 struct Installed: Codable, Identifiable, Equatable {
-    /// The Chrome Web Store id, or "local-…" for one loaded from a folder.
+    /// The Chrome Web Store id, or for one loaded from a folder the id
+    /// Chrome would give it ("local-…" in lists written before that).
     let id: String
     var name: String
     var version: String
@@ -33,8 +34,17 @@ struct Installed: Codable, Identifiable, Equatable {
     /// a list written before there was pinning still reads.
     var pinned: Bool? = nil
     /// For one loaded from a folder: where that folder is, so Reload can
-    /// bring the author's latest edits in.
+    /// bring the author's latest edits in. Kept with its links resolved:
+    /// the path its id was worked out from.
     var source: String? = nil
+
+    /// Whether Reload may copy from `source` under this id: a link put on
+    /// the way since would bring in another folder, which has another id.
+    /// "local-…" ids came from no path, and reload as they always did.
+    var sourceKeepsID: Bool {
+        guard let source, !fromStore, !id.hasPrefix("local-") else { return true }
+        return Crx.unpackedID(for: URL(fileURLWithPath: source, isDirectory: true)) == id
+    }
 }
 
 @available(macOS 15.4, *)
@@ -409,6 +419,7 @@ final class Extensions: NSObject, ObservableObject {
 
     @discardableResult
     private func load(_ item: Installed) async -> Bool {
+        if let forgetting = forgetting[item.id] { await forgetting.value }
         // The shim this build of Search carries, in place of whatever the
         // build that installed it carried — away from the main thread: the
         // first launch after an update reads and rewrites every script and
@@ -542,7 +553,12 @@ final class Extensions: NSObject, ObservableObject {
             browser?.announce("That folder has no manifest.json")
             return
         }
-        let id = "local-" + String(UUID().uuidString.prefix(8)).lowercased()
+        let source = URL(fileURLWithPath: Crx.realPath(of: source), isDirectory: true)
+        let id = Crx.unpackedID(for: source)
+        if installed.contains(where: { $0.id == id }) {
+            browser?.announce("Already installed. Press Reload to take its changes")
+            return
+        }
         let staged = Extensions.stagingFolder(for: id)
         Task {
             defer { try? FileManager.default.removeItem(at: staged) }
@@ -575,6 +591,10 @@ final class Extensions: NSObject, ObservableObject {
                 let source = URL(fileURLWithPath: path, isDirectory: true)
                 guard FileManager.default.fileExists(atPath: source.appendingPathComponent("manifest.json").path) else {
                     browser?.announce("The folder \(original.name) was loaded from is gone")
+                    return
+                }
+                guard original.sourceKeepsID else {
+                    browser?.announce("\(original.name) wasn't reloaded — its folder now leads somewhere else")
                     return
                 }
                 do {
@@ -727,7 +747,55 @@ final class Extensions: NSObject, ObservableObject {
         installed.removeAll { $0.id == id }
         save()
         try? FileManager.default.removeItem(at: Extensions.folder(for: id))
+        forgetting[id] = Task { await forgetData(of: id) }
     }
+
+    /// What removed extensions kept, still being cleared. The same folder
+    /// loaded again, or another put at its path, gets the same id, and
+    /// starts with nothing of the one before, as in Chrome: loading waits.
+    private var forgetting: [String: Task<Void, Never>] = [:]
+
+    /// Its chrome.storage, which WebKit keeps by id, and what its pages
+    /// kept at chrome-extension://<id>. WebKit lists no website records
+    /// for that origin (see `workersKey`), so the second is cleared from a
+    /// blank page at that origin, which only an extension context can
+    /// host: a stand-in with no worker, scripts or pages of its own, so
+    /// nothing of the removed extension runs again.
+    private func forgetData(of id: String) async {
+        defer { forgetting[id] = nil }
+        let types = WKWebExtensionController.allExtensionDataTypes
+        let records = await controller.dataRecords(ofTypes: types).filter { $0.uniqueIdentifier == id }
+        if !records.isEmpty { await controller.removeData(ofTypes: types, from: records) }
+        guard let base = URL(string: "\(Extensions.scheme)://\(id)/") else { return }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("search-forget-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data(#"{"manifest_version": 3, "name": "Search", "version": "1"}"#.utf8).write(to: folder.appendingPathComponent("manifest.json"))
+            let standIn = WKWebExtensionContext(for: try await WKWebExtension(resourceBaseURL: folder))
+            standIn.uniqueIdentifier = id
+            standIn.baseURL = base
+            try controller.load(standIn)
+            defer { try? controller.unload(standIn) }
+            guard let configuration = standIn.webViewConfiguration else { return }
+            let page = HiddenPage(configuration)
+            guard await page.loadBlank(at: base) else {
+                NSLog("Extensions: couldn't open %@ to clear what it kept", id)
+                return
+            }
+            _ = try await page.web.callAsyncJavaScript(Extensions.forgetScript, contentWorld: .defaultClient)
+        } catch {
+            NSLog("Extensions: couldn't clear what %@ kept: %@", id, error.localizedDescription)
+        }
+    }
+
+    private static let forgetScript = """
+        localStorage.clear();
+        for (const db of await indexedDB.databases()) {
+            await new Promise(done => { const q = indexedDB.deleteDatabase(db.name); q.onsuccess = q.onerror = q.onblocked = done; });
+        }
+        for (const key of await caches.keys()) await caches.delete(key);
+        """
 
     // MARK: - new tab pages
 
@@ -1819,4 +1887,37 @@ private struct ExtensionMenu: View {
 
 private extension CGRect {
     var area: CGFloat { isNull ? 0 : width * height }
+}
+
+/// A page nobody sees, loaded for one job.
+@MainActor
+private final class HiddenPage: NSObject, WKNavigationDelegate {
+    let web: WKWebView
+    private var loaded: CheckedContinuation<Bool, Never>?
+
+    init(_ configuration: WKWebViewConfiguration) {
+        web = WKWebView(frame: .zero, configuration: configuration)
+        super.init()
+        web.navigationDelegate = self
+    }
+
+    /// Whether an empty page at `base` loaded within `limit` seconds.
+    func loadBlank(at base: URL, within limit: TimeInterval = 10) async -> Bool {
+        await withCheckedContinuation { done in
+            loaded = done
+            web.loadHTMLString("<!doctype html>", baseURL: base)
+            DispatchQueue.main.asyncAfter(deadline: .now() + limit) { [weak self] in
+                MainActor.assumeIsolated { self?.finish(false) }
+            }
+        }
+    }
+
+    private func finish(_ ok: Bool) {
+        loaded?.resume(returning: ok)
+        loaded = nil
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finish(true) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finish(false) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { finish(false) }
 }

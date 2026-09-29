@@ -3601,7 +3601,7 @@ enum ExtensionShims {
             let found = context.webExtension
             return ["id": id, "name": found.displayName ?? "", "shortName": found.displayShortName ?? "",
                     "version": found.version ?? "", "description": found.displayDescription ?? "",
-                    "enabled": true, "type": "extension", "installType": id.hasPrefix("local-") ? "development" : "normal",
+                    "enabled": true, "type": "extension", "installType": owner.installed.first { $0.id == id }?.fromStore == false ? "development" : "normal",
                     "mayDisable": true, "offlineEnabled": true, "isApp": false, "hostPermissions": [], "permissions": []]
         case "management.getAll":
             return []
