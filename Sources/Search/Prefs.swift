@@ -92,6 +92,21 @@ final class Preferences: ObservableObject {
     @Published var customEngine: String {
         didSet { store.set(customEngine, forKey: "search.custom") }
     }
+    /// New tabs open on a page of your own rather than empty, ready to type
+    /// into. Off unless asked for; an extension's page, once you let it, is
+    /// shown instead of either.
+    @Published var newTabOpensPage: Bool {
+        didSet { store.set(newTabOpensPage, forKey: "tabs.new.page") }
+    }
+    /// Where, typed as into the address field.
+    @Published var newTabAddress: String {
+        didSet { store.set(newTabAddress, forKey: "tabs.new.address") }
+    }
+    /// That page, once what's typed is a place. Nil until then, and a new
+    /// tab is empty.
+    var newTabPage: URL? {
+        newTabOpensPage ? Address.url(from: newTabAddress) : nil
+    }
     /// Shortcuts to a site's own search, ahead of the default engine (see
     /// Keyword.swift). Empty until someone adds one.
     @Published var keywords: [Keyword] {
@@ -379,6 +394,8 @@ final class Preferences: ObservableObject {
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
+        newTabOpensPage = store.bool(forKey: "tabs.new.page")
+        newTabAddress = store.string(forKey: "tabs.new.address") ?? ""
         keywords = store.data(forKey: "search.keywords")
             .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true

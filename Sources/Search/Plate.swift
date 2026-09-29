@@ -213,6 +213,8 @@ struct Quick: View {
             Text(title)
                 .font(.system(size: 11.5))
                 .foregroundStyle(tint)
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Palette.wash, in: Capsule())

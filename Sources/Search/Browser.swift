@@ -2479,6 +2479,15 @@ final class Browser: NSObject, ObservableObject {
             rememberSession()
             return
         }
+        // Your own, from Settings › Tabs. An extension that asks for the new
+        // tab still gets its question, on the page opened here.
+        if let page = prefs.newTabPage {
+            let tab = open(page, foreground: true)
+            summoning = false
+            rememberSession()
+            if #available(macOS 15.4, *) { Extensions.shared.offerNewTabPage(into: tab) }
+            return
+        }
         // Never two empty tabs. One already open anywhere in the row comes to
         // its end and is the one opened, with whatever was typed into it and
         // never gone to cleared away — a row of identical empty tabs is what

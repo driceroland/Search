@@ -739,6 +739,22 @@ final class Extensions: NSObject, ObservableObject {
         return Store.settings.object(forKey: "extensions.newtab.\(id)") as? Bool == true ? url : nil
     }
 
+    /// The extension that shows its page in new tabs if you let it — the
+    /// newest one on that asks — and whether you did. What Settings › Tabs
+    /// names, so a page an extension put there can be taken back where the
+    /// new tab is set.
+    var newTabAsker: (item: Installed, allowed: Bool)? {
+        guard let (id, _) = newTabCandidate, let item = installed.first(where: { $0.id == id }) else { return nil }
+        return (item, Store.settings.object(forKey: "extensions.newtab.\(id)") as? Bool == true)
+    }
+
+    /// Yes or no to an extension's new tab page, from Settings rather than
+    /// the question it asked.
+    func allowNewTabPage(_ id: String, _ yes: Bool) {
+        Store.settings.set(yes, forKey: "extensions.newtab.\(id)")
+        objectWillChange.send()
+    }
+
     private var newTabCandidate: (String, URL)? {
         for item in installed.reversed() where item.enabled {
             if let url = contexts[item.id]?.overrideNewTabPageURL { return (item.id, url) }
@@ -753,7 +769,7 @@ final class Extensions: NSObject, ObservableObject {
         guard let (id, url) = newTabCandidate, Store.settings.object(forKey: "extensions.newtab.\(id)") == nil,
               let name = installed.first(where: { $0.id == id })?.name else { return }
         Task {
-            let yes = await ask("Show “\(name)” in new tabs?", detail: "It asked to replace the new tab page. You can change this later in Settings › Extensions.",
+            let yes = await ask("Show “\(name)” in new tabs?", detail: "It asked to replace the new tab page. You can change this later in Settings › Tabs.",
                                 icon: contexts[id]?.webExtension.icon(for: CGSize(width: 64, height: 64)), yes: "Keep It", no: "Don't Allow")
             Store.settings.set(yes, forKey: "extensions.newtab.\(id)")
             if yes, tab.isBlank, let browser { browser.replaceBlank(tab, with: url) }
