@@ -1312,6 +1312,14 @@ final class Browser: NSObject, ObservableObject {
         editingTab = tab.id
     }
 
+    /// A click on the tab you are on names it, as a click on a file's name
+    /// in the Finder does. A tab with no page yet has nothing to name, so it
+    /// goes to the address; the site's mark in the tab goes there too, with
+    /// the site card under it (AddressClick).
+    func beginTabClick(_ tab: Tab) {
+        if tab.isBlank { beginTabEdit(tab) } else { beginTabRename(tab) }
+    }
+
     func commitTabEdit() {
         guard let id = editingTab, let tab = tabs.first(where: { $0.id == id }) else { return }
         if renamingTab {

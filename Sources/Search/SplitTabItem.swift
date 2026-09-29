@@ -131,7 +131,7 @@ private struct SplitTabHalf: View {
         laidOut
             .modifier(OneClick(double: false) {
                 guard interactive else { return }
-                if focused { browser.beginTabEdit(tab) }
+                if focused { browser.beginTabClick(tab) }
                 else { browser.focusPane(tab) }
             })
             .overlay {
@@ -203,6 +203,10 @@ private struct SplitTabHalf: View {
                 if prefs.glyph == .icons || narrow {
                     Mark(icon: tab.icon, letter: tab.monogram, size: stacked ? 15 : 13, dim: tab.asleep)
                         .frame(width: stacked ? 15 : 13, height: stacked ? 15 : 13)
+                        // Down to its mark, the half has only the mark to
+                        // click, and a click on it names the page as the
+                        // rest of a half does.
+                        .modifier(AddressClick(armed: focused && interactive && !narrow) { browser.beginTabEdit(tab) })
                 }
                 if tab.shy {
                     Image(systemName: "eye.slash")
