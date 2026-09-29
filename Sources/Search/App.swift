@@ -617,7 +617,14 @@ struct ContentView: View {
             }
             .overlay { field }
             .overlay { panels }
-            .overlay { TabSwitcherOverlay(browser: browser, switcher: browser.tabSwitcher) }
+            .overlay {
+                TabSwitcherOverlay(
+                    switcher: browser.tabSwitcher,
+                    tab: { [browser] id in browser.tabs.first { $0.id == id } ?? LittleWindow.holding(id)?.tab },
+                    current: browser.activeID,
+                    pick: { [browser] id in browser.commitTabSwitch(picking: id) }
+                )
+            }
             .overlay(alignment: .topTrailing) {
                 if let job = browser.fileImport { ImportProgress(browser: browser, job: job) }
             }
