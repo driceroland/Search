@@ -1775,6 +1775,20 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // Dark pages (see Dusk.swift), turned on or off, paused, or switched
+        // for a site: every tab's next page, and the page each is showing now.
+        Dusk.shared.$revision
+            .dropFirst()
+            .sink { [weak self] _ in
+                // Published before it is set; the pages read the set one.
+                DispatchQueue.main.async { self?.redusk() }
+            }
+            .store(in: &bag)
+        // A page darkened or let go: the View menu's line says which.
+        Dusk.shared.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &bag)
+
         // Every tab's next page, and the page each is showing now.
         prefs.$showsLinks
             .dropFirst()
@@ -3890,6 +3904,53 @@ final class Browser: NSObject, ObservableObject {
     func resetZoom() { active?.resetZoom() }
 
     /// ⌘⇧R. The article, and nothing that was arranged around it.
+    // MARK: - dark pages
+
+    /// Whether ⇧⌘D has anything to do: on, not paused, and the frame dark,
+    /// since a light frame darkens nothing.
+    var canDusk: Bool { canDusk(active) }
+
+    /// The same for a given tab: the site card's, which in Split View can be
+    /// the page beside the one with the keys.
+    func canDusk(_ tab: Tab?) -> Bool {
+        prefs.darkensPages && !Dusk.shared.paused && Dusk.frameIsDark
+            && Dusk.host(of: tab?.pageAddress) != nil
+    }
+
+    /// ⇧⌘D: the site you're on, darkened or left as it is, the other way
+    /// from now. Kept for the site; in a private tab, for this page alone.
+    func toggleDusk() {
+        guard canDusk, let tab = active else { return }
+        dusk(!tab.dusked, tab)
+    }
+
+    func dusk(_ on: Bool, _ tab: Tab) {
+        guard let host = Dusk.host(of: tab.pageAddress) else { return }
+        if tab.shy {
+            tab.built?.evaluateInSearch("window.__officeDusk && window.__officeDusk.force(\(on))")
+        } else {
+            Dusk.shared.choose(on, for: host, native: tab.duskNative)
+        }
+    }
+
+    /// ⌥⇧⌘D: every page as its site made it, until pressed again or Search
+    /// quits. For showing someone a site the way they see it.
+    func pauseDusk() {
+        guard prefs.darkensPages else { return }
+        Dusk.shared.pause(!Dusk.shared.paused)
+        announce(Dusk.shared.paused ? "Pages as their sites made them, until ⌥⇧⌘D" : "Light pages darkened again")
+    }
+
+    /// The darkening as it now stands, into every tab's next page and the
+    /// page each is showing.
+    private func redusk() {
+        let update = Dusk.shared.update
+        for tab in tabs + parkedTabs {
+            tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+            tab.built?.evaluateInSearch(update)
+        }
+    }
+
     func toggleReader() {
         guard let tab = active else { return }
         tab.toggleReader { [weak self] worked in

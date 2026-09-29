@@ -226,6 +226,16 @@ struct SiteCard: View {
             Row("Print…", keys: "⌘P") { after { browser.printPage() } }
             zoom
             sound
+            darken
+        }
+    }
+
+    /// Whether Search darkens the site (see Dusk.swift), a switch like the
+    /// sound's. Only while dark pages are on and doing something: not
+    /// paused, and the frame dark. It takes effect on the page at once.
+    @ViewBuilder private var darken: some View {
+        if browser.canDusk(tab) {
+            Darken(on: Binding(get: { tab.dusked }, set: { browser.dusk($0, tab) }))
         }
     }
 
@@ -300,6 +310,32 @@ struct SiteCard: View {
             .padding(.trailing, MenuMetrics.trailing)
             .frame(height: MenuMetrics.row)
             .onChange(of: on) { _, value in Autoplay.set(value, for: host) }
+        }
+    }
+
+    private struct Darken: View {
+        @Binding var on: Bool
+
+        var body: some View {
+            HStack(spacing: 0) {
+                Text("Darken This Site")
+                    .font(MenuMetrics.font)
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .fixedSize()
+                Spacer(minLength: 24)
+                // The key as it is now: Settings › Shortcuts can move it.
+                if let keys = ShortcutStore.shared.key(for: "view.dusk")?.display {
+                    Text(keys)
+                        .font(MenuMetrics.font)
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .fixedSize()
+                        .padding(.trailing, 8)
+                }
+                Switch(on: $on)
+            }
+            .padding(.leading, MenuMetrics.text)
+            .padding(.trailing, MenuMetrics.trailing)
+            .frame(height: MenuMetrics.row)
         }
     }
 
