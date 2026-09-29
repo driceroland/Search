@@ -374,7 +374,12 @@ struct AddressField: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+        let field = FocusableField()
+        let coordinator = context.coordinator
+        field.onAttach = { [weak field, weak coordinator] in
+            guard let field, let coordinator else { return }
+            coordinator.requestFocus(in: field)
+        }
         field.delegate = context.coordinator
         field.isBordered = false
         field.drawsBackground = false
@@ -416,25 +421,18 @@ struct AddressField: NSViewRepresentable {
         }
 
         if coordinator.answered != browser.focusRequest {
-            coordinator.answered = browser.focusRequest
-            DispatchQueue.main.async {
-                field.window?.makeFirstResponder(field)
-                guard let editor = field.currentEditor() as? NSTextView else { return }
-                // The system paints selected text as a block of accent colour,
-                // which over this pale field is the loudest thing in the
-                // window. A tenth of the ink says "selected" quietly enough.
-                editor.selectedTextAttributes = [
-                    .backgroundColor: NSColor(Palette.ink.opacity(0.12)),
-                    .foregroundColor: Palette.NS.ink,
-                ]
-                // A draft come back to its blank tab is carried on, not typed
-                // over: the caret after it. An address ⌘L raises is selected whole.
-                if browser.active?.isBlank == true, !browser.typed.isEmpty {
-                    coordinator.select(from: browser.typed.count, in: field)
-                } else {
-                    editor.selectAll(nil)
-                }
-            }
+            coordinator.requestFocus(in: field)
+        }
+    }
+
+    /// SwiftUI can update the field before it has a window. In that case the
+    /// focus request must be tried again once AppKit attaches it.
+    private final class FocusableField: NSTextField {
+        var onAttach: (() -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil { onAttach?() }
         }
     }
 
@@ -452,6 +450,31 @@ struct AddressField: NSViewRepresentable {
 
         init(browser: Browser) {
             self.browser = browser
+        }
+
+        func requestFocus(in field: NSTextField) {
+            DispatchQueue.main.async { [weak self, weak field] in
+                guard let self, let field, let window = field.window,
+                      self.browser.fieldShowing,
+                      self.answered != self.browser.focusRequest,
+                      window.makeFirstResponder(field),
+                      let editor = field.currentEditor() as? NSTextView else { return }
+                self.answered = self.browser.focusRequest
+                // The system paints selected text as a block of accent colour,
+                // which over this pale field is the loudest thing in the
+                // window. A tenth of the ink says "selected" quietly enough.
+                editor.selectedTextAttributes = [
+                    .backgroundColor: NSColor(Palette.ink.opacity(0.12)),
+                    .foregroundColor: Palette.NS.ink,
+                ]
+                // A draft come back to its blank tab is carried on, not typed
+                // over: the caret after it. An address ⌘L raises is selected whole.
+                if self.browser.active?.isBlank == true, !self.browser.typed.isEmpty {
+                    self.select(from: self.browser.typed.count, in: field)
+                } else {
+                    editor.selectAll(nil)
+                }
+            }
         }
 
         func controlTextDidChange(_ note: Notification) {
