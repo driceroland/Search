@@ -195,7 +195,8 @@ struct ExtensionsPage: View {
             if context?.overrideNewTabPageURL != nil {
                 let on = Store.settings.object(forKey: "extensions.newtab.\(item.id)") as? Bool == true
                 Button(on ? "Stop Showing in New Tabs" : "Show in New Tabs") {
-                    extensions.allowNewTabPage(item.id, !on)
+                    Store.settings.set(!on, forKey: "extensions.newtab.\(item.id)")
+                    extensions.objectWillChange.send()
                 }
             }
             if context?.optionsPageURL != nil {

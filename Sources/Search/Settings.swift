@@ -139,7 +139,6 @@ struct SettingsPanel: View {
                     switch page {
                     case .general: general
                     case .tabs:
-                        NewTabs(prefs: prefs)
                         tabs
                         if !prefs.sidebar { toolbar }
                     case .shortcuts: ShortcutsPage(browser: browser, store: .shared)
@@ -911,99 +910,6 @@ private struct NotificationSites: View {
                 Line(URL(string: site).map(SiteCard.site) ?? site, "Can send notifications") {
                     Pill("Remove") { SiteNotifications.forget(site) }
                 }
-            }
-        }
-    }
-}
-
-/// What a new tab opens on: empty, a page of your own, or an extension's page
-/// once you've let it take the new tab. The extension is named here, where
-/// you'd look to change the new tab, and picking anything else takes it back.
-struct NewTabs: View {
-    @ObservedObject var prefs: Preferences
-
-    var body: some View {
-        if #available(macOS 15.4, *) {
-            Asked(prefs: prefs, extensions: .shared)
-        } else {
-            Chooser(prefs: prefs, asker: nil, allow: { _ in })
-        }
-    }
-
-    @available(macOS 15.4, *)
-    private struct Asked: View {
-        @ObservedObject var prefs: Preferences
-        @ObservedObject var extensions: Extensions
-
-        var body: some View {
-            let asker = extensions.newTabAsker
-            Chooser(prefs: prefs, asker: asker.map { ($0.item.name, $0.allowed) }) { yes in
-                if let id = asker?.item.id { extensions.allowNewTabPage(id, yes) }
-            }
-        }
-    }
-
-    private enum Opens: Hashable { case empty, page, extensionPage }
-
-    private struct Chooser: View {
-        @ObservedObject var prefs: Preferences
-        /// The extension asking for the new tab, and whether you said yes.
-        let asker: (name: String, allowed: Bool)?
-        let allow: (Bool) -> Void
-
-        private var opens: Opens {
-            if asker?.allowed == true { return .extensionPage }
-            return prefs.newTabOpensPage ? .page : .empty
-        }
-
-        private func choose(_ choice: Opens) {
-            if choice == .extensionPage { return allow(true) }
-            if asker?.allowed == true { allow(false) }
-            prefs.newTabOpensPage = choice == .page
-        }
-
-        var body: some View {
-            Card {
-                Line("New tabs open", detail) {
-                    Picker("", selection: Binding(get: { opens }, set: choose)) {
-                        Text("Empty").tag(Opens.empty)
-                        Text("A page").tag(Opens.page)
-                        if let asker { Text(asker.name).tag(Opens.extensionPage) }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .fixedSize()
-                }
-                if opens == .page {
-                    ZStack(alignment: .leading) {
-                        if prefs.newTabAddress.isEmpty {
-                            Text("example.com")
-                                .foregroundStyle(Palette.muted.opacity(0.8))
-                        }
-                        TextField("", text: $prefs.newTabAddress)
-                            .textFieldStyle(.plain)
-                            .foregroundStyle(Palette.ink)
-                    }
-                    .font(.system(size: 12.5))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 11)
-                }
-            }
-        }
-
-        private var detail: String {
-            switch opens {
-            case .extensionPage:
-                return "“\(asker?.name ?? "")”, an extension, put its page here when you said yes to it. Pick Empty or A page to take it back"
-            case .page:
-                guard let url = prefs.newTabPage else { return "Type an address below. Until then, empty" }
-                return "Opens \(url.host() ?? url.absoluteString)"
-            case .empty:
-                guard let asker else { return "The address field, ready to type into" }
-                return "The address field, ready to type into. “\(asker.name)” asked to show its page here instead"
             }
         }
     }
