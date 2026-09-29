@@ -2582,6 +2582,32 @@ final class Browser: NSObject, ObservableObject {
         typed = tab.isBlank ? tab.draft : ""
     }
 
+    /// ⌘W closes what is in front: a peek, then a panel over the page
+    /// (Settings, History and the rest), then the tab. In Chrome these
+    /// panels are tabs, and ⌘W on one closes it; closing the page behind it
+    /// instead took the one thing you couldn't see. Escape puts things away
+    /// in the same order, so the two keys agree on what is in front.
+    func closeFront() {
+        if peekTab != nil { closePeek() }
+        else if closePanel() { return }
+        else if let tab = active { close(tab) }
+    }
+
+    /// The panel over the page put away, if one is up — for ⌘W and Escape
+    /// both. Whether there was one.
+    func closePanel() -> Bool {
+        if notesShowing { notesShowing = false }
+        else if newsShowing { newsShowing = false }
+        else if tuning { tuning = false }
+        else if bookmarking { bookmarking = false }
+        else if managing { managing = false }
+        else if bringingIn != nil { bringingIn = nil }
+        else if recalling { recalling = false }
+        else if hoarding { hoarding = false }
+        else { return false }
+        return true
+    }
+
     /// ⌘W, or the cross on the tab. Closing the last one leaves a blank tab
     /// behind; closing that blank tab closes the window.
     func close(_ tab: Tab) {
