@@ -71,8 +71,7 @@ enum ExtensionNative {
         let pipe = HostPipe(program: program, origin: "chrome-extension://\(extensionID)/")
         try pipe.start()
         defer { pipe.stop() }
-        try pipe.write(message)
-        return try await pipe.readOne()
+        return try await pipe.request(message)
     }
 
     /// `runtime.connectNative`: run, and keep the two talking until either
@@ -152,14 +151,30 @@ enum ExtensionNative {
 /// One host program and the framing Chrome uses to talk to it.
 @available(macOS 15.4, *)
 final class HostPipe: @unchecked Sendable {
+    /// How long a host that has exited may leave its output open (a child
+    /// of its own still holding it) before the connection ends anyway.
+    static let exitGrace: TimeInterval = 1.5
+    /// How long a host has, once asked to stop, before it is killed, as in Chrome.
+    static let killGrace: TimeInterval = 2
+
     private let process = Process()
     private let input = Pipe()
     private let output = Pipe()
     private var buffer = Data()
     private let lock = NSLock()
+    /// Held around each use of the input handle, so it is never written once closed.
+    private let writing = NSLock()
     var onMessage: ((Any) -> Void)?
     var onExit: (() -> Void)?
-    private var waiters: [CheckedContinuation<Any?, Error>] = []
+    private var waiters: [(id: Int, continuation: CheckedContinuation<Any?, Error>)] = []
+    private var nextWaiter = 0
+    private var stopped = false
+    private var outputClosed = false
+    private var finished = false
+    private var inputClosed = false
+    private var ending = false
+
+    private static var exited: Error { ExtensionNative.Refused(why: "Native host has exited.") }
 
     init(program: URL, origin: String) {
         process.executableURL = program
@@ -179,18 +194,41 @@ final class HostPipe: @unchecked Sendable {
             guard let self else { return }
             if chunk.isEmpty {
                 handle.readabilityHandler = nil
+                self.lock.lock()
+                self.outputClosed = true
+                self.lock.unlock()
                 self.finish()
+                // As in Chrome, a host whose output has closed is done with,
+                // even if it runs on.
+                self.end()
                 return
             }
             self.take(chunk)
         }
-        process.terminationHandler = { [weak self] _ in self?.finish() }
+        // A host may exit the moment its last reply is written, before that
+        // reply has been read: the end is when its output closes, as in
+        // Chrome. But a child of the host's may hold that output open long
+        // after, so an exit ends things after a grace in any case.
+        process.terminationHandler = { [weak self] _ in
+            guard let self else { return }
+            self.lock.lock()
+            let now = self.stopped || self.outputClosed
+            self.lock.unlock()
+            if now {
+                self.finish()
+            } else {
+                DispatchQueue.global().asyncAfter(deadline: .now() + Self.exitGrace) { self.finish() }
+            }
+        }
         try process.run()
     }
 
     func stop() {
+        lock.lock()
+        stopped = true
+        lock.unlock()
         output.fileHandleForReading.readabilityHandler = nil
-        if process.isRunning { process.terminate() }
+        if process.isRunning { end() } else { finish() }
     }
 
     func write(_ message: Any) throws {
@@ -199,19 +237,49 @@ final class HostPipe: @unchecked Sendable {
         var length = UInt32(json.count).littleEndian
         var frame = Data(bytes: &length, count: 4)
         frame.append(json)
+        writing.lock()
+        defer { writing.unlock() }
+        guard !inputClosed else { throw Self.exited }
         try input.fileHandleForWriting.write(contentsOf: frame)
     }
 
     func readOne() async throws -> Any? {
         try await withCheckedThrowingContinuation { continuation in
-            lock.lock()
-            waiters.append(continuation)
-            lock.unlock()
+            if wait(continuation) == nil { continuation.resume(throwing: Self.exited) }
         }
+    }
+
+    /// Writes `message` and reads the reply. The reply's waiter is in place
+    /// before the message goes, so a host quick to answer isn't missed.
+    func request(_ message: Any) async throws -> Any? {
+        try await withCheckedThrowingContinuation { continuation in
+            guard let id = wait(continuation) else { return continuation.resume(throwing: Self.exited) }
+            do {
+                try write(message)
+            } catch {
+                // Unless a reply or the end got to it first.
+                lock.lock()
+                let index = waiters.firstIndex { $0.id == id }
+                if let index { waiters.remove(at: index) }
+                lock.unlock()
+                if index != nil { continuation.resume(throwing: error) }
+            }
+        }
+    }
+
+    /// Adds a waiter for the next message, or nil once the connection has ended.
+    private func wait(_ continuation: CheckedContinuation<Any?, Error>) -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return nil }
+        nextWaiter += 1
+        waiters.append((nextWaiter, continuation))
+        return nextWaiter
     }
 
     private func take(_ chunk: Data) {
         lock.lock()
+        guard !finished else { return lock.unlock() }
         buffer.append(chunk)
         var messages: [Any] = []
         while buffer.count >= 4 {
@@ -225,7 +293,7 @@ final class HostPipe: @unchecked Sendable {
         }
         var handed: [(CheckedContinuation<Any?, Error>, Any)] = []
         for message in messages where !waiters.isEmpty {
-            handed.append((waiters.removeFirst(), message))
+            handed.append((waiters.removeFirst().continuation, message))
         }
         let rest = messages.dropFirst(handed.count)
         lock.unlock()
@@ -233,13 +301,44 @@ final class HostPipe: @unchecked Sendable {
         rest.forEach { onMessage?($0) }
     }
 
+    /// Stops the host as Chrome does: its input closed and SIGTERM, then
+    /// SIGKILL if it is still running after a grace.
+    private func end() {
+        lock.lock()
+        let first = !ending
+        ending = true
+        lock.unlock()
+        guard first else { return }
+        // Off the caller's thread: a write stuck on a host that doesn't read
+        // holds `writing` until the signals below free it.
+        DispatchQueue.global().async {
+            self.writing.lock()
+            if !self.inputClosed {
+                self.inputClosed = true
+                try? self.input.fileHandleForWriting.close()
+            }
+            self.writing.unlock()
+        }
+        guard process.isRunning else { return }
+        let pid = process.processIdentifier
+        guard pid > 0 else { return }
+        process.terminate()
+        DispatchQueue.global().asyncAfter(deadline: .now() + Self.killGrace) {
+            if self.process.isRunning { kill(pid, SIGKILL) }
+        }
+    }
+
     private func finish() {
         lock.lock()
+        guard !finished else { return lock.unlock() }
+        finished = true
         let pending = waiters
         waiters = []
-        lock.unlock()
-        pending.forEach { $0.resume(throwing: ExtensionNative.Refused(why: "Native host has exited.")) }
-        onExit?()
+        let exit = onExit
         onExit = nil
+        lock.unlock()
+        output.fileHandleForReading.readabilityHandler = nil
+        pending.forEach { $0.continuation.resume(throwing: Self.exited) }
+        exit?()
     }
 }
