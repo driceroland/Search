@@ -7,16 +7,20 @@ import WebKit
 // (see Tab.build), so this is only for the ones that stay white. WebKit has
 // no switch for it: Chromium darkens as it paints, and the paint-time filter
 // Mail uses (-apple-color-filter) isn't parsed in a web view, flag or no
-// flag (macOS 27.2). So the page is turned over with a CSS filter on its
-// root, and the pictures on it are turned back.
+// flag (macOS 27.2). So a page is darkened in its own colours: each rule of
+// its that sets one gets a dark twin (DuskColours.swift), and pictures are
+// never touched. The twins take a moment to make, and until they are ready,
+// or on a Mac whose WebKit can't do relative colours (before macOS 15), the
+// page is turned over with a CSS filter on its root and the pictures on it
+// are turned back.
 //
 // Whether a site needs it is measured, never read off what the site says:
 // plenty declare `color-scheme: light dark` and only mean their form
 // controls, and plenty more keep a dark theme behind a setting of their own.
 // The page's colours are sampled across the screen just before its first
 // frame, and again whenever it changes its theme; a site already dark is
-// left alone. The filter changes no computed colour, so the measuring sees
-// the site's own colours whether the page is darkened or not.
+// left alone. The filter changes no computed colour, and the twins are set
+// aside while it looks, so the measuring always sees the site's own colours.
 //
 // On unless turned off in Settings › Appearance, and only ever while the
 // frame is dark. ⇧⌘D turns it off, or on, for the site you're on, and is
@@ -98,15 +102,21 @@ final class Dusk: ObservableObject {
     }
 
     private var config: String {
-        let config: [String: Any] = ["on": active, "sites": sites, "seen": seen]
+        // "filter" keeps a page to the filter even where the browser can do
+        // colours: for comparing the two, set by hand.
+        let mode = Store.settings.string(forKey: "dusk.mode") ?? "colours"
+        let config: [String: Any] = ["on": active, "sites": sites, "seen": seen, "mode": mode]
         guard let data = try? JSONSerialization.data(withJSONObject: config),
               let json = String(data: data, encoding: .utf8) else { return "{\"on\":false,\"sites\":{},\"seen\":{}}" }
         return json
     }
 
     private static func page(_ config: String) -> String {
-        "(\(script))(\(config));"
+        "(\(whole))(\(config));"
     }
+
+    /// The page script with the colour engine in its place (see DuskColours.swift).
+    private static let whole = script.replacingOccurrences(of: DuskColours.slot, with: DuskColours.engine)
 
     /// The shade under the page, where a scroll past its end shows: the
     /// white a light page left there, turned over as the filter turns it.
@@ -116,7 +126,9 @@ final class Dusk: ObservableObject {
     /// per main frame: a frame inside is turned over with its page, except
     /// for the ones turned back with the pictures.
     ///
-    /// The page is filtered `invert hue-rotate contrast`; what is turned back
+    /// A page is darkened in its own colours where the browser can (see
+    /// DuskColours.swift), and by the filter until they are ready, or where
+    /// it can't. The page is filtered `invert hue-rotate contrast`; what is turned back
     /// is filtered by the exact reverse, in reverse order, so a photo comes
     /// out as it went in. The contrast of .85 is what keeps white from going
     /// to pure black and black text from going to pure white.
@@ -143,6 +155,12 @@ final class Dusk: ObservableObject {
         + 'html:has(:fullscreen), html:has(:fullscreen) :is(' + pictures + ') { filter: none !important; }'
         + '}';
       var sheet = new CSSStyleSheet();
+      // The page in its own colours, made dark: null where the browser
+      // can't, or where it is kept to the filter by hand.
+      var paint = config.mode === 'filter' ? null : (/*COLOURS*/)(doc, [sheet]);
+      // Whether the filter is what shows now: until the colours are ready,
+      // and on its own without them.
+      var filtering = false;
 
       // A sheet of the document's own rather than an element in it: nothing
       // for a page's framework to find in its markup and take out again.
@@ -169,10 +187,17 @@ final class Dusk: ObservableObject {
         var was = shown;
         shown = wanted();
         attach();
+        // The colours once they are ready; the filter before, from the first
+        // frame, so the page is never seen white while they are made. Both
+        // change here, in one go, so no frame falls between them.
+        var painted = shown && !!paint && paint.ready();
+        filtering = shown && !painted;
         // The ground a page left transparent is the canvas's, which the
         // filter on the root doesn't reach: it is given the page's own, so
         // that it turns over with the rest.
-        sheet.replaceSync(shown ? turned + '@media screen { html { background-color: ' + ground + ' !important; } }' : '');
+        sheet.replaceSync(filtering ? turned + '@media screen { html { background-color: ' + ground + ' !important; } }' : '');
+        if (paint) paint.show(painted);
+        if (shown && paint && !paint.started() && ready()) paint.start(apply);
         // Once, and again whenever it is darkened anew: what came while it
         // wasn't was never looked at.
         if (shown && ready() && (!scanned || !was)) everything();
@@ -249,8 +274,14 @@ final class Dusk: ObservableObject {
       // changes in, and most pages have a ground of their own under every
       // point.
       var measure = function () {
+        // The colours change every colour on the page: read with them set
+        // aside, always.
+        if (paint && paint.showing()) return paint.aside(measureOwn);
+        measureOwn();
+      };
+      var measureOwn = function () {
         var dark = sample();
-        if (fellThrough || !shown) {
+        if (fellThrough || !filtering) {
           sheet.disabled = true;
           dark = sample();
           var top = getComputedStyle(root).backgroundColor;
@@ -289,7 +320,31 @@ final class Dusk: ObservableObject {
         }
         return found;
       };
-      var mark = function (el) { if (!el.hasAttribute(KEEP)) el.setAttribute(KEEP, ''); };
+      // "picture" for a picture's frame or a photo, "dark" for a dark part.
+      // The filter turns back both; the colours keep only what is laid over
+      // a picture (DuskColours.swift), since a dark part stays dark anyway.
+      // Whether a background drawn from a stylesheet is a photo rather than
+      // an icon: by how big it is drawn, not how big its box is. A select's
+      // chevron sits in a box 200 wide and is an icon all the same. At its
+      // own size (auto) it can't be told without loading it, and only a
+      // large box is taken for a photo. A form control's is always an icon.
+      var controls = { INPUT: 1, SELECT: 1, BUTTON: 1, TEXTAREA: 1 };
+      var photoIn = function (el, style) {
+        if (controls[el.tagName] || style.backgroundImage.indexOf('url(') < 0) return false;
+        var w = el.offsetWidth, h = el.offsetHeight;
+        if (w < photo || h < photo) return false;
+        var size = style.backgroundSize.split(',')[0].trim();
+        if (/cover|contain/.test(size)) return true;
+        var parts = size.split(/\s+/), box = [w, h], given = false, fills = true;
+        for (var i = 0; i < parts.length && i < 2; i++) {
+          if (parts[i] === 'auto') continue;
+          given = true;
+          var n = parseFloat(parts[i]);
+          if ((parts[i].indexOf('%') > 0 ? n / 100 : n / box[i]) < 0.5) fills = false;
+        }
+        return given ? fills : w * h >= 300 * 150;
+      };
+      var mark = function (el, kind) { if (!el.hasAttribute(KEEP)) el.setAttribute(KEEP, kind || 'picture'); };
       var look = function (el) {
         if (skip[el.tagName] || el.hasAttribute(KEEP)) return NodeFilter.FILTER_REJECT;
         if (tags[el.tagName]) {
@@ -298,12 +353,12 @@ final class Dusk: ObservableObject {
           return NodeFilter.FILTER_REJECT;
         }
         var style = getComputedStyle(el);
-        if (style.backgroundImage.indexOf('url(') >= 0 && el.offsetWidth >= photo && el.offsetHeight >= photo) {
+        if (photoIn(el, style)) {
           mark(frame(el));
           return NodeFilter.FILTER_REJECT;
         }
-        if (light(style.backgroundColor) === false) {
-          mark(el);
+        if (filtering && light(style.backgroundColor) === false) {
+          mark(el, 'dark');
           return NodeFilter.FILTER_REJECT;
         }
         return NodeFilter.FILTER_SKIP;
@@ -412,7 +467,11 @@ final class Dusk: ObservableObject {
         update: function (next) { config = next; apply(); soon(); },
         // A private tab's ⇧⌘D: this page only, kept nowhere.
         force: function (on) { config.sites[host] = on; apply(); },
-        state: function () { return { native: native, shown: shown, kept: doc.querySelectorAll('[' + KEEP + ']').length, passes: passes, ms: Math.round(spent) }; }
+        state: function () {
+          return { native: native, shown: shown, mode: !shown ? 'none' : filtering ? 'filter' : 'colours',
+                   kept: doc.querySelectorAll('[' + KEEP + ']').length, passes: passes, ms: Math.round(spent),
+                   colours: paint ? paint.stats() : null };
+        }
       };
 
       // A site known to be light is darkened before anything is drawn; the
