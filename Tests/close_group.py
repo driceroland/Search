@@ -12,6 +12,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
 
+# Its own world, apart from the split suite's in this checkout (see use()).
+sv.use("close-group")
+
 
 def groups():
     return sv.cmd({"do": "group"})["groups"]
