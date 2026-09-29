@@ -114,6 +114,14 @@ enum DuskColours {
             }
             continue;
           }
+          if (p === 'mix-blend-mode' || p === 'background-blend-mode') {
+            // Multiply and its kin darken by what is under them: meant to
+            // lose a photo's white on a light tile, onto a dark one they
+            // take the picture and everything on it down to black.
+            if (/^(multiply|darken|color-burn)$/i.test(style.getPropertyValue(p).trim()))
+              out += p + ':normal' + (always || style.getPropertyPriority(p) ? ' !important;' : ';');
+            continue;
+          }
           if (!make) continue;
           v = style.getPropertyValue(p).trim();
           if (!v) { pending = true; continue; }
@@ -341,7 +349,7 @@ enum DuskColours {
         }
         return clear >= (clear + seen) * 0.3 && seen > 0 && dark >= seen * 0.6;
       };
-      var turnIcon = function (img, dark) { if (dark && !img.closest('[data-office-dusk="picture"]')) img.setAttribute(ICON, ''); };
+      var turnIcon = function (img, dark) { if (dark && !img.closest('[data-office-dusk-over]')) img.setAttribute(ICON, ''); };
       var lookAt = function (img) {
         if (img.hasAttribute(ICON)) return;
         var src = img.currentSrc || img.src;
@@ -383,7 +391,7 @@ enum DuskColours {
       // The page's scheme dark: its default colours, its form controls and
       // its scrollbars, which no rule of its own ever names.
       ground.replaceSync(':root { color-scheme: dark !important; }'
-        + '[data-office-dusk="picture"] { --office-dusk-keep: 1; }'
+        + '[data-office-dusk-over] { --office-dusk-keep: 1; }'
         + 'img[' + ICON + '] { filter: invert(1) hue-rotate(180deg) !important; }');
 
       // Ours after all of the page's, in the page's order: the ground first,

@@ -200,7 +200,7 @@ final class Dusk: ObservableObject {
         if (shown && paint && !paint.started() && ready()) paint.start(apply);
         // Once, and again whenever it is darkened anew: what came while it
         // wasn't was never looked at.
-        if (shown && ready() && (!scanned || !was)) everything();
+        if (shown && ready() && (!scanned || !was || scannedFor !== filtering)) everything();
         tell();
       };
 
@@ -320,9 +320,6 @@ final class Dusk: ObservableObject {
         }
         return found;
       };
-      // "picture" for a picture's frame or a photo, "dark" for a dark part.
-      // The filter turns back both; the colours keep only what is laid over
-      // a picture (DuskColours.swift), since a dark part stays dark anyway.
       // Whether a background drawn from a stylesheet is a photo rather than
       // an icon: by how big it is drawn, not how big its box is. A select's
       // chevron sits in a box 200 wide and is an icon all the same. At its
@@ -344,18 +341,54 @@ final class Dusk: ObservableObject {
         }
         return given ? fills : w * h >= 300 * 150;
       };
+      // Under the filter, "picture" for a picture's frame or a photo and
+      // "dark" for a dark part, both turned back whole.
       var mark = function (el, kind) { if (!el.hasAttribute(KEEP)) el.setAttribute(KEEP, kind || 'picture'); };
+      // In the colours, only what is laid over a picture keeps the site's
+      // own (DuskColours.swift): the writing and the buttons on it, found by
+      // where they are drawn. A frame can't stand for them there: a caption
+      // under a photo, in the same link, is the page's and goes light.
+      var OVER = 'data-office-dusk-over';
+      var over = function (pic) {
+        var r = pic.getBoundingClientRect(), area = r.width * r.height;
+        if (area < big) return;
+        // Near the picture: the few boxes around it no more than three
+        // times its size, where what is written on it lives.
+        var scope = pic;
+        for (var up = 0; up < 4 && scope.parentElement && scope.parentElement !== doc.body; up++) {
+          var q = scope.parentElement.getBoundingClientRect();
+          if (q.width * q.height > area * 3) break;
+          scope = scope.parentElement;
+        }
+        var near = scope.querySelectorAll('*');
+        for (var i = 0; i < near.length && i < 300; i++) {
+          var el = near[i];
+          if (el === pic || el.contains(pic) || el.hasAttribute(OVER) || skip[el.tagName]) continue;
+          var own = el.tagName === 'IMG';
+          for (var t = el.firstChild; t && !own; t = t.nextSibling) own = t.nodeType === 3 && /\S/.test(t.data);
+          if (!own && !opaque(getComputedStyle(el).backgroundColor)) continue;
+          var b = el.getBoundingClientRect(), mine = b.width * b.height;
+          var w = Math.min(r.right, b.right) - Math.max(r.left, b.left), h = Math.min(r.bottom, b.bottom) - Math.max(r.top, b.top);
+          if (mine > 0 && w > 0 && h > 0 && w * h >= mine * 0.5) el.setAttribute(OVER, '');
+        }
+      };
+      var picture = function (el, photo) {
+        if (!filtering) return over(el);
+        var f = frame(el);
+        if (f !== el || photo) mark(f);
+      };
       var look = function (el) {
-        if (skip[el.tagName] || el.hasAttribute(KEEP)) return NodeFilter.FILTER_REJECT;
+        if (skip[el.tagName] || el.hasAttribute(filtering ? KEEP : OVER)) return NodeFilter.FILTER_REJECT;
         if (tags[el.tagName]) {
-          var f = frame(el);
-          if (f !== el) mark(f);
+          picture(el, false);
           return NodeFilter.FILTER_REJECT;
         }
         var style = getComputedStyle(el);
         if (photoIn(el, style)) {
-          mark(frame(el));
-          return NodeFilter.FILTER_REJECT;
+          picture(el, true);
+          // What is inside a photo is looked at in its own right in the
+          // colours: another picture within it, say.
+          return filtering ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
         }
         if (filtering && light(style.backgroundColor) === false) {
           mark(el, 'dark');
@@ -364,7 +397,7 @@ final class Dusk: ObservableObject {
         return NodeFilter.FILTER_SKIP;
       };
       var scan = function (top) {
-        if (!top || top.nodeType !== 1 || top.closest('[' + KEEP + ']')) return;
+        if (!top || top.nodeType !== 1 || filtering && top.closest('[' + KEEP + ']')) return;
         if (look(top) !== NodeFilter.FILTER_SKIP) return;
         var walker = doc.createTreeWalker(top, NodeFilter.SHOW_ELEMENT, { acceptNode: look });
         while (walker.nextNode()) {}
@@ -372,13 +405,14 @@ final class Dusk: ObservableObject {
       // The whole page, while it is darkened: when it first has its look,
       // at its load, and a moment after for what came late. Then only
       // what is added, as it is added, before it is drawn.
-      var passes = 0, spent = 0, scanned = false;
+      var passes = 0, spent = 0, scanned = false, scannedFor = null;
       var everything = function () {
         var t = performance.now();
         scan(doc.body);
         spent += performance.now() - t;
         passes++;
         scanned = true;
+        scannedFor = filtering;
       };
       new MutationObserver(function (records) {
         if (!shown || !scanned) return;
@@ -392,10 +426,7 @@ final class Dusk: ObservableObject {
       // frame is only found then.
       doc.addEventListener('load', function (e) {
         var el = e.target;
-        if (shown && scanned && el.tagName === 'IMG' && !el.closest('[' + KEEP + ']')) {
-          var f = frame(el);
-          if (f !== el) mark(f);
-        }
+        if (shown && scanned && el.tagName === 'IMG' && !(filtering && el.closest('[' + KEEP + ']'))) picture(el, false);
       }, true);
       addEventListener('load', function () {
         if (shown) everything();

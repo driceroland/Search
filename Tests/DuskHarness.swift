@@ -157,8 +157,9 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
             .card h2{position:relative;color:#111}.tile img{width:300px;height:160px;display:block}</style>
             <div class=card><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='160'%3E%3Crect width='300' height='160' fill='%23eee'/%3E%3C/svg%3E"><h2 id=over>Over the photo</h2></div>
             <div class=tile><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='160'%3E%3Crect width='300' height='160' fill='%23a62'/%3E%3C/svg%3E"><p id=under>A title under it</p><p>$12.99</p><p>Free delivery</p></div>
+            <a class=link style="display:block;width:300px"><img style="display:block;width:300px;height:160px" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='160'%3E%3Crect width='300' height='160' fill='%23ccc'/%3E%3C/svg%3E"><span id=caption style="color:#111">Footwear</span></a>
             """, dark: false, shown: true,
-                looks: ["lum('#over','color') < 0.02", "lum('#under','color') > 0.4"], settle: 0.8),
+                looks: ["lum('#over','color') < 0.02", "lum('#under','color') > 0.4", "lum('#caption','color') > 0.4"], settle: 0.8),
         // A field whose colour is animated by the site: measuring the page
         // must leave nothing running, and the field dark.
         Fixture(name: "colours-transitions", html: """
@@ -187,6 +188,14 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
             """, dark: false, shown: true,
                 looks: ["lum('#menu','backgroundColor') > 0.4", "document.getElementById('logo').hasAttribute('data-office-dusk-icon')",
                         "!document.getElementById('photo').hasAttribute('data-office-dusk-icon')"], settle: 0.8),
+        // A product photo blended into its light tile: onto a dark one the
+        // blend would take it, and the badge on it, down to black.
+        Fixture(name: "colours-blend-modes", html: """
+            <style>body{background:#fff}.tile{background:#f7f7f7;padding:10px}.tile img{mix-blend-mode:multiply}.deal{mix-blend-mode:multiply;background:#fff}</style>
+            <div class=tile><img id=pic width=100 height=60 src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"><div id=deal class=deal>50% off</div></div>
+            """, dark: false, shown: true,
+                looks: ["getComputedStyle(document.getElementById('pic')).mixBlendMode === 'normal'",
+                        "getComputedStyle(document.getElementById('deal')).mixBlendMode === 'normal'"]),
         Fixture(name: "known-light-from-start", html: "<style>body{background:#fff}</style>" + card,
                 dark: false, shown: true, seen: ["known-light-from-start.test": false]),
     ]
