@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """⌘W with a panel up closes the panel, not the tab behind it, in a hidden probe.
 
-Build first (`./build.sh`), then `python3 Tests/close_panel.py`. It uses the
-split suite's harness: started hidden, everything removed afterwards.
+Build first (`./build.sh`), then `python3 Tests/close_panel.py`. It runs in
+split_view.py's test world, with its harness: started hidden, everything
+removed afterwards.
 """
 import sys
 import time

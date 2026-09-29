@@ -1134,38 +1134,8 @@ struct ContentView: View {
                 withAnimation(Motion.glide) { browser.makingSpace = false }
                 return true
             }
-            if browser.notesShowing {
-                browser.notesShowing = false
-                return true
-            }
-            if browser.newsShowing {
-                browser.newsShowing = false
-                return true
-            }
-            if browser.tuning {
-                browser.tuning = false
-                return true
-            }
-            if browser.bookmarking {
-                browser.bookmarking = false
-                return true
-            }
-            if browser.managing {
-                browser.managing = false
-                return true
-            }
-            if browser.bringingIn != nil {
-                browser.bringingIn = nil
-                return true
-            }
-            if browser.recalling {
-                browser.recalling = false
-                return true
-            }
-            if browser.hoarding {
-                browser.hoarding = false
-                return true
-            }
+            // The same panels in the same order as ⌘W (Browser.closeFront).
+            if browser.closePanel() { return true }
             if browser.suggesting != nil {
                 browser.dropChoice()
                 return true
