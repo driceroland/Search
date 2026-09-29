@@ -113,6 +113,9 @@ struct Pull: Equatable {
     /// disc, and the one letting go would open (see PageView.openList).
     var stops: [Stop]? = nil
     var picked = 0
+    /// Going back from the first page, where back means leaving: the small
+    /// window closes rather than the page changing (see PageView.leave).
+    var leaves = false
 }
 
 /// A page in the list a held swipe shows.

@@ -388,6 +388,12 @@ final class Tab: ObservableObject, Identifiable {
     /// A sideways swipe in progress, for the disc that shows it.
     @Published var pull: Pull?
 
+    /// What going back from the first page does, for a tab where it does
+    /// anything (see PageView.leave).
+    var leave: (() -> Void)? {
+        didSet { built?.leave = leave }
+    }
+
     /// What a site opens at until you zoom it yourself: Settings › General ›
     /// Page zoom. Read from the file, not from the one object the window holds.
     static var defaultZoom: CGFloat {
@@ -600,6 +606,7 @@ final class Tab: ObservableObject, Identifiable {
         web.allowsBackForwardNavigationGestures = false
         Swipe.calm(web)
         web.onPull = { [weak self] pull in self?.pull = pull }
+        web.leave = leave
         web.onTouch = { [weak self] in self?.uncover() }
         web.onKeys = { [weak self] in if let self { self.onKeys?(self) } }
         web.searchName = { [weak self] in self?.searchName?() }
@@ -1317,6 +1324,7 @@ final class Tab: ObservableObject, Identifiable {
         Web.release(controller)
         controller.removeAllUserScripts()
         web.onPull = nil
+        web.leave = nil
         web.onTouch = nil
         web.onKeys = nil
         web.searchName = nil
@@ -1516,6 +1524,10 @@ final class PageView: WKWebView {
 
     /// Told where a sideways swipe has got to, and nil when there is none.
     var onPull: ((Pull?) -> Void)?
+    /// What back means with nothing to go back to, where it means anything:
+    /// a small window's first page was, a step back, no window at all (see
+    /// Little.swift). Nil everywhere else, where back there does nothing.
+    var leave: (() -> Void)?
     /// Told the moment the page is reached for — a click, a scroll — so the
     /// picture of a tab waking up never stands between you and the page.
     var onTouch: (() -> Void)?
@@ -1547,6 +1559,7 @@ final class PageView: WKWebView {
     override func otherMouseDown(with event: NSEvent) {
         switch event.buttonNumber {
         case 3 where canGoBack: goBack()
+        case 3 where leave != nil: leaveSoon()
         case 4 where canGoForward: goForward()
         default: super.otherMouseDown(with: event)
         }
@@ -1556,6 +1569,7 @@ final class PageView: WKWebView {
     /// 3 and 4 — deltaX 1 for back, -1 for forward, as Safari reads it.
     override func swipe(with event: NSEvent) {
         if event.deltaX > 0, canGoBack { goBack() }
+        else if event.deltaX > 0, leave != nil { leaveSoon() }
         else if event.deltaX < 0, canGoForward { goForward() }
         else { super.swipe(with: event) }
     }
@@ -1814,7 +1828,7 @@ final class PageView: WKWebView {
                 back = sideways > 0
                 // Nowhere to go that way: nothing to show, and nothing more
                 // to read from this gesture.
-                if back ? !canGoBack : !canGoForward {
+                if back ? !canGoBack && leave == nil : !canGoForward {
                     spent = true
                     return
                 }
@@ -1847,6 +1861,15 @@ final class PageView: WKWebView {
         guard free == nil else { return }
         free = true
         tell()
+    }
+
+    /// Back from the first page, where that means leaving.
+    private var leaves: Bool { back && !canGoBack && leave != nil }
+
+    /// Not from inside the event: leaving closes the window this view is in,
+    /// and the page with it.
+    private func leaveSoon() {
+        DispatchQueue.main.async { [weak self] in self?.leave?() }
     }
 
     /// Only the distance in the direction it set off in. Past the origin the
@@ -1888,7 +1911,7 @@ final class PageView: WKWebView {
             )
         }
         armedNow = armed
-        settle(Pull(back: back, travel: travel, armed: armed, going: false, stops: stops, picked: picked))
+        settle(Pull(back: back, travel: travel, armed: armed, going: false, stops: stops, picked: picked, leaves: leaves))
     }
 
     /// Held long enough: the pages that way, nearest to the fingers — at the
@@ -1943,9 +1966,11 @@ final class PageView: WKWebView {
             return
         }
         going = true
-        settle(Pull(back: back, travel: travel, armed: true, going: true, stops: stops, picked: picked))
+        settle(Pull(back: back, travel: travel, armed: true, going: true, stops: stops, picked: picked, leaves: leaves))
         if stops != nil, items.indices.contains(picked) {
             go(to: items[picked])
+        } else if leaves {
+            leaveSoon()
         } else if back {
             goBack()
         } else {
