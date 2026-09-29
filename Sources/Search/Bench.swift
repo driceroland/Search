@@ -1533,6 +1533,9 @@ final class Bench {
             } else if request["fold"] as? Bool == true {
                 guard let group else { answer(["error": "no group “\(named)”"]); return }
                 browser.toggleTabGroup(group.id)
+            } else if request["close"] as? Bool == true {
+                guard let group else { answer(["error": "no group “\(named)”"]); return }
+                browser.closeTabGroup(group.id)
             }
             answer(["on": browser.prefs.usesTabGroups, "groups": browser.tabGroups.map { group in
                 ["id": String(group.id.uuidString.prefix(8)).lowercased(), "name": group.name, "collapsed": group.collapsed,
@@ -2579,11 +2582,6 @@ final class Bench {
         case "clear":
             // The line's Clear, with the pinned rows on (Browser.clearTabs).
             browser.clearTabs()
-            reply()
-
-        case "reopen":
-            // ⇧⌘T: the last tab closed, or everything the last Clear closed.
-            browser.reopen()
             reply()
 
         case "space":

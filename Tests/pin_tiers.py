@@ -94,6 +94,16 @@ try:
     t.ok("Clear: an empty tab in front", front and front[0]["blank"], front)
     sv.sp("select", id=ids["a"]); sv.page("h"); sv.sp("select", id=ids["a"]); sv.sp("clear"); st = sv.sp("state")
     t.ok("Clear from a pin: the pin stays in front", st["activeID"] == ids["a"] and loose(st) == ["g"], (st["activeID"], loose(st)))
+    # An empty tab of yours, in a group, is the one Clear's new tab reuses:
+    # the undo leaves it where it is.
+    gid = st["groupIDs"][[x["id"] for x in st["tabs"]].index(ids["g"])]
+    sv.sp("newTab"); blank = sv.sp("state")["activeID"]; sv.sp("group", id=blank, group=gid)
+    sv.sp("select", id=ids["a"]); k = sv.page("k"); sv.sp("clear"); time.sleep(0.5)
+    t.ok("Clear reuses your empty tab in a group", sv.sp("state")["activeID"] == blank)
+    sv.sp("reopen"); time.sleep(0.5); st = sv.sp("state")
+    kept = [(x["id"], st["groupIDs"][i]) for i, x in enumerate(st["tabs"]) if x["blank"]]
+    t.ok("undo: your empty tab in a group stays", kept == [(blank, gid)], kept)
+    t.ok("undo: and the cleared tab is back in front", by_url(st)[st["activeID"]] == "k", by_url(st).get(st["activeID"]))
 
     # Off: the rows are drawn as squares, and a pin carried across the
     # hidden line becomes the kind it landed among.

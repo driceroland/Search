@@ -1407,6 +1407,11 @@ final class Browser: NSObject, ObservableObject {
     /// and the History menu can offer them by name.
     @Published private(set) var ghosts: [Ghost] = []
 
+    /// Groups closed with Close Group, kept while a tab they held can still
+    /// come back with ⌘⇧T: the first one back brings its group back too,
+    /// named as it was and where it was among the others.
+    private var closedGroups: [UUID: (group: TabGroup, at: Int)] = [:]
+
     struct Ghost: Identifiable, Equatable {
         let id = UUID()
         let url: URL
@@ -2673,8 +2678,11 @@ final class Browser: NSObject, ObservableObject {
         // Already an empty tab in front: that is where Clear leaves you.
         guard !onScreen.isEmpty, !(onScreen.count == 1 && onScreen[0].isBlank) else { return }
         // After the others went, so it can't reuse an empty one among them.
+        // It may still reuse one of yours, in a group: that one is yours to
+        // keep, and only a tab Clear made is taken away again by the undo.
+        let had = Set(tabs.map(\.id))
         newTab()
-        lastClear = (batch, activeID)
+        lastClear = (batch, activeID.flatMap { had.contains($0) ? nil : $0 })
         for tab in onScreen where tab.id != activeID { close(tab) }
     }
 
@@ -2737,6 +2745,9 @@ final class Browser: NSObject, ObservableObject {
         for ghost in members.reversed() {
             let tab = Tab(configuration: Web.configuration(space: spaceID))
             prepare(tab)
+            // No group to put it back in, as reopen(_:) does for a tab from
+            // a closed group (closedGroups): Clear never takes a tab that is
+            // in a group (see clearTabs), so none of these was in one.
             tab.restore(url: ghost.url, title: ghost.title)
             tabs.insert(tab, at: safeInsertionIndex(ghost.index))
             if let was = ghost.was { back[was] = tab }
@@ -2764,10 +2775,19 @@ final class Browser: NSObject, ObservableObject {
         ghosts.removeAll { $0.id == ghost.id }
         let tab = Tab(configuration: Web.configuration(space: spaceID))
         prepare(tab)
+        var regrouped = false
+        if prefs.usesTabGroups, let id = ghost.groupID, !tabGroups.contains(where: { $0.id == id }),
+           let closed = closedGroups.removeValue(forKey: id) {
+            var group = closed.group
+            group.collapsed = false
+            tabGroups.insert(group, at: min(closed.at, tabGroups.count))
+            regrouped = true
+        }
         tab.groupID = prefs.usesTabGroups && tabGroups.contains(where: { $0.id == ghost.groupID })
             ? ghost.groupID : nil
         leaving()
         tabs.insert(tab, at: safeInsertionIndex(ghost.index))
+        if regrouped { arrangeGroupedTabs() }
         activeID = tab.id
         editing = false
         typed = ""
@@ -2790,8 +2810,10 @@ final class Browser: NSObject, ObservableObject {
             guard let batch = ghost.batch else { return total + 1 }
             return steps.insert(batch).inserted ? total + 1 : total
         }
-        guard count > 12, let oldest = ghosts.first else { return }
-        if let batch = oldest.batch { ghosts.removeAll { $0.batch == batch } } else { ghosts.removeFirst() }
+        if count > 12, let oldest = ghosts.first {
+            if let batch = oldest.batch { ghosts.removeAll { $0.batch == batch } } else { ghosts.removeFirst() }
+        }
+        closedGroups = closedGroups.filter { id, _ in ghosts.contains { $0.groupID == id } }
     }
 
     /// Dragged from one place in the row to another.
@@ -2991,6 +3013,21 @@ final class Browser: NSObject, ObservableObject {
         tabGroups.removeAll { $0.id == id }
         arrangeGroupedTabs()
         if editingGroupID == id { editingGroupID = nil }
+        writeSession(now: true)
+    }
+
+    /// Close Group, in a group's menu: the group and every tab in it, each
+    /// closed as ⌘W closes it, so ⌘⇧T brings them back one by one and into
+    /// the group again (see closedGroups). The page on screen goes last, as
+    /// with Clear, so no neighbour wakes only to be closed.
+    func closeTabGroup(_ id: UUID) {
+        guard let at = tabGroups.firstIndex(where: { $0.id == id }) else { return }
+        closedGroups[id] = (tabGroups[at], at)
+        let going = tabs.filter { $0.groupID == id }
+        for tab in going where !visibleTabIDs.contains(tab.id) { close(tab) }
+        for tab in going where visibleTabIDs.contains(tab.id) { close(tab) }
+        // The group goes with its last tab; an empty one goes here.
+        if tabGroups.contains(where: { $0.id == id }) { removeTabGroup(id) }
         writeSession(now: true)
     }
 
