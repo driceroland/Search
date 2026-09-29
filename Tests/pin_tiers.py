@@ -20,6 +20,7 @@ import split_view as sv  # noqa: E402
 sv.W = "pin-tiers"
 sv.SUPPORT = f"{sv.HOME}/Library/Application Support/Search ({sv.W})"
 sv.SUITE = f"com.officecommun.search.test.{sv.W}"
+sv.SOCK = f"{sv.SUPPORT}/bench.sock"
 
 t = sv.T()
 def by_url(st): return {x["id"]: x["url"].rsplit("/", 1)[-1] for x in st["tabs"]}
@@ -74,6 +75,18 @@ try:
     # Clear: the loose tabs go, the pins and a group stay, an empty tab in front.
     g = sv.page("g"); sv.sp("group", id=g)
     ids = {v: k for k, v in by_url(sv.sp("state")).items()}
+    sv.sp("select", id=ids["e"]); st = sv.sp("state")
+    before = [by_url(st)[x["id"]] for x in st["tabs"] if not x["blank"]]
+    sv.sp("clear"); time.sleep(0.5); st = sv.sp("state")
+    t.ok("Clear: ⇧⌘T's menu item says what it brings back", st["reopenTitle"] == "Reopen 2 Cleared Tabs", st["reopenTitle"])
+    # One ⇧⌘T undoes all of it: the same row, the same tab in front.
+    sv.sp("reopen"); time.sleep(0.5); st = sv.sp("state")
+    after = [by_url(st)[x["id"]] for x in st["tabs"] if not x["blank"]]
+    t.ok("undo: one ⇧⌘T brings every cleared tab back, each in its place", after == before, (after, before))
+    t.ok("undo: the tab you were on is in front again", by_url(st)[st["activeID"]] == "e", by_url(st)[st["activeID"]])
+    t.ok("undo: the empty tab Clear left is gone", not any(x["blank"] for x in st["tabs"]), st["tabs"])
+    t.ok("undo: nothing left to reopen", st["ghosts"] == 0 and st["reopenTitle"] == "Reopen Closed Tab", (st["ghosts"], st["reopenTitle"]))
+    ids = {v: k for k, v in by_url(st).items()}
     sv.sp("select", id=ids["e"]); sv.sp("clear"); time.sleep(0.5); st = sv.sp("state")
     t.ok("Clear: the loose tabs are gone", loose(st) == ["g"], loose(st))
     t.ok("Clear: the pins stay, squares and rows", pins(st) == ["a", "b", "d"] and rows(st) == ["d"], (pins(st), rows(st)))
@@ -81,6 +94,16 @@ try:
     t.ok("Clear: an empty tab in front", front and front[0]["blank"], front)
     sv.sp("select", id=ids["a"]); sv.page("h"); sv.sp("select", id=ids["a"]); sv.sp("clear"); st = sv.sp("state")
     t.ok("Clear from a pin: the pin stays in front", st["activeID"] == ids["a"] and loose(st) == ["g"], (st["activeID"], loose(st)))
+    # An empty tab of yours, in a group, is the one Clear's new tab reuses:
+    # the undo leaves it where it is.
+    gid = st["groupIDs"][[x["id"] for x in st["tabs"]].index(ids["g"])]
+    sv.sp("newTab"); blank = sv.sp("state")["activeID"]; sv.sp("group", id=blank, group=gid)
+    sv.sp("select", id=ids["a"]); k = sv.page("k"); sv.sp("clear"); time.sleep(0.5)
+    t.ok("Clear reuses your empty tab in a group", sv.sp("state")["activeID"] == blank)
+    sv.sp("reopen"); time.sleep(0.5); st = sv.sp("state")
+    kept = [(x["id"], st["groupIDs"][i]) for i, x in enumerate(st["tabs"]) if x["blank"]]
+    t.ok("undo: your empty tab in a group stays", kept == [(blank, gid)], kept)
+    t.ok("undo: and the cleared tab is back in front", by_url(st)[st["activeID"]] == "k", by_url(st).get(st["activeID"]))
 
     # Off: the rows are drawn as squares, and a pin carried across the
     # hidden line becomes the kind it landed among.
@@ -98,6 +121,21 @@ try:
     pin(ids["a"], listed=True); st = sv.sp("state")
     sv.sp("move", id=ids["a"], to=0); st = sv.sp("state")
     t.ok("across the top: a row carried among the squares becomes one", pins(st)[0] == "a" and rows(st) == [], (pins(st), rows(st)))
+
+    # More than the twelve closed tabs ⇧⌘T keeps, a pair among them, cleared
+    # from a pin: all of it comes back as one step, the pair a pair again.
+    st = relaunch(splitView=True)
+    ids = {v: k for k, v in by_url(st).items()}
+    many = [sv.page(f"m{i}") for i in range(12)]
+    x = sv.page("x"); y = sv.page("y"); sv.sp("pair", id=y, **{"with": x}, side="right")
+    sv.sp("select", id=ids["b"]); before = loose(sv.sp("state"))
+    sv.sp("clear"); time.sleep(0.5); st = sv.sp("state")
+    t.ok("Clear of 14: the menu item counts them all", st["reopenTitle"] == f"Reopen {len(before) - 1} Cleared Tabs", (st["reopenTitle"], before))
+    sv.sp("reopen"); time.sleep(0.5); st = sv.sp("state")
+    t.ok("undo of 14: every one of them back, in order", loose(st) == before, (loose(st), before))
+    t.ok("undo of 14: the pin you were on stays in front", st["activeID"] == ids["b"], st["activeID"])
+    back = by_url(st)
+    t.ok("undo of 14: the pair is a pair again", [[back[i] for i in p["tabs"]] for p in st["splits"]] == [["x", "y"]], st["splits"])
 finally:
     t.done(); sv.finish()
 sys.exit(1 if t.failed else 0)

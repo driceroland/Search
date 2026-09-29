@@ -52,7 +52,7 @@ struct SearchApp: App {
                     .shortcut("file.newTab")
                 Button("New Private Tab") { browser.newShyTab() }
                     .shortcut("file.newPrivateTab")
-                Button("Reopen Closed Tab") { browser.reopen() }
+                Button(browser.reopenTitle) { browser.reopen() }
                     .shortcut("file.reopen")
                     .disabled(browser.ghosts.isEmpty && Browsers.lastClosedAt == nil)
                 Divider()
@@ -525,7 +525,10 @@ struct ContentView: View {
     /// own whenever a tab has nowhere to be yet.
     @ViewBuilder
     private var field: some View {
-        if browser.fieldShowing, browser.activeSplit == nil {
+        // SplitStage owns the field whenever Split View is enabled, including
+        // an ordinary tab that is not currently paired. Drawing it here too
+        // leaves two offset address fields on a blank tab.
+        if browser.fieldShowing, !browser.prefs.splitView {
             Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
