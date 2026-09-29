@@ -1453,8 +1453,8 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 
 /// A web view that reads the two-finger swipe for itself.
 final class PageView: WKWebView {
-/// The page's own right-click menu. WebKit supplies extension page actions;
-/// `WKWebExtensionContext.menuItems(for:)` is for a tab's menu, not this one.
+    /// The page's own right-click menu. WebKit puts extensions' items for the
+    /// page in it itself; Search adding them again showed each one twice.
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         // WebKit names it for a window, but a new window's page arrives here

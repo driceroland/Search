@@ -1167,7 +1167,6 @@ final class Extensions: NSObject, ObservableObject {
         }
         return false
     }
-
 }
 
 // MARK: - WebKit asks, the browser answers
