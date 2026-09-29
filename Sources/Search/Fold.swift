@@ -364,12 +364,22 @@ struct Fold: View {
         guard let bar = titlebar(of: window), let container = bar.superview else { return }
         bar.layer?.removeAnimation(forKey: "fold")
         for view in container.subviews where view.isHidden != column { view.isHidden = column }
-        // The window macOS keeps the title bar in casts a shadow of its own
-        // along the bar's bottom edge, a line across the page with nothing
-        // above it.
-        if let holder = container.window, holder !== window, holder.hasShadow == column {
-            holder.hasShadow = !column
+        // The window macOS brings the title bar down in, with the menu bar,
+        // draws a shadow of its own under it: a picture of one, 16 points
+        // deep, faded in with the menu bar and across the page with nothing
+        // above it. It goes with the rest.
+        if let holder = fullScreenBar(of: window), let content = holder.contentView, content.isHidden != column {
+            content.isHidden = column
         }
+    }
+
+    /// The window of macOS's own that a full-screen window's title bar comes
+    /// down in. It has no public name; it is the one of that class that is
+    /// the full-screen window's, or failing that the one on its screen.
+    static func fullScreenBar(of window: NSWindow) -> NSWindow? {
+        let bars = NSApp.windows.filter { $0 !== window && $0.className == "NSToolbarFullScreenWindow" }
+        return bars.first { $0.parent === window || window.childWindows?.contains($0) == true }
+            ?? bars.first { $0.screen === window.screen && $0.frame.minX == window.frame.minX }
     }
 
     /// Out of full screen, all of the title bar back, and the buttons the
@@ -377,6 +387,7 @@ struct Fold: View {
     static func windowed(_ window: NSWindow, lightsHidden: Bool) {
         guard let bar = titlebar(of: window), let container = bar.superview else { return }
         for view in container.subviews where view !== bar { view.isHidden = false }
+        fullScreenBar(of: window)?.contentView?.isHidden = false
         reset(bar, hidden: lightsHidden)
     }
 

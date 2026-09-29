@@ -133,9 +133,9 @@ extension Lights {
 /// Full screen takes a window's own buttons into a bar of macOS's that comes
 /// down only with the menu bar, so the column's corner stood empty and the
 /// lights were nowhere until the pointer went up for them. These are fresh
-/// buttons of the system's own make, so they look and answer the pointer as
-/// the real ones do, set where the real ones sit out of full screen. The real
-/// ones are hidden meanwhile (see Fold.hideLights), or both came down at once.
+/// buttons of the system's own make, so they look as the real ones do, glyphs
+/// and all, set where the real ones sit out of full screen. The real ones are
+/// hidden meanwhile (see Fold.fullScreen), or both came down at once.
 struct FullScreenLights: NSViewRepresentable {
     func makeNSView(context: Context) -> Row { Row() }
     func updateNSView(_ row: Row, context: Context) {}
@@ -177,9 +177,18 @@ struct FullScreenLights: NSViewRepresentable {
         override func mouseEntered(with event: NSEvent) { hover(true) }
         override func mouseExited(with event: NSEvent) { hover(false) }
 
+        /// The buttons ask `_mouseInGroup:` only when their state changes: told
+        /// to redraw, they drew the same again, and the glyphs came only with
+        /// a click. So each is switched off and on again, which is a change of
+        /// state that changes nothing. Found with the buttons in a window of
+        /// their own, 29 Sep 2026.
         private func hover(_ on: Bool) {
             hovering = on
-            for button in buttons { button.needsDisplay = true }
+            for button in buttons {
+                let enabled = button.isEnabled
+                button.isEnabled = !enabled
+                button.isEnabled = enabled
+            }
         }
 
         /// Asked by each button of the row it sits in: the pointer over any
