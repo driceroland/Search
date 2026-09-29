@@ -107,6 +107,7 @@ struct GroupHeading: View {
             Button(group.collapsed ? "Expand Group" : "Collapse Group") { browser.toggleTabGroup(group.id) }
             Divider()
             Button("Ungroup Tabs") { browser.removeTabGroup(group.id) }
+            Button("Close Group") { browser.closeTabGroup(group.id) }
         }
     }
 
