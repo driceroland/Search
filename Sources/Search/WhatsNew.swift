@@ -40,6 +40,8 @@ enum WhatsNew {
                since: "1.0.5", get: { $0.searchesSites }, set: { $0.searchesSites = $1 }),
         Toggle(title: "Start with a fresh window", detail: "Your pinned tabs, and none of last time's others.",
                since: "1.0.5", get: { $0.startsFresh }, set: { $0.startsFresh = $1 }),
+        Toggle(title: "Pins in every space", detail: "Right-click a pin and choose Keep in Every Space.",
+               since: "1.0.5", get: { $0.sharesPins }, set: { $0.sharesPins = $1 }),
 
         Toggle(title: "Tab groups", detail: "Named sections of tabs. Right-click a tab to start one.",
                since: "1.0.4", get: { $0.usesTabGroups }, set: { $0.usesTabGroups = $1 }),

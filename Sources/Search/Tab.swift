@@ -518,6 +518,9 @@ final class Tab: ObservableObject, Identifiable {
     var home: URL?
     /// For a pin, which of the pins it is, in every window (see Pins.swift).
     var pinID: UUID?
+    /// For a pin, one every space shows (see Pins.shared). Set when the row
+    /// is built; pins.json, not the session, says which pins these are.
+    var everywhere = false
     /// For a pin, kept as a row under the squares rather than as a square:
     /// Arc's pinned list, below its favourites. Still a pin in every other
     /// way: put down by ⌘W, the same in every window, never in a group.
