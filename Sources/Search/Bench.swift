@@ -2878,8 +2878,11 @@ final class Bench {
             "shy": tab.shy,
             "noisy": tab.noisy,
             "muted": tab.muted,
-            // Darkened by Search, as the page last said (see Dusk.swift).
+            // Darkened by Search, as the page last said, and what the page
+            // was seen to be: dark by itself, light, or not looked at (see
+            // Dusk.swift).
             "dusked": tab.dusked,
+            "duskNative": tab.duskNative.map { $0 ? "dark" : "light" } ?? "",
             "extensions": { if #available(macOS 15.4, *) { return tab.carriesExtensions } else { return false } }(),
             // The page's WebKit process, for measuring what it holds.
             "process": tab.built.flatMap { $0.value(forKey: "_webProcessIdentifier") as? Int } ?? 0,

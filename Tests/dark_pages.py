@@ -53,6 +53,7 @@ t = sv.T()
 
 def tab(id): return next(x for x in sv.cmd({"do": "tabs"})["tabs"] if x["id"] == id)
 def dusked(id): return tab(id)["dusked"]
+def seen(id): return tab(id)["duskNative"]
 def state(id): return sv.cmd({"do": "eval", "id": id, "js": "window.__officeDusk ? window.__officeDusk.state() : null", "world": "search"}).get("value")
 def open_(url, **f):
     id = sv.cmd({"do": "open", "url": url, **f})["id"]
@@ -74,17 +75,24 @@ def shot(id, name):
 
 
 try:
-    # Nothing set but the look: the setting is on unless turned off.
+    # Nothing set but the look: the setting is off unless turned on.
     sv.setup()
     subprocess.run(["defaults", "write", sv.SUITE, "look", "-string", "dark"])
     sv.launch()
     if SHOTS: Path(SHOTS).mkdir(parents=True, exist_ok=True)
 
+    first = open_(LIGHT)
+    t.ok("off by default: a light page gets nothing at all", state(first) is None and not dusked(first), state(first))
+    ui(dusk=True)
+    t.ok("turned on: the light page up is looked at, and darkened without a reload", dusked(first), (seen(first), state(first)))
+
     light = open_(LIGHT)
     dark = open_(DARK)
-    t.ok("on by default: a light site is darkened", dusked(light), state(light))
-    t.ok("a site dark by itself is left alone", not dusked(dark), state(dark))
-    t.ok("…because it measured dark, not because nothing ran", (state(dark) or {}).get("native") is True, state(dark))
+    t.ok("a light site is darkened", dusked(light), state(light))
+    t.ok("…from its first frame, now that it is known light", (state(light) or {}).get("native") is False, state(light))
+    t.ok("a site dark by itself is left alone", not dusked(dark), seen(dark))
+    t.ok("…seen to be dark, from outside it", seen(dark) == "dark", seen(dark))
+    t.ok("…with no script, observer or sheet of ours in it", state(dark) is None, state(dark))
     shot(light, "light-darkened"); shot(dark, "dark-left-alone")
 
     sv.cmd({"do": "select", "id": light}); time.sleep(0.4)
@@ -108,8 +116,11 @@ try:
 
     ui(look="light")
     t.ok("a light frame darkens nothing", not dusked(light), state(light))
+    plain = open_(LIGHT)
+    t.ok("…and a page opened in it gets nothing at all", state(plain) is None, state(plain))
     ui(look="dark")
     t.ok("dark again: darkened again", dusked(light), state(light))
+    t.ok("…the page opened while light too, looked at and darkened", dusked(plain), (seen(plain), state(plain)))
 
     ui(dusk=False)
     t.ok("turned off in Settings: let go at once", not dusked(light), state(light))

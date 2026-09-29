@@ -1872,6 +1872,9 @@ final class Browser: NSObject, ObservableObject {
 
     private func relook() {
         Favicons.shared.relook(tabs.filter { !$0.asleep })
+        // Dark pages are only ever put into a page while Search is dark: a
+        // change of look takes them in, or lets them go.
+        redusk()
     }
 
     func writeSession(now: Bool = false) {
@@ -3958,7 +3961,7 @@ final class Browser: NSObject, ObservableObject {
     func dusk(_ on: Bool, _ tab: Tab) {
         guard let host = Dusk.host(of: tab.pageAddress) else { return }
         if tab.shy {
-            tab.built?.evaluateInSearch("window.__officeDusk && window.__officeDusk.force(\(on))")
+            tab.built?.evaluateInSearch(Dusk.shared.forced(for: host, on))
         } else {
             Dusk.shared.choose(on, for: host, native: tab.duskNative)
         }
@@ -3973,12 +3976,34 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// The darkening as it now stands, into every tab's next page and the
-    /// page each is showing.
+    /// page each is showing: taken over, let go, or, for a site not known
+    /// yet, looked at.
     private func redusk() {
-        let update = Dusk.shared.update
         for tab in tabs + parkedTabs {
             tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
-            tab.built?.evaluateInSearch(update)
+            guard let web = tab.built else { continue }
+            let host = Dusk.host(of: tab.pageAddress)
+            if Dusk.shared.unsure(host) { duskLook(tab) } else { web.evaluateInSearch(Dusk.shared.update(for: host)) }
+        }
+    }
+
+    /// A page on a site not known to be light, looked at from outside as it
+    /// is drawn (see Dusk.look). Light, and it is darkened now, and every
+    /// page of the site after it from its first frame; dark, and it is left
+    /// with nothing in it.
+    func duskLook(_ tab: Tab) {
+        guard let web = tab.built, let url = web.url, let host = Dusk.host(of: url),
+              Dusk.shared.unsure(host), !tab.dusked else { return }
+        Dusk.look(at: web) { [weak self, weak tab] dark in
+            MainActor.assumeIsolated {
+                guard let self, let tab, let dark, tab.built === web, web.url == url, Dusk.shared.unsure(host) else { return }
+                tab.duskNative = dark
+                // A private tab remembers nothing, not even this.
+                if !tab.shy { Dusk.shared.saw(host, dark: dark) }
+                guard !dark, let script = Dusk.shared.script(for: host, light: true) else { return }
+                web.evaluateInSearch(script)
+                tab.arm(hiding: self.curtain.css(on: self.curtain.host(of: tab.address)))
+            }
         }
     }
 
@@ -4115,7 +4140,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // decided here because here is the last moment before it loads.
         if action.targetFrame?.isMainFrame ?? true, let tab = tab(for: webView) {
             let host = curtain.host(of: url)
-            tab.arm(hiding: curtain.css(on: host))
+            tab.arm(hiding: curtain.css(on: host), to: url)
             // And the blocker, on or off for where it is going.
             Shield.shared.tune(webView.configuration.userContentController, for: host)
             // The frames that were told about the last page's darkening go
@@ -4663,6 +4688,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, renderingProgressDidChange events: UInt) {
         guard events & PageView.firstFrame != 0 else { return }
         (webView as? PageView)?.showFirstFrame()
+        // Dark pages: a page's first frame is what it looks like.
+        if let tab = tab(for: webView) { duskLook(tab) }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -4671,6 +4698,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         (webView as? PageView)?.showFirstFrame()
         guard let tab = anyTab(for: webView), let url = tab.address else { return }
         tab.uncover()
+        // And again once it has all come in, for a page that drew its look
+        // late, or never had a first frame to say so.
+        duskLook(tab)
         // The find bar still open over a page that has just come in: look
         // for the same words on it.
         if tab.id == activeID, finding, findSpec == nil,

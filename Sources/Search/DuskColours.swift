@@ -142,7 +142,6 @@ enum DuskColours {
       // A list of rules, twinned, with every group they sit in kept around
       // them: a twin must match only where its original does, and in a
       // cascade layer it must lose and win where its original would.
-      var imports = [];
       var rules = function (list, base) {
         var out = '';
         for (var i = 0; i < list.length; i++) {
@@ -158,8 +157,8 @@ enum DuskColours {
               inner = rules(from, r.href);
               var media = r.media && r.media.mediaText;
               if (inner) out += media && media !== 'all' ? '@media ' + media + '{' + inner + '}' : inner;
-            } else if (r.href) {
-              imports.push(new URL(r.href, base || location.href).href);
+            } else {
+              unreadable = true;
             }
           } else if (r instanceof CSSMediaRule) {
             inner = rules(r.cssRules, base);
@@ -183,10 +182,11 @@ enum DuskColours {
 
       // Each of the page's sheets has a twin sheet of its own, kept in the
       // same order after all of them, so one that changes is twinned again
-      // alone. A sheet from another site can't be read from here; the same
-      // address is asked for again with CORS, which the CDNs sites use
-      // answer, and parsed apart from the page.
-      var twins = new Map(), fetched = {}, asked = {};
+      // alone. A sheet from another site can't be read from here, and it
+      // isn't asked for again: that would be a request the page never
+      // made. What such a sheet colours is read off the elements it lands on
+      // instead (see paint).
+      var twins = new Map();
       var ground = new CSSStyleSheet(), marks = new CSSStyleSheet();
       ground.disabled = marks.disabled = true;
       // While our sheets come and go under the page (to measure it, or to
@@ -205,48 +205,10 @@ enum DuskColours {
         settle();
         still.disabled = true;
       };
-      var started = false, showing = false, readyAt = 0, startedAt = 0;
-      var spent = 0, waiting = 0, onReady = null;
-
-      var fetchSheet = function (href) {
-        if (asked[href]) return;
-        asked[href] = true;
-        waiting++;
-        fetch(href, { mode: 'cors', credentials: 'omit' })
-          .then(function (res) { return res.ok ? res.text() : ''; })
-          .then(function (text) {
-            var parsed = new CSSStyleSheet();
-            // replaceSync takes no @import: each is asked for on its own.
-            var found = [];
-            parsed.replaceSync(text.replace(/@import\s+(?:url\()?\s*["']?([^"')\s;]+)["']?\s*\)?[^;]*;/gi, function (_, url) {
-              found.push(new URL(url, href).href);
-              return '';
-            }));
-            imports = [];
-            var t = performance.now();
-            var body = rules(parsed.cssRules, href);
-            spent += performance.now() - t;
-            var all = found.concat(imports);
-            fetched[href] = { imports: all, text: body };
-            all.forEach(fetchSheet);
-          })
-          .catch(function () { fetched[href] = { imports: [], text: '' }; })
-          .then(function () { waiting--; refresh(); });
-      };
-
-      // The twin text of a sheet from elsewhere, with what it imports
-      // before it; null while any of it is still on its way.
-      var textOf = function (href) {
-        var got = fetched[href];
-        if (!got) { fetchSheet(href); return null; }
-        var out = '';
-        for (var i = 0; i < got.imports.length; i++) {
-          var part = textOf(got.imports[i]);
-          if (part === null) return null;
-          out += part;
-        }
-        return out + got.text;
-      };
+      var started = false, showing = false, readyAt = 0, spent = 0, onReady = null, unreadable = false;
+      // Where the time goes, for the bench: twinning sheets, painting what
+      // they can't reach, and marking what the markup colours.
+      var took = { twins: 0, paint: 0, paints: 0, markups: 0, refreshes: 0, paintRead: 0, paintWrite: 0, painted: 0 };
 
       var mine = new Set([ground, marks, still].concat(others));
       // The document, and every open shadow root in it. A shadow root's
@@ -270,24 +232,13 @@ enum DuskColours {
         }
         var list = null;
         try { list = s.cssRules; } catch (e) {}
-        var text;
-        if (list) {
-          if (list.length === t.count) return t;
-          t.count = list.length;
-          imports = [];
-          var start = performance.now();
-          text = rules(list, s.href);
-          spent += performance.now() - start;
-          for (var i = imports.length - 1; i >= 0; i--) {
-            var part = textOf(imports[i]);
-            if (part !== null) text = part + text;
-          }
-        } else if (s.href) {
-          text = textOf(s.href);
-          if (text === null) return t;
-        } else {
-          text = '';
-        }
+        if (!list) { unreadable = true; return t; }
+        if (list.length === t.count) return t;
+        t.count = list.length;
+        var start = performance.now();
+        var text = rules(list, s.href);
+        spent += performance.now() - start;
+        took.twins += performance.now() - start;
         var media = s.media && s.media.mediaText;
         if (text && media && media !== 'all') text = '@media ' + media + '{' + text + '}';
         if (text !== t.text) {
@@ -302,6 +253,21 @@ enum DuskColours {
       // is matched by the attribute holding it, at no specificity at all, so
       // any rule of the page's (and its twin) still wins over it, as the
       // attribute itself always lost to them.
+      var PAINT = 'data-office-dusk-paint';
+      var sides = [['backgroundColor', 'background-color', BG, null, 'bg'], ['color', 'color', FG, null, 'fg'],
+                   ['borderTopColor', 'border-top-color', LINE, 'borderTopWidth', 'bt'],
+                   ['borderRightColor', 'border-right-color', LINE, 'borderRightWidth', 'br'],
+                   ['borderBottomColor', 'border-bottom-color', LINE, 'borderBottomWidth', 'bb'],
+                   ['borderLeftColor', 'border-left-color', LINE, 'borderLeftWidth', 'bl'],
+                   ['fill', 'fill', FG, null, 'fill'], ['stroke', 'stroke', FG, null, 'stroke']];
+      var base = ':root { color-scheme: dark !important; }'
+        + '[data-office-dusk-over] { --office-dusk-keep: 1; }'
+        + 'img[data-office-dusk-icon] { filter: invert(1) hue-rotate(180deg) !important; }'
+        // What paint finds, one rule a part, written once: the colour itself
+        // sits on the element (see paint).
+        + sides.map(function (side) {
+          return '[' + PAINT + '~="' + side[4] + '"]{' + side[1] + ':var(--office-dusk-' + side[4] + ') !important}';
+        }).join('');
       var given = {};
       var legacy = [['bgcolor', 'background-color', BG], ['text', 'color', FG], ['color', 'color', FG],
                     ['fill', 'fill', FG], ['stroke', 'stroke', FG]];
@@ -314,32 +280,116 @@ enum DuskColours {
           v = v.trim();
           var key = l[0] + '=' + v;
           if (given[key] || leave.test(v) || v.indexOf('url(') >= 0) return;
-          given[key] = true;
           var colour = hex.test(v) ? '#' + v : v;
-          var sel = ':where([' + l[0] + '="' + v.replace(/["\\]/g, '\\$&') + '"])';
-          try { ground.insertRule(sel + '{' + l[1] + ':' + l[2](colour) + '}', ground.cssRules.length); } catch (e) {}
+          var match = '[' + l[0] + '="' + v.replace(/["\\]/g, '\\$&') + '"]';
+          given[key] = { match: match, rule: ':where(' + match + '){' + l[1] + ':' + l[2](colour) + '}' };
+          try { ground.insertRule(given[key].rule, ground.cssRules.length); } catch (e) {}
         });
       };
 
-      // A style attribute's colours: the element is marked with the twin's
-      // number, and the twin is a rule for that mark. Elements with the same
-      // colours share one.
-      var numbered = {}, count = 0, MARK = 'data-office-dusk-style';
-      var markStyle = function (el) {
-        var decls = el.style && el.style.length ? twin(el.style, true) : '';
-        if (!decls) { if (el.hasAttribute(MARK)) el.removeAttribute(MARK); return; }
-        var n = numbered[decls];
-        if (!n) {
-          n = numbered[decls] = String(++count);
-          marks.insertRule('[' + MARK + '="' + n + '"]{' + decls + '}', marks.cssRules.length);
-        }
-        if (el.getAttribute(MARK) !== n) el.setAttribute(MARK, n);
+      // Colours set on one element rather than by a rule: the element is
+      // marked with the twin's number, and the twin is a rule for that
+      // mark. Elements with the same colours share one.
+      var marker = function (attr, sheet) {
+        var numbered = {}, count = 0;
+        var put = function (el, decls) {
+          if (!decls) { if (el.hasAttribute(attr)) el.removeAttribute(attr); return; }
+          var n = numbered[decls];
+          if (!n) {
+            n = numbered[decls] = String(++count);
+            sheet.insertRule('[' + attr + '="' + n + '"]{' + decls + '}', sheet.cssRules.length);
+          }
+          if (el.getAttribute(attr) !== n) el.setAttribute(attr, n);
+        };
+        // Only the numbers some element still carries, in any root.
+        var prune = function () {
+          var text = '';
+          Object.keys(numbered).forEach(function (decls) {
+            var sel = '[' + attr + '="' + numbered[decls] + '"]';
+            if (anywhere(sel)) text += sel + '{' + decls + '}';
+            else delete numbered[decls];
+          });
+          sheet.replaceSync(text);
+        };
+        return { put: put, prune: prune, count: function () { return Object.keys(numbered).length; } };
       };
+      var anywhere = function (sel) { return roots.some(function (r) { return !!r.querySelector(sel); }); };
+
+      // A style attribute's colours.
+      var styled = marker('data-office-dusk-style', marks);
+      var markStyle = function (el) {
+        styled.put(el, el.style && el.style.length ? twin(el.style, true) : '');
+      };
+
+      // What a sheet that can't be read colours, read off the elements it
+      // lands on: each one's computed ground, writing and lines that no twin
+      // has taken (a twin's colour computes to oklch), taken to dark. Read
+      // for every element first and written after, so the page's style is
+      // worked out once. Only on a page with such a sheet. Writing an element
+      // only inherits isn't its own, and is left to its parent's.
+      //
+      // The dark colour goes on the element itself, as a custom property,
+      // and one of the rules above (a rule a part, written once) puts it to
+      // use. A rule per colour would change our sheet with every colour
+      // found, and a changed sheet has the whole page's style worked out
+      // again: 180 ms a time on a news front page.
+      var untwinned = function (v) {
+        return v && v.indexOf('oklch(') !== 0 && v !== 'transparent' && v !== 'none' && !/^rgba\(.*,\s*0\)$/.test(v) && !/^url\(/.test(v);
+      };
+      var paint = function (tops) {
+        if (!unreadable) return;
+        var t = performance.now();
+        var all = [];
+        tops.forEach(function (top) {
+          if (!top || top.nodeType !== 1 && top.nodeType !== 11) return;
+          // Inside another of the batch, it is read with that one.
+          if (tops.some(function (other) { return other !== top && other.contains && other.contains(top); })) return;
+          if (top.nodeType === 1) all.push(top);
+          all.push.apply(all, top.querySelectorAll('*'));
+        });
+        var found = [];
+        for (var i = 0; i < all.length; i++) {
+          var el = all[i];
+          if (skip[el.tagName] || el.hasAttribute('data-office-dusk-style')) continue;
+          var cs = getComputedStyle(el), parent = el.parentElement ? getComputedStyle(el.parentElement) : null, parts = [];
+          // fill and stroke are an SVG's: an HTML element reports the black
+          // they start as, which is no colour of its own.
+          var svg = el instanceof SVGElement;
+          for (var j = 0; j < sides.length; j++) {
+            var side = sides[j];
+            if (side[3] && parseFloat(cs[side[3]]) === 0) continue;
+            if ((side[0] === 'fill' || side[0] === 'stroke') && !svg) continue;
+            var v = cs[side[0]];
+            // Inherited, it is the parent's to change.
+            if ((side[0] === 'color' || side[0] === 'fill' || side[0] === 'stroke') && parent && parent[side[0]] === v) continue;
+            if (untwinned(v)) parts.push([side[4], side[2](v)]);
+          }
+          if (parts.length) found.push([el, parts]);
+        }
+        var w = performance.now();
+        took.paintRead += w - t;
+        found.forEach(function (f) {
+          var keys = (f[0].getAttribute(PAINT) || '').split(' ').filter(Boolean);
+          f[1].forEach(function (part) {
+            f[0].style.setProperty('--office-dusk-' + part[0], part[1]);
+            if (keys.indexOf(part[0]) < 0) keys.push(part[0]);
+          });
+          f[0].setAttribute(PAINT, keys.join(' '));
+        });
+        took.paintWrite += performance.now() - w;
+        took.painted += found.length;
+        spent += performance.now() - t;
+        took.paint += performance.now() - t;
+        took.paints++;
+      };
+      var skip = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, HEAD: 1, LINK: 1, META: 1, TITLE: 1, BR: 1 };
+
       // A logo or an icon drawn dark on nothing: invisible on a dark ground.
       // Small pictures are looked at, drawn into a few pixels: mostly clear,
-      // and what isn't clear dark, it is turned over. From another site, a
-      // picture is asked for again with CORS, since one drawn from there
-      // can't be read. Kept by address, so each is looked at once.
+      // and what isn't clear dark, it is turned over. Only what the page can
+      // read already: a picture from another site can't be drawn and read,
+      // and isn't asked for again. Kept by address, so each is looked at
+      // once.
       var ICON = 'data-office-dusk-icon', verdicts = {}, lens = doc.createElement('canvas').getContext('2d', { willReadFrequently: true });
       var judge = function (source, w, h) {
         var cw = Math.max(1, Math.min(48, Math.round(w))), ch = Math.max(1, Math.min(48, Math.round(h)));
@@ -354,37 +404,26 @@ enum DuskColours {
         }
         return clear >= (clear + seen) * 0.3 && seen > 0 && dark >= seen * 0.6;
       };
-      var turnIcon = function (img, dark) { if (dark && !img.closest('[data-office-dusk-over]')) img.setAttribute(ICON, ''); };
+      // Logos and icons come as SVG, PNG or GIF; a photo as JPEG, WebP or
+      // AVIF, and decoding one to look at it is most of what this costs on
+      // a page of thumbnails.
+      var drawn = /(\.(svg|png|gif)([?#]|$))|^data:image\/(svg|png|gif)/i;
       var lookAt = function (img) {
         if (img.hasAttribute(ICON)) return;
         var src = img.currentSrc || img.src;
-        if (!src || /\.jpe?g(\?|$)/i.test(src)) return;
+        if (!src || !drawn.test(src)) return;
         if (!img.complete || !img.naturalWidth) return;
         var w = img.width, h = img.height;
         if (w * h > 400 * 200 || w < 8 || h < 8) return;
-        if (src in verdicts) {
-          if (verdicts[src] === null) return;
-          if (verdicts[src] !== 'pending') turnIcon(img, verdicts[src]);
-          return;
+        if (!(src in verdicts)) {
+          try { verdicts[src] = judge(img, w, h); } catch (e) { verdicts[src] = false; }
         }
-        try { verdicts[src] = judge(img, w, h); turnIcon(img, verdicts[src]); return; } catch (e) {}
-        // Drawn from another site: asked for again, where it allows it.
-        verdicts[src] = 'pending';
-        fetch(src, { mode: 'cors', credentials: 'omit' }).then(function (r) { return r.ok ? r.blob() : null; }).then(function (blob) {
-          if (!blob) { verdicts[src] = null; return; }
-          var copy = new Image(), url = URL.createObjectURL(blob);
-          copy.onload = function () {
-            try { verdicts[src] = judge(copy, w, h); } catch (e) { verdicts[src] = null; }
-            URL.revokeObjectURL(url);
-            if (verdicts[src]) doc.querySelectorAll('img').forEach(function (i) { if ((i.currentSrc || i.src) === src) turnIcon(i, true); });
-          };
-          copy.onerror = function () { verdicts[src] = null; URL.revokeObjectURL(url); };
-          copy.src = url;
-        }).catch(function () { verdicts[src] = null; });
+        if (verdicts[src] && !img.closest('[data-office-dusk-over]')) img.setAttribute(ICON, '');
       };
 
       var markups = function (top) {
         if (!top || top.nodeType !== 1 && top.nodeType !== 11) return;
+        var t = performance.now();
         if (top.nodeType === 1) {
           if (top.tagName === 'IMG') lookAt(top);
           if (top.hasAttribute('style')) markStyle(top);
@@ -393,16 +432,15 @@ enum DuskColours {
         top.querySelectorAll('img').forEach(lookAt);
         top.querySelectorAll('[style]').forEach(markStyle);
         top.querySelectorAll(legacyFind).forEach(noteLegacy);
+        took.markups += performance.now() - t;
       };
 
       // The page's scheme dark: its default colours, its form controls and
       // its scrollbars, which no rule of its own ever names.
-      ground.replaceSync(':root { color-scheme: dark !important; }'
-        + '[data-office-dusk-over] { --office-dusk-keep: 1; }'
-        + 'img[' + ICON + '] { filter: invert(1) hue-rotate(180deg) !important; }');
+      ground.replaceSync(base);
 
       // Ours after all of the page's, in the page's order: the ground first,
-      // then each sheet's twin, then the style attributes'.
+      // then each sheet's twin, then the elements' own.
       var place = function (root) {
         var theirs = root.adoptedStyleSheets.filter(function (s) { return !mine.has(s) || others.indexOf(s) >= 0; });
         var ordered = [ground];
@@ -413,8 +451,7 @@ enum DuskColours {
       };
 
       // A shadow root is made without a mutation to say so: looked for in
-      // what is added, and swept for once a second while the page is
-      // darkened, inside the ones already found too.
+      // what is added, and swept for while the page is watched.
       var shadows = function (top) {
         if (!top || !top.querySelectorAll) return;
         if (top.shadowRoot && !rooted.has(top.shadowRoot)) adopt(top.shadowRoot);
@@ -427,13 +464,14 @@ enum DuskColours {
       var adopt = function (sr) {
         rooted.add(sr);
         roots.push(sr);
-        watch(sr);
+        if (awake) watch(sr);
         markups(sr);
         shadows(sr);
       };
 
       var refresh = function () {
         if (!started) return;
+        took.refreshes++;
         var t = performance.now();
         // A root whose host has left the page goes with it.
         roots = roots.filter(function (r) { return r === doc || r.host.isConnected; });
@@ -442,65 +480,151 @@ enum DuskColours {
           place(root);
         });
         spent += performance.now() - t;
-        // Ready when nothing is on its way, or once it has been long enough
-        // to show what there is: the rest comes in as it arrives.
-        if (!readyAt && (waiting === 0 || performance.now() - startedAt > 1500)) {
+        if (!readyAt) {
           readyAt = performance.now();
           if (onReady) onReady();
         }
       };
 
-      var start = function (ready) {
-        if (started) return;
-        started = true;
-        startedAt = performance.now();
-        onReady = ready;
-        markups(doc.body);
-        shadows(doc);
-        watch(doc.documentElement);
-        refresh();
-        setTimeout(refresh, 1600);
-        // Rules added by script (insertRule) change no markup: each sheet's
-        // count is looked at once a second, and shadow roots swept for.
-        setInterval(function () {
+      // What no longer has anything to colour goes, so our sheets shrink
+      // with the page as well as grow with it: the twin of a sheet the page
+      // took out, the marks no element carries, and the attribute colours
+      // no element has.
+      var prune = function () {
+        var present = new Set();
+        roots.forEach(function (r) { sources(r).forEach(function (s) { present.add(s); }); });
+        twins.forEach(function (t, s) { if (!present.has(s)) { twins.delete(s); mine.delete(t.sheet); } });
+        roots.forEach(place);
+        styled.prune();
+        var text = base;
+        Object.keys(given).forEach(function (key) {
+          if (anywhere(given[key].match)) text += given[key].rule;
+          else delete given[key];
+        });
+        ground.replaceSync(text);
+      };
+
+      // Watched for a while, not for the page's life: from the start until
+      // ten seconds after the page has loaded, and ten seconds again when it
+      // moves to another address of its own (again). Rules a script adds
+      // without touching the markup are looked for once a second in that
+      // time. What stays for the page's life is small: the <head>, for a
+      // new sheet, and a sheet's load.
+      var observers = [], ticker = 0, until = 0, awake = false, SPELL = 10000;
+      var wake = function () {
+        until = performance.now() + SPELL;
+        if (awake) return;
+        awake = true;
+        roots.forEach(watch);
+        ticker = setInterval(function () {
+          if (performance.now() > until) return rest();
           if (!showing) return;
           roots.slice().forEach(shadows);
           refresh();
         }, 1000);
+      };
+      var rest = function () {
+        awake = false;
+        clearInterval(ticker);
+        observers.forEach(function (o) { o.disconnect(); });
+        observers = [];
+        prune();
+      };
+
+      var changed = function (records) {
+        var sheets = false;
+        records.forEach(function (r) {
+          if (r.type === 'attributes') {
+            if (r.attributeName === 'style') markStyle(r.target);
+            else noteLegacy(r.target);
+            return;
+          }
+          var node = r.target;
+          if (node.nodeName === 'STYLE' || node.parentNode && node.parentNode.nodeName === 'STYLE') sheets = true;
+          for (var i = 0; i < r.addedNodes.length; i++) {
+            var one = r.addedNodes[i];
+            if (one.nodeName === 'STYLE' || one.nodeName === 'LINK') sheets = true;
+            if (one.nodeType === 1) later(one);
+          }
+          for (var j = 0; j < r.removedNodes.length; j++) {
+            var gone = r.removedNodes[j].nodeName;
+            if (gone === 'STYLE' || gone === 'LINK') sheets = true;
+          }
+        });
+        // Before the frame is drawn: a new sheet's colours are never seen.
+        if (sheets) refresh();
+      };
+
+      // What is added is taken in a batch, once a frame and before it is
+      // drawn, rather than as each piece arrives: marked, swept for shadow
+      // roots, and painted with every element read first and written after,
+      // so the page's style is worked out once for all of it. A page adding
+      // a thousand things as it loads was worked out a thousand times.
+      var queued = [], flushing = false;
+      var later = function (node) {
+        queued.push(node);
+        if (flushing) return;
+        flushing = true;
+        var frame = 0, timer = 0;
+        var go = function () {
+          cancelAnimationFrame(frame);
+          clearTimeout(timer);
+          if (flushing) flush();
+        };
+        frame = requestAnimationFrame(go);
+        timer = setTimeout(go, 100);
+      };
+      var flush = function () {
+        flushing = false;
+        var batch = queued.filter(function (n) { return n.isConnected; });
+        queued = [];
+        batch.forEach(function (n) { markups(n); if (started) shadows(n); });
+        if (showing && unreadable) { toPaint.push.apply(toPaint, batch); paintSoon(); }
+      };
+      // Painting reads every new element's colours, which has the page's
+      // style worked out first; on a page that changes its own style all the
+      // time that is 50 ms a read. So it waits a little and takes what came
+      // meanwhile in one go: the twins have what the readable sheets colour
+      // at once, and only what an unreadable one colours waits.
+      var toPaint = [], paintTimer = 0;
+      var paintSoon = function () {
+        if (paintTimer) return;
+        paintTimer = setTimeout(function () {
+          paintTimer = 0;
+          var batch = toPaint.filter(function (n) { return n.isConnected; });
+          toPaint = [];
+          if (showing && batch.length) paint(batch);
+        }, 300);
+      };
+      var watch = function (root) {
+        var o = new MutationObserver(changed);
+        o.observe(root, { childList: true, subtree: true, characterData: true,
+                          attributes: true, attributeFilter: ['style', 'bgcolor', 'text', 'color', 'fill', 'stroke'] });
+        observers.push(o);
+      };
+
+      var start = function (ready) {
+        if (started) return;
+        started = true;
+        onReady = ready;
+        markups(doc.body);
+        shadows(doc);
+        wake();
+        // A new sheet in the <head> wakes it again, for the page's life.
+        if (doc.head) new MutationObserver(function (records) {
+          if (records.some(function (r) { return r.target.nodeName === 'STYLE' || [].some.call(r.addedNodes, function (n) { return n.nodeName === 'STYLE' || n.nodeName === 'LINK'; }); })) {
+            refresh();
+            wake();
+          }
+        }).observe(doc.head, { childList: true, subtree: true, characterData: true });
+        if (doc.readyState !== 'complete') addEventListener('load', function () { wake(); refresh(); if (showing) paint([doc.body]); }, { once: true });
+        refresh();
         // A <link> is only a sheet once it has loaded, and a picture can
         // only be looked at once it has.
         doc.addEventListener('load', function (e) {
           if (e.target.nodeName === 'LINK') refresh();
           if (e.target.nodeName === 'IMG') lookAt(e.target);
         }, true);
-      };
-
-      var watch = function (root) {
-        new MutationObserver(function (records) {
-          var sheets = false;
-          records.forEach(function (r) {
-            if (r.type === 'attributes') {
-              if (r.attributeName === 'style') markStyle(r.target);
-              else noteLegacy(r.target);
-              return;
-            }
-            var node = r.target;
-            if (node.nodeName === 'STYLE' || node.parentNode && node.parentNode.nodeName === 'STYLE') sheets = true;
-            for (var i = 0; i < r.addedNodes.length; i++) {
-              var added = r.addedNodes[i];
-              if (added.nodeName === 'STYLE' || added.nodeName === 'LINK') sheets = true;
-              markups(added);
-              if (added.nodeType === 1 && started) shadows(added);
-            }
-            for (var j = 0; j < r.removedNodes.length; j++) {
-              var gone = r.removedNodes[j].nodeName;
-              if (gone === 'STYLE' || gone === 'LINK') sheets = true;
-            }
-          });
-          // Before the frame is drawn: a new sheet's colours are never seen.
-          if (sheets) refresh();
-        }).observe(root, { childList: true, subtree: true, characterData: true,
-                           attributes: true, attributeFilter: ['style', 'bgcolor', 'text', 'color', 'fill', 'stroke'] });
       };
 
       var own = function () {
@@ -519,6 +643,16 @@ enum DuskColours {
           showing = on;
           if (on) roots.forEach(place);
           quietly(function () { own().forEach(function (s) { s.disabled = !on; }); });
+          // Read with the twins in place, so what they took is left alone.
+          if (on) paint([doc.body]);
+        },
+        // The page has moved to another address of its own: watched again.
+        again: function () {
+          if (!started) return;
+          wake();
+          refresh();
+          markups(doc.body);
+          if (showing) paint([doc.body]);
         },
         // The page's own colours, read with ours set aside for a moment.
         aside: function (read) {
@@ -534,7 +668,11 @@ enum DuskColours {
         stats: function () {
           var n = 0;
           twins.forEach(function (t) { if (t.text) n += t.sheet.cssRules.length; });
-          return { sheets: twins.size, twins: n, marked: count, ms: Math.round(spent), waiting: waiting, shadows: roots.length - 1 };
+          return { sheets: twins.size, twins: n, marked: styled.count(), painted: doc.querySelectorAll('[' + PAINT + ']').length, unreadable: unreadable,
+                   ms: Math.round(spent), shadows: roots.length - 1, watching: awake,
+                   took: { twins: Math.round(took.twins), paint: Math.round(took.paint), paints: took.paints,
+                           markups: Math.round(took.markups), refreshes: took.refreshes,
+                           paintRead: Math.round(took.paintRead), paintWrite: Math.round(took.paintWrite), painted: took.painted } };
         }
       };
     }

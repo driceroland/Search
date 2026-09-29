@@ -1321,6 +1321,15 @@ struct ContentView: View {
             return true
         }
 
+        // ⌥⇧⌘D, dark pages paused (see Dusk.swift), here rather than left to
+        // the View menu: its line only exists while dark pages are on, and a
+        // menu line that appears after launch doesn't take its key.
+        if flags.contains(.option), shifted, !flags.contains(.control), browser.prefs.darkensPages,
+           event.characters(byApplyingModifiers: [])?.lowercased() == "d" {
+            browser.pauseDusk()
+            return true
+        }
+
         // Other shortcuts with ⌥ or ⌃ on top are somebody else's.
         guard !flags.contains(.option), !flags.contains(.control) else { return false }
 

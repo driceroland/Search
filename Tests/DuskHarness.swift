@@ -39,6 +39,10 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
         var frames: [String: Bool] = [:]
         /// How long after the load to look.
         var settle: Double = 0.6
+        /// Served from a scheme of its own (test-page://NAME/) rather than
+        /// given as a string: a page that can load a sheet from another
+        /// origin (test-other://), whose rules it then can't read.
+        var served = false
     }
 
     private static let world = WKContentWorld.world(name: "Search")
@@ -74,15 +78,30 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
                 dark: true, shown: false),
         Fixture(name: "oklch-ground", html: "<style>body{background:oklch(0.98 0.01 250);color:oklch(0.2 0 0)}</style>" + card,
                 dark: false, shown: true),
-        // An app drawn after it loads: an empty shell first, then its own dark ground.
+        // An app drawn after it loads: an empty shell first, then its own
+        // dark ground. In the colours it stays as it drew itself, dark, and
+        // isn't measured again for it (see Dusk.step); under the filter it is,
+        // since the filter would turn it light.
         Fixture(name: "app-drawn-late", html: """
+            <body><script>setTimeout(function(){var d=document.createElement('div');d.id='app';d.style.cssText='position:fixed;inset:0;background:#181818;color:#ddd';d.textContent='The app';document.body.appendChild(d)},250)</script></body>
+            """, dark: false, shown: true,
+                looks: ["lum('#app','backgroundColor') < 0.02", "lum('#app','color') > 0.6"], settle: 1.0),
+        Fixture(name: "app-drawn-late-filtered", html: """
             <body><script>setTimeout(function(){var d=document.createElement('div');d.style.cssText='position:fixed;inset:0;background:#181818;color:#ddd';d.textContent='The app';document.body.appendChild(d)},250)</script></body>
-            """, dark: true, shown: false, settle: 1.0),
-        // A site's own switch, flipped after it loads.
+            """, dark: true, shown: false, mode: "filter", settle: 1.0),
+        // A site's own switch, flipped after it loads. Under the filter the
+        // page is measured again and let go, since turned over its dark look
+        // comes out light; in the colours it stays darkened and looks as the
+        // site's dark look does (see Dusk.step).
         Fixture(name: "theme-switched-later", html: """
             <style>body{background:#fff}html.dark body{background:#111;color:#eee}</style>\(card)
             <script>setTimeout(function(){document.documentElement.className='dark'},300)</script>
-            """, dark: true, shown: false, settle: 1.0),
+            """, dark: true, shown: false, mode: "filter", settle: 1.0),
+        Fixture(name: "theme-switched-later-colours", html: """
+            <style>body{background:#fff}html.dark body{background:#111;color:#eee}</style>\(card)
+            <script>setTimeout(function(){document.documentElement.className='dark'},300)</script>
+            """, dark: false, shown: true,
+                looks: ["lum('body','backgroundColor') < 0.02", "lum('body','color') > 0.6"], settle: 1.0),
         Fixture(name: "turned-off-for-site", html: "<style>body{background:#fff}</style>" + card,
                 dark: false, shown: false, sites: ["turned-off-for-site.test": false]),
         Fixture(name: "turned-on-for-dark-site", html: "<style>body{background:#111;color:#eee}</style>" + card,
@@ -244,6 +263,16 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
                 looks: ["lum('#a','backgroundColor') < 0.05", "lum('#a','color') > 0.4", "lum('#a >>> .in','backgroundColor') < 0.05",
                         "lum('#b >>> .in','backgroundColor') < 0.05", "lum('#b >>> .in','color') > 0.4",
                         "lum('#c >>> .in','backgroundColor') < 0.05"], settle: 2.0),
+        // A sheet from another origin can't be read: what it colours is read
+        // off the elements, and taken dark, with nothing asked for again.
+        Fixture(name: "colours-unreadable-sheet", html: """
+            <link rel=stylesheet href="test-other://cdn/sheet.css"><style>body{background:#fff}</style>
+            <div id=a class=cdn>From a CDN <span id=inner>inside</span></div><div id=b class=cdn-card>Card</div>
+            """, dark: false, shown: true,
+                looks: ["lum('#a','backgroundColor') < 0.05", "lum('#a','color') > 0.4", "lum('#inner','color') > 0.4",
+                        "lum('#a','borderTopColor') < 0.12", "lum('#b','backgroundColor') < 0.05",
+                        "!document.getElementById('inner').hasAttribute('data-office-dusk-paint')",
+                        "window.__officeDusk.state().colours.unreadable === true"], settle: 1.0, served: true),
         Fixture(name: "known-light-from-start", html: "<style>body{background:#fff}</style>" + card,
                 dark: false, shown: true, seen: ["known-light-from-start.test": false]),
     ]
@@ -300,7 +329,16 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
         pageOn = false
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
-        let config: [String: Any] = ["on": true, "sites": fixture.sites, "seen": fixture.seen, "mode": fixture.mode]
+        // A stylesheet from another origin, as a CDN's is: its rules can't be
+        // read from the page, and it is never asked for again.
+        let schemes = OtherOrigin()
+        configuration.setURLSchemeHandler(schemes, forURLScheme: "test-other")
+        configuration.setURLSchemeHandler(schemes, forURLScheme: "test-page")
+        // Only this one site's answers, as Dusk.config hands them over.
+        let host = "\(fixture.name).test"
+        let config: [String: Any] = ["on": true, "host": host, "mode": fixture.mode,
+                                     "choice": fixture.sites[host].map { $0 as Any } ?? NSNull(),
+                                     "known": fixture.seen[host].map { $0 as Any } ?? NSNull()]
         let json = String(data: (try? JSONSerialization.data(withJSONObject: config)) ?? Data(), encoding: .utf8) ?? "{}"
         let controller = configuration.userContentController
         controller.add(self, contentWorld: Self.world, name: "officeDusk")
@@ -322,7 +360,12 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
         window.contentView = web
         window.orderFrontRegardless()
         current = web
-        web.loadHTMLString(fixture.html, baseURL: URL(string: "https://\(fixture.name).test/"))
+        if fixture.served, let page = URL(string: "test-page://\(fixture.name)/") {
+            OtherOrigin.page = fixture.html
+            web.load(URLRequest(url: page))
+        } else {
+            web.loadHTMLString(fixture.html, baseURL: URL(string: "https://\(fixture.name).test/"))
+        }
 
         try? await Task.sleep(for: .seconds(0.4 + fixture.settle))
         let state = try? await web.evaluateJavaScript("window.__officeDusk.state()", in: nil, contentWorld: Self.world) as? [String: Any]
@@ -393,6 +436,22 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
             }
         }
     }
+}
+
+/// Serves a served fixture's page (test-page://) and a stylesheet from
+/// another origin (test-other://), as a CDN's is to the page.
+private final class OtherOrigin: NSObject, WKURLSchemeHandler {
+    static let css = ".cdn{background:#fff;color:#111;border:2px solid #ddd}.cdn-card{background:#f4f4f4}"
+    static var page = ""
+    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        guard let url = task.request.url else { return }
+        let css = url.scheme == "test-other"
+        let data = Data((css ? OtherOrigin.css : OtherOrigin.page).utf8)
+        task.didReceive(URLResponse(url: url, mimeType: css ? "text/css" : "text/html", expectedContentLength: data.count, textEncodingName: "utf-8"))
+        task.didReceive(data)
+        task.didFinish()
+    }
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
 }
 
 @main

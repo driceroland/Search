@@ -22,7 +22,7 @@ import WebKit
 // left alone. The filter changes no computed colour, and the twins are set
 // aside while it looks, so the measuring always sees the site's own colours.
 //
-// On unless turned off in Settings › Appearance, and only ever while the
+// Off unless turned on in Settings › Appearance, and only ever while the
 // frame is dark. ⇧⌘D turns it off, or on, for the site you're on, and is
 // kept; ⌥⇧⌘D pauses it everywhere until pressed again or Search quits.
 
@@ -90,25 +90,88 @@ final class Dusk: ObservableObject {
     /// A page's darkening changed; the View menu's line says so.
     func heard() { objectWillChange.send() }
 
-    /// For each new document, or nil while off or paused: then nothing is
-    /// put into pages at all.
-    var script: String? {
-        active ? Dusk.page(config) : nil
+    /// Whether a page on `host` is darkened from its first frame: on, not
+    /// paused, Search dark, and the site switched on by hand or measured
+    /// light already this session. Nothing goes into any other page.
+    func wanted(_ host: String?) -> Bool {
+        guard active, Dusk.frameIsDark, let host else { return false }
+        if let chosen = sites[host] { return chosen }
+        return seen[host] == false
     }
 
-    /// For a page already up: taking it over, or letting it go, now.
-    var update: String {
-        Dusk.page(config)
+    /// Whether a page on `host` is still to be looked at, from outside it
+    /// (see look): on, Search dark, and neither switched nor known light.
+    func unsure(_ host: String?) -> Bool {
+        guard active, Dusk.frameIsDark, let host, sites[host] == nil else { return false }
+        return seen[host] != false
     }
 
-    private var config: String {
+    /// For each new document on `host`, or nil. `light`: what the page up
+    /// now was just seen to be, for a private tab, which keeps nothing.
+    func script(for host: String?, light: Bool = false) -> String? {
+        guard let host, wanted(host) || light && active && Dusk.frameIsDark && sites[host] != false else { return nil }
+        return Dusk.page(config(for: host, light: light))
+    }
+
+    /// For the page up now: taking it over, or letting it go.
+    func update(for host: String?) -> String {
+        script(for: host) ?? Dusk.letGo
+    }
+
+    static let letGo = "window.__officeDusk && window.__officeDusk.update({ on: false })"
+
+    /// A private tab's ⇧⌘D: this page, whatever it measured, kept nowhere.
+    func forced(for host: String, _ on: Bool) -> String {
+        on ? Dusk.page(config(for: host, chosen: true)) : "window.__officeDusk && window.__officeDusk.force(false)"
+    }
+
+    /// Only the one site's answers, never the list of every site switched
+    /// or measured: a page is told what it needs about itself.
+    private func config(for host: String, light: Bool = false, chosen: Bool? = nil) -> String {
         // "filter" keeps a page to the filter even where the browser can do
         // colours: for comparing the two, set by hand.
         let mode = Store.settings.string(forKey: "dusk.mode") ?? "colours"
-        let config: [String: Any] = ["on": active, "sites": sites, "seen": seen, "mode": mode]
+        let known: Bool? = light ? false : seen[host]
+        let config: [String: Any] = ["on": true, "host": host, "mode": mode,
+                                     "choice": (chosen ?? sites[host]).map { $0 as Any } ?? NSNull(),
+                                     "known": known.map { $0 as Any } ?? NSNull()]
         guard let data = try? JSONSerialization.data(withJSONObject: config),
-              let json = String(data: data, encoding: .utf8) else { return "{\"on\":false,\"sites\":{},\"seen\":{}}" }
+              let json = String(data: data, encoding: .utf8) else { return "{\"on\":false}" }
         return json
+    }
+
+    /// Whether a page is dark, from outside it: a picture of what it shows,
+    /// 48 pixels wide, and how much of it is light. Nothing goes into the
+    /// page to find out, so a dark page, or one already dark by itself, gets
+    /// no script, observer or sheet at all. Nil when there is no picture to
+    /// be had.
+    static func look(at web: WKWebView, _ answer: @escaping (Bool?) -> Void) {
+        let config = WKSnapshotConfiguration()
+        config.snapshotWidth = 48
+        web.takeSnapshot(with: config) { image, _ in
+            guard let cg = image?.cgImage(forProposedRect: nil, context: nil, hints: nil),
+                  let srgb = CGColorSpace(name: CGColorSpace.sRGB) else { return answer(nil) }
+            let w = cg.width, h = cg.height
+            var pixels = [UInt8](repeating: 0, count: w * h * 4)
+            let drawn: Bool = pixels.withUnsafeMutableBytes { raw in
+                guard let context = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                              bytesPerRow: w * 4, space: srgb,
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+                context.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+                return true
+            }
+            guard drawn, w * h > 0 else { return answer(nil) }
+            func linear(_ c: UInt8) -> Double {
+                let v = Double(c) / 255
+                return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+            }
+            var lit = 0
+            for i in stride(from: 0, to: pixels.count, by: 4)
+            where 0.2126 * linear(pixels[i]) + 0.7152 * linear(pixels[i + 1]) + 0.0722 * linear(pixels[i + 2]) > 0.35 {
+                lit += 1
+            }
+            answer(lit * 2 < w * h)
+        }
     }
 
     private static func page(_ config: String) -> String {
@@ -147,10 +210,13 @@ final class Dusk: ObservableObject {
       var doc = document, root = doc.documentElement;
       var scheme = matchMedia('(prefers-color-scheme: dark)');
       var host = location.hostname.toLowerCase().replace(/^www\./, '');
+      // Search says what it knows of this one site, and only if this is the
+      // site it meant: a redirect to another lands with nothing known.
+      var ours = function () { return config.host === host; };
       // true: dark by itself. false: light. undefined: not measured yet.
       // What a site measured is kept by the sites people visit, not by what
       // they embed.
-      var native = framed ? undefined : config.seen[host];
+      var native = !framed && ours() && typeof config.known === 'boolean' ? config.known : undefined;
       var shown = false, told = null, ground = '#fff';
 
       // What is kept as the site made it: the pictures, and what the page
@@ -178,7 +244,7 @@ final class Dusk: ObservableObject {
 
       var wanted = function () {
         if (framed) return config.on && scheme.matches && topOn && native === false;
-        var chosen = config.sites[host];
+        var chosen = ours() ? config.choice : null;
         if (!config.on || !scheme.matches || chosen === false) return false;
         return chosen === true || native === false;
       };
@@ -196,12 +262,14 @@ final class Dusk: ObservableObject {
       var apply = function () {
         var was = shown;
         shown = wanted();
-        attach();
         // The colours once they are ready; the filter before, from the first
         // frame, so the page is never seen white while they are made. Both
         // change here, in one go, so no frame falls between them.
         var painted = shown && !!paint && paint.ready();
         filtering = shown && !painted;
+        // The filter's sheet only while it shows: a page it doesn't darken
+        // has none of ours in it.
+        if (filtering) attach();
         // The ground a page left transparent is the canvas's, which the
         // filter on the root doesn't reach: it is given the page's own, so
         // that it turns over with the rest.
@@ -352,14 +420,17 @@ final class Dusk: ObservableObject {
         return given ? fills : w * h >= 300 * 150;
       };
       // Under the filter, "picture" for a picture's frame or a photo and
-      // "dark" for a dark part, both turned back whole.
-      var mark = function (el, kind) { if (!el.hasAttribute(KEEP)) el.setAttribute(KEEP, kind || 'picture'); };
+      // "dark" for a dark part, both turned back whole (see settle).
       // In the colours, only what is laid over a picture keeps the site's
       // own (DuskColours.swift): the writing and the buttons on it, found by
       // where they are drawn. A frame can't stand for them there: a caption
       // under a photo, in the same link, is the page's and goes light.
       var OVER = 'data-office-dusk-over';
-      var over = function (pic) {
+      // Where each picture sits and what lies over it, read for all of them
+      // before a single mark is written: a mark changes the page's style,
+      // and reading after it means working the layout out again, once per
+      // picture on a page with hundreds.
+      var over = function (pic, writes) {
         var r = pic.getBoundingClientRect(), area = r.width * r.height;
         if (area < big) return;
         // Near the picture: the few boxes around it no more than three
@@ -379,13 +450,22 @@ final class Dusk: ObservableObject {
           if (!own && !opaque(getComputedStyle(el).backgroundColor)) continue;
           var b = el.getBoundingClientRect(), mine = b.width * b.height;
           var w = Math.min(r.right, b.right) - Math.max(r.left, b.left), h = Math.min(r.bottom, b.bottom) - Math.max(r.top, b.top);
-          if (mine > 0 && w > 0 && h > 0 && w * h >= mine * 0.5) el.setAttribute(OVER, '');
+          if (mine > 0 && w > 0 && h > 0 && w * h >= mine * 0.5) writes.push([el, OVER, '']);
         }
       };
-      var picture = function (el, photo) {
-        if (!filtering) return over(el);
-        var f = frame(el);
-        if (f !== el || photo) mark(f);
+      // Found as the page is walked; settled after (see settle).
+      var pending = [];
+      var picture = function (el, photo) { pending.push([el, photo]); };
+      var settle = function () {
+        var found = pending, writes = [];
+        pending = [];
+        found.forEach(function (p) {
+          if (p[1] === 'dark') return writes.push([p[0], KEEP, 'dark']);
+          if (!filtering) return over(p[0], writes);
+          var f = frame(p[0]);
+          if (f !== p[0] || p[1]) writes.push([f, KEEP, 'picture']);
+        });
+        writes.forEach(function (w) { if (!w[0].hasAttribute(w[1])) w[0].setAttribute(w[1], w[2]); });
       };
       var look = function (el) {
         if (skip[el.tagName] || el.hasAttribute(filtering ? KEEP : OVER)) return NodeFilter.FILTER_REJECT;
@@ -393,6 +473,10 @@ final class Dusk: ObservableObject {
           picture(el, false);
           return NodeFilter.FILTER_REJECT;
         }
+        // A photo from a stylesheet needs a box big enough to be one, and a
+        // box's size is had without working its style out: in the colours,
+        // where nothing else here needs the style, only a big box is asked.
+        if (!filtering && el.offsetWidth * el.offsetHeight < big) return NodeFilter.FILTER_SKIP;
         var style = getComputedStyle(el);
         if (photoIn(el, style)) {
           picture(el, true);
@@ -401,7 +485,7 @@ final class Dusk: ObservableObject {
           return filtering ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
         }
         if (filtering && light(style.backgroundColor) === false) {
-          mark(el, 'dark');
+          pending.push([el, 'dark']);
           return NodeFilter.FILTER_REJECT;
         }
         return NodeFilter.FILTER_SKIP;
@@ -419,28 +503,73 @@ final class Dusk: ObservableObject {
       var everything = function () {
         var t = performance.now();
         scan(doc.body);
+        settle();
         spent += performance.now() - t;
         passes++;
         scanned = true;
         scannedFor = filtering;
       };
-      new MutationObserver(function (records) {
+      // What is added is looked at as it comes, for a while (see watchKept)
+      // rather than for the page's life.
+      // In a batch once a frame, as the colours take theirs, so the page's
+      // style is worked out once for everything added.
+      var arrived = [], gathering = false;
+      var gather = function (node) {
+        arrived.push(node);
+        if (gathering) return;
+        gathering = true;
+        var frame = 0, timer = 0;
+        var go = function () {
+          cancelAnimationFrame(frame);
+          clearTimeout(timer);
+          if (!gathering) return;
+          gathering = false;
+          var batch = arrived;
+          arrived = [];
+          if (!shown || !scanned) return;
+          var t = performance.now();
+          batch.forEach(function (n) {
+            if (n.nodeType !== 1 || !n.isConnected) return;
+            if (n.tagName === 'IMG') { if (!(filtering && n.closest('[' + KEEP + ']'))) picture(n, false); }
+            else scan(n);
+          });
+          settle();
+          spent += performance.now() - t;
+        };
+        frame = requestAnimationFrame(go);
+        timer = setTimeout(go, 100);
+      };
+      var kept = new MutationObserver(function (records) {
         if (!shown || !scanned) return;
-        var t = performance.now();
         records.forEach(function (r) {
-          for (var i = 0; i < r.addedNodes.length; i++) scan(r.addedNodes[i]);
+          for (var i = 0; i < r.addedNodes.length; i++) gather(r.addedNodes[i]);
         });
-        spent += performance.now() - t;
-      }).observe(root, { childList: true, subtree: true });
+      }), keptUntil = 0;
+      var watchKept = function () {
+        var fresh = !keptUntil;
+        keptUntil = performance.now() + 10000;
+        if (!fresh) return;
+        kept.observe(root, { childList: true, subtree: true });
+        var check = function () {
+          if (performance.now() < keptUntil) return setTimeout(check, keptUntil - performance.now());
+          kept.disconnect();
+          keptUntil = 0;
+        };
+        setTimeout(check, 10000);
+      };
+      watchKept();
       // A picture that comes in late has no size until it loads, and its
       // frame is only found then.
       doc.addEventListener('load', function (e) {
         var el = e.target;
-        if (shown && scanned && el.tagName === 'IMG' && !(filtering && el.closest('[' + KEEP + ']'))) picture(el, false);
+        if (shown && scanned && el.tagName === 'IMG') gather(el);
       }, true);
       addEventListener('load', function () {
         if (shown) everything();
-        setTimeout(function () { if (shown) everything(); }, 2000);
+        // Under the filter, once more for what came late; in the colours,
+        // what comes late is taken as it comes (see gather).
+        setTimeout(function () { if (shown && filtering) everything(); }, 2000);
+        watchKept();
       });
 
       // A page is ready to be read once it has a body and the stylesheets in
@@ -457,7 +586,7 @@ final class Dusk: ObservableObject {
       // and darkened with nothing seen in between. A page in the background
       // gets no frames until it is shown, so a timer stands in, and a tab
       // opened behind this one is already right when you go to it.
-      var waiting = false, watchedBody = null;
+      var waiting = false, watchedBody = null, themed = false;
       var soon = function () {
         if (waiting) return;
         waiting = true;
@@ -474,19 +603,39 @@ final class Dusk: ObservableObject {
       var step = function () {
         waiting = false;
         if (!ready()) { soon(); return; }
-        if (doc.body !== watchedBody) {
+        if (doc.body !== watchedBody && !paint) {
           watchedBody = doc.body;
-          themes.observe(watchedBody, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode', 'data-mode'] });
+          themes.observe(watchedBody, { attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode', 'data-mode'] });
         }
         if (!config.on || !scheme.matches || framed && !topOn) { apply(); return; }
+        // Once the page shows in its own colours, it isn't measured again.
+        // Measuring sets our sheets aside and back, which has the page's whole
+        // style worked out four times over, and sites change the classes on
+        // <html> all the time. The colours keep a dark part dark and light
+        // writing light, so a site that turns to its own dark look, or an
+        // app that draws itself dark after its first frame, looks as it
+        // should without it; its next page is measured afresh.
+        if (paint && paint.showing()) { apply(); return; }
+        themed = false;
         measure();
         apply();
       };
 
       // A theme switched by the site itself: a class, a style or a data-
       // attribute on <html> or <body>. Watched for as long as the page is up.
-      var themes = new MutationObserver(soon);
-      themes.observe(root, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode', 'data-mode'] });
+      // Our own colours on <html> or <body> (see DuskColours.paint) are
+      // no theme of the site's.
+      var own = function (style) { return (style || '').replace(/--office-dusk-[a-z]+:[^;]*;?\s*/g, '').trim(); };
+      var themes = new MutationObserver(function (records) {
+        if (!records.some(function (r) {
+          return r.attributeName !== 'style' || own(r.oldValue) !== own(r.target.getAttribute('style'));
+        })) return;
+        themed = true;
+        soon();
+      });
+      // Only the filter needs it: turned over, a site's own dark look comes
+      // out light.
+      if (!paint) themes.observe(root, { attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode', 'data-mode'] });
       // And a page that draws itself after it loads, as an app does: its
       // look is only there once it has drawn. Watched until a few seconds
       // after the load, when it has.
@@ -502,14 +651,22 @@ final class Dusk: ObservableObject {
       // A change of look or of settings is taken at once, frame or no frame:
       // a tab in the background gets none until it is shown, and should be
       // right when it is. The measuring after can wait for one.
-      scheme.addEventListener('change', function () { apply(); soon(); });
+      scheme.addEventListener('change', function () { themed = true; apply(); soon(); });
 
       window.__officeDusk = {
         update: function (next) { config = next; apply(); soon(); },
         // A frame: whether the page around it is darkened now.
         top: function (on) { topOn = on; apply(); soon(); },
+        // The page moved to another address of its own (history.pushState):
+        // what it drew for it is looked at, for a while, as at a load.
+        again: function () {
+          if (paint) paint.again();
+          watchKept();
+          if (shown) everything();
+          soon();
+        },
         // A private tab's ⇧⌘D: this page only, kept nowhere.
-        force: function (on) { config.sites[host] = on; apply(); },
+        force: function (on) { config.host = host; config.choice = on; apply(); },
         state: function () {
           return { native: native, shown: shown, mode: !shown ? 'none' : filtering ? 'filter' : 'colours',
                    kept: doc.querySelectorAll('[' + KEEP + ']').length, passes: passes, ms: Math.round(spent),

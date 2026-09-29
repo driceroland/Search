@@ -680,6 +680,9 @@ final class Tab: ObservableObject, Identifiable {
                         self.committed = fresh
                     }
                     if moved { self.adoptIcon() }
+                    // A darkened page that moved to another address of its
+                    // own is watched again for a while (see Dusk.swift).
+                    if self.dusked, !moved { self.built?.evaluateInSearch("window.__officeDusk && window.__officeDusk.again()") }
                 }
             },
             web.observe(\.estimatedProgress, options: [.new]) { [weak self] _, _ in
@@ -736,7 +739,10 @@ final class Tab: ObservableObject, Identifiable {
     /// pointing mode, and this site's stylesheet of things you have hidden. The
     /// stylesheet goes in before the document has a body, so nothing is ever
     /// seen arriving and then leaving again.
-    func arm(hiding css: String) {
+    /// `to`: where the next document comes from, when that isn't the page up
+    /// now (a navigation just decided). Dark pages hand that one site's
+    /// answer over, and nothing at all to a page that isn't to be darkened.
+    func arm(hiding css: String, to url: URL? = nil) {
         veils = css
         guard let built else { return }
         let controller = built.configuration.userContentController
@@ -811,7 +817,7 @@ final class Tab: ObservableObject, Identifiable {
         // (see Dusk.swift). Before the document, so a site known to be light
         // is never seen white. Every frame: a frame darkens its own document,
         // led by its page.
-        if let dusk = Dusk.shared.script {
+        if let dusk = Dusk.shared.script(for: Dusk.host(of: url ?? pageAddress)) {
             controller.addUserScript(
                 WKUserScript(source: dusk, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
             )
