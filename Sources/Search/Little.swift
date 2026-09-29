@@ -29,8 +29,15 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         browser.prepare(tab)
         tab.go(to: url)
         let little = LittleWindow(tab: tab, browser: browser)
+        // A step down and in from the newest one on screen, so that five
+        // links from Mail are five windows you can see are there, not one
+        // on top of four.
+        if let last = open.last(where: { $0.window.isVisible }) {
+            little.window.cascadeTopLeft(from: last.window.cascadeTopLeft(from: .zero))
+        } else {
+            little.window.center()
+        }
         open.append(little)
-        little.window.center()
         // Never a test run's in front: a probe started hidden stays off every screen.
         guard front, !Store.testing else { return }
         little.window.makeKeyAndOrderFront(nil)
