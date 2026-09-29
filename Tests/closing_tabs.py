@@ -17,10 +17,7 @@ import split_view as sv  # noqa: E402
 
 # A world of its own, so another suite on the harness can run at the same
 # time: sharing split-tests, each wiped and drove the other's browser.
-sv.W = "closing-tests"
-sv.SUPPORT = f"{sv.HOME}/Library/Application Support/Search ({sv.W})"
-sv.SUITE = f"com.officecommun.search.test.{sv.W}"
-sv.SOCK = f"{sv.SUPPORT}/bench.sock"
+sv.use("closing-tests")
 
 HOUR = 3600
 t = sv.T()
@@ -85,6 +82,17 @@ try:
     t.ok("pair: half of it past its time, both stay", by(st, l) is not None and by(st, r) is not None, urls(st))
     sv.sp("age", id=r, seconds=2 * HOUR); st = sv.sp("tidy")
     t.ok("pair: both past their time, both close", by(st, l) is None and by(st, r) is None, urls(st))
+    # Both past their time, one half holding a draft: both stay, since each
+    # half is asked before either closes. Then the draft goes, and so do both.
+    l2 = sv.page("left2"); r2 = sv.page("right2"); sv.sp("pair", id=r2, **{"with": l2}, side="right")
+    sv.ev(r2, "var box = document.createElement('textarea'); document.body.appendChild(box); box.focus(); true")
+    sv.cmd({"do": "key", "id": r2, "text": "a draft"})
+    sv.page("away3"); sv.sp("age", id=l2, seconds=2 * HOUR); sv.sp("age", id=r2, seconds=2 * HOUR)
+    sv.sp("tidy"); time.sleep(1); st = sv.sp("state")
+    t.ok("pair: one half holding a draft, both stay", by(st, l2) is not None and by(st, r2) is not None, urls(st))
+    sv.ev(r2, "document.querySelector('textarea').value = ''; true")
+    sv.sp("tidy"); time.sleep(1); st = sv.sp("state")
+    t.ok("pair: the draft gone, both close", by(st, l2) is None and by(st, r2) is None, urls(st))
 
     # A private tab stays: nothing could bring it back. Last of these, since
     # a page opened from a private tab is private too.
@@ -97,9 +105,11 @@ try:
     # Let go of a keeping, and the time starts from then.
     st = sv.sp("name", id=named)
     t.ok("unnamed: its time starts again", by(st, named)["idle"] < 60, by(st, named))
+    t.ok("unnamed: when you last looked is left alone (⌃Tab)", by(st, named)["looked"] >= HOUR, by(st, named))
     sv.cmd({"do": "pin", "id": pinned, "off": True}); st = sv.sp("tidy")
     tab = by(st, pinned)
     t.ok("unpinned: its time starts again, and it stays", tab is not None and tab["idle"] < 60, tab)
+    t.ok("unpinned: when you last looked is left alone (⌃Tab)", tab is not None and tab["looked"] >= HOUR, tab)
 
     # The clock goes on across a quit: half an hour left is half an hour after.
     sv.sp("age", id=fresh, seconds=HOUR / 2); sv.sp("save"); sv.quit(); sv.launch()

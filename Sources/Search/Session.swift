@@ -21,6 +21,8 @@ enum Session {
         /// the night Search was quit (see Closing.swift). Nil in sessions
         /// written before then: those tabs start counting at launch.
         var touched: Date? = nil
+        /// When it was last let go of (Tab.letGo). Nil when it never was.
+        var letGo: Date? = nil
         /// A pin kept as a row (see Tab.listed). Nil for a square.
         var listed: Bool? = nil
     }
@@ -101,7 +103,7 @@ enum Session {
 // key it isn't asked for. In extensions, so the memberwise initialisers stay.
 
 extension Session.Entry {
-    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, listed }
+    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -113,6 +115,7 @@ extension Session.Entry {
         groupID = try? c.decodeIfPresent(UUID.self, forKey: .groupID)
         pinID = try? c.decodeIfPresent(UUID.self, forKey: .pinID)
         touched = try? c.decodeIfPresent(Date.self, forKey: .touched)
+        letGo = try? c.decodeIfPresent(Date.self, forKey: .letGo)
         listed = try? c.decodeIfPresent(Bool.self, forKey: .listed)
     }
 }

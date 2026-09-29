@@ -9,8 +9,9 @@ import Foundation
 // stays is what you said to keep: a pinned tab, a tab you named, a tab in a
 // group. There is no fourth way, and no list of exceptions to learn.
 //
-// The time counts from when you last left the tab, and goes on counting while
-// Search is quit: the session file carries it (Session.Entry.touched).
+// The time counts from when you last left the tab, or let go of it (unpinned,
+// ungrouped, unnamed: Tab.letGo), and goes on counting while Search is quit:
+// the session file carries both (Session.Entry.touched, .letGo).
 // Without that, yesterday's tabs would come back each morning as if just
 // looked at, and a browser quit every night would never close a thing.
 //
@@ -18,7 +19,8 @@ import Foundation
 // busy the way a tab kept awake is (Browser.busy): playing, on a call,
 // downloading, asking something, or holding something typed and not sent. A
 // private tab stays too: nothing could bring it back. A Split View pair goes
-// whole or not at all, since half of one left behind has no reason to be there.
+// whole or not at all, since half of one left behind has no reason to be there:
+// both halves are asked about anything typed before either closes.
 //
 // Never, unless chosen.
 
@@ -51,20 +53,34 @@ extension Browser {
     func closeLeftAlone() {
         guard let wait = closeAfter else { return }
         let since = Date().addingTimeInterval(-wait)
-        let due = (tabs + parkedTabs).filter { $0.touched <= since && stays(because: $0) == nil }
+        let due = (tabs + parkedTabs).filter { $0.leftSince <= since && stays(because: $0) == nil }
         let going = Set(due.map(\.id))
         let pairs = splits + parked.values.flatMap(\.splits)
-        for tab in due where pairs.first(where: { $0.contains(tab.id) })?.tabs.allSatisfy(going.contains) ?? true {
-            retire(tab, since: since)
+        var taken = Set<Tab.ID>()
+        for tab in due where !taken.contains(tab.id) {
+            // A pair is one: both halves due, or neither goes.
+            let pair = pairs.first { $0.contains(tab.id) }
+            guard pair?.tabs.allSatisfy(going.contains) ?? true else { continue }
+            let together = pair.map { pair in due.filter { pair.contains($0.id) } } ?? [tab]
+            taken.formUnion(together.map(\.id))
+            retire(together, since: since)
         }
     }
 
-    /// Asks the page whether it holds something typed, as sleeping does, and
-    /// looks again once it has answered: you may have gone back to it since.
-    private func retire(_ tab: Tab, since: Date) {
-        tab.unsaved { [weak self, weak tab] typed in
-            guard let self, let tab, !typed, closeAfter != nil,
-                  tab.touched <= since, stays(because: tab) == nil else { return }
+    /// Asks each page whether it holds something typed, as sleeping does,
+    /// one after another, and closes them all only when none does. Then it
+    /// looks again: you may have gone back to one while they answered.
+    private func retire(_ together: [Tab], since: Date, asked: Int = 0) {
+        guard asked == together.count else {
+            together[asked].unsaved { [weak self] typed in
+                guard let self, !typed else { return }
+                self.retire(together, since: since, asked: asked + 1)
+            }
+            return
+        }
+        guard closeAfter != nil,
+              together.allSatisfy({ $0.leftSince <= since && stays(because: $0) == nil }) else { return }
+        for tab in together {
             if tabs.contains(where: { $0 === tab }) {
                 close(tab)
             } else {

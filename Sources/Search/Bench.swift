@@ -2611,6 +2611,7 @@ final class Bench {
                 return
             }
             page.touch(at: Date().addingTimeInterval(-seconds))
+            page.letGo = nil
             reply()
 
         case "name":
@@ -2705,7 +2706,10 @@ final class Bench {
                     "asleep": tab.asleep,
                     "awakeReason": browser.awake(because: tab) ?? "",
                     "staysReason": browser.stays(because: tab) ?? "",
-                    "idle": Date().timeIntervalSince(tab.touched),
+                    // How long it counts as left (Closing.swift), and when
+                    // you last looked, for ⌃Tab: letting go moves only the first.
+                    "idle": Date().timeIntervalSince(tab.leftSince),
+                    "looked": Date().timeIntervalSince(tab.touched),
                 ] as [String: Any]
             },
             "splits": browser.splits.map { pair in

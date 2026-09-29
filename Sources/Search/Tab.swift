@@ -513,7 +513,7 @@ final class Tab: ObservableObject, Identifiable {
     /// at the head of the row and gives up its title for that letter — which
     /// is all you need for the five or six pages you keep open all day.
     @Published var pin: String? {
-        didSet { if pin == nil, oldValue != nil { touch() } }
+        didSet { if pin == nil, oldValue != nil { letGo = Date() } }
     }
     /// For a pin, the page it was pinned at: a double-click on it goes back
     /// there (Browser.goHome).
@@ -529,7 +529,7 @@ final class Tab: ObservableObject, Identifiable {
 
     /// The group that holds this ordinary tab in the sidebar.
     @Published var groupID: UUID? {
-        didSet { if groupID == nil, oldValue != nil { touch() } }
+        didSet { if groupID == nil, oldValue != nil { letGo = Date() } }
     }
 
     /// A name you gave it, in place of whatever the page calls itself. It
@@ -538,15 +538,24 @@ final class Tab: ObservableObject, Identifiable {
     ///
     /// Pinned, grouped and named are the three ways of keeping a tab when
     /// tabs close themselves (see Closing.swift). A tab let go from any of
-    /// them starts its time from then, not from whenever it was last left.
+    /// them starts its time from then (letGo), not from whenever it was
+    /// last left.
     @Published var name: String? {
-        didSet { if name == nil, oldValue != nil { touch() } }
+        didSet { if name == nil, oldValue != nil { letGo = Date() } }
     }
 
     /// When you last looked at it. The summon lists pages by this, because
     /// what you were just reading is what you are most likely to want back.
     /// Written into the session, so a tab's time away counts across quits.
     private(set) var touched = Date()
+    /// When it was last let go of: unpinned, taken out of its group, its
+    /// name taken away. Kept apart from `touched`, which says when you last
+    /// looked, for ⌃Tab and for where ⌘W on a pin lands; letting go of a
+    /// tab isn't looking at it. In the session too (see Closing.swift).
+    var letGo: Date?
+    /// Since when a tab that closes itself counts as left: the later of the
+    /// last look and the last letting go.
+    var leftSince: Date { max(touched, letGo ?? .distantPast) }
 
     /// What was typed into this blank tab's field and not sent, kept while
     /// another tab is in front: the field is one for every tab. Only ever in
