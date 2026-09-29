@@ -138,8 +138,11 @@ struct Fold: View {
         // A column folded for good is folded before there is a window to
         // hide the lights of; they go once there is one.
         .background(WindowSetup { window in
-            window.standardWindowButton(.closeButton)?.superview?.isHidden = window.styleMask.contains(.fullScreen)
-                ? prefs.sidebar : lightsOff
+            if window.styleMask.contains(.fullScreen) {
+                Fold.fullScreen(window, column: prefs.sidebar)
+            } else {
+                Fold.titlebar(of: window)?.isHidden = lightsOff
+            }
             pointer.window = window
             watch()
         })
@@ -151,8 +154,8 @@ struct Fold: View {
             if (note.object as? NSWindow) === browser.window { hideLights() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
-            if (note.object as? NSWindow) === browser.window, let bar = Fold.titlebar(of: browser.window) {
-                Fold.reset(bar, hidden: lightsOff)
+            if let window = browser.window, (note.object as? NSWindow) === window {
+                Fold.windowed(window, lightsHidden: lightsOff)
             }
         }
         .onChange(of: folding) { _, _ in
@@ -336,15 +339,9 @@ struct Fold: View {
     /// circles drawn over them while the app is behind (see RestingLights),
     /// so hiding it hides both, and hidden buttons take no clicks.
     private func hideLights() {
-        guard let bar = Fold.titlebar(of: browser.window) else { return }
-        // In full screen macOS shows the buttons in the bar that comes down
-        // with the menu bar. With the strip they stay there: slid away with
-        // it, they were missing from that bar (#241). The column has buttons
-        // of its own in its corner instead (FullScreenLights), and macOS's
-        // go, or a second three came down over them with the menu bar.
-        if browser.window?.styleMask.contains(.fullScreen) == true {
-            bar.layer?.removeAnimation(forKey: "fold")
-            bar.isHidden = prefs.sidebar
+        guard let window = browser.window, let bar = Fold.titlebar(of: window) else { return }
+        if window.styleMask.contains(.fullScreen) {
+            Fold.fullScreen(window, column: prefs.sidebar)
             return
         }
         if prefs.sidebar {
@@ -352,6 +349,35 @@ struct Fold: View {
         } else {
             Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true)
         }
+    }
+
+    /// In full screen macOS shows the buttons in the bar that comes down
+    /// with the menu bar. With the strip they stay there: slid away with it,
+    /// they were missing from that bar (#241). The column has buttons of its
+    /// own in its corner instead (FullScreenLights), and macOS's title bar
+    /// goes whole: the buttons, or a second three came down over the
+    /// column's, and the rest of it, which full screen draws, frosted and
+    /// shadowed, as a band 28 points deep over the top of the window. The
+    /// title bar's own container can't be hidden: AppKit shows it again as
+    /// it moves it into full screen's window of its own. What it holds can.
+    static func fullScreen(_ window: NSWindow, column: Bool) {
+        guard let bar = titlebar(of: window), let container = bar.superview else { return }
+        bar.layer?.removeAnimation(forKey: "fold")
+        for view in container.subviews where view.isHidden != column { view.isHidden = column }
+        // The window macOS keeps the title bar in casts a shadow of its own
+        // along the bar's bottom edge, a line across the page with nothing
+        // above it.
+        if let holder = container.window, holder !== window, holder.hasShadow == column {
+            holder.hasShadow = !column
+        }
+    }
+
+    /// Out of full screen, all of the title bar back, and the buttons the
+    /// way the fold says.
+    static func windowed(_ window: NSWindow, lightsHidden: Bool) {
+        guard let bar = titlebar(of: window), let container = bar.superview else { return }
+        for view in container.subviews where view !== bar { view.isHidden = false }
+        reset(bar, hidden: lightsHidden)
     }
 
     /// The window in front's title bar, for the bench.

@@ -24,9 +24,12 @@ final class Lights: NSObject {
 
     /// Starts looking after a window's lights, once. `moved` hears each time
     /// they have been put in place.
-    static func keep(_ window: NSWindow, centreX: @escaping () -> CGFloat, moved: @escaping () -> Void) {
+    /// `fullScreen` hears each time AppKit lays the title bar out in full
+    /// screen, where the buttons are left where it puts them.
+    static func keep(_ window: NSWindow, centreX: @escaping () -> CGFloat, moved: @escaping () -> Void,
+                     fullScreen: @escaping () -> Void) {
         guard kept[ObjectIdentifier(window)] == nil else { return }
-        kept[ObjectIdentifier(window)] = Lights(window, centreX: centreX, moved: moved)
+        kept[ObjectIdentifier(window)] = Lights(window, centreX: centreX, moved: moved, fullScreen: fullScreen)
     }
 
     static func refresh(_ window: NSWindow?) {
@@ -36,6 +39,7 @@ final class Lights: NSObject {
 
     private weak var window: NSWindow?
     private let moved: () -> Void
+    private let fullScreen: () -> Void
     private let centreX: () -> CGFloat
     private var placing = false
     /// AppKit's own spacing between the three, read once from its first
@@ -46,10 +50,12 @@ final class Lights: NSObject {
     /// from the one before. Reproduced with ./bench resize, 23 Sep 2026.
     private let spacing: CGFloat
 
-    private init(_ window: NSWindow, centreX: @escaping () -> CGFloat, moved: @escaping () -> Void) {
+    private init(_ window: NSWindow, centreX: @escaping () -> CGFloat, moved: @escaping () -> Void,
+                 fullScreen: @escaping () -> Void) {
         self.window = window
         self.centreX = centreX
         self.moved = moved
+        self.fullScreen = fullScreen
         let row = [NSWindow.ButtonType.closeButton, .miniaturizeButton].compactMap { window.standardWindowButton($0) }
         let measured = row.count == 2 ? row[1].frame.minX - row[0].frame.minX : 0
         spacing = (16...32).contains(measured) ? measured : 20
@@ -58,7 +64,8 @@ final class Lights: NSObject {
         for name in [
             NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification,
             NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
-            NSWindow.didExitFullScreenNotification, NSWindow.didChangeScreenNotification,
+            NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification,
+            NSWindow.didChangeScreenNotification,
         ] {
             centre.addObserver(self, selector: #selector(place), name: name, object: window)
         }
@@ -79,9 +86,15 @@ final class Lights: NSObject {
     }
 
     @objc private func place() {
+        guard !placing, let window else { return }
         // Full screen keeps its title bar in a window of its own, laid out by
-        // macOS; it is left to it.
-        guard !placing, let window, !window.styleMask.contains(.fullScreen) else { return }
+        // macOS; the buttons are left to it. It moves the title bar there
+        // after saying full screen has begun, though, and shows all of it
+        // again on the way, so what is shown of it is settled here.
+        if window.styleMask.contains(.fullScreen) {
+            fullScreen()
+            return
+        }
         let buttons = self.buttons
         guard buttons.count == 3, let bar = buttons[0].superview, let container = bar.superview else { return }
         placing = true
