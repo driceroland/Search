@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Remove All… in the passwords panel takes every password Search keeps out of the keychain at once, after asking and after Touch ID or your password, as showing one does, for when you move them to a password manager of your own. With the search box narrowing the list it reads Remove 12… and removes only what the list shows. Return is Cancel there. Passwords in Bitwarden, other apps and other browsers are not touched. Thanks [@Tekkiech](https://github.com/Tekkiech) for asking and [@karadoganyi](https://github.com/karadoganyi) for building it ([#471](https://github.com/driceroland/Search/pull/471), [#469](https://github.com/driceroland/Search/issues/469))
+
 ### Changed
 
 - A bookmark opens in a tab of its own, from the bookmarks bar, the Bookmarks menu or the list: opened from a pinned tab it used to take the pin's place. An empty new tab is used as it is, and ⌘ opens the bookmark behind the tab you are on.
