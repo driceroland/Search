@@ -455,6 +455,10 @@ struct SettingsPanel: View {
             Line("Split View", "Show two tabs side by side. Drag a tab onto a page to pair them.") {
                 Switch(on: $prefs.splitView)
             }
+            Rule()
+            Line("Keys in the tab switcher", "With ⌃ still held in the ⌃Tab switcher, ⌃W closes the tab picked, ⌃R reloads it, ⌃M mutes it, and ⌃O takes a small window into your tabs.") {
+                Switch(on: $prefs.switcherKeys)
+            }
         }
     }
 
