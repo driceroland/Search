@@ -117,9 +117,16 @@ struct Fold: View {
             ZStack(alignment: onRight ? .trailing : .leading) {
                 Color.clear.frame(width: 0)
                 if folding, prefs.sidebar, browser.peeking {
+                    // Its shadow falls from a ground laid under it, as the
+                    // strip's does. Cast by the column itself, it was drawn
+                    // again from every row, icon and title on each frame of
+                    // the slide, the column's full height over: in full
+                    // screen, the whole screen's, and the slide lagged there.
+                    // The column's own ground is opaque, so it is the same
+                    // rectangle either way.
                     SideBar(browser: browser, prefs: prefs)
                         .transition(.move(edge: onRight ? .trailing : .leading)
-                            .combined(with: .casting(FoldShadow(x: onRight ? -4 : 4))))
+                            .combined(with: .casting(FoldShadow(x: onRight ? -4 : 4, behind: true))))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity,
