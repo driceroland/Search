@@ -83,11 +83,16 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             .map(\.element.tab.id)
     }
 
-    /// ⌃Tab in a small window: the small windows, latest first, as the
-    /// browser's switcher shows its tabs. One for all of them, so the
-    /// order is the same whichever one it starts in; it shows over the one
-    /// it started in, the first of its cards.
+    /// ⌃Tab in a small window: the browser's switcher as it looks from
+    /// here, the tabs as the planet and the small windows as its moons,
+    /// walked from this moon. One for all of them, so the moons' order is
+    /// the same whichever one it starts in; it shows over the one it started
+    /// in, its home.
     static let switcher = TabSwitcher()
+
+    /// The browser whose tabs are the planet for this gesture: the window
+    /// in front, as Open in Search takes.
+    private(set) static weak var planet: Browser?
 
     /// The last one brought forward on a benched run, which never puts one
     /// on a screen — for the bench.
@@ -101,10 +106,11 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
     }
 
-    /// The small window the switcher is on, or the one clicked, forward.
+    /// The card the switcher is on, or the one clicked: a small window
+    /// forward, or a tab in its browser window.
     static func commit(picking id: Tab.ID? = nil) {
         guard let target = switcher.finish(picking: id) else { return }
-        holding(target)?.front()
+        if let little = holding(target) { little.front() } else { planet?.bringForward(target) }
     }
 
     /// Letting go of ⌃, and a click while the switcher is up, in whichever
@@ -115,7 +121,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     private static func watch() {
         guard watching.isEmpty else { return }
         if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .leftMouseDown], handler: { event in
-            guard switcher.active, let little = owning(event.window), switcher.candidates.first == little.tab.id
+            guard switcher.active, let little = owning(event.window), switcher.home == little.tab.id
             else { return event }
             if event.type == .flagsChanged {
                 if !event.modifierFlags.contains(.control) { commit() }
@@ -154,7 +160,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             .overlay {
                 TabSwitcherOverlay(
                     switcher: LittleWindow.switcher,
-                    tab: { LittleWindow.holding($0)?.tab },
+                    tab: { id in LittleWindow.holding(id)?.tab ?? LittleWindow.planet?.tabs.first { $0.id == id } },
                     current: id, host: id,
                     pick: { LittleWindow.commit(picking: $0) }
                 )
@@ -170,9 +176,14 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         let switcher = LittleWindow.switcher
         if event.keyCode == 48, flags.contains(.control), flags.isDisjoint(with: [.command, .option]) {
             // A Tab held down doesn't race through them.
-            if !event.isARepeat {
-                switcher.step(row: LittleWindow.stacked, current: tab.id, backwards: flags.contains(.shift))
+            guard !event.isARepeat else { return true }
+            if !switcher.active {
+                let browser = Browsers.front ?? self.browser
+                LittleWindow.planet = browser
+                switcher.partners = browser?.switcherPartners ?? [:]
             }
+            switcher.step(fromMoon: tab.id, moons: LittleWindow.stacked,
+                          planet: LittleWindow.planet?.switcherPlanet ?? [], backwards: flags.contains(.shift))
             return true
         }
         // While the switcher is up, ⌃ and the arrows move through it; any
@@ -224,13 +235,13 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// comes back to first.
     func windowDidResignKey(_ notification: Notification) {
         let switcher = LittleWindow.switcher
-        if switcher.candidates.first == tab.id { switcher.cancel() }
+        if switcher.home == tab.id { switcher.cancel() }
         guard !kept else { return }
         switcher.left(tab, alive: Set(LittleWindow.open.map(\.tab.id)))
     }
 
     func windowWillClose(_ notification: Notification) {
-        if LittleWindow.switcher.candidates.first == tab.id { LittleWindow.switcher.cancel() }
+        if LittleWindow.switcher.home == tab.id { LittleWindow.switcher.cancel() }
         if !kept { tab.close() }
         LittleWindow.open.removeAll { $0 === self }
     }

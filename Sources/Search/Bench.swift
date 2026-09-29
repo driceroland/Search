@@ -2191,14 +2191,22 @@ final class Bench {
                 guard let text = request["what"] as? String, let url = URL(string: text) else { answer(["error": "little needs a url, keep or close"]); return }
                 LittleWindow.show(url, for: browser, front: false)
             }
-            // Its own switcher (⌃Tab in a small window), by address.
+            // Its own switcher (⌃Tab in a small window): the moons by
+            // address, the planet's tabs as the bench names them.
             let sw = LittleWindow.switcher
-            func address(_ id: Tab.ID?) -> String { id.flatMap { LittleWindow.holding($0)?.tab.address?.absoluteString } ?? "" }
+            func address(_ id: Tab.ID?) -> String {
+                guard let id else { return "" }
+                if let little = LittleWindow.holding(id) { return little.tab.address?.absoluteString ?? "" }
+                return browser.tabs.first { $0.id == id }.map { Bench.short($0) } ?? ""
+            }
             answer([
                 "switcher": [
                     "visible": sw.visible, "selected": address(sw.selectedID),
                     "candidates": sw.candidates.map { address($0) },
+                    "moons": sw.moons.map { address($0) },
                 ] as [String: Any],
+                "screens": LittleWindow.all.map { $0.tab.screens ?? 0 },
+                "activeID": browser.activeID.map { String($0.uuidString.prefix(8)).lowercased() } ?? "",
                 "fronted": address(LittleWindow.fronted),
                 "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" },
                 "tabs": browser.tabs.map { ($0.pin != nil ? "PIN " : "") + ($0.address?.host() ?? "blank") },

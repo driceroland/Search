@@ -5,8 +5,9 @@ Build first (`./build.sh`), then `python3 Tests/little_switcher.py`. Three
 small windows are made without being shown (see Little.swift). In the
 browser window, ⌃Tab shows them beside the grid as moons, and picking one
 brings its window forward and leaves the row alone. In a small window,
-⌃Tab walks the small windows, and Escape puts the switcher away without
-closing the window it was up in.
+⌃Tab shows the same planet and moons, walked from the moon it's in, and
+Escape puts the switcher away without closing the window it was up in.
+A moon is bigger the longer its page.
 """
 import sys
 import time
@@ -52,12 +53,14 @@ def main():
              l["fronted"] == y and not s["visible"], (s, l))
         t.ok("and the row is as it was", s["active"] == b and len(l["littles"]) == 3, (s, l))
 
-        # A small window: the small windows, and nothing of the browser's.
+        # A small window: the same planet and moons, walked from its moon.
         sv.cmd({**CTRL_TAB, "window": "little"}); time.sleep(0.8)
         l = little()["switcher"]
-        t.ok("⌃Tab in a small window: the small windows, the one it's in first",
-             l["visible"] and l["candidates"][0] == z and set(l["candidates"]) == {x, y, z}, l)
-        t.ok("and it stops on the next one", l["selected"] == y, l)
+        t.ok("⌃Tab in a small window: the small windows are the moons, the one it's in first",
+             l["visible"] and l["moons"] == [z, y, x], l)
+        t.ok("and the browser's tabs are the planet", {a, b} <= set(l["candidates"]), l)
+        t.ok("it stops on the next moon", l["selected"] == y, l)
+        planet = l["candidates"]
         sv.cmd({"do": "press", "code": 53, "chars": "\x1b", "mods": ["ctrl"], "window": "little"}); time.sleep(0.6)
         l = little()
         t.ok("Escape puts the switcher away and leaves the window open",
@@ -65,9 +68,24 @@ def main():
         sv.cmd({**CTRL_TAB, "window": "little"}); time.sleep(0.2)
         sv.cmd({**CTRL_TAB, "window": "little", "letgo": True}); time.sleep(0.6)
         l = little()
-        t.ok("two ⌃Tabs and ⌃ let go of: the one two along comes forward",
+        t.ok("two ⌃Tabs and ⌃ let go of: the moon two along comes forward",
              l["fronted"] == x and not l["switcher"]["visible"], l)
+        sv.cmd({**CTRL_TAB, "mods": ["ctrl", "shift"], "window": "little", "letgo": True}); time.sleep(0.6)
+        l = little()
+        t.ok("⇧⌃Tab from a small window: the planet's far end, that tab in the browser",
+             l["activeID"] == planet[-1] and not l["switcher"]["visible"], (planet, l))
         t.ok("the browser's switcher never came up for it", not switcher()["visible"])
+
+        # Moons by the length of their pages.
+        little(f"{sv.BASE}/long"); time.sleep(1.5)
+        l = little()
+        short, long_ = l["screens"][0], l["screens"][-1]
+        t.ok("a small window's page says how long it is", short >= 1 and long_ > 10, l["screens"])
+        sv.cmd(CTRL_TAB); time.sleep(0.8)
+        cards = switcher()["cards"]
+        t.ok("its moon is bigger than a one-screen page's",
+             cards[f"{sv.BASE}/long"][2] > cards[x][2], cards)
+        sv.cmd({"do": "press", "code": 53, "chars": "\x1b", "mods": ["ctrl"]}); time.sleep(0.4)
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)

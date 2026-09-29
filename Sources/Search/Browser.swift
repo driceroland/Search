@@ -3076,11 +3076,31 @@ final class Browser: NSObject, ObservableObject {
     /// (`commitTabSwitch`).
     func switchTabs(backwards: Bool) {
         guard let activeID else { return }
-        // A pair once, under its first page, pictured with its other one.
-        tabSwitcher.partners = prefs.splitView
-            ? Dictionary(splits.map { ($0.left, $0.right) }, uniquingKeysWith: { first, _ in first }) : [:]
+        tabSwitcher.partners = switcherPartners
         tabSwitcher.step(row: tabs.filter(standsInRow).map(\.id), current: activeSplit?.left ?? activeID,
                          backwards: backwards, moons: LittleWindow.stacked)
+    }
+
+    /// A pair once, under its first page, pictured with its other one.
+    var switcherPartners: [Tab.ID: Tab.ID] {
+        prefs.splitView ? Dictionary(splits.map { ($0.left, $0.right) }, uniquingKeysWith: { first, _ in first }) : [:]
+    }
+
+    /// The row as the switcher's grid shows it, for a small window's
+    /// switcher to show as its planet (see TabSwitcher.ordered).
+    var switcherPlanet: [Tab.ID] {
+        tabSwitcher.ordered(row: tabs.filter(standsInRow).map(\.id), current: activeSplit?.left ?? activeID)
+    }
+
+    /// A tab picked in a small window's switcher: that tab, in this window,
+    /// in front. A run the bench is driving goes to the tab and puts nothing
+    /// on a screen.
+    func bringForward(_ id: Tab.ID) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        select(entry(tab))
+        guard !(Store.testing && prefs.bench), let window else { return }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
     }
 
     /// A click while the switcher is up, at a point in the window's own

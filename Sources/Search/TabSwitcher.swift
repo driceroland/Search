@@ -1,9 +1,11 @@
 import SwiftUI
 
 /// ⌃Tab: the tabs of the space on screen as pictures, the one you are on
-/// first and then the ones you last left, latest first, and the small
-/// windows beside them. In a small window, the small windows instead. One gesture's order stays fixed until ⌃ is let go
-/// of, so walking it does not rearrange what is being walked.
+/// first and then the ones you last left, latest first: the planet. The
+/// small windows sit beside it as its moons. From a small window it is the
+/// same picture, walked from the moon you are on. One gesture's order stays
+/// fixed until ⌃ is let go of, so walking it does not rearrange what is
+/// being walked.
 @MainActor
 final class TabSwitcher: ObservableObject {
     enum Direction { case left, right, up, down }
@@ -17,7 +19,7 @@ final class TabSwitcher: ObservableObject {
     /// row's, and picking one brings its window forward and leaves the row
     /// as it was.
     @Published private(set) var moons: [Tab.ID] = []
-    static let maxMoons = 6
+    static let maxMoons = 9
     /// Up to three to a column, and the columns even: four moons are two
     /// and two, not three and one.
     var moonColumns: Int { (moons.count + 2) / 3 }
@@ -74,14 +76,21 @@ final class TabSwitcher: ObservableObject {
         return true
     }
 
-    /// Every card in the order ⌃Tab walks them: the grid, then its moons.
-    private var ring: [Tab.ID] { candidates + moons }
+    /// The card the gesture started on: the tab on screen, or the small
+    /// window the keys were in. The switcher shows over its window.
+    private(set) var home: Tab.ID?
+    /// Walked from a small window: its moons come first, then the planet.
+    private var moonsLead = false
+
+    /// Every card in the order ⌃Tab walks them: the grid, then its moons,
+    /// or the moons first when the gesture started on one.
+    private var ring: [Tab.ID] { moonsLead ? moons + candidates : candidates + moons }
 
     private var previewRequests: [Tab.ID: UUID] = [:]
     private var reveal: DispatchWorkItem?
     private var previewRequested = false
     private var generation = UUID()
-    var active: Bool { !candidates.isEmpty }
+    var active: Bool { home != nil }
 
     /// The tab just left goes to the front, with a picture of it as it was.
     /// Tabs that are gone fall out, and only the ten latest keep a picture.
@@ -97,27 +106,60 @@ final class TabSwitcher: ObservableObject {
     /// next comes back again. ⇧ starts from the far end, which is the last
     /// moon when there are any: the walk is one ring, grid then moons.
     func step(row: [Tab.ID], current: Tab.ID, backwards: Bool, moons: [Tab.ID] = []) {
-        if candidates.isEmpty {
-            let valid = Set(row)
-            guard valid.contains(current) else { return }
-            var seen: Set<Tab.ID> = []
-            candidates = Array(([current] + recentIDs + row)
-                .filter { valid.contains($0) && seen.insert($0).inserted }
-                .prefix(10))
-            self.moons = Array(moons.filter { !valid.contains($0) }.prefix(Self.maxMoons))
-            // One tab and a small window is still somewhere to go.
-            guard ring.count > 1 else {
-                candidates = []
-                self.moons = []
-                return
-            }
-            selectedID = backwards ? ring.last : ring[1]
-            let work = DispatchWorkItem { [weak self] in self?.show() }
-            reveal = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+        guard active else {
+            guard row.contains(current) else { return }
+            let planet = ordered(row: row, current: current)
+            begin(home: current, planet: planet, moons: moons.filter { !planet.contains($0) },
+                  moonsLead: false, backwards: backwards)
             return
         }
+        walk(backwards: backwards)
+    }
 
+    /// ⌃Tab in a small window: the same planet and moons, the moons first,
+    /// from the one the keys are in. A quick press goes back to the small
+    /// window last left, and walking on goes out to the tabs. `planet` comes
+    /// in its own order, the browser's (see `ordered`).
+    func step(fromMoon moon: Tab.ID, moons: [Tab.ID], planet: [Tab.ID], backwards: Bool) {
+        guard active else {
+            guard moons.contains(moon) else { return }
+            var seen: Set<Tab.ID> = []
+            let latest = ([moon] + recentIDs + moons).filter { moons.contains($0) && seen.insert($0).inserted }
+            begin(home: moon, planet: Array(planet.prefix(10)), moons: latest, moonsLead: true, backwards: backwards)
+            return
+        }
+        walk(backwards: backwards)
+    }
+
+    /// A row's tabs as the grid shows them: the one on screen, the ones left
+    /// latest first, then the rest in the row's order; ten at most.
+    func ordered(row: [Tab.ID], current: Tab.ID?) -> [Tab.ID] {
+        let valid = Set(row)
+        var seen: Set<Tab.ID> = []
+        return Array(([current].compactMap { $0 } + recentIDs + row)
+            .filter { valid.contains($0) && seen.insert($0).inserted }
+            .prefix(10))
+    }
+
+    private func begin(home: Tab.ID, planet: [Tab.ID], moons: [Tab.ID], moonsLead: Bool, backwards: Bool) {
+        candidates = planet
+        self.moons = Array(moons.prefix(Self.maxMoons))
+        self.moonsLead = moonsLead
+        // One tab and a small window is still somewhere to go.
+        guard ring.count > 1, ring.first == home else {
+            candidates = []
+            self.moons = []
+            self.moonsLead = false
+            return
+        }
+        self.home = home
+        selectedID = backwards ? ring.last : ring[1]
+        let work = DispatchWorkItem { [weak self] in self?.show() }
+        reveal = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+
+    private func walk(backwards: Bool) {
         let ring = ring
         guard let selectedID, let index = ring.firstIndex(of: selectedID) else { return }
         let next = (index + (backwards ? -1 : 1) + ring.count) % ring.count
@@ -131,25 +173,26 @@ final class TabSwitcher: ObservableObject {
         let ring = ring
         guard let selectedID, let index = ring.firstIndex(of: selectedID) else { return }
         show()
-        let next: Int
-        let moon = index - candidates.count
         switch direction {
-        case .left: next = (index - 1 + ring.count) % ring.count
-        case .right: next = (index + 1) % ring.count
-        case .up where moon >= 0:
-            guard moon % moonsPerColumn > 0 else { return }
-            next = index - 1
-        case .down where moon >= 0:
-            guard (moon + 1) % moonsPerColumn > 0, moon + 1 < moons.count else { return }
-            next = index + 1
-        case .up:
-            guard index >= 5 else { return }
-            next = index - 5
-        case .down:
-            guard index < 5, candidates.count > 5 else { return }
-            next = min(index + 5, candidates.count - 1)
+        case .left: self.selectedID = ring[(index - 1 + ring.count) % ring.count]
+        case .right: self.selectedID = ring[(index + 1) % ring.count]
+        case .up, .down:
+            if let moon = moons.firstIndex(of: selectedID) {
+                let per = moonsPerColumn
+                let next = direction == .up ? moon - 1 : moon + 1
+                // Within its own column.
+                guard moons.indices.contains(next), next / per == moon / per else { return }
+                self.selectedID = moons[next]
+            } else if let card = candidates.firstIndex(of: selectedID) {
+                if direction == .up {
+                    guard card >= 5 else { return }
+                    self.selectedID = candidates[card - 5]
+                } else {
+                    guard card < 5, candidates.count > 5 else { return }
+                    self.selectedID = candidates[min(card + 5, candidates.count - 1)]
+                }
+            }
         }
-        self.selectedID = ring[next]
     }
 
     func finish(picking id: Tab.ID? = nil) -> Tab.ID? {
@@ -166,6 +209,8 @@ final class TabSwitcher: ObservableObject {
         generation = UUID()
         candidates = []
         moons = []
+        home = nil
+        moonsLead = false
         selectedID = nil
         visible = false
         panelFrame = .zero
@@ -267,11 +312,21 @@ struct TabSwitcherOverlay: View {
     var host: Tab.ID?
     let pick: (Tab.ID) -> Void
 
-    /// A moon's card beside a grid card: small, as the small window is.
+    /// A moon's card beside a grid card, at its biggest: small, as the
+    /// small window is.
     private static let moonScale: CGFloat = 0.62
 
+    /// A moon's size by its page's length, as a moon's goes by its mass: a
+    /// page one screen long is the smallest, sixteen screens or more fills
+    /// the column, on a log scale between, so a 40-comment thread and a
+    /// 400-comment one still differ. One whose page hasn't said is between.
+    static func moonSize(screens: Double?) -> CGFloat {
+        guard let screens else { return 0.8 }
+        return 0.6 + 0.4 * CGFloat(min(1, max(0, log2(screens) / 4)))
+    }
+
     var body: some View {
-        if switcher.visible, host == nil || switcher.candidates.first == host {
+        if switcher.visible, host == nil || switcher.home == host {
             GeometryReader { geometry in
                 let columns = min(5, switcher.candidates.count)
                 let moonColumns = switcher.moonColumns
@@ -348,17 +403,21 @@ struct TabSwitcherOverlay: View {
     }
 
     /// The moons: the small windows, in a panel of their own beside the
-    /// grid, in even columns, their cards smaller than a tab's.
+    /// grid, in even columns, their cards smaller than a tab's and sized by
+    /// their pages. `width` is a column's, the biggest a moon can be.
     private func moons(width: CGFloat, columns: Int) -> some View {
         let per = switcher.moonsPerColumn
-        let previewHeight = (width - 12) * 0.62
-        return HStack(alignment: .top, spacing: 6) {
+        return HStack(alignment: .center, spacing: 6) {
             ForEach(0..<columns, id: \.self) { column in
                 VStack(spacing: 6) {
                     ForEach(Array(switcher.moons.dropFirst(column * per).prefix(per)), id: \.self) { id in
-                        if let tab = tab(id) { moon(tab, width: width, previewHeight: previewHeight) }
+                        if let tab = tab(id) {
+                            let size = width * Self.moonSize(screens: tab.screens)
+                            moon(tab, width: size, previewHeight: (size - 12) * 0.62)
+                        }
                     }
                 }
+                .frame(width: width)
             }
         }
         .padding(8)
