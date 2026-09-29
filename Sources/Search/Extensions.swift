@@ -761,15 +761,22 @@ final class Extensions: NSObject, ObservableObject {
 
     /// Chrome asks the first time an extension's page takes the place of
     /// the new tab — an extension that did it quietly could be anything.
-    /// So does Search, and then shows the page in the tab just opened.
+    /// So does Search, and then shows the page in the tab just opened. It
+    /// asks even while another extension's page has new tabs, naming that
+    /// one, so the first to ask doesn't keep them for good.
     func offerNewTabPage(into tab: Tab) {
         guard let item = newTabAskers.last(where: { Store.settings.object(forKey: "extensions.newtab.\($0.id)") == nil }),
               let url = contexts[item.id]?.overrideNewTabPageURL else { return }
+        let holder = newTabPageID.flatMap { id in installed.first { $0.id == id } }
+        let shown = newTabPage.flatMap(Browser.extensionHost(of:))
+        let replacing = holder.map { "It asked to replace the new tab page, which “\($0.name)” shows now." } ?? "It asked to replace the new tab page."
         Task {
-            let yes = await ask("Show “\(item.name)” in new tabs?", detail: "It asked to replace the new tab page. You can change this later in Settings › General › Home page.",
+            let yes = await ask("Show “\(item.name)” in new tabs?", detail: "\(replacing) You can change this later in Settings › General › Home page.",
                                 icon: contexts[item.id]?.webExtension.icon(for: CGSize(width: 64, height: 64)), yes: "Keep It", no: "Don't Allow")
             if yes { setNewTabPage(item.id) } else { Store.settings.set(false, forKey: "extensions.newtab.\(item.id)") }
-            if yes, tab.isBlank, let browser { browser.replaceBlank(tab, with: url) }
+            // The tab just opened, if it is still the page it opened on.
+            let untouched = tab.isBlank || (shown != nil && tab.address.flatMap(Browser.extensionHost(of:)) == shown)
+            if yes, untouched, let browser { browser.replaceNewTab(tab, with: url) }
         }
     }
 
