@@ -4087,6 +4087,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             tab.arm(hiding: curtain.css(on: host))
             // And the blocker, on or off for where it is going.
             Shield.shared.tune(webView.configuration.userContentController, for: host)
+            // The frames that were told about the last page's darkening go
+            // with it.
+            tab.duskFrames.removeAll()
         }
 
         // chrome-extension: an extension's own pages — options, a side

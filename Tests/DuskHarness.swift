@@ -32,7 +32,11 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
         var mode = "colours"
         /// JavaScript that should be true of the darkened page, with
         /// lum(selector, property) and ok(selector, property) to read it.
+        /// A selector reaches into a shadow root with " >>> ".
         var looks: [String] = []
+        /// Each frame, by its document's title: whether it should end up
+        /// darkened.
+        var frames: [String: Bool] = [:]
         /// How long after the load to look.
         var settle: Double = 0.6
     }
@@ -40,6 +44,11 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
     private static let world = WKContentWorld.world(name: "Search")
     private var failures = 0
     private var told: [[String: Any]] = []
+    /// As DuskRelay keeps them: the frames that asked, and whether the page
+    /// is darkened now, which they are told.
+    private var frameInfos: [WKFrameInfo] = []
+    private var pageOn = false
+    private weak var current: WKWebView?
     private let shots: URL? = CommandLine.arguments.dropFirst().first.map { URL(fileURLWithPath: $0) }
 
     private static let card = """
@@ -196,6 +205,45 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
             """, dark: false, shown: true,
                 looks: ["getComputedStyle(document.getElementById('pic')).mixBlendMode === 'normal'",
                         "getComputedStyle(document.getElementById('deal')).mixBlendMode === 'normal'"]),
+        // Frames follow their page: a light one darkens with it, a dark one
+        // (a video player) is left alone, and one from another origin too.
+        Fixture(name: "frames-on-a-light-page", html: """
+            <style>body{background:#fff;color:#111}iframe{width:200px;height:80px;border:0}</style><p>Page</p>
+            <iframe srcdoc="<title>light-frame</title><style>body{background:#fff;color:#111}</style><p>Comments</p>"></iframe>
+            <iframe srcdoc="<title>dark-frame</title><style>body{background:#111;color:#eee}</style><p>Player</p>"></iframe>
+            <iframe src="data:text/html,<title>other-origin</title><style>body{background:%23fff}</style><p>Widget</p>"></iframe>
+            """, dark: false, shown: true,
+                frames: ["light-frame": true, "dark-frame": false, "other-origin": true], settle: 1.2),
+        // A frame inside a frame, as W3Schools' "Try it" shows one: an
+        // inline ground and a heading with no colour of its own.
+        Fixture(name: "frames-nested", html: """
+            <style>body{background:#fff}iframe{width:320px;height:200px;border:0}</style>
+            <iframe srcdoc="<title>outer</title><body style='background:#fff'><h2>Outer</h2><iframe style='width:260px;height:120px' srcdoc='<title>inner</title><body style=&quot;background-color:lightblue&quot;><h1 id=h>In a frame</h1>'></iframe>"></iframe>
+            """, dark: false, shown: true, frames: ["outer": true, "inner": true], settle: 1.5),
+        // A page dark by itself isn't darkened, and neither are its frames.
+        Fixture(name: "frames-on-a-dark-page", html: """
+            <style>body{background:#fff}@media (prefers-color-scheme: dark){body{background:#111;color:#eee}}iframe{width:200px;height:80px}</style>
+            <iframe srcdoc="<title>light-frame</title><style>body{background:#fff}</style><p>Widget</p>"></iframe>
+            """, dark: true, shown: false, frames: ["light-frame": false], settle: 1.2),
+        // Shadow roots: styled by a <style> inside, by an adopted sheet, and
+        // one made after the page is up, which is only found by the sweep.
+        Fixture(name: "shadow-roots", html: """
+            <style>body{background:#fff}</style>
+            <div id=a></div><div id=b></div><div id=c></div>
+            <script>
+            var a = document.getElementById('a').attachShadow({mode: 'open'});
+            a.innerHTML = '<style>:host{display:block;background:#fff;color:#111}.in{background:#f5f5f5}</style><p class=in>Inside</p>';
+            var b = document.getElementById('b').attachShadow({mode: 'open'}), sheet = new CSSStyleSheet();
+            sheet.replaceSync('.in{background:#fff;color:#000}'); b.adoptedStyleSheets = [sheet]; b.innerHTML = '<p class=in>Adopted</p>';
+            setTimeout(function () {
+              var c = document.getElementById('c').attachShadow({mode: 'open'});
+              c.innerHTML = '<style>.in{background:#fff}</style><p class=in>Late</p>';
+            }, 400);
+            </script>
+            """, dark: false, shown: true,
+                looks: ["lum('#a','backgroundColor') < 0.05", "lum('#a','color') > 0.4", "lum('#a >>> .in','backgroundColor') < 0.05",
+                        "lum('#b >>> .in','backgroundColor') < 0.05", "lum('#b >>> .in','color') > 0.4",
+                        "lum('#c >>> .in','backgroundColor') < 0.05"], settle: 2.0),
         Fixture(name: "known-light-from-start", html: "<style>body{background:#fff}</style>" + card,
                 dark: false, shown: true, seen: ["known-light-from-start.test": false]),
     ]
@@ -230,19 +278,26 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
     private static let helpers = """
     var pen = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
     var lin = function (c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    var find = function (sel) {
+      var parts = sel.split(' >>> '), at = document;
+      for (var i = 0; i < parts.length; i++) { var el = at.querySelector(parts[i]); at = i < parts.length - 1 ? el.shadowRoot : el; }
+      return at;
+    };
     var lum = function (sel, prop) {
-      pen.clearRect(0, 0, 1, 1); pen.fillStyle = 'rgba(0,0,0,0)'; pen.fillStyle = getComputedStyle(document.querySelector(sel))[prop];
+      pen.clearRect(0, 0, 1, 1); pen.fillStyle = 'rgba(0,0,0,0)'; pen.fillStyle = getComputedStyle(find(sel))[prop];
       pen.fillRect(0, 0, 1, 1); var d = pen.getImageData(0, 0, 1, 1).data;
       return 0.2126 * lin(d[0]) + 0.7152 * lin(d[1]) + 0.0722 * lin(d[2]);
     };
     var ok = function (sel, prop) {
-      var m = /oklch\\(([\\d.]+) ([\\d.]+) ([\\d.]+)/.exec(getComputedStyle(document.querySelector(sel))[prop]);
+      var m = /oklch\\(([\\d.]+) ([\\d.]+) ([\\d.]+)/.exec(getComputedStyle(find(sel))[prop]);
       return m ? [+m[1], +m[2], +m[3]] : [NaN, NaN, NaN];
     };
     """
 
     private func run(_ fixture: Fixture, _ script: String) async {
         told = []
+        frameInfos = []
+        pageOn = false
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let config: [String: Any] = ["on": true, "sites": fixture.sites, "seen": fixture.seen, "mode": fixture.mode]
@@ -250,7 +305,7 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
         let controller = configuration.userContentController
         controller.add(self, contentWorld: Self.world, name: "officeDusk")
         controller.addUserScript(WKUserScript(source: "(\(script))(\(json));", injectionTime: .atDocumentStart,
-                                              forMainFrameOnly: true, in: Self.world))
+                                              forMainFrameOnly: false, in: Self.world))
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 520, height: 320), configuration: configuration)
         // Off every screen, a window counts as covered, and WebKit gives a page
         // nobody sees no frames: the measuring waits for one. Told to paint
@@ -266,6 +321,7 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
         window.appearance = NSAppearance(named: .darkAqua)
         window.contentView = web
         window.orderFrontRegardless()
+        current = web
         web.loadHTMLString(fixture.html, baseURL: URL(string: "https://\(fixture.name).test/"))
 
         try? await Task.sleep(for: .seconds(0.4 + fixture.settle))
@@ -283,6 +339,15 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
             let held = try? await web.evaluateJavaScript("(function(){ \(Self.helpers) try { return !!(\(look)); } catch (e) { return false; } })()",
                                                          in: nil, contentWorld: Self.world) as? Bool
             if held != true { wrong.append(look) }
+        }
+        for (title, want) in fixture.frames {
+            var found: Bool?
+            for frame in frameInfos {
+                let said = try? await web.evaluateJavaScript("[document.title, window.__officeDusk ? window.__officeDusk.state().shown : null]",
+                                                             in: frame, contentWorld: Self.world) as? [Any]
+                if said?.first as? String == title { found = said?.last as? Bool; break }
+            }
+            if found != want { wrong.append("frame \(title): \(found.map { $0 ? "darkened" : "left alone" } ?? "never asked")") }
         }
         // Darkened the way it was asked to be: in its colours where the
         // browser can, by the filter where it was kept to it.
@@ -308,8 +373,24 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
     }
 
     nonisolated func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        let frame = message.frameInfo
         MainActor.assumeIsolated {
-            if let body = message.body as? [String: Any] { told.append(body) }
+            guard let body = message.body as? [String: Any], let web = current else { return }
+            // What DuskRelay does: a frame is kept and told whether its page
+            // is darkened; the page's changes are told to every frame.
+            if !frame.isMainFrame {
+                guard body["frame"] as? Bool == true else { return }
+                frameInfos.append(frame)
+                web.evaluateJavaScript("window.__officeDusk && window.__officeDusk.top(\(pageOn))", in: frame, in: Self.world) { _ in }
+                return
+            }
+            told.append(body)
+            let on = body["on"] as? Bool ?? false
+            guard on != pageOn else { return }
+            pageOn = on
+            for f in frameInfos {
+                web.evaluateJavaScript("window.__officeDusk && window.__officeDusk.top(\(on))", in: f, in: Self.world) { _ in }
+            }
         }
     }
 }

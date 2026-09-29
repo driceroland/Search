@@ -249,9 +249,14 @@ enum DuskColours {
       };
 
       var mine = new Set([ground, marks, still].concat(others));
-      var sources = function () {
-        var list = [].slice.call(doc.styleSheets);
-        doc.adoptedStyleSheets.forEach(function (s) { if (!mine.has(s)) list.push(s); });
+      // The document, and every open shadow root in it. A shadow root's
+      // sheets style only what is inside it, and the document's twins don't
+      // reach in there either: each root gets twins of its own, beside its
+      // own sheets, and our ground, marks and stillness too.
+      var roots = [doc], rooted = new WeakSet();
+      var sources = function (root) {
+        var list = [].slice.call(root.styleSheets);
+        root.adoptedStyleSheets.forEach(function (s) { if (!mine.has(s)) list.push(s); });
         return list;
       };
 
@@ -379,11 +384,13 @@ enum DuskColours {
       };
 
       var markups = function (top) {
-        if (!top || top.nodeType !== 1) return;
-        if (top.tagName === 'IMG') lookAt(top);
+        if (!top || top.nodeType !== 1 && top.nodeType !== 11) return;
+        if (top.nodeType === 1) {
+          if (top.tagName === 'IMG') lookAt(top);
+          if (top.hasAttribute('style')) markStyle(top);
+          if (top.matches(legacyFind)) noteLegacy(top);
+        }
         top.querySelectorAll('img').forEach(lookAt);
-        if (top.hasAttribute('style')) markStyle(top);
-        if (top.matches(legacyFind)) noteLegacy(top);
         top.querySelectorAll('[style]').forEach(markStyle);
         top.querySelectorAll(legacyFind).forEach(noteLegacy);
       };
@@ -396,20 +403,44 @@ enum DuskColours {
 
       // Ours after all of the page's, in the page's order: the ground first,
       // then each sheet's twin, then the style attributes'.
-      var place = function () {
-        var theirs = doc.adoptedStyleSheets.filter(function (s) { return !mine.has(s) || others.indexOf(s) >= 0; });
+      var place = function (root) {
+        var theirs = root.adoptedStyleSheets.filter(function (s) { return !mine.has(s) || others.indexOf(s) >= 0; });
         var ordered = [ground];
-        sources().forEach(function (s) { var t = twins.get(s); if (t) ordered.push(t.sheet); });
+        sources(root).forEach(function (s) { var t = twins.get(s); if (t) ordered.push(t.sheet); });
         ordered.push(marks, still);
-        var now = doc.adoptedStyleSheets, want = theirs.concat(ordered);
-        if (now.length !== want.length || want.some(function (s, i) { return now[i] !== s; })) doc.adoptedStyleSheets = want;
+        var now = root.adoptedStyleSheets, want = theirs.concat(ordered);
+        if (now.length !== want.length || want.some(function (s, i) { return now[i] !== s; })) root.adoptedStyleSheets = want;
+      };
+
+      // A shadow root is made without a mutation to say so: looked for in
+      // what is added, and swept for once a second while the page is
+      // darkened, inside the ones already found too.
+      var shadows = function (top) {
+        if (!top || !top.querySelectorAll) return;
+        if (top.shadowRoot && !rooted.has(top.shadowRoot)) adopt(top.shadowRoot);
+        var all = top.querySelectorAll('*');
+        for (var i = 0; i < all.length; i++) {
+          var sr = all[i].shadowRoot;
+          if (sr && !rooted.has(sr)) adopt(sr);
+        }
+      };
+      var adopt = function (sr) {
+        rooted.add(sr);
+        roots.push(sr);
+        watch(sr);
+        markups(sr);
+        shadows(sr);
       };
 
       var refresh = function () {
         if (!started) return;
         var t = performance.now();
-        sources().forEach(twinOf);
-        place();
+        // A root whose host has left the page goes with it.
+        roots = roots.filter(function (r) { return r === doc || r.host.isConnected; });
+        roots.forEach(function (root) {
+          sources(root).forEach(twinOf);
+          place(root);
+        });
         spent += performance.now() - t;
         // Ready when nothing is on its way, or once it has been long enough
         // to show what there is: the rest comes in as it arrives.
@@ -425,11 +456,26 @@ enum DuskColours {
         startedAt = performance.now();
         onReady = ready;
         markups(doc.body);
+        shadows(doc);
+        watch(doc.documentElement);
         refresh();
         setTimeout(refresh, 1600);
         // Rules added by script (insertRule) change no markup: each sheet's
-        // count is looked at once a second.
-        setInterval(function () { if (showing) refresh(); }, 1000);
+        // count is looked at once a second, and shadow roots swept for.
+        setInterval(function () {
+          if (!showing) return;
+          roots.slice().forEach(shadows);
+          refresh();
+        }, 1000);
+        // A <link> is only a sheet once it has loaded, and a picture can
+        // only be looked at once it has.
+        doc.addEventListener('load', function (e) {
+          if (e.target.nodeName === 'LINK') refresh();
+          if (e.target.nodeName === 'IMG') lookAt(e.target);
+        }, true);
+      };
+
+      var watch = function (root) {
         new MutationObserver(function (records) {
           var sheets = false;
           records.forEach(function (r) {
@@ -444,6 +490,7 @@ enum DuskColours {
               var added = r.addedNodes[i];
               if (added.nodeName === 'STYLE' || added.nodeName === 'LINK') sheets = true;
               markups(added);
+              if (added.nodeType === 1 && started) shadows(added);
             }
             for (var j = 0; j < r.removedNodes.length; j++) {
               var gone = r.removedNodes[j].nodeName;
@@ -452,14 +499,8 @@ enum DuskColours {
           });
           // Before the frame is drawn: a new sheet's colours are never seen.
           if (sheets) refresh();
-        }).observe(doc.documentElement, { childList: true, subtree: true, characterData: true,
-                                          attributes: true, attributeFilter: ['style', 'bgcolor', 'text', 'color', 'fill', 'stroke'] });
-        // A <link> is only a sheet once it has loaded, and a picture can
-        // only be looked at once it has.
-        doc.addEventListener('load', function (e) {
-          if (e.target.nodeName === 'LINK') refresh();
-          if (e.target.nodeName === 'IMG') lookAt(e.target);
-        }, true);
+        }).observe(root, { childList: true, subtree: true, characterData: true,
+                           attributes: true, attributeFilter: ['style', 'bgcolor', 'text', 'color', 'fill', 'stroke'] });
       };
 
       var own = function () {
@@ -476,7 +517,7 @@ enum DuskColours {
         show: function (on) {
           if (on === showing) return;
           showing = on;
-          if (on) place();
+          if (on) roots.forEach(place);
           quietly(function () { own().forEach(function (s) { s.disabled = !on; }); });
         },
         // The page's own colours, read with ours set aside for a moment.
@@ -493,7 +534,7 @@ enum DuskColours {
         stats: function () {
           var n = 0;
           twins.forEach(function (t) { if (t.text) n += t.sheet.cssRules.length; });
-          return { sheets: twins.size, twins: n, marked: count, ms: Math.round(spent), waiting: waiting };
+          return { sheets: twins.size, twins: n, marked: count, ms: Math.round(spent), waiting: waiting, shadows: roots.length - 1 };
         }
       };
     }

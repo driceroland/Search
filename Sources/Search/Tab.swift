@@ -433,6 +433,10 @@ final class Tab: ObservableObject, Identifiable {
     @Published var dusked = false
     /// What the page measured: true, dark by itself; nil, not yet measured.
     var duskNative: Bool?
+    /// The page's frames that asked whether it is darkened, to be told
+    /// when that changes. Let go of with the page (see Browser's
+    /// decidePolicyFor).
+    var duskFrames: [WKFrameInfo] = []
     /// Silenced by hand from its speaker or its menu: the page plays on and
     /// is not heard. WebKit keeps the mute on the view from one page to the
     /// next, so it is only set again on a view built new, as a sleeping tab
@@ -805,10 +809,11 @@ final class Tab: ObservableObject, Identifiable {
         )
         // Only while it is on and not paused: otherwise pages get nothing
         // (see Dusk.swift). Before the document, so a site known to be light
-        // is never seen white.
+        // is never seen white. Every frame: a frame darkens its own document,
+        // led by its page.
         if let dusk = Dusk.shared.script {
             controller.addUserScript(
-                WKUserScript(source: dusk, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
+                WKUserScript(source: dusk, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
             )
         }
         guard !css.isEmpty else { return }

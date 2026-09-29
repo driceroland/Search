@@ -134,15 +134,23 @@ final class Dusk: ObservableObject {
     /// to pure black and black text from going to pure white.
     static let script = #"""
     function (config) {
-      if (window.top !== window) return;
       if (window.__officeDusk) { window.__officeDusk.update(config); return; }
       if (!config.on) return;
+      // A frame darkens its own document, since nothing outside it can:
+      // but only while the page around it is darkened, which Search tells
+      // it (top), and only if it measures light itself, so a light comment
+      // box goes dark with its page and a video player is left alone. Until
+      // it is told, it does nothing at all. An ad's pixel isn't worth it.
+      var framed = window.top !== window, topOn = false;
+      if (framed && innerWidth * innerHeight < 40 * 40) return;
 
       var doc = document, root = doc.documentElement;
       var scheme = matchMedia('(prefers-color-scheme: dark)');
       var host = location.hostname.toLowerCase().replace(/^www\./, '');
       // true: dark by itself. false: light. undefined: not measured yet.
-      var native = config.seen[host];
+      // What a site measured is kept by the sites people visit, not by what
+      // they embed.
+      var native = framed ? undefined : config.seen[host];
       var shown = false, told = null, ground = '#fff';
 
       // What is kept as the site made it: the pictures, and what the page
@@ -169,12 +177,14 @@ final class Dusk: ObservableObject {
       };
 
       var wanted = function () {
+        if (framed) return config.on && scheme.matches && topOn && native === false;
         var chosen = config.sites[host];
         if (!config.on || !scheme.matches || chosen === false) return false;
         return chosen === true || native === false;
       };
 
       var tell = function () {
+        if (framed) return;
         var now = [native === true, native !== undefined, shown].join();
         if (now === told) return;
         told = now;
@@ -468,7 +478,7 @@ final class Dusk: ObservableObject {
           watchedBody = doc.body;
           themes.observe(watchedBody, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode', 'data-mode'] });
         }
-        if (!config.on || !scheme.matches) { apply(); return; }
+        if (!config.on || !scheme.matches || framed && !topOn) { apply(); return; }
         measure();
         apply();
       };
@@ -496,6 +506,8 @@ final class Dusk: ObservableObject {
 
       window.__officeDusk = {
         update: function (next) { config = next; apply(); soon(); },
+        // A frame: whether the page around it is darkened now.
+        top: function (on) { topOn = on; apply(); soon(); },
         // A private tab's ⇧⌘D: this page only, kept nowhere.
         force: function (on) { config.sites[host] = on; apply(); },
         state: function () {
@@ -509,6 +521,8 @@ final class Dusk: ObservableObject {
       // measuring after only confirms it.
       if (wanted()) apply();
       soon();
+      // A frame asks whether its page is darkened, and waits to be told.
+      if (framed) try { webkit.messageHandlers.officeDusk.postMessage({ frame: true }); } catch (e) {}
     }
     """#
 }
@@ -520,9 +534,18 @@ final class DuskRelay: NSObject, WKScriptMessageHandler {
     weak var tab: Tab?
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, let said = message.body as? [String: Any] else { return }
+        guard let said = message.body as? [String: Any] else { return }
+        let frame = message.frameInfo
         MainActor.assumeIsolated {
             guard let tab, let web = tab.built, web === message.webView else { return }
+            // A frame asking whether its page is darkened: kept, to be told
+            // again whenever that changes, and told now.
+            guard frame.isMainFrame else {
+                guard said["frame"] as? Bool == true else { return }
+                tab.duskFrames.append(frame)
+                DuskRelay.tell(frame, tab.dusked, in: web) { gone in if gone { tab.duskFrames.removeAll { $0 === frame } } }
+                return
+            }
             let on = said["on"] as? Bool ?? false
             let dark = said["dark"] as? Bool ?? false
             if said["known"] as? Bool == true {
@@ -533,8 +556,21 @@ final class DuskRelay: NSObject, WKScriptMessageHandler {
             if tab.dusked != on {
                 tab.dusked = on
                 Dusk.shared.heard()
+                // Every frame on the page follows it.
+                for frame in tab.duskFrames {
+                    DuskRelay.tell(frame, on, in: web) { gone in if gone { tab.duskFrames.removeAll { $0 === frame } } }
+                }
             }
             web.underPageBackgroundColor = on ? Dusk.underPage : nil
+        }
+    }
+
+    /// A frame's page is darkened, or not. A frame that has gone since
+    /// (its page moved on, or it was taken out) answers with an error, and
+    /// is forgotten.
+    @MainActor static func tell(_ frame: WKFrameInfo, _ on: Bool, in web: WKWebView, gone: @escaping (Bool) -> Void) {
+        web.evaluateJavaScript("window.__officeDusk && window.__officeDusk.top(\(on))", in: frame, in: Web.world) { result in
+            if case .failure = result { gone(true) }
         }
     }
 }
