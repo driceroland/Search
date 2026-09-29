@@ -2658,11 +2658,11 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Arc's Clear, on the line above the tabs that come and go: each of
-    /// them closed as ⌘W closes it, so ⇧⌘T brings the last dozen back. Pins
-    /// stay, and so does a tab group: a section you named is one you are
-    /// keeping. The page on screen goes last, once an empty tab has taken
-    /// its place: closed first, a neighbour would wake only to be closed.
-    /// All of it is remembered as one: a single ⇧⌘T puts every tab back.
+    /// them closed as ⌘W closes it, and all of it remembered as one, so a
+    /// single ⇧⌘T puts every tab back. Pins stay, and so does a tab group:
+    /// a section you named is one you are keeping. The page on screen goes
+    /// last, once an empty tab has taken its place: closed first, a
+    /// neighbour would wake only to be closed.
     func clearTabs() {
         let going = tabs.filter { $0.pin == nil && !$0.bench && group(of: $0) == nil }
         guard !going.isEmpty else { return }
