@@ -191,6 +191,9 @@ struct SettingsPanel: View {
                 }
             }
             Rule()
+            // What ⌘T opens to, and the way back after an extension took it.
+            HomePageLine()
+            Rule()
             Line("Search with", searchDetail) {
                 Picker("", selection: $prefs.engine) {
                     ForEach(Engine.allCases) { engine in
