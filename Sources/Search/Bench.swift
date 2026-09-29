@@ -1560,8 +1560,17 @@ final class Bench {
             let steps = max(2, request["steps"] as? Int ?? 10)
             let ms = max(1, request["ms"] as? Double ?? 200)
             let before = tab.address?.absoluteString ?? ""
+            // Over the middle of the page. An event made here has no window,
+            // so AppKit hands WebKit its screen point as the point in the
+            // window: left where it starts, the pointer's, the page saw the
+            // scroll only while the pointer happened to be over it. Put where
+            // the page's middle is in its window, measured the way AppKit
+            // measures a screen point (from the top of the main screen).
+            let middle = web.convert(NSPoint(x: web.bounds.midX, y: web.bounds.midY), to: nil)
+            let over = CGPoint(x: middle.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - middle.y)
             func send(_ phase: Int64, _ delta: Double) {
                 guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: Int32(delta), wheel3: 0) else { return }
+                cg.location = over
                 cg.setIntegerValueField(CGEventField(rawValue: 88)!, value: 1) // kCGScrollWheelEventIsContinuous
                 cg.setIntegerValueField(CGEventField(rawValue: 99)!, value: phase) // kCGScrollWheelEventScrollPhase
                 cg.setIntegerValueField(CGEventField(rawValue: 97)!, value: Int64(delta)) // kCGScrollWheelEventPointDeltaAxis2
@@ -2401,6 +2410,8 @@ final class Bench {
             }
             if let on = request["pages120"] as? Bool { browser.prefs.fastPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
+            // Swipe between pages, standing in for the Mac's own setting.
+            if let on = request["swipepages"] as? Bool, Store.testing { Swipe.testing = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["folded"] as? Bool { browser.folded = on }

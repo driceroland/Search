@@ -1825,6 +1825,8 @@ final class PageView: WKWebView {
         // Only a live trackpad gesture — not its glide afterwards, and not a
         // mouse wheel, which has no beginning or end to speak of.
         guard event.momentumPhase == [] else { return }
+        // And only while the Mac says a swipe may go between pages.
+        guard Swipe.followsTheMac else { return }
 
         switch event.phase {
         case .mayBegin, .began:
