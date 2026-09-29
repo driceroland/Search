@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import WebKit
 
@@ -20,16 +21,34 @@ enum Store {
     }
 
     /// Which test world a test run lives in. SEARCH_PROBE=1, or a run from
-    /// the build folder, is the test world, "Search (test)". SEARCH_PROBE=
-    /// <name> is a world of its own, "Search (<name>)", with settings and
-    /// WebKit stores of its own: two sessions testing at once, or a
-    /// measurement that needs a browser nobody has installed anything in,
-    /// never borrow each other's. Nil for the browser somebody is using.
+    /// the build folder, is the test world of the checkout it was built in,
+    /// "Search (test-<checkout>)"; built anywhere else, "Search (test)".
+    /// SEARCH_PROBE=<name> is a world of its own, "Search (<name>)", with
+    /// settings and WebKit stores of its own: two sessions testing at once,
+    /// or a measurement that needs a browser nobody has installed anything
+    /// in, never borrow each other's. Nil for the browser somebody is using.
     static let world: String? = {
         guard testing else { return nil }
         let asked = (ProcessInfo.processInfo.environment["SEARCH_PROBE"] ?? "").lowercased()
             .filter { ($0.isASCII && ($0.isLetter || $0.isNumber)) || $0 == "-" }
-        return asked.isEmpty || asked == "1" || asked == "test" ? "test" : asked
+        guard asked.isEmpty || asked == "1" || asked == "test" else { return asked }
+        return checkout.map { "test-\($0)" } ?? "test"
+    }()
+
+    /// The checkout this build came out of, as a tag: the first eight hex
+    /// digits of a SHA-1 of its real path, the tag ./bench, fresh.sh and the
+    /// tests' harness (Tests/split_view.py) make of it too. Two checkouts
+    /// testing at once, a worktree beside the main one, never share a test
+    /// world then: one run answered on the other's socket, by the other's
+    /// build, is how a test failed at random. Nil for a build outside a
+    /// checkout's build or .build folder.
+    static let checkout: String? = {
+        guard let path = Bundle.main.executablePath, let real = realpath(path, nil) else { return nil }
+        defer { free(real) }
+        let parts = URL(fileURLWithPath: String(cString: real)).pathComponents
+        guard let at = parts.lastIndex(where: { $0 == "build" || $0 == ".build" }), at > 1 else { return nil }
+        let root = NSString.path(withComponents: Array(parts[..<at]))
+        return Insecure.SHA1.hash(data: Data(root.utf8)).prefix(4).map { String(format: "%02x", $0) }.joined()
     }()
 
     /// A test run there to be weighed and timed rather than driven
@@ -87,10 +106,11 @@ enum Store {
     }
 
     /// The fixed identifiers of a test world's WebKit stores: 1 for websites,
-    /// 2 for extensions. The test world's are 5E4C0000-0000-4000-8000-00000000000k,
-    /// the ones fresh.sh wipes; a named world puts a hash of its name (FNV-1a,
+    /// 2 for extensions. The plain test world's, for a build outside any
+    /// checkout, are 5E4C0000-0000-4000-8000-00000000000k; every other world,
+    /// a checkout's test world included, puts a hash of its name (FNV-1a,
     /// 32 bits) in place of the second and third groups of zeros, so each
-    /// keeps its own from one run to the next.
+    /// keeps its own from one run to the next, and fresh.sh finds it.
     static func probeStore(_ kind: UInt32) -> UUID {
         var hash: UInt32 = 0
         if let world, world != "test" {
