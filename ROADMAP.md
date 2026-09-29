@@ -39,6 +39,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 
 - [ ] **Window stutters between screens** Dragging the window from one screen to another stutters. Needs a trace recorded on two screens. *(X)*
 - [ ] **Figma and LinkedIn feel slow** Figma blurs for a moment as you zoom in; LinkedIn's feed and profiles scroll with lag. *(email)*
+- [ ] **Turn the floating video off per site** Choose the sites where a video never floats. *([#267](https://github.com/driceroland/Search/issues/267))*
 - [ ] **Screen recording from extensions** Loom, Screencastify, Awesome Screenshot, Tella, ScreenPal and Vidyard record your screen or a window from their Chrome extensions: macOS asks what to share each time, and a pill says who is recording, with Stop. Not a single tab, and not the tab's sound: WebKit has neither. *(email)*
 
 ## Done, in the next version
