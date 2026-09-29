@@ -3175,39 +3175,6 @@ final class Browser: NSObject, ObservableObject {
         tabSwitcher.ordered(row: tabs.filter(standsInRow).map(\.id), current: activeSplit?.left ?? activeID)
     }
 
-    /// A letter pressed on a card while a switcher is up (see
-    /// TabSwitcher.Action): the card's tab, or its small window, as its ⌘
-    /// key would have it. `switcher` is the one the card is in, this
-    /// window's or a small window's.
-    func act(_ action: TabSwitcher.Action, onCard id: Tab.ID, in switcher: TabSwitcher) {
-        if let little = LittleWindow.holding(id) { return little.act(action, in: switcher) }
-        guard let tab = tabs.first(where: { $0.id == id }) else { return }
-        // A pair is one card: what's done to it is done to both its pages.
-        let partner = switcher.partners[id].flatMap { other in tabs.first { $0.id == other } }
-        switch action {
-        case .close:
-            // A pin not on screen is put down where it is and keeps its
-            // card, as ⌘W puts one down, without taking you anywhere.
-            if tab.pin != nil, id != activeID, partner == nil {
-                tab.rest()
-                writeSession(now: true)
-                return switcher.redraw()
-            }
-            switcher.remove(id)
-            close(tab)
-            if let partner { close(partner) }
-        case .reload:
-            tab.reload()
-            partner?.reload()
-        case .mute:
-            tab.toggleMute()
-            partner?.toggleMute()
-            switcher.redraw()
-        case .keep:
-            break
-        }
-    }
-
     /// A tab picked in a small window's switcher: that tab, in this window,
     /// in front. A test run goes to the tab and puts nothing on a screen.
     func bringForward(_ id: Tab.ID) {

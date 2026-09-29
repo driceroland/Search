@@ -86,34 +86,6 @@ def main():
         t.ok("its moon is bigger than a one-screen page's",
              cards[f"{sv.BASE}/long"][2] > cards[x][2], cards)
         sv.cmd({"do": "press", "code": 53, "chars": "\x1b", "mods": ["ctrl"]}); time.sleep(0.4)
-        # Tabs and small windows managed from the switcher, ⌃ held.
-        def press(code, ch): sv.cmd({"do": "press", "code": code, "chars": ch, "mods": ["ctrl"]}); time.sleep(0.6)
-        sv.cmd(CTRL_TAB); time.sleep(0.8)
-        pick = switcher()["selected"]
-        press(46, "m")
-        s = switcher()
-        t.ok("⌃M mutes the tab picked, and the switcher stays up", pick in s["muted"] and s["visible"], s)
-        press(13, "w")
-        s = switcher()
-        t.ok("⌃W closes it: its card goes and the pick moves on, the switcher still up",
-             s["visible"] and pick not in s["candidates"] and s["selected"] not in ("", pick), s)
-        t.ok("and the tab is gone from the row", pick not in sv.order(sv.sp("state")))
-        for _ in range(12):
-            if switcher()["selected"] in switcher()["moons"]: break
-            sv.cmd(CTRL_TAB); time.sleep(0.2)
-        moon = switcher()["selected"]; before = len(little()["littles"])
-        press(13, "w")
-        s = switcher(); l = little()
-        t.ok("⌃W on a moon closes its small window", moon not in s["moons"] and len(l["littles"]) == before - 1
-             and moon not in l["littles"] and s["visible"], (s, l))
-        for _ in range(12):
-            if switcher()["selected"] in switcher()["moons"]: break
-            sv.cmd(CTRL_TAB); time.sleep(0.2)
-        moon = switcher()["selected"]; rows = len(sv.order(sv.sp("state")))
-        press(31, "o")
-        l = little()
-        t.ok("⌃O on a moon takes it into the row", moon not in l["littles"]
-             and len(sv.order(sv.sp("state"))) == rows + 1 and not switcher()["visible"], l)
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)
