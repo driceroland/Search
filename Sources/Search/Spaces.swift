@@ -500,6 +500,10 @@ enum SpaceMenu {
 /// bookmarks list borrows `name` for Rename….
 @MainActor
 enum Ask {
+    /// A test run's answer to `sure`, in place of a sheet that a probe
+    /// started hidden can't show (`ui confirm on|off`). Never set otherwise.
+    @MainActor static var testing: Bool?
+
     static func name(_ title: String, placeholder: String, initial: String = "", confirm: String, then: @escaping (String) -> Void) {
         let alert = NSAlert()
         alert.messageText = title
@@ -540,13 +544,35 @@ enum Ask {
         }
     }
 
-    static func sure(_ title: String, detail: String, confirm: String, then: @escaping () -> Void) {
+    /// `returnCancels`: Return is Cancel's, for a yes that can't be undone.
+    static func sure(_ title: String, detail: String, confirm: String, returnCancels: Bool = false, then: @escaping () -> Void) {
+        if Store.testing, let yes = testing {
+            if yes { then() }
+            return
+        }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = detail
-        alert.addButton(withTitle: confirm).hasDestructiveAction = true
-        alert.addButton(withTitle: "Cancel")
-        show(alert) { ok in if ok { then() } }
+        let yes = alert.addButton(withTitle: confirm)
+        yes.hasDestructiveAction = true
+        let no = alert.addButton(withTitle: "Cancel")
+        guard returnCancels else {
+            show(alert) { ok in if ok { then() } }
+            return
+        }
+        yes.keyEquivalent = ""
+        no.keyEquivalent = "\r"
+        // A button holds one key, and Cancel gave up Esc for Return: Esc is
+        // caught here for it while the question is up.
+        let escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.window === alert.window, event.keyCode == 53 else { return event }
+            no.performClick(nil)
+            return nil
+        }
+        show(alert) { ok in
+            if let escape { NSEvent.removeMonitor(escape) }
+            if ok { then() }
+        }
     }
 
     static func folder(then: @escaping (URL?) -> Void) {

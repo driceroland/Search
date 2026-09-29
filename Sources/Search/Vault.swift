@@ -221,7 +221,12 @@ enum Vault {
 
     /// A password is shown only to the person the Mac belongs to. Touch ID,
     /// the watch, or the account password — whatever the Mac itself takes.
-    static func prove(_ reason: String, _ done: @escaping (Bool) -> Void) {
+    @MainActor static func prove(_ reason: String, _ done: @escaping (Bool) -> Void) {
+        // A test run answers as it answers Ask.sure (`ui confirm on|off`).
+        if Store.testing, let yes = Ask.testing {
+            done(yes)
+            return
+        }
         let context = LAContext()
         var trouble: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &trouble) else {
