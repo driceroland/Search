@@ -2485,11 +2485,14 @@ final class Browser: NSObject, ObservableObject {
             newShyTab()
             return
         }
-        // An extension's new tab page, if one asked and you said yes.
+        // An extension's new tab page, if one asked and you said yes. One
+        // added since that also asks is still asked, over the page it would
+        // take the place of: which one has new tabs stays yours to say.
         if #available(macOS 15.4, *), let page = Extensions.shared.newTabPage {
-            open(page, foreground: true)
+            let tab = open(page, foreground: true)
             summoning = false
             rememberSession()
+            Extensions.shared.offerNewTabPage(into: tab)
             return
         }
         // Never two empty tabs. One already open anywhere in the row comes to
@@ -2508,6 +2511,9 @@ final class Browser: NSObject, ObservableObject {
             editing = false
             focusRequest += 1
             rememberSession()
+            // Asked here too: the blank a window opens with is the one the
+            // first ⌘T after adding an extension lands on.
+            if #available(macOS 15.4, *) { Extensions.shared.offerNewTabPage(into: blank) }
             return
         }
         let tab = Tab(configuration: Web.configuration(space: spaceID))
@@ -2522,10 +2528,10 @@ final class Browser: NSObject, ObservableObject {
         if #available(macOS 15.4, *) { Extensions.shared.offerNewTabPage(into: tab) }
     }
 
-    /// A blank tab given an extension's new tab page: the page needs a view
-    /// built from that extension's configuration, so it is a new tab in the
-    /// blank one's place.
-    func replaceBlank(_ tab: Tab, with url: URL) {
+    /// A new tab given an extension's new tab page, whether blank or showing
+    /// another extension's: the page needs a view built from that
+    /// extension's configuration, so it is a new tab in the old one's place.
+    func replaceNewTab(_ tab: Tab, with url: URL) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         let url = Browser.page(url)
         let page = Tab(configuration: Browser.extensionConfiguration(for: url))
