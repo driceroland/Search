@@ -3,7 +3,12 @@
 # asked, the disk image people install it from and the ZIP the updater
 # fetches.
 #
-#   ./build.sh                 debug-free release build, ad-hoc signed: runs here
+#   ./build.sh                 debug-free release build, ad-hoc signed: runs here.
+#                              A dev build: yellow icon, named for the branch
+#                              (Search-split-view from claude/split-view-4a6927)
+#   SEARCH_FEATURE=name ./build.sh
+#                              the same, named Search-name
+#   SEARCH_DEV=0 ./build.sh    the same, as plain Search with the white icon
 #   ./build.sh release dmg     + build/Search.dmg, build/Search.zip and
 #                                build/appcast.json, signed with Developer ID
 #                                if there is one in the keychain
@@ -54,9 +59,10 @@ case "$ARCH" in
 esac
 APP="$OUT/Search.app"
 NAME="Search"
-# A build made to run here is a dev build: "Search Dev" in the menu bar, the
-# Dock and ⌘Tab, on a yellow plate, so it's never taken for the installed
-# app beside it. Only the name people see changes. The bundle id stays, so it
+# A build made to run here is a dev build, on a yellow plate and named for
+# the feature it's built from: "Search-split-view" in the menu bar, the Dock
+# and ⌘Tab, so it's never taken for the installed app beside it, or for the
+# dev build from another worktree. Only the name people see changes. The bundle id stays, so it
 # shares the real app's settings, and so does the folder, build/Search.app,
 # which fresh.sh and the tests open. What goes in a DMG or a ZIP is never
 # one. SEARCH_DEV=0 or 1 overrides either way.
@@ -67,7 +73,23 @@ case "${SEARCH_DEV:-}" in
 esac
 [ "$STEP" != "app" ] && [ "$DEV" = 1 ] && { echo "a dev build doesn't go in a DMG" >&2; exit 1; }
 SHOWN="$NAME"
-[ "$DEV" = 1 ] && SHOWN="$NAME Dev"
+if [ "$DEV" = 1 ]; then
+  # The feature: SEARCH_FEATURE, or the branch's last part, without the
+  # six-character hash a worktree's name ends in (claude/split-view-4a6927
+  # is split-view). A hash has a digit in it; a word like "decade" doesn't.
+  FEATURE="${SEARCH_FEATURE:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)}"
+  FEATURE="${FEATURE##*/}"
+  if [[ "$FEATURE" =~ ^(.+)-([0-9a-f]{6})$ ]]; then
+    STEM="${BASH_REMATCH[1]}" HASH="${BASH_REMATCH[2]}"
+    [[ "$HASH" =~ [0-9] ]] && FEATURE="$STEM"
+  fi
+  # Only what's safe in a name and in InfoPlist.strings.
+  FEATURE="$(printf '%s' "$FEATURE" | tr -cd 'A-Za-z0-9._-')"
+  case "$FEATURE" in
+    ""|HEAD) SHOWN="$NAME Dev" ;;   # no branch to name it for
+    *) SHOWN="$NAME-$FEATURE" ;;
+  esac
+fi
 VERSION="$(tr -d '[:space:]' < VERSION)"
 # A build number that only ever goes up, so the updater can tell newer from
 # older without parsing version strings.
