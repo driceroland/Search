@@ -2639,6 +2639,9 @@ enum ExtensionShims {
       // script's port, or an app's, goes as it is.
       if (runtime && typeof runtime.connect === "function" && runtime.onConnect) {
         const own = runtime.getURL("");
+        // Content scripts run at the website's URL. Their ports arrive at
+        // the worker with that website as sender, so the worker leaves them
+        // plain; numbering only one end hides messages from the extension.
         const numbered = new WeakSet();
         // Set on the port itself, not with `put`, which holds what it touches
         // for good: a port is the extension's to let go. Its onMessage is held
@@ -2677,7 +2680,7 @@ enum ExtensionShims {
         // the numbered wrapper, not the message.
         put(runtime, "connect", (...args) => {
           const port = connect.apply(runtime, args);
-          return typeof args[0] === "string" && args[0] !== runtime.id ? port : number(port);
+          return inContent || (typeof args[0] === "string" && args[0] !== runtime.id) ? port : number(port);
         });
         const onConnect = runtime.onConnect;
         const add = onConnect.addListener, remove = onConnect.removeListener, has = onConnect.hasListener;
