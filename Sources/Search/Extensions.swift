@@ -915,10 +915,15 @@ final class Extensions: NSObject, ObservableObject {
 
     /// Its manifest asks to talk to apps on this Mac ("nativeMessaging"),
     /// required or optional, which WebKit's own grant — given to all, see
-    /// `load` — doesn't say.
+    /// `load` — doesn't say. Nor does the manifest WebKit reads: Search
+    /// writes nativeMessaging into every one for its own line
+    /// (ExtensionShims.prepare), and notes it in .search-added, so what it
+    /// added there doesn't count as asked.
     static func asksForNative(_ context: WKWebExtensionContext) -> Bool {
-        context.webExtension.requestedPermissions.contains(.nativeMessaging)
-            || context.webExtension.optionalPermissions.contains(.nativeMessaging)
+        let folder = Extensions.folder(for: context.uniqueIdentifier)
+        let added = Set((try? JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent(".search-added")))) as? [String] ?? [])
+        let required = context.webExtension.requestedPermissions.contains(.nativeMessaging) && !added.contains("nativeMessaging")
+        return required || context.webExtension.optionalPermissions.contains(.nativeMessaging)
     }
 
     /// Whether this address is a page of an extension other than the one
