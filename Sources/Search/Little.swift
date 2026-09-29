@@ -29,8 +29,16 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         browser.prepare(tab)
         tab.go(to: url)
         let little = LittleWindow(tab: tab, browser: browser)
+        // A step down and in from the newest one on screen, so that five
+        // links from Mail are five windows you can see are there, not one
+        // on top of four.
+        if let last = open.last(where: { $0.window.isVisible }) {
+            little.window.cascadeTopLeft(from: last.window.cascadeTopLeft(from: .zero))
+        } else {
+            little.window.center()
+        }
         open.append(little)
-        little.window.center()
+        watch()
         // Never a test run's in front: a probe started hidden stays off every screen.
         guard front, !Store.testing else { return }
         little.window.makeKeyAndOrderFront(nil)
@@ -43,10 +51,83 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// Closed as its button closes it — for the bench.
     func close() { window.performClose(nil) }
 
+    /// Its window's number, for the bench to press keys in it.
+    var windowNumber: Int { window.windowNumber }
+
     /// The small window a key was pressed in, if it was one.
     static func owning(_ window: NSWindow?) -> LittleWindow? {
         guard let window else { return nil }
         return open.first { $0.window === window }
+    }
+
+    /// The small window a tab is the page of, if it is one's.
+    static func holding(_ id: Tab.ID) -> LittleWindow? {
+        open.first { $0.tab.id == id }
+    }
+
+    /// The small windows' tabs as the Mac stacks their windows, the one in
+    /// front first; any never shown after them, newest first. The browser's
+    /// switcher shows them in this order, beside its tabs.
+    static var stacked: [Tab.ID] {
+        // The Mac lists windows it has never shown too, oldest first: only
+        // the ones on screen have a place in the stack.
+        let stack = NSApp.orderedWindows.filter(\.isVisible)
+        let depth = { (little: LittleWindow) in stack.firstIndex { $0 === little.window } ?? stack.count }
+        return open.reversed().enumerated()
+            .sorted { (depth($0.element), $0.offset) < (depth($1.element), $1.offset) }
+            .map(\.element.tab.id)
+    }
+
+    /// ⌃Tab in a small window: the small windows, latest first, as the
+    /// browser's switcher shows its tabs. One for all of them, so the
+    /// order is the same whichever one it starts in; it shows over the one
+    /// it started in, the first of its cards.
+    static let switcher = TabSwitcher()
+
+    /// The last one brought forward, on a test run, which never puts one
+    /// on a screen — for the bench.
+    private(set) static var fronted: Tab.ID?
+
+    /// In front, with the keys, as a click on it would leave it.
+    func front() {
+        guard !Store.testing else { return LittleWindow.fronted = tab.id }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
+    }
+
+    /// The small window the switcher is on, or the one clicked, forward.
+    static func commit(picking id: Tab.ID? = nil) {
+        guard let target = switcher.finish(picking: id) else { return }
+        holding(target)?.front()
+    }
+
+    /// Letting go of ⌃, and a click while the switcher is up, in whichever
+    /// small window it is up in. The browser windows' own monitors hear
+    /// these too, and leave them: a small window isn't theirs.
+    private static var watching: [Any] = []
+
+    private static func watch() {
+        guard watching.isEmpty else { return }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .leftMouseDown], handler: { event in
+            guard switcher.active, let little = owning(event.window), switcher.candidates.first == little.tab.id
+            else { return event }
+            if event.type == .flagsChanged {
+                if !event.modifierFlags.contains(.control) { commit() }
+                return event
+            }
+            // As in a browser window (Browser.clickTabSwitcher): ⌃ is held,
+            // and a ⌃-click is a right-click to AppKit, so the switcher
+            // takes the click before any view does.
+            guard let height = little.window.contentView?.bounds.height else { return event }
+            let at = event.locationInWindow
+            return switcher.click(at: CGPoint(x: at.x, y: height - at.y)) { commit(picking: $0) } ? nil : event
+        }) {
+            watching.append(monitor)
+        }
+        watching.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { _ in MainActor.assumeIsolated { switcher.cancel() } })
     }
 
     private init(tab: Tab, browser: Browser) {
@@ -63,14 +144,52 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 420, height: 320)
         window.delegate = self
-        window.contentView = NSHostingView(rootView: LittleView(tab: tab, keep: { [weak self] in self?.keep() }))
+        let id = tab.id
+        window.contentView = NSHostingView(rootView: LittleView(tab: tab, keep: { [weak self] in self?.keep() })
+            .overlay {
+                TabSwitcherOverlay(
+                    switcher: LittleWindow.switcher,
+                    tab: { LittleWindow.holding($0)?.tab },
+                    current: id, host: id,
+                    pick: { LittleWindow.commit(picking: $0) }
+                )
+            })
     }
 
-    /// Its keys, before the browser's: ⌘O keeps it, Escape and ⌘W close it.
-    /// Everything else is the page's.
+    /// Its keys, before the browser's: ⌃Tab goes to the other small
+    /// windows, ⌘O keeps it, Escape and ⌘W close it. Everything else is the
+    /// page's.
     func take(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let switcher = LittleWindow.switcher
+        if event.keyCode == 48, flags.contains(.control), flags.isDisjoint(with: [.command, .option]) {
+            // A Tab held down doesn't race through them.
+            if !event.isARepeat {
+                switcher.step(row: LittleWindow.stacked, current: tab.id, backwards: flags.contains(.shift))
+            }
+            return true
+        }
+        // While the switcher is up, ⌃ and the arrows move through it; any
+        // other key puts it away. Escape does nothing else: it would close
+        // this window too, on the way out of the switcher.
+        if switcher.active {
+            if flags.contains(.control), flags.isDisjoint(with: [.command, .option]) {
+                let direction: TabSwitcher.Direction? = switch event.keyCode {
+                case 123: .left
+                case 124: .right
+                case 125: .down
+                case 126: .up
+                default: nil
+                }
+                if let direction {
+                    switcher.move(direction)
+                    return true
+                }
+            }
+            switcher.cancel()
+            if event.keyCode == 53 { return true }
+        }
         if event.keyCode == 53 && flags.isEmpty || key == "w" && flags == .command {
             window.performClose(nil)
             return true
@@ -96,7 +215,17 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             .makeKeyAndOrderFront(nil)
     }
 
+    /// Stepping away puts the switcher away, and makes this the one ⌃Tab
+    /// comes back to first.
+    func windowDidResignKey(_ notification: Notification) {
+        let switcher = LittleWindow.switcher
+        if switcher.candidates.first == tab.id { switcher.cancel() }
+        guard !kept else { return }
+        switcher.left(tab, alive: Set(LittleWindow.open.map(\.tab.id)))
+    }
+
     func windowWillClose(_ notification: Notification) {
+        if LittleWindow.switcher.candidates.first == tab.id { LittleWindow.switcher.cancel() }
         if !kept { tab.close() }
         LittleWindow.open.removeAll { $0 === self }
     }

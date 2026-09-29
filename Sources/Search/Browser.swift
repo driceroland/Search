@@ -3071,15 +3071,16 @@ final class Browser: NSObject, ObservableObject {
         select(entry(shown[index]))
     }
 
-    /// ⌃Tab with the switcher on: the space's tabs, the most recently used
-    /// first. Nothing changes until ⌃ is let go of (`commitTabSwitch`).
+    /// ⌃Tab: the space's tabs, the most recently used first, and the small
+    /// windows beside them. Nothing changes until ⌃ is let go of
+    /// (`commitTabSwitch`).
     func switchTabs(backwards: Bool) {
         guard let activeID else { return }
         // A pair once, under its first page, pictured with its other one.
         tabSwitcher.partners = prefs.splitView
             ? Dictionary(splits.map { ($0.left, $0.right) }, uniquingKeysWith: { first, _ in first }) : [:]
         tabSwitcher.step(row: tabs.filter(standsInRow).map(\.id), current: activeSplit?.left ?? activeID,
-                         backwards: backwards)
+                         backwards: backwards, moons: LittleWindow.stacked)
     }
 
     /// A click while the switcher is up, at a point in the window's own
@@ -3089,20 +3090,18 @@ final class Browser: NSObject, ObservableObject {
     /// a ⌃-click is a right-click to AppKit, not a click the card's button
     /// can be counted on to take. From #358, by oddharsh.
     func clickTabSwitcher(at point: CGPoint) -> Bool {
-        guard tabSwitcher.visible else { return false }
-        guard tabSwitcher.panelFrame.contains(point) else {
-            tabSwitcher.cancel()
-            return true
-        }
-        // Between two cards: the switcher's, and nothing happens.
-        if let id = tabSwitcher.card(at: point) { commitTabSwitch(picking: id) }
-        return true
+        tabSwitcher.click(at: point) { commitTabSwitch(picking: $0) }
     }
 
     func commitTabSwitch(picking id: Tab.ID? = nil) {
-        guard let target = tabSwitcher.finish(picking: id),
-              let tab = tabs.first(where: { $0.id == target }) else { return }
-        select(entry(tab))
+        guard let target = tabSwitcher.finish(picking: id) else { return }
+        if let tab = tabs.first(where: { $0.id == target }) {
+            select(entry(tab))
+        } else {
+            // A moon: its small window comes forward, and the row stays as
+            // it was. Open in Search is still what moves it in.
+            LittleWindow.holding(target)?.front()
+        }
     }
 
     /// A link opened from a page lands next to the page it came from, not at

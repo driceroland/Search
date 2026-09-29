@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""The small windows in the ⌃Tab switcher, in a hidden probe.
+
+Build first (`./build.sh`), then `python3 Tests/little_switcher.py`. Three
+small windows are made without being shown (see Little.swift). In the
+browser window, ⌃Tab shows them beside the grid as moons, and picking one
+brings its window forward and leaves the row alone. In a small window,
+⌃Tab walks the small windows, and Escape puts the switcher away without
+closing the window it was up in.
+"""
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import split_view as sv  # noqa: E402
+
+CTRL_TAB = {"do": "press", "code": 48, "chars": "\t", "mods": ["ctrl"]}
+
+
+def switcher():
+    return sv.cmd({"do": "switcher"})
+
+
+def little(what="state"):
+    return sv.cmd({"do": "little", "what": what})
+
+
+def main():
+    t = sv.T()
+    try:
+        sv.setup(); sv.launch()
+        a = sv.page("a"); b = sv.page("b")
+        x, y, z = (f"{sv.BASE}/{n}" for n in "xyz")
+        for u in (x, y, z): little(u); time.sleep(0.5)
+
+        # The browser window: tabs in the grid, the small windows beside it.
+        sv.sp("select", id=b); time.sleep(0.4)
+        sv.cmd(CTRL_TAB); time.sleep(0.8)
+        s = switcher()
+        grid = s["candidates"]
+        t.ok("⌃Tab in the browser: the grid has the tabs, and only them",
+             s["visible"] and {a, b} <= set(grid) and not {x, y, z} & set(grid), s)
+        t.ok("and the small windows are its moons, newest first", s["moons"] == [z, y, x], s["moons"])
+        t.ok("a moon has a card of its own", z in s["cards"], s["cards"])
+        t.ok("the first ⌃Tab goes back to the last tab, not a moon", s["selected"] == a, s)
+        for _ in range(len(grid) - 1): sv.cmd(CTRL_TAB); time.sleep(0.2)
+        t.ok("walking on goes out of the grid to the first moon", switcher()["selected"] == z, switcher())
+        sv.cmd({"do": "press", "code": 124, "chars": "", "mods": ["ctrl"], "letgo": True}); time.sleep(0.6)
+        s = switcher(); l = little()
+        t.ok("⌃→ moves along the moons; letting go of ⌃ brings that window forward",
+             l["fronted"] == y and not s["visible"], (s, l))
+        t.ok("and the row is as it was", s["active"] == b and len(l["littles"]) == 3, (s, l))
+
+        # A small window: the small windows, and nothing of the browser's.
+        sv.cmd({**CTRL_TAB, "window": "little"}); time.sleep(0.8)
+        l = little()["switcher"]
+        t.ok("⌃Tab in a small window: the small windows, the one it's in first",
+             l["visible"] and l["candidates"][0] == z and set(l["candidates"]) == {x, y, z}, l)
+        t.ok("and it stops on the next one", l["selected"] == y, l)
+        sv.cmd({"do": "press", "code": 53, "chars": "\x1b", "mods": ["ctrl"], "window": "little"}); time.sleep(0.6)
+        l = little()
+        t.ok("Escape puts the switcher away and leaves the window open",
+             not l["switcher"]["visible"] and len(l["littles"]) == 3, l)
+        sv.cmd({**CTRL_TAB, "window": "little"}); time.sleep(0.2)
+        sv.cmd({**CTRL_TAB, "window": "little", "letgo": True}); time.sleep(0.6)
+        l = little()
+        t.ok("two ⌃Tabs and ⌃ let go of: the one two along comes forward",
+             l["fronted"] == x and not l["switcher"]["visible"], l)
+        t.ok("the browser's switcher never came up for it", not switcher()["visible"])
+    finally:
+        t.done(); sv.finish()
+    sys.exit(1 if t.failed else 0)
+
+
+if __name__ == "__main__":
+    main()
