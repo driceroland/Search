@@ -2786,7 +2786,9 @@ final class Browser: NSObject, ObservableObject {
            let blank = tabs.first(where: { $0.id == id }), blank.isBlank, blank.draft.isEmpty, activeID != id {
             close(blank)
         }
-        lastClear = nil
+        // Only this Clear's own undo lets its empty tab go: a Close Group
+        // made after it, undone first, leaves the Clear's still to undo.
+        if lastClear?.batch == batch { lastClear = nil }
         rememberSession()
     }
 
