@@ -33,6 +33,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Each page of Settings opens at its top. Going to Tabs after reading down General opened Tabs as far down, past New tabs open. Thanks [@oddharsh](https://github.com/oddharsh) ([#479](https://github.com/driceroland/Search/pull/479))
 - An extension's row in Settings › Extensions keeps its actions in a … menu, also on right-click. Pin, Show in New Tabs, Options and Remove were pills beside the name that wrapped a letter at a time when they didn't fit. Thanks [@oddharsh](https://github.com/oddharsh) ([#479](https://github.com/driceroland/Search/pull/479))
 - An extension's items in a page's right-click menu show once: WebKit already puts them there, and Search added them a second time. Thanks [@quanru](https://github.com/quanru) ([#456](https://github.com/driceroland/Search/pull/456))
 - The bookmarks list opens tall enough for its folders. With one folder at the top, as bookmarks brought in from Dia are, the list under the bookmark button was a single row high, and opening the folder showed a sliver of it above Add This Page: the list took its height from the closed folders as it opened and never grew. It is now as tall as the whole tree would be with every folder open, up to the height it always had at most, and a top level that is one folder alone opens with that folder open.
