@@ -1598,6 +1598,9 @@ final class Browser: NSObject, ObservableObject {
         defer {
             follow()
             watchForSleep()
+            // Before the first frame: tabs whose time ran out while Search
+            // was quit are gone, rather than drawn and taken away a minute on.
+            closeLeftAlone()
         }
 
         Spaces.sharing = Set(spaces.filter { $0.sharesSignIns == true }.map(\.id))
@@ -2178,6 +2181,10 @@ final class Browser: NSObject, ObservableObject {
                 url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name,
                 home: tab.pin == nil ? nil : tab.home?.absoluteString, groupID: tab.groupID,
                 pinID: tab.pin == nil ? nil : tab.pinID,
+                // A page on screen is being looked at now, not when it was
+                // arrived at: quitting on it is leaving it.
+                touched: visibleTabIDs.contains(tab.id) ? Date() : tab.touched,
+                letGo: tab.pin == nil ? tab.letGo : nil,
                 listed: tab.pin != nil && tab.listed ? true : nil
             ))
         }
@@ -2213,7 +2220,7 @@ final class Browser: NSObject, ObservableObject {
     /// Another space's row. Its groups are the ones in its own file, the
     /// only place a space off screen keeps them: written without them, the
     /// space would lose every group it had.
-    private func writeSession(now: Bool, space: UUID, row: Parked) {
+    func writeSession(now: Bool, space: UUID, row: Parked) {
         let groups = row.groups ?? readRow(space).groups
         writeRow(space, session(row.tabs, active: row.active, groups: groups, splits: row.splits), now: now)
     }
@@ -3471,6 +3478,9 @@ final class Browser: NSObject, ObservableObject {
             let tab = Tab(configuration: Web.configuration(space: space))
             prepare(tab)
             tab.restore(url: url, title: entry.title, name: entry.name)
+            // Never later than now: a clock set wrong once would keep the tab forever.
+            if let touched = entry.touched { tab.touch(at: min(touched, Date())) }
+            tab.letGo = entry.letGo.map { min($0, Date()) }
             tab.pin = entry.pin
             tab.pinID = entry.pin == nil ? nil : entry.pinID
             tab.listed = entry.pin != nil && entry.listed == true

@@ -219,6 +219,9 @@ extension Browser {
         }
         editing = active?.isBlank ?? true
         typed = ""
+        // A row read from its file just now may hold tabs whose time ran out
+        // while it wasn't in memory (see Closing.swift).
+        closeLeftAlone()
         askFocus()
         // Beside the space's icon when the tabs are on screen (SpaceDot);
         // folded away, at the bottom.

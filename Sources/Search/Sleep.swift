@@ -27,11 +27,15 @@ extension Browser {
         return set > 0 ? set : 30 * 60
     }
 
-    /// Started once, at launch.
+    /// Started once, at launch. The same look closes the tabs left alone
+    /// longest, when tabs close themselves (see Closing.swift).
     func watchForSleep() {
         let every = min(60, max(5, Browser.sleepAfter / 4))
         let timer = Timer(timeInterval: every, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.sleepIdle() }
+            MainActor.assumeIsolated {
+                self?.sleepIdle()
+                self?.closeLeftAlone()
+            }
         }
         timer.tolerance = every / 4
         RunLoop.main.add(timer, forMode: .common)
@@ -69,13 +73,21 @@ extension Browser {
         if tab.bench { return "a bench tab" }
         if tab.isBlank { return "blank" }
         if tab.asleep { return "already asleep" }
-        guard let web = tab.built else { return "no page" }
+        guard tab.built != nil else { return "no page" }
         if tab.loading { return "still loading" }
+        return busy(tab)
+    }
+
+    /// What the page is in the middle of that letting it go would cut off:
+    /// the part of staying awake that closing a tab asks too (Closing.swift).
+    func busy(_ tab: Tab) -> String? {
         if tab.noisy { return "playing sound" }
         if tab.floating || floating == tab.id { return "its video is out" }
-        if web.cameraCaptureState != .none || web.microphoneCaptureState != .none { return "on a call" }
-        if #available(macOS 15.4, *), ExtensionCapture.screen(web) { return "recording the screen" }
-        if downloading.contains(where: { $0.webView === web }) { return "downloading" }
+        if let web = tab.built {
+            if web.cameraCaptureState != .none || web.microphoneCaptureState != .none { return "on a call" }
+            if #available(macOS 15.4, *), ExtensionCapture.screen(web) { return "recording the screen" }
+            if downloading.contains(where: { $0.webView === web }) { return "downloading" }
+        }
         if heldDialogs[tab.id]?.isEmpty == false || paneQuestions.contains(where: { $0.tab == tab.id }) {
             return "a question waiting"
         }
