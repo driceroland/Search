@@ -920,6 +920,7 @@ final class Bench {
                 "visible": sw.visible, "selected": short(sw.selectedID),
                 "candidates": sw.candidates.map { short($0) },
                 "moons": sw.moons.map { LittleWindow.holding($0)?.tab.address?.absoluteString ?? "" },
+                "muted": (browser.tabs + LittleWindow.all.map(\.tab)).filter(\.muted).map { short($0.id) },
                 "panel": box(sw.panelFrame),
                 "cards": Dictionary(sw.cardFrames.map { (short($0.key), box($0.value)) }, uniquingKeysWith: { a, _ in a }),
                 "active": short(browser.activeID),

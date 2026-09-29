@@ -1124,6 +1124,12 @@ struct ContentView: View {
                     return true
                 }
             }
+            // ⌃W, ⌃R, ⌃M, ⌃O: the card picked, closed, reloaded, muted or
+            // kept, and the switcher stays up.
+            if let action = TabSwitcher.Action(event), let id = browser.tabSwitcher.selectedID {
+                if !event.isARepeat { browser.act(action, onCard: id, in: browser.tabSwitcher) }
+                return true
+            }
             browser.tabSwitcher.cancel()
             if event.keyCode == 53 { return true }
         }

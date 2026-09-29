@@ -203,6 +203,16 @@ final class LittleWindow: NSObject, NSWindowDelegate {
                     return true
                 }
             }
+            // ⌃W, ⌃R, ⌃M, ⌃O on the card picked, a moon or a tab.
+            if let action = TabSwitcher.Action(event), let id = switcher.selectedID {
+                guard !event.isARepeat else { return true }
+                if let little = LittleWindow.holding(id) {
+                    little.act(action, in: switcher)
+                } else {
+                    LittleWindow.planet?.act(action, onCard: id, in: switcher)
+                }
+                return true
+            }
             switcher.cancel()
             if event.keyCode == 53 { return true }
         }
@@ -215,6 +225,25 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             return true
         }
         return false
+    }
+
+    /// A letter pressed on this window's card in a switcher (see
+    /// TabSwitcher.Action): closed, reloaded, muted, or kept in the row.
+    func act(_ action: TabSwitcher.Action, in switcher: TabSwitcher) {
+        switch action {
+        case .close:
+            switcher.remove(tab.id)
+            close()
+        case .reload:
+            tab.reload()
+        case .mute:
+            tab.toggleMute()
+            switcher.redraw()
+        case .keep:
+            // Going to it in the row: nothing left to switch between here.
+            switcher.cancel()
+            keep()
+        }
     }
 
     /// Into the browser's row, after the tab on screen (never among the
