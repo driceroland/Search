@@ -62,6 +62,15 @@ struct PasswordsPanel: View {
                     }
                     Pill("File…") { browser.importFile() }
                     Spacer(minLength: 0)
+                    // What the list shows, all of it or what the search
+                    // leaves: never more than can be seen (Browser.forgetShown).
+                    let shown = browser.shownSites.reduce(0) { $0 + $1.logins.count }
+                    if shown > 0 {
+                        Pill(browser.hunting.trimmingCharacters(in: .whitespaces).isEmpty ? "Remove All…" : "Remove \(shown)…") {
+                            browser.forgetShown()
+                        }
+                        .disabled(browser.forgetting)
+                    }
                     Text(browser.saved.count == 1 ? "1 password" : "\(browser.saved.count) passwords")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)

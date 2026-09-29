@@ -84,6 +84,7 @@
     ./bench import-file-start PATH   test run: start file import without waiting for completion
     ./bench import-file-status       test run: current filename, stage, counts and cancellation state
     ./bench import-file-cancel       test run: request cancellation of the current file import
+    ./bench passwords [TEXT] [remove]  test run: the passwords list, narrowed to TEXT; remove: its Remove All… / Remove N… (ui confirm on|off answers it, Touch ID included)
     ./bench menu [open]                test run: the Bookmarks menu as it is about to open, and its first
                                        folder (open: its first bookmark picked)
     ./bench bookmark URL [new]         test run: a bookmark picked from the list, timed until it loads
@@ -117,7 +118,7 @@
                                        leaves it, and how far it swings on the way
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        import on|off|extensions|BROWSER,
-                                       look light|dark|system, sidebar on|off, side left|right, spaces on|off, hides on|off,
+                                       look light|dark|system, sidebar on|off, side left|right, spaces on|off, confirm on|off, hides on|off,
                                        folded on|off, peek on|off, peeklink keep|close, pages120 on|off
 
 Needs Settings › General › "Let a script drive Search" switched on in the
@@ -401,6 +402,10 @@ def main(argv):
     elif verb in ("import-file", "import-file-start"):
         if len(args) != 1: sys.exit(f"usage: bench {verb} PATH")
         request["path"] = os.path.abspath(args[0])
+    elif verb == "passwords":
+        for a in args:
+            if a == "remove": request["remove"] = True
+            else: request["filter"] = a
     elif verb in ("import-file-status", "import-file-cancel"):
         if args: sys.exit(f"usage: bench {verb}")
     elif verb == "menu":
