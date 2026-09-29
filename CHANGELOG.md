@@ -32,6 +32,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A copy of Search built with Xcode 27 looks like the macOS it runs on: the window's buttons and controls come out in macOS 27's style on macOS 27, where every one of them was drawn as on macOS 14. It still runs on macOS 14 and later, as before.
 - An extension's items in a page's right-click menu show once: WebKit already puts them there, and Search added them a second time. Thanks [@quanru](https://github.com/quanru) ([#456](https://github.com/driceroland/Search/pull/456))
 - The bookmarks list opens tall enough for its folders. With one folder at the top, as bookmarks brought in from Dia are, the list under the bookmark button was a single row high, and opening the folder showed a sliver of it above Add This Page: the list took its height from the closed folders as it opened and never grew. It is now as tall as the whole tree would be with every folder open, up to the height it always had at most, and a top level that is one folder alone opens with that folder open.
 - The column comes back after a video's full screen. Leaving a video's own full screen with Escape, on YouTube for one, could leave the tabs gone until the column was switched off and on again in the View menu: the window heard of a page going full screen and coming back only when something else changed, and coming back there sometimes was nothing else.
