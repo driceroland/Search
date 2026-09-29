@@ -273,6 +273,16 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
                         "lum('#a','borderTopColor') < 0.12", "lum('#b','backgroundColor') < 0.05",
                         "!document.getElementById('inner').hasAttribute('data-office-dusk-paint')",
                         "window.__officeDusk.state().colours.unreadable === true"], settle: 1.0, served: true),
+        // The site's own rules are never touched: darkened or let go, each
+        // says what the page read before anything was darkened.
+        Fixture(name: "colours-leave-the-site-alone", html: """
+            <style>body{background:#fff;color:#222;border-top:1px solid var(--line,#ddd)}@media (min-width:1px){p{color:#333}}</style>
+            <script>var r = document.styleSheets[0].cssRules; document.documentElement.dataset.before = r[0].style.cssText + '|' + r[1].cssRules[0].style.cssText;</script>
+            <p id=p>Text</p>
+            """, dark: false, shown: true,
+                looks: ["lum('body','backgroundColor') < 0.05", "lum('#p','color') > 0.3",
+                        "(function () { var r = document.styleSheets[0].cssRules; return r[0].style.cssText + '|' + r[1].cssRules[0].style.cssText === document.documentElement.dataset.before; })()",
+                        "(function () { window.__officeDusk.update({ on: false }); var r = document.styleSheets[0].cssRules; return r[0].style.cssText + '|' + r[1].cssRules[0].style.cssText === document.documentElement.dataset.before && lum('body','backgroundColor') > 0.9; })()"]),
         Fixture(name: "known-light-from-start", html: "<style>body{background:#fff}</style>" + card,
                 dark: false, shown: true, seen: ["known-light-from-start.test": false]),
     ]

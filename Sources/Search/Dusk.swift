@@ -234,7 +234,7 @@ final class Dusk: ObservableObject {
       var paint = config.mode === 'filter' ? null : (/*COLOURS*/)(doc, [sheet]);
       // Whether the filter is what shows now: until the colours are ready,
       // and on its own without them.
-      var filtering = false;
+      var filtering = false, written = '';
 
       // A sheet of the document's own rather than an element in it: nothing
       // for a page's framework to find in its markup and take out again.
@@ -273,7 +273,11 @@ final class Dusk: ObservableObject {
         // The ground a page left transparent is the canvas's, which the
         // filter on the root doesn't reach: it is given the page's own, so
         // that it turns over with the rest.
-        sheet.replaceSync(filtering ? turned + '@media screen { html { background-color: ' + ground + ' !important; } }' : '');
+        // Only when it says something else: rewriting a sheet, even with what
+        // it already says, has the page's whole style worked out again, and
+        // this runs every frame a page grows while it loads.
+        var text = filtering ? turned + '@media screen { html { background-color: ' + ground + ' !important; } }' : '';
+        if (text !== written) { written = text; sheet.replaceSync(text); }
         if (paint) paint.show(painted);
         if (shown && paint && !paint.started() && ready()) paint.start(apply);
         // Once, and again whenever it is darkened anew: what came while it

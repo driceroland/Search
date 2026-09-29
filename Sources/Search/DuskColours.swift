@@ -317,8 +317,15 @@ enum DuskColours {
 
       // A style attribute's colours.
       var styled = marker('data-office-dusk-style', marks);
+      // Looked at again only when its style attribute says something else,
+      // and read only when it names a colour: a page that animates its
+      // elements' transforms through the attribute changes it every frame.
+      var colourful = /color|background|border|outline|fill|stroke|blend|mask/i, lastStyle = new WeakMap();
       var markStyle = function (el) {
-        styled.put(el, el.style && el.style.length ? twin(el.style, true) : '');
+        var text = el.getAttribute('style') || '';
+        if (lastStyle.get(el) === text) return;
+        lastStyle.set(el, text);
+        styled.put(el, colourful.test(text) && el.style && el.style.length ? twin(el.style, true) : '');
       };
 
       // What a sheet that can't be read colours, read off the elements it
@@ -576,7 +583,14 @@ enum DuskColours {
       };
       var flush = function () {
         flushing = false;
-        var batch = queued.filter(function (n) { return n.isConnected; });
+        // Something added inside something else added in the same frame is
+        // taken with it: walked once, not once for each level it came in at.
+        var all = new Set(queued);
+        var batch = queued.filter(function (n) {
+          if (!n.isConnected) return false;
+          for (var up = n.parentNode; up; up = up.parentNode) if (all.has(up)) return false;
+          return true;
+        });
         queued = [];
         batch.forEach(function (n) { markups(n); if (started) shadows(n); });
         if (showing && unreadable) { toPaint.push.apply(toPaint, batch); paintSoon(); }
