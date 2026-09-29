@@ -365,9 +365,14 @@ final class Bench {
             // (true) or a square (false).
             if request["off"] as? Bool == true { browser.unpin(tab) }
             else if request["home"] as? Bool == true { browser.goHome(tab) }
+            // "everywhere": Keep in Every Space (true) or Only in This Space
+            // (false), as the pin's menu does.
+            else if let everywhere = request["everywhere"] as? Bool, tab.pin != nil {
+                if everywhere { browser.shareEverywhere(tab) } else { browser.keepHere(tab) }
+            }
             else if let listed = request["listed"] as? Bool, tab.pin != nil { browser.setListed(tab, listed) }
             else { browser.pin(tab, listed: request["listed"] as? Bool ?? false) }
-            answer(["pin": tab.pin ?? "", "listed": tab.listed, "pinned": browser.pinnedCount, "home": tab.home?.absoluteString ?? "",
+            answer(["pin": tab.pin ?? "", "listed": tab.listed, "everywhere": tab.everywhere, "pinned": browser.pinnedCount, "home": tab.home?.absoluteString ?? "",
                     "address": tab.address?.absoluteString ?? "", "editingLetter": browser.editingPin == tab.id])
 
         case "select":
@@ -2526,6 +2531,7 @@ final class Bench {
             if let on = request["pages120"] as? Bool { browser.prefs.fastPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
+            if let on = request["sharedpins"] as? Bool { browser.prefs.sharesPins = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
             // The window's own full screen as the chrome sees it, without
@@ -2917,6 +2923,11 @@ final class Bench {
             // What ⇧⌘T would bring back, as its menu item says it.
             "reopenTitle": browser.reopenTitle,
             "ghosts": browser.ghosts.count,
+            // The pins every space shows (Pins.shared), and which cookie
+            // store each pin's tab signs in with.
+            "everywhere": browser.tabs.filter { $0.pin != nil && $0.everywhere }.map { Bench.short($0) },
+            "pinStores": Dictionary(uniqueKeysWithValues: browser.tabs.filter { $0.pin != nil }
+                .map { (Bench.short($0), $0.store.identifier?.uuidString ?? "default") }),
             // What pages of the pair asked, oldest first (see PaneQuestion).
             "questions": browser.paneQuestions.map { question in
                 ["tab": short(question.tab), "host": question.host, "message": question.message,

@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Pins in every space: a pin can be kept in every space, shown above each space's own pins, as Arc's favourites sit above every space. Right-click a pin and choose Keep in Every Space, or Only in This Space to take it back; unpinning it takes it out of every space. A space with its own sign-ins signs in to it its own way. Off unless you turn it on in Settings › Tabs › Pins in every space, which shows while Spaces is on. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#463](https://github.com/driceroland/Search/pull/463))
+
 ### Changed
 
 - A bookmark opens in a tab of its own, from the bookmarks bar, the Bookmarks menu or the list: opened from a pinned tab it used to take the pin's place. An empty new tab is used as it is, and ⌘ opens the bookmark behind the tab you are on.
