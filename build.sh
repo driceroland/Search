@@ -74,6 +74,18 @@ BINARY="$(swift build "${SWIFTFLAGS[@]}" --show-bin-path)/Search"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/$NAME"
+# The binary says which SDK it was built with, and AppKit draws the app the
+# way that SDK's macOS drew it: built with the macOS 27 SDK, a Mac on 27 gets
+# 27's window buttons and controls; said to be built with an older one, it
+# gets that one's. Swift Build, SwiftPM's default since Xcode 27, writes the
+# oldest macOS the app runs on in both places (minos 14.0, sdk 14.0 — the
+# native build system wrote sdk 27.0 from the same sources), and the app came
+# out in macOS 14's looks on every Mac. The SDK it really was built with is
+# put back; the oldest macOS stays as it is.
+SDK="$(xcrun --sdk macosx --show-sdk-version)"
+vtool -set-build-version macos "$MINIMUM" "$SDK" -replace \
+  -output "$APP/Contents/MacOS/$NAME.sdk" "$APP/Contents/MacOS/$NAME"
+mv "$APP/Contents/MacOS/$NAME.sdk" "$APP/Contents/MacOS/$NAME"
 # The AppleScript dictionary (Scripting.swift): read-only, tabs' addresses
 # and titles. The plist below points to it.
 cp Search.sdef "$APP/Contents/Resources/"
