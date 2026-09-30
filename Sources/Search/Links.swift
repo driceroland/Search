@@ -177,11 +177,6 @@ final class Links: NSObject, NSApplicationDelegate {
             // The window in front's browser, or a window brought back for it:
             // the link lands where you are, not in the first window.
             let browser = Browsers.ensureWindow()
-            // In a small window of its own, for whoever chose that.
-            if browser.prefs.littleLinks {
-                LittleWindow.show(url, for: browser)
-                return
-            }
             browser.arrive(url)
             // Put away in the Dock, it stayed there: bringing a window to the
             // front doesn't take it out (#95).
@@ -243,6 +238,17 @@ final class Links: NSObject, NSApplicationDelegate {
     static func arrived(_ url: URL) { take(url) }
 
     private static func take(_ url: URL) {
+        // In a small window of its own, for whoever chose that — and only
+        // that: no browser window is brought back or made for it, not even
+        // at a launch the link started (see Little.swift). The small window
+        // needs a browser, not a browser's window; the scene's is there
+        // before its window is.
+        let little = MainActor.assumeIsolated {
+            guard Shared.prefs.littleLinks else { return false }
+            LittleWindow.show(url, for: Browsers.acting)
+            return true
+        }
+        if little { return }
         if let deliver {
             deliver(url)
         } else {
