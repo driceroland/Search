@@ -174,6 +174,21 @@ cat > "$APP/Contents/Info.plist" <<PLIST
       <key>LSItemContentTypes</key>
       <array><string>public.xhtml</string></array>
     </dict>
+    <!-- What a tab shows besides a page: Open With in the Finder lists an app
+         only for the types it claims. Alternate keeps Preview, or whatever
+         the Mac uses, as the app a double-click opens. -->
+    <dict>
+      <key>CFBundleTypeName</key><string>Document or picture</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.adobe.pdf</string>
+        <string>public.image</string>
+        <string>public.plain-text</string>
+        <string>public.json</string>
+      </array>
+    </dict>
   </array>
   <!-- A browser goes wherever it is pointed, including at http sites and at
        whatever is running on localhost. -->
