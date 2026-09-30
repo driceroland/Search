@@ -2021,6 +2021,25 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
 
 
 
+extension URL {
+    /// What a local file may read from: its folder, for the pictures and
+    /// styles beside it — unless the folder is the home folder, the disk or
+    /// a volume, where the file alone is what was opened.
+    ///
+    /// The folder is handed over as the file spells it: standardizing drops
+    /// the /private of /private/tmp and /private/etc, and WebKit, which
+    /// compares paths as written, then finds the file outside its folder and
+    /// loads a blank page without a word.
+    var readableFolder: URL {
+        let folder = deletingLastPathComponent()
+        let plain = folder.standardizedFileURL
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+        let tooWide = plain == home || ["/", "/Users", "/Volumes"].contains(plain.path)
+            || plain.deletingLastPathComponent().path == "/Volumes"
+        return tooWide ? self : folder
+    }
+}
+
 extension WKWebView {
     /// An address, or a file on this Mac. WebKit reads a file only when told
     /// which folder the page may read from, and loads nothing at all
@@ -2028,14 +2047,7 @@ extension WKWebView {
     /// Mac's browser, opened a tab that stayed empty.
     func open(_ url: URL) {
         if url.isFileURL {
-            // Its folder, for the pictures and styles beside it — unless the
-            // folder is the home folder, the disk or a volume, where the
-            // file alone is what was opened.
-            let folder = url.deletingLastPathComponent().standardizedFileURL
-            let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
-            let tooWide = folder == home || ["/", "/Users", "/Volumes"].contains(folder.path)
-                || folder.deletingLastPathComponent().path == "/Volumes"
-            loadFileURL(url, allowingReadAccessTo: tooWide ? url : folder)
+            loadFileURL(url, allowingReadAccessTo: url.readableFolder)
         } else {
             load(URLRequest(url: url))
         }
