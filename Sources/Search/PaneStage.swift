@@ -24,6 +24,7 @@ struct PaneStageView: NSViewRepresentable {
     let frames: ([Tab.ID: CGRect]) -> Void
     let action: (PaneStage.Action) -> Void
     let hover: (Tab.ID?) -> Void
+    var find: Browser? = nil
 
     func makeNSView(context: Context) -> PaneStage { PaneStage() }
 
@@ -34,6 +35,7 @@ struct PaneStageView: NSViewRepresentable {
         stage.onAction = action
         stage.onHover = hover
         stage.show(tabs, split: split, focused: focused)
+        stage.showFind(find)
     }
 }
 
@@ -65,6 +67,25 @@ final class PaneStage: NSView {
     fileprivate var tabs: [Tab] = []
     fileprivate var split: TabSplit?
     private var focused: Tab.ID?
+    private var findBar: NSHostingView<FindBar>?
+    private var findWidth: CGFloat?
+
+    /// The controls belong to the stage so they stay above WebKit, below
+    /// window panels, and follow every layout of the focused page.
+    func showFind(_ browser: Browser?) {
+        guard let browser else {
+            findBar?.removeFromSuperview()
+            findBar = nil
+            findWidth = nil
+            return
+        }
+        if findBar == nil {
+            let bar = NSHostingView(rootView: FindBar(browser: browser))
+            findBar = bar
+            addSubview(bar, positioned: .above, relativeTo: nil)
+        }
+        needsLayout = true
+    }
     fileprivate var slots: [StageView] = []
     private var cues: [FocusCue] = []
     fileprivate let divider = PaneDivider()
@@ -255,6 +276,20 @@ final class PaneStage: NSView {
         // A window made too narrow for two takes the other page off, and
         // gives it back once there is room.
         feed()
+        if let bar = findBar {
+            let page = focused.flatMap { id in tabs.firstIndex { $0.id == id } }
+                .flatMap { frames.indices.contains($0) ? frames[$0] : nil }
+            bar.isHidden = page == nil || page?.width == 0
+            if let page, page.width > 0 {
+                if findWidth != page.width {
+                    findWidth = page.width
+                    bar.rootView.availableWidth = page.width
+                }
+                let width = min(390, page.width)
+                bar.frame = CGRect(x: page.maxX - width, y: page.minY,
+                                   width: width, height: min(60, page.height))
+            }
+        }
         guard live == nil else { return }
         var now: [Tab.ID: CGRect] = [:]
         for (index, tab) in tabs.enumerated() where shown(index) { now[tab.id] = frames[index] }
