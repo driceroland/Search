@@ -1098,6 +1098,10 @@ final class Browser: NSObject, ObservableObject {
         /// always; in a private tab it is never kept.
         var once = false
         var keeps = true
+        /// A website asking to share its screen: the card offers a screen or
+        /// a window, as Safari's does, and nothing is remembered — sharing
+        /// your screen is a thing you say yes to each time.
+        var screen = false
         /// When it came up. A page can time a click to land where Allow is
         /// about to be: the card takes none in its first half second.
         var shown = Date()
@@ -1106,11 +1110,28 @@ final class Browser: NSObject, ObservableObject {
 
     @Published private(set) var asking: CaptureAsk?
     private var decide: ((WKPermissionDecision) -> Void)?
+    /// A screen-share question's answer, apart from `decide`: WebKit wants a
+    /// screen (1) or a window (2), or no (0), not a yes/no.
+    private var decideDisplay: ((Int) -> Void)?
     private var askedAbout = ""
 
     func allowCapture() { answerCapture(.grant) }
     func allowCaptureOnce() { answerCapture(.grant, keep: false) }
     func denyCapture() { answerCapture(.deny) }
+
+    /// The screen-share card's buttons: a screen, a window, or no. The Mac's
+    /// own picker follows a yes and asks which one.
+    func shareScreen() { answerDisplay(1) }
+    func shareWindow() { answerDisplay(2) }
+    func denyShare() { answerDisplay(0) }
+
+    private func answerDisplay(_ decision: Int) {
+        guard let decideDisplay, let asking, asking.screen,
+              Date().timeIntervalSince(asking.shown) > 0.5 else { return }
+        decideDisplay(decision)
+        self.decideDisplay = nil
+        self.asking = nil
+    }
 
     private func answerCapture(_ decision: WKPermissionDecision, keep: Bool = true) {
         guard let decide, let asking, Date().timeIntervalSince(asking.shown) > 0.5 else { return }
@@ -4552,6 +4573,37 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             askedAbout = shy ? "" : key
             asking = CaptureAsk(host: host, wants: Browser.name(for: type))
         }, drop: { decisionHandler(.deny) })
+    }
+
+    /// A website asking to share its screen (Meet, Around, a WebRTC call).
+    /// WebKit asks this through a delegate method that isn't public on the
+    /// Mac; left unanswered it falls back to showing the Mac's own picker
+    /// straight away, with nothing of Search's in front of it. Answered here,
+    /// Search puts its own card up first — as it does for the camera — and
+    /// only a yes brings on the Mac's picker to choose which screen or window.
+    /// An extension recording through its broker (ExtensionCapture) is already
+    /// approved and goes on without a second question.
+    @objc(_webView:requestDisplayCapturePermissionForOrigin:initiatedByFrame:withSystemAudio:decisionHandler:)
+    func askedToShareScreen(_ webView: WKWebView, origin: WKSecurityOrigin, frame: WKFrameInfo,
+                            systemAudio: Bool, decisionHandler: @escaping (Int) -> Void) {
+        if #available(macOS 15.4, *) {
+            let inFlight = ExtensionCapture.shared.displayDecision(for: webView)
+            if inFlight != 0 { return decisionHandler(inFlight) }
+        }
+        // One question at a time, as for the camera: a second page asking
+        // while the first still waits is refused rather than queued.
+        guard decide == nil, decideDisplay == nil else { return decisionHandler(0) }
+        let asker = frame.securityOrigin
+        let host = origin.host.isEmpty ? (tab(for: webView)?.address?.host() ?? "This page") : origin.host
+        let named = Browser.extensionScheme(asker.protocol) ? Browser.extensionName(asker.host) : host
+        // Asked over its own page, as the camera card is: a tab in the
+        // background waits until you go to it. A tab closed first is denied.
+        ask(from: webView, show: { [weak self] in
+            guard let self else { return decisionHandler(0) }
+            guard decide == nil, decideDisplay == nil else { return decisionHandler(0) }
+            decideDisplay = decisionHandler
+            asking = CaptureAsk(host: named, wants: "screen", screen: true)
+        }, drop: { decisionHandler(0) })
     }
 
     /// An extension's own scheme, today's or the one it had before.
