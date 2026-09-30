@@ -108,11 +108,12 @@ enum Web {
         // Off by default on macOS, which is why a full-screen button on a video
         // did nothing at all: the page asks, and WebKit refuses without a word.
         config.preferences.isElementFullscreenEnabled = true
-        // On by default on macOS: a page could open a new tab, and take you
-        // to it, whenever it liked — on load, on a timer. Off, window.open
-        // works only from a click or a key, as Safari's pop-up blocking has
-        // it; a sign-in window opened by its button still opens.
-        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // On, so every window.open reaches Browser's createWebViewWith, which
+        // lets one through only on the heels of a click or a key (see
+        // PageView.mayOpenWindow). Off, WebKit's own rule was stricter than
+        // that: draw.io's Authorize asks its server first and opens the
+        // Google sign-in window with the answer, and was told "Allow pop-ups".
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
         // Sound waits for a click, as everywhere; video too when Settings
         // says videos wait (Never Auto-Play, in Safari's words).
         config.mediaTypesRequiringUserActionForPlayback = Web.playback
@@ -1536,7 +1537,28 @@ final class PageView: WKWebView {
 
     override func mouseDown(with event: NSEvent) {
         onTouch?()
+        reached = Date()
         super.mouseDown(with: event)
+    }
+
+    /// "Open Link in New Window" in the right-click menu is a window the
+    /// page opens too, and the menu can stay open for a while.
+    override func didCloseMenu(_ menu: NSMenu, with event: NSEvent?) {
+        super.didCloseMenu(menu, with: event)
+        reached = Date()
+    }
+
+    /// When the page last had a click, a key, or its menu used.
+    private var reached = Date.distantPast
+
+    /// Whether the page may open a window now: within five seconds of being
+    /// reached, as Chrome has it, and once for each. WebKit's own rule counts
+    /// only while the click is still being handled, so a page that waits on
+    /// its server before it opens the window was refused. Nothing else, on
+    /// load or on a timer, gets a window.
+    func mayOpenWindow() -> Bool {
+        defer { reached = .distantPast }
+        return reached.timeIntervalSinceNow > -5
     }
 
     /// The side buttons a mouse has for back and forward — button 3 and 4.
@@ -1590,6 +1612,7 @@ final class PageView: WKWebView {
         let now = event.timestamp
         handed.removeAll { now - $0.timestamp > 2 }
         if handed.count > 32 { handed.removeFirst(handed.count - 32) }
+        reached = Date()
         super.keyDown(with: event)
     }
 

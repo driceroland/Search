@@ -4278,6 +4278,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         for action: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
+        // Returning nil is what makes window.open give the page null.
+        guard (webView as? PageView)?.mayOpenWindow() == true else { return nil }
         let from = tab(for: webView)?.id ?? activeID
         // WebKit's copy of the opener's configuration still holds the
         // opener's user content controller — its scripts and its message
