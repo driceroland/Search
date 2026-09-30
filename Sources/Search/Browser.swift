@@ -3172,16 +3172,16 @@ final class Browser: NSObject, ObservableObject {
     /// Command toggles one tab; Shift picks the visible run from the last
     /// clicked tab (or the active tab when a selection begins).
     func extendTabSelection(to tab: Tab, modifiers: NSEvent.ModifierFlags) {
-        let shown = shownTabs.map(\.id)
+        let shown = selectableTabs.map(\.id)
         guard let end = shown.firstIndex(of: tab.id) else { return }
         if modifiers.contains(.shift) {
-            let startID = selectionAnchor ?? (activeSplit?.left ?? activeID) ?? tab.id
+            let startID = selectionAnchor ?? activeID ?? tab.id
             let start = shown.firstIndex(of: startID) ?? end
             let range = Set(shown[min(start, end)...max(start, end)])
             selectedTabIDs = modifiers.contains(.command) ? selectedTabIDs.union(range) : range
             selectionAnchor = shown[start]
         } else if modifiers.contains(.command) {
-            if selectedTabIDs.isEmpty, let active = activeSplit?.left ?? activeID,
+            if selectedTabIDs.isEmpty, let active = activeID,
                shown.contains(active) {
                 selectedTabIDs.insert(active)
             }
@@ -3190,8 +3190,14 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    private var selectableTabs: [Tab] {
+        shownTabs.flatMap { tab in
+            split(for: tab).map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? [tab]
+        }
+    }
+
     var visibleSelectedTabCount: Int {
-        shownTabs.filter { selectedTabIDs.contains($0.id) }.count
+        selectableTabs.filter { selectedTabIDs.contains($0.id) }.count
     }
 
     var selectedTabLinkCount: Int {
@@ -3199,7 +3205,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     var selectedTabLinks: [String] {
-        shownTabs.compactMap { tab in
+        selectableTabs.compactMap { tab in
             selectedTabIDs.contains(tab.id) ? tab.address?.absoluteString : nil
         }
     }
@@ -3209,7 +3215,7 @@ final class Browser: NSObject, ObservableObject {
         guard !links.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(links.joined(separator: "\n"), forType: .string)
-        announce("\(links.count) links copied")
+        announce(links.count == 1 ? "1 address copied" : "\(links.count) addresses copied")
     }
 
     /// ⌃Tab, ⌃⇧Tab: the next tab on screen, round to the first again. It

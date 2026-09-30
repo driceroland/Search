@@ -560,6 +560,7 @@ private struct TabPill: View {
         // edits its letter; everything else answers the first click at
         // once. Change Letter in the menu covers the rest.
         .modifier(OneClick(double: live && pinned) {
+            guard NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
             browser.clearTabSelection()
             if live && pinned {
                 browser.goHome(tab)
@@ -569,7 +570,7 @@ private struct TabPill: View {
                 browser.select(tab)
             }
         })
-        .overlay { if !editing { ModifiedTabClick { browser.extendTabSelection(to: tab, modifiers: $0) } } }
+        .modifier(ModifiedTabClick { if !editing { browser.extendTabSelection(to: tab, modifiers: $0) } })
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
@@ -964,11 +965,11 @@ struct TabMenu: View {
     let close: () -> Void
 
     var body: some View {
+        singleMenu
         if browser.selectedTabIDs.contains(tab.id) && browser.visibleSelectedTabCount > 1 {
-            Button("Copy Links") { browser.copySelectedTabLinks() }
+            Divider()
+            Button("Copy Addresses") { browser.copySelectedTabLinks() }
                 .disabled(browser.selectedTabLinkCount == 0)
-        } else {
-            singleMenu
         }
     }
 
@@ -1111,45 +1112,15 @@ struct TabMenu: View {
     }
 }
 
-/// Takes only modified left clicks, leaving ordinary clicks, drags and the
-/// context menu with the tab's existing SwiftUI gestures.
-struct ModifiedTabClick: NSViewRepresentable {
+/// A modified tap selects tabs; a drag stays with the row's drag gesture.
+struct ModifiedTabClick: ViewModifier {
     let act: (NSEvent.ModifierFlags) -> Void
 
-    func makeNSView(context: Context) -> NSView { Catch() }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        (view as? Catch)?.act = act
-    }
-
-    private final class Catch: NSView {
-        var act: (NSEvent.ModifierFlags) -> Void = { _ in }
-        private var pressed = false
-        private var modifiers: NSEvent.ModifierFlags = []
-
-        override var mouseDownCanMoveWindow: Bool { false }
-
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            guard let event = NSApp.currentEvent, event.type == .leftMouseDown,
-                  !event.modifierFlags.intersection([.command, .shift]).isEmpty
-            else { return nil }
-            return super.hitTest(point)
-        }
-
-        override func mouseDown(with event: NSEvent) {
-            pressed = true
-            modifiers = event.modifierFlags
-        }
-
-        override func mouseDragged(with event: NSEvent) {
-            if !bounds.contains(convert(event.locationInWindow, from: nil)) { pressed = false }
-        }
-
-        override func mouseUp(with event: NSEvent) {
-            guard pressed else { return }
-            pressed = false
-            if bounds.contains(convert(event.locationInWindow, from: nil)) { act(modifiers) }
-        }
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(TapGesture().onEnded {
+            let modifiers = NSEvent.modifierFlags
+            if !modifiers.intersection([.command, .shift]).isEmpty { act(modifiers) }
+        })
     }
 }
 
