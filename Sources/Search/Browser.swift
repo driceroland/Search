@@ -3571,6 +3571,11 @@ final class Browser: NSObject, ObservableObject {
         if liftedAway, let id = floating, id == activeID { land() }
     }
 
+    /// ⇧⌘F: the window fills the screen, or comes back out of it.
+    func toggleFullScreen() {
+        window?.toggleFullScreen(nil)
+    }
+
     /// ⌘⇧P, for lifting one out by hand.
     func toggleFloat() {
         if floater.showing {
