@@ -117,6 +117,8 @@ struct SearchApp: App {
                     .shortcut("view.reader")
                 Button("Float Video") { browser.toggleFloat() }
                     .shortcut("view.float")
+                Button("Toggle Full Screen") { browser.toggleFullScreen() }
+                    .shortcut("view.fullScreen")
                 // The AI add-on's, only once it is on (Settings › AI).
                 if browser.prefs.ai {
                     Divider()
@@ -1352,6 +1354,8 @@ struct ContentView: View {
             browser.printPage()
         case "f" where !shifted:
             browser.openFind()
+        case "f" where shifted:
+            browser.toggleFullScreen()
         case "g":
             browser.look(forward: !shifted)
         case "m" where shifted:
