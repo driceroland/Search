@@ -14,7 +14,8 @@ struct ImportPanel: View {
     @ObservedObject var browser: Browser
 
     @State private var sources: [ImportSource] = []
-    @State private var unreadable: [String] = []
+    @State private var unreadable: [(source: Chromium.Source, looked: String)] = []
+    @State private var folderError: String?
     @State private var looking = true
     @State private var pick: ImportSource?
     /// Each browser's profiles, and the one used most recently.
@@ -59,7 +60,7 @@ struct ImportPanel: View {
                     Text("Looking on this Mac…").font(.system(size: 12)).foregroundStyle(Palette.muted)
                 }
             } else if sources.isEmpty {
-                Card { Nothing("No other browser found on this Mac.") }
+                Card { Nothing(unreadable.isEmpty ? "No other browser found on this Mac." : "Choose a browser's data folder below to allow Search to read it.") }
             } else {
                 Caption("On this Mac")
                 Card {
@@ -164,19 +165,59 @@ struct ImportPanel: View {
     /// be: said by name rather than left out.
     @ViewBuilder
     private var notes: some View {
-        let lines = (ImportSource.safari
-                     ? ["Safari — macOS keeps its data from other apps: in Safari, File › Export Browsing Data, then bring the file in below."]
-                     : []) + unreadable
-        if !lines.isEmpty {
+        if ImportSource.safari || !unreadable.isEmpty || folderError != nil {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(lines, id: \.self) { line in
-                    Text(line)
+                if ImportSource.safari {
+                    Text("Safari — macOS keeps its data from other apps: in Safari, File › Export Browsing Data, then bring the file in below.")
                         .font(.system(size: 11.5))
                         .foregroundStyle(Palette.faint)
-                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(unreadable.indices, id: \.self) { index in
+                    let missing = unreadable[index]
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(missing.source.name) is on this Mac, but Search couldn't read its data in \(missing.looked).")
+                        Spacer(minLength: 4)
+                        Pill("Choose folder…") { chooseFolder(for: missing.source) }
+                    }
+                }
+                if let folderError {
+                    Text(folderError)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
                 }
             }
+            .font(.system(size: 11.5))
+            .foregroundStyle(Palette.faint)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.leading, 2)
+        }
+    }
+
+    /// macOS protects another app's data. Choosing its folder in the system
+    /// panel grants this browser access without asking for Full Disk Access.
+    private func chooseFolder(for source: Chromium.Source) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = source.root.deletingLastPathComponent()
+        panel.message = "Choose \(source.name)'s browser data folder"
+        panel.prompt = "Use Folder"
+        panel.begin { answer in
+            guard answer == .OK, let folder = panel.url else { return }
+            var selected = source
+            selected.rootOverride = folder
+            guard !selected.profiles.isEmpty else {
+                folderError = "No browser profile was found in \(folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")). Choose the folder that contains Default or Profile 1."
+                return
+            }
+            Chromium.useForSession(folder, for: source)
+            folderError = nil
+            previews = [:]
+            profiles = [:]
+            usual = [:]
+            looking = true
+            look()
         }
     }
 
@@ -318,7 +359,7 @@ struct ImportPanel: View {
         let wanted = browser.bringingIn ?? ""
         DispatchQueue.global(qos: .userInitiated).async {
             let found = ImportSource.installed()
-            let missing = Chromium.unreadable().map { "\($0.source.name) is on this Mac, but nothing of it was found in \($0.looked)." }
+            let missing = Chromium.unreadable()
             let lists = found.map { ($0.id, $0.profiles, $0.usual) }
             DispatchQueue.main.async {
                 sources = found
