@@ -21,6 +21,7 @@
     ./bench type ID SELECTOR TEXT
     ./bench submit ID SELECTOR         the form around SELECTOR
     ./bench shot ID [PATH] [WIDTH]     a PNG of the page → its path
+    ./bench pdf PATH                   test run: export the page on screen as a continuous, screen-layout PDF
     ./bench close ID | all             only tabs the bench opened
     ./bench probe                      the window's own state: panels, modal, windows
     ./bench extensions                 installed extensions, loaded or not, with their warnings
@@ -211,6 +212,9 @@ def main(argv):
         request["id"] = args[0]
         if len(args) > 1: request["path"] = os.path.abspath(args[1])
         if len(args) > 2: request["width"] = float(args[2])
+    elif verb == "pdf":
+        if len(args) != 1: sys.exit("usage: bench pdf PATH")
+        request["path"] = os.path.abspath(args[0])
     elif verb == "sitesearch":
         request["action"] = args[0] if args else "state"
         if len(args) == 3 and args[0] == "learn":

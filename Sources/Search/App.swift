@@ -72,6 +72,9 @@ struct SearchApp: App {
                 Button("Share…") { browser.share() }
                     .shortcut("file.share")
                     .disabled(browser.active?.isBlank ?? true)
+                Button("Export as PDF…") { browser.exportPDF() }
+                    .shortcut("file.exportPDF")
+                    .disabled(browser.active?.isBlank ?? true)
                 Button("Print…") { browser.printPage() }
                     .shortcut("file.print")
                     .disabled(browser.active?.isBlank ?? true)

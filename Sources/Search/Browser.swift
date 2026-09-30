@@ -3424,7 +3424,46 @@ final class Browser: NSObject, ObservableObject {
         typed = ""
     }
 
-    /// ⌘P. The system's own sheet, which is also where "save as PDF" lives.
+    /// File › Export as PDF…. Unlike Print, this keeps the page's screen
+    /// layout and takes its whole current length. WebKit splits only a page
+    /// taller than a PDF page can be (200 inches).
+    func exportPDF() {
+        guard let tab = active, !tab.isBlank, let window = tab.web.window ?? self.window else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.canCreateDirectories = true
+        let title = tab.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stem = (title.isEmpty ? tab.pageAddress?.host() ?? "Page" : title)
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        panel.nameFieldStringValue = stem.lowercased().hasSuffix(".pdf") ? stem : stem + ".pdf"
+        panel.directoryURL = downloadsFolder
+        panel.beginSheetModal(for: window) { [weak self] answer in
+            guard answer == .OK, let file = panel.url else { return }
+            self?.exportPDF(to: file)
+        }
+    }
+
+    /// The same export without its save panel, for the bench.
+    func exportPDF(to file: URL, finished: ((Bool) -> Void)? = nil) {
+        guard let tab = active, !tab.isBlank else {
+            finished?(false)
+            return
+        }
+        tab.web.createPDF(configuration: WKPDFConfiguration()) { [weak self] result in
+            do {
+                let data = try result.get()
+                try data.write(to: file, options: .atomic)
+                self?.announce("Saved \(file.lastPathComponent)", file: file)
+                finished?(true)
+            } catch {
+                self?.announce("Couldn't export page")
+                finished?(false)
+            }
+        }
+    }
+
+    /// ⌘P. The system's print sheet, where a paginated PDF can also be saved.
     func printPage() {
         guard let tab = active, !tab.isBlank, let window = NSApp.keyWindow else { return }
         Browser.printing(tab.web).runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
