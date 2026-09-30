@@ -741,37 +741,62 @@ struct ContentView: View {
     /// with the answer remembered so it is asked once and not every call.
     private func captureAsking(_ ask: Browser.CaptureAsk) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: ask.wants == "location" ? "location" : ask.wants == "microphone" ? "mic" : ask.wants == "notifications" ? "bell" : "video")
+            Image(systemName: ask.screen ? "macwindow.on.rectangle" : ask.wants == "location" ? "location" : ask.wants == "microphone" ? "mic" : ask.wants == "notifications" ? "bell" : "video")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Palette.muted)
-            Text(ask.wants == "location" ? "\(ask.host) wants to know your location"
+            Text(ask.screen ? "\(ask.host) wants to share your screen"
+                 : ask.wants == "location" ? "\(ask.host) wants to know your location"
                  : ask.wants == "notifications" ? "\(ask.host) wants to send you notifications"
                  : "\(ask.host) wants to use your \(ask.wants)")
                 .font(.system(size: 12.5))
                 .foregroundStyle(Palette.ink)
-            Button { ask.once ? browser.allowCaptureOnce() : browser.allowCapture() } label: {
-                Text(ask.once ? "Allow once" : "Allow")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.ground)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 5)
-                    .background(Palette.ink, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            if ask.once, ask.keeps {
-                Button { browser.allowCapture() } label: {
-                    Text("Always allow")
+            if ask.screen {
+                Button { browser.shareScreen() } label: {
+                    Text("Share a Screen")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.ground)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(Palette.ink, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                Button { browser.shareWindow() } label: {
+                    Text("Share a Window")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.ink)
                 }
                 .buttonStyle(.plain)
+                Button { browser.denyShare() } label: {
+                    Text("Don't allow")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button { ask.once ? browser.allowCaptureOnce() : browser.allowCapture() } label: {
+                    Text(ask.once ? "Allow once" : "Allow")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.ground)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(Palette.ink, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                if ask.once, ask.keeps {
+                    Button { browser.allowCapture() } label: {
+                        Text("Always allow")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.ink)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button { browser.denyCapture() } label: {
+                    Text("Don't allow")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                }
+                .buttonStyle(.plain)
             }
-            Button { browser.denyCapture() } label: {
-                Text("Don't allow")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.muted)
-            }
-            .buttonStyle(.plain)
         }
         .padding(.leading, 16)
         .padding(.trailing, 10)

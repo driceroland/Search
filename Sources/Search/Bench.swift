@@ -1414,7 +1414,10 @@ final class Bench {
             case "once": browser.allowCaptureOnce()
             case "always": browser.allowCapture()
             case "no": browser.denyCapture()
-            default: answer(["error": "answer once|always|no"]); return
+            case "screen": browser.shareScreen()
+            case "window": browser.shareWindow()
+            case "noscreen": browser.denyShare()
+            default: answer(["error": "answer once|always|no|screen|window|noscreen"]); return
             }
             answer(["asking": browser.asking.map { "\($0.host) \($0.wants)" } ?? "", "locationAnswered": Browser.locationAnswered ?? ""])
 

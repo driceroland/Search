@@ -70,7 +70,9 @@
     ./bench ai mock URL | key PROVIDER KEY | ask PROVIDER MODEL TEXT | read ID | check TEXT | signin | engine [PATH MODELS] | use PROVIDER [MODEL] | summarize ID | question ID TEXT | agree | state | picture DIR
                                        test run: the AI add-on's requests, against a stand-in on this Mac;
                                        what of a page would go to the model, and an answer checked against it
-    ./bench answer once|always|no     test run: the card of a page asking for the camera, microphone or location
+    ./bench answer once|always|no|screen|window|noscreen
+                                       test run: the card of a page asking for the camera, microphone or location;
+                                       screen/window/noscreen answer a page asking to share your screen
     ./bench accounts [ROW]             test run: the list under the sign-in box the caret is in (passkeys,
                                        then passwords); ROW: a click on that row, from 0
     ./bench pull DX [STEPS] [MS]       test run: two fingers DX points sideways over the page (back is +) — where it went
@@ -508,7 +510,8 @@ def main(argv):
         elif args[0] == "check" and len(args) == 2: request["text"] = args[1]
         else: sys.exit(usage)
     elif verb == "answer":
-        if args not in (["once"], ["always"], ["no"]): sys.exit("usage: bench answer once|always|no")
+        if args not in (["once"], ["always"], ["no"], ["screen"], ["window"], ["noscreen"]):
+            sys.exit("usage: bench answer once|always|no|screen|window|noscreen")
         request["with"] = args[0]
     elif verb == "notifications":
         pass
