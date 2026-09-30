@@ -48,8 +48,9 @@ enum Store {
     /// between probes the way the real one does. Wiping the test store is
     /// then as safe as wiping its folder.
     static var websites: WKWebsiteDataStore {
-        guard testing, !ownContainer else { return .default() }
-        return WKWebsiteDataStore(forIdentifier: probeStore(1))
+        let store = testing && !ownContainer ? WKWebsiteDataStore(forIdentifier: probeStore(1)) : .default()
+        MainActor.assumeIsolated { BrowserProxy.shared.attach(store) }
+        return store
     }
 
     /// Settings › Privacy › Prevent cross-site tracking, turned off. WebKit's
