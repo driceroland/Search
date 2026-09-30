@@ -12,6 +12,7 @@ enum Address {
 
     static func url(from typed: String) -> URL? {
         let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let file = file(at: text) { return file }
         guard !text.isEmpty, !text.contains(" ") else { return nil }
 
         // Written with a scheme, it is taken at its word.
@@ -65,6 +66,18 @@ enum Address {
         else { return nil }
         parts.host = "localhost"
         return parts.url
+    }
+
+    /// A path typed in full, or from the home folder, that names a file on
+    /// this Mac. It is asked before the spaces are, which a file's name may
+    /// have, and only a file that is there counts: "/r/swift" is a phrase,
+    /// and a folder has no page to show.
+    private static func file(at text: String) -> URL? {
+        guard text.hasPrefix("/") || text.hasPrefix("~/") else { return nil }
+        let path = (text as NSString).expandingTildeInPath
+        var folder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &folder), !folder.boolValue else { return nil }
+        return URL(fileURLWithPath: path)
     }
 
     private static func looksLikeHost(_ host: String) -> Bool {
