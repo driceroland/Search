@@ -28,7 +28,7 @@ enum Web {
     /// included, and registering a name twice is a hard crash.
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name,
-                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name] {
+                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
@@ -108,11 +108,10 @@ enum Web {
         // Off by default on macOS, which is why a full-screen button on a video
         // did nothing at all: the page asks, and WebKit refuses without a word.
         config.preferences.isElementFullscreenEnabled = true
-        // On by default on macOS: a page could open a new tab, and take you
-        // to it, whenever it liked — on load, on a timer. Off, window.open
-        // works only from a click or a key, as Safari's pop-up blocking has
-        // it; a sign-in window opened by its button still opens.
-        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // WebKit's synchronous popup check rejects async POST sign-ins.
+        // The UI delegate instead consumes a recent trusted interaction
+        // recorded in Search's isolated world (see PopupGesture.swift).
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
         // Sound waits for a click, as everywhere; video too when Settings
         // says videos wait (Never Auto-Play, in Safari's words).
         config.mediaTypesRequiringUserActionForPlayback = Web.playback
@@ -287,6 +286,7 @@ final class Tab: ObservableObject, Identifiable {
     var pageAddress: URL? { committed ?? address }
 
     func didCommit() {
+        popupGesture.clear()
         // A new document: whatever the old one waited for under its field
         // went with it.
         if let built { Passkeys.shared.forget(built) }
@@ -486,6 +486,8 @@ final class Tab: ObservableObject, Identifiable {
     private let shop = StoreRelay()
     private let iconChanges = IconRelay()
     private let middles = MiddleRelay()
+    private let popupGestures = PopupGestureRelay()
+    var popupGesture = PopupGesture()
     private let passkeyRelay = PasskeyRelay()
     private let hovered = HoveredLink()
     private let ears = AudioWatch()
@@ -637,6 +639,8 @@ final class Tab: ObservableObject, Identifiable {
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
+        popupGestures.tab = self
+        controller.add(popupGestures, contentWorld: Web.world, name: PopupGestureRelay.name)
         Shield.shared.protect(controller)
         built = web
         // A tab muted before it went to sleep wakes muted.
@@ -730,6 +734,9 @@ final class Tab: ObservableObject, Identifiable {
         guard let built else { return }
         let controller = built.configuration.userContentController
         controller.removeAllUserScripts()
+        controller.addUserScript(
+            WKUserScript(source: PopupGestureRelay.script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
+        )
         controller.addUserScript(
             WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
