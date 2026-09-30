@@ -4072,9 +4072,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         _ action: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-        // "Download Image", "Download Linked File" from the page's own
-        // context menu, and a link with the `download` attribute all arrive
-        // as an ordinary-looking action with this one flag set. Answered
+        // "Download Image" from the page's own context menu and a link with
+        // the `download` attribute arrive as an ordinary-looking action with
+        // this one flag set. ("Download Linked File" doesn't come this way:
+        // see contextMenuDidCreateDownload below.) Answered
         // with `.allow`, as anything else here was, WebKit tries to load it
         // as if it were the next page — nowhere for that to go, so nothing
         // happens and nothing says why. `.download` is what turns it into
@@ -4342,6 +4343,14 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     ) {
         keep(download, from: webView)
         dropEmpty(webView)
+    }
+
+    /// Download Linked File in the right-click menu. WebKit starts the
+    /// download and hands it to a delegate that answers this name, outside
+    /// the public framework; unanswered, the file was fetched and went nowhere.
+    @objc(_webView:contextMenuDidCreateDownload:)
+    func webView(_ webView: WKWebView, contextMenuDidCreateDownload download: WKDownload) {
+        keep(download, from: webView)
     }
 
     /// A tab that has shown nothing, and whose first page turned out to be a
