@@ -17,7 +17,6 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     private static var open: [LittleWindow] = []
 
     let tab: Tab
-    private weak var browser: Browser?
     private let window: NSWindow
     private var kept = false
 
@@ -28,7 +27,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         let tab = Tab(configuration: Web.configuration(space: browser.spaceID))
         browser.prepare(tab)
         tab.go(to: url)
-        let little = LittleWindow(tab: tab, browser: browser)
+        let little = LittleWindow(tab: tab)
         open.append(little)
         little.window.center()
         // Never a test run's in front: a probe started hidden stays off every screen.
@@ -49,9 +48,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         return open.first { $0.window === window }
     }
 
-    private init(tab: Tab, browser: Browser) {
+    private init(tab: Tab) {
         self.tab = tab
-        self.browser = browser
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
             styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
@@ -85,15 +83,15 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// Into the browser's row, after the tab on screen (never among the
     /// pins), and in front; the small window goes.
     func keep() {
-        // Into the window in front, whichever that is now.
-        guard let browser = Browsers.front ?? browser else { return }
+        // Into the window in front, whichever that is now — or, when the
+        // link came with no window open, the one brought back to take it.
+        let browser = Browsers.ensureWindow()
         kept = true
         // As a tab moved from another window is: this window's delegate,
         // and this window's space, with its sign-ins.
         browser.receive(tab)
         window.close()
-        (browser.window ?? NSApp.windows.first { $0.contentView != nil && !($0 is NSPanel) && $0 !== window })?
-            .makeKeyAndOrderFront(nil)
+        browser.window?.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
