@@ -32,6 +32,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A text file on this Mac opens as text, whatever it is called: a Makefile, a dotfile like .zshrc, a .swift, .yml, .toml or .log, which Search used to copy into Downloads and leave a blank tab instead of showing. It is shown when it reads as UTF-8 and is under 20 MB; binaries and other encodings still download as before ([#525](https://github.com/driceroland/Search/issues/525))
 - The hidden column's shadow leaves with it. Sliding back out of the window, the column was gone while its shadow still lay along the window's edge, then vanished at once; it now fades as the column slides and is gone when the column is. The same for the tabs across the top, folded away. Thanks [@Qddog23](https://github.com/Qddog23) for reporting and [@karadoganyi](https://github.com/karadoganyi) for the fix ([#441](https://github.com/driceroland/Search/issues/441), [#462](https://github.com/driceroland/Search/pull/462))
 - ⌘W closes what's in front first: a peek, then a panel over the page (Settings, Bookmarks, Passwords, History, Downloads, What's New…), and only then the tab, in the same order as Escape. With Settings open, ⌘W used to close the page behind it. Thanks [@oddharsh](https://github.com/oddharsh) ([#452](https://github.com/driceroland/Search/pull/452))
 - An extension's items in a page's right-click menu show once: WebKit already puts them there, and Search added them a second time. Thanks [@quanru](https://github.com/quanru) ([#456](https://github.com/driceroland/Search/pull/456))

@@ -4323,6 +4323,16 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             decisionHandler(.download)
             return
         }
+        // A file on this Mac that WebKit has no type for but that reads as
+        // text is shown as text, not copied into Downloads. Shown from its
+        // bytes, under its own address, so a wake or a reload opens it again.
+        if response.isForMainFrame, !response.canShowMIMEType,
+           let file = response.response.url, file.isFileURL,
+           let text = LocalText.contents(of: file) {
+            decisionHandler(.cancel)
+            webView.load(text, mimeType: "text/plain", characterEncodingName: "utf-8", baseURL: file)
+            return
+        }
         decisionHandler(response.canShowMIMEType ? .allow : .download)
     }
 
