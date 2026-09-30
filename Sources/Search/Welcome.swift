@@ -101,14 +101,19 @@ struct WelcomePanel: View {
                             .font(.system(size: 13))
                             .foregroundStyle(Palette.muted)
                     }
-                    Choice("Passwords", "macOS will ask once for that browser's keychain key", on: $wantsPasswords)
+                    if (source ?? sources[0]).importsPasswords {
+                        Choice("Passwords", "macOS will ask once for that browser's keychain key", on: $wantsPasswords)
+                    } else {
+                        Text("Passwords from \((source ?? sources[0]).name) aren't supported yet.")
+                            .font(.system(size: 13)).foregroundStyle(Palette.muted)
+                    }
                     Choice("Bookmarks", "Folders and all, behind the bookmark button", on: $wantsBookmarks)
                     Choice("History", "The last few thousand places, for finishing addresses", on: $wantsHistory)
                 }
 
                 HStack(spacing: 12) {
                     Big(bringing ? "Bringing…" : "Bring them in", filled: true) { bringAll() }
-                        .disabled(bringing || brought != nil || !(wantsPasswords || wantsHistory || wantsBookmarks))
+                        .disabled(bringing || brought != nil || !(((source ?? sources[0]).importsPasswords && wantsPasswords) || wantsHistory || wantsBookmarks))
                     if bringing { Ring(size: 10) }
                     if let brought {
                         Text(brought)
@@ -232,7 +237,7 @@ struct WelcomePanel: View {
         bringing = true
         var lines: [String] = []
         let group = DispatchGroup()
-        if wantsPasswords {
+        if wantsPasswords && source.importsPasswords {
             group.enter()
             DispatchQueue.global(qos: .userInitiated).async {
                 let outcome = Result { try source.read(profile: profile) }
