@@ -376,7 +376,12 @@ struct ContentView: View {
             // it and is resized once, not on every frame of the slide: laid out
             // again thirty times a second, the page juddered along its right
             // edge and overshot the window with the spring (see `room`).
-            stage
+            // The native page's previous bounds are not its ideal size.
+            // Keep that measurement inside the space assigned to the page,
+            // so shrinking a window cannot push the browser chrome outside it.
+            GeometryReader { area in
+                stage.frame(width: area.size.width, height: area.size.height, alignment: .topLeading)
+            }
                 .padding(.leading, sideOnRight ? 0 : roomed.width)
                 .padding(.trailing, sideOnRight ? roomed.width : 0)
                 .padding(.top, roomed.height)
