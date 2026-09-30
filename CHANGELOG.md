@@ -11,6 +11,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+- Inline extension chats recover when an idle runtime port loses its route: Search checks that connection before sending and reconnects without resending messages already delivered.
+
 ### Added
 
 - Close Group, in a tab group's menu, closes the group and every tab in it. ⇧⌘T brings them back one by one, into the same group, named as it was. Asked for by email

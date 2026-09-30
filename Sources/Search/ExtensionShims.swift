@@ -1031,6 +1031,117 @@ enum ExtensionShims {
           if (typeof f === "function") put(runtime, name, f.bind(runtime));
         }
       }
+      // A worker can answer new connections while an older port silently
+      // loses its route. Check that port before posting after an idle spell.
+      // Queue only unsent messages; never replay one handed to WebKit.
+      const portCheck = (message) => message && typeof message === "object"
+        && Object.keys(message).length === 1 && typeof message.__searchPortCheck?.token === "string"
+        && typeof message.__searchPortCheck.reply === "boolean" ? message.__searchPortCheck : null;
+      if (runtime?.onConnect) {
+        const incoming = new WeakSet(), wrapped = new WeakMap();
+        const onConnect = runtime.onConnect;
+        const add = onConnect.addListener.bind(onConnect), remove = onConnect.removeListener.bind(onConnect);
+        const has = onConnect.hasListener.bind(onConnect);
+        const prepare = (port) => {
+          if (incoming.has(port)) return port;
+          incoming.add(port);
+          const messages = port.onMessage, post = port.postMessage.bind(port), listeners = event();
+          messages.addListener((message, ...rest) => {
+            const check = portCheck(message);
+            if (check) {
+              if (!check.reply) { try { post({ __searchPortCheck: { token: check.token, reply: true } }); } catch (e) {} }
+              return;
+            }
+            for (const f of [...listeners.listeners]) {
+              try { f(message, ...rest); } catch (e) { setTimeout(() => { throw e; }); }
+            }
+          });
+          // Ports must not enter put()'s globally retained property list.
+          Object.defineProperty(port, "onMessage", { value: listeners, configurable: true, writable: true });
+          return port;
+        };
+        put(onConnect, "addListener", (listener, ...rest) => {
+          if (typeof listener !== "function") return add(listener, ...rest);
+          let f = wrapped.get(listener);
+          if (!f) { f = (port) => listener(prepare(port)); wrapped.set(listener, f); }
+          return add(f, ...rest);
+        });
+        put(onConnect, "removeListener", (listener) => remove(wrapped.get(listener) || listener));
+        put(onConnect, "hasListener", (listener) => has(wrapped.get(listener) || listener));
+      }
+      // Before the content-script return: an inline chat reaches its worker
+      // through precisely these ports, too.
+      if (typeof document !== "undefined" && runtime && typeof runtime.connect === "function") {
+        const connect = runtime.connect.bind(runtime);
+        put(runtime, "connect", (...args) => {
+          if (typeof args[0] === "string" && args[0] !== runtime.id) return connect(...args);
+          let current = connect(...args), closed = false, heard = 0, timer = null, token = null, retried = false;
+          const messages = event(), disconnected = event(), pending = [];
+          const view = { name: current.name, sender: current.sender, onMessage: messages, onDisconnect: disconnected };
+          const clear = () => { clearTimeout(timer); timer = null; token = null; };
+          const finish = () => {
+            if (closed) return;
+            closed = true; clear(); pending.length = 0;
+            try { current.disconnect(); } catch (e) {}
+            for (const f of [...disconnected.listeners]) {
+              try { f(view); } catch (e) { setTimeout(() => { throw e; }); }
+            }
+          };
+          const flush = () => {
+            clear(); heard = Date.now(); retried = false;
+            while (!closed && pending.length) {
+              const message = pending.shift();
+              try { current.postMessage(message); } catch (e) { finish(); }
+            }
+          };
+          const attach = (port) => {
+            port.onMessage.addListener((message) => {
+              if (closed || current !== port) return;
+              const check = portCheck(message);
+              if (check) {
+                if (check.reply && check.token === token) flush();
+                return;
+              }
+              heard = Date.now();
+              for (const f of [...messages.listeners]) {
+                try { f(message, view); } catch (e) { setTimeout(() => { throw e; }); }
+              }
+            });
+            port.onDisconnect.addListener(() => { if (current === port) finish(); });
+          };
+          const probe = () => {
+            token = Math.random().toString(36).slice(2);
+            timer = setTimeout(() => {
+              clear();
+              if (closed) return;
+              if (retried) { finish(); return; }
+              retried = true;
+              const old = current;
+              try { current = connect(...args); attach(current); }
+              catch (e) { finish(); return; }
+              try { old.disconnect(); } catch (e) {}
+              probe();
+            }, 10000);
+            try { current.postMessage({ __searchPortCheck: { token, reply: false } }); }
+            catch (e) { finish(); }
+          };
+          attach(current);
+          view.postMessage = (message) => {
+            if (closed) throw new Error("Attempting to use a disconnected port object");
+            if (token === null && heard && Date.now() - heard < 5000) return current.postMessage(message);
+            // postMessage snapshots its argument at the call, even when the
+            // receiver isn't ready yet. Do not queue a caller's mutable object.
+            pending.push(typeof structuredClone === "function" ? structuredClone(message) : JSON.parse(JSON.stringify(message)));
+            if (token === null) probe();
+          };
+          view.disconnect = () => {
+            if (closed) return;
+            closed = true; clear(); pending.length = 0; current.disconnect();
+          };
+          return view;
+        });
+      }
+
       if (inContent) {
         // A frame inside this extension's own page — its offscreen
         // document reading a site, say — is part of that page's tab, and
