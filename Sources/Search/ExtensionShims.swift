@@ -1152,6 +1152,15 @@ enum ExtensionShims {
           (e) => withLastError(e, callback));
       };
       let checkWorker = () => {};
+      // A page owns its ports; this list must not keep an abandoned one alive.
+      const workerPorts = new Set(), workerDisconnect = new WeakMap();
+      const disconnectWorkerPorts = () => {
+        for (const ref of [...workerPorts]) {
+          const port = ref.deref();
+          if (port) workerDisconnect.get(port)?.();
+          else workerPorts.delete(ref);
+        }
+      };
       // When the worker was last heard from — a reply, a port message.
       let heard = 0;
       if (runtime && typeof runtime.sendMessage === "function") {
@@ -1190,7 +1199,9 @@ enum ExtensionShims {
             if (r === "pong" || heard >= started) heard = Math.max(heard, Date.now());
             else {
               if (__SEARCH_VERBOSE__) native("debug.error", ["worker check: " + String(r) + " from " + location.pathname]).catch(() => {});
-              native("background.revive", []).catch(() => {});
+              native("background.revive", []).then((restarted) => {
+                if (restarted) disconnectWorkerPorts();
+              }).catch(() => {});
             }
           }).finally(() => { asking = false; });
         };
@@ -1242,6 +1253,37 @@ enum ExtensionShims {
           checkWorker();
           const port = connect(...args);
           try { port.onMessage.addListener(() => { heard = Date.now(); }); } catch (e) {}
+          // An external extension isn't served by our worker.
+          if (typeof args[0] === "string" && args[0] !== runtime.id) return port;
+          const ref = new WeakRef(port), disconnected = event();
+          const post = port.postMessage, disconnect = port.disconnect;
+          let closed = false;
+          const finish = () => {
+            if (closed) return;
+            closed = true;
+            workerPorts.delete(ref);
+            try { disconnect.call(port); } catch (e) {}
+            for (const f of [...disconnected.listeners]) {
+              try { f(port); } catch (e) { setTimeout(() => { throw e; }); }
+            }
+          };
+          port.onDisconnect.addListener(finish);
+          // Unlike put(), these properties don't retain every port globally.
+          const set = (key, value) => Object.defineProperty(port, key, { value, configurable: true, writable: true });
+          set("onDisconnect", disconnected);
+          set("postMessage", (message) => {
+            if (closed) throw new Error("Attempting to use a disconnected port object");
+            checkWorker();
+            return post.call(port, message);
+          });
+          set("disconnect", () => {
+            closed = true;
+            workerPorts.delete(ref);
+            disconnect.call(port);
+          });
+          for (const old of workerPorts) { if (!old.deref()) workerPorts.delete(old); }
+          workerPorts.add(ref);
+          workerDisconnect.set(port, finish);
           return port;
         });
       }
@@ -3729,8 +3771,7 @@ enum ExtensionShims {
         // A page found the worker gone though WebKit believes it runs (see
         // the shim's ping).
         case "background.revive":
-            owner.revive(id, because: "its worker stopped answering")
-            return nil
+            return owner.revive(id, because: "its worker stopped answering")
 
         // MARK: what went wrong inside
         case "debug.error":

@@ -640,9 +640,10 @@ final class Extensions: NSObject, ObservableObject {
     private var loadsThisRun: Set<String> = []
     private(set) var loadedBefore: Set<String> = []
 
-    func revive(_ id: String, because reason: String) {
+    @discardableResult
+    func revive(_ id: String, because reason: String) -> Bool {
         guard let item = installed.first(where: { $0.id == id }), item.enabled,
-              Date().timeIntervalSince(revived[id] ?? .distantPast) > 60 else { return }
+              Date().timeIntervalSince(revived[id] ?? .distantPast) > 60 else { return false }
         revived[id] = Date()
         workersChanged()
         noteError("restarted the extension: \(reason)", for: id)
@@ -655,6 +656,7 @@ final class Extensions: NSObject, ObservableObject {
             // with a folded column meanwhile.
             ExtensionPopup.shared.show(popup, for: context, from: anchor(for: id))
         }
+        return true
     }
 
     /// WebKit records a worker that failed to start as an error on its
