@@ -445,6 +445,12 @@ struct SettingsPanel: View {
             Line("Tab groups", "Named sections in the sidebar. Right-click a tab to start a group; click its heading to hide or show its tabs.") {
                 Switch(on: $prefs.usesTabGroups)
             }
+            if prefs.sidebar {
+                Rule()
+                Line("Pinned rows", "As in Arc: pins as squares for the sites you live in, pins as rows under them for pages you keep, and a line over the rest with Clear. Right-click a tab to pin it as a row.") {
+                    Switch(on: $prefs.listsPins)
+                }
+            }
             Rule()
             Line("Split View", "Show two tabs side by side. Drag a tab onto a page to pair them.") {
                 Switch(on: $prefs.splitView)
@@ -560,7 +566,7 @@ struct SettingsPanel: View {
                     Switch(on: Binding(get: { !prefs.keepsSignIns }, set: { prefs.keepsSignIns = !$0 }))
                 }
                 Rule()
-                Line("Camera, microphone, location and notifications", "What each site was allowed or refused") {
+                Line("Camera, microphone, location and notifications", "What each site was allowed or refused, and the sites whose videos don't float") {
                     Pill("Forget choices") { browser.forgetCaptureChoices() }
                 }
                 Rule()

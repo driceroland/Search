@@ -301,6 +301,15 @@ final class Preferences: ObservableObject {
     @Published var usesTabGroups: Bool {
         didSet { store.set(usesTabGroups, forKey: "tabs.groups") }
     }
+    /// Arc's three tiers in the sidebar: the squares, pins kept as rows
+    /// under them, and a line with Clear above the tabs that come and go
+    /// (see Tab.listed). Off unless asked for.
+    @Published var listsPins: Bool {
+        didSet { store.set(listsPins, forKey: "pins.list") }
+    }
+    /// Whether the pinned rows are drawn as rows: asked for, and with the
+    /// tabs down the side. Across the top every pin is a square.
+    var showsPinRows: Bool { listsPins && sidebar }
     /// The AI add-on: summaries of the page and questions about it (see
     /// AIAssist). Off unless asked for; nothing is sent until you ask.
     @Published var ai: Bool {
@@ -415,6 +424,7 @@ final class Preferences: ObservableObject {
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
         usesTabGroups = store.bool(forKey: "tabs.groups")
+        listsPins = store.bool(forKey: "pins.list")
         splitView = store.bool(forKey: "splitView")
         ai = store.bool(forKey: "ai")
         aiProvider = store.string(forKey: "ai.provider").flatMap(AIProvider.init(rawValue:))

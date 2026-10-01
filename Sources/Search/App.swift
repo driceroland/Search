@@ -52,7 +52,7 @@ struct SearchApp: App {
                     .shortcut("file.newTab")
                 Button("New Private Tab") { browser.newShyTab() }
                     .shortcut("file.newPrivateTab")
-                Button("Reopen Closed Tab") { browser.reopen() }
+                Button(browser.reopenTitle) { browser.reopen() }
                     .shortcut("file.reopen")
                     .disabled(browser.ghosts.isEmpty && Browsers.lastClosedAt == nil)
                 Divider()
@@ -65,7 +65,7 @@ struct SearchApp: App {
                 Button("Bring Things Over…") { browser.bringingIn = "" }
                     .shortcut("file.import")
                 Divider()
-                Button("Close Tab") { if let tab = browser.active { browser.close(tab) } }
+                Button("Close Tab") { browser.closeFront() }
                     .shortcut("file.closeTab")
             }
             CommandGroup(replacing: .printItem) {
@@ -186,11 +186,21 @@ struct SearchApp: App {
                     Divider()
                 }
                 if let tab = browser.active {
+                    let rows = browser.prefs.showsPinRows
                     if tab.pin == nil {
                         Button("Pin Tab") { browser.pin(tab) }
                             .disabled(tab.isBlank || tab.shy)
+                        if rows {
+                            Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
+                                .disabled(tab.isBlank || tab.shy)
+                        }
                     } else {
-                        Button("Change Letter") { browser.editLetter(tab) }
+                        if rows {
+                            Button(tab.listed ? "Show Pin as Square" : "Show Pin as Row") { browser.setListed(tab, !tab.listed) }
+                        }
+                        if !(rows && tab.listed) {
+                            Button("Change Letter") { browser.editLetter(tab) }
+                        }
                         Button("Unpin Tab") { browser.unpin(tab) }
                     }
                 }
@@ -515,7 +525,10 @@ struct ContentView: View {
     /// own whenever a tab has nowhere to be yet.
     @ViewBuilder
     private var field: some View {
-        if browser.fieldShowing, browser.activeSplit == nil {
+        // SplitStage owns the field whenever Split View is enabled, including
+        // an ordinary tab that is not currently paired. Drawing it here too
+        // leaves two offset address fields on a blank tab.
+        if browser.fieldShowing, !browser.prefs.splitView {
             Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
@@ -855,9 +868,12 @@ struct ContentView: View {
     }
 
     /// Either visible pane may give its page to WebKit's fullscreen window.
+    /// Read through immersionRevision: a tab's going full screen and coming
+    /// back are the tab's changes, not the browser's, and this view watches
+    /// only the browser (see fullscreenWatch).
     private var fullscreenTab: Tab? {
-        guard browser.prefs.splitView else { return browser.active?.immersed == true ? browser.active : nil }
         _ = immersionRevision
+        guard browser.prefs.splitView else { return browser.active?.immersed == true ? browser.active : nil }
         if let split = browser.activeSplit,
            let immersed = browser.tabs.first(where: { split.contains($0.id) && $0.immersed }) {
             return immersed
@@ -865,11 +881,13 @@ struct ContentView: View {
         return browser.active?.immersed == true ? browser.active : nil
     }
 
+    /// The pages on screen, watched for full screen. The page alone too: left
+    /// unwatched, a video's full screen ended with nothing to draw the window
+    /// again, and the column stayed away until something else did — until
+    /// the column was switched off and on again, as it was reported.
     @ViewBuilder
     private var fullscreenWatch: some View {
-        if !browser.prefs.splitView {
-            // Nothing to watch: the page on screen is the only one.
-        } else if let split = browser.activeSplit {
+        if browser.prefs.splitView, let split = browser.activeSplit {
             if let left = browser.tabs.first(where: { $0.id == split.left }) {
                 TabImmersionWatch(tab: left) { immersionRevision += 1 }.id(left.id)
             }
@@ -1119,38 +1137,8 @@ struct ContentView: View {
                 withAnimation(Motion.glide) { browser.makingSpace = false }
                 return true
             }
-            if browser.notesShowing {
-                browser.notesShowing = false
-                return true
-            }
-            if browser.newsShowing {
-                browser.newsShowing = false
-                return true
-            }
-            if browser.tuning {
-                browser.tuning = false
-                return true
-            }
-            if browser.bookmarking {
-                browser.bookmarking = false
-                return true
-            }
-            if browser.managing {
-                browser.managing = false
-                return true
-            }
-            if browser.bringingIn != nil {
-                browser.bringingIn = nil
-                return true
-            }
-            if browser.recalling {
-                browser.recalling = false
-                return true
-            }
-            if browser.hoarding {
-                browser.hoarding = false
-                return true
-            }
+            // The same panels in the same order as ⌘W (Browser.closeFront).
+            if browser.closePanel() { return true }
             if browser.suggesting != nil {
                 browser.dropChoice()
                 return true
@@ -1403,11 +1391,7 @@ struct ContentView: View {
         case "0":
             browser.resetZoom()
         case "w" where !shifted:
-            if browser.peekTab != nil {
-                browser.closePeek()
-            } else if let tab = browser.active {
-                browser.close(tab)
-            }
+            browser.closeFront()
         case "l" where !shifted:
             browser.edit()
         case "r" where !shifted:

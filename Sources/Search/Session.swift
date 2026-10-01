@@ -17,6 +17,8 @@ enum Session {
         var groupID: UUID? = nil
         /// A pin's identity, the same in every window (see Pins.swift).
         var pinID: UUID? = nil
+        /// A pin kept as a row (see Tab.listed). Nil for a square.
+        var listed: Bool? = nil
     }
 
     struct Shape: Codable {
@@ -95,7 +97,7 @@ enum Session {
 // key it isn't asked for. In extensions, so the memberwise initialisers stay.
 
 extension Session.Entry {
-    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID }
+    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, listed }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -106,6 +108,7 @@ extension Session.Entry {
         home = try c.decodeIfPresent(String.self, forKey: .home)
         groupID = try? c.decodeIfPresent(UUID.self, forKey: .groupID)
         pinID = try? c.decodeIfPresent(UUID.self, forKey: .pinID)
+        listed = try? c.decodeIfPresent(Bool.self, forKey: .listed)
     }
 }
 

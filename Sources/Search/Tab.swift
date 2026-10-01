@@ -369,7 +369,7 @@ final class Tab: ObservableObject, Identifiable {
         return host.first.map { String($0).uppercased() } ?? "•"
     }
 
-    private func adoptIcon() {
+    func adoptIcon() {
         guard let site = address.flatMap(Favicons.site) else {
             icon = nil
             return
@@ -518,6 +518,12 @@ final class Tab: ObservableObject, Identifiable {
     var home: URL?
     /// For a pin, which of the pins it is, in every window (see Pins.swift).
     var pinID: UUID?
+    /// For a pin, kept as a row under the squares rather than as a square:
+    /// Arc's pinned list, below its favourites. Still a pin in every other
+    /// way: put down by ⌘W, the same in every window, never in a group.
+    /// Drawn as a square while Settings › Tabs › Pinned rows is off, or
+    /// with the tabs across the top.
+    @Published var listed = false
 
     /// The group that holds this ordinary tab in the sidebar.
     @Published var groupID: UUID?
@@ -1447,7 +1453,8 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 
 /// A web view that reads the two-finger swipe for itself.
 final class PageView: WKWebView {
-    /// What extensions added to the right-click menu, at the end of it.
+    /// The page's own right-click menu. WebKit puts extensions' items for the
+    /// page in it itself; Search adding them again showed each one twice.
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         // WebKit names it for a window, but a new window's page arrives here
@@ -1466,13 +1473,6 @@ final class PageView: WKWebView {
             item.target = self
             item.action = #selector(searchSelection(_:))
         }
-        guard #available(macOS 15.4, *),
-              let tab = Browsers.all.lazy.flatMap(\.tabs).first(where: { $0.built === self })
-        else { return }
-        let items = Extensions.shared.menuItems(for: tab)
-        guard !items.isEmpty else { return }
-        menu.addItem(.separator())
-        items.forEach { menu.addItem($0) }
     }
 
     var searchName: (() -> String?)?

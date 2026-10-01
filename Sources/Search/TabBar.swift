@@ -966,11 +966,27 @@ struct TabMenu: View {
                 }
             }
         }
+        let rows = browser.prefs.showsPinRows
         if tab.pin == nil {
             Button("Pin") { browser.pin(tab) }
                 .disabled(tab.isBlank || tab.shy)
+            if rows {
+                Button("Pin as Row") { browser.pin(tab, listed: true) }
+                    .disabled(tab.isBlank || tab.shy)
+            }
         } else {
-            Button("Change Letter") { browser.editLetter(tab) }
+            if rows {
+                Button(tab.listed ? "Show as Square" : "Show as Row") { browser.setListed(tab, !tab.listed) }
+            }
+            // A row wears its title, not its letter; and a click on it is
+            // the address, so the way home a square's double-click is
+            // (Browser.goHome) is here instead, while it has wandered.
+            if rows && tab.listed {
+                Button("Back to Pinned Page") { browser.goHome(tab) }
+                    .disabled(tab.home.map { Browser.samePage($0, tab.address) } ?? true)
+            } else {
+                Button("Change Letter") { browser.editLetter(tab) }
+            }
             Button("Unpin") { browser.unpin(tab) }
         }
         if browser.prefs.usesSpaces, !tab.bench,
@@ -1068,7 +1084,7 @@ struct TabMenu: View {
             .disabled(browser.tabs.count < 2)
         // ⌘⇧T, and the History menu's Recently Closed, where few think to
         // look for it: here too, where tabs are closed.
-        Button("Reopen Closed Tab") { browser.reopen() }
+        Button(browser.reopenTitle) { browser.reopen() }
             .disabled(browser.ghosts.isEmpty)
     }
 }

@@ -354,10 +354,13 @@ final class Bench {
             // Pin a tab, or unpin it with "off". Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "pin only works on a --test run"]); return }
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            // "listed": pinned as a row, or an existing pin made a row
+            // (true) or a square (false).
             if request["off"] as? Bool == true { browser.unpin(tab) }
             else if request["home"] as? Bool == true { browser.goHome(tab) }
-            else { browser.pin(tab) }
-            answer(["pin": tab.pin ?? "", "pinned": browser.pinnedCount, "home": tab.home?.absoluteString ?? "",
+            else if let listed = request["listed"] as? Bool, tab.pin != nil { browser.setListed(tab, listed) }
+            else { browser.pin(tab, listed: request["listed"] as? Bool ?? false) }
+            answer(["pin": tab.pin ?? "", "listed": tab.listed, "pinned": browser.pinnedCount, "home": tab.home?.absoluteString ?? "",
                     "address": tab.address?.absoluteString ?? "", "editingLetter": browser.editingPin == tab.id])
 
         case "select":
@@ -1025,6 +1028,31 @@ final class Bench {
                 }
             }
 
+        case "dropdown":
+            // The bookmark button's list, laid out off every screen, never in
+            // a popover: its height as it opens, the list's part of it, and
+            // how tall the tree is with every folder open.
+            let dropdown = BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
+            let whole = NSHostingView(rootView: dropdown).fittingSize
+            let all = Set(Bookmarks.folders(browser.bookmarks.roots).map(\.node.id))
+            let outline = BookmarkOutline(bookmarks: browser.bookmarks, expanded: .constant(all), open: { _ in }, openInNewTab: { _ in })
+                .padding(6)
+                .frame(width: 280)
+            // As it opens, folders closed: what the list was once sized by.
+            let closed = BookmarkOutline(bookmarks: browser.bookmarks, expanded: .constant([]), open: { _ in }, openInNewTab: { _ in })
+                .padding(6)
+                .frame(width: 280)
+            // And as it opens now, with what opens with it.
+            let opening = BookmarksDropdown.opening(browser.bookmarks.roots)
+            let shown = BookmarkOutline(bookmarks: browser.bookmarks, expanded: .constant(opening), open: { _ in }, openInNewTab: { _ in })
+                .padding(6)
+                .frame(width: 280)
+            answer(["height": Double(whole.height), "width": Double(whole.width), "list": Double(dropdown.listHeight),
+                    "allOpen": Double(NSHostingView(rootView: outline).fittingSize.height),
+                    "closed": Double(NSHostingView(rootView: closed).fittingSize.height),
+                    "shown": Double(NSHostingView(rootView: shown).fittingSize.height),
+                    "opening": opening.count])
+
         case "import":
             // Another browser's passwords, bookmarks and history, brought in
             // through the same calls the Welcome and the panels make. Only on
@@ -1075,7 +1103,7 @@ final class Bench {
             }
             if what.contains("spaces") {
                 if let sidebar = source.arcSidebar(profile: profile) {
-                    let (spaces, pins, tabs) = browser.takeArc(sidebar)
+                    let (spaces, pins, tabs) = browser.takeArc(sidebar, from: source, profile: profile)
                     ImportRecords.note(source.name, spaces: spaces, pinned: pins + tabs)
                     out["arc"] = ["spaces": spaces, "pins": pins, "tabs": tabs,
                                   "names": browser.spaces.map(\.name), "usesSpaces": browser.prefs.usesSpaces]
@@ -1507,6 +1535,9 @@ final class Bench {
             } else if request["fold"] as? Bool == true {
                 guard let group else { answer(["error": "no group “\(named)”"]); return }
                 browser.toggleTabGroup(group.id)
+            } else if request["close"] as? Bool == true {
+                guard let group else { answer(["error": "no group “\(named)”"]); return }
+                browser.closeTabGroup(group.id)
             }
             answer(["on": browser.prefs.usesTabGroups, "groups": browser.tabGroups.map { group in
                 ["id": String(group.id.uuidString.prefix(8)).lowercased(), "name": group.name, "collapsed": group.collapsed,
@@ -2558,6 +2589,11 @@ final class Bench {
             browser.dropTabIntoStrip(page, before: tab("before"))
             reply()
 
+        case "clear":
+            // The line's Clear, with the pinned rows on (Browser.clearTabs).
+            browser.clearTabs()
+            reply()
+
         case "space":
             switch request["spaceAction"] as? String {
             case "new": browser.addSpace(named: request["name"] as? String ?? "Split test")
@@ -2682,6 +2718,11 @@ final class Bench {
             "needle": browser.needle,
             "findStatus": browser.findStatus ?? "",
             "pins": browser.tabs.filter { $0.pin != nil }.map { Bench.short($0) },
+            // Every pin kept as a row, drawn so or not (Tab.listed).
+            "listed": browser.tabs.filter { $0.pin != nil && $0.listed }.map { Bench.short($0) },
+            // What ⇧⌘T would bring back, as its menu item says it.
+            "reopenTitle": browser.reopenTitle,
+            "ghosts": browser.ghosts.count,
             // What pages of the pair asked, oldest first (see PaneQuestion).
             "questions": browser.paneQuestions.map { question in
                 ["tab": short(question.tab), "host": question.host, "message": question.message,
