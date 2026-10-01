@@ -173,7 +173,13 @@ enum Browsers {
             view.sizingOptions = [.minSize]
             host = view
         }
-        let size = popup ? NSSize(width: 480, height: 600) : front?.window?.frame.size ?? NSSize(width: 1180, height: 780)
+        // A new window from one in full screen: in full screen of its own,
+        // in a Space of its own, as Safari and Chrome do — sized as a window
+        // for when it leaves full screen, not as the screen.
+        let fullScreen = !popup && frame == nil && front?.window?.styleMask.contains(.fullScreen) == true
+        let size = popup ? NSSize(width: 480, height: 600)
+            : fullScreen ? NSSize(width: 1180, height: 780)
+            : front?.window?.frame.size ?? NSSize(width: 1180, height: 780)
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -192,7 +198,7 @@ enum Browsers {
         }
         if let frame {
             window.setFrame(frame, display: false)
-        } else if popup {
+        } else if popup || fullScreen {
             window.center()
         } else if let beside = front?.window {
             // Down and to the right of the window in front, as new windows go.
@@ -207,6 +213,7 @@ enum Browsers {
         register(browser)
         Bench.keepOff(window)
         window.makeKeyAndOrderFront(nil)
+        if fullScreen { window.toggleFullScreen(nil) }
         comeForward()
     }
 
