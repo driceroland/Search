@@ -336,48 +336,197 @@ final class Browser: NSObject, ObservableObject {
 
     // MARK: - looking for something on the page
 
-    /// ⌘F on the tab on screen (see FindSession in Find.swift). Its state
-    /// is read and set through the Browser as it always was — the menus,
-    /// the split panes and the bench know it by these names — and every
-    /// change to it is this browser's change, for the views watching it.
-    private(set) lazy var finder: FindSession = {
-        let finder = FindSession { [weak self] in self?.active }
-        finder.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        return finder
-    }()
-
-    var finding: Bool {
-        get { finder.finding }
-        set { finder.finding = newValue }
-    }
-    var needle: String {
-        get { finder.needle }
-        set { finder.needle = newValue }
-    }
-    var matchCase: Bool {
-        get { finder.matchCase }
-        set { finder.matchCase = newValue }
-    }
-    var wholeWords: Bool {
-        get { finder.wholeWords }
-        set { finder.wholeWords = newValue }
-    }
-    var missed: Bool { finder.missed }
-    var findResult: PageFind.Result? { finder.findResult }
-    var findBusy: Bool { finder.findBusy }
-    var findStatus: String? { finder.findStatus }
-
-    func openFind() { finder.open() }
-    func closeFind() { finder.close() }
-    func look(forward: Bool) { finder.look(forward: forward) }
-    private func invalidateFindPage(retryOnActiveTab: Bool) { finder.pageLeft(retry: retryOnActiveTab) }
-
+    @Published var finding = false
     /// The AI panel's conversation about the page, while it is open.
     @Published var assisting: Assistant?
     /// The Settings page it opens on next.
     var settingsPage: SettingsPanel.Page {
         get { SettingsPanel.Page(rawValue: Store.settings.string(forKey: "settings.page") ?? "") ?? .general }
         set { Store.settings.set(newValue.rawValue, forKey: "settings.page") }
+    }
+    // The same words written back (the field does, as it appears) aren't
+    // a Next: Return and the buttons ask for that themselves.
+    @Published var needle = "" {
+        didSet { if !resettingFind, oldValue != needle { look(forward: true) } }
+    }
+    @Published var matchCase = false {
+        didSet { if !resettingFind, oldValue != matchCase { look(forward: true) } }
+    }
+    @Published var wholeWords = false {
+        didSet { if !resettingFind, oldValue != wholeWords { look(forward: true) } }
+    }
+    /// Set when the page doesn't hold what was asked for.
+    @Published private(set) var missed = false
+    @Published private(set) var findFocus = 0
+    /// The count and which match is current, as the page last answered.
+    @Published private(set) var findResult: PageFind.Result?
+
+    private let pageFind = PageFind()
+    private struct FindSpec: Equatable {
+        let tab: Tab.ID
+        let query: String
+        let matchCase: Bool
+        let wholeWords: Bool
+    }
+    private var findSpec: FindSpec?
+    /// Goes up whenever what is looked for, or the page it is looked for on,
+    /// changes: an answer for an older one is dropped.
+    private var findGeneration: UInt64 = 0
+    /// One question to the page at a time. Letters typed while it answers
+    /// wait here, and only the last of them is asked next: on a long page
+    /// every letter would otherwise queue a whole search of its own.
+    private var findAsking: UInt64?
+    private var findAsked: UInt64 = 0
+    /// A new search not yet asked, and Next / Previous presses not yet sent.
+    private var findFresh = false
+    private var findSteps = 0
+    private var resettingFind = false
+    private weak var findWeb: WKWebView?
+
+    /// A question to the page not answered yet, or one waiting to be asked.
+    var findBusy: Bool { findAsking != nil || findFresh || findSteps != 0 }
+
+    var findStatus: String? {
+        guard !needle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let result = findResult else { return nil }
+        guard result.available else { return "Search unavailable" }
+        if result.nativeFallback {
+            if wholeWords && !result.wholeWordsAvailable { return "Whole words unavailable" }
+            return result.found ? "Match found" : "No matches"
+        }
+        guard let index = result.index, let count = result.count, count > 0 else { return "No matches" }
+        return "\(index) of \(count)\(result.more ? "+" : "")"
+    }
+
+    func openFind() {
+        guard active?.isBlank == false else { return }
+        finding = true
+        findFocus += 1
+    }
+
+    func closeFind() {
+        guard finding || !needle.isEmpty || findResult != nil else { return }
+        // The page's own selection back, and the match's highlight gone.
+        resetFindState()
+        // The keyboard back to the page, as in Safari. Left with the window,
+        // the Mac's keyboard navigation handed it to the first button next.
+        if let web = active?.built, let window = web.window,
+           window.firstResponder === window || window.firstResponder is NSText {
+            window.makeFirstResponder(web)
+        }
+    }
+
+    func look(forward: Bool) {
+        guard let tab = active else {
+            missed = false
+            findResult = nil
+            return
+        }
+
+        guard !needle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            missed = false
+            findResult = nil
+            guard findSpec != nil || findWeb != nil else { return }
+            let web = findWeb ?? tab.built
+            forgetFind()
+            if let web { clearFind(on: web) }
+            return
+        }
+
+        let web = tab.web
+        let spec = FindSpec(tab: tab.id, query: needle, matchCase: matchCase, wholeWords: wholeWords)
+        if findSpec != spec || findWeb !== web {
+            findGeneration &+= 1
+            findSpec = spec
+            findWeb = web
+            findFresh = true
+            findSteps = 0
+        } else {
+            findSteps += forward ? 1 : -1
+        }
+        askFind()
+    }
+
+    /// Sends what is waiting to the page, unless a question is still out:
+    /// its answer sends the next one.
+    private func askFind() {
+        guard findAsking == nil, let spec = findSpec, let web = findWeb,
+              findFresh || findSteps != 0 else { return }
+        findAsked &+= 1
+        let asking = findAsked
+        let generation = findGeneration
+        let steps = findSteps
+        findAsking = asking
+        findFresh = false
+        findSteps = 0
+        Task { [weak self, weak web] in
+            guard let self else { return }
+            guard let web, self.activeID == spec.tab, self.active?.built === web else {
+                if self.findAsking == asking { self.findAsking = nil }
+                return
+            }
+            let result = await self.pageFind.update(
+                on: web,
+                query: spec.query,
+                matchCase: spec.matchCase,
+                wholeWords: spec.wholeWords,
+                steps: steps,
+                generation: generation
+            )
+            // Something newer took over while the page was answering.
+            guard self.findAsking == asking else { return }
+            self.findAsking = nil
+            if !result.stale, self.findGeneration == generation, self.findSpec == spec,
+               self.activeID == spec.tab, self.active?.built === web {
+                self.findResult = result
+                self.missed = result.available && !result.found
+                    && (!result.nativeFallback || !spec.wholeWords || result.wholeWordsAvailable)
+            }
+            self.askFind()
+        }
+    }
+
+    /// Nothing asked or waiting any more; whatever answer is out is dropped.
+    private func forgetFind() {
+        findGeneration &+= 1
+        findSpec = nil
+        findWeb = nil
+        findAsking = nil
+        findFresh = false
+        findSteps = 0
+    }
+
+    private func clearFind(on web: WKWebView) {
+        let generation = findGeneration
+        Task { [pageFind] in _ = await pageFind.clear(on: web, generation: generation) }
+    }
+
+    private func resetFindState() {
+        let web = findWeb
+        forgetFind()
+        resettingFind = true
+        finding = false
+        needle = ""
+        matchCase = false
+        wholeWords = false
+        resettingFind = false
+        findResult = nil
+        missed = false
+        if let web { clearFind(on: web) }
+    }
+
+    /// A tab or document changed under an open find bar. Keep what was typed,
+    /// but retire every result and callback tied to the page that just left.
+    private func invalidateFindPage(retryOnActiveTab: Bool) {
+        let web = findWeb
+        forgetFind()
+        findResult = nil
+        missed = false
+        if let web { clearFind(on: web) }
+        guard retryOnActiveTab, finding,
+              !needle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let tab = active, !tab.loading, !tab.isBlank else { return }
+        look(forward: true)
     }
 
     /// ⌘⇧M. Whatever is making noise in this tab stops making noise.
@@ -4574,7 +4723,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         tab.uncover()
         // The find bar still open over a page that has just come in: look
         // for the same words on it.
-        if tab.id == activeID { finder.pageArrived() }
+        if tab.id == activeID, finding, findSpec == nil,
+           !needle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            look(forward: true)
+        }
         tellStore(tab)
         // A page that arrived after a password went out: did the sign-in take?
         tab.settleSignIn()

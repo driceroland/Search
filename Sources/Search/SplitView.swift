@@ -123,7 +123,7 @@ private struct PaneLayers: View {
         }
         .overlay(alignment: .topTrailing) {
             if browser.finding, focused {
-                FindBar(find: browser.finder, availableWidth: width)
+                FindBar(browser: browser, availableWidth: width)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .clipped()
                     .transition(.move(edge: .top).combined(with: .opacity))

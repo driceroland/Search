@@ -16,9 +16,8 @@ final class Links: NSObject, NSApplicationDelegate {
     @MainActor static var window: NSWindow? { Browsers.front?.window ?? Browsers.primary?.window }
     /// Whether the window has been asked for on a link's behalf (summon).
     private static var summoned = false
-    /// Launched by a link for a small window: the browser's window isn't
-    /// wanted, until something asks for it after the launch.
-    private static var littleLaunch = false
+    /// Whether the app has finished launching: a small window's link that
+    /// comes before then is what launched it (see little).
     private static var launched = false
     /// A first quit waits for an import worker to remove its temporary files.
     /// AppKit calls us again when that cleanup has finished.
@@ -92,6 +91,12 @@ final class Links: NSObject, NSApplicationDelegate {
             self, andSelector: #selector(handle(getURL:reply:)),
             forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL)
         )
+        // A test run takes no links from outside (see handle), so it is
+        // handed one this way to launch with, taken where the Apple Event
+        // would be (Tests/little_window.py).
+        if Store.testing, let text = ProcessInfo.processInfo.environment["SEARCH_LINK"], let url = URL(string: text) {
+            Links.take(url)
+        }
     }
 
     /// A launch macOS doesn't call a plain one — started hidden, as `open -j`
@@ -103,17 +108,16 @@ final class Links: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // SwiftUI opens its window at launch, a link's launch included, and
         // asks nobody first (applicationShouldOpenUntitledFile isn't
-        // consulted). A launch made for a small window came to be read
-        // alone (see little), so the browser's window is closed again as
-        // it comes, here before it is drawn and once more a turn later, and
-        // left as a window closed by hand is: kept, and brought back by
-        // Open in Search, the Dock or ⌘N.
-        if Links.littleLaunch { MainActor.assumeIsolated { Links.putAwayBrowserWindows() } }
+        // consulted). A launch made for a small window came to read it alone
+        // (see little), so the browser's windows are put away as they come:
+        // here, before the first is drawn, once more a turn later, and as
+        // each is dressed. Open, with their tabs, and written down as they
+        // were, until one is wanted (see Browsers.keepAway).
+        MainActor.assumeIsolated { Browsers.putAway() }
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                if Links.littleLaunch { Links.putAwayBrowserWindows() }
+                Browsers.putAway()
                 Links.launched = true
-                Links.littleLaunch = false
             }
         }
         // What an import left in the temporary folder when Search stopped
@@ -157,7 +161,9 @@ final class Links: NSObject, NSApplicationDelegate {
         // (`open -n` of a second probe) can reach it as a reopen, and nothing
         // is brought back, made or brought forward for it.
         guard !Store.testing else { return false }
-        if !flag { Browsers.ensureWindow() }
+        // The small window on screen counts as a window to macOS; the
+        // browser's, kept away behind it, are what the Dock icon is for.
+        if !flag || Browsers.keptAway { Browsers.ensureWindow() }
         return true
     }
 
@@ -275,21 +281,12 @@ final class Links: NSObject, NSApplicationDelegate {
     @MainActor
     private static func little(_ url: URL) -> Bool {
         guard Shared.prefs.littleLinks else { return false }
-        if !launched { littleLaunch = true }
+        if !launched { Browsers.keepAway() }
         // The space and sign-ins of the window in front, on screen or not.
         let browser = Browsers.front.flatMap { $0.extensionPopup == nil ? $0 : nil }
             ?? Browsers.primary ?? SceneSlot.shared.browser
         LittleWindow.show(url, for: browser)
         return true
-    }
-
-    /// Every window on screen but the small ones and panels.
-    @MainActor
-    private static func putAwayBrowserWindows() {
-        for window in NSApp.windows where window.isVisible && window.contentView != nil
-            && !(window is NSPanel) && LittleWindow.owning(window) == nil {
-            window.close()
-        }
     }
 
     /// A link that launches the app arrives as an Apple Event, taken above,
