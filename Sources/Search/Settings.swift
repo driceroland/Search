@@ -430,6 +430,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.lazyTabs)
             }
             Rule()
+            Line("Leave a new tab when the last tab closes", "Close the last tab that isn't pinned and a new tab takes its place, ready for an address. Otherwise you land on a pinned tab.") {
+                Switch(on: $prefs.newTabAfterLast)
+            }
+            Rule()
             Line("Search a site from the address field", "Type the start of a site's name, like red or yout, then Tab, and what you type next searches that site. Sites you visit that offer a search join the list.") {
                 Switch(on: $prefs.searchesSites)
             }
