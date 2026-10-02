@@ -2327,6 +2327,7 @@ final class Bench {
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
+            if let on = request["extprivate"] as? Bool, Store.testing { browser.prefs.extensionsInPrivate = on }
             // The window's own full screen as the chrome sees it, without
             // the window going there: a test run never takes the screen.
             if let on = request["fullscreen"] as? Bool, Store.testing { browser.fullScreen = on }

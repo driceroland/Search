@@ -447,6 +447,7 @@ final class Extensions: NSObject, ObservableObject {
             }
             Extensions.fence(context)
             Extensions.watchTouches()
+            context.hasAccessToPrivateData = Extensions.mayGoPrivate(found)
             try controller.load(context)
             watch(context)
             if contexts[item.id] == nil, loadsThisRun.contains(item.id) { loadedBefore.insert(item.id) }
@@ -911,6 +912,13 @@ final class Extensions: NSObject, ObservableObject {
                 context.setPermissionStatus(.deniedExplicitly, for: pages)
             }
         }
+    }
+
+    /// Allow on private tabs, unless its manifest says it must never run
+    /// there ("incognito": "not_allowed"), which Chrome honours whatever was
+    /// allowed. WebKit doesn't read that key.
+    static func mayGoPrivate(_ webExtension: WKWebExtension) -> Bool {
+        Store.settings.bool(forKey: "extensions.private") && (webExtension.manifest["incognito"] as? String) != "not_allowed"
     }
 
     /// Its manifest asks to talk to apps on this Mac ("nativeMessaging"),
@@ -1403,11 +1411,18 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
     /// it: no view to run a script in, no address, no picture — whatever it
     /// was granted (see Extensions.reachesExtensions).
     private func sealed(_ context: WKWebExtensionContext) -> Bool {
-        Extensions.othersPage(tab?.built?.url, for: context) || Extensions.othersPage(tab?.address, for: context)
+        hidden(context) || Extensions.othersPage(tab?.built?.url, for: context) || Extensions.othersPage(tab?.address, for: context)
+    }
+
+    /// A private tab, to an extension not let into private tabs (the switch
+    /// off, or its manifest refusing them): blank, title included. WebKit
+    /// takes a tab's privacy from its window, and here a window holds both.
+    private func hidden(_ context: WKWebExtensionContext) -> Bool {
+        tab?.shy == true && !context.hasAccessToPrivateData
     }
 
     func webView(for context: WKWebExtensionContext) -> WKWebView? { sealed(context) ? nil : tab?.built }
-    func title(for context: WKWebExtensionContext) -> String? { tab?.title }
+    func title(for context: WKWebExtensionContext) -> String? { hidden(context) ? nil : tab?.title }
     func url(for context: WKWebExtensionContext) -> URL? { sealed(context) ? nil : tab?.address }
     func isLoadingComplete(for context: WKWebExtensionContext) -> Bool { !(tab?.loading ?? false) }
     func isSelected(for context: WKWebExtensionContext) -> Bool { tab?.id == browser?.activeID }

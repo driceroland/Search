@@ -3861,6 +3861,9 @@ enum ExtensionShims {
             let places: [Any] = first as? [Any] ?? []
             return places.map { place -> Any in
                 guard let tab = located(place, owner: owner) else { return NSNull() }
+                // A private tab stays blank to an extension not let into
+                // them, as WebKit is told (see ExtensionTab.hidden).
+                if tab.shy, !context.hasAccessToPrivateData { return ["url": "", "title": ""] }
                 // Another extension's page stays blank, as WebKit keeps it
                 // (see the refusal in Extensions.load); its own are its own.
                 if let url = tab.address, let scheme = url.scheme?.lowercased(),

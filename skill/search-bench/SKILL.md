@@ -95,11 +95,11 @@ id=$(./bench --test open https://example.com)
 
 | Key | Value |
 |---|---|
-| `settings` `passwords` `welcome` `history` `downloads` `bookmarks` `hidden` `sidebar` `extensions` | `on` or `off` |
+| `settings` `passwords` `welcome` `history` `downloads` `bookmarks` `hidden` `sidebar` `extensions` `extprivate` | `on` or `off` |
 | `side` | `left` or `right` |
 | `look` | `light`, `dark`, or `system` |
 
-`extensions on` opens the puzzle-button menu. `ext-menu PATH` writes that menu to a PNG. `look`, `sidebar`, and `side` are remembered.
+`extensions on` opens the puzzle-button menu. `ext-menu PATH` writes that menu to a PNG. `look`, `sidebar`, `side`, and `extprivate` (Settings › Extensions › Allow on private tabs, test only) are remembered.
 
 `resize WIDTH HEIGHT [STEPS]` (test only) drags the window to that size and returns the size and traffic-light positions. `key ID TEXT` (test only) sends real key events to a tab and returns how many the page did not use. `sleep ID` tries to sleep a tab now and reports the reason it stayed awake. A bench tab stays awake.
 

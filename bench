@@ -118,7 +118,8 @@
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        import on|off|extensions|BROWSER,
                                        look light|dark|system, sidebar on|off, side left|right, spaces on|off, hides on|off,
-                                       folded on|off, peek on|off, peeklink keep|close, pages120 on|off
+                                       folded on|off, peek on|off, peeklink keep|close, pages120 on|off,
+                                       extprivate on|off (test run only)
 
 Needs Settings › General › "Let a script drive Search" switched on in the
 running app. IDs are the first characters of a tab's id, as `tabs` prints
