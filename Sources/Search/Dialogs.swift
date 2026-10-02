@@ -118,6 +118,9 @@ extension Browser {
         for id in heldDialogs.keys where !known.contains(where: { $0.id == id }) {
             heldDialogs.removeValue(forKey: id)?.forEach { $0.dismiss() }
         }
+        if let tab = known.first(where: { $0.built === webView }), tab.id == floating {
+            floater.onReturn?()
+        }
         guard let tab = known.first(where: { $0.built === webView }), tab.id != activeID else {
             show()
             return

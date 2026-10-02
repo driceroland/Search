@@ -70,6 +70,8 @@ Apps you allow in System Settings › Privacy & Security › Automation can read
 
 With Split View on, `⌥⌘N` splits the current page and `⌃⌘←` / `⌃⌘→` go from one page to the other. `⌘W` closes the focused tab and gives the remaining page the whole area. Tabs › Separate Split Tabs keeps both tabs open separately.
 
+Settings › General › Float whole pages adds View › Float Page and automatically floats recognized calls on Meet, Teams and Zoom when you switch tabs, apps or desktops. It moves the same live page into a resizable window above ordinary app windows, with its controls and fields still usable. Selecting the source tab or clicking Return brings it back; returning to Search also brings back a page floated automatically when you left the app. An identified ended screen returns a meeting page without stealing focus. Call detection reads each site's in-call controls and ended UI, not just its address or device capture; an unrecognized or localized layout may need manual Float Page. This floats the page as its site lays it out at a smaller size, not in the meeting site's own picture-in-picture layout. Off by default.
+
 ---
 
 ## For developers

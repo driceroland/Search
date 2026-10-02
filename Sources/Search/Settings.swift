@@ -338,6 +338,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.floatsAway)
             }
             Rule()
+            Line("Float whole pages", "Recognized calls on Meet, Teams and Zoom float when you switch tabs, apps or desktops, and return when their ended screen appears. View › Float Page floats any page by hand. The same live page stays interactive") {
+                Switch(on: $prefs.floatsPages)
+            }
+            Rule()
             Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
                 Switch(on: $prefs.bench)
             }

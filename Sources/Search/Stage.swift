@@ -44,7 +44,7 @@ struct Page: View {
             if tab.floating {
                 // The tab is not empty, its page is simply elsewhere. Saying so
                 // is kinder than a white rectangle.
-                Text("This page is playing in the floating window.")
+                Text("This page is in the floating window.")
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.muted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -259,6 +259,10 @@ final class StageView: NSView {
     }
 
     private func settle() {
+        // SwiftUI may not have replaced this stage's wanted page yet when
+        // a desktop change lays out the source window. PiP still owns it.
+        if let wanted, Shared.floater.holds(wanted) { return }
+
         // A video filling the screen has its page lent to WebKit's own
         // window, with a placeholder left here in its place. The chrome
         // stepping aside lays this stage out again in that same moment, and
@@ -303,6 +307,10 @@ final class StageView: NSView {
         // cover the inspector.
         if !(docked && subviews.contains(where: Self.isInspector)) {
             wanted.frame = bounds
+        }
+        if let page = wanted as? PageView, let returned = page.onFloatReturn {
+            page.onFloatReturn = nil
+            returned()
         }
     }
 
