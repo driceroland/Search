@@ -583,6 +583,36 @@ final class Bench {
                 answer(["tabsBefore": before, "tabsAfter": browser.tabs.count])
             }
 
+        case "linkmenu":
+            // A right-click at X Y of a tab's page (its own points from the
+            // top left), and the item named "pick" chosen from the menu that
+            // comes up. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "linkmenu only works on a --test run"]); return }
+            guard let tab = find(request, in: browser), let x = request["x"] as? Double, let y = request["y"] as? Double,
+                  let pick = request["pick"] as? String
+            else { answer(missing(request)); return }
+            house(tab)
+            let web = tab.web
+            let inView = NSPoint(x: x, y: web.isFlipped ? y : web.bounds.height - y)
+            let point = web.convert(inView, to: nil)
+            PageView.picking = pick
+            for type in [NSEvent.EventType.rightMouseDown, .rightMouseUp] {
+                guard let event = NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: web.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1,
+                    pressure: type == .rightMouseDown ? 1 : 0
+                ) else { continue }
+                if type == .rightMouseDown { web.rightMouseDown(with: event) } else { web.rightMouseUp(with: event) }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                PageView.picking = nil
+                answer([
+                    "tabs": browser.tabs.map { Bench.short($0) },
+                    "urls": browser.tabs.map { $0.address?.absoluteString ?? "" },
+                    "active": browser.activeID.flatMap { id in browser.tabs.first { $0.id == id } }.map { Bench.short($0) } ?? "",
+                ])
+            }
+
         case "shot":
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             house(tab)
