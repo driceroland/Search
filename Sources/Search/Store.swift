@@ -69,12 +69,21 @@ enum Store {
     }
 
     /// The switch through a name outside the public framework — Safari's
-    /// "Prevent cross-site tracking" is the same one.
+    /// "Prevent cross-site tracking" is the same one. Off, the store's
+    /// cookie policy is Always too: left as it was, it took cookies only
+    /// from the page's own site, and a site framed in another — a Kaltura
+    /// video in a Brightspace course — still got none. Back on, tracking
+    /// prevention blocks them again, whatever the policy says.
     @MainActor static func followSignIns(_ store: WKWebsiteDataStore) {
         let set = NSSelectorFromString("_setResourceLoadStatisticsEnabled:")
         guard store.responds(to: set) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
         unsafeBitCast(store.method(for: set), to: Setter.self)(store, set, !keepsSignIns)
+        let jar = store.httpCookieStore
+        let policy = NSSelectorFromString("_setCookieAcceptPolicy:completionHandler:")
+        guard keepsSignIns, jar.responds(to: policy) else { return }
+        typealias Policy = @convention(c) (AnyObject, Selector, UInt, @escaping @convention(block) () -> Void) -> Void
+        unsafeBitCast(jar.method(for: policy), to: Policy.self)(jar, policy, HTTPCookie.AcceptPolicy.always.rawValue) {}
     }
 
     /// A test copy of the app under a bundle id of its own has a WebKit
