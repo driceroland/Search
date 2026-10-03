@@ -4289,10 +4289,18 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         let tab = Tab(shy: tab(for: webView)?.shy ?? false, configuration: configuration)
         tab.popup = windowFeatures.width != nil || windowFeatures.height != nil
             || windowFeatures.toolbarsVisibility?.boolValue == false
-        adopt(tab)
         tab.opener = from
-        activeID = tab.id
-        editing = false
+        // The link menu's Open Link in New Tab: behind this tab, where a
+        // ⌘-click's goes (see open(_:foreground:)).
+        if (webView as? PageView)?.takeBehind() == true, let source = self.tab(for: webView) {
+            prepare(tab)
+            if prefs.usesTabGroups, !tab.shy, !tab.bench { tab.groupID = source.groupID }
+            tabs.insert(tab, at: placeForNew())
+        } else {
+            adopt(tab)
+            activeID = tab.id
+            editing = false
+        }
         // Returning the view is what makes it the target. WebKit loads the
         // request into it itself when the action carries one.
         if let url = action.request.url { tab.setAddressOptimistically(url) }

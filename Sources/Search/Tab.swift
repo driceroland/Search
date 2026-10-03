@@ -1458,9 +1458,33 @@ final class PageView: WKWebView {
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         // WebKit names it for a window, but a new window's page arrives here
-        // as a new tab (Browser's createWebViewWith), so it says so.
-        if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierOpenLinkInNewWindow" }) {
+        // as a new tab (Browser's createWebViewWith), so it says so. The tab
+        // stays behind this one, as in Safari and Chrome, and as a ⌘-click's
+        // does; with ⌥ held the item becomes one that goes to it, WebKit's
+        // own, as it always was. Without a mouse's middle button, this is
+        // the way to a tab in the background that needs no key held.
+        if let index = menu.items.firstIndex(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierOpenLinkInNewWindow" }) {
+            let item = menu.items[index]
+            if let front = item.copy() as? NSMenuItem {
+                front.title = "Open Link in New Tab and Go to It"
+                front.keyEquivalentModifierMask = .option
+                front.isAlternate = true
+                menu.insertItem(front, at: index + 1)
+            }
+            openLink = (item.target, item.action)
             item.title = "Open Link in New Tab"
+            item.keyEquivalentModifierMask = []
+            item.target = self
+            item.action = #selector(openLinkBehind(_:))
+        }
+        // The bench's linkmenu: the item it names is chosen as the menu
+        // comes up, the way a hand would choose it, and the menu goes.
+        if Store.testing, let title = PageView.picking {
+            PageView.picking = nil
+            RunLoop.main.perform(inModes: [.eventTracking, .default]) {
+                if let index = menu.items.firstIndex(where: { $0.title == title }) { menu.performActionForItem(at: index) }
+                menu.cancelTracking()
+            }
         }
         if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierSearchWeb" }),
            let name = searchName?() {
@@ -1475,6 +1499,8 @@ final class PageView: WKWebView {
         }
     }
 
+    /// The item the bench's linkmenu will choose in the next menu.
+    static var picking: String?
     var searchName: (() -> String?)?
     var onSearch: ((String) -> Void)?
     private var selection: String?
@@ -1503,6 +1529,25 @@ final class PageView: WKWebView {
     })(document)
     """
     private var webSearch: (target: AnyObject?, action: Selector?) = (nil, nil)
+
+    /// WebKit's Open Link in New Window, handed on once the tab it makes is
+    /// marked to stay behind. WebKit asks for that tab a moment later, from
+    /// the page's process (Browser's createWebViewWith), so the mark lasts a
+    /// second and is used up by the first tab asked for.
+    private var openLink: (target: AnyObject?, action: Selector?) = (nil, nil)
+    private var behindSince: Date?
+
+    @objc private func openLinkBehind(_ item: NSMenuItem) {
+        guard let action = openLink.action else { return }
+        behindSince = Date()
+        NSApp.sendAction(action, to: openLink.target, from: item)
+    }
+
+    /// Whether the tab being made now is the menu's, to stay behind.
+    func takeBehind() -> Bool {
+        defer { behindSince = nil }
+        return behindSince.map { Date().timeIntervalSince($0) < 1 } ?? false
+    }
 
     @objc private func searchSelection(_ item: NSMenuItem) {
         defer { selection = nil }
