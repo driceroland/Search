@@ -2,6 +2,35 @@ import XCTest
 @testable import Search
 
 final class PopupGestureTests: XCTestCase {
+    func testLongLivedMenuPreservesFrameAndOneWindowLimit() {
+        var permission = PopupGesture()
+        permission.record(origin: "iframe", kind: "menu", now: 10)
+        XCTAssertFalse(permission.take(origin: "iframe", now: 20))
+        permission.menuClosed(now: 20)
+        XCTAssertFalse(permission.take(origin: "sibling", now: 20.1))
+        XCTAssertTrue(permission.take(origin: "iframe", now: 20.2))
+        permission.menuClosed(now: 21)
+        XCTAssertFalse(permission.take(origin: "iframe", now: 21.1))
+    }
+
+    func testMenuCannotCreateOrRearmAGesture() {
+        var permission = PopupGesture()
+        permission.menuClosed(now: 10)
+        XCTAssertFalse(permission.take(origin: "same", now: 10.1))
+        permission.record(origin: "same", kind: "input", now: 10)
+        permission.menuClosed(now: 20)
+        XCTAssertFalse(permission.take(origin: "same", now: 20.1))
+        permission.record(origin: "same", kind: "input", now: 11)
+        XCTAssertTrue(permission.take(origin: "same", now: 11.1))
+        permission.record(origin: "same", kind: "menu", now: 11.2)
+        permission.menuClosed(now: 20)
+        XCTAssertFalse(permission.take(origin: "same", now: 20.1))
+        permission.record(origin: "same", kind: "menu", now: 21)
+        permission.clear()
+        permission.menuClosed(now: 22)
+        XCTAssertFalse(permission.take(origin: "same", now: 22.1))
+    }
+
     func testAsyncRequestCanOpenOnceWithinActivationWindow() {
         var permission = PopupGesture()
         XCTAssertFalse(permission.take(origin: "https://example.com:443", now: 10))
