@@ -898,6 +898,10 @@ final class Bench {
         case "switcher":
             // The ⌃Tab switcher as it stands: up or not, the pick, and where
             // the panel and each card are in the window (top-left points).
+            if let on = request["enabled"] as? Bool {
+                guard Store.testing else { answer(["error": "changing the switcher requires a test run"]); return }
+                browser.prefs.mruSwitcher = on
+            }
             let sw = browser.tabSwitcher
             func short(_ id: Tab.ID?) -> String {
                 guard let id, let tab = browser.tabs.first(where: { $0.id == id }) else { return "" }
@@ -905,6 +909,7 @@ final class Bench {
             }
             func box(_ r: CGRect) -> [Double] { [r.minX, r.minY, r.width, r.height].map { Double($0) } }
             answer([
+                "enabled": browser.prefs.mruSwitcher,
                 "visible": sw.visible, "selected": short(sw.selectedID),
                 "candidates": sw.candidates.map { short($0) },
                 "panel": box(sw.panelFrame),

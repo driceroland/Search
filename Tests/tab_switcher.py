@@ -12,15 +12,41 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
 
+sv.use("tab-switcher")
 
-def switcher():
-    return sv.cmd({"do": "switcher"})
+def switcher(**options):
+    return sv.cmd({"do": "switcher", **options})
+
+
+def press(backwards=False):
+    return sv.cmd({"do": "press", "code": 48, "chars": "\t",
+                   "mods": ["ctrl", "shift"] if backwards else ["ctrl"]})
 
 
 def main():
     t = sv.T()
     try:
         sv.setup(); sv.launch()
+        a = sv.page("a"); b = sv.page("b"); c = sv.page("c")
+        t.ok("previews are off without a saved choice", not switcher()["enabled"])
+        sv.sp("select", id=a)
+        press()
+        s = switcher()
+        t.ok("off: Ctrl-Tab follows the row without a preview", s["active"] == b and not s["candidates"], s)
+        press(backwards=True)
+        t.ok("off: Ctrl-Shift-Tab goes back", switcher()["active"] == a)
+        sv.sp("select", id=c); sv.sp("select", id=b); sv.sp("select", id=a)
+        switcher(enabled=True)
+        press()
+        s = switcher()
+        t.ok("off: tab changes kept no recently-used order", [id for id in s["candidates"] if id in (a, b, c)] == [a, b, c], s)
+        switcher(enabled=False)
+        time.sleep(0.3)
+        s = switcher()
+        t.ok("turning off cancels the gesture without switching", not s["visible"] and not s["candidates"] and s["active"] == a, s)
+        switcher(enabled=True)
+        sv.quit(); time.sleep(0.5); sv.launch()
+        t.ok("the explicit choice survives a restart", switcher()["enabled"])
         a = sv.page("a"); b = sv.page("b"); c = sv.page("c")
         sv.sp("select", id=c); time.sleep(0.4)
         sv.cmd({"do": "press", "code": 48, "chars": "\t", "mods": ["ctrl"]}); time.sleep(0.8)
@@ -37,6 +63,12 @@ def main():
         sv.sp("mouse", points=[[5, 5], [5, 5]]); time.sleep(0.6)
         s = switcher()
         t.ok("a click outside the panel puts the switcher away, the tab unchanged", not s["visible"] and s["active"] == a, s)
+        press(); time.sleep(0.3)
+        switcher(enabled=False)
+        s = switcher()
+        t.ok("turning off closes a visible preview", not s["visible"] and not s["candidates"], s)
+        sv.quit(); time.sleep(0.5); sv.launch()
+        t.ok("off stays off after a restart", not switcher()["enabled"])
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)

@@ -66,7 +66,7 @@ Apps you allow in System Settings › Privacy & Security › Automation can read
 
 `⌘R` reloads the page; `⌥⌘R` reloads it from origin, checking everything cached with the site again, as Safari's Reload Page From Origin.
 
-`⌃Tab` and `⌃⇧Tab` walk along the row of tabs; `Tab` stays the page's, for moving through a form. `esc` puts away whatever is open.
+`⌃Tab` and `⌃⇧Tab` walk along the row of tabs. Turn on **Settings › Tabs › Recently used tab switcher** for previews in recently used order. `Tab` stays the page's, for moving through a form. `esc` puts away whatever is open.
 
 With Split View on, `⌥⌘N` splits the current page and `⌃⌘←` / `⌃⌘→` go from one page to the other. `⌘W` closes the focused tab and gives the remaining page the whole area. Tabs › Separate Split Tabs keeps both tabs open separately.
 

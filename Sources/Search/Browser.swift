@@ -76,6 +76,7 @@ final class Browser: NSObject, ObservableObject {
             // The switcher's order and pictures, most recently used first.
             // Focus moving within a pair isn't leaving it; a pair left is
             // one entry, under its first page.
+            guard prefs.mruSwitcher else { return }
             if prefs.splitView, let pair = splits.first(where: { $0.contains(old) }) {
                 if let id = activeID, pair.contains(id) { return }
                 tabSwitcher.cancel()
@@ -1713,6 +1714,10 @@ final class Browser: NSObject, ObservableObject {
     /// read where they are used.
     private func follow() {
         followStore()
+        prefs.$mruSwitcher
+            .dropFirst()
+            .sink { [weak self] on in if !on { self?.tabSwitcher.reset() } }
+            .store(in: &bag)
         // Spaces turned off: back to the first, whose tabs are the ones there
         // were before (see Spaces.swift).
         prefs.$usesSpaces
@@ -3183,7 +3188,7 @@ final class Browser: NSObject, ObservableObject {
     /// ⌃Tab with the switcher on: the space's tabs, the most recently used
     /// first. Nothing changes until ⌃ is let go of (`commitTabSwitch`).
     func switchTabs(backwards: Bool) {
-        guard let activeID else { return }
+        guard prefs.mruSwitcher, let activeID else { return }
         // A pair once, under its first page, pictured with its other one.
         tabSwitcher.partners = prefs.splitView
             ? Dictionary(splits.map { ($0.left, $0.right) }, uniquingKeysWith: { first, _ in first }) : [:]

@@ -102,6 +102,10 @@ final class Preferences: ObservableObject {
     @Published var sleepsTabs: Bool {
         didSet { store.set(sleepsTabs, forKey: "tabs.sleep") }
     }
+    /// Off, ⌃Tab walks the row without keeping an order or pictures of its own.
+    @Published var mruSwitcher: Bool {
+        didSet { store.set(mruSwitcher, forKey: "tabs.mru") }
+    }
     /// A tab opened behind the page — ⌘-click, the middle button, a batch
     /// of links from another app — waits to load until it is gone to, as a
     /// tab brought back from the last session does (see Browser.open).
@@ -382,6 +386,7 @@ final class Preferences: ObservableObject {
         keywords = store.data(forKey: "search.keywords")
             .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
+        mruSwitcher = store.bool(forKey: "tabs.mru")
         lazyTabs = store.bool(forKey: "tabs.lazy")
         startsFresh = store.bool(forKey: Preferences.freshKey)
         searchesSites = store.bool(forKey: "search.sites")

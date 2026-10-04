@@ -142,6 +142,7 @@ final class TabSwitcher: ObservableObject {
     func reset() {
         cancel()
         recentIDs = []
+        partners = [:]
         previewRequests = [:]
         if !previews.isEmpty { previews = [:] }
     }

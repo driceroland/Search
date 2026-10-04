@@ -32,6 +32,8 @@ enum WhatsNew {
     /// Every switch worth meeting, oldest last. The card shows this
     /// version's, and the older ones still off.
     static let toggles: [Toggle] = [
+        Toggle(title: "Recently used tab switcher", detail: "Hold ⌃ and press Tab for previews in recently used order. Off, follow the tab row.",
+               since: "1.0.5", get: { $0.mruSwitcher }, set: { $0.mruSwitcher = $1 }),
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
         Toggle(title: "Split View", detail: "Two tabs side by side: drag a tab to the edge of a page, or press ⌥⌘N.",

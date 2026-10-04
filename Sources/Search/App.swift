@@ -1210,7 +1210,7 @@ struct ContentView: View {
         // round to the first again, ⌃⇧Tab the other way — the keys every
         // other browser uses for that.
         //
-        // ⌃Tab brings up the switcher instead, most recently used first —
+        // With the switcher on, ⌃Tab brings it up, most recently used first —
         // whenever there is nothing over the page it would have to cover;
         // otherwise it walks the row as before.
         //
@@ -1218,7 +1218,7 @@ struct ContentView: View {
         // there is to move through, and Return takes whatever the walk landed on.
         if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option) {
             if flags.contains(.control) {
-                if canSwitchTabs(event) {
+                if browser.prefs.mruSwitcher, canSwitchTabs(event) {
                     // A Tab held down doesn't race through them.
                     if !event.isARepeat { browser.switchTabs(backwards: flags.contains(.shift)) }
                     return true

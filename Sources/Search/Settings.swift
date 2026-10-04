@@ -445,6 +445,10 @@ struct SettingsPanel: View {
             Line("Tab groups", "Named sections in the sidebar. Right-click a tab to start a group; click its heading to hide or show its tabs.") {
                 Switch(on: $prefs.usesTabGroups)
             }
+            Rule()
+            Line("Recently used tab switcher", "Hold ⌃ and press Tab to see previews in recently used order. Off, ⌃Tab follows the tab row.") {
+                Switch(on: $prefs.mruSwitcher)
+            }
             if prefs.sidebar {
                 Rule()
                 Line("Pinned rows", "As in Arc: pins as squares for the sites you live in, pins as rows under them for pages you keep, and a line over the rest with Clear. Right-click a tab to pin it as a row.") {
