@@ -69,6 +69,23 @@ def main():
         t.ok("turning off closes a visible preview", not s["visible"] and not s["candidates"], s)
         sv.quit(); time.sleep(0.5); sv.launch()
         t.ok("off stays off after a restart", not switcher()["enabled"])
+        # A split pair is one switcher card, and keeps the page with focus.
+        sv.sp("enabled", on=True)
+        a = sv.page("pair-left"); b = sv.page("pair-right"); c = sv.page("outside-pair")
+        sv.sp("pair", id=b, **{"with": a}, side="right")
+        switcher(enabled=True)
+        sv.sp("select", id=c)
+        press()
+        s = switcher()
+        t.ok("a split pair is one card", s["candidates"].count(a) == 1 and b not in s["candidates"] and s["selected"] == a, s)
+        x, y, w, h = s["cards"][a]
+        sv.sp("mouse", points=[[x + w / 2, y + h / 2], [x + w / 2, y + h / 2]])
+        st = sv.sp("state")
+        t.ok("picking the pair restores its focused page", st["activeID"] == b and set(st["visibleIDs"]) == {a, b}, st)
+        switcher(enabled=False)
+        press()
+        s = switcher()
+        t.ok("off: Ctrl-Tab steps past the pair", s["active"] == c and not s["candidates"], s)
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)
