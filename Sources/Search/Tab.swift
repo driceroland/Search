@@ -296,6 +296,9 @@ final class Tab: ObservableObject, Identifiable {
             held = nil
             address = url
         }
+        // A link followed out of an article is a page, not an article: ⇧⌘R
+        // reads it rather than reloading it, and the article's corner goes.
+        reader = false
     }
 
     /// An address the tab shows, and reports to extensions, without loading
@@ -346,7 +349,7 @@ final class Tab: ObservableObject, Identifiable {
             done(true)
             return
         }
-        web.evaluateJavaScript(Reader.script) { [weak self] answer, _ in
+        web.evaluateJavaScript(Reader.apply(Reader.look) + Reader.script) { [weak self] answer, _ in
             let worked = (answer as? String) == "read"
             if worked { self?.reader = true }
             done(worked)
