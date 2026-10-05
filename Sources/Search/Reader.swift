@@ -37,6 +37,45 @@ enum Reader {
 
       var article = best();
       if (!article) return 'none';
+      var heading = document.querySelector('h1');
+
+      // Bloomberg keeps an article's byline, its takeaways and the video it
+      // opens with between the headline and the text, outside the part with
+      // the most prose. Such parts of its head come along, in the page's
+      // order: those drawn on the page, and never one from a menu, a rail or
+      // a footer. Class names are matched in part and whatever their case,
+      // as sites build them (BasicByline_byline__VTyoS); a subheading is an
+      // h2.
+      var above = [];
+      if (heading) {
+        var found = document.querySelectorAll(
+          '[class*="byline" i],[class*="takeaways" i],[class*="lede" i],h2'
+        );
+        for (var a = 0; a < found.length; a++) {
+          var part = found[a];
+          if (part.contains(article) || article.contains(part) ||
+              above.some(function (o) { return o.contains(part); })) continue;
+          if (!(heading.compareDocumentPosition(part) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+          if (!(article.compareDocumentPosition(part) & Node.DOCUMENT_POSITION_PRECEDING)) continue;
+          if (part.closest('nav, aside, footer, [role="banner"]') || !part.getClientRects().length) continue;
+          above.push(part);
+        }
+      }
+
+      // What the page itself hides stays out: a box it keeps in a copy for
+      // each size of screen, of which only one shows. Copied out of the
+      // page, every copy comes along, and whether the site's own rules still
+      // hide them in the reader depends on how those rules were written.
+      // Not when it holds paragraphs, though: an article's folded-away rest
+      // is still the article.
+      [article].concat(above).forEach(function (root) {
+        var every = root.querySelectorAll('*');
+        for (var h = 0; h < every.length; h++) {
+          var el = every[h];
+          if (el.closest('svg') || /^(SOURCE|TRACK|SCRIPT|STYLE|TEMPLATE|BR|WBR)$/.test(el.tagName)) continue;
+          if (getComputedStyle(el).display === 'none' && !el.querySelector('p')) el.setAttribute('data-office-gone', '');
+        }
+      });
 
       // Every picture is resolved while the real page is still standing.
       //
@@ -47,7 +86,10 @@ enum Reader {
       // placeholder, or nothing at all.
       var late = ['data-src', 'data-original', 'data-lazy-src', 'data-lazy',
                   'data-full-src', 'data-hi-res-src', 'data-image', 'data-echo'];
-      var pictures = article.querySelectorAll('img');
+      var pictures = Array.prototype.slice.call(article.querySelectorAll('img'));
+      above.forEach(function (o) {
+        pictures = pictures.concat(Array.prototype.slice.call(o.querySelectorAll('img')));
+      });
       for (var i = 0; i < pictures.length; i++) {
         var picture = pictures[i];
         picture.setAttribute('loading', 'eager');
@@ -66,7 +108,6 @@ enum Reader {
         }
       }
 
-      var heading = document.querySelector('h1');
       var title = (heading && heading.innerText.trim()) || document.title;
 
       var sheet = document.createElement('style');
@@ -85,6 +126,13 @@ enum Reader {
         '#office-reader figure{margin:1.8em 0}',
         '#office-reader figcaption{font:400 13px/1.5 -apple-system,sans-serif;',
         'color:#a3a3a3;margin-top:.6em}',
+        // A caption and its credit, which the site's own layout kept apart.
+        '#office-reader figcaption > * + *{margin-left:.35em}',
+        // The byline and a summary, quieter than the text.
+        '#office-reader .office-above{font:400 14px/1.55 -apple-system,sans-serif;',
+        'color:#555;margin:0 0 1.6em}',
+        '#office-reader .office-above ul{padding-left:1.2em}',
+        '#office-reader .office-above h2{margin:.4em 0}',
         '#office-reader a{color:#171717;text-underline-offset:3px}',
         '#office-reader h2,#office-reader h3{font:600 20px/1.3 -apple-system,sans-serif;',
         'margin:2em 0 .6em}',
@@ -97,14 +145,40 @@ enum Reader {
       var wrap = document.createElement('div');
       wrap.id = 'office-reader';
       wrap.innerHTML = article.innerHTML;
+      for (var o = above.length - 1; o >= 0; o--) {
+        var copy = above[o].cloneNode(true);
+        copy.classList.add('office-above');
+        wrap.insertBefore(copy, wrap.firstChild);
+      }
+
+      // A picture in a button, a click to see it larger, is the picture:
+      // Bloomberg puts every photo in one. The button goes and what it holds
+      // stays.
+      var pressed = wrap.querySelectorAll('button');
+      for (var b = 0; b < pressed.length; b++) {
+        if (!pressed[b].querySelector('img, picture, video')) continue;
+        while (pressed[b].firstChild) pressed[b].parentNode.insertBefore(pressed[b].firstChild, pressed[b]);
+        pressed[b].remove();
+      }
 
       // What was arranged around the words rather than being part of them.
       // Not header: an article's opening image lives there as often as not.
+      // A video.js player's controls, title bar and read-outs go too; the
+      // video stays.
       var clutter = wrap.querySelectorAll(
         'script,style,noscript,form,nav,aside,footer,button,input,select,textarea,' +
-        '[role="complementary"],[role="navigation"],[role="banner"],[aria-hidden="true"]'
+        '[role="complementary"],[role="navigation"],[role="banner"],[aria-hidden="true"],' +
+        '[data-office-gone],.video-js > [class*="vjs-"]:not(video)'
       );
       for (var c = 0; c < clutter.length; c++) clutter[c].remove();
+
+      // So does a box inviting you to a newsletter, which Bloomberg sets in
+      // the middle of the text. Only a short one: a newsletter's own page
+      // may keep its whole text in a box named the same.
+      var invites = wrap.querySelectorAll('[class*="newsletter" i]');
+      for (var n = 0; n < invites.length; n++) {
+        if (invites[n].querySelectorAll('p').length < 3) invites[n].remove();
+      }
 
       // Embedded video is part of the article; every other frame is not.
       var players = /youtube|youtu\\.be|vimeo|dailymotion|loom\\.com|streamable|wistia|ted\\.com/i;
@@ -117,6 +191,50 @@ enum Reader {
           frames[f].removeAttribute('width');
         } else {
           frames[f].remove();
+        }
+      }
+
+      // A video's poster, which its player also shows as a picture beside it:
+      // once is enough.
+      var videos = wrap.querySelectorAll('video'), posters = [];
+      for (var v = 0; v < videos.length; v++) {
+        if (videos[v].poster) posters.push(videos[v].poster);
+      }
+      var stills = wrap.querySelectorAll('img');
+      for (var s = 0; s < stills.length; s++) {
+        if (posters.indexOf(stills[s].src) >= 0 && !stills[s].closest('video')) stills[s].remove();
+      }
+
+      // A video its player fed from the page itself, through a blob: address,
+      // has nothing to play once that player is gone. It plays from the plain
+      // stream it names beside that, which WebKit plays on its own, with
+      // controls and never by itself; with none, it is its poster; with no
+      // poster, it goes.
+      for (var q = 0; q < videos.length; q++) {
+        var video = videos[q], fed = /^blob:/.test(video.getAttribute('src') || ''), plain = '';
+        var named = video.querySelectorAll('source');
+        for (var m = 0; m < named.length; m++) {
+          if (/^blob:/.test(named[m].getAttribute('src') || '')) fed = true;
+          else if (!plain && /^https?:/.test(named[m].src)) plain = named[m].src;
+        }
+        if (!fed) continue;
+        if (plain) {
+          for (var r = 0; r < named.length; r++) named[r].remove();
+          video.setAttribute('src', plain);
+          video.setAttribute('controls', '');
+          video.setAttribute('playsinline', '');
+          video.removeAttribute('autoplay');
+          // Out of the player's box, which the page's stylesheet still sizes
+          // for the player: kept around it, the box's room for the picture
+          // and the picture itself would both take a screen's height.
+          var player = video.parentNode.closest('.video-js');
+          if (player) player.parentNode.replaceChild(video, player);
+        } else if (video.poster) {
+          var still = document.createElement('img');
+          still.setAttribute('src', video.poster);
+          video.parentNode.replaceChild(still, video);
+        } else {
+          video.remove();
         }
       }
 
