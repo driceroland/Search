@@ -3604,10 +3604,14 @@ final class Browser: NSObject, ObservableObject {
             if let otherwise { lift(otherwise, quietly: quietly) }
             return
         }
-        // A picture of the page before anything moves, and only then the
-        // move: what the page looks like is about to change. The video's
-        // frame in it covers the little window, and the whole of it the tab
-        // when the video lands, each until the page has settled there.
+        // A picture of the page as it is, asked for in the same breath as the
+        // isolation and before it: the page's process answers in the order
+        // it is asked, so the picture is of the page before anything moved.
+        // Isolating only once the picture is back would be a tenth of a
+        // second late, and a muted video, which WebKit stops when nobody can
+        // see it, might no longer be playing. The video's frame in the
+        // picture covers the little window, and the whole of it the tab when
+        // the video lands, each until the page has settled there.
         //
         // At no more than a million and a bit pixels, the size of the page in
         // points or less: WebKit paints a picture of a page on the processor,
@@ -3621,41 +3625,58 @@ final class Browser: NSObject, ObservableObject {
         let picture = WKSnapshotConfiguration()
         picture.afterScreenUpdates = false
         picture.snapshotWidth = NSNumber(value: Double(min(shape.width, most) / fine))
-        tab.web.takeSnapshot(with: picture) { [weak self] shot, _ in
+        var shot: NSImage??
+        var found: Any??
+        // Going to another tab, the stage holds on to this page, unseen,
+        // until it is in the little window or has nothing to float.
+        let stage = tab.web.superview as? StageView
+        stage?.keep(tab.web)
+        func both() {
+            guard let shot, let found else { return }
+            lifted(tab, shot: shot, found: found, quietly: quietly, otherwise: otherwise)
+            stage?.letGo(tab.web)
+        }
+        tab.web.takeSnapshot(with: picture) { image, _ in
             MainActor.assumeIsolated {
-                guard let self, !self.floater.showing else { return }
-                tab.web.evaluateInSearch(Isolate.on) { [weak self] answer in
-                    MainActor.assumeIsolated {
-                        guard let self else { return }
-                        guard let found = answer as? [String: Any], found["floating"] as? Bool == true else {
-                            if let otherwise { return self.lift(otherwise, quietly: quietly) }
-                            if !quietly { self.announce("Nothing is playing here") }
-                            return
-                        }
-                        // Out again before it had settled in its tab: the
-                        // page isn't as it was left yet, and the picture
-                        // from the first time still is.
-                        var left = shot
-                        if self.landed?.tab == tab.id {
-                            left = self.landed?.picture
-                            self.landing.end()
-                        }
-                        self.leftAs = left.map { (tab.id, $0) }
-                        self.floating = tab.id
-                        tab.floating = true
-                        self.ownFloater()
-                        let still = shot.flatMap { shot in
-                            Float.still(
-                                of: shot,
-                                picture: (found["picture"] as? [NSNumber] ?? []).map(\.doubleValue),
-                                page: (found["page"] as? [NSNumber] ?? []).map(\.doubleValue)
-                            )
-                        }
-                        self.floater.lift(tab.web, still: still)
-                    }
-                }
+                shot = .some(image)
+                both()
             }
         }
+        tab.web.evaluateInSearch(Isolate.on) { answer in
+            MainActor.assumeIsolated {
+                found = .some(answer)
+                both()
+            }
+        }
+    }
+
+    /// The page isolated, or not, and pictured as it was before: into the
+    /// little window, or on to the other page of a pair.
+    private func lifted(_ tab: Tab, shot: NSImage?, found answer: Any?, quietly: Bool, otherwise: Tab?) {
+        guard let found = answer as? [String: Any], found["floating"] as? Bool == true else {
+            if let otherwise { return lift(otherwise, quietly: quietly) }
+            if !quietly { announce("Nothing is playing here") }
+            return
+        }
+        // Out again before it had settled in its tab: the page isn't as it
+        // was left yet, and the picture from the first time still is.
+        var left = shot
+        if landed?.tab == tab.id {
+            left = landed?.picture
+            landing.end()
+        }
+        leftAs = left.map { (tab.id, $0) }
+        floating = tab.id
+        tab.floating = true
+        ownFloater()
+        let still = shot.flatMap { shot in
+            Float.still(
+                of: shot,
+                picture: (found["picture"] as? [NSNumber] ?? []).map(\.doubleValue),
+                page: (found["page"] as? [NSNumber] ?? []).map(\.doubleValue)
+            )
+        }
+        floater.lift(tab.web, still: still)
     }
 
     /// The page as it was when its video went out, for covering the tab with

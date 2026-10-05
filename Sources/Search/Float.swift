@@ -890,8 +890,13 @@ enum Players {
         ("ted.com", nil), ("nebula.tv", nil), ("curiositystream.com", nil),
     ]
 
+    /// Hosts a test run's bench counts as players' (see `film float` in
+    /// Bench.swift). Empty everywhere else.
+    static var benchHosts: Set<String> = []
+
     static func knows(_ url: URL?) -> Bool {
         guard let url, let host = url.host()?.lowercased() else { return false }
+        if benchHosts.contains(host) { return true }
         let path = url.path().lowercased()
         return known.contains { entry in
             guard host == entry.host || host.hasSuffix("." + entry.host) else { return false }
@@ -934,7 +939,7 @@ private final class Panel: NSPanel {
 /// Waits for a page moved between the tab and the floating window to settle
 /// where it now is (`Isolate.fits` going out, `Isolate.off` coming back), so
 /// that what covers it meanwhile comes off once, onto the page as it will
-/// stay. The page is asked every twentieth of a second, one question at a
+/// stay. The page is asked as often as the screen draws, one question at a
 /// time, since an answer from JavaScript comes back once and not when
 /// something changes; and whatever it says, the wait is over at the limit.
 @MainActor
@@ -947,7 +952,7 @@ final class Settling {
         stop()
         self.then = then
         let began = CACurrentMediaTime()
-        let clock = Timer(timeInterval: 0.05, repeats: true) { [weak self, weak web] timer in
+        let clock = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self, weak web] timer in
             MainActor.assumeIsolated {
                 guard let self, self.clock === timer else { return }
                 guard let web, CACurrentMediaTime() - began < limit else { return self.end() }
