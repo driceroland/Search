@@ -108,7 +108,8 @@
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
     ./bench film float|land PATH [SECS]  the tab in front's video out into its floating window, or back: every
                                        frame the page draws for SECS (1), its size, the video's box and how much
-                                       of the view it fills → PATH.json; from a probe started hidden, both
+                                       of the view it fills, and when the covers over the little window and
+                                       the tab are up → PATH.json; from a probe started hidden, both
                                        windows kept off every screen — --test runs only
     ./bench float screens [two] | place X Y | swipe DX DY [STEPS] [MS] | wheel DX DY | click
                                        test run: the floating window's gestures (after film float, so it is

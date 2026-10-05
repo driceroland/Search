@@ -31,14 +31,16 @@ struct Page: View {
             if let cover = tab.cover {
                 // The page as it was left, while it is rebuilt underneath —
                 // anchored where the page itself starts, and never in the
-                // way of a click meant for the page.
+                // way of a click meant for the page. Up at once, since what
+                // it covers is not fit to be seen (a page waking up, or one
+                // landing from the floating window); off with a fade.
                 Image(nsImage: cover)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .clipped()
                     .allowsHitTesting(false)
-                    .transition(.opacity)
+                    .transition(.asymmetric(insertion: .identity, removal: .opacity))
             }
 
             if tab.floating {

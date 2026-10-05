@@ -75,7 +75,7 @@ def main():
             time.sleep(0.4)
             p = json.loads(sv.cmd({"do": "eval", "id": tab, "js": PROBE}).get("value"))
             fills = abs(p["x"]) < 1 and abs(p["y"]) < 1 and abs(p["w"] - p["iw"]) < 1 and abs(p["h"] - p["ih"]) < 1
-            t.ok(f"{name}: the video fills the view and is drawn", said == "floating" and fills and p["seen"], p)
+            t.ok(f"{name}: the video fills the view and is drawn", isinstance(said, dict) and said.get("floating") is True and fills and p["seen"], p)
             sv.sp("close", id=tab)
     finally:
         t.done(); sv.finish()

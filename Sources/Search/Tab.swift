@@ -1116,6 +1116,18 @@ final class Tab: ObservableObject, Identifiable {
         }
     }
 
+    /// The page as it was when its video went out to the floating window,
+    /// over it while it lands (see Browser.land).
+    func cover(with picture: NSImage) {
+        cover = picture
+    }
+
+    /// That picture off, if it is still the one up.
+    func uncover(_ picture: NSImage) {
+        guard cover === picture else { return }
+        cover = nil
+    }
+
     /// Set when WebKit said the page's process went away while nobody was
     /// looking at the tab. Coming back to it loads the page again rather
     /// than showing the white that is left.

@@ -1908,6 +1908,7 @@ final class Bench {
             let record = """
             (function () {
               var log = window.__benchFilm = [], t0 = performance.now();
+              window.__benchWall = Date.now();
               function look() {
                 var v = document.querySelector('[data-office-float]');
                 if (!v) {
@@ -1943,9 +1944,12 @@ final class Bench {
               return true;
             })();
             """
-            // Where the page is, from this side, every few hundredths.
+            // Where the page is, from this side, every few hundredths, and
+            // what covers it meanwhile: the still over the little window,
+            // the picture of the page over its tab.
             var hosts: [[String: Any]] = []
             var started = CACurrentMediaTime()
+            var startedWall = Date().timeIntervalSince1970
             // Every size the web view is given on the way, however briefly:
             // each one is a layout WebKit is asked for.
             var sizes: [[Int]] = []
@@ -1964,18 +1968,23 @@ final class Bench {
                 let view = web.bounds.size
                 hosts.append(["t": Int((CACurrentMediaTime() - started) * 1000),
                               "in": web.window === hall ? "tab" : web.window == nil ? "none" : "float",
-                              "view": [Int(view.width), Int(view.height)], "showing": showing.map { "\(type(of: $0))" }])
+                              "view": [Int(view.width), Int(view.height)], "showing": showing.map { "\(type(of: $0))" },
+                              "still": browser.floater.covered ? (browser.floater.coveredByStill ? "frame" : "black") : "none",
+                              "cover": tab.cover != nil])
                 guard CACurrentMediaTime() - started < seconds else { return finish(view) }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { watch() }
             }
             func finish(_ view: NSSize) {
                 NotificationCenter.default.removeObserver(resized)
-                web.evaluateInSearch("[window.__benchFilm, window.__benchTurns]") { found in
+                web.evaluateInSearch("[window.__benchFilm, window.__benchTurns, window.__benchWall]") { found in
                     MainActor.assumeIsolated {
                         giveBack()
                         let both = found as? [Any] ?? []
                         let rows = (both.first as? [[Any]] ?? []).map { $0.map { ($0 as? NSNumber)?.doubleValue ?? 0 } }
-                        let turns = (both.last as? [[Any]] ?? []).map { $0.map { ($0 as? NSNumber)?.intValue ?? 0 } }
+                        // Added to a frame's or a turn's time, puts it on the
+                        // hosts' clock, which starts as the float is asked for.
+                        let shift = both.count > 2 ? Int(((both[2] as? NSNumber)?.doubleValue ?? 0) - startedWall * 1000) : 0
+                        let turns = (both.count > 1 ? both[1] as? [[Any]] ?? [] : []).map { $0.map { ($0 as? NSNumber)?.intValue ?? 0 } }
                         let fill = { (part: CGFloat, whole: CGFloat) in whole > 0 ? (part / whole * 1000).rounded() / 1000 : 0 }
                         let frames: [[String: Any]] = rows.filter { $0.count == 12 }.map { n in
                             // The picture inside the video's box, fitted as
@@ -1993,7 +2002,7 @@ final class Bench {
                                     "fill": seen.isNull ? [0, 0] : [fill(seen.width, view.width), fill(seen.height, view.height)]]
                         }
                         let result: [String: Any] = ["view": [Int(view.width), Int(view.height)], "frames": frames, "hosts": hosts,
-                                                     "sizes": sizes, "turns": turns]
+                                                     "sizes": sizes, "turns": turns, "shift": shift]
                         if let data = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted]) {
                             try? data.write(to: URL(fileURLWithPath: path + ".json"))
                         }
@@ -2022,6 +2031,7 @@ final class Bench {
                             MainActor.assumeIsolated {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                     started = CACurrentMediaTime()
+                                    startedWall = Date().timeIntervalSince1970
                                     watch()
                                     browser.toggleFloat()
                                 }

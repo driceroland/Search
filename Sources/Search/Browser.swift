@@ -2158,7 +2158,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// Its window closed for good, with others open: every page let go.
     func closeAll() {
-        if floating != nil { land() }
+        if floating != nil { land(covering: false) }
         if peekTab != nil { closePeek() }
         for tab in tabs + parkedTabs { tab.close() }
         parked = [:]
@@ -2620,7 +2620,7 @@ final class Browser: NSObject, ObservableObject {
         // A tab whose page is out in the little window takes the window with
         // it. Left alone, the window would go on holding a page belonging to a
         // tab that no longer exists.
-        if floating == tab.id { land() }
+        if floating == tab.id { land(covering: false) }
 
         // A pinned tab is not closed by ⌘W — it is put down. The letter keeps
         // its place, the page is let go, and you land on whatever you were
@@ -3604,36 +3604,101 @@ final class Browser: NSObject, ObservableObject {
             if let otherwise { lift(otherwise, quietly: quietly) }
             return
         }
-        tab.web.evaluateInSearch(Isolate.on) { [weak self] answer in
+        // A picture of the page before anything moves, and only then the
+        // move: what the page looks like is about to change. The video's
+        // frame in it covers the little window, and the whole of it the tab
+        // when the video lands, each until the page has settled there.
+        //
+        // At no more than a million and a bit pixels, the size of the page in
+        // points or less: WebKit paints a picture of a page on the processor,
+        // and one of the whole page at a Retina screen's size took half a
+        // second (YouTube, 1412×728 points: 480 ms; 110 ms at one pixel a
+        // point). The video's frame is cut from it at about the little
+        // window's size anyway, and the tab's picture is up for a moment.
+        let shape = tab.web.bounds.size
+        let fine = tab.web.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let most = (1_200_000 * shape.width / max(shape.height, 1)).squareRoot()
+        let picture = WKSnapshotConfiguration()
+        picture.afterScreenUpdates = false
+        picture.snapshotWidth = NSNumber(value: Double(min(shape.width, most) / fine))
+        tab.web.takeSnapshot(with: picture) { [weak self] shot, _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
-                guard (answer as? String) == "floating" else {
-                    if let otherwise { return self.lift(otherwise, quietly: quietly) }
-                    if !quietly { self.announce("Nothing is playing here") }
-                    return
+                guard let self, !self.floater.showing else { return }
+                tab.web.evaluateInSearch(Isolate.on) { [weak self] answer in
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        guard let found = answer as? [String: Any], found["floating"] as? Bool == true else {
+                            if let otherwise { return self.lift(otherwise, quietly: quietly) }
+                            if !quietly { self.announce("Nothing is playing here") }
+                            return
+                        }
+                        // Out again before it had settled in its tab: the
+                        // page isn't as it was left yet, and the picture
+                        // from the first time still is.
+                        var left = shot
+                        if self.landed?.tab == tab.id {
+                            left = self.landed?.picture
+                            self.landing.end()
+                        }
+                        self.leftAs = left.map { (tab.id, $0) }
+                        self.floating = tab.id
+                        tab.floating = true
+                        self.ownFloater()
+                        let still = shot.flatMap { shot in
+                            Float.still(
+                                of: shot,
+                                picture: (found["picture"] as? [NSNumber] ?? []).map(\.doubleValue),
+                                page: (found["page"] as? [NSNumber] ?? []).map(\.doubleValue)
+                            )
+                        }
+                        self.floater.lift(tab.web, still: still)
+                    }
                 }
-                self.floating = tab.id
-                tab.floating = true
-                self.ownFloater()
-                self.floater.lift(tab.web)
             }
         }
     }
 
+    /// The page as it was when its video went out, for covering the tab with
+    /// while it lands.
+    private var leftAs: (tab: Tab.ID, picture: NSImage)?
+    /// The tab covered now, and with what, until its page has settled.
+    private var landed: (tab: Tab.ID, picture: NSImage)?
+    private let landing = Settling()
+
     /// Back into its tab. The stage takes the page again on its next layout,
     /// which is what the self-healing there is for.
-    func land() {
+    ///
+    /// The tab shows the page as it was left until the page is that again
+    /// (see Isolate.off). Put back as it comes, it showed the video alone at
+    /// the little window's size, then the page around it, then the video
+    /// growing into its place. `covering`: false for a tab on its way out,
+    /// with nobody to see it land.
+    func land(covering: Bool = true) {
         // Another window's video: that window takes it back.
         if floating == nil, let owner = Browsers.all.first(where: { $0 !== self && $0.floating != nil }) {
-            return owner.land()
+            return owner.land(covering: covering)
         }
         // The window closes whatever else is true. Tying that to the bookkeeping
         // is how a little window outlives the thing that opened it.
         if floater.showing { floater.drop() }
+        let left = leftAs
+        leftAs = nil
         guard let id = floating, let tab = tabs.first(where: { $0.id == id }) else { return }
         floating = nil
+        // One landing at a time: one still settling elsewhere is uncovered now.
+        landing.end()
+        if covering, let left, left.tab == id {
+            tab.cover(with: left.picture)
+            landed = left
+        }
         tab.floating = false
         tab.web.evaluateInSearch(Isolate.off)
+        guard landed != nil else { return }
+        landing.watch(tab.web, within: 1.5) { [weak self, weak tab] in
+            guard let self, let landed = self.landed else { return }
+            self.landed = nil
+            tab?.uncover(landed.picture)
+        }
     }
 
     func prepare(_ tab: Tab) {
