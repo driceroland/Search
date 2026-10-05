@@ -25,14 +25,14 @@ struct ShortcutsPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Hunt(text: $hunt, prompt: "Search commands or keys", focus: $hunting)
+            Hunt(text: $hunt, prompt: L("Search commands or keys"), focus: $hunting)
             let found = Command.all.filter(shown)
-            if found.isEmpty { Nothing("No command called that, or on that key") }
+            if found.isEmpty { Nothing(L("No command called that, or on that key")) }
             ForEach(Command.Section.allCases, id: \.self) { section in
                 let commands = found.filter { $0.section == section }
                 if !commands.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Caption(section.rawValue)
+                    Caption(section.title)
                     Card {
                         ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
                             if index > 0 { Rule() }
@@ -40,9 +40,9 @@ struct ShortcutsPage: View {
                                 KeyBox(browser: browser, store: store, id: command.id)
                             }
                             .contextMenu {
-                                Button("Clear Shortcut") { store.clear(command.id) }
+                                Button(L("Clear Shortcut")) { store.clear(command.id) }
                                     .disabled(store.key(for: command.id) == nil)
-                                Button("Reset to Default") { store.reset(command.id) }
+                                Button(L("Reset to Default")) { store.reset(command.id) }
                                     .disabled(!store.isChanged(command.id))
                             }
                         }
@@ -52,7 +52,7 @@ struct ShortcutsPage: View {
             }
             if #available(macOS 15.4, *) { extensionCommands }
             if store.anyChanged, hunt.isEmpty {
-                Pill("Reset All to Defaults") { store.resetAll() }
+                Pill(L("Reset All to Defaults")) { store.resetAll() }
             }
         }
     }
@@ -71,7 +71,7 @@ extension ShortcutsPage {
         }
         if !commands.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Caption("Extensions")
+                Caption(L("Extensions"))
                 Card {
                     ForEach(Array(commands.enumerated()), id: \.element.id) { index, item in
                         if index > 0 { Rule() }
@@ -79,9 +79,9 @@ extension ShortcutsPage {
                             KeyBox(browser: browser, store: store, id: item.id)
                         }
                         .contextMenu {
-                            Button("Clear Shortcut") { store.clear(item.id) }
+                            Button(L("Clear Shortcut")) { store.clear(item.id) }
                                 .disabled(store.key(for: item.id) == nil)
-                            Button("Reset to Default") { store.reset(item.id) }
+                            Button(L("Reset to Default")) { store.reset(item.id) }
                                 .disabled(!store.isChanged(item.id))
                         }
                     }
@@ -130,11 +130,11 @@ private struct KeyBox: View {
 
     private var label: String {
         if let taking, let other = store.owner(of: taking, except: id) {
-            return "Used by \(other.title) — press again"
+            return L("Used by \(other.title) — press again")
         }
         if let note { return note }
-        if listening { return "Type a shortcut" }
-        return store.key(for: id)?.display ?? "None"
+        if listening { return L("Type a shortcut") }
+        return store.key(for: id)?.display ?? L("None")
     }
 
     private func listen() {
@@ -157,12 +157,12 @@ private struct KeyBox: View {
             return stop()
         }
         guard let combo = KeyCombo(event: event) else { return }
-        guard combo.isUsable else { return say("Add ⌘, ⌥ or ⌃") }
-        guard !KeyCombo.isReserved(combo) else { return say("Can’t be changed") }
+        guard combo.isUsable else { return say(L("Add ⌘, ⌥ or ⌃")) }
+        guard !KeyCombo.isReserved(combo) else { return say(L("Can’t be changed")) }
         // An extension's command takes a key as its manifest would: one
         // that types a character, not an arrow or a function key.
-        guard !id.hasPrefix("ext:") || combo.key.count == 1 else { return say("Not for an extension") }
-        guard !id.hasPrefix("ext:") || !KeyCombo.isBrowserOnly(combo) else { return say("Not for an extension") }
+        guard !id.hasPrefix("ext:") || combo.key.count == 1 else { return say(L("Not for an extension")) }
+        guard !id.hasPrefix("ext:") || !KeyCombo.isBrowserOnly(combo) else { return say(L("Not for an extension")) }
         if store.owner(of: combo, except: id) != nil, taking != combo {
             taking = combo
             return
@@ -170,7 +170,7 @@ private struct KeyBox: View {
         let other = store.owner(of: combo, except: id)
         store.assign(combo, to: id)
         stop()
-        if let other { browser.announce("\(combo.display) moved from \(other.title)") }
+        if let other { browser.announce(L("\(combo.display) moved from \(other.title)")) }
     }
 
     /// Why that key won't do, for a moment, still listening.

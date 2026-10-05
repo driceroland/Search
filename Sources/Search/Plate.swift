@@ -36,7 +36,7 @@ struct Plate<Content: View, Foot: View>: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Palette.ink)
                 Spacer(minLength: 0)
-                Door(icon: "xmark", help: "Done   esc", act: close)
+                Door(icon: "xmark", help: L("Done   esc"), act: close)
             }
             .padding(.horizontal, 22)
             .padding(.top, 18)
@@ -104,11 +104,13 @@ struct Rule: View {
 struct Line<Control: View>: View {
     let title: String
     let detail: String?
+    let detailColor: Color
     @ViewBuilder let control: () -> Control
 
-    init(_ title: String, _ detail: String? = nil, @ViewBuilder control: @escaping () -> Control) {
+    init(_ title: String, _ detail: String? = nil, detailColor: Color = Palette.muted, @ViewBuilder control: @escaping () -> Control) {
         self.title = title
         self.detail = detail
+        self.detailColor = detailColor
         self.control = control
     }
 
@@ -121,7 +123,7 @@ struct Line<Control: View>: View {
                 if let detail {
                     Text(detail)
                         .font(.system(size: 11.5))
-                        .foregroundStyle(Palette.muted)
+                        .foregroundStyle(detailColor)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }

@@ -455,16 +455,16 @@ struct Helm: View {
             let back = !tab.isBlank && tab.canGoBack
             let forward = !tab.isBlank && tab.canGoForward
             HStack(spacing: 4) {
-                Door(icon: "chevron.left", help: "Back   ⌘[") { browser.back() }
+                Door(icon: "chevron.left", help: L("Back   ⌘[")) { browser.back() }
                     .disabled(!back)
                     .opacity(back ? 1 : 0.3)
-                Door(icon: "chevron.right", help: "Forward   ⌘]") { browser.forward() }
+                Door(icon: "chevron.right", help: L("Forward   ⌘]")) { browser.forward() }
                     .disabled(!forward)
                     .opacity(forward ? 1 : 0.3)
                 // Reload, or stop while it is still coming.
                 Door(
                     icon: tab.loading ? "xmark" : "arrow.clockwise",
-                    help: tab.loading ? "Stop   ⌘." : "Reload   ⌘R"
+                    help: tab.loading ? L("Stop   ⌘.") : L("Reload   ⌘R")
                 ) {
                     if tab.loading { tab.stop() } else { browser.reload() }
                 }
@@ -621,7 +621,7 @@ private struct TabPill: View {
                     Image(systemName: "record.circle")
                         .font(.system(size: 10))
                         .foregroundStyle(colour.opacity(0.8))
-                        .help("Recording")
+                        .help(L("Recording"))
                 }
                 Text(tab.label)
                     .font(.system(size: 12.5))
@@ -953,8 +953,8 @@ struct TabMenu: View {
 
     var body: some View {
         if browser.prefs.usesTabGroups && tab.pin == nil && !tab.shy && !tab.bench {
-            Menu("Move to Group") {
-                Button("New Group") { browser.addTabGroup(containing: tab) }
+            Menu(L("Move to Group")) {
+                Button(L("New Group")) { browser.addTabGroup(containing: tab) }
                 if !browser.tabGroups.isEmpty { Divider() }
                 ForEach(browser.tabGroups) { group in
                     Button(group.name) { browser.move(tab, toGroup: group.id) }
@@ -962,36 +962,36 @@ struct TabMenu: View {
                 }
                 if tab.groupID != nil {
                     Divider()
-                    Button("Remove from Group") { browser.move(tab, toGroup: nil) }
+                    Button(L("Remove from Group")) { browser.move(tab, toGroup: nil) }
                 }
             }
         }
         let rows = browser.prefs.showsPinRows
         if tab.pin == nil {
-            Button("Pin") { browser.pin(tab) }
+            Button(L("Pin")) { browser.pin(tab) }
                 .disabled(tab.isBlank || tab.shy)
             if rows {
-                Button("Pin as Row") { browser.pin(tab, listed: true) }
+                Button(L("Pin as Row")) { browser.pin(tab, listed: true) }
                     .disabled(tab.isBlank || tab.shy)
             }
         } else {
             if rows {
-                Button(tab.listed ? "Show as Square" : "Show as Row") { browser.setListed(tab, !tab.listed) }
+                Button(tab.listed ? L("Show as Square") : L("Show as Row")) { browser.setListed(tab, !tab.listed) }
             }
             // A row wears its title, not its letter; and a click on it is
             // the address, so the way home a square's double-click is
             // (Browser.goHome) is here instead, while it has wandered.
             if rows && tab.listed {
-                Button("Back to Pinned Page") { browser.goHome(tab) }
+                Button(L("Back to Pinned Page")) { browser.goHome(tab) }
                     .disabled(tab.home.map { Browser.samePage($0, tab.address) } ?? true)
             } else {
-                Button("Change Letter") { browser.editLetter(tab) }
+                Button(L("Change Letter")) { browser.editLetter(tab) }
             }
-            Button("Unpin") { browser.unpin(tab) }
+            Button(L("Unpin")) { browser.unpin(tab) }
         }
         if browser.prefs.usesSpaces, !tab.bench,
            tab.address.flatMap({ Browser.extensionHost(of: $0) }) == nil {
-            Menu("Move to Space") {
+            Menu(L("Move to Space")) {
                 ForEach(browser.spaces.filter { $0.id != browser.spaceID }) { space in
                     Button {
                         browser.move(tab, toSpace: space.id)
@@ -1000,7 +1000,7 @@ struct TabMenu: View {
                     }
                 }
                 if browser.spaces.count > 1 { Divider() }
-                Button("New Space…") {
+                Button(L("New Space…")) {
                     browser.askForSpace { space in
                         browser.move(tab, toSpace: space.id) {
                             browser.switchSpace(to: space.id)
@@ -1008,23 +1008,23 @@ struct TabMenu: View {
                     }
                 }
             }
-            .help("Pages moved to a Space with different sign-ins reopen there.")
+            .help(L("Pages moved to a Space with different sign-ins reopen there."))
         }
         if browser.prefs.splitView {
             if browser.split(for: tab) != nil {
-                Button("Swap Pages") {
+                Button(L("Swap Pages")) {
                     browser.focusPane(tab)
                     browser.swapSplit()
                 }
-                Button("Separate Split Tabs") { browser.detachSplit(tab) }
-                Button("Close Both Pages") {
+                Button(L("Separate Split Tabs")) { browser.detachSplit(tab) }
+                Button(L("Close Both Pages")) {
                     browser.focusPane(tab)
                     browser.closeSplit()
                 }
             } else {
                 // Beside the page on screen; on that page itself, an empty
                 // page beside it.
-                Button("Open in Split View") { browser.openInSplit(tab) }
+                Button(L("Open in Split View")) { browser.openInSplit(tab) }
                     .disabled(tab.bench)
             }
         }
@@ -1032,11 +1032,11 @@ struct TabMenu: View {
             // Another window, or a new one (see Browser.moveToWindow).
             let others = Browsers.all.filter { $0 !== browser && $0.isOpen && $0.extensionPopup == nil }
             if others.isEmpty {
-                Button("Move to New Window") { browser.moveToWindow(tab, nil) }
+                Button(L("Move to New Window")) { browser.moveToWindow(tab, nil) }
                     .disabled(browser.tabs.count < 2)
             } else {
-                Menu("Move to Window") {
-                    Button("New Window") { browser.moveToWindow(tab, nil) }
+                Menu(L("Move to Window")) {
+                    Button(L("New Window")) { browser.moveToWindow(tab, nil) }
                         .disabled(browser.tabs.count < 2)
                     Divider()
                     ForEach(Array(others.enumerated()), id: \.offset) { _, other in
@@ -1046,41 +1046,41 @@ struct TabMenu: View {
             }
         }
         Divider()
-        Button("Rename") { browser.beginTabRename(tab) }
-        Button("Duplicate") {
+        Button(L("Rename")) { browser.beginTabRename(tab) }
+        Button(L("Duplicate")) {
             browser.select(tab)
             browser.duplicate()
         }
         .disabled(tab.isBlank)
         // The card a click on the tab you are on shows under its address.
-        Button("Site Information…") {
+        Button(L("Site Information…")) {
             if browser.activeID != tab.id { browser.select(tab) }
             browser.beginTabEdit(tab)
         }
         .disabled(tab.isBlank || tab.address == nil || tab.pin != nil)
-        Button("Copy Address") {
+        Button(L("Copy Address")) {
             browser.select(tab)
             browser.copyAddress()
         }
         .disabled(tab.isBlank)
-        Button("Copy as Markdown Link") {
+        Button(L("Copy as Markdown Link")) {
             browser.select(tab)
             browser.copyMarkdownLink()
         }
         .disabled(tab.isBlank)
-        Button(tab.muted ? "Unmute Tab" : "Mute Tab") { tab.toggleMute() }
+        Button(tab.muted ? L("Unmute Tab") : L("Mute Tab")) { tab.toggleMute() }
         // Its page let go of now, as it would be after half an hour unseen:
         // the row keeps its title and picture, and it loads again when gone
         // to. Not the tab on screen, nor one that has to stay awake (#310).
-        Button("Put to Sleep") {
+        Button(L("Put to Sleep")) {
             browser.sleep(tab) { outcome in
-                if outcome != "asleep" { browser.announce("Stays awake: \(outcome)") }
+                if outcome != "asleep" { browser.announce(L("Stays awake: \(outcome)")) }
             }
         }
         .disabled(browser.awake(because: tab) != nil)
         Divider()
-        Button("Close Tab", action: close)
-        Button("Close Other Tabs") { browser.closeOthers(but: tab) }
+        Button(L("Close Tab"), action: close)
+        Button(L("Close Other Tabs")) { browser.closeOthers(but: tab) }
             .disabled(browser.tabs.count < 2)
         // ⌘⇧T, and the History menu's Recently Closed, where few think to
         // look for it: here too, where tabs are closed.

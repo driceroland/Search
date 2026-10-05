@@ -18,14 +18,14 @@ struct FindBar: View {
         HStack(spacing: 6) {
             ZStack(alignment: .leading) {
                 if browser.needle.isEmpty {
-                    Text("Find on page")
+                    Text(L("Find on page"))
                         .foregroundStyle(Palette.ink.opacity(0.3))
                 }
                 TextField("", text: $browser.needle)
                     .textFieldStyle(.plain)
                     .foregroundStyle(Palette.ink)
-                    .accessibilityLabel("Find on page")
-                    .accessibilityHint("Type text to search this page. Press Return to find the next match.")
+                    .accessibilityLabel(L("Find on page"))
+                    .accessibilityHint(L("Type text to search this page. Press Return to find the next match."))
                     .focused($focused)
                     .onSubmit { browser.look(forward: true) }
             }
@@ -41,25 +41,25 @@ struct FindBar: View {
                     .lineLimit(1)
                     .fixedSize()
                     .accessibilityLabel(status)
-                    .accessibilityIdentifier("Find result status")
+                    .accessibilityIdentifier(L("Find result status"))
             }
 
             // A pane too narrow for them keeps Return and ⇧Return instead.
             if !narrow {
-                step("chevron.up", label: "Previous match", help: "Find the previous match.") {
+                step("chevron.up", label: L("Previous match"), help: L("Find the previous match.")) {
                     browser.look(forward: false)
                 }
-                step("chevron.down", label: "Next match", help: "Find the next match.") {
+                step("chevron.down", label: L("Next match"), help: L("Find the next match.")) {
                     browser.look(forward: true)
                 }
             }
 
             Menu {
-                Toggle("Match case", isOn: $browser.matchCase)
-                    .help("Match uppercase and lowercase letters exactly.")
-                Toggle("Whole words", isOn: $browser.wholeWords)
+                Toggle(L("Match case"), isOn: $browser.matchCase)
+                    .help(L("Match uppercase and lowercase letters exactly."))
+                Toggle(L("Whole words"), isOn: $browser.wholeWords)
                     .disabled(browser.findResult?.nativeFallback == true && !browser.wholeWords)
-                    .help("Match complete words. This option is unavailable for PDF pages.")
+                    .help(L("Match complete words. This option is unavailable for PDF pages."))
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 10, weight: .semibold))
@@ -70,11 +70,11 @@ struct FindBar: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .accessibilityLabel("Search options")
-            .accessibilityHint("Choose whether to match case or whole words.")
-            .help("Search options")
+            .accessibilityLabel(L("Search options"))
+            .accessibilityHint(L("Choose whether to match case or whole words."))
+            .help(L("Search options"))
 
-            step("xmark", label: "Close Find on Page", help: "Close the find field and clear its selection.") {
+            step("xmark", label: L("Close Find on Page"), help: L("Close the find field and clear its selection.")) {
                 browser.closeFind()
             }
         }
@@ -89,7 +89,7 @@ struct FindBar: View {
             )
         )
         .shadow(color: .black.opacity(0.10), radius: 18, y: 5)
-        .padding(.top, 12)
+        .padding(.top, browser.prefs.floatingNavigation ? (browser.fullScreen ? 116 : 66) : 12)
         .padding(.trailing, 14)
         .animation(Motion.quick, value: browser.missed)
         .onAppear(perform: focus)

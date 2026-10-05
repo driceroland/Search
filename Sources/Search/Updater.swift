@@ -132,6 +132,7 @@ final class Updater: ObservableObject {
     /// checks every time.
     func checkIfDue(then say: @escaping (String) -> Void) {
         self.say = say
+        guard Store.localProfile == nil else { return }
         Swap.sweep()
         // And again every hour for as long as the app is up — a browser that
         // is left open for a week would otherwise never look.
@@ -179,6 +180,7 @@ final class Updater: ObservableObject {
     /// names, or nil when this is the latest; what becomes of it after that
     /// is said through the line handed to `checkIfDue`.
     func check(then done: @escaping (Release?) -> Void) {
+        guard Store.localProfile == nil || Self.overridden else { done(nil); return }
         guard !checking else { return }
         checking = true
         Task { [weak self] in

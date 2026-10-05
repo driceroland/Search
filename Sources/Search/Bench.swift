@@ -620,6 +620,9 @@ final class Bench {
                 "key": NSApp.keyWindow.map { "\(type(of: $0)) “\($0.title)”" } ?? "",
                 // What the keyboard goes to in the key window, or the browser's: a find field,
                 // a page, or a button it shouldn't be.
+                "floatingNavigation": browser.prefs.floatingNavigation,
+                "interfaceLanguage": Localization.shared.language.rawValue,
+                "localizationResources": Localization.resources.bundlePath,
                 "responder": (NSApp.keyWindow ?? Links.window)?.firstResponder.map { "\(type(of: $0))" } ?? "",
             ]
             out["windows"] = NSApp.windows.map { window -> [String: Any] in
@@ -2298,6 +2301,11 @@ final class Bench {
             splitCommand(request, browser: browser, answer)
 
         case "ui":
+            if Store.testing {
+                if let on = request["floatingNavigation"] as? Bool { browser.prefs.floatingNavigation = on }
+                if let language = (request["language"] as? String).flatMap(InterfaceLanguage.init) { Localization.shared.language = language }
+                if let page = (request["settingsPage"] as? String).flatMap(SettingsPanel.Page.init) { browser.settingsPage = page }
+            }
             // Open or close the app's own panels, to reproduce what a person
             // did without a person.
             if let on = request["settings"] as? Bool { browser.tuning = on }
@@ -2967,6 +2975,9 @@ final class Bench {
     /// panel, one made by a path nobody thought of: taken off at once and
     /// named in every answer.
     static func watchScreens() {
+        // Explicit visual-review runs need WindowServer to composite Liquid Glass.
+        // Ordinary probes remain hidden, with their original safeguards.
+        guard ProcessInfo.processInfo.environment["SEARCH_VISUAL_REVIEW"] != "1" else { return }
         guard watching.isEmpty else { return }
         // The app itself shown or brought forward by anything but `pages on`
         // (which never activates it): hidden again at once.

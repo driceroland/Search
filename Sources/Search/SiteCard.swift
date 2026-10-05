@@ -208,7 +208,7 @@ struct SiteCard: View {
         if let host = url.host(), !host.isEmpty {
             return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         }
-        if url.isFileURL { return "File" }
+        if url.isFileURL { return L("File") }
         return url.scheme ?? url.absoluteString
     }
 
@@ -222,9 +222,9 @@ struct SiteCard: View {
             if let safety {
                 Row(safety.title, submenu: true) { deeper = true }
             }
-            Row("Copy Address", keys: "⇧⌘C") { after { browser.copyAddress() } }
+            Row(L("Copy Address"), keys: "⇧⌘C") { after { browser.copyAddress() } }
             Separator()
-            Row("Print…", keys: "⌘P") { after { browser.printPage() } }
+            Row(L("Print…"), keys: "⌘P") { after { browser.printPage() } }
             zoom
             sound
             grounded
@@ -258,11 +258,11 @@ struct SiteCard: View {
     /// its end. The number puts it back to the size every site starts at.
     private var zoom: some View {
         HStack(spacing: 0) {
-            Text("Zoom")
+            Text(L("Zoom"))
                 .font(MenuMetrics.font)
                 .foregroundStyle(Color(nsColor: .labelColor))
             Spacer(minLength: 24)
-            Step(symbol: "minus", help: "Zoom Out   ⌘-") { browser.zoom(by: 1 / 1.1) }
+            Step(symbol: "minus", help: L("Zoom Out   ⌘-")) { browser.zoom(by: 1 / 1.1) }
             Button { browser.resetZoom() } label: {
                 Text("\(Int((tab.zoom * 100).rounded()))%")
                     .font(MenuMetrics.font)
@@ -272,8 +272,8 @@ struct SiteCard: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Actual Size   ⌘0")
-            Step(symbol: "plus", help: "Zoom In   ⌘+") { browser.zoom(by: 1.1) }
+            .help(L("Actual Size   ⌘0"))
+            Step(symbol: "plus", help: L("Zoom In   ⌘+")) { browser.zoom(by: 1.1) }
         }
         .padding(.leading, MenuMetrics.text)
         .padding(.trailing, MenuMetrics.inset + 4)
@@ -295,13 +295,13 @@ struct SiteCard: View {
 
         var body: some View {
             HStack(spacing: 0) {
-                Text("Play Sound by Itself")
+                Text(L("Play Sound by Itself"))
                     .font(MenuMetrics.font)
                     .foregroundStyle(Color(nsColor: .labelColor))
                     .fixedSize()
                 Spacer(minLength: 24)
                 if on != was {
-                    Text("from the next page")
+                    Text(L("from the next page"))
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                         .fixedSize()
@@ -329,7 +329,7 @@ struct SiteCard: View {
 
         var body: some View {
             HStack(spacing: 0) {
-                Text("Don't Float Videos Here")
+                Text(L("Don't Float Videos Here"))
                     .font(MenuMetrics.font)
                     .foregroundStyle(Color(nsColor: .labelColor))
                     .fixedSize()
@@ -365,11 +365,11 @@ struct SiteCard: View {
                 .padding(.bottom, 6)
             Separator()
             if let trust = safety.trust {
-                Row(certified == false ? "Show Certificate (Not Valid)…" : "Show Certificate…") {
+                Row(certified == false ? L("Show Certificate (Not Valid)…") : L("Show Certificate…")) {
                     after { SiteCard.show(trust) }
                 }
             }
-            Row("Back") { deeper = false }
+            Row(L("Back")) { deeper = false }
         }
     }
 
@@ -396,27 +396,27 @@ struct SiteCard: View {
             // (see Dialogs.trust) gets this far untrusted.
             if certified == false {
                 return Safety(
-                    symbol: "lock.open", title: "Connection is not secure",
-                    detail: "This site's certificate isn't trusted by this Mac. Someone could be reading what you send.",
+                    symbol: "lock.open", title: L("Connection is not secure"),
+                    detail: L("This site's certificate isn't trusted by this Mac. Someone could be reading what you send."),
                     tint: Palette.unsafe, trust: trust
                 )
             }
             if tab.built?.hasOnlySecureContent == false {
                 return Safety(
-                    symbol: "lock.trianglebadge.exclamationmark", title: "Parts of this page are not secure",
-                    detail: "The page came privately, but some of what it shows was fetched over plain http, where anyone on the network could read or change it.",
+                    symbol: "lock.trianglebadge.exclamationmark", title: L("Parts of this page are not secure"),
+                    detail: L("The page came privately, but some of what it shows was fetched over plain http, where anyone on the network could read or change it."),
                     tint: Palette.unsafe, trust: trust
                 )
             }
             return Safety(
-                symbol: "lock", title: "Connection is secure",
-                detail: "Your information (for example, passwords or credit card numbers) is private when it is sent to this site.",
+                symbol: "lock", title: L("Connection is secure"),
+                detail: L("Your information (for example, passwords or credit card numbers) is private when it is sent to this site."),
                 tint: Palette.safe, trust: trust
             )
         case "http":
             return Safety(
-                symbol: "lock.open", title: "Connection is not secure",
-                detail: "Don't enter passwords or credit card numbers here: anything sent to this site can be read on the way.",
+                symbol: "lock.open", title: L("Connection is not secure"),
+                detail: L("Don't enter passwords or credit card numbers here: anything sent to this site can be read on the way."),
                 tint: Palette.unsafe, trust: nil
             )
         default:

@@ -9,6 +9,10 @@ import WebKit
 // make twice.
 
 enum Store {
+    /// A personal build uses its own files and keychain labels, alongside Search.
+    static let localProfile = Bundle.main.object(forInfoDictionaryKey: "SearchLocalProfile") as? String
+    static var dataProfile: String? { world ?? localProfile }
+
     /// A run is a test run if it says so, or if it is being run straight out
     /// of the build folder rather than from an installed app. The second half
     /// is not belt and braces: a development build launched from a terminal
@@ -108,8 +112,8 @@ enum Store {
     static let folder: URL = {
         let support = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let home = support.appendingPathComponent(world.map { "Search (\($0))" } ?? "Search", isDirectory: true)
-        if !testing {
+        let home = support.appendingPathComponent(dataProfile.map { "Search (\($0))" } ?? "Search", isDirectory: true)
+        if !testing, localProfile == nil {
             let old = support.appendingPathComponent("Office Browser", isDirectory: true)
             let files = FileManager.default
             if !files.fileExists(atPath: home.path), files.fileExists(atPath: old.path) {
@@ -141,7 +145,7 @@ enum Store {
     /// where the tabs go must not change yours.
     static let settings: UserDefaults = {
         guard testing else {
-            carryOver(into: .standard)
+            if localProfile == nil { carryOver(into: .standard) }
             return .standard
         }
         let suite = world == "test" ? "com.officecommun.search.test" : "com.officecommun.search.test.\(world ?? "")"

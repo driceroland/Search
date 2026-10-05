@@ -33,8 +33,8 @@ enum When {
 
     static func day(_ date: Date) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(date) { return "Today" }
-        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        if calendar.isDateInToday(date) { return L("Today") }
+        if calendar.isDateInYesterday(date) { return L("Yesterday") }
         return plain.string(from: date)
     }
 }
@@ -50,12 +50,12 @@ struct HistoryPanel: View {
     private var clearing: Bool { browser.recallMode == .clearing }
 
     var body: some View {
-        Plate("History", width: 600, close: { browser.recalling = false }) {
+        Plate(L("History"), width: 600, close: { browser.recalling = false }) {
             VStack(alignment: .leading, spacing: 14) {
-                Hunt(text: $browser.recallHunt, prompt: "Search everywhere you have been", focus: $hunting)
+                Hunt(text: $browser.recallHunt, prompt: L("Search everywhere you have been"), focus: $hunting)
 
                 if traces.isEmpty {
-                    Card { Nothing(browser.recallHunt.isEmpty ? "Nothing yet." : "Nothing matches.") }
+                    Card { Nothing(browser.recallHunt.isEmpty ? L("Nothing yet.") : L("Nothing matches.")) }
                 } else {
                     // Lazy: only the lines in view are made. Two thousand of
                     // them, each with its icon, took the panel a third of a
@@ -109,11 +109,11 @@ struct HistoryPanel: View {
                 sweeps
             } else {
                 HStack {
-                    Text(traces.count == 1 ? "1 page" : "\(traces.count) pages")
+                    Text(traces.count == 1 ? L("1 page") : L("\(traces.count) pages"))
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)
                     Spacer()
-                    Pill("Clear…") { withAnimation(Motion.settle) { browser.recallMode = .clearing } }
+                    Pill(L("Clear…")) { withAnimation(Motion.settle) { browser.recallMode = .clearing } }
                 }
             }
         }
@@ -130,25 +130,25 @@ struct HistoryPanel: View {
     private var sweeps: some View {
         VStack(alignment: .leading, spacing: 10) {
             Card {
-                Line("History", "Everywhere you have been") {
-                    Pill("Clear") {
+                Line(L("History"), L("Everywhere you have been")) {
+                    Pill(L("Clear")) {
                         browser.clearHistory()
                         refresh()
                         withAnimation(Motion.settle) { browser.recallMode = .history }
                     }
                 }
                 Rule()
-                Line("Cookies and sign-ins", "Signs you out of every site") {
-                    Pill("Sign out of everything") { browser.clearSites() }
+                Line(L("Cookies and sign-ins"), L("Signs you out of every site")) {
+                    Pill(L("Sign out of everything")) { browser.clearSites() }
                 }
                 Rule()
-                Line("Cache", "Only what was fetched to draw pages") {
-                    Pill("Clear") { browser.clearCache() }
+                Line(L("Cache"), L("Only what was fetched to draw pages")) {
+                    Pill(L("Clear")) { browser.clearCache() }
                 }
             }
             HStack {
                 Spacer()
-                Pill("Back") { withAnimation(Motion.settle) { browser.recallMode = .history } }
+                Pill(L("Back")) { withAnimation(Motion.settle) { browser.recallMode = .history } }
             }
         }
         .transition(.opacity)
@@ -226,7 +226,7 @@ struct HistoryPanel: View {
                 }
                 Spacer(minLength: 8)
                 if hovering {
-                    Quick("Remove", tint: .red.opacity(0.75), act: forget)
+                    Quick(L("Remove"), tint: .red.opacity(0.75), act: forget)
                 } else {
                     Text(When.clock(trace.last))
                         .font(.system(size: 11.5))
@@ -257,15 +257,15 @@ struct DownloadsPanel: View {
     }
 
     var body: some View {
-        Plate("Downloads", width: 560, close: { browser.hoarding = false }) {
+        Plate(L("Downloads"), width: 560, close: { browser.hoarding = false }) {
             if fetches.entries.isEmpty && loot.kept.isEmpty {
-                Card { Nothing("Nothing downloaded yet.") }
+                Card { Nothing(L("Nothing downloaded yet.")) }
             } else {
                 ScrollView(showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         if !fetches.entries.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
-                                Caption("Current downloads")
+                                Caption(L("Current downloads"))
                                 Card {
                                     ForEach(Array(fetches.entries.enumerated()), id: \.element.id) { index, entry in
                                         if index > 0 { Rule() }
@@ -283,7 +283,7 @@ struct DownloadsPanel: View {
 
                         if !loot.kept.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
-                                Caption("Completed")
+                                Caption(L("Completed"))
                                 Card {
                                     ForEach(Array(loot.kept.enumerated()), id: \.element.id) { index, keep in
                                         if index > 0 { Rule() }
@@ -304,13 +304,13 @@ struct DownloadsPanel: View {
             }
         } foot: {
             HStack {
-                Text(loot.kept.isEmpty ? "Files land in \(browser.downloadsFolder.lastPathComponent)"
-                     : "Clearing the list leaves the files where they are")
+                Text(loot.kept.isEmpty ? L("Files land in \(browser.downloadsFolder.lastPathComponent)")
+                     : L("Clearing the list leaves the files where they are"))
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
                 Spacer()
                 if !loot.kept.isEmpty {
-                    Pill("Clear list") { loot.forgetAll() }
+                    Pill(L("Clear list")) { loot.forgetAll() }
                 }
             }
         }
@@ -327,16 +327,16 @@ struct DownloadsPanel: View {
             let received = ByteCountFormatter.string(fromByteCount: entry.completedBytes, countStyle: .file)
             guard entry.totalBytes > 0 else { return received + " downloaded" }
             let total = ByteCountFormatter.string(fromByteCount: entry.totalBytes, countStyle: .file)
-            return "\(received) of \(total)"
+            return L("\(received) of \(total)")
         }
 
         private var stateLabel: String {
             switch entry.state {
-            case .downloading: return "Downloading"
-            case .pausing: return "Pausing…"
-            case .paused: return "Paused"
-            case .resuming: return "Resuming…"
-            case .failed: return "Failed"
+            case .downloading: return L("Downloading")
+            case .pausing: return L("Pausing…")
+            case .paused: return L("Paused")
+            case .resuming: return L("Resuming…")
+            case .failed: return L("Failed")
             }
         }
 
@@ -381,7 +381,7 @@ struct DownloadsPanel: View {
                             .truncationMode(.middle)
                     }
                     if case .failed = entry.state {
-                        Text(entry.errorDescription ?? "The download failed.")
+                        Text(entry.errorDescription ?? L("The download failed."))
                             .font(.system(size: 11.5))
                             .foregroundStyle(Palette.muted)
                             .fixedSize(horizontal: false, vertical: true)
@@ -400,39 +400,39 @@ struct DownloadsPanel: View {
             switch entry.state {
             case .downloading:
                 HStack(spacing: 4) {
-                    if entry.canPause { Quick("Pause", act: pause) }
-                    Quick("Cancel", act: cancel)
+                    if entry.canPause { Quick(L("Pause"), act: pause) }
+                    Quick(L("Cancel"), act: cancel)
                 }
             case .pausing:
                 HStack(spacing: 4) {
-                    Quick("Pausing…", act: {})
+                    Quick(L("Pausing…"), act: {})
                         .disabled(true)
-                    Quick("Cancel", act: cancel)
+                    Quick(L("Cancel"), act: cancel)
                 }
             case .paused:
                 HStack(spacing: 4) {
                     if entry.canResume {
-                        Quick("Resume", act: resume)
+                        Quick(L("Resume"), act: resume)
                     } else if entry.canRetry {
-                        Quick("Retry", act: retry)
-                            .help("Start the download again from the beginning")
+                        Quick(L("Retry"), act: retry)
+                            .help(L("Start the download again from the beginning"))
                     }
-                    Quick("Remove", act: cancel)
+                    Quick(L("Remove"), act: cancel)
                 }
             case .resuming:
                 HStack(spacing: 4) {
-                    Quick("Resuming…", act: {})
+                    Quick(L("Resuming…"), act: {})
                         .disabled(true)
-                    Quick("Cancel", act: cancel)
+                    Quick(L("Cancel"), act: cancel)
                 }
             case .failed:
                 HStack(spacing: 4) {
-                    if entry.canResume { Quick("Resume", act: resume) }
+                    if entry.canResume { Quick(L("Resume"), act: resume) }
                     if entry.canRetry {
-                        Quick("Retry", act: retry)
-                            .help("Start the download again from the beginning")
+                        Quick(L("Retry"), act: retry)
+                            .help(L("Start the download again from the beginning"))
                     }
-                    Quick("Remove", act: cancel)
+                    Quick(L("Remove"), act: cancel)
                 }
             }
         }
@@ -465,8 +465,8 @@ struct DownloadsPanel: View {
                 }
                 Spacer(minLength: 8)
                 if hovering {
-                    if keep.stillThere { Quick("Show in Finder", act: reveal) }
-                    Quick("Remove", tint: .red.opacity(0.75), act: forget)
+                    if keep.stillThere { Quick(L("Show in Finder"), act: reveal) }
+                    Quick(L("Remove"), tint: .red.opacity(0.75), act: forget)
                 }
             }
             .padding(.horizontal, 14)

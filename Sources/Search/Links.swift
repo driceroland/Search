@@ -150,7 +150,7 @@ final class Links: NSObject, NSApplicationDelegate {
     /// New Window in the Dock icon's menu, as every browser has it.
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
-        let item = NSMenuItem(title: "New Window", action: #selector(newWindow), keyEquivalent: "")
+        let item = NSMenuItem(title: L("New Window"), action: #selector(newWindow), keyEquivalent: "")
         item.target = self
         menu.addItem(item)
         return menu

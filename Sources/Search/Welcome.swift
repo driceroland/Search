@@ -66,7 +66,7 @@ struct WelcomePanel: View {
                 Text("Search")
                     .font(.system(size: 34, weight: .medium))
                     .foregroundStyle(Palette.ink)
-                Text("A browser with nothing in the way. Four megabytes, the engine already in your Mac, and as little around the page as we could manage.")
+                Text(L("A browser with nothing in the way. Four megabytes, the engine already in your Mac, and as little around the page as we could manage."))
                     .font(.system(size: 14.5))
                     .foregroundStyle(Palette.muted)
                     .multilineTextAlignment(.center)
@@ -78,14 +78,14 @@ struct WelcomePanel: View {
 
     private var bring: some View {
         VStack(alignment: .leading, spacing: 22) {
-            heading("Bring things over.", "Passwords go into your keychain, bookmarks into the menu, and history means the address field already knows where you go. Nothing in the other browser changes.")
+            heading(L("Bring things over."), L("Passwords go into your keychain, bookmarks into the menu, and history means the address field already knows where you go. Nothing in the other browser changes."))
 
             let sources = ImportSource.installed()
             let unreadable = Chromium.unreadable()
             if sources.isEmpty {
                 Text(unreadable.isEmpty
-                     ? "No other browser found on this Mac — nothing to bring."
-                     : unreadable.map { "\($0.source.name) is on this Mac, but nothing of it was found in \($0.looked)." }.joined(separator: "\n"))
+                     ? L("No other browser found on this Mac — nothing to bring.")
+                     : unreadable.map { L("\($0.source.name) is on this Mac, but nothing of it was found in \($0.looked).") }.joined(separator: "\n"))
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.faint)
                     .fixedSize(horizontal: false, vertical: true)
@@ -97,17 +97,17 @@ struct WelcomePanel: View {
                             selection: Binding(get: { source ?? sources[0] }, set: { source = $0 })
                         )
                     } else {
-                        Text("From \(sources[0].name)")
+                        Text(L("From \(sources[0].name)"))
                             .font(.system(size: 13))
                             .foregroundStyle(Palette.muted)
                     }
-                    Choice("Passwords", "macOS will ask once for that browser's keychain key", on: $wantsPasswords)
-                    Choice("Bookmarks", "Folders and all, behind the bookmark button", on: $wantsBookmarks)
-                    Choice("History", "The last few thousand places, for finishing addresses", on: $wantsHistory)
+                    Choice(L("Passwords"), L("macOS will ask once for that browser's keychain key"), on: $wantsPasswords)
+                    Choice(L("Bookmarks"), L("Folders and all, behind the bookmark button"), on: $wantsBookmarks)
+                    Choice(L("History"), L("The last few thousand places, for finishing addresses"), on: $wantsHistory)
                 }
 
                 HStack(spacing: 12) {
-                    Big(bringing ? "Bringing…" : "Bring them in", filled: true) { bringAll() }
+                    Big(bringing ? L("Bringing…") : L("Bring them in"), filled: true) { bringAll() }
                         .disabled(bringing || brought != nil || !(wantsPasswords || wantsHistory || wantsBookmarks))
                     if bringing { Ring(size: 10) }
                     if let brought {
@@ -122,23 +122,23 @@ struct WelcomePanel: View {
 
             // Safari, a browser on another Mac, one Search can't read: what
             // it exported, bookmarks, passwords or Safari's own ZIP.
-            Pill("From a file another browser exported…") { browser.importFile() }
+            Pill(L("From a file another browser exported…")) { browser.importFile() }
         }
     }
 
     private var hold: some View {
         VStack(alignment: .leading, spacing: 22) {
-            heading("Two ways to hold it.", "Titles across the top, or down the side. The grey slides to the tab you pick either way, and you can change your mind with ⇧⌘S.")
+            heading(L("Two ways to hold it."), L("Titles across the top, or down the side. The grey slides to the tab you pick either way, and you can change your mind with ⇧⌘S."))
             HStack(spacing: 12) {
-                Way(title: "Tab strip", sidebar: false, chosen: !prefs.sidebar) {
+                Way(title: L("Tab strip"), sidebar: false, chosen: !prefs.sidebar) {
                     withAnimation(Motion.glide) { prefs.sidebar = false }
                 }
-                Way(title: "Sidebar", sidebar: true, chosen: prefs.sidebar) {
+                Way(title: L("Sidebar"), sidebar: true, chosen: prefs.sidebar) {
                     withAnimation(Motion.glide) { prefs.sidebar = true }
                 }
             }
             HStack(spacing: 12) {
-                Text("Tabs wear")
+                Text(L("Tabs wear"))
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.muted)
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
@@ -148,23 +148,23 @@ struct WelcomePanel: View {
 
     private var links: some View {
         VStack(alignment: .leading, spacing: 22) {
-            heading("Links from other apps.", "A click in Mail, in Slack, in a PDF — macOS sends it to whichever browser is the default. It can be this one.")
+            heading(L("Links from other apps."), L("A click in Mail, in Slack, in a PDF — macOS sends it to whichever browser is the default. It can be this one."))
             HStack(spacing: 12) {
                 if isDefault {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark")
                             .font(.system(size: 11, weight: .medium))
-                        Text("Search is the default browser")
+                        Text(L("Search is the default browser"))
                     }
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.ink)
                 } else {
-                    Big("Make Search the default", filled: true) {
+                    Big(L("Make Search the default"), filled: true) {
                         asked = true
                         Links.becomeDefault { _ in isDefault = Links.isDefault }
                     }
                     if asked, !isDefault {
-                        Text("macOS asks in its own dialog")
+                        Text(L("macOS asks in its own dialog"))
                             .font(.system(size: 13))
                             .foregroundStyle(Palette.faint)
                     }
@@ -173,19 +173,19 @@ struct WelcomePanel: View {
             .animation(Motion.settle, value: isDefault)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("A few things worth knowing")
+                Text(L("A few things worth knowing"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.faint)
                     .textCase(.uppercase)
                     .tracking(0.6)
                     .padding(.top, 6)
-                Key("⌘T", "A new tab. Type a place, or words to search.")
-                Key("⌘K", "Every open tab, by name.")
-                Key("⌘,", "Settings, including passwords and updates.")
-                Key("⌃1", "Spaces: separate tabs and sign-ins. Turn them on in Settings › Tabs.")
-                Key("⌥⌘N", "Split a page in two; ⌃⌘← and ⌃⌘→ go from one page to the other. Turn Split View on in Settings › Tabs.")
-                Key("⌘O", "Links from other apps can open in a small window. Settings › General.")
-                Key("⌘,", "AI summaries and questions about a page — off until you turn it on in Settings › AI.")
+                Key("⌘T", L("A new tab. Type a place, or words to search."))
+                Key("⌘K", L("Every open tab, by name."))
+                Key("⌘,", L("Settings, including passwords and updates."))
+                Key("⌃1", L("Spaces: separate tabs and sign-ins. Turn them on in Settings › Tabs."))
+                Key("⌥⌘N", L("Split a page in two; ⌃⌘← and ⌃⌘→ go from one page to the other. Turn Split View on in Settings › Tabs."))
+                Key("⌘O", L("Links from other apps can open in a small window. Settings › General."))
+                Key("⌘,", L("AI summaries and questions about a page — off until you turn it on in Settings › AI."))
             }
         }
     }
@@ -203,18 +203,18 @@ struct WelcomePanel: View {
             }
             Spacer()
             if page > 0 {
-                Button("Back") { forward = false; page -= 1 }
+                Button(L("Back")) { forward = false; page -= 1 }
                     .buttonStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.muted)
             }
             if page < pages - 1 {
-                Button("Skip") { finish() }
+                Button(L("Skip")) { finish() }
                     .buttonStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.muted)
             }
-            Big(page < pages - 1 ? "Continue" : "Start browsing", filled: true) {
+            Big(page < pages - 1 ? L("Continue") : L("Start browsing"), filled: true) {
                 if page < pages - 1 { forward = true; page += 1 } else { finish() }
             }
             .keyboardShortcut(.defaultAction)
@@ -241,25 +241,25 @@ struct WelcomePanel: View {
                     case .success(let found):
                         let kept = browser.keep(found)
                         ImportRecords.note(source.name, passwords: kept)
-                        lines.append("\(kept) passwords")
+                        lines.append(L("\(kept) passwords"))
                     case .failure(Chromium.Trouble.noPassphrase):
-                        lines.append("passwords: macOS didn't hand over the key — allow it and try again")
+                        lines.append(L("passwords: macOS didn't hand over the key — allow it and try again"))
                     case .failure(Mozilla.Trouble.primaryPassword):
-                        lines.append("passwords: \(source.name) has a primary password — export them from it and bring in the CSV")
+                        lines.append(L("passwords: \(source.name) has a primary password — export them from it and bring in the CSV"))
                     case .failure:
-                        lines.append("passwords: nothing readable")
+                        lines.append(L("passwords: nothing readable"))
                     }
                     group.leave()
                 }
             }
         }
         if wantsBookmarks {
-            lines.append("\(browser.takeBookmarks(from: source, profile: profile).added) bookmarks")
+            lines.append(L("\(browser.takeBookmarks(from: source, profile: profile).added) bookmarks"))
         }
         if wantsHistory {
             group.enter()
             browser.takePlaces(from: source, profile: profile) { count in
-                lines.append("\(count) places")
+                lines.append(L("\(count) places"))
                 group.leave()
             }
         }

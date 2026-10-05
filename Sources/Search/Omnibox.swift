@@ -53,7 +53,7 @@ struct Omnibox: View {
                 // the appear and disappear it had, and the overlay is what
                 // keeps that from moving the field.
                 if !browser.offers.isEmpty || browser.siteOffer != nil {
-                    list
+                    suggestions
                         .frame(width: width)
                         .offset(y: Self.fieldHeight + 8)
                 }
@@ -123,7 +123,7 @@ struct Omnibox: View {
     /// It lives below the field, in an overlay, so arriving or leaving never
     /// moves the field — and the transition that carried it in and out before
     /// is kept, only anchored to its own top edge.
-    private var list: some View {
+    var suggestions: some View {
         VStack(spacing: 0) {
             if let site = browser.siteOffer {
                 SiteOfferRow(site: site)
@@ -243,7 +243,7 @@ private struct SiteIcon: View {
 
 /// The site Tab put in the field: its icon and name, in the field's grey,
 /// before what is typed.
-private struct SiteChip: View {
+struct SiteChip: View {
     let site: SearchSite
     var body: some View {
         HStack(spacing: 6) {
@@ -258,7 +258,7 @@ private struct SiteChip: View {
         .frame(height: 22)
         .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Searching \(site.name)")
+        .accessibilityLabel(L("Searching \(site.name)"))
     }
 }
 
@@ -269,12 +269,12 @@ private struct SiteOfferRow: View {
     var body: some View {
         HStack(spacing: 10) {
             SiteIcon(site: site)
-            Text("Search \(site.name)")
+            Text(L("Search \(site.name)"))
                 .font(.system(size: 13))
                 .foregroundStyle(Palette.ink)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            Text("Tab")
+            Text(L("Tab"))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Palette.muted)
                 .padding(.horizontal, 6)
@@ -288,7 +288,7 @@ private struct SiteOfferRow: View {
         }
         .onHover { hovering = $0 }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Search \(site.name), press Tab")
+        .accessibilityLabel(L("Search \(site.name), press Tab"))
     }
 }
 
@@ -370,6 +370,7 @@ private struct Breath: NSViewRepresentable {
 /// needs a real text field and its delegate.
 struct AddressField: NSViewRepresentable {
     @ObservedObject var browser: Browser
+    var fontSize: CGFloat = 15.5
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 
@@ -379,26 +380,24 @@ struct AddressField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 15.5)
+        field.font = .systemFont(ofSize: fontSize)
         field.textColor = Palette.NS.ink
         field.lineBreakMode = .byTruncatingTail
         field.cell?.usesSingleLineMode = true
         field.cell?.wraps = false
-        // SwiftUI picks its own colour for a placeholder, and on a pale ground
-        // that colour was near-white.
-        field.placeholderAttributedString = NSAttributedString(
-            string: "Enter a web address",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 15.5),
-                .foregroundColor: NSColor(Palette.ink.opacity(0.3)),
-            ]
-        )
         return field
     }
 
     func updateNSView(_ field: NSTextField, context: Context) {
         let coordinator = context.coordinator
         coordinator.browser = browser
+        field.placeholderAttributedString = NSAttributedString(
+            string: L("Enter a web address"),
+            attributes: [
+                .font: NSFont.systemFont(ofSize: fontSize),
+                .foregroundColor: NSColor(Palette.ink.opacity(0.68)),
+            ]
+        )
 
         // Only when something other than typing changed it — ⌘L arriving with
         // an address, a walk through the list, a submit clearing it.
@@ -452,6 +451,23 @@ struct AddressField: NSViewRepresentable {
 
         init(browser: Browser) {
             self.browser = browser
+        }
+
+        func controlTextDidEndEditing(_ note: Notification) {
+            guard browser.prefs.floatingNavigation, browser.active?.isBlank == false else { return }
+            let request = browser.focusRequest
+            weak var window = (note.object as? NSTextField)?.window
+            // Let a suggestion receive its click, but never close an editor
+            // that a newer focus request or a rebuilt address field now owns.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, browser.prefs.floatingNavigation,
+                      browser.editing, browser.focusRequest == request else { return }
+                if let editor = window?.firstResponder as? NSTextView,
+                   (editor.delegate as? NSTextField)?.delegate is Coordinator { return }
+                if let field = window?.firstResponder as? NSTextField,
+                   field.delegate is Coordinator { return }
+                browser.dismiss()
+            }
         }
 
         func controlTextDidChange(_ note: Notification) {

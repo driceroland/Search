@@ -17,8 +17,8 @@ enum Glyph: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .letters: return "Letters"
-        case .icons: return "Site icons"
+        case .letters: return L("Letters")
+        case .icons: return L("Site icons")
         }
     }
 }
@@ -31,8 +31,8 @@ enum SidebarPosition: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .left: return "Left"
-        case .right: return "Right"
+        case .left: return L("Left")
+        case .right: return L("Right")
         }
     }
 }
@@ -40,6 +40,10 @@ enum SidebarPosition: String, CaseIterable, Identifiable {
 @MainActor
 final class Preferences: ObservableObject {
     private let store = Store.settings
+
+    @Published var floatingNavigation: Bool {
+        didSet { store.set(floatingNavigation, forKey: "navigation.floating") }
+    }
 
     /// Back, forward and reload before the tabs rather than after them, with
     /// the tabs across the top. Off unless asked for.
@@ -351,6 +355,7 @@ final class Preferences: ObservableObject {
     }
 
     init() {
+        floatingNavigation = store.bool(forKey: "navigation.floating")
         navigationLeft = store.bool(forKey: "toolbar.left")
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.

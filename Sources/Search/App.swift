@@ -8,6 +8,7 @@ import Combine
 @main
 struct SearchApp: App {
     /// The window in front's browser, for the menus (see Windows.swift).
+    @State private var localization = Localization.shared
     @StateObject private var front = Front.shared
     /// Your own keys (Settings › Shortcuts): the menus are drawn again when
     /// one changes, and show it.
@@ -46,50 +47,50 @@ struct SearchApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 // Another window, with tabs of its own (see Windows.swift).
-                Button("New Window") { Browsers.newWindow() }
+                Button(L("New Window")) { Browsers.newWindow() }
                     .shortcut("file.newWindow")
-                Button("New Tab") { browser.newTab() }
+                Button(L("New Tab")) { browser.newTab() }
                     .shortcut("file.newTab")
-                Button("New Private Tab") { browser.newShyTab() }
+                Button(L("New Private Tab")) { browser.newShyTab() }
                     .shortcut("file.newPrivateTab")
                 Button(browser.reopenTitle) { browser.reopen() }
                     .shortcut("file.reopen")
                     .disabled(browser.ghosts.isEmpty && Browsers.lastClosedAt == nil)
                 Divider()
-                Button("Open Address…") { browser.edit() }
+                Button(L("Open Address…")) { browser.edit() }
                     .shortcut("file.openAddress")
                 Divider()
                 // Another browser's bookmarks, history, passwords and the
                 // rest, as Safari's File › Import From: the one sheet every
                 // other way in opens too.
-                Button("Bring Things Over…") { browser.bringingIn = "" }
+                Button(L("Bring Things Over…")) { browser.bringingIn = "" }
                     .shortcut("file.import")
                 Divider()
-                Button("Close Tab") { browser.closeFront() }
+                Button(L("Close Tab")) { browser.closeFront() }
                     .shortcut("file.closeTab")
             }
             CommandGroup(replacing: .printItem) {
-                Button("Share…") { browser.share() }
+                Button(L("Share…")) { browser.share() }
                     .shortcut("file.share")
                     .disabled(browser.active?.isBlank ?? true)
-                Button("Print…") { browser.printPage() }
+                Button(L("Print…")) { browser.printPage() }
                     .shortcut("file.print")
                     .disabled(browser.active?.isBlank ?? true)
             }
             CommandGroup(after: .pasteboard) {
                 Divider()
-                Button("Find on Page…") { browser.openFind() }
+                Button(L("Find on Page…")) { browser.openFind() }
                     .shortcut("edit.find")
                     .disabled(browser.active?.isBlank ?? true)
-                Button("Find Next") { browser.look(forward: true) }
+                Button(L("Find Next")) { browser.look(forward: true) }
                     .shortcut("edit.findNext")
                     .disabled(!browser.finding)
-                Button("Find Previous") { browser.look(forward: false) }
+                Button(L("Find Previous")) { browser.look(forward: false) }
                     .shortcut("edit.findPrevious")
                     .disabled(!browser.finding)
             }
             CommandGroup(replacing: .toolbar) {
-                Toggle("Show Tabs in Sidebar", isOn: Binding(
+                Toggle(L("Show Tabs in Sidebar"), isOn: Binding(
                     get: { browser.prefs.sidebar },
                     set: { _ in browser.toggleSidebar() }
                 ))
@@ -97,10 +98,10 @@ struct SearchApp: App {
                 // Folded away, not moved (see Fold.swift) — the column, or the
                 // strip across the top.
                 Button(browser.prefs.sidebar
-                       ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
-                       : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
+                       ? (browser.folded ? L("Show Sidebar") : L("Hide Sidebar"))
+                       : (browser.folded ? L("Show Tab Bar") : L("Hide Tab Bar"))) { browser.toggleFold() }
                     .shortcut("view.fold")
-                Picker("Tabs Wear", selection: Binding(
+                Picker(L("Tabs Wear"), selection: Binding(
                     get: { browser.prefs.glyph },
                     set: { browser.prefs.glyph = $0 }
                 )) {
@@ -109,129 +110,129 @@ struct SearchApp: App {
                     }
                 }
                 Divider()
-                Button("Reload Page") { browser.reload() }
+                Button(L("Reload Page")) { browser.reload() }
                     .shortcut("view.reload")
-                Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
+                Button(L("Reload Page From Origin")) { browser.reload(fromOrigin: true) }
                     .shortcut("view.reloadOrigin")
-                Button("Reading Mode") { browser.toggleReader() }
+                Button(L("Reading Mode")) { browser.toggleReader() }
                     .shortcut("view.reader")
-                Button("Float Video") { browser.toggleFloat() }
+                Button(L("Float Video")) { browser.toggleFloat() }
                     .shortcut("view.float")
                 // The AI add-on's, only once it is on (Settings › AI).
                 if browser.prefs.ai {
                     Divider()
-                    Button("Summarize Page") { browser.summarizePage() }
+                    Button(L("Summarize Page")) { browser.summarizePage() }
                         .shortcut("view.summarize")
                         .disabled(browser.active?.isBlank ?? true)
-                    Button("Ask About This Page…") { browser.askAboutPage() }
+                    Button(L("Ask About This Page…")) { browser.askAboutPage() }
                         .shortcut("view.ask")
                         .disabled(browser.active?.isBlank ?? true)
                 }
                 Divider()
-                Button("Hide Elements…") { browser.toggleHiding() }
+                Button(L("Hide Elements…")) { browser.toggleHiding() }
                     .shortcut("view.hide")
-                Button("Hidden on This Site…") { browser.reviewing.toggle() }
+                Button(L("Hidden on This Site…")) { browser.reviewing.toggle() }
                     .shortcut("view.hidden")
                 Divider()
-                Button("Zoom In") { browser.zoom(by: 1.1) }
+                Button(L("Zoom In")) { browser.zoom(by: 1.1) }
                     .shortcut("view.zoomIn")
-                Button("Zoom Out") { browser.zoom(by: 1 / 1.1) }
+                Button(L("Zoom Out")) { browser.zoom(by: 1 / 1.1) }
                     .shortcut("view.zoomOut")
-                Button("Actual Size") { browser.resetZoom() }
+                Button(L("Actual Size")) { browser.resetZoom() }
                     .shortcut("view.actualSize")
                 Divider()
                 // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
-                Button("Web Inspector") { browser.toggleInspector() }
+                Button(L("Web Inspector")) { browser.toggleInspector() }
                     .shortcut("view.inspector")
-                Button("JavaScript Console") { browser.showConsole() }
+                Button(L("JavaScript Console")) { browser.showConsole() }
                     .shortcut("view.console")
-                Button("Inspect Element") { browser.inspectElement() }
+                Button(L("Inspect Element")) { browser.inspectElement() }
                     .shortcut("view.inspect")
             }
-            CommandMenu("Tabs") {
-                Button("Back") { browser.back() }
+            CommandMenu(L("Tabs")) {
+                Button(L("Back")) { browser.back() }
                     .shortcut("tabs.back")
                     .disabled(browser.active?.canGoBack != true)
-                Button("Forward") { browser.forward() }
+                Button(L("Forward")) { browser.forward() }
                     .shortcut("tabs.forward")
                     .disabled(browser.active?.canGoForward != true)
                 Divider()
-                Button("Next Tab") { browser.step(1) }
+                Button(L("Next Tab")) { browser.step(1) }
                     .shortcut("tabs.next")
-                Button("Previous Tab") { browser.step(-1) }
+                Button(L("Previous Tab")) { browser.step(-1) }
                     .shortcut("tabs.previous")
-                Button("Search Tabs…") { browser.summon() }
+                Button(L("Search Tabs…")) { browser.summon() }
                     .shortcut("tabs.search")
                 Divider()
                 if browser.prefs.splitView {
-                    Button("Split Current Page") { browser.startSplit() }
+                    Button(L("Split Current Page")) { browser.startSplit() }
                         .shortcut("tabs.split")
                         .disabled(browser.active == nil || browser.active?.bench == true)
-                    Button("Focus Left Page") { browser.focusPane(onLeft: true) }
+                    Button(L("Focus Left Page")) { browser.focusPane(onLeft: true) }
                         .shortcut("tabs.focusLeftPane")
                         .disabled(browser.activeSplit == nil)
-                    Button("Focus Right Page") { browser.focusPane(onLeft: false) }
+                    Button(L("Focus Right Page")) { browser.focusPane(onLeft: false) }
                         .shortcut("tabs.focusRightPane")
                         .disabled(browser.activeSplit == nil)
-                    Button("Swap Pages") { browser.swapSplit() }
+                    Button(L("Swap Pages")) { browser.swapSplit() }
                         .shortcut("tabs.swapSplit")
                         .disabled(browser.activeSplit == nil)
-                    Button("Separate Split Tabs") {
+                    Button(L("Separate Split Tabs")) {
                         if let tab = browser.active { browser.detachSplit(tab) }
                     }
                     .shortcut("tabs.separateSplit")
                     .disabled(browser.activeSplit == nil)
-                    Button("Close Both Pages") { browser.closeSplit() }
+                    Button(L("Close Both Pages")) { browser.closeSplit() }
                         .disabled(browser.activeSplit == nil)
                     Divider()
                 }
                 if let tab = browser.active {
                     let rows = browser.prefs.showsPinRows
                     if tab.pin == nil {
-                        Button("Pin Tab") { browser.pin(tab) }
+                        Button(L("Pin Tab")) { browser.pin(tab) }
                             .disabled(tab.isBlank || tab.shy)
                         if rows {
-                            Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
+                            Button(L("Pin Tab as Row")) { browser.pin(tab, listed: true) }
                                 .disabled(tab.isBlank || tab.shy)
                         }
                     } else {
                         if rows {
-                            Button(tab.listed ? "Show Pin as Square" : "Show Pin as Row") { browser.setListed(tab, !tab.listed) }
+                            Button(tab.listed ? L("Show Pin as Square") : L("Show Pin as Row")) { browser.setListed(tab, !tab.listed) }
                         }
                         if !(rows && tab.listed) {
-                            Button("Change Letter") { browser.editLetter(tab) }
+                            Button(L("Change Letter")) { browser.editLetter(tab) }
                         }
-                        Button("Unpin Tab") { browser.unpin(tab) }
+                        Button(L("Unpin Tab")) { browser.unpin(tab) }
                     }
                 }
-                Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
+                Button(L("Rename Tab")) { if let tab = browser.active { browser.beginTabRename(tab) } }
                     .shortcut("tabs.rename")
                     .disabled(browser.active == nil)
-                Button("Duplicate Tab") { browser.duplicate() }
+                Button(L("Duplicate Tab")) { browser.duplicate() }
                     .shortcut("tabs.duplicate")
                     .disabled(browser.active?.isBlank ?? true)
-                Button("Copy Address") { browser.copyAddress() }
+                Button(L("Copy Address")) { browser.copyAddress() }
                     .shortcut("tabs.copyAddress")
                     .disabled(browser.active?.isBlank ?? true)
-                Button("Copy as Markdown Link") { browser.copyMarkdownLink() }
+                Button(L("Copy as Markdown Link")) { browser.copyMarkdownLink() }
                     .shortcut("tabs.copyMarkdown")
                     .disabled(browser.active?.isBlank ?? true)
-                Button("Paste and Go") { browser.pasteAndGo() }
+                Button(L("Paste and Go")) { browser.pasteAndGo() }
                     .shortcut("tabs.pasteAndGo")
                 Divider()
-                Button("Close Other Tabs") { if let tab = browser.active { browser.closeOthers(but: tab) } }
+                Button(L("Close Other Tabs")) { if let tab = browser.active { browser.closeOthers(but: tab) } }
                     .shortcut("tabs.closeOthers")
                     .disabled(browser.tabs.count < 2)
-                Button("Stop Sound in Tab") { browser.pauseMedia() }
+                Button(L("Stop Sound in Tab")) { browser.pauseMedia() }
                     .shortcut("tabs.mute")
             }
-            CommandMenu("Bookmarks") {
-                Button(browser.pageKept ? "Edit Bookmark\u{2026}" : "Add This Page") { browser.bookmarkCurrent() }
+            CommandMenu(L("Bookmarks")) {
+                Button(browser.pageKept ? "Edit Bookmark\u{2026}" : L("Add This Page")) { browser.bookmarkCurrent() }
                     .shortcut("bookmarks.add")
                     .disabled(browser.active?.isBlank ?? true)
-                Button("Show Bookmarks…") { browser.bookmarking = true }
+                Button(L("Show Bookmarks…")) { browser.bookmarking = true }
                     .shortcut("bookmarks.show")
-                Toggle("Show Bookmarks Bar", isOn: Binding(
+                Toggle(L("Show Bookmarks Bar"), isOn: Binding(
                     get: { browser.prefs.bookmarksBar },
                     set: { on in withAnimation(Motion.glide) { browser.prefs.bookmarksBar = on } }
                 ))
@@ -239,8 +240,8 @@ struct SearchApp: App {
                 // The bookmarks themselves follow, put in by AppKit (see
                 // BookmarkMenu in Bookmarks.swift).
             }
-            CommandMenu("History") {
-                Section("Recently Visited") {
+            CommandMenu(L("History")) {
+                Section(L("Recently Visited")) {
                     ForEach(browser.recentlyVisited) { trace in
                         Button {
                             browser.open(trace.url, foreground: true)
@@ -250,7 +251,7 @@ struct SearchApp: App {
                     }
                 }
                 if !browser.ghosts.isEmpty {
-                    Section("Recently Closed") {
+                    Section(L("Recently Closed")) {
                         ForEach(browser.ghosts.reversed().prefix(10)) { ghost in
                             Button {
                                 browser.reopen(ghost)
@@ -261,28 +262,28 @@ struct SearchApp: App {
                     }
                 }
                 Divider()
-                Button("Show History…") { browser.recalling = true }
+                Button(L("Show History…")) { browser.recalling = true }
                     .shortcut("history.show")
-                Button("Downloads…") { browser.hoarding = true }
+                Button(L("Downloads…")) { browser.hoarding = true }
                     .shortcut("history.downloads")
                 Divider()
-                Button("Clear Browsing Data…") { browser.recallMode = .clearing }
+                Button(L("Clear Browsing Data…")) { browser.recallMode = .clearing }
                     .shortcut("history.clearData")
-                Button("Clear History") { browser.clearHistory() }
+                Button(L("Clear History")) { browser.clearHistory() }
                     .shortcut("history.clear")
             }
             // Search › Check for Updates…, under About, as in any Mac app.
             CommandGroup(after: .appInfo) { UpdateMenuItem() }
             CommandGroup(after: .appSettings) {
-                Button("Settings…") { browser.tuning = true }
+                Button(L("Settings…")) { browser.tuning = true }
                     .shortcut("app.settings")
-                Button("Welcome…") { browser.welcoming = true }
+                Button(L("Welcome…")) { browser.welcoming = true }
                     .shortcut("app.welcome")
-                Button("Passwords…") { browser.managing = true }
+                Button(L("Passwords…")) { browser.managing = true }
                     .shortcut("app.passwords")
             }
             CommandGroup(replacing: .help) {
-                Button("Send Feedback…") { Links.writeFeedback() }
+                Button(L("Send Feedback…")) { Links.writeFeedback() }
             }
         }
     }
@@ -348,6 +349,7 @@ private final class CursorGroundView: NSView {
 }
 
 struct ContentView: View {
+    @State private var localization = Localization.shared
     @ObservedObject var browser: Browser
 
     @State private var keys: Any?
@@ -511,7 +513,7 @@ struct ContentView: View {
             }
             StoreOffer(browser: browser)
             if browser.veiling {
-                hint("Click anything to hide it   ⌘Z undo   esc done")
+                hint(L("Click anything to hide it   ⌘Z undo   esc done"))
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -528,7 +530,7 @@ struct ContentView: View {
         // SplitStage owns the field whenever Split View is enabled, including
         // an ordinary tab that is not currently paired. Drawing it here too
         // leaves two offset address fields on a blank tab.
-        if browser.fieldShowing, !browser.prefs.splitView {
+        if browser.fieldShowing, !browser.prefs.splitView, !browser.prefs.floatingNavigation {
             Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
@@ -615,8 +617,16 @@ struct ContentView: View {
                     // the title bar's band is page too.
                     .ignoresSafeArea()
             }
+            .overlay(alignment: .top) {
+                if browser.prefs.floatingNavigation, fullscreenTab == nil, let tab = browser.active {
+                    FloatingNavigation(browser: browser, tab: tab)
+                        .padding(.top, browser.fullScreen ? 64 : band + 14)
+                        .ignoresSafeArea()
+                }
+            }
             .overlay { field }
-            .overlay { panels }
+            .overlay { panels.id(localization.language) }
+            .environment(\.locale, localization.locale)
             .overlay { TabSwitcherOverlay(browser: browser, switcher: browser.tabSwitcher) }
             .overlay(alignment: .topTrailing) {
                 if let job = browser.fileImport { ImportProgress(browser: browser, job: job) }
@@ -718,7 +728,7 @@ struct ContentView: View {
                     .foregroundStyle(Palette.ink)
                 // A file just saved: the line shows it in the Finder.
                 if browser.announcedFile != nil {
-                    Text("Show in Finder")
+                    Text(L("Show in Finder"))
                         .foregroundStyle(Palette.muted)
                 }
             }
@@ -744,13 +754,13 @@ struct ContentView: View {
             Image(systemName: ask.wants == "location" ? "location" : ask.wants == "microphone" ? "mic" : ask.wants == "notifications" ? "bell" : "video")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Palette.muted)
-            Text(ask.wants == "location" ? "\(ask.host) wants to know your location"
-                 : ask.wants == "notifications" ? "\(ask.host) wants to send you notifications"
-                 : "\(ask.host) wants to use your \(ask.wants)")
+            Text(ask.wants == "location" ? L("\(ask.host) wants to know your location")
+                 : ask.wants == "notifications" ? L("\(ask.host) wants to send you notifications")
+                 : L("\(ask.host) wants to use your \(ask.wants)"))
                 .font(.system(size: 12.5))
                 .foregroundStyle(Palette.ink)
             Button { ask.once ? browser.allowCaptureOnce() : browser.allowCapture() } label: {
-                Text(ask.once ? "Allow once" : "Allow")
+                Text(ask.once ? L("Allow once") : L("Allow"))
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.ground)
                     .padding(.horizontal, 11)
@@ -760,14 +770,14 @@ struct ContentView: View {
             .buttonStyle(.plain)
             if ask.once, ask.keeps {
                 Button { browser.allowCapture() } label: {
-                    Text("Always allow")
+                    Text(L("Always allow"))
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.ink)
                 }
                 .buttonStyle(.plain)
             }
             Button { browser.denyCapture() } label: {
-                Text("Don't allow")
+                Text(L("Don't allow"))
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
             }
@@ -787,26 +797,26 @@ struct ContentView: View {
         let login = offer.login
         return HStack(spacing: 12) {
             Text(offer.changed
-                 ? "Update the password for \(login.user) on \(login.host)?"
+                 ? L("Update the password for \(login.user) on \(login.host)?")
                  : (login.user.isEmpty
-                    ? "Save this password for \(login.host)?"
-                    : "Save the password for \(login.user) on \(login.host)?"))
+                    ? L("Save this password for \(login.host)?")
+                    : L("Save the password for \(login.user) on \(login.host)?")))
                 .font(.system(size: 12.5))
                 .foregroundStyle(Palette.ink)
                 .lineLimit(1)
-            Button(offer.changed ? "Update" : "Save") { browser.keepOffer() }
+            Button(offer.changed ? L("Update") : L("Save")) { browser.keepOffer() }
                 .buttonStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.ground)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 5)
                 .background(Palette.ink, in: Capsule())
-            Button("Not now") { browser.dropOffer() }
+            Button(L("Not now")) { browser.dropOffer() }
                 .buttonStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.muted)
             if !offer.changed {
-                Button("Never here") { browser.neverOffer() }
+                Button(L("Never here")) { browser.neverOffer() }
                     .buttonStyle(.plain)
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
@@ -1440,20 +1450,22 @@ private struct UpdateMenuItem: View {
     @ObservedObject private var updater = Updater.shared
 
     var body: some View {
+        if Store.localProfile == nil {
         switch updater.stage {
         case .none:
-            Button(updater.checking ? "Checking for Updates…" : "Check for Updates…") { updater.checkByHand() }
+            Button(updater.checking ? L("Checking for Updates…") : L("Check for Updates…")) { updater.checkByHand() }
                 .disabled(updater.checking)
         case .waiting:
-            Button("Install Update") { updater.install() }
+            Button(L("Install Update")) { updater.install() }
         case .fetching:
-            Button("Downloading Update…") {}
+            Button(L("Downloading Update…")) {}
                 .disabled(true)
         case .ready:
-            Button("Restart to Update") { updater.relaunch() }
+            Button(L("Restart to Update")) { updater.relaunch() }
         case .offered:
-            Button(updater.fetchingDisk ? "Downloading Update…" : "Download Update…") { updater.openDisk() }
+            Button(updater.fetchingDisk ? L("Downloading Update…") : L("Download Update…")) { updater.openDisk() }
                 .disabled(updater.fetchingDisk)
+        }
         }
     }
 }
@@ -1504,7 +1516,7 @@ private struct ImportProgress: View {
         .padding(20)
         .transition(.opacity)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Importing \(job.filename), \(job.message)")
+        .accessibilityLabel(L("Importing \(job.filename), \(job.message)"))
     }
 
     private var bar: some View {
@@ -1522,13 +1534,13 @@ private struct ImportProgress: View {
     private var footer: some View {
         HStack {
             if let total = job.total, total > 0 {
-                Text("\(job.completed.formatted()) of \(total.formatted())")
+                Text(L("\(job.completed.formatted()) of \(total.formatted())"))
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.muted)
             }
             Spacer(minLength: 0)
             Button { browser.cancelFileImport() } label: {
-                Text(job.cancelling ? "Cancelling…" : "Cancel")
+                Text(job.cancelling ? L("Cancelling…") : L("Cancel"))
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.ink)
                     .padding(.horizontal, 10)

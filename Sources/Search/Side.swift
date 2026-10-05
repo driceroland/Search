@@ -512,7 +512,7 @@ struct SideBar: View {
     private static let footHeight: CGFloat = 26 + 10
 
     private var newTab: some View {
-        Quiet(icon: "plus", title: "New tab", height: SideBar.row) { browser.newTab() }
+        Quiet(icon: "plus", title: L("New tab"), height: SideBar.row) { browser.newTab() }
             .padding(.top, SideBar.gap)
     }
 
@@ -667,7 +667,7 @@ private struct SideRow: View {
                     Image(systemName: "record.circle")
                         .font(.system(size: 10))
                         .foregroundStyle(colour.opacity(0.8))
-                        .help("Recording")
+                        .help(L("Recording"))
                 }
                 Text(tab.label)
                     .font(.system(size: 12.5))
@@ -843,14 +843,14 @@ struct KeepLine: View {
                     HStack(spacing: 3) {
                         Image(systemName: "arrow.down")
                             .font(.system(size: 8, weight: .semibold))
-                        Text("Clear")
+                        Text(L("Clear"))
                             .font(.system(size: 11))
                     }
                     .foregroundStyle(Palette.muted)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Close the tabs under the line. Pins and groups stay; ⇧⌘T brings them all back.")
+                .help(L("Close the tabs under the line. Pins and groups stay; ⇧⌘T brings them all back."))
                 .transition(.opacity)
             }
         }
@@ -882,7 +882,7 @@ struct Speaker: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(tab.muted ? "Unmute Tab" : "Mute Tab")
+        .help(tab.muted ? L("Unmute Tab") : L("Mute Tab"))
         .animation(Motion.quick, value: hovering)
     }
 }

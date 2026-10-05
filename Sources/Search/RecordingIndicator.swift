@@ -192,7 +192,7 @@ struct PillView: View {
                         .fixedSize()
                     Spacer(minLength: 12)
                     Button { indicator.stop(line.id) } label: {
-                        Text("Stop")
+                        Text(L("Stop"))
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Palette.ground)
                             .padding(.horizontal, 11)
@@ -200,7 +200,7 @@ struct PillView: View {
                             .background(Palette.ink, in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Stop \(line.name)")
+                    .accessibilityLabel(L("Stop \(line.name)"))
                 }
             }
         }
@@ -212,6 +212,6 @@ struct PillView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
         .fixedSize()
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Recording")
+        .accessibilityLabel(L("Recording"))
     }
 }

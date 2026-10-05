@@ -13,3 +13,6 @@ __pycache__/
 *.provisionprofile
 *.p12
 *.mobileprovision
+
+# Local visual-review evidence
+.impeccable/review/

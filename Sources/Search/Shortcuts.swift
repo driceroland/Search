@@ -54,7 +54,7 @@ struct KeyCombo: Codable, Hashable {
     /// As a menu shows it: ⌃⌥⇧⌘ then the key.
     var display: String {
         (control ? "⌃" : "") + (option ? "⌥" : "") + (shift ? "⇧" : "") + (command ? "⌘" : "")
-            + (KeyCombo.symbols[key] ?? key.uppercased())
+            + (key == "space" ? L("Space") : (KeyCombo.symbols[key] ?? key.uppercased()))
     }
 
     private var isFunctionKey: Bool { key.count > 1 && key.hasPrefix("f") && Int(key.dropFirst()) != nil }
@@ -120,17 +120,19 @@ struct KeyCombo: Codable, Hashable {
 struct Command: Identifiable {
     enum Section: String, CaseIterable {
         case app = "Search", file = "File", edit = "Edit", view = "View", tabs = "Tabs", bookmarks = "Bookmarks", history = "History"
+        var title: String { Localization.text(rawValue) }
     }
 
     let id: String
-    let title: String
+    private let titleKey: LocalizedPhrase
+    var title: String { L(titleKey) }
     let section: Section
     let defaultKey: KeyCombo?
     let run: @MainActor (Browser) -> Void
 
-    init(_ id: String, _ title: String, _ section: Section, _ key: KeyCombo?, _ run: @escaping @MainActor (Browser) -> Void) {
+    init(_ id: String, _ title: LocalizedPhrase, _ section: Section, _ key: KeyCombo?, _ run: @escaping @MainActor (Browser) -> Void) {
         self.id = id
-        self.title = title
+        self.titleKey = title
         self.section = section
         self.defaultKey = key
         self.run = run

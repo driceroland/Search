@@ -74,6 +74,7 @@ BINARY="$(swift build "${SWIFTFLAGS[@]}" --show-bin-path)/Search"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/$NAME"
+cp -R "$(dirname "$BINARY")/Search_Search.bundle" "$APP/Contents/Resources/"
 # The AppleScript dictionary (Scripting.swift): read-only, tabs' addresses
 # and titles. The plist below points to it.
 cp Search.sdef "$APP/Contents/Resources/"

@@ -56,7 +56,7 @@ struct SplitTabItem: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Split tabs")
+        .accessibilityLabel(L("Split tabs"))
         .animation(Motion.quick, value: hovered)
     }
 
@@ -93,7 +93,7 @@ struct SplitTabItem: View {
                 }
                 .padding(.trailing, 7)
                 .transition(.opacity)
-                .help(tab.id == left.id ? "Close the left page" : "Close the right page")
+                .help(tab.id == left.id ? L("Close the left page") : L("Close the right page"))
         }
     }
 }
@@ -112,7 +112,7 @@ private struct SplitTabHalf: View {
     @Binding var hovered: Tab.ID?
 
     private var hovering: Bool { hovered == tab.id }
-    private var title: String { tab.label.isEmpty ? "New Tab" : tab.label }
+    private var title: String { tab.label.isEmpty ? L("New Tab") : tab.label }
     private var playing: Bool { !tab.loading && (tab.noisy || tab.muted) }
     private var editing: Bool { browser.editingTab == tab.id }
 
@@ -154,10 +154,10 @@ private struct SplitTabHalf: View {
         handled
             .accessibilityElement(children: editing ? .contain : .ignore)
             .accessibilityLabel(title)
-            .accessibilityValue(focused ? "Focused page" : "")
-            .accessibilityHint(interactive ? "Click to focus this page; right-click for tab actions" : "")
-            .accessibilityAction(named: "Focus page") { browser.focusPane(tab) }
-            .accessibilityAction(named: "Close tab") { if interactive { browser.close(tab) } }
+            .accessibilityValue(focused ? L("Focused page") : "")
+            .accessibilityHint(interactive ? L("Click to focus this page; right-click for tab actions") : "")
+            .accessibilityAction(named: L("Focus page")) { browser.focusPane(tab) }
+            .accessibilityAction(named: L("Close tab")) { if interactive { browser.close(tab) } }
             .help(title)
     }
 
@@ -214,7 +214,7 @@ private struct SplitTabHalf: View {
                     Circle()
                         .fill(Palette.muted)
                         .frame(width: 5, height: 5)
-                        .accessibilityLabel("Asking a question")
+                        .accessibilityLabel(L("Asking a question"))
                 }
                 if !narrow {
                     Text(title)
