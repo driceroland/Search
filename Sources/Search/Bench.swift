@@ -1972,14 +1972,21 @@ final class Bench {
             }
             // What WebKit has handed this side to show, as against what the
             // page has laid out: the size of the page's frame in the layers
-            // it last sent, and of the video's own layer in them.
+            // it last sent, and of the video's own layer in them. And the
+            // picture itself: drawn by another of WebKit's processes into a
+            // layer of its own (`host`, its size, and whether it is shown at
+            // that size or stretched to another) inside the one it has been
+            // given room in (`room`). The two disagree while that process has
+            // still to draw at the new size.
             func drawn() -> [String: Any] {
-                var frame: CGSize?, video: CGSize?, host: [Int] = []
+                var frame: CGSize?, video: CGSize?, host: [Int] = [], room: [Int] = []
                 func walk(_ layer: CALayer) {
                     let name = layer.name ?? ""
                     if frame == nil, name == "frame clipping" { frame = layer.bounds.size }
-                    if host.isEmpty, "\(type(of: layer))" == "CALayerHost", layer.superlayer.map({ "\(type(of: $0))" == "WebAVPlayerLayer" }) == true {
+                    if host.isEmpty, "\(type(of: layer))" == "CALayerHost", let player = layer.superlayer,
+                       "\(type(of: player))" == "WebAVPlayerLayer" {
                         host = [Int(layer.bounds.width), Int(layer.bounds.height), CATransform3DIsIdentity(layer.transform) ? 1 : 0]
+                        room = [Int(player.bounds.width), Int(player.bounds.height)]
                     }
                     if name.contains(" VIDEO "), layer.bounds.width * layer.bounds.height > (video.map { $0.width * $0.height } ?? -1) {
                         video = layer.bounds.size
@@ -1987,7 +1994,8 @@ final class Bench {
                     layer.sublayers?.forEach(walk)
                 }
                 if let root = web.layer { walk(root) }
-                return ["page": frame.map { [Int($0.width), Int($0.height)] } ?? [], "video": video.map { [Int($0.width), Int($0.height)] } ?? [], "host": host]
+                return ["page": frame.map { [Int($0.width), Int($0.height)] } ?? [], "video": video.map { [Int($0.width), Int($0.height)] } ?? [],
+                        "host": host, "room": room]
             }
             // Each time round the run loop that the page is in no window at
             // all: too brief, some of them, for the samples to catch.

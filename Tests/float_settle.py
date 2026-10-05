@@ -11,7 +11,8 @@ apps. The bench records every frame the page draws and, beside it, what
 WebKit has handed over to be drawn and when the covers are up: the video's
 frame over the little window, the page as it was left over the tab. Each
 must come off only once the page has reached the size it stays at, drawn,
-and before its time limit; and going out, the page never leaves a window.
+with the video's own picture drawn at the size it is shown, and before its
+time limit; and going out, the page never leaves a window.
 """
 import functools
 import json
@@ -62,6 +63,15 @@ def when(rows, test):
     return next((r["t"] for r in rows if test(r)), None)
 
 
+def stretched(hosts, after):
+    """Samples from `after` on in which a video's picture, drawn by another
+    of WebKit's processes, is not at the size it is shown: the old picture
+    stretched into a new room, until that process draws again."""
+    return [(h["t"], h["drawn"]["host"][:2], h["drawn"]["room"]) for h in hosts
+            if after is not None and h["t"] >= after and h["drawn"].get("host")
+            and not close(h["drawn"]["host"][:2], h["drawn"]["room"])]
+
+
 def round_trip(t, out, via):
     """Out and back by one way, and what each cover did meanwhile."""
     name = {"key": "⇧⌘P", "switch": "switching tabs", "app": "switching apps"}[via]
@@ -85,6 +95,8 @@ def round_trip(t, out, via):
     t.ok(f"{name}, out: the frame comes off only once the page fills the window, drawn",
          None not in (down, fits, drawn) and fits < down and drawn <= down,
          {"fits": fits, "drawn": drawn, "down": down})
+    t.ok(f"{name}, out: once it is off, the video's picture is drawn at the size it is shown",
+         down is not None and not stretched(hosts, down), stretched(hosts, down)[:3])
     t.ok(f"{name}, out: and before its limit of {LIMIT_OUT} ms",
          None not in (up, down) and down - up < LIMIT_OUT - 20, {"up": up, "down": down})
 
@@ -111,6 +123,8 @@ def round_trip(t, out, via):
          None not in (down, settled, drawn) and settled < down and drawn <= down
          and all(f["t"] < down for f in stale),
          {"settled": settled, "drawn": drawn, "down": down, "stale until": stale[-1]["t"] if stale else None})
+    t.ok(f"{name}, back: once it is off, the video's picture is drawn at the size it is shown",
+         down is not None and not stretched(hosts, down), stretched(hosts, down)[:3])
     t.ok(f"{name}, back: and before its limit of {LIMIT_LAND} ms",
          None not in (up, down) and down - up < LIMIT_LAND - 20, {"up": up, "down": down})
 

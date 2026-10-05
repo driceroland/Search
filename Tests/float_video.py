@@ -6,7 +6,7 @@ holds a playing video under an ancestor that makes a box of its own for
 fixed elements (a transform, a filter, containment…), is drawn only when on
 screen, or is faded out. The isolation script is run on an ordinary tab of
 a hidden probe — the floating window itself is never opened — and the video
-must then fill the page's view and be visible.
+must then fill the page's view, as `contain` fits it, and be visible.
 """
 import functools
 import json
@@ -74,8 +74,11 @@ def main():
             said = sv.cmd({"do": "eval", "id": tab, "js": isolate, "world": "search"}).get("value")
             time.sleep(0.4)
             p = json.loads(sv.cmd({"do": "eval", "id": tab, "js": PROBE}).get("value"))
-            fills = abs(p["x"]) < 1 and abs(p["y"]) < 1 and abs(p["w"] - p["iw"]) < 1 and abs(p["h"] - p["ih"]) < 1
-            t.ok(f"{name}: the video fills the view and is drawn", isinstance(said, dict) and said.get("floating") is True and fills and p["seen"], p)
+            # As large as it goes whole, in the middle: one way it fills the
+            # view, the other it is centred.
+            wide = abs(p["x"]) < 1 and abs(p["w"] - p["iw"]) < 1 and abs(2 * p["y"] + p["h"] - p["ih"]) < 2 and p["h"] <= p["ih"] + 1
+            tall = abs(p["y"]) < 1 and abs(p["h"] - p["ih"]) < 1 and abs(2 * p["x"] + p["w"] - p["iw"]) < 2 and p["w"] <= p["iw"] + 1
+            t.ok(f"{name}: the video fills the view and is drawn", isinstance(said, dict) and said.get("floating") is True and (wide or tall) and p["seen"], p)
             sv.sp("close", id=tab)
     finally:
         t.done(); sv.finish()

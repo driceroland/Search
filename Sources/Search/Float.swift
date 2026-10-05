@@ -947,6 +947,7 @@ final class Settling {
     private var clock: Timer?
     private var then: (() -> Void)?
     private var asking = false
+    private var drawn = false
 
     func watch(_ web: WKWebView, within limit: TimeInterval, then: @escaping () -> Void) {
         stop()
@@ -956,6 +957,12 @@ final class Settling {
             MainActor.assumeIsolated {
                 guard let self, self.clock === timer else { return }
                 guard let web, CACurrentMediaTime() - began < limit else { return self.end() }
+                // The page is drawn as it will stay: only the videos' own
+                // pictures are left to catch up, which this side can see.
+                if self.drawn {
+                    if Settling.picturesFit(web) { self.end() }
+                    return
+                }
                 guard !self.asking else { return }
                 self.asking = true
                 web.evaluateInSearch(Isolate.settled) { answer in
@@ -966,10 +973,12 @@ final class Settling {
                             return
                         }
                         // Laid out as it will stay, and drawn so by the page;
-                        // over once that frame is on screen too. Nothing more
-                        // is asked meanwhile.
+                        // over once that frame is on screen too, video and
+                        // all. Nothing more is asked meanwhile.
                         Settling.afterDrawing(web) {
-                            if self.clock === timer { self.end() }
+                            guard self.clock === timer else { return }
+                            self.drawn = true
+                            if Settling.picturesFit(web) { self.end() }
                         }
                     }
                 }
@@ -993,6 +1002,30 @@ final class Settling {
         }
     }
 
+    /// Whether every video in the page is drawn at the size it is shown.
+    /// WebKit draws a video's picture in another of its processes, into a
+    /// layer of its own inside the room the page gives it, and when the
+    /// room changes size it stretches the old picture to fill it until that
+    /// process draws again at the new size, a third of a second on. A
+    /// player that keeps its video small for longer than that while it
+    /// finds its feet (landing, Isolate.off) has its picture redrawn small,
+    /// and then stretched back up: blurred, or in part of its room, until
+    /// drawn once more. The layers are WebKit's own and unnamed outside it,
+    /// so where they can't be found there is nothing to wait for.
+    private static func picturesFit(_ web: WKWebView) -> Bool {
+        func fits(_ layer: CALayer) -> Bool {
+            if String(describing: type(of: layer)) == "WebAVPlayerLayer" {
+                for host in layer.sublayers ?? [] where String(describing: type(of: host)) == "CALayerHost" {
+                    if abs(host.bounds.width - layer.bounds.width) > 2 || abs(host.bounds.height - layer.bounds.height) > 2 {
+                        return false
+                    }
+                }
+            }
+            return (layer.sublayers ?? []).allSatisfy(fits)
+        }
+        return web.layer.map(fits) ?? true
+    }
+
     /// Over now, whatever the page says: what was waiting is done.
     func end() {
         let then = self.then
@@ -1006,6 +1039,7 @@ final class Settling {
         clock = nil
         then = nil
         asking = false
+        drawn = false
     }
 }
 
@@ -1043,9 +1077,11 @@ enum Isolate {
       if (!window.__officeFloatHome || !(window.__officeFloatLanding || (wait && wait.landing && !wait.settled))) {
         window.__officeFloatHome = {
           box: [r.left + scrollX, r.top + scrollY, r.width, r.height],
+          size: [best.offsetWidth, best.offsetHeight],
           wide: innerWidth, high: innerHeight
         };
       }
+      var size = window.__officeFloatHome.size;
 
       // A landing still waiting for its tab is called off: the page is out
       // again.
@@ -1071,6 +1107,23 @@ enum Isolate {
         // With our top/left at zero, that moves it out of the floating window.
         'transform:none !important; translate:none !important; rotate:none !important; scale:none !important;',
         'opacity:1 !important; object-fit:contain !important; z-index:2147483647 !important}',
+        // Better, where WebKit can divide one length by another: the video
+        // keeps the size it had in its tab, and is only scaled to the
+        // window, as large as it goes whole and in the middle. Made the
+        // window's size, its picture is redrawn at that size by another of
+        // WebKit's processes a third of a second after everything else, and
+        // until then it showed at its old size shrunk with the page, in a
+        // part of the window, before growing to fill it.
+        size[0] && size[1] ? [
+          '@supports (scale: calc(100vw / 1px)) {',
+          'html.office-floating [data-office-float] {',
+          '--office-float-by: min(calc(100vw / ' + size[0] + 'px), calc(100vh / ' + size[1] + 'px));',
+          'right:auto !important; bottom:auto !important; margin:0 !important; box-sizing:border-box !important;',
+          'width:' + size[0] + 'px !important; height:' + size[1] + 'px !important;',
+          'min-width:0 !important; min-height:0 !important; transform-origin:0 0 !important;',
+          'transform:translate(calc((100vw - ' + size[0] + 'px * var(--office-float-by)) / 2),',
+          ' calc((100vh - ' + size[1] + 'px * var(--office-float-by)) / 2)) scale(var(--office-float-by)) !important}}'
+        ].join('') : '',
         // Netflix renders timed text after the video, in a layer of its own
         // beside it or one level up. Keep it above the video without
         // exposing the rest of the player.
