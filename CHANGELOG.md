@@ -32,6 +32,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Reading mode keeps an article's charts and its opening photo. On the FT each chart was an empty band, as every frame but a video's was taken out; frames from the chart makers (Flourish, Datawrapper, Infogram, Tableau, the FT's own, Google Maps) and any frame a site put in a figure now stay at the height the page gave them, the photo the FT keeps just above its article comes too, and a box left empty goes.
 - The hidden column's shadow leaves with it. Sliding back out of the window, the column was gone while its shadow still lay along the window's edge, then vanished at once; it now fades as the column slides and is gone when the column is. The same for the tabs across the top, folded away. Thanks [@Qddog23](https://github.com/Qddog23) for reporting and [@karadoganyi](https://github.com/karadoganyi) for the fix ([#441](https://github.com/driceroland/Search/issues/441), [#462](https://github.com/driceroland/Search/pull/462))
 - ⌘W closes what's in front first: a peek, then a panel over the page (Settings, Bookmarks, Passwords, History, Downloads, What's New…), and only then the tab, in the same order as Escape. With Settings open, ⌘W used to close the page behind it. Thanks [@oddharsh](https://github.com/oddharsh) ([#452](https://github.com/driceroland/Search/pull/452))
 - An extension's items in a page's right-click menu show once: WebKit already puts them there, and Search added them a second time. Thanks [@quanru](https://github.com/quanru) ([#456](https://github.com/driceroland/Search/pull/456))
