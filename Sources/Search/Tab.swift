@@ -1289,6 +1289,14 @@ final class Tab: ObservableObject, Identifiable {
     /// fetched again — nothing is kept behind to make that look otherwise.
     func back() { web.goBack() }
     func forward() { web.goForward() }
+    /// Every page that way, nearest first, for the list a held Back or
+    /// Forward shows. Nothing for a tab whose page was never built.
+    func pages(back: Bool) -> [WKBackForwardListItem] {
+        guard let built else { return [] }
+        return back ? built.backForwardList.backList.reversed() : built.backForwardList.forwardList
+    }
+    /// Straight to a page several steps away, as one step.
+    func go(to item: WKBackForwardListItem) { web.go(to: item) }
 
     /// Called when the tab is thrown away. Without it the view keeps running
     /// whatever the page left behind — timers, video, sockets.

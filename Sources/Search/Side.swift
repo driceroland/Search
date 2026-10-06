@@ -892,12 +892,20 @@ struct Door: View {
     let icon: String
     var on = false
     var help = ""
+    /// What holding the button down opens, as Back and Forward list the
+    /// pages that way. Nil, or a nil menu, and a hold is just a slow click.
+    var held: (() -> NSMenu?)? = nil
     let act: () -> Void
 
     @State private var hovering = false
+    /// The hold opened its menu: the click that ends the press is the
+    /// menu's, not the button's.
+    @State private var opened = false
 
     var body: some View {
-        Button(action: act) {
+        Button {
+            if opened { opened = false } else { act() }
+        } label: {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(on ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
@@ -909,10 +917,52 @@ struct Door: View {
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                guard let menu = held?() else { return }
+                opened = true
+                // Opened under the pointer while the button is still down,
+                // so dragging onto a row and letting go picks it, as in
+                // Safari. popUp returns once the menu has closed.
+                menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+                // The press ended inside the menu, so no click may reach the
+                // button after all; don't let this one swallow the next.
+                DispatchQueue.main.async { opened = false }
+            },
+            isEnabled: held != nil
+        )
+        // A right-click opens the same menu at once, as in Chrome.
+        .overlay { if let held { RightClick(menu: held) } }
         .onHover { hovering = $0 }
         .help(help)
         .animation(Motion.quick, value: hovering)
         .animation(Motion.quick, value: on)
+    }
+}
+
+/// A right-click over a door, and only that. SwiftUI has no right-click of
+/// its own short of a context menu built when the view is drawn, which would
+/// list the pages as they were then. This view answers the hit test only for
+/// a right-click, so every other click and the hover fall through to the
+/// button beneath.
+private struct RightClick: NSViewRepresentable {
+    let menu: () -> NSMenu?
+
+    func makeNSView(context: Context) -> Catcher { Catcher() }
+    func updateNSView(_ view: Catcher, context: Context) { view.pages = menu }
+
+    final class Catcher: NSView {
+        var pages: (() -> NSMenu?)?
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent, event.type == .rightMouseDown else { return nil }
+            return super.hitTest(point)
+        }
+
+        override func rightMouseDown(with event: NSEvent) {
+            guard let menu = pages?() else { return }
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        }
     }
 }
 
