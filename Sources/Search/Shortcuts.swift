@@ -34,7 +34,8 @@ struct KeyCombo: Codable, Hashable {
     init?(event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let named = KeyCombo.names[event.keyCode] ?? ContentView.digits[event.keyCode].map(String.init)
-        guard let key = named ?? event.characters(byApplyingModifiers: [])?.lowercased(), !key.isEmpty else { return nil }
+        let key = named ?? event.shortcutKey
+        guard !key.isEmpty else { return nil }
         self.init(key, command: flags.contains(.command), shift: flags.contains(.shift),
                   option: flags.contains(.option), control: flags.contains(.control))
     }

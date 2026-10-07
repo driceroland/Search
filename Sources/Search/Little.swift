@@ -70,7 +70,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// Everything else is the page's.
     func take(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let key = event.shortcutCharacters
         if event.keyCode == 53 && flags.isEmpty || key == "w" && flags == .command {
             window.performClose(nil)
             return true
