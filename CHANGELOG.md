@@ -80,6 +80,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Esc on a question over a panel answers the question. With a bookmarks folder's “Remove?” up over the bookmarks panel, Esc closed the panel and left the question up. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#502](https://github.com/driceroland/Search/pull/502))
 - A small window for a link from another app says so when its page fails to load, with Try again, as a tab does. It used to stay blank. Thanks [@oddharsh](https://github.com/oddharsh) ([#491](https://github.com/driceroland/Search/pull/491))
 - A long address can be read and edited all the way along, in the tab and in the address field on a new tab: the field never scrolled, so what ran past its edge was cut off and the caret, Home and End, ⌘← and ⌘→ and a click couldn't reach it. Thanks [@shohruxsaidov](https://github.com/shohruxsaidov) for reporting and [@razbyskov](https://github.com/razbyskov) for the fix ([#517](https://github.com/driceroland/Search/issues/517), [#555](https://github.com/driceroland/Search/pull/555))
+- ⌘N from a window in full screen opens the new window in full screen too, in a Space of its own, as Safari and Chrome do. It used to open over the full-screen window, as large as the screen. Thanks [@wouter-deen](https://github.com/wouter-deen) for reporting and [@jorgelso](https://github.com/jorgelso) for the fix ([#515](https://github.com/driceroland/Search/issues/515), [#531](https://github.com/driceroland/Search/pull/531))
 
 ## 1.0.4 — 27 September 2026
 
