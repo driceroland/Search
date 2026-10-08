@@ -4717,7 +4717,11 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        guard let tab = tab(for: webView) else { return }
+        guard let tab = tab(for: webView) else {
+            // A small window's page came: what failed before it is over.
+            littleTab(for: webView)?.failure = nil
+            return
+        }
         tab.didCommit()
         tab.extensionReturn.finished(navigation)
         if tab.id == activeID {
@@ -4775,7 +4779,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     private func fail(_ webView: WKWebView, _ error: Error) {
-        tab(for: webView)?.uncover()
+        let tab = tab(for: webView) ?? littleTab(for: webView)
+        tab?.uncover()
         let nsError = error as NSError
         let code = nsError.code
         // Cancelled is not a failure: it's what a redirect, a stopped load, or
@@ -4787,7 +4792,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // page didn't load" over a download that had worked — clicked again,
         // it downloaded again.
         guard !(nsError.domain == "WebKitErrorDomain" && code == 102) else { return }
-        tab(for: webView)?.failure = message(for: code)
+        tab?.failure = message(for: code)
     }
 
     private func message(for code: Int) -> String {
@@ -4809,6 +4814,13 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     func tab(for webView: WKWebView) -> Tab? {
         tabs.first { $0.built === webView }
+    }
+
+    /// A small window's tab (see Little.swift). This browser looks after its
+    /// pages without it being one of its tabs, so tab(for:) never finds it,
+    /// and a link that failed to load there left the window blank.
+    private func littleTab(for webView: WKWebView) -> Tab? {
+        LittleWindow.all.first { $0.tab.built === webView }?.tab
     }
 
     /// The tab a page belongs to, in the space on screen or another: a page

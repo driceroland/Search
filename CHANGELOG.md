@@ -78,6 +78,7 @@ in [ROADMAP.md](ROADMAP.md).
 - A site that changes its icon after it has loaded, as GitHub does with its theme, shows the new one, and a site's light and dark icons no longer take each other's place. Thanks [@keyding](https://github.com/keyding) for reporting ([#423](https://github.com/driceroland/Search/issues/423))
 - Pins and pinned tabs brought over from Arc wear their icons at once, taken from Arc's own icons as the bookmarks' are, instead of a letter until each page was opened. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#424](https://github.com/driceroland/Search/pull/424), [#416](https://github.com/driceroland/Search/issues/416))
 - Esc on a question over a panel answers the question. With a bookmarks folder's “Remove?” up over the bookmarks panel, Esc closed the panel and left the question up. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#502](https://github.com/driceroland/Search/pull/502))
+- A small window for a link from another app says so when its page fails to load, with Try again, as a tab does. It used to stay blank Thanks [@oddharsh](https://github.com/oddharsh) ([#491](https://github.com/driceroland/Search/pull/491))
 
 ## 1.0.4 — 27 September 2026
 

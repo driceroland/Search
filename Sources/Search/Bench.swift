@@ -2211,6 +2211,7 @@ final class Bench {
             }
             answer([
                 "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" },
+                "failures": LittleWindow.all.map { $0.tab.failure ?? "" },
                 "tabs": browser.tabs.map { ($0.pin != nil ? "PIN " : "") + ($0.address?.host() ?? "blank") },
                 "active": browser.active?.address?.host() ?? "",
             ])
