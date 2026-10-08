@@ -65,7 +65,7 @@ struct SearchApp: App {
                 Button("Bring Things Over…") { browser.bringingIn = "" }
                     .shortcut("file.import")
                 Divider()
-                Button("Close Tab") { if let tab = browser.active { browser.close(tab) } }
+                Button("Close Tab") { browser.closeFront() }
                     .shortcut("file.closeTab")
             }
             CommandGroup(replacing: .printItem) {
@@ -1073,12 +1073,13 @@ struct ContentView: View {
     }
 
     /// Whether the tab switcher can come up: in this window, with nothing
-    /// over the page it would have to cover.
+    /// over the page it would have to cover. The find bar isn't one: it sits
+    /// in a corner, stays open, and looks again on the tab picked (#553).
     private func canSwitchTabs(_ event: NSEvent) -> Bool {
         guard let window, event.window === window else { return false }
         return !browser.tuning && !browser.recalling && !browser.hoarding &&
             !browser.bookmarking && !browser.welcoming && !browser.managing &&
-            !browser.reviewing && !browser.finding && !browser.bookmarksOpen &&
+            !browser.reviewing && !browser.bookmarksOpen &&
             !browser.veiling && !browser.summoning && !browser.makingSpace &&
             browser.peekTab == nil && browser.editingTab == nil &&
             browser.asking == nil && browser.offering == nil && browser.suggesting == nil
@@ -1090,6 +1091,10 @@ struct ContentView: View {
     ]
 
     private func take(_ event: NSEvent) -> Bool {
+        // A question hanging from the window (Ask) answers its own keys. Esc
+        // there is its Cancel: taken here, it closed the panel under it and
+        // left the question up, with Return still on its first button.
+        if event.window?.sheetParent != nil { return false }
         // A small window's keys are its own (see Little.swift).
         if let little = LittleWindow.owning(event.window) { return little.take(event) }
         // An extension's popup window: ⌘W closes it, not a tab of the
@@ -1144,38 +1149,8 @@ struct ContentView: View {
                 withAnimation(Motion.glide) { browser.makingSpace = false }
                 return true
             }
-            if browser.notesShowing {
-                browser.notesShowing = false
-                return true
-            }
-            if browser.newsShowing {
-                browser.newsShowing = false
-                return true
-            }
-            if browser.tuning {
-                browser.tuning = false
-                return true
-            }
-            if browser.bookmarking {
-                browser.bookmarking = false
-                return true
-            }
-            if browser.managing {
-                browser.managing = false
-                return true
-            }
-            if browser.bringingIn != nil {
-                browser.bringingIn = nil
-                return true
-            }
-            if browser.recalling {
-                browser.recalling = false
-                return true
-            }
-            if browser.hoarding {
-                browser.hoarding = false
-                return true
-            }
+            // The same panels in the same order as ⌘W (Browser.closeFront).
+            if browser.closePanel() { return true }
             if browser.suggesting != nil {
                 browser.dropChoice()
                 return true
@@ -1428,11 +1403,7 @@ struct ContentView: View {
         case "0":
             browser.resetZoom()
         case "w" where !shifted:
-            if browser.peekTab != nil {
-                browser.closePeek()
-            } else if let tab = browser.active {
-                browser.close(tab)
-            }
+            browser.closeFront()
         case "l" where !shifted:
             browser.edit()
         case "r" where !shifted:
