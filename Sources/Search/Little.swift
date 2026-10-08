@@ -136,8 +136,14 @@ struct LittleView: View {
             .frame(height: 34)
             ZStack {
                 WebStage(page: tab.built ?? tab.web)
+                // A page that never came says so, with Try again, as in a tab.
+                if let failure = tab.failure {
+                    Trouble(message: failure) { tab.reload() }
+                        .transition(.opacity)
+                }
                 Swiping(pull: tab.pull)
             }
+            .animation(Motion.quick, value: tab.failure)
             .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
         }
         .background(Palette.ground)

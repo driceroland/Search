@@ -2392,8 +2392,9 @@ enum ExtensionShims {
         };
         // Extension pages are never an extension's to reach, as in Chrome,
         // where such a pattern isn't even valid (see
-        // Extensions.reachesExtensions): never held, never asked for.
-        const extensionPages = (origins) => origins.some((o) => /^(chrome|webkit)-extension:/i.test(String(o)));
+        // Extensions.reachesExtensions): never held, never asked for. Nor
+        // files, as in Chrome with file access left off (Extensions.reachesFiles).
+        const extensionPages = (origins) => origins.some((o) => /^((chrome|webkit)-extension|file):/i.test(String(o)));
         put(p, "contains", withCb(async ({ permissions = [], origins = [] }) => {
           const { theirs, mine, unknown } = split(permissions);
           if (unknown.length || extensionPages(origins)) return false;
@@ -2673,11 +2674,14 @@ enum ExtensionShims {
           return port;
         };
         const connect = runtime.connect;
-        // Only a port to the extension itself: another extension would hear
-        // the numbered wrapper, not the message.
+        // Only a port to the extension itself, and never a content script's:
+        // another extension would hear the numbered wrapper, not the message,
+        // and a content script's port reaches the worker with the website as
+        // sender, so the worker leaves it plain; numbering one end only hides
+        // its messages from the extension.
         put(runtime, "connect", (...args) => {
           const port = connect.apply(runtime, args);
-          return typeof args[0] === "string" && args[0] !== runtime.id ? port : number(port);
+          return inContent || (typeof args[0] === "string" && args[0] !== runtime.id) ? port : number(port);
         });
         const onConnect = runtime.onConnect;
         const add = onConnect.addListener, remove = onConnect.removeListener, has = onConnect.hasListener;
@@ -3497,7 +3501,7 @@ enum ExtensionShims {
         case "downloads.download":
             let spec = first as? [String: Any] ?? [:]
             guard let url = (spec["url"] as? String).flatMap(URL.init(string:)) else { throw Unsupported(what: "No url to download") }
-            guard let web = browser.active?.built ?? browser.tabs.lazy.compactMap(\.built).first else {
+            guard let web = ExtensionShims.downloadPage(active: browser.active, tabs: browser.tabs) else {
                 throw Unsupported(what: "No page to download through")
             }
             if let name = spec["filename"] as? String, !name.isEmpty {
@@ -3830,7 +3834,7 @@ enum ExtensionShims {
             let found = context.webExtension
             let wanted = ((first as? [String]) ?? []).map { WKWebExtension.Permission(rawValue: $0) }
             let origins = ((args.dropFirst().first as? [String]) ?? []).compactMap { try? WKWebExtension.MatchPattern(string: $0) }
-                .filter { !Extensions.reachesExtensions($0) }
+                .filter { !Extensions.withheld($0) }
             let named = found.requestedPermissions.union(found.optionalPermissions)
             // Sites as the manifest names them, optional ones included —
             // which allRequestedMatchPatterns leaves out.
@@ -4157,6 +4161,14 @@ enum ExtensionShims {
 
     /// Popups extensions set for their buttons: per tab, or "*" for all.
     static var popups: [String: [String: String]] = [:]
+    /// The page an extension's downloads.download goes through: the tab in
+    /// front, or another of yours, never a private tab — a download goes
+    /// with the sign-ins of the page it's made through, and a private tab's
+    /// are its own, whatever the extension may see.
+    static func downloadPage(active: Tab?, tabs: [Tab]) -> WKWebView? {
+        ([active].compactMap { $0 } + tabs).filter { !$0.shy }.lazy.compactMap(\.built).first
+    }
+
     /// Downloads an extension asked for, by address, until they land; then
     /// the files they became, which are the only ones it may open.
     static var askedDownloads: [URL: String] = [:]

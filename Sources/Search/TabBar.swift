@@ -840,6 +840,11 @@ struct TabAddressField: NSViewRepresentable {
         field.textColor = Palette.NS.ink
         field.cell?.usesSingleLineMode = true
         field.cell?.wraps = false
+        // Without this the field editor stays as wide as the field: the text
+        // past the edge is cut off, and the caret, Home/End and a click can't
+        // reach it. Scrollable, the editor grows to the text and follows the caret.
+        field.cell?.isScrollable = true
+        field.lineBreakMode = .byClipping
         field.stringValue = browser.tabDraft
         context.coordinator.watch(field)
         // The site card stands under whichever field the address is in.
@@ -1084,7 +1089,7 @@ struct TabMenu: View {
             .disabled(browser.tabs.count < 2)
         // ⌘⇧T, and the History menu's Recently Closed, where few think to
         // look for it: here too, where tabs are closed.
-        Button("Reopen Closed Tab") { browser.reopen() }
+        Button(browser.reopenTitle) { browser.reopen() }
             .disabled(browser.ghosts.isEmpty)
     }
 }

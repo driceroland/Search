@@ -599,6 +599,8 @@ final class Bench {
                 "settings": browser.tuning,
                 "welcome": browser.welcoming,
                 "passwords": browser.managing,
+                // A question hanging from the window (Ask), still unanswered.
+                "sheet": browser.window?.attachedSheet != nil,
                 "history": browser.recalling,
                 "downloads": browser.hoarding,
                 "bookmarks": browser.bookmarking,
@@ -704,7 +706,10 @@ final class Bench {
                 guard let event = NSEvent.keyEvent(
                     with: type, location: .zero, modifierFlags: flags,
                     timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: (browser.window ?? Links.window)?.windowNumber ?? 0, context: nil,
+                    // "sheet": to the question hanging from the window, as a
+                    // key typed while it is up goes to it.
+                    windowNumber: (request["sheet"] as? Bool == true ? browser.window?.attachedSheet : nil)?.windowNumber
+                        ?? (browser.window ?? Links.window)?.windowNumber ?? 0, context: nil,
                     characters: chars, charactersIgnoringModifiers: chars,
                     isARepeat: repeats && type == .keyDown, keyCode: UInt16(code)
                 ) else { continue }
@@ -1152,6 +1157,17 @@ final class Bench {
                         "total": browser.bookmarks.count, "top": browser.bookmarks.roots.map(\.title), "saved": browser.saved.count])
             }
 
+        case "remove-folder":
+            // The bookmarks list's Remove on a top-level folder, question and
+            // all: the real sheet, which `press` with "sheet" answers. Only on
+            // a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "remove-folder only works on a --test run"]); return }
+            guard let title = request["title"] as? String,
+                  let folder = browser.bookmarks.roots.first(where: { $0.isFolder && $0.title == title })
+            else { answer(["error": "no top-level folder by that title"]); return }
+            browser.bookmarks.askRemove(folder)
+            answer(["asked": title])
+
         case "import-file-start":
             guard Store.testing else { answer(["error": "import-file only works on a --test run"]); return }
             guard let path = request["path"] as? String else { answer(["error": "import-file needs a path"]); return }
@@ -1179,6 +1195,22 @@ final class Bench {
             guard Store.testing else { answer(["error": "menu only works on a --test run"]); return }
             guard let main = NSApp.mainMenu, let menu = main.items.first(where: { $0.title == "Bookmarks" })?.submenu
             else { answer(["error": "no Bookmarks menu"]); return }
+            // "peek": only what is in it now, nothing opened or filled — to
+            // see what an update while it is open left of the bookmarks.
+            // "shown"/"hidden": the menu told it opened or closed, as tracking would.
+            if request["shown"] as? Bool == true {
+                NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: main)
+                menu.delegate?.menuWillOpen?(menu)
+            }
+            if request["swiftui"] as? Bool == true { BookmarkMenu.shared.swiftUIUpdate() }
+            if request["hidden"] as? Bool == true {
+                menu.delegate?.menuDidClose?(menu)
+                NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: main)
+            }
+            if request["peek"] as? Bool == true {
+                answer(["ours": BookmarkMenu.shared.count, "items": menu.items.count])
+                return
+            }
             let before = menu.items.count
             let wrapped = menu.delegate.map { "\(type(of: $0))" } ?? "none"
             let start = CACurrentMediaTime()
@@ -2179,6 +2211,7 @@ final class Bench {
             }
             answer([
                 "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" },
+                "failures": LittleWindow.all.map { $0.tab.failure ?? "" },
                 "tabs": browser.tabs.map { ($0.pin != nil ? "PIN " : "") + ($0.address?.host() ?? "blank") },
                 "active": browser.active?.address?.host() ?? "",
             ])
@@ -2356,7 +2389,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "accounts", "find", "answer", "visible", "ai", "notifications",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "accounts", "find", "answer", "visible", "ai", "notifications",
             ]])
         }
     }
@@ -2710,6 +2743,9 @@ final class Bench {
             "pins": browser.tabs.filter { $0.pin != nil }.map { Bench.short($0) },
             // Every pin kept as a row, drawn so or not (Tab.listed).
             "listed": browser.tabs.filter { $0.pin != nil && $0.listed }.map { Bench.short($0) },
+            // What ⇧⌘T would bring back, as its menu item says it.
+            "reopenTitle": browser.reopenTitle,
+            "ghosts": browser.ghosts.count,
             // What pages of the pair asked, oldest first (see PaneQuestion).
             "questions": browser.paneQuestions.map { question in
                 ["tab": short(question.tab), "host": question.host, "message": question.message,
