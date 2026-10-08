@@ -455,10 +455,10 @@ struct Helm: View {
             let back = !tab.isBlank && tab.canGoBack
             let forward = !tab.isBlank && tab.canGoForward
             HStack(spacing: 4) {
-                Door(icon: "chevron.left", help: "Back   ⌘[") { browser.back() }
+                Door(icon: "chevron.left", help: "Back   ⌘[", held: { Rewind.menu(tab, back: true) }) { browser.back() }
                     .disabled(!back)
                     .opacity(back ? 1 : 0.3)
-                Door(icon: "chevron.right", help: "Forward   ⌘]") { browser.forward() }
+                Door(icon: "chevron.right", help: "Forward   ⌘]", held: { Rewind.menu(tab, back: false) }) { browser.forward() }
                     .disabled(!forward)
                     .opacity(forward ? 1 : 0.3)
                 // Reload, or stop while it is still coming.
@@ -475,6 +475,48 @@ struct Helm: View {
             .animation(Motion.quick, value: forward)
             .animation(Motion.quick, value: tab.loading)
         }
+    }
+}
+
+/// Back or Forward held: every page that way, nearest at the top, each with
+/// its site's mark, as Safari and Chrome list them. Picking one goes straight
+/// there, however many steps away. Read when the menu opens, so it is never
+/// a page behind.
+@MainActor
+enum Rewind {
+    static func menu(_ tab: Tab, back: Bool) -> NSMenu? {
+        let pages = tab.pages(back: back)
+        guard !pages.isEmpty else { return nil }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for page in pages {
+            let title = page.title.flatMap { $0.isEmpty ? nil : $0 } ?? page.url.host() ?? page.url.absoluteString
+            let item = Pick(title: title) { [weak tab] in tab?.go(to: page) }
+            item.toolTip = page.url.absoluteString
+            if let site = Favicons.site(page.url), let image = Favicons.shared.cached(site)?.copy() as? NSImage {
+                image.size = NSSize(width: 16, height: 16)
+                item.image = image
+            } else {
+                item.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+            }
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    /// A menu row that runs its own closure, its own target.
+    private final class Pick: NSMenuItem {
+        private let run: () -> Void
+
+        init(title: String, run: @escaping () -> Void) {
+            self.run = run
+            super.init(title: title, action: #selector(fire), keyEquivalent: "")
+            target = self
+        }
+
+        required init(coder: NSCoder) { fatalError() }
+
+        @objc private func fire() { run() }
     }
 }
 
