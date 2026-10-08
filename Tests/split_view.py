@@ -14,11 +14,13 @@ hand on a release candidate.
 import hashlib
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
 import threading
 import time
+import uuid
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -58,7 +60,55 @@ started = set()
 def running(): return set(subprocess.run(["pgrep", "-f", APP + "/Contents/MacOS"], capture_output=True, text=True).stdout.split())
 def holding(): return set(subprocess.run(["lsof", "-t", "--", SOCK], capture_output=True, text=True).stdout.split()) if os.path.exists(SOCK) else set()
 def pids(): return sorted((started & running()) | (holding() & running()))
+WEBKIT = f"{HOME}/Library/WebKit/com.officecommun.search"
+def stores():
+    """The WebKit stores this world's runs made, where WebKit keeps them and
+    named as the app names them (Store.probeStore, Spaces.store): its
+    websites', its extensions', and one for each of its spaces with sign-ins
+    of its own, read from its own list of spaces and of spaces it was still
+    erasing. Only those: a real Search's spaces keep their stores beside
+    them, and a store is never guessed at by its look."""
+    h = 2166136261
+    for byte in W.encode(): h = ((h ^ byte) * 16777619) & 0xFFFFFFFF
+    probe = lambda kind: f"5E4C{h >> 16:04X}-{h & 0xFFFF:04X}-4000-8000-{kind:012X}"
+    found = [f"{WEBKIT}/WebsiteDataStore/{probe(1).lower()}", f"{WEBKIT}/WebExtensions/{probe(2)}"]
+    ids = []
+    try:
+        ids += [space["id"] for space in json.load(open(f"{SUPPORT}/spaces.json")) if space.get("sharesSignIns") is not True]
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    erasing = subprocess.run(["defaults", "read", SUITE, "spaces.erasing"], capture_output=True, text=True).stdout
+    ids += re.findall(r"[0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}", erasing)
+    for id in ids:
+        try: id = str(uuid.UUID(id))
+        except (ValueError, AttributeError, TypeError): continue
+        # The first space is signed in where the world is: no store of its own.
+        if id != FIRST_SPACE:
+            found.append(f"{WEBKIT}/WebsiteDataStore/{id}")
+    return found
+# The real Search's folder, beside whose stores these are removed.
+REAL = f"{HOME}/Library/Application Support/Search"
+FIRST_SPACE = "00000000-0000-0000-0000-000000000001"
+def guarded():
+    """Store ids no wipe removes, whatever stores() names: every space of the
+    real Search's own list, and the first space's fixed id. A wrong hash, or
+    a test world's list holding a real space's id, then never reaches a real
+    space's sign-ins: rm -rf runs in the folder where those live."""
+    ids = {FIRST_SPACE}
+    try:
+        ids |= {str(uuid.UUID(space["id"])) for space in json.load(open(f"{REAL}/spaces.json"))}
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        pass
+    return ids
 def wipe():
+    # The stores first: which spaces had one is in the folder and settings
+    # about to go.
+    keep = guarded()
+    for path in stores():
+        if os.path.basename(path).lower() in keep:
+            print(f"wipe: not removing {path}: the real Search's spaces use that id", file=sys.stderr)
+            continue
+        subprocess.run(["rm", "-rf", path])
     subprocess.run(["rm", "-rf", SUPPORT]); subprocess.run(["defaults", "delete", SUITE], capture_output=True)
 def probe(pid):
     names = subprocess.run(["lsof", "-a", "-U", "-p", pid, "-Fn"], capture_output=True, text=True).stdout
