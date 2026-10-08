@@ -2652,6 +2652,9 @@ final class Bench {
 
         case "save":
             browser.writeSession(now: true)
+            // And pins.json, which goes by the Disk queue: a test reads it
+            // the moment this answers, and a busy machine can leave it behind.
+            Disk.drain()
             reply()
 
         case "closeOthers":
