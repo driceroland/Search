@@ -67,7 +67,7 @@ final class PaneStage: NSView {
     fileprivate var tabs: [Tab] = []
     fileprivate var split: TabSplit?
     private var focused: Tab.ID?
-    private var findBar: NSHostingView<FindBar>?
+    private var findBar: FindHost?
     private var findWidth: CGFloat?
 
     /// The controls belong to the stage so they stay above WebKit, below
@@ -80,7 +80,7 @@ final class PaneStage: NSView {
             return
         }
         if findBar == nil {
-            let bar = NSHostingView(rootView: FindBar(browser: browser))
+            let bar = FindHost(rootView: FindBar(browser: browser))
             findBar = bar
             addSubview(bar, positioned: .above, relativeTo: nil)
         }
@@ -746,5 +746,15 @@ extension PaneStage {
             func box(_ r: CGRect) -> [Double] { [r.minX, r.minY, r.width, r.height].map { Double($0) } }
             return ["from": box(start), "to": box(end), "now": box(now)]
         }
+    }
+}
+
+/// The find bar's box over the page's corner is wider and taller than its
+/// pill; a press where the pill isn't goes to the page under it, rather than
+/// to the box, which would have kept the click or carried the window off.
+private final class FindHost: NSHostingView<FindBar> {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
     }
 }
