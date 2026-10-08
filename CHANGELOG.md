@@ -85,6 +85,7 @@ in [ROADMAP.md](ROADMAP.md).
 - A tab that goes from one local site to another on the same host, such as localhost:3000 to localhost:5173, changes to the new site's icon at once instead of keeping the old one until the page has loaded, and an icon brought over from another browser for a page on a port never falls back to the one for the same host without it. Thanks [@theosementa](https://github.com/theosementa) ([#575](https://github.com/driceroland/Search/pull/575))
 - Bringing Arc's spaces over keeps the names of its folders even when tab groups are off, as the session already keeps them: the folders were thrown away as they arrived, so turning tab groups on afterwards found nothing left and the only way back was to bring Arc over again. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#478](https://github.com/driceroland/Search/issues/478), [#494](https://github.com/driceroland/Search/pull/494))
 - Download Linked File in a link's right-click menu saves the file. It did nothing: WebKit fetched the file and had nowhere to put it. Thanks [@Aaditya2605](https://github.com/Aaditya2605) ([#505](https://github.com/driceroland/Search/pull/505))
+- The folded column slides out over the page more smoothly, in full screen above all: its shadow was drawn again from every row and icon in it on each frame of the slide, down the column's whole height, and now falls from the plain ground under it, which looks the same. Thanks [@oddharsh](https://github.com/oddharsh) ([#499](https://github.com/driceroland/Search/pull/499))
 
 ### Held back
 
