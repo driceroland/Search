@@ -214,11 +214,11 @@ final class Preferences: ObservableObject {
         }
     }
     /// Pages draw at 120 frames a second on a screen that can (see FrameRate.swift).
-    /// Off unless asked for.
-    @Published var fastPages: Bool {
+    /// Never unless asked for.
+    @Published var fastPages: FastPages {
         didSet {
-            store.set(fastPages, forKey: "pages.120")
-            FrameRate.fast = fastPages
+            store.set(fastPages.rawValue, forKey: "pages.120.mode")
+            FrameRate.mode = fastPages
         }
     }
     /// Shift-click on a link opens it in a panel over the page (see
@@ -457,9 +457,11 @@ final class Preferences: ObservableObject {
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls
-        let fast = store.bool(forKey: "pages.120")
+        // "pages.120" was a switch before it was three choices: on is now always.
+        let fast = store.string(forKey: "pages.120.mode").flatMap(FastPages.init)
+            ?? (store.bool(forKey: "pages.120") ? .always : .never)
         fastPages = fast
-        FrameRate.fast = fast
+        FrameRate.mode = fast
         // Left behind by the Web Inspector's switch, from before it was
         // always there.
         store.removeObject(forKey: "inspector")

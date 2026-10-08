@@ -68,7 +68,7 @@ enum WhatsNew {
         Toggle(title: "Float the video when you switch apps", detail: "A playing video follows you out into a small window.",
                since: "1.0.2", get: { $0.floatsAway }, set: { $0.floatsAway = $1 }),
         Toggle(title: "Pages at 120 Hz", detail: "Smoother scrolling and animations on screens that can. Uses more battery.",
-               since: "1.0.2", get: { $0.fastPages }, set: { $0.fastPages = $1 }),
+               since: "1.0.2", get: { $0.fastPages != .never }, set: { $0.fastPages = $1 ? .always : .never }),
         Toggle(title: "Scroll with the middle button", detail: "Click the wheel, then move the mouse to scroll, as on Windows.",
                since: "1.0.3", get: { $0.autoScroll }, set: { $0.autoScroll = $1 }),
     ]

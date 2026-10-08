@@ -317,8 +317,8 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autoScroll)
             }
             Rule()
-            Line("Pages at 120 Hz", "Animations and scrolling in pages at up to 120 frames a second on a screen that can, instead of 60 as in Safari. Uses more battery. Open tabs follow when reloaded") {
-                Switch(on: $prefs.fastPages)
+            Line("Pages at 120 Hz", "Animations and scrolling in pages at up to 120 frames a second on a screen that can, instead of 60 as in Safari. Uses more battery, so On power keeps it to when the Mac is plugged in. Open tabs follow when reloaded") {
+                Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
             }
             Rule()
             Line("Hold a swipe to pick from history", "Swipe back or forward and keep your fingers down: the pages that way appear, and moving up or down picks one to go to") {
