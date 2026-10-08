@@ -249,6 +249,14 @@ final class Preferences: ObservableObject {
             HoveredLink.on = showsLinks
         }
     }
+    /// Two fingers sideways slide the page back or forward, as in Safari
+    /// (see PageView.slides). On unless turned off: every Mac browser does it.
+    @Published var slides: Bool {
+        didSet {
+            store.set(slides, forKey: "swipe.slide")
+            PageView.slides = slides
+        }
+    }
     /// A back or forward swipe held once armed shows the pages that way to
     /// pick from (see PageView.openList). Off unless asked for.
     @Published var holdsHistory: Bool {
@@ -433,6 +441,9 @@ final class Preferences: ObservableObject {
         let history = store.bool(forKey: "swipe.history")
         holdsHistory = history
         PageView.holdsHistory = history
+        let slide = store.object(forKey: "swipe.slide") as? Bool ?? true
+        slides = slide
+        PageView.slides = slide
         // On for everyone who never touched these three switches (Drice,
         // 27 Sep 2026); a choice made before stands.
         let flicks = store.object(forKey: "float.flicks") as? Bool ?? true

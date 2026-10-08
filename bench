@@ -73,7 +73,8 @@
     ./bench answer once|always|no     test run: the card of a page asking for the camera, microphone or location
     ./bench accounts [ROW]             test run: the list under the sign-in box the caret is in (passkeys,
                                        then passwords); ROW: a click on that row, from 0
-    ./bench pull DX [STEPS] [MS]       test run: two fingers DX points sideways over the page (back is +) — where it went
+    ./bench pull DX [STEPS] [MS]       test run: two fingers DX points sideways over the page (back is +), as the disc
+                                       reads them (a real trackpad's slide is WebKit's) — where it went
     ./bench keyeq CHARS CODE [shift]   test run: ⌘CHARS pressed while the page has the keyboard — who took it
     ./bench import BROWSER [WHAT…] [--profile NAME|all] [--replace]
                                      test run: bookmarks, history, passwords from a made-up profile in the world's Import/

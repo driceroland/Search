@@ -594,10 +594,11 @@ final class Tab: ObservableObject, Identifiable {
         // else on a Mac. ⌘+ and ⌘- are the other thing — they lay the page out
         // again at a bigger size — and both are worth having.
         web.allowsMagnification = true
-        // WebKit's own two-finger swipe stays off. It drags the page across
-        // the window with a picture of the last one behind it; ours is in
-        // PageView, and it moves nothing but a disc.
-        web.allowsBackForwardNavigationGestures = false
+        // WebKit's own two-finger swipe slides the page across the window
+        // with a picture of the last one behind it, as Safari's does. It is
+        // on unless the swipe is off in Settings, or a held swipe is on:
+        // that one is PageView's own, and moves nothing but a disc.
+        web.applyGestures()
         Swipe.calm(web)
         web.onPull = { [weak self] pull in self?.pull = pull }
         web.onTouch = { [weak self] in self?.uncover() }
@@ -1663,9 +1664,25 @@ final class PageView: WKWebView {
     /// How far the fingers have gone up (or down, below nought) since the
     /// last step through the list.
     private var climbed: CGFloat = 0
+    /// Settings › General › Swipe between pages. Off, two fingers sideways
+    /// do nothing at all; mouse buttons and the Logi swipe still go back.
+    @MainActor static var slides = true { didSet { refreshGestures() } }
     /// Settings › General › Hold a swipe to pick from history. Off unless
     /// asked for; off, a held swipe is a swipe like any other.
-    static var holdsHistory = false
+    @MainActor static var holdsHistory = false { didSet { refreshGestures() } }
+
+    /// WebKit's own swipe, which slides the page as Safari's does, is what
+    /// two fingers do unless a held swipe is on: the list of pages it opens
+    /// is drawn by the disc below, and WebKit's swipe would go back on its
+    /// own before the disc was done.
+    @MainActor private static var native: Bool { slides && !holdsHistory }
+    @MainActor private var disc: Bool { PageView.slides && PageView.holdsHistory }
+
+    /// The switch, for a page made now and for every page already open.
+    @MainActor func applyGestures() { allowsBackForwardNavigationGestures = PageView.native }
+    @MainActor private static func refreshGestures() {
+        for page in Web.pages.allObjects { page.applyGestures() }
+    }
     /// How long armed before the list, and how far up or down a step is.
     private static let hold: TimeInterval = 0.45
     private static let step: CGFloat = 22
@@ -1771,8 +1788,11 @@ final class PageView: WKWebView {
             super.scrollWheel(with: event)
         }
         // Only a live trackpad gesture — not its glide afterwards, and not a
-        // mouse wheel, which has no beginning or end to speak of.
-        guard event.momentumPhase == [] else { return }
+        // mouse wheel, which has no beginning or end to speak of. And only
+        // when the disc is what two fingers do: otherwise WebKit slides the
+        // page, or nothing is meant to happen, and going back from here too
+        // would go twice.
+        guard disc, event.momentumPhase == [] else { return }
 
         switch event.phase {
         case .mayBegin, .began:

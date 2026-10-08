@@ -1478,9 +1478,15 @@ final class Bench {
             // events spread over MS milliseconds, with a trackpad's phases,
             // handed to the page's view — for the swipe back and forward.
             // Reports where the tab is after. Only on a SEARCH_PROBE run.
+            // These events are read by the disc (PageView.scrollWheel), not
+            // by WebKit's slide, which wants a real trackpad; so the held
+            // swipe is on for the length of the pull, as it is for the disc.
             guard Store.testing else { answer(["error": "pull only works on a --test run"]); return }
             guard let tab = browser.active, let web = tab.built, let dx = request["dx"] as? Double
             else { answer(["error": "pull needs a loaded tab and a distance"]); return }
+            let (held, slid) = (PageView.holdsHistory, PageView.slides)
+            PageView.holdsHistory = true
+            PageView.slides = true
             let steps = max(2, request["steps"] as? Int ?? 10)
             let ms = max(1, request["ms"] as? Double ?? 200)
             let before = tab.address?.absoluteString ?? ""
@@ -1499,6 +1505,7 @@ final class Bench {
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000 + 1.2) {
+                (PageView.holdsHistory, PageView.slides) = (held, slid)
                 answer(["before": before, "after": tab.address?.absoluteString ?? ""])
             }
 

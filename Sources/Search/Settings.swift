@@ -318,10 +318,18 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.fastPages)
             }
             Rule()
-            Line("Hold a swipe to pick from history", "Swipe back or forward and keep your fingers down: the pages that way appear, and moving up or down picks one to go to") {
-                Switch(on: $prefs.holdsHistory)
+            Line("Swipe between pages", "Two fingers sideways slide the page back or forward, as in Safari") {
+                Switch(on: $prefs.slides)
             }
             Rule()
+            // Picking from a list needs Search's own swipe, which doesn't
+            // slide the page; with the swipe off there is nothing to hold.
+            if prefs.slides {
+                Line("Hold a swipe to pick from history", "Swipe back or forward and keep your fingers down: the pages that way appear, and moving up or down picks one to go to. The page doesn't slide while this is on; a disc shows the swipe instead") {
+                    Switch(on: $prefs.holdsHistory)
+                }
+                Rule()
+            }
             Line("Flick the floating video to a corner", "Two fingers on it send it to the corner or edge they point at, instead of pushing it along; a strong swipe at the side of the screen it is against tucks it in there, a sliver left to bring it back by. Dragging still puts it anywhere") {
                 Switch(on: $prefs.floatFlicks)
             }

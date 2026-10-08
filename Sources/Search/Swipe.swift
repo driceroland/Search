@@ -1,13 +1,17 @@
 import Foundation
 import WebKit
 
-// Two fingers sideways means back, or forward.
+// Two fingers sideways means back, or forward — if Settings › General › Swipe
+// between pages is on, which it is unless turned off.
 //
 // WebKit has a swipe of its own, and it drags the whole page across the window
-// with a picture of the last one behind it. This is the other kind: a disc
-// comes in from the edge you are pulling from, and past a certain point it is
-// armed. Let go then, and the page simply goes back. Let go before, and it
-// slips out again. Nothing slides, nothing is kept in memory to slide.
+// with a picture of the last one behind it, as Safari's does. That is the one
+// used, and none of what follows runs, unless Hold a swipe to pick from
+// history is on: that needs the other kind, which is ours. A disc comes in
+// from the edge you are pulling from, and past a certain point it is armed.
+// Let go then, and the page simply goes back. Let go before, and it slips out
+// again. Nothing slides, nothing is kept in memory to slide. Held a moment
+// longer, the disc becomes the list of pages that way.
 //
 // The one hard question is whether a sideways swipe belongs to the page — a
 // carousel, a wide table, a map, a canvas — or is free to mean something. The
