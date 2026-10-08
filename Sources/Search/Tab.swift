@@ -665,9 +665,9 @@ final class Tab: ObservableObject, Identifiable {
                         if fresh == self.heldOver { return }
                         self.held = nil
                     }
-                    let freshHost = fresh.host()?.lowercased()
-                    let currentHost = self.address?.host()?.lowercased()
-                    let moved = freshHost != currentHost
+                    // By site, port included: localhost:3000 to localhost:5173
+                    // is another project, with another icon.
+                    let moved = Favicons.site(fresh) != self.address.flatMap(Favicons.site)
                     self.address = fresh
                     // Within the same origin — history.pushState, a fragment —
                     // the page on screen is the one at the new address.
@@ -785,6 +785,13 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: LiveRate.script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
         )
+        // Every frame, in the page's own world: a page an extension lists
+        // reaches it as chrome.runtime (see ExtensionExternal.swift).
+        if let external = ExtensionExternal.script {
+            controller.addUserScript(
+                WKUserScript(source: external, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
+            )
+        }
         // Passkeys stand in the page's own world — they replace the page's
         // functions — and reach Search through a bridge in Search's, off or on:
         // an extension's page script can carry the patch either way (see

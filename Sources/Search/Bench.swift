@@ -1203,6 +1203,20 @@ final class Bench {
             browser.cancelFileImport()
             answer(["cancelling": browser.fileImport?.cancelling ?? false])
 
+        case "menus":
+            // Every menu of the menu bar, by title, after SwiftUI has filled
+            // it — and whether the AI add-on counts as on. Reads only.
+            guard Store.testing else { answer(["error": "menus only works on a --test run"]); return }
+            var menus: [String: [String]] = [:]
+            for item in NSApp.mainMenu?.items ?? [] {
+                guard let menu = item.submenu else { continue }
+                menu.delegate?.menuNeedsUpdate?(menu)
+                menus[item.title] = menu.items.filter { !$0.isSeparatorItem && !$0.isHidden }.map(\.title)
+            }
+            answer(["menus": menus, "ai": browser.prefs.ai, "shipped": AI.shipped,
+                    "settingsPages": SettingsPanel.Page.allCases.filter { $0 != .ai || AI.shipped }.map(\.rawValue),
+                    "settingsPage": browser.settingsPage.rawValue])
+
         case "menu":
             // The Bookmarks menu as it is about to open: the menu bar
             // told it is being tracked, SwiftUI's own update run on it, its

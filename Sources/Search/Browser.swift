@@ -341,7 +341,10 @@ final class Browser: NSObject, ObservableObject {
     @Published var assisting: Assistant?
     /// The Settings page it opens on next.
     var settingsPage: SettingsPanel.Page {
-        get { SettingsPanel.Page(rawValue: Store.settings.string(forKey: "settings.page") ?? "") ?? .general }
+        get {
+            let page = SettingsPanel.Page(rawValue: Store.settings.string(forKey: "settings.page") ?? "") ?? .general
+            return page == .ai && !AI.shipped ? .general : page
+        }
         set { Store.settings.set(newValue.rawValue, forKey: "settings.page") }
     }
     // The same words written back (the field does, as it appears) aren't
@@ -1992,9 +1995,19 @@ final class Browser: NSObject, ObservableObject {
         }
         for target in targets {
             var defs = Pins.defs(target.id)
+            // The pins this space had before any of this, for telling a
+            // favourite that is already here from one this import is adding.
+            let had = defs
             // A space's own profile's favourites, as Arc shows them above it.
             let favourites = target.space.flatMap { sidebar.favoritesByProfile[$0.profile] } ?? sidebar.favorites
-            for favourite in favourites where !defs.contains(where: { $0.home == favourite.url.absoluteString }) {
+            // A favourite whose site is already pinned is the pin you have,
+            // however far it has gone from the address it was pinned at: Gmail
+            // pinned at mail.google.com answers at mail.google.com/mail/u/0/,
+            // and comparing the two as strings brought it in a second time.
+            // Only against the pins that were already here: two favourites of
+            // Arc's own on one site are two favourites, and stay two.
+            for favourite in favourites where !had.contains(where: { Browser.samePin($0, favourite.url) })
+                && !defs.contains(where: { $0.home == favourite.url.absoluteString }) {
                 let host = favourite.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
                 defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
                                    home: favourite.url.absoluteString, title: favourite.title, name: nil))
@@ -2031,6 +2044,34 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// Whether a pin is the one a favourite would make: the same site, and
+    /// one address inside the other (mail.google.com and
+    /// mail.google.com/mail/u/0/), or failing a site to compare (a file, an
+    /// about: page), the same address. github.com/me and github.com/work are
+    /// two pins, and stay two. A site is its host without the www. that is
+    /// not part of who it is, as a pin's letter already reads it, and its
+    /// port: localhost:3000 and localhost:5173 are two sites.
+    static func samePin(_ pin: PinDef, _ url: URL) -> Bool {
+        guard let home = URL(string: pin.home), let mine = site(of: url), let theirs = site(of: home) else {
+            return pin.home == url.absoluteString
+        }
+        guard mine == theirs else { return false }
+        let a = folder(of: url), b = folder(of: home)
+        return a.hasPrefix(b) || b.hasPrefix(a)
+    }
+
+    private static func site(of url: URL) -> String? {
+        guard let host = url.host()?.lowercased(), !host.isEmpty else { return nil }
+        let name = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        return url.port.map { "\(name):\($0)" } ?? name
+    }
+
+    /// The path, ending in a slash, so that /me is never taken for the start of /media.
+    private static func folder(of url: URL) -> String {
+        let path = url.path().lowercased()
+        return path.hasSuffix("/") ? path : path + "/"
+    }
+
     /// Arc's pinned list, folders opened out in their order, each page with
     /// the top folder it came from: a tab group's name, when groups are on.
     private static func opened(_ nodes: [ArcSidebar.Node], in folder: String? = nil) -> [(item: ArcSidebar.Item, folder: String?)] {
@@ -2048,7 +2089,6 @@ final class Browser: NSObject, ObservableObject {
     /// group of that name in the space, made if there is none; with them
     /// off, the folders stay opened out. Groups are never turned on here.
     private func takeAsleep(_ items: [(item: ArcSidebar.Item, folder: String?)], into space: UUID) -> Int {
-        let grouping = prefs.usesTabGroups
         func asleep(_ item: ArcSidebar.Item) -> Tab {
             let tab = Tab(configuration: Web.configuration(space: space))
             prepare(tab)
@@ -2060,8 +2100,12 @@ final class Browser: NSObject, ObservableObject {
             return items.filter { seen.insert($0.item.url.absoluteString).inserted }
         }
         /// The group a folder's pages go into, by name, made if missing.
+        /// Kept whether or not tab groups are turned on, as the session keeps
+        /// them (see Session.Shape.groups): a folder Arc had is a name this
+        /// import is the only chance to learn, and turning groups on later
+        /// finds it waiting rather than gone.
         func group(_ folder: String?, in groups: inout [TabGroup]) -> UUID? {
-            guard grouping, let folder else { return nil }
+            guard let folder else { return nil }
             if let same = groups.first(where: { $0.name == folder }) { return same.id }
             let made = TabGroup(id: UUID(), name: folder, collapsed: false)
             groups.append(made)
@@ -2105,7 +2149,7 @@ final class Browser: NSObject, ObservableObject {
             Session.Entry(url: page.item.url.absoluteString, title: page.item.title,
                           groupID: group(page.folder, in: &groups))
         }
-        if grouping { saved.groups = groups }
+        saved.groups = groups
         writeRow(space, saved, now: true)
         return new.count
     }
@@ -4156,9 +4200,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         _ action: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-        // "Download Image", "Download Linked File" from the page's own
-        // context menu, and a link with the `download` attribute all arrive
-        // as an ordinary-looking action with this one flag set. Answered
+        // "Download Image" from the page's own context menu and a link with
+        // the `download` attribute arrive as an ordinary-looking action with
+        // this one flag set. ("Download Linked File" doesn't come this way:
+        // see contextMenuDidCreateDownload below.) Answered
         // with `.allow`, as anything else here was, WebKit tries to load it
         // as if it were the next page — nowhere for that to go, so nothing
         // happens and nothing says why. `.download` is what turns it into
@@ -4426,6 +4471,14 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     ) {
         keep(download, from: webView)
         dropEmpty(webView)
+    }
+
+    /// Download Linked File in the right-click menu. WebKit starts the
+    /// download and hands it to a delegate that answers this name, outside
+    /// the public framework; unanswered, the file was fetched and went nowhere.
+    @objc(_webView:contextMenuDidCreateDownload:)
+    func webView(_ webView: WKWebView, contextMenuDidCreateDownload download: WKDownload) {
+        keep(download, from: webView)
     }
 
     /// A tab that has shown nothing, and whose first page turned out to be a
