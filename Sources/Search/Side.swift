@@ -35,7 +35,7 @@ struct SideBar: View {
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
 
     /// The window's buttons' corner: gone in full screen, where macOS takes
-    /// them away, and back, forward and reload move up to the edge (idea 184).
+    /// them away, and the doors may have the whole row to themselves (idea 184).
     private var lights: CGFloat { browser.fullScreen ? 0 : Metrics.sideLights }
 
     var body: some View {
@@ -50,23 +50,19 @@ struct SideBar: View {
             // clicks. The lights are the title bar's own and answer first.
             HStack(spacing: 0) {
                 DragStrip()
-                    .frame(width: 10 + lights)
                 Color.clear
-                    .frame(width: Metrics.helm)
+                    .frame(width: Metrics.helm - 8 + 10)
                     .allowsHitTesting(false)
-                DragStrip()
             }
             .frame(height: Metrics.strip)
 
             VStack(alignment: .leading, spacing: 0) {
-                // The traffic lights' corner, with back, forward and reload
-                // sitting right of them — the same three doors as the top
-                // bar, moved beside the lights since there's no far end of a
-                // row to put them at in this mode.
+                // Back, forward and reload at the column's far end, as at the
+                // top bar's: the lights keep the corner to themselves, and
+                // the doors line up with the rows' right edge below.
                 HStack(spacing: 0) {
-                    Color.clear.frame(width: lights)
+                    Spacer(minLength: lights)
                     Helm(browser: browser)
-                    Spacer(minLength: 0)
                 }
                 .frame(height: Metrics.strip)
 
