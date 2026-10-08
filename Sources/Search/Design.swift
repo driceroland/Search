@@ -266,3 +266,34 @@ struct Shake: GeometryEffect {
         )
     }
 }
+
+extension View {
+    /// What a popover holds, on the ground colour. From macOS 26 a popover
+    /// clips what it holds to its own rounded glass; before, an opaque
+    /// background was drawn out to the content's square edges, past the
+    /// popover's rounded corners (macOS 15, by email). There the popover is
+    /// handed the colour and fills its own shape with it, arrow included.
+    /// `card`: drawn as its own rounded card, with an edge, on macOS 26.
+    func popoverGround(card: Bool = false) -> some View {
+        modifier(PopoverGround(card: card))
+    }
+}
+
+private struct PopoverGround: ViewModifier {
+    let card: Bool
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            if card {
+                content
+                    .background(Palette.ground)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+            } else {
+                content.background(Palette.ground)
+            }
+        } else {
+            content.presentationBackground(Palette.ground)
+        }
+    }
+}

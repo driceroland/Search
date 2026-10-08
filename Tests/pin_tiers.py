@@ -15,12 +15,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
 
-# A world of its own: another checkout running the split suite at the same
-# time answers on split-tests' socket, with its own build.
-sv.W = "pin-tiers"
-sv.SUPPORT = f"{sv.HOME}/Library/Application Support/Search ({sv.W})"
-sv.SUITE = f"com.officecommun.search.test.{sv.W}"
-sv.SOCK = f"{sv.SUPPORT}/bench.sock"
+# Its own world, apart from the split suite's in this checkout (see use()).
+sv.use("pin-tiers")
 
 t = sv.T()
 def by_url(st): return {x["id"]: x["url"].rsplit("/", 1)[-1] for x in st["tabs"]}

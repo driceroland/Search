@@ -118,6 +118,29 @@ final class Extensions: NSObject, ObservableObject {
         folder.appendingPathComponent(".staging-\(id)-\(UUID().uuidString)", isDirectory: true)
     }
 
+    /// One loaded from a folder is copied in links and all, and both WebKit,
+    /// serving its files, and the shim, rewriting its pages, go where a link
+    /// points. So a link stays only if what it names is there and inside the
+    /// package; one leading anywhere else, or nowhere, is taken out. (A
+    /// package from the store with any link in it is refused whole: see
+    /// Crx.) Throws if one couldn't be taken out.
+    nonisolated static func unlinkOutside(_ root: URL) throws {
+        guard let base = realpath(root.path, nil) else { return }
+        let inside = String(cString: base) + "/"
+        free(base)
+        let files = FileManager.default
+        let found = files.enumerator(at: root, includingPropertiesForKeys: [.isSymbolicLinkKey])
+        while let item = found?.nextObject() as? URL {
+            guard (try? item.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true else { continue }
+            var kept = false
+            if let real = realpath(item.path, nil) {
+                kept = String(cString: real).hasPrefix(inside)
+                free(real)
+            }
+            if !kept { try files.removeItem(at: item) }
+        }
+    }
+
     private override init() {
         WKWebExtension.MatchPattern.registerCustomURLScheme(Extensions.scheme)
         // A test run keeps its extensions' storage apart, as it does its
@@ -414,6 +437,11 @@ final class Extensions: NSObject, ObservableObject {
         // first launch after an update reads and rewrites every script and
         // page each extension ships (Grammarly: 450 ms).
         let folder = Extensions.folder(for: item.id)
+        // One installed from a folder before links were looked at.
+        if item.source != nil {
+            do { try await Task.detached(priority: .userInitiated) { try Extensions.unlinkOutside(folder) }.value }
+            catch { return false }
+        }
         try? await Task.detached(priority: .userInitiated) { try ExtensionShims.prepare(folder) }.value
         do {
             let found = try await WKWebExtension(resourceBaseURL: Extensions.folder(for: item.id))
@@ -431,11 +459,7 @@ final class Extensions: NSObject, ObservableObject {
                 context.setPermissionStatus(.grantedExplicitly, for: permission)
             }
             context.setPermissionStatus(.grantedExplicitly, for: .nativeMessaging)
-            // Never one for extension pages, another's or all of them (see
-            // `fence`).
-            for pattern in found.allRequestedMatchPatterns where !Extensions.reachesExtensions(pattern) {
-                context.setPermissionStatus(.grantedExplicitly, for: pattern)
-            }
+            Extensions.grantSites(context)
             // Its own sign-in address, https://<id>.chromiumapp.org, which
             // is never loaded (see ExtensionAuth.handOver). WebKit shows an
             // extension a tab's address only where it has access, where
@@ -548,7 +572,9 @@ final class Extensions: NSObject, ObservableObject {
             defer { try? FileManager.default.removeItem(at: staged) }
             do {
                 try FileManager.default.createDirectory(at: Extensions.folder, withIntermediateDirectories: true)
-                try FileManager.default.copyItem(at: source, to: staged)
+                // The folder itself, wherever a link to it leads.
+                try FileManager.default.copyItem(at: source.resolvingSymlinksInPath(), to: staged)
+                try Extensions.unlinkOutside(staged)
                 try ExtensionShims.prepare(staged, fresh: true)
                 try await admit(staged, as: id, fromStore: false, finalFolder: Extensions.folder(for: id), confirm: confirm || !Store.testing, source: source)
             } catch {
@@ -578,7 +604,8 @@ final class Extensions: NSObject, ObservableObject {
                     return
                 }
                 do {
-                    try FileManager.default.copyItem(at: source, to: staged)
+                    try FileManager.default.copyItem(at: source.resolvingSymlinksInPath(), to: staged)
+                    try Extensions.unlinkOutside(staged)
                     try ExtensionShims.prepare(staged, fresh: true)
                 } catch {
                     browser?.announce("Couldn't copy \(original.name) again: \(error.localizedDescription)")
@@ -899,6 +926,29 @@ final class Extensions: NSObject, ObservableObject {
         return [Extensions.scheme, Extensions.formerScheme, "webkit-extension"].contains(scheme)
     }
 
+    /// Files on this Mac aren't an extension's to reach either, whatever its
+    /// manifest names: Chrome keeps them from every extension until "Allow
+    /// access to file URLs" is turned on for it, and Search has no such
+    /// switch. WebKit's <all_urls> leaves file: out; a pattern naming it
+    /// (file:///*) would be granted with the rest.
+    nonisolated static func reachesFiles(_ pattern: WKWebExtension.MatchPattern) -> Bool {
+        pattern.scheme?.lowercased() == "file"
+    }
+
+    /// What no extension is given or asked about: extension pages and files.
+    nonisolated static func withheld(_ pattern: WKWebExtension.MatchPattern) -> Bool {
+        reachesExtensions(pattern) || reachesFiles(pattern)
+    }
+
+    /// The sites its manifest names, granted as it loads: never one for
+    /// extension pages, another's or all of them, nor for files on this Mac
+    /// (see `fence`, which is set after).
+    static func grantSites(_ context: WKWebExtensionContext) {
+        for pattern in context.webExtension.allRequestedMatchPatterns where !withheld(pattern) {
+            context.setPermissionStatus(.grantedExplicitly, for: pattern)
+        }
+    }
+
     /// Other extensions' pages are never among "all sites" either: with
     /// chrome-extension registered as a scheme, WebKit counts them in
     /// <all_urls>, which Chrome doesn't, so they are refused outright. A
@@ -909,6 +959,12 @@ final class Extensions: NSObject, ObservableObject {
         for scheme in Set([Extensions.scheme, Extensions.formerScheme, "webkit-extension"]) {
             if let pages = try? WKWebExtension.MatchPattern(string: "\(scheme)://*/*") {
                 context.setPermissionStatus(.deniedExplicitly, for: pages)
+            }
+        }
+        // Nor files (see `reachesFiles`).
+        for string in ["file:///*", "file://*/*"] {
+            if let files = try? WKWebExtension.MatchPattern(string: string) {
+                context.setPermissionStatus(.deniedExplicitly, for: files)
             }
         }
     }
@@ -1304,8 +1360,8 @@ extension Extensions: WKWebExtensionControllerDelegate {
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, promptForPermissionMatchPatterns matchPatterns: Set<WKWebExtension.MatchPattern>, in tab: (any WKWebExtensionTab)?, for extensionContext: WKWebExtensionContext) async -> (Set<WKWebExtension.MatchPattern>, Date?) {
-        // Extension pages are never given, so never asked about.
-        let wanted = matchPatterns.filter { !Extensions.reachesExtensions($0) }
+        // Extension pages and files are never given, so never asked about.
+        let wanted = matchPatterns.filter { !Extensions.withheld($0) }
         guard !wanted.isEmpty else { return ([], nil) }
         let all = wanted.contains { $0.matchesAllHosts || $0.matchesAllURLs }
         let what = all ? "every website" : wanted.map(\.string).sorted().joined(separator: ", ")
@@ -1530,10 +1586,13 @@ struct ExtensionSlot: View {
     /// The side the list opens toward: down from the top row, out to the
     /// right from the sidebar.
     var edge: Edge = .bottom
+    /// How many pinned ones the row has room for; the rest are only in the
+    /// list. Nil: all of them.
+    var room: Int? = nil
 
     var body: some View {
         if #available(macOS 15.4, *) {
-            ExtensionButtons(extensions: .shared, edge: edge)
+            ExtensionButtons(extensions: .shared, edge: edge, room: room)
         }
     }
 }
@@ -1542,11 +1601,12 @@ struct ExtensionSlot: View {
 private struct ExtensionButtons: View {
     @ObservedObject var extensions: Extensions
     let edge: Edge
+    var room: Int?
 
     var body: some View {
         if !extensions.installed.isEmpty {
             HStack(spacing: 2) {
-                ForEach(extensions.buttons.filter(\.pinned)) { button in
+                ForEach(extensions.buttons.filter(\.pinned).prefix(room ?? .max)) { button in
                     ActionButton(button: button) { extensions.press(button.id) }
                         .background(Anchor(id: button.id))
                         .contextMenu { ExtensionActions(id: button.id, name: button.name, extensions: extensions) }
@@ -1723,7 +1783,7 @@ private struct ExtensionMenu: View {
             .padding(6)
         }
         .frame(width: 280)
-        .background(Palette.ground)
+        .popoverGround()
     }
 
     private struct Row: View {
