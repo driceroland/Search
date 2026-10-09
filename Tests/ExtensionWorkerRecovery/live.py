@@ -535,6 +535,7 @@ class Live:
         self.passed = self.failed = self.skipped = 0
         self.tabs = {}
         self.instances = {}
+        self.content_document = None
         self.extension = None
         self.serial = 0
         self.last = {}
@@ -739,8 +740,14 @@ class Live:
     def states(self):
         return {label: self.state(label) for label in self.tabs}
 
+    def content_audit(self):
+        value = self.eval('content', 'JSON.stringify(globalThis.__searchPortDocumentFixture || null)')
+        return json.loads(value) if value else None
+
     def snapshot(self, label):
         print('SNAPSHOT', label, json.dumps(self.states(), sort_keys=True), flush=True)
+        print('DOCUMENT_AUDIT', label, json.dumps(self.content_audit(), sort_keys=True), flush=True)
+
 
     def click(self, label, button):
         self.serial += 1
@@ -816,8 +823,16 @@ class Live:
             self.check(f'{name}: {label} exact per-port disconnect counts {expected}',
                        state['opened'] == generations and actual == expected and state['disconnected'] == retired,
                        state)
-            self.check(f'{name}: {label} original document retained', state['instance'] == self.instances[label], state)
+            self.check(f'{name}: {label} original fixture instance retained', state['instance'] == self.instances[label], state)
             self.check(f'{name}: {label} no fixture errors', not state['errors'], state['errors'])
+        audit = self.content_audit()
+        self.check(f'{name}: content main document retained', audit and audit['document'] == self.content_document, audit)
+        self.check(f'{name}: content isolated fixture retained actual state',
+                   audit and set(audit['instances']) == {self.instances['content']} and not audit['errors']
+                   and not audit['counts'].get('world-replaced', 0), audit)
+        self.check(f'{name}: independent page tally agrees with actual content callbacks',
+                   audit and audit['counts'].get('connect', 0) == states['content']['opened']
+                   and audit['counts'].get('disconnect', 0) == states['content']['disconnected'], audit)
 
     def stable_for(self, seconds, generations, retired, name, keepalive=False):
         # Check every snapshot, not merely the final one: counters cannot hide
@@ -827,6 +842,10 @@ class Live:
         heartbeat = time.monotonic() + 10
         while time.monotonic() < until:
             states = self.states()
+            audit = self.content_audit()
+            if (not audit or audit['document'] != self.content_document or audit['errors']
+                    or set(audit['instances']) != {self.instances['content']} or audit['counts'].get('world-replaced', 0)):
+                self.check(f'{name}: content document/world continuity', False, audit, fatal=True)
             expected = [1 if index < retired else 0 for index in range(generations)]
             for label, state in states.items():
                 if (state['instance'] != self.instances[label] or state['opened'] != generations
@@ -862,6 +881,12 @@ class Live:
             state = self.poll(label + ' initial real port echo', lambda: self.state(label),
                               lambda data: data and data['opened'] == 1 and bool(data['ports'][0]['messages']), timeout=20)
             self.instances[label] = state['instance']
+            if label == 'content':
+                audit = self.content_audit()
+                self.check('content: independent document audit initialized',
+                           audit and audit['document'] == state.get('document') and state['instance'] in audit['instances'],
+                           audit, fatal=True)
+                self.content_document = audit['document']
             self.check(label + ': initial real WebKit port echoes',
                        any('echo' in message for message in state['ports'][0]['messages']), state, fatal=True)
             workers.append(state['ports'][0]['messages'][0].get('worker'))
@@ -1064,6 +1089,13 @@ class Live:
                 raise
             except Exception as error:
                 print('FINAL_STATE_UNAVAILABLE', label, str(error), 'LAST', json.dumps(self.last.get(label)), flush=True)
+        if 'content' in self.tabs:
+            try:
+                print('FINAL_DOCUMENT_AUDIT', json.dumps(self.content_audit(), sort_keys=True), flush=True)
+            except Deadline:
+                raise
+            except Exception as error:
+                print('FINAL_DOCUMENT_AUDIT_UNAVAILABLE', str(error), flush=True)
         print('EXTENSIONS', json.dumps(self.extension_state(), sort_keys=True), flush=True)
 
 

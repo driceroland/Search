@@ -6,6 +6,10 @@ Run `node Tests/ExtensionWorkerRecovery/run.js`. It executes the **whole**
 installed shim, including the real content-script early return. The tests use
 mock WebKit objects; they are not a live extension recovery result.
 
+Run `node Tests/ExtensionWorkerRecovery/fixture-checks.js` to check the fixture's
+same-world reinjection, replacement refusal, serialized audit and worker-ready
+ordering. These VM checks validate observation mechanics, not native recovery.
+
 To reproduce the missing notification on upstream main:
 
 ```
@@ -72,6 +76,16 @@ explicitly through console.error. Missing readiness fails within
 listener registration, while only successful port echoes prove backend delivery.
 The separate brief-busy-worker assertions remain unchanged; readiness gating is
 not a new claim about connections made during cold worker startup.
+
+WebKit can immediately reinject declared content scripts when an extension is
+loaded again. The content fixture therefore keeps its real ports and callbacks
+in a per-Document isolated-world singleton; reinjection only increments a counter.
+The website independently records a document nonce and serialized callback events,
+including every content instance. If the DOM survives but the singleton is lost,
+the new fixture reports world replacement and opens no port. It never reconstructs
+old counters from DOM state. Document/world replacement, missing callbacks and
+duplicate callbacks remain failures; a successful newly injected port cannot mask
+the original port's result. Main-world observations expose no extension APIs.
 
 Application-level withheld replies do not claim dead-worker detection, and the
 brief stall is not proof of slow initial startup. Cross-origin child frames,
