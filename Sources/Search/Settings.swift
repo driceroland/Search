@@ -317,7 +317,7 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autoScroll)
             }
             Rule()
-            Line("Pages at 120 Hz", "Animations and scrolling in pages at up to 120 frames a second on a screen that can, instead of 60 as in Safari. Uses more battery, so On power keeps it to when the Mac is plugged in. Open tabs follow when reloaded") {
+            Line("Pages at 120 Hz", "Animations and scrolling in pages at up to 120 frames a second on a screen that can, instead of 60 as in Safari. Uses more battery, so On power keeps it to when the Mac is plugged in") {
                 Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
             }
             Rule()
