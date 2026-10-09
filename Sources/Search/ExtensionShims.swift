@@ -2673,11 +2673,14 @@ enum ExtensionShims {
           return port;
         };
         const connect = runtime.connect;
-        // Only a port to the extension itself: another extension would hear
-        // the numbered wrapper, not the message.
+        // Only a port to the extension itself, and never a content script's:
+        // another extension would hear the numbered wrapper, not the message,
+        // and a content script's port reaches the worker with the website as
+        // sender, so the worker leaves it plain; numbering one end only hides
+        // its messages from the extension.
         put(runtime, "connect", (...args) => {
           const port = connect.apply(runtime, args);
-          return typeof args[0] === "string" && args[0] !== runtime.id ? port : number(port);
+          return inContent || (typeof args[0] === "string" && args[0] !== runtime.id) ? port : number(port);
         });
         const onConnect = runtime.onConnect;
         const add = onConnect.addListener, remove = onConnect.removeListener, has = onConnect.hasListener;
