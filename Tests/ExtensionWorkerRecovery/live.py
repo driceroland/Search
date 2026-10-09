@@ -18,7 +18,9 @@ without changing Search's timeouts. Truly hung workers and delayed startup remai
 manual coverage; the final report says so explicitly.
 """
 
+import argparse
 import json
+import re
 import platform
 import signal
 import subprocess
@@ -33,7 +35,11 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 APP = ROOT / 'build' / 'Search.app'
 ATTRIBUTE = 'data-search-port-fixture'
-TOTAL_TIMEOUT = 480
+TOTAL_TIMEOUT = 504
+# Reserve time for delayed OS crash reports (20s), other diagnostics, and the
+# existing isolated lifecycle cleanup. The normal suite takes about 5 minutes.
+WORK_TIMEOUT = TOTAL_TIMEOUT - 74
+MAX_REPORT_BYTES = 8 * 1024 * 1024
 
 
 class Failure(Exception):
@@ -72,6 +78,217 @@ def environment():
     }
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--admission-only', action='store_true',
+                        help='install the fixture and verify its initial real ports, then clean up')
+    parser.add_argument('--self-test', action='store_true',
+                        help='run pure-Python diagnostic selection checks; no app or macOS required')
+    return parser.parse_args(argv)
+
+
+def parse_report(text):
+    """Apple .ips is usually one metadata JSON object plus a report object."""
+    decoder = json.JSONDecoder()
+    documents = []
+    remaining = text.lstrip()
+    while remaining:
+        try:
+            document, end = decoder.raw_decode(remaining)
+        except ValueError:
+            break
+        if isinstance(document, dict):
+            documents.append(document)
+        remaining = remaining[end:].lstrip()
+    return next((item for item in reversed(documents) if 'pid' in item), None)
+
+
+def owned_report(text, *, pids, launched_at, modified_at, app):
+    """Never select by filename alone: both launch time and owned PID match."""
+    if modified_at < launched_at or not pids:
+        return None
+    report = parse_report(text)
+    if report is not None:
+        pid, name, path = report.get('pid'), report.get('procName'), report.get('procPath')
+    else:
+        process = re.search(r'^Process:\s+Search\s+\[(\d+)\]', text, re.MULTILINE)
+        path_match = re.search(r'^Path:\s+(.+)$', text, re.MULTILINE)
+        if not process or not path_match:
+            return None
+        pid, name, path = process.group(1), 'Search', path_match.group(1).strip()
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return None
+    if pid not in pids or name != 'Search':
+        return None
+    # Some .ips versions omit procPath; PID + process name + launch time still
+    # identify our captured process. A supplied path must match our app exactly.
+    if path and Path(path).resolve() != (Path(app) / 'Contents/MacOS/Search').resolve():
+        # macOS may redact home-directory components even in local reports.
+        # Keep PID + timestamp + process-name scoping when that exact app
+        # suffix is intact; never accept a different explicit executable.
+        redacted = ('*' in path or '/USER/' in path) and path.endswith('/Search.app/Contents/MacOS/Search')
+        if not redacted:
+            return None
+    return report if report is not None else {'pid': pid, 'procName': name, 'legacy': text[:24000]}
+
+
+def summarize_report(report):
+    if 'legacy' in report:
+        return report
+    result = {key: report[key] for key in (
+        'pid', 'procName', 'procPath', 'captureTime', 'procLaunch', 'osVersion',
+        'exception', 'termination', 'asi', 'asiSignatures', 'lastExceptionBacktrace',
+        'faultingThread', 'vmSummary') if key in report}
+    threads = report.get('threads') or []
+    index = report.get('faultingThread')
+    if not isinstance(index, int) or not 0 <= index < len(threads):
+        index = next((i for i, thread in enumerate(threads) if thread.get('triggered')), None)
+    frames = []
+    if index is not None:
+        thread = threads[index]
+        frames = thread.get('frames', [])[:48]
+        result['faultingThreadDetails'] = {key: thread[key] for key in ('name', 'queue', 'triggered', 'threadState') if key in thread}
+        result['faultingThreadDetails']['frames'] = frames
+    images = report.get('usedImages') or []
+    wanted = {frame.get('imageIndex') for frame in frames}
+    result['relevantImages'] = [dict(imageIndex=i, **image) for i, image in enumerate(images)
+                                if i in wanted or image.get('name') == 'Search']
+    return result
+
+
+def search_addresses(report):
+    """Only the owned process's Search executable, never framework frames."""
+    summary = summarize_report(report)
+    frames = summary.get('faultingThreadDetails', {}).get('frames', [])
+    for index, image in enumerate(report.get('usedImages') or []):
+        if image.get('name') != 'Search' or not image.get('path', '').endswith('/Search.app/Contents/MacOS/Search'):
+            continue
+        base = image.get('base')
+        try:
+            base = int(base, 0) if isinstance(base, str) else int(base)
+            addresses = []
+            for frame in frames:
+                if frame.get('imageIndex') != index:
+                    continue
+                offset = frame.get('imageOffset')
+                offset = int(offset, 0) if isinstance(offset, str) else int(offset)
+                addresses.append(base + offset)
+                if len(addresses) == 16:
+                    break
+        except (TypeError, ValueError):
+            continue
+        if addresses:
+            return image, base, addresses
+    return None
+
+
+def symbolicate_report(report, app):
+    selected = search_addresses(report)
+    if selected is None:
+        print('SEARCH_SYMBOLICATION unavailable: no owned Search frames with image offsets', flush=True)
+        return
+    image, base, addresses = selected
+    build = Path(app).parent
+    relative = Path('Search.app.dSYM/Contents/Resources/DWARF/Search')
+    candidates = [build / relative, build / 'intel' / relative]
+    if platform.machine() == 'x86_64':
+        candidates.reverse()
+    dwarf = next((path for path in candidates if path.is_file()), None)
+    if dwarf is None:
+        print('SEARCH_SYMBOLICATION unavailable: release Search dSYM missing', flush=True)
+        return
+    command = ['/usr/bin/atos', '-arch', platform.machine(), '-o', str(dwarf), '-l', hex(base)]
+    command.extend(hex(address) for address in addresses)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+        print('SEARCH_SYMBOLICATION', json.dumps({'dSYM': str(dwarf), 'imageUUID': image.get('uuid'),
+              'base': hex(base), 'addresses': [hex(address) for address in addresses],
+              'exit': result.returncode, 'symbols': result.stdout[:24000], 'stderr': result.stderr[:3000]}, sort_keys=True), flush=True)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print('SEARCH_SYMBOLICATION unavailable:', str(error), flush=True)
+
+
+def capture_os_reports(*, pids, launched_at, app, wait=20):
+    if not pids or launched_at is None:
+        print('OS_CRASH_REPORT unavailable: no saved owned process identity', flush=True)
+        return
+    directories = [Path.home() / 'Library/Logs/DiagnosticReports', Path('/Library/Logs/DiagnosticReports')]
+    until = time.monotonic() + min(20, max(0, wait))
+    while True:
+        candidates = []
+        for directory in directories:
+            for pattern in ('Search*.ips', 'Search*.crash'):
+                try:
+                    for path in directory.glob(pattern):
+                        stat = path.stat()
+                        if stat.st_mtime >= launched_at:
+                            candidates.append((stat.st_mtime, path))
+                except OSError:
+                    pass
+        found = []
+        for modified_at, path in sorted(candidates, reverse=True)[:30]:
+            try:
+                with path.open('rb') as stream:
+                    raw = stream.read(MAX_REPORT_BYTES + 1)
+                if len(raw) > MAX_REPORT_BYTES:
+                    continue
+                report = owned_report(raw.decode('utf-8', errors='replace'), pids=pids,
+                                      launched_at=launched_at, modified_at=modified_at, app=app)
+            except OSError:
+                continue
+            if report is not None:
+                found.append((path, report))
+        if found:
+            for path, report in found[:3]:
+                print('OS_CRASH_REPORT', str(path), json.dumps(summarize_report(report), sort_keys=True)[:48000], flush=True)
+            # At most one five-second atos call, keeping diagnostics bounded.
+            symbolicate_report(found[0][1], app)
+            return
+        if time.monotonic() >= until:
+            print('OS_CRASH_REPORT absent for saved owned PIDs', sorted(pids),
+                  'since launch', launched_at, 'after bounded wait', flush=True)
+            return
+        time.sleep(min(1, max(0, until - time.monotonic())))
+
+
+def self_test():
+    app = Path('/tmp/search-live-self-test/Search.app')
+    report = {'pid': 123, 'procName': 'Search', 'procPath': str(app / 'Contents/MacOS/Search'),
+              'exception': {'type': 'EXC_BAD_ACCESS'}, 'faultingThread': 0,
+              'threads': [{'triggered': True, 'frames': [{'imageIndex': 0, 'symbol': 'testFrame'}]}],
+              'usedImages': [{'name': 'Search', 'path': str(app / 'Contents/MacOS/Search')}]}
+    text = json.dumps({'app_name': 'Search'}) + '\n' + json.dumps(report)
+    arguments = dict(pids={123}, launched_at=100.0, modified_at=101.0, app=app)
+    assert owned_report(text, **arguments) == report
+    assert owned_report(text, **dict(arguments, pids={456})) is None
+    assert owned_report(text, **dict(arguments, pids=set())) is None
+    assert owned_report(text, **dict(arguments, modified_at=99.9)) is None
+    assert owned_report(text, **dict(arguments, app=Path('/tmp/other/Search.app'))) is None
+    assert owned_report(json.dumps(dict(report, procName='Other')), **arguments) is None
+    redacted = dict(report, procPath='/Users/USER/*/Search.app/Contents/MacOS/Search')
+    assert owned_report(json.dumps(redacted), **arguments) == redacted
+    legacy = f'Process: Search [123]\nPath: {app}/Contents/MacOS/Search\nException Type: EXC_CRASH'
+    assert owned_report(legacy, **arguments)['pid'] == 123
+    assert owned_report('not a report', **arguments) is None
+    summary = summarize_report(report)
+    assert summary['faultingThreadDetails']['frames'][0]['symbol'] == 'testFrame'
+    assert summary['relevantImages'][0]['imageIndex'] == 0
+    symbol_report = dict(report, usedImages=[dict(report['usedImages'][0], base=4096)],
+                         threads=[{'frames': [{'imageIndex': 0, 'imageOffset': 32}]}])
+    assert search_addresses(symbol_report)[1:] == (4096, [4128])
+    symbol_report['threads'][0]['frames'] *= 20
+    assert len(search_addresses(symbol_report)[2]) == 16
+    symbol_report['usedImages'][0]['name'] = 'WebKit'
+    assert search_addresses(symbol_report) is None
+    assert parse_args(['--admission-only']).admission_only
+    assert not parse_args([]).admission_only
+    assert parse_args(['--self-test']).self_test
+    print('PASS 17 pure-Python diagnostic selection, symbolication, summary and argument checks', flush=True)
+    return 0
+
+
 class Site(BaseHTTPRequestHandler):
     def do_GET(self):
         # Serve only this fixture, never the checkout or arbitrary disk paths.
@@ -99,6 +316,8 @@ class Live:
         self.extension = None
         self.serial = 0
         self.last = {}
+        self.owned_pids = set()
+        self.launched_at = None
 
     def check(self, name, condition, detail=None, fatal=False):
         if condition:
@@ -423,7 +642,10 @@ class Live:
             print('NATIVE_CRASH_REPORT', crash.read_text(errors='replace')[-20000:], flush=True)
         else:
             print('NATIVE_CRASH_REPORT absent in isolated profile', flush=True)
-        print('OWNED_PROBE_PIDS', self.sv.pids(), flush=True)
+        alive = self.sv.pids()
+        print('OWNED_PROBE_PIDS', alive, 'SAVED_OWNED_PIDS', sorted(self.owned_pids), flush=True)
+        if self.failed or not alive:
+            capture_os_reports(pids=self.owned_pids, launched_at=self.launched_at, app=APP, wait=20)
         for label in self.tabs:
             try:
                 print('FINAL_STATE', label, json.dumps(self.state(label), sort_keys=True), flush=True)
@@ -434,7 +656,10 @@ class Live:
         print('EXTENSIONS', json.dumps(self.extension_state(), sort_keys=True), flush=True)
 
 
-def main():
+def main(argv=None):
+    options = parse_args(argv)
+    if options.self_test:
+        return self_test()
     if sys.platform != 'darwin':
         print('NOT RUN: live WebKit fixture requires macOS 15.4 or newer.', flush=True)
         return 2
@@ -445,7 +670,7 @@ def main():
         print(f'NOT RUN: built app missing at {APP}; build first (copy build/intel/Search.app here on Intel).', flush=True)
         return 2
     signal.signal(signal.SIGALRM, expired)
-    signal.alarm(TOTAL_TIMEOUT)
+    signal.alarm(WORK_TIMEOUT)
     print('ENVIRONMENT', json.dumps(environment(), sort_keys=True), flush=True)
     sys.path.insert(0, str(ROOT / 'Tests'))
     import split_view as sv
@@ -460,16 +685,24 @@ def main():
     live = Live(sv)
     try:
         sv.setup()
+        live.launched_at = time.time()
         sv.launch()
+        live.owned_pids = {int(pid) for pid in sv.started}
+        print('PROBE_LAUNCH', json.dumps({'at': live.launched_at, 'pids': sorted(live.owned_pids)}), flush=True)
         live.check('isolated hidden Search bench is available', Path(sv.SOCK).exists(), sv.SOCK, fatal=True)
-        live.run(f'http://127.0.0.1:{server.server_port}')
+        base = f'http://127.0.0.1:{server.server_port}'
+        if options.admission_only:
+            live.setup_pages(base)
+            print('ADMISSION_ONLY: initial real ports verified; recovery cases were not run', flush=True)
+        else:
+            live.run(base)
     except (Exception, KeyboardInterrupt) as error:
         live.check('live fixture completed', False, str(error))
         traceback.print_exc()
     finally:
         # Failure diagnostics and teardown are also bounded. finish() can only
         # stop/wipe this checkout's named probe, never the user's main profile.
-        signal.alarm(20)
+        signal.alarm(30)
         try:
             live.diagnostics()
         except Exception as error:
