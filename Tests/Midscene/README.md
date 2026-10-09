@@ -209,7 +209,11 @@ only the isolated visible probe entry point, AI cases and CI/report pipeline.
 Visual shards download one app built for the current workflow attempt. Cases
 still launch separate ad-hoc-signed copies with fresh data; sharing a binary does
 not share a running process or a test world. Repeated import asserts both import
-completion messages before checking the final unique bookmark list.
+completion messages before checking the final unique bookmark list. The normal
+1.7-second transient feedback is held for 60 seconds only in a DEBUG visual probe,
+because model planning can outlast its display duration. This tests the visible
+message content and import outcome, not production toast dismissal timing; normal
+builds and hidden probes retain the original duration.
 
 Report-rebuild runs make no model calls and do not count as stability samples.
 Use independent full runs for cold-start evidence. A failure demonstration must

@@ -22,7 +22,15 @@ enum Store {
     /// Probe scripts normally stay hidden. Visual E2E opts into a visible
     /// window while retaining the same isolated settings and data stores.
     static var hiddenProbe: Bool {
-        testing && ProcessInfo.processInfo.environment["SEARCH_E2E_VISIBLE"] != "1"
+        testing && !visualProbe
+    }
+
+    static var visualProbe: Bool {
+        #if DEBUG
+        testing && ProcessInfo.processInfo.environment["SEARCH_E2E_VISIBLE"] == "1"
+        #else
+        false
+        #endif
     }
 
     /// Which test world a test run lives in. SEARCH_PROBE=1, or a run from

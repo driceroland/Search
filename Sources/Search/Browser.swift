@@ -1400,7 +1400,9 @@ final class Browser: NSObject, ObservableObject {
             self?.announcedFile = nil
         }
         hush = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + (file == nil ? 1.7 : 4), execute: work)
+        // Let a visual probe inspect feedback after the model finishes its action.
+        let duration: TimeInterval = Store.visualProbe ? 60 : (file == nil ? 1.7 : 4)
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
     }
 
     /// The names extensions asked their downloads to be saved under.
