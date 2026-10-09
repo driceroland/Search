@@ -3834,8 +3834,10 @@ enum ExtensionShims {
 
         // MARK: the worker, up before a page talks to it
         case "background.observe":
+            guard owner.contexts[id] === context, context.isLoaded else { return nil }
             return await ExtensionWorkerRecovery.shared.observe(id, generation: first as? Int ?? 0, token: args.dropFirst().first as? String ?? "")
         case "background.unobserve":
+            guard owner.contexts[id] === context else { return nil }
             ExtensionWorkerRecovery.shared.cancel(id, token: first as? String ?? "")
             return nil
         case "background.wake":

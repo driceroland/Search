@@ -42,17 +42,31 @@ final class ExtensionWorkerRecovery {
     func register(_ context: WKWebExtensionContext) -> @MainActor () -> Void {
         let id = context.uniqueIdentifier
         let previous = contexts[id], previousBackground = backgrounds[id]
+        let addedHandler = handlers[id] == nil
         contexts[id] = WeakContext(context)
-        if handlers[id] == nil {
+        if addedHandler {
             let handler = Handler(id: id, owner: self)
             handlers[id] = handler
             for controller in controllers.allObjects { handler.attach(controller) }
         }
         return { [weak self, weak context] in
             guard let self, let context, self.contexts[id]?.value === context else { return }
+            if addedHandler { self.unregister(id) }
             self.contexts[id] = previous
             self.backgrounds[id] = previousBackground
         }
+    }
+
+    /// A replacement/removal must not carry this extension's bridge into
+    /// future tabs. Automatic same-context recovery deliberately keeps it.
+    func unregister(_ id: String) {
+        if let handler = handlers.removeValue(forKey: id) {
+            for controller in controllers.allObjects { handler.detach(controller) }
+        }
+        contexts[id] = nil
+        backgrounds[id] = nil
+        let replies = waiting.removeValue(forKey: id) ?? [:]
+        replies.values.forEach { $0.reply(nil) }
     }
 
     private func lifetime(for id: String) -> UUID? {
@@ -132,7 +146,7 @@ final class ExtensionWorkerRecovery {
             self.id = id
             self.owner = owner
             // WebKit uses this shared named world for isolated scripts.
-            // Retained through unload; no website main-world handler is added.
+            // Retained through recovery; no website main-world handler is added.
             world = .world(name: "WebExtension-" + id)
             super.init()
         }
@@ -141,14 +155,26 @@ final class ExtensionWorkerRecovery {
             controller.addScriptMessageHandler(self, contentWorld: world, name: "searchWorkerRecovery")
         }
 
+        func detach(_ controller: WKUserContentController) {
+            controller.removeScriptMessageHandler(forName: "searchWorkerRecovery", contentWorld: world)
+        }
+
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage,
                                    replyHandler: @escaping @MainActor (Any?, String?) -> Void) {
             guard let request = message.body as? [String: Any], let token = request["token"] as? String,
                   !token.isEmpty, token.count <= 128 else { replyHandler(nil, "Invalid observer"); return }
+            guard owner.handlers[id] === self else {
+                replyHandler(nil, "Extension registration was replaced")
+                return
+            }
             if request["cancel"] as? Bool == true {
                 owner.cancel(id, token: token)
                 replyHandler(nil, nil)
+                return
+            }
+            guard owner.contexts[id]?.value?.isLoaded == true else {
+                replyHandler(nil, "Extension context is not loaded")
                 return
             }
             guard let generation = request["generation"] as? Int, generation >= 0,

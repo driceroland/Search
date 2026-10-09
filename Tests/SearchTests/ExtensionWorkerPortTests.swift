@@ -86,6 +86,24 @@ final class ExtensionWorkerPortTests: XCTestCase {
         recovery.cancel("first", token: "fresh")
     }
 
+    @MainActor
+    func testUnregisterCancelsPendingObserversWithoutClaimingRestart() {
+        let recovery = ExtensionWorkerRecovery()
+        recovery.restarted("first")
+        var replies: [Int?] = [], other: [Int?] = []
+        recovery.observe("first", generation: 1, token: "pending", lifetime: nil) { replies.append($0) }
+        recovery.observe("second", generation: 0, token: "pending", lifetime: nil) { other.append($0) }
+        recovery.unregister("first")
+        XCTAssertEqual(replies.count, 1)
+        XCTAssertNil(replies[0])
+        recovery.createdWorker("first", lifetime: UUID())
+        XCTAssertEqual(replies.count, 1)
+        XCTAssertEqual(recovery.generation(for: "first"), 1, "Cleanup must preserve a previous context generation")
+        XCTAssertTrue(other.isEmpty, "Another extension's subscriptions are retained")
+        recovery.cancel("second", token: "pending")
+        XCTAssertEqual(other.count, 1)
+    }
+
     private func drain(_ js: JSContext) {
         for _ in 0..<40 { js.evaluateScript("void 0") }
         XCTAssertNil(js.exception?.toString())

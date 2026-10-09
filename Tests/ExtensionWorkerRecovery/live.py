@@ -41,6 +41,9 @@ TOTAL_TIMEOUT = 504
 # existing isolated lifecycle cleanup. The normal suite takes about 5 minutes.
 WORK_TIMEOUT = TOTAL_TIMEOUT - 74
 MAX_REPORT_BYTES = 8 * 1024 * 1024
+LLDB_MAX_THREADS = 32
+LLDB_MAX_FRAMES = 48
+LLDB_LOG_LIMIT = 160000
 
 
 class Failure(Exception):
@@ -86,8 +89,11 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--admission-only', action='store_true',
                         help='install the fixture and verify its initial real ports, then clean up')
-    parser.add_argument('--direct-launch', action='store_true',
+    launcher = parser.add_mutually_exclusive_group()
+    launcher.add_argument('--direct-launch', action='store_true',
                         help='diagnostic only: launch the exact built executable and capture its exit and output')
+    launcher.add_argument('--lldb-launch', action='store_true',
+                          help='diagnostic only: launch this probe under LLDB and capture bounded native stacks')
     parser.add_argument('--self-test', action='store_true',
                         help='run pure-Python diagnostic selection checks; no app or macOS required')
     return parser.parse_args(argv)
@@ -109,6 +115,95 @@ def process_status(code):
         except ValueError:
             result['signal'] = str(-code)
     return result
+
+
+def lldb_capture_command():
+    # SBProcess/Thread APIs inspect only this debugger's launched target. No
+    # expression evaluation, code injection, attach, or host configuration.
+    source = f"""import lldb, json
+p = lldb.debugger.GetSelectedTarget().GetProcess()
+state = p.GetState()
+print('LLDB_TARGET_STATE', json.dumps({{'pid': p.GetProcessID(), 'state': state, 'exitStatus': p.GetExitStatus()}}), flush=True)
+if p.IsValid() and state in (lldb.eStateStopped, lldb.eStateCrashed, lldb.eStateSuspended):
+    selected = p.GetSelectedThread()
+    candidates = [selected] + [p.GetThreadAtIndex(i) for i in range(min(p.GetNumThreads(), {LLDB_MAX_THREADS}))]
+    ids = []
+    for thread in candidates:
+        if thread.IsValid() and thread.GetIndexID() not in ids:
+            ids.append(thread.GetIndexID())
+    ids = ids[:{LLDB_MAX_THREADS}]
+    print('LLDB_STACK_SCOPE', json.dumps({{'totalThreads': p.GetNumThreads(), 'selectedThread': selected.GetIndexID(), 'dumpedThreads': ids, 'framesPerThread': {LLDB_MAX_FRAMES}}}), flush=True)
+    lldb.debugger.HandleCommand('process status')
+    if ids:
+        lldb.debugger.HandleCommand('thread backtrace --count {LLDB_MAX_FRAMES} ' + ' '.join(str(i) for i in ids))
+    lldb.debugger.HandleCommand('register read')
+    lldb.debugger.HandleCommand('image list -o -f')
+    print('LLDB_CAPTURE_COMPLETE', flush=True)
+    print('LLDB_OWNED_PROCESS_KILL', str(p.Kill()), flush=True)
+else:
+    print('LLDB_NO_STOPPED_STACK', flush=True)
+"""
+    return 'script exec(' + repr(source) + ')'
+
+
+def lldb_command(debugger, app, world, support):
+    support = Path(support)
+    executable = Path(app) / 'Contents/MacOS/Search'
+    pid_path = support / 'lldb-owned-process.json'
+    record = ("script import json, os, lldb; t=lldb.debugger.GetSelectedTarget(); p=t.GetProcess(); "
+              "f=t.GetExecutable(); " +
+              "open(" + repr(str(pid_path)) + ", 'w').write(json.dumps({'pid': p.GetProcessID(), "
+              "'executable': os.path.join(f.GetDirectory(), f.GetFilename())}))")
+    launch = ('process launch --stop-at-entry --stdout ' + json.dumps(str(support / 'lldb-stdout.log')) +
+              ' --stderr ' + json.dumps(str(support / 'lldb-stderr.log')))
+    command = [str(debugger), '--batch', '--no-lldbinit', '--file', str(executable),
+               '--one-line', 'settings set target.disable-aslr false',
+               '--one-line', 'settings set target.env-vars ' + json.dumps('SEARCH_PROBE=' + world)]
+    # The copied Intel app may have its matching dSYM beside the original.
+    relative = Path('Search.app.dSYM/Contents/Resources/DWARF/Search')
+    candidates = [Path(app).parent / relative, Path(app).parent / 'intel' / relative]
+    if platform.machine() == 'x86_64':
+        candidates.reverse()
+    dwarf = next((path for path in candidates if path.is_file()), None)
+    if dwarf is not None:
+        command.extend(['--one-line', 'target symbols add ' + json.dumps(str(dwarf))])
+    capture = lldb_capture_command()
+    command.extend(['--one-line', launch, '--one-line', record, '--one-line', 'continue',
+                    '--one-line', capture, '--one-line-on-crash', capture])
+    return command
+
+
+def lldb_owned_pid(text, app):
+    try:
+        data = json.loads(text)
+        pid = data['pid']
+        if type(pid) is int and 1 < pid < 2 ** 31 and Path(data['executable']).resolve() == (Path(app) / 'Contents/MacOS/Search').resolve():
+            return pid
+    except (ValueError, TypeError, KeyError):
+        pass
+    return None
+
+
+def lldb_launch_error(output):
+    permission = re.search(r'not (?:permitted|authorized|entitled|allowed)|permission denied|failed to get (?:the )?task|developer mode', output, re.IGNORECASE)
+    return 'BLOCKED: LLDB launch permission denied' if permission else 'LLDB launch did not reach the isolated bench'
+
+
+def bounded_log(path, limit=LLDB_LOG_LIMIT):
+    # Preserve the beginning (faulting thread) as well as the final result;
+    # an image list must not push the useful stack out of a tail-only capture.
+    with Path(path).open('rb') as stream:
+        stream.seek(0, os.SEEK_END)
+        size = stream.tell()
+        stream.seek(0)
+        head = stream.read(min(size, limit))
+        tail = b''
+        if size > limit:
+            head = head[:limit * 3 // 4]
+            stream.seek(-limit // 4, os.SEEK_END)
+            tail = stream.read(limit // 4)
+    return {'bytes': size, 'truncated': size > limit,
+            'text': head.decode('utf-8', errors='replace') + ('\n[bounded transcript: middle omitted]\n' + tail.decode('utf-8', errors='replace') if tail else '')}
 
 
 def parse_report(text):
@@ -317,7 +412,64 @@ def self_test():
     assert process_status(-6)['signal'] == 'SIGABRT'
     assert process_status(0) == {'state': 'exited', 'returncode': 0}
     assert process_status(None)['state'] == 'running'
-    print('PASS 24 pure-Python diagnostic selection, symbolication, summary and argument checks', flush=True)
+    debug = parse_args(['--lldb-launch', '--admission-only'])
+    assert debug.lldb_launch and debug.admission_only and not debug.direct_launch
+    assert not parse_args([]).lldb_launch
+    command = lldb_command('/usr/bin/lldb', app, 'safe-probe', Path('/tmp/probe with spaces'))
+    assert '--batch' in command and '--no-lldbinit' in command
+    assert '--attach-pid' not in command and '--attach-name' not in command
+    assert 'settings set target.disable-aslr false' in command
+    assert any('SEARCH_PROBE=safe-probe' in item for item in command)
+    assert '--one-line-on-crash' in command
+    assert 'range(min(p.GetNumThreads(), 32))' in lldb_capture_command()
+    assert 'thread backtrace --count 48' in lldb_capture_command()
+    assert lldb_owned_pid(json.dumps({'pid': 123, 'executable': str(app / 'Contents/MacOS/Search')}), app) == 123
+    assert lldb_owned_pid(json.dumps({'pid': 123, 'executable': '/tmp/unrelated/Search'}), app) is None
+    assert lldb_owned_pid(json.dumps({'pid': True, 'executable': str(app / 'Contents/MacOS/Search')}), app) is None
+    assert lldb_owned_pid('incomplete', app) is None
+    assert lldb_launch_error('error: Operation not permitted').startswith('BLOCKED:')
+    assert not lldb_launch_error('target stopped').startswith('BLOCKED:')
+    import tempfile
+    with tempfile.TemporaryDirectory() as temp:
+        log = Path(temp) / 'test.log'
+        log.write_bytes(b'A' * 900 + b'Z' * 100)
+        excerpt = bounded_log(log, limit=100)
+        assert excerpt['truncated'] and excerpt['text'].startswith('A' * 75) and excerpt['text'].endswith('Z' * 25)
+        assert bounded_log(log, limit=2000)['text'] == 'A' * 900 + 'Z' * 100
+    import ast, contextlib, io, types
+    capture = ast.literal_eval(lldb_capture_command()[len('script exec('):-1])
+    assert compile(capture, '<lldb-capture>', 'exec') is not None
+    class MockThread:
+        def __init__(self, index): self.index = index
+        def IsValid(self): return True
+        def GetIndexID(self): return self.index
+    class MockProcess:
+        killed = False
+        def GetState(self): return 5
+        def GetProcessID(self): return 123
+        def GetExitStatus(self): return 0
+        def IsValid(self): return True
+        def GetSelectedThread(self): return MockThread(999)
+        def GetNumThreads(self): return 1000
+        def GetThreadAtIndex(self, index): return MockThread(index + 1)
+        def Kill(self): self.killed = True; return 'success'
+    process = MockProcess()
+    commands = []
+    fake_lldb = types.SimpleNamespace(eStateStopped=5, eStateCrashed=8, eStateSuspended=11,
+        debugger=types.SimpleNamespace(GetSelectedTarget=lambda: types.SimpleNamespace(GetProcess=lambda: process), HandleCommand=commands.append))
+    original_lldb = sys.modules.get('lldb')
+    try:
+        sys.modules['lldb'] = fake_lldb
+        with contextlib.redirect_stdout(io.StringIO()):
+            exec(capture, {})
+    finally:
+        if original_lldb is None: sys.modules.pop('lldb', None)
+        else: sys.modules['lldb'] = original_lldb
+    backtrace = next(command for command in commands if command.startswith('thread backtrace'))
+    assert len(backtrace.split()[4:]) == LLDB_MAX_THREADS
+    assert backtrace.split()[4] == '999'
+    assert process.killed
+    print('PASS 45 pure-Python diagnostic selection, symbolication, summary and argument checks', flush=True)
     return 0
 
 
@@ -352,10 +504,15 @@ class Live:
         self.launched_at = None
         self.process = None
         self.output_paths = {}
+        self.debugger = None
+        self.lldb_pid_path = None
+        self.lldb_paths = {}
 
-    def launch(self, direct=False):
+    def launch(self, direct=False, lldb=False):
         self.launched_at = time.time()
-        if not direct:
+        if lldb:
+            self.launch_lldb()
+        elif not direct:
             self.sv.launch()
             self.owned_pids = {int(pid) for pid in self.sv.started}
         else:
@@ -378,8 +535,98 @@ class Live:
             while not socket.exists() and self.process.poll() is None and time.monotonic() < until:
                 time.sleep(0.1)
             time.sleep(2)
-        print('PROBE_LAUNCH', json.dumps({'mode': 'direct' if direct else 'open', 'at': self.launched_at,
+        print('PROBE_LAUNCH', json.dumps({'mode': 'lldb' if lldb else 'direct' if direct else 'open', 'at': self.launched_at,
               'pids': sorted(self.owned_pids), 'process': process_status(self.process.poll()) if self.process else None}), flush=True)
+
+    def save_lldb_pid(self):
+        if self.lldb_pid_path is None:
+            return
+        try:
+            with self.lldb_pid_path.open() as stream:
+                pid = lldb_owned_pid(stream.read(4096), APP)
+        except OSError:
+            return
+        if pid is not None:
+            self.owned_pids.add(pid)
+            self.sv.started.add(str(pid))
+
+    def launch_lldb(self):
+        support = Path(self.sv.SUPPORT)
+        support.mkdir(parents=True, exist_ok=True)
+        socket = Path(self.sv.SOCK)
+        if socket.exists():
+            socket.unlink()
+        try:
+            found = subprocess.run(['/usr/bin/xcrun', '--find', 'lldb'], capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise Failure('BLOCKED: LLDB is unavailable: ' + str(error))
+        debugger = Path(found.stdout.strip())
+        if found.returncode or not debugger.is_file():
+            raise Failure('BLOCKED: LLDB is unavailable: ' + found.stderr.strip())
+        self.lldb_pid_path = support / 'lldb-owned-process.json'
+        self.lldb_paths = {name: support / ('lldb-' + name + '.log') for name in ('transcript', 'stdout', 'stderr')}
+        command = lldb_command(debugger, APP, self.sv.W, support)
+        print('LLDB_LAUNCH', json.dumps({'debugger': str(debugger), 'executable': str(APP / 'Contents/MacOS/Search'),
+              'probe': self.sv.W, 'attach': False, 'maxThreads': LLDB_MAX_THREADS, 'maxFramesPerThread': LLDB_MAX_FRAMES}), flush=True)
+        with self.lldb_paths['transcript'].open('wb') as transcript:
+            self.debugger = subprocess.Popen(command, cwd=ROOT, env=direct_environment(self.sv.W),
+                                             stdin=subprocess.DEVNULL, stdout=transcript, stderr=subprocess.STDOUT)
+        until = time.monotonic() + 30
+        while time.monotonic() < until:
+            self.save_lldb_pid()
+            if socket.exists() or self.debugger.poll() is not None:
+                break
+            time.sleep(0.1)
+        self.save_lldb_pid()
+        if not socket.exists():
+            output = bounded_log(self.lldb_paths['transcript'])['text']
+            print('LLDB_LAUNCH_OUTPUT', output, flush=True)
+            raise Failure(lldb_launch_error(output))
+        if not self.owned_pids:
+            raise Failure('BLOCKED: LLDB did not confirm its launched Search PID')
+        time.sleep(2)
+
+    def lldb_diagnostics(self):
+        if self.debugger is None:
+            return
+        self.save_lldb_pid()
+        if self.failed and self.debugger.poll() is None:
+            try:
+                self.debugger.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                print('LLDB_INTERRUPT_FOR_DIAGNOSTICS: fixture failed; interrupting only its owned debugger', flush=True)
+                self.debugger.send_signal(signal.SIGINT)
+                try:
+                    self.debugger.wait(timeout=8)
+                except subprocess.TimeoutExpired:
+                    print('LLDB_CAPTURE_INCOMPLETE: debugger did not finish within the bounded diagnostic wait', flush=True)
+        print('LLDB_DEBUGGER_PROCESS', json.dumps(dict(pid=self.debugger.pid, **process_status(self.debugger.poll()))), flush=True)
+        for name, path in self.lldb_paths.items():
+            try:
+                print('LLDB_' + name.upper(), json.dumps(bounded_log(path)), flush=True)
+            except OSError as error:
+                print('LLDB_' + name.upper() + '_UNAVAILABLE', str(error), flush=True)
+
+    def finish_lldb(self):
+        if self.debugger is None:
+            return
+        # Ordinary sv.finish first asks the owned Search to quit. If it is
+        # stopped, interrupt only our debugger so its stop hook captures and
+        # kills its own launched inferior. Never attach or signal by name.
+        try:
+            self.debugger.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self.debugger.send_signal(signal.SIGINT)
+            try:
+                self.debugger.wait(timeout=6)
+            except subprocess.TimeoutExpired:
+                self.debugger.terminate()
+                try:
+                    self.debugger.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.debugger.kill()
+                    self.debugger.wait(timeout=2)
+        print('LLDB_DEBUGGER_AFTER_CLEANUP', json.dumps(process_status(self.debugger.returncode)), flush=True)
 
     def direct_diagnostics(self):
         if self.process is None:
@@ -729,6 +976,7 @@ class Live:
 
     def diagnostics(self):
         # Capture before the report wait and before finish removes the logs.
+        self.lldb_diagnostics()
         self.direct_diagnostics()
         # Capture the app's own exception report before isolated cleanup erases
         # it. A broken bench connection must not hide the original native fault.
@@ -740,7 +988,7 @@ class Live:
         alive = self.sv.pids()
         print('OWNED_PROBE_PIDS', alive, 'SAVED_OWNED_PIDS', sorted(self.owned_pids), flush=True)
         if self.failed or not alive:
-            capture_os_reports(pids=self.owned_pids, launched_at=self.launched_at, app=APP, wait=20)
+            capture_os_reports(pids=self.owned_pids, launched_at=self.launched_at, app=APP, wait=0 if self.debugger else 20)
         for label in self.tabs:
             try:
                 print('FINAL_STATE', label, json.dumps(self.state(label), sort_keys=True), flush=True)
@@ -766,7 +1014,7 @@ def main(argv=None):
         return 2
     signal.signal(signal.SIGALRM, expired)
     signal.alarm(WORK_TIMEOUT)
-    print('ENVIRONMENT', json.dumps(dict(environment(), launchMode='direct' if options.direct_launch else 'open'), sort_keys=True), flush=True)
+    print('ENVIRONMENT', json.dumps(dict(environment(), launchMode='lldb' if options.lldb_launch else 'direct' if options.direct_launch else 'open'), sort_keys=True), flush=True)
     sys.path.insert(0, str(ROOT / 'Tests'))
     import split_view as sv
     sv.use('extension-worker-recovery')
@@ -780,7 +1028,7 @@ def main(argv=None):
     live = Live(sv)
     try:
         sv.setup()
-        live.launch(direct=options.direct_launch)
+        live.launch(direct=options.direct_launch, lldb=options.lldb_launch)
         live.check('isolated hidden Search bench is available', Path(sv.SOCK).exists(), sv.SOCK, fatal=True)
         base = f'http://127.0.0.1:{server.server_port}'
         if options.admission_only:
@@ -804,7 +1052,12 @@ def main(argv=None):
             try:
                 sv.finish()
             finally:
+                # A bench timeout may have armed expired()'s one-second retry.
+                # Give the mutually exclusive owned launcher its own bound so
+                # that alarm cannot repeatedly interrupt debugger cleanup.
+                signal.alarm(13)
                 live.finish_direct()
+                live.finish_lldb()
             live.check('isolated probe cleaned up', not Path(sv.SUPPORT).exists() and not sv.pids())
         except Exception as error:
             live.check('isolated probe cleaned up', False, str(error))

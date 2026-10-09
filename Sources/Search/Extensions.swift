@@ -510,6 +510,7 @@ final class Extensions: NSObject, ObservableObject {
         // All paths retire the same endpoint: recovery, reload, disable and
         // remove. Complete observers before their views are closed, too.
         ExtensionWorkerRecovery.shared.restarted(id, replacingContext: replacingContext)
+        if replacingContext { ExtensionWorkerRecovery.shared.unregister(id) }
         // A reused context keeps native ports' weak context reference alive.
         // Retire only this extension's host/socket resources explicitly, rather
         // than waiting for isDisconnected to notice a deallocated context.
@@ -736,6 +737,9 @@ final class Extensions: NSObject, ObservableObject {
                 }
             }
         } catch {
+            if contexts[id] == nil, !context.isLoaded {
+                ExtensionWorkerRecovery.shared.unregister(id)
+            }
             noteError("couldn't reload the extension: \(error.localizedDescription)", for: id)
         }
         return true

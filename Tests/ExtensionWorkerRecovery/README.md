@@ -42,8 +42,12 @@ the same context. If it did not, that branch is reported as not covered.
 baseline comparisons. `--direct-launch` is an explicit diagnostic route using
 the exact built executable, unchanged signature/entitlements and the same probe
 profile/window isolation; it records stdout, stderr and the actual child exit
-status. The default continues to use the existing `open` launcher. OS crash
-reports and symbolication are restricted to the captured test process.
+status. `--lldb-launch --admission-only` instead launches that executable under
+LLDB (never attaches) to capture the owned process's native admission stack.
+The diagnostic leaves ASLR enabled, bounds stacks to 32 threads / 48 frames,
+and reports debugger permission failures as BLOCKED without changing permissions.
+The default continues to use the existing `open` launcher. OS crash reports and
+symbolication are restricted to the captured test process.
 
 Application-level withheld replies do not claim dead-worker detection, and the
 brief stall is not proof of slow initial startup. Cross-origin child frames,
@@ -133,6 +137,12 @@ between those operations is a separate lifecycle interleaving that requires
 additional live coverage.
 
 Observers cancel when their port closes, is collected, or its document leaves.
-BFCache keeps subscriptions. Abrupt process death without pagehide can retain a
+BFCache keeps subscriptions. Replacing, disabling or removing the extension
+removes its isolated bridge from tracked controllers; future tabs do not inherit
+an inactive extension's handler. Failed loading rolls back a newly added bridge
+without replacing a prior live registration. Automatic same-context recovery retains
+it unless reloading fails with no loaded context. Stale registrations cannot cancel
+subscriptions belonging to a replacement.
+Abrupt process death without pagehide can retain a
 pending native reply until that extension is next unloaded; no timer is added
 to probe for that condition.
