@@ -2813,6 +2813,14 @@ final class Bench {
         ]
     }
 
+    /// Keep load failures observable even when a framework's nested error
+    /// diagnostics cannot safely be traversed. Domain and code retain the
+    /// error identity without invoking userInfo or arbitrary descriptions.
+    static func extensionErrorSummary(_ error: Error) -> String {
+        let error = error as NSError
+        return "\(String(error.domain.prefix(200))) (\(error.code))"
+    }
+
     /// Extensions, from the shell. Installing asks as it always does, except
     /// in a test run given `yes` — a real browser can't be made to skip it.
     @available(macOS 15.4, *)
@@ -2821,18 +2829,14 @@ final class Bench {
         let skip = Store.testing && (request["yes"] as? Bool ?? false)
         switch verb {
         case "extensions":
-            answer(["busy": extensions.busy ?? "", "extensions": extensions.installed.map { item -> [String: Any] in
+            answer(["started": extensions.started, "busy": extensions.busy ?? "", "extensions": extensions.installed.map { item -> [String: Any] in
                 let context = extensions.contexts[item.id]
                 let action = context?.action(for: extensions.activeAdapter)
                 return [
                     "id": item.id, "name": item.name, "version": item.version, "enabled": item.enabled,
                     "loaded": context != nil,
                     "base": context?.baseURL.absoluteString ?? "",
-                    "errors": (context?.errors ?? []).map { error in
-                        let e = error as NSError
-                        let under = (e.userInfo[NSUnderlyingErrorKey] as? NSError).map { " ← \($0.localizedDescription) \($0.userInfo)" } ?? ""
-                        return e.localizedDescription + under + (e.userInfo.isEmpty ? "" : " \(e.userInfo.filter { $0.key != NSLocalizedDescriptionKey && $0.key != NSUnderlyingErrorKey })")
-                    },
+                    "errors": (context?.errors ?? []).map(Bench.extensionErrorSummary),
                     "reported": extensions.errors[item.id] ?? [],
                     "action": action?.label ?? "", "badge": action?.badgeText ?? "",
                     "popup": action?.presentsPopup ?? false,

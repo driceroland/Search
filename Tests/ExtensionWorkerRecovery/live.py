@@ -803,6 +803,11 @@ class Live:
         self.assert_ports(name, generations, retired)
 
     def setup_pages(self, base):
+        # Admission during Search's initial asynchronous scan can race a
+        # second load of the newly installed extension. Await its real state,
+        # not a guessed sleep, before adding the fixture to this empty profile.
+        self.poll('extension startup scan completed', self.extension_state,
+                  lambda data: data.get('started') is True and not data.get('busy'), timeout=60)
         self.sv.cmd({'do': 'ext-folder', 'path': str(HERE / 'extension'), 'yes': True})
         status = self.poll('local fixture installation', self.extension_state,
                            lambda data: any(item['name'] == 'Search Worker Recovery Fixture' and item['loaded']

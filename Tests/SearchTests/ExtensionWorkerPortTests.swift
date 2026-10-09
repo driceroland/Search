@@ -104,6 +104,19 @@ final class ExtensionWorkerPortTests: XCTestCase {
         XCTAssertEqual(other.count, 1)
     }
 
+    private final class OpaqueError: NSError, @unchecked Sendable {
+        override var userInfo: [String: Any] { fatalError("The benchmark must not traverse nested error payloads") }
+        override var localizedDescription: String { fatalError("The benchmark must not ask nested diagnostics to describe themselves") }
+    }
+
+    @MainActor
+    func testBenchErrorSummaryPreservesIdentityWithoutTraversingPayloads() {
+        let error = OpaqueError(domain: "WKWebExtensionErrorDomain", code: 6, userInfo: nil)
+        XCTAssertEqual(Bench.extensionErrorSummary(error), "WKWebExtensionErrorDomain (6)")
+        let long = NSError(domain: String(repeating: "a", count: 1000), code: 1)
+        XCTAssertEqual(Bench.extensionErrorSummary(long), String(repeating: "a", count: 200) + " (1)")
+    }
+
     private func drain(_ js: JSContext) {
         for _ in 0..<40 { js.evaluateScript("void 0") }
         XCTAssertNil(js.exception?.toString())
