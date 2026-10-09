@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 """Popup security regressions in Search's own hidden, checkout-specific world.
 
-Build on macOS (`./build.sh`), then `python3 Tests/popups.py`. Native tap and
-linkmenu deliver trusted input. This does not use element.click() as proof
+Build on macOS (`./build.sh`), then `python3 Tests/popups.py`. Native
+tap delivers trusted input. This does not use element.click() as proof
 of user activation. The delayed GET models draw.io, and the POST body is
 checked at the local server. No accounts, external sites or model APIs.
+
+The >5-second native-menu case is a MANUAL check, NOT RUN by this hidden
+suite: its isolation guard hides any menu entering the screen. For an
+interactive Mac check, run `python3 Tests/popups.py --serve`, open the printed
+/menu URL in Search, right-click the link, wait at least six seconds, then
+choose Open Link in New Tab (WebKit's Open Link in New Window). Expect one
+new tab for /opened-menu. Repeat with Open Link in New Tab and Go to It if
+checking the foreground variant. Do not disable the hidden-probe guard.
 """
+import argparse
 import sys
 import time
 from http.server import BaseHTTPRequestHandler
@@ -17,14 +26,11 @@ import split_view as sv  # noqa: E402
 
 sv.use("popup-tests")
 posts = []
-menu_requests = []
 
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
         page = urlparse(self.path).path
-        if page == "/opened-menu":
-            menu_requests.append(time.monotonic())
         if page == "/delay":
             time.sleep(2)
             body = "ready"
@@ -114,19 +120,27 @@ def main():
         page = sv.page("ads"); tap(page); time.sleep(3)
         t.ok("repeated cross-origin ad-frame requests are refused", not opened("ad"))
 
-        page = sv.page("menu")
-        before = time.monotonic()
-        result = sv.cmd({"do": "linkmenu", "id": page, "x": 60, "y": 60,
-                         "pick": "Open Link in New Tab", "delay": 6})
-        t.ok("native link-menu action after more than 5 seconds opens once",
-             len(menu_requests) == 1 and menu_requests[0] - before >= 6
-             and len(opened("menu")) == 1, result)
+        print("NOT RUN: native menu held >5 seconds requires the interactive --serve check.")
     finally:
         t.done(); sv.finish()
     return 1 if t.failed else 0
 
 
 if __name__ == "__main__":
-    if sys.platform != "darwin":
-        sys.exit("Tests/popups.py requires macOS and a built Search.app")
-    sys.exit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--serve", action="store_true", help="serve local fixtures for an interactive Search check; do not launch or drive an app")
+    args = parser.parse_args()
+    if args.serve:
+        print(f"Open {sv.BASE}/menu in Search on a Mac.", flush=True)
+        print("Right-click the link, wait at least six seconds, then choose Open Link in New Tab.")
+        print("Expect one new tab for /opened-menu. This command does not launch or control Search.")
+        print("Press Ctrl-C to stop the fixture server.", flush=True)
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            sv.srv.shutdown()
+    else:
+        if sys.platform != "darwin":
+            sys.exit("Tests/popups.py requires macOS and a built Search.app")
+        sys.exit(main())

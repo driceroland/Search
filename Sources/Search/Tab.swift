@@ -1507,17 +1507,10 @@ final class PageView: WKWebView {
         // comes up, the way a hand would choose it, and the menu goes.
         if Store.testing, let title = PageView.picking {
             PageView.picking = nil
-            let timer = Timer(timeInterval: PageView.pickingDelay, repeats: false) { _ in
-                MainActor.assumeIsolated {
-                    // Keep the native item and its link target alive until
-                    // dispatched, as in the immediate link-menu probe.
-                    if let index = menu.items.firstIndex(where: { $0.title == title }) { menu.performActionForItem(at: index) }
-                    menu.cancelTracking()
-                }
+            RunLoop.main.perform(inModes: [.eventTracking, .default]) {
+                if let index = menu.items.firstIndex(where: { $0.title == title }) { menu.performActionForItem(at: index) }
+                menu.cancelTracking()
             }
-            PageView.pickingDelay = 0
-            RunLoop.main.add(timer, forMode: .eventTracking)
-            RunLoop.main.add(timer, forMode: .default)
         }
         if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierSearchWeb" }),
            let name = searchName?() {
@@ -1534,7 +1527,6 @@ final class PageView: WKWebView {
 
     /// The item the bench's linkmenu will choose in the next menu.
     static var picking: String?
-    static var pickingDelay: TimeInterval = 0
     var searchName: (() -> String?)?
     var onSearch: ((String) -> Void)?
     private var selection: String?

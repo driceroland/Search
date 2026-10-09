@@ -595,9 +595,7 @@ final class Bench {
             let web = tab.web
             let inView = NSPoint(x: x, y: web.isFlipped ? y : web.bounds.height - y)
             let point = web.convert(inView, to: nil)
-            let delay = min(10, max(0, request["delay"] as? Double ?? 0))
             PageView.picking = pick
-            PageView.pickingDelay = delay
             for type in [NSEvent.EventType.rightMouseDown, .rightMouseUp] {
                 guard let event = NSEvent.mouseEvent(
                     with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
@@ -606,9 +604,8 @@ final class Bench {
                 ) else { continue }
                 if type == .rightMouseDown { web.rightMouseDown(with: event) } else { web.rightMouseUp(with: event) }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay + 1.2) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 PageView.picking = nil
-                PageView.pickingDelay = 0
                 answer([
                     "tabs": browser.tabs.map { Bench.short($0) },
                     "urls": browser.tabs.map { $0.address?.absoluteString ?? "" },
