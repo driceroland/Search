@@ -2671,7 +2671,7 @@ final class Browser: NSObject, ObservableObject {
             }
             let fresh = Tab(configuration: Web.configuration(space: spaceID))
             prepare(fresh)
-            remember(tab, at: index)
+            remember(tab, at: index, partner: partner?.id, onLeft: pair?.left == tab.id)
             tab.close()
             tabs[index] = fresh
             activeID = fresh.id
