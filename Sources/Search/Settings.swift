@@ -455,6 +455,10 @@ struct SettingsPanel: View {
                 }
             }
             Rule()
+            Line("Pins stay on their site", "As in Arc: a link from a pinned tab to another site opens in a panel over it, and the pin stays on its page. Links within the site go as usual, and ⌘W takes the pin back to the page it was pinned at.") {
+                Switch(on: $prefs.pinsPeek)
+            }
+            Rule()
             Line("Split View", "Show two tabs side by side. Drag a tab onto a page to pair them.") {
                 Switch(on: $prefs.splitView)
             }

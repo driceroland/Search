@@ -631,6 +631,14 @@ private struct PinSquare: View {
                     .fill(hovering ? Palette.hover : Palette.wash.opacity(0.55))
             }
         }
+        .overlay(alignment: .topTrailing) {
+            // The peek opened from it, while it is up.
+            if browser.peekFrom == tab.id, let page = browser.peekTab {
+                PeekBadge(page: page, size: scale * 16 / 34)
+                    .offset(x: scale * 4 / 34, y: -scale * 4 / 34)
+            }
+        }
+        .animation(Motion.quick, value: browser.peekFrom)
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
         .modifier(OneClick(double: live) {
             if live { browser.goHome(tab) } else { browser.select(tab) }
@@ -667,6 +675,9 @@ private struct SideRow: View {
     /// The speaker, which can be pressed, and so steps in beside the cross
     /// under the pointer rather than hiding beneath it as the ring does.
     private var speaker: Bool { !tab.loading && (tab.noisy || tab.muted) }
+    /// A pinned row with a peek opened from it: the peek's icon at its end,
+    /// as on a square's corner.
+    private var peeking: Bool { !editing && tab.pin != nil && browser.peekFrom == tab.id && browser.peekTab != nil }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -702,8 +713,16 @@ private struct SideRow: View {
                     .foregroundStyle(colour)
             }
 
-            if status {
+            if status || peeking {
                 Spacer(minLength: 2)
+            }
+            if peeking, let page = browser.peekTab {
+                // Under the pointer the cross takes its place, unless the
+                // ring or the speaker already holds the end of the row.
+                PeekBadge(page: page, size: 16)
+                    .opacity(hovering && !status ? 0 : 1)
+            }
+            if status {
 
                 ZStack {
                     if tab.loading {
@@ -720,7 +739,7 @@ private struct SideRow: View {
             }
         }
         .padding(.leading, 10)
-        .padding(.trailing, status ? 7 : 10)
+        .padding(.trailing, status || peeking ? 7 : 10)
         .frame(height: 28)
         .frame(maxWidth: .infinity, alignment: .leading)
         // The title keeps its length under the pointer and fades out
@@ -763,6 +782,7 @@ private struct SideRow: View {
         }
         .animation(Motion.quick, value: tab.loading)
         .animation(Motion.quick, value: speaker)
+        .animation(Motion.quick, value: peeking)
         .background { ground }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
