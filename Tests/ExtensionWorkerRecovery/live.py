@@ -157,6 +157,8 @@ class Live:
 
     def extension_state(self):
         status = self.sv.cmd({'do': 'extensions'})
+        if 'extensions' not in status:
+            raise Failure('extensions command returned no result; the app may have stopped: ' + repr(status))
         if self.extension:
             return next((item for item in status['extensions'] if item['id'] == self.extension), None)
         return status
@@ -414,6 +416,14 @@ class Live:
                   'the bounded event-loop stall covers an already-running worker; this runner uses top-level fixture documents')
 
     def diagnostics(self):
+        # Capture the app's own exception report before isolated cleanup erases
+        # it. A broken bench connection must not hide the original native fault.
+        crash = Path(self.sv.SUPPORT) / 'crash.log'
+        if crash.is_file():
+            print('NATIVE_CRASH_REPORT', crash.read_text(errors='replace')[-20000:], flush=True)
+        else:
+            print('NATIVE_CRASH_REPORT absent in isolated profile', flush=True)
+        print('OWNED_PROBE_PIDS', self.sv.pids(), flush=True)
         for label in self.tabs:
             try:
                 print('FINAL_STATE', label, json.dumps(self.state(label), sort_keys=True), flush=True)
