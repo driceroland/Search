@@ -117,6 +117,11 @@ struct SearchApp: App {
                     .shortcut("view.reader")
                 Button("Float Video") { browser.toggleFloat() }
                     .shortcut("view.float")
+                if browser.prefs.floatsPages {
+                    Button("Float Page") { browser.toggleFloat(.page) }
+                        .shortcut("view.floatPage")
+                        .disabled(browser.active?.isBlank ?? true)
+                }
                 // The AI add-on's, only once it is on (Settings › AI).
                 if browser.prefs.ai {
                     Divider()
@@ -645,8 +650,14 @@ struct ContentView: View {
                 // Only the window you were in, or every window's video would come.
                 browser.appLeft()
             }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)) { _ in
+                browser.desktopChanged()
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { Browsers.becameKey(browser) }
+                if let window, (note.object as? NSWindow) === window {
+                    Browsers.becameKey(browser)
+                    browser.appBack()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { browser.tabSwitcher.cancel() }

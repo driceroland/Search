@@ -70,6 +70,8 @@ Apps you allow in System Settings › Privacy & Security › Automation can read
 
 With Split View on, `⌥⌘N` splits the current page and `⌃⌘←` / `⌃⌘→` go from one page to the other. `⌘W` closes the focused tab and gives the remaining page the whole area. Tabs › Separate Split Tabs keeps both tabs open separately.
 
+Float whole pages, off by default in Settings › General, adds View › Float Page and automatically floats recognized Meet, Teams and Zoom calls when you switch tabs, apps or desktops. The same live page stays interactive and can return to its tab.
+
 ---
 
 ## For developers

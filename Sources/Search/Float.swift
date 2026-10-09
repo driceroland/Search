@@ -4,21 +4,24 @@ import WebKit
 // A video that keeps playing after you have gone somewhere else, in a small
 // window that stays above everything — other tabs, and other apps.
 //
-// WebKit will not hand a video to the system's picture-in-picture without a
-// real click on the page, and nothing the app does counts as one. Chromium is
-// looser, which is why this works elsewhere and refused here.
+// macOS WKWebView exposes no public native-PiP enablement switch. Support
+// depends on the engine and player, so this path does not assume it is there.
 //
-// So the engine is not asked. The page itself is moved: everything but the
-// video is made invisible, the video is stretched to fill the viewport, and the
-// whole web view is lifted out of the window and into a small floating one. The
-// video never stops, because it is the same page it always was — it has only
-// changed windows.
+// The same live page is moved instead. Where its video fits in the source
+// viewport, a native crop scales it without resizing WebKit's separately
+// hosted video layer. Whole pages resize normally so their controls remain
+// responsive. Neither mode reloads or duplicates the media session.
 
 @MainActor
 final class Float {
+    enum Presentation { case video, page }
+
     private var panel: NSPanel?
     private var controls: Controls?
     private weak var page: NSView?
+    private var magnification = true
+    private var autoresizing: NSView.AutoresizingMask = []
+    private(set) var presentation: Presentation = .video
 
     /// Asked to go away. The browser does the bookkeeping and calls back into
     /// `drop` — there is one way this window closes, and it is not this class
@@ -34,10 +37,14 @@ final class Float {
     /// Asked every half second while the window is up, for the line along the
     /// bottom edge.
     var onProgress: ((@escaping (Double, Bool) -> Void) -> Void)?
+    /// A meeting may end without navigating away from its room's address.
+    var onPageCheck: (() -> Void)?
 
     private var ticker: Timer?
 
     var showing: Bool { panel != nil }
+
+    func holds(_ view: NSView) -> Bool { showing && page === view }
 
     /// Where a test run's bench opens the window instead: off every screen,
     /// at the size it would have had, and not remembered (see `film float`
@@ -81,20 +88,24 @@ final class Float {
     /// everywhere else.
     static var benchScreens: [NSRect]?
 
-    func lift(_ page: NSView) {
+    func lift(_ page: NSView, presentation: Presentation = .video, title: String = "", videoRect: NSRect? = nil) {
         guard panel == nil else { return }
         self.page = page
+        self.presentation = presentation
 
-        let size = NSSize(width: 440, height: 247)
+        let videoSize = videoRect?.size
+        var size = presentation == .video ? NSSize(width: 440, height: 247) : NSSize(width: 640, height: 480)
+        if presentation == .video, let videoSize { size.height = size.width * videoSize.height / videoSize.width }
         let screen = NSScreen.main?.visibleFrame ?? .zero
         // Where it was last, at the size it was, if a screen still shows it;
         // otherwise the bottom right of this one.
-        var spot = Float.remembered ?? NSRect(
+        var spot = remembered ?? NSRect(
             x: screen.maxX - size.width - 24,
             y: screen.minY + 24,
             width: size.width,
             height: size.height
         )
+        if presentation == .video, videoSize != nil { spot.size.height = spot.width * size.height / size.width }
         if let away = Float.benchAway { spot.origin = away }
 
         let panel = Panel(
@@ -117,16 +128,17 @@ final class Float {
         // playing in the tab.
         panel.hasShadow = false
         panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
         // The bench's, off every screen, is left out when a probe is hidden.
         panel.canHide = Float.benchAway == nil
-        panel.aspectRatio = size
+        if presentation == .video { panel.aspectRatio = size }
         // Kept once a move or a resize is over, not on each step of one: at
         // the end of a resize by its edges, as it closes (see drop), and as
         // the app quits with it open, which closes nothing.
-        let keep: (Notification.Name, AnyObject) -> NSObjectProtocol = { name, object in
+        let keep: (Notification.Name, AnyObject) -> NSObjectProtocol = { [weak self] name, object in
             NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    if let frame = self?.restingFrame { Float.remembered = frame }
+                    if let frame = self?.restingFrame { self?.remembered = frame }
                 }
             }
         }
@@ -134,7 +146,19 @@ final class Float {
             keep(NSWindow.didEndLiveResizeNotification, panel),
             keep(NSApplication.willTerminateNotification, NSApp),
         ]
-        panel.minSize = NSSize(width: 260, height: 146)
+        panel.minSize = presentation == .video ? NSSize(width: 260, height: 260 * size.height / size.width) : NSSize(width: 360, height: 280)
+        if presentation == .page {
+            limitPage(panel)
+            spot = panel.frame
+            let limit: @Sendable (Notification) -> Void = { [weak self, weak panel] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let panel else { return }
+                    self.limitPage(panel)
+                }
+            }
+            keeping.append(NotificationCenter.default.addObserver(forName: NSWindow.didChangeScreenNotification, object: panel, queue: .main, using: limit))
+            keeping.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main, using: limit))
+        }
 
         // At the size the window opens at. Built at the default size and
         // then stretched to a remembered one, the page was laid out twice,
@@ -150,15 +174,37 @@ final class Float {
         // recogniser is consulted before the responder chain is. With it left
         // on, every pinch aimed at this window went into zooming the page
         // inside it instead of sizing the window. It comes back on landing.
-        (page as? WKWebView)?.allowsMagnification = false
+        magnification = (page as? WKWebView)?.allowsMagnification ?? true
+        autoresizing = page.autoresizingMask
+        if presentation == .video { (page as? WKWebView)?.allowsMagnification = false }
 
         page.removeFromSuperview()
-        page.frame = ground.bounds
-        page.autoresizingMask = [.width, .height]
-        ground.addSubview(page)
+        let header: CGFloat = presentation == .page ? 44 : 0
+        var cropped = false
+        if presentation == .video, let videoRect,
+           NSRect(origin: .zero, size: page.bounds.size).contains(videoRect) {
+            // The video keeps its existing layout and GPU-layer size. Only
+            // this native ancestor scales; resizing PiP need not reflow a page.
+            let viewport = VideoViewport(frame: ground.bounds, videoSize: videoRect.size)
+            viewport.autoresizingMask = [.width, .height]
+            page.autoresizingMask = []
+            page.setFrameOrigin(NSPoint(x: -videoRect.minX, y: videoRect.maxY - page.frame.height))
+            viewport.addSubview(page)
+            ground.addSubview(viewport)
+            cropped = true
+        } else {
+            // A player larger than its source viewport cannot be cropped
+            // whole without relayout. Keep the viewport-fitting path for it.
+            page.frame = NSRect(x: 0, y: 0, width: spot.width, height: spot.height - header)
+            page.autoresizingMask = [.width, .height]
+            ground.addSubview(page)
+        }
 
-        let controls = Controls(frame: ground.bounds)
-        controls.autoresizingMask = [.width, .height]
+        // Page controls live above the viewport, never over a site's buttons.
+        let controls = Controls(frame: presentation == .video ? ground.bounds
+                                : NSRect(x: 0, y: spot.height - header, width: spot.width, height: header),
+                                presentation: presentation, title: title)
+        controls.autoresizingMask = presentation == .video ? [.width, .height] : [.width, .minYMargin]
         controls.onClose = { [weak self] in self?.onClose?() }
         controls.onReturn = { [weak self] in self?.onReturn?() }
         controls.onPlayPause = { [weak self] in
@@ -171,8 +217,30 @@ final class Float {
         self.controls = controls
 
         panel.contentView = ground
-        panel.orderFrontRegardless()
         self.panel = panel
+        let show = { [weak self, weak panel] in
+            guard let self, let panel, self.panel === panel,
+                  self.page?.isDescendant(of: ground) == true else { return }
+            let fades = !Motion.reduced
+            if fades { panel.alphaValue = 0 }
+            panel.orderFrontRegardless()
+            if fades {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.14
+                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    panel.animator().alphaValue = 1
+                }
+            }
+        }
+        if presentation == .video, !cropped, let web = page as? WKWebView {
+            // Isolation belongs to the destination viewport, not the source
+            // page. Show only after WebKit has accepted that final layout.
+            web.evaluateInSearch(Isolate.present) { _ in
+                MainActor.assumeIsolated { show() }
+            }
+        } else {
+            show()
+        }
 
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -183,14 +251,18 @@ final class Float {
                 // and rather than hunt every path that could, this makes it
                 // impossible for the empty black rectangle to outlive it by
                 // more than half a second.
-                if self.page?.superview !== ground {
+                if self.page?.isDescendant(of: ground) != true {
                     self.onClose?()
                     return
                 }
 
-                self.onProgress? { through, playing in
-                    self.controls?.progress = through
-                    self.controls?.playing = playing
+                if self.presentation == .video {
+                    self.onProgress? { through, playing in
+                        self.controls?.progress = through
+                        self.controls?.playing = playing
+                    }
+                } else {
+                    self.onPageCheck?()
                 }
             }
         }
@@ -198,23 +270,39 @@ final class Float {
 
     /// The window's last place and size, kept across closing it and quitting,
     /// and given back only while a screen still shows most of it.
-    private static var remembered: NSRect? {
+    private var frameKey: String { presentation == .video ? "float.frame" : "float.pageFrame" }
+
+    private var remembered: NSRect? {
         get {
-            guard let text = Store.settings.string(forKey: "float.frame") else { return nil }
+            guard let text = Store.settings.string(forKey: frameKey) else { return nil }
             let frame = NSRectFromString(text)
             let shown = NSScreen.screens.contains {
                 let seen = $0.visibleFrame.intersection(frame)
                 return seen.width * seen.height > 0.6 * frame.width * frame.height
             }
-            return frame.width > 100 && shown ? frame : nil
+            let minimum = presentation == .video ? NSSize(width: 260, height: 146) : NSSize(width: 360, height: 280)
+            return frame.width >= minimum.width && frame.height >= minimum.height && shown ? frame : nil
         }
         set {
-            guard benchAway == nil else { return }
-            Store.settings.set(newValue.map(NSStringFromRect), forKey: "float.frame")
+            guard Self.benchAway == nil else { return }
+            Store.settings.set(newValue.map(NSStringFromRect), forKey: frameKey)
         }
     }
 
     private var keeping: [NSObjectProtocol] = []
+
+    private func limitPage(_ panel: NSPanel) {
+        guard let screen = panel.screen ?? NSScreen.main else { return }
+        let maximum = NSSize(width: screen.visibleFrame.width / 2, height: screen.visibleFrame.height / 2)
+        panel.minSize = NSSize(width: min(360, maximum.width), height: min(280, maximum.height))
+        panel.maxSize = maximum
+        var frame = panel.frame
+        let size = NSSize(width: min(frame.width, maximum.width), height: min(frame.height, maximum.height))
+        guard size != frame.size else { return }
+        frame.origin.y += frame.height - size.height
+        frame.size = size
+        panel.setFrame(frame, display: false)
+    }
 
     /// Where the window is, or was before it was docked at a side: a docked
     /// window is kept as it was, not as the sliver it is.
@@ -228,18 +316,41 @@ final class Float {
     /// their next layout.
     func drop() {
         guard let panel else { return }
-        if let frame = restingFrame { Float.remembered = frame }
+        if let frame = restingFrame { remembered = frame }
         keeping.forEach(NotificationCenter.default.removeObserver)
         keeping = []
         ticker?.invalidate()
         ticker = nil
-        (page as? WKWebView)?.allowsMagnification = true
+        (page as? WKWebView)?.allowsMagnification = magnification
+        page?.autoresizingMask = autoresizing
         page?.removeFromSuperview()
         page = nil
         controls = nil
         panel.orderOut(nil)
         panel.close()
         self.panel = nil
+    }
+
+    /// A fixed-size video crop composited at the panel's size. The web view's
+    /// own frame and viewport do not follow this view's frame changes.
+    private final class VideoViewport: NSView {
+        private let videoSize: NSSize
+
+        init(frame: NSRect, videoSize: NSSize) {
+            self.videoSize = videoSize
+            super.init(frame: frame)
+            wantsLayer = true
+            layer?.masksToBounds = true
+            setBoundsSize(videoSize)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            setBoundsSize(videoSize)
+        }
     }
 
     /// What a small window of video needs, and nothing else: a way out, a way
@@ -254,7 +365,9 @@ final class Float {
         var onSkip: ((Double) -> Void)?
 
         var playing = true {
-            didSet { pause.image = glyph(playing ? "pause.fill" : "play.fill", 17) }
+            didSet {
+                if playing != oldValue { pause.image = glyph(playing ? "pause.fill" : "play.fill", 17) }
+            }
         }
 
         /// Nought to one. Drawn as a hairline along the bottom edge.
@@ -269,39 +382,56 @@ final class Float {
         private let forward = NSButton()
         private let scrim = CAGradientLayer()
         private let line = Line()
+        private let title = NSTextField(labelWithString: "")
+        private let presentation: Presentation
         private var near = false
 
-        override init(frame: NSRect) {
+        init(frame: NSRect, presentation: Presentation, title: String) {
+            self.presentation = presentation
             super.init(frame: frame)
             wantsLayer = true
 
-            // A wash at the top and bottom, so white buttons hold against a
-            // bright frame of film without covering it.
-            scrim.colors = [
-                NSColor(white: 0, alpha: 0.45).cgColor,
-                NSColor(white: 0, alpha: 0).cgColor,
-                NSColor(white: 0, alpha: 0).cgColor,
-                NSColor(white: 0, alpha: 0.5).cgColor,
-            ]
-            scrim.locations = [0, 0.28, 0.66, 1]
-            scrim.opacity = 0
-            layer?.addSublayer(scrim)
-
             dress(close, "xmark", 11, round: 15, action: #selector(pressedClose))
             dress(back, "arrow.up.forward", 12, round: 15, action: #selector(pressedReturn))
-            dress(rewind, "gobackward.15", 15, round: 19, action: #selector(pressedRewind))
-            dress(pause, "pause.fill", 17, round: 25, action: #selector(pressedPause))
-            dress(forward, "goforward.15", 15, round: 19, action: #selector(pressedForward))
+            close.toolTip = "Close Floating Window"
+            close.setAccessibilityLabel("Close Floating Window")
+            back.toolTip = "Return to Tab"
+            back.setAccessibilityLabel("Return to Tab")
+            if presentation == .video {
+                // A wash at the top and bottom, so white buttons hold against a
+                // bright frame of film without covering it.
+                scrim.colors = [
+                    NSColor(white: 0, alpha: 0.45).cgColor,
+                    NSColor(white: 0, alpha: 0).cgColor,
+                    NSColor(white: 0, alpha: 0).cgColor,
+                    NSColor(white: 0, alpha: 0.5).cgColor,
+                ]
+                scrim.locations = [0, 0.28, 0.66, 1]
+                scrim.opacity = 0
+                layer?.addSublayer(scrim)
 
-            line.alphaValue = 0
-            addSubview(line)
-            buttons.forEach { $0.alphaValue = 0 }
+                dress(rewind, "gobackward.15", 15, round: 19, action: #selector(pressedRewind))
+                dress(pause, "pause.fill", 17, round: 25, action: #selector(pressedPause))
+                dress(forward, "goforward.15", 15, round: 19, action: #selector(pressedForward))
+
+                line.alphaValue = 0
+                addSubview(line)
+                buttons.forEach { $0.alphaValue = 0 }
+            } else {
+                near = true
+                layer?.backgroundColor = NSColor(white: 0.1, alpha: 1).cgColor
+                self.title.stringValue = title.isEmpty ? "Floating Page" : title
+                self.title.font = .systemFont(ofSize: 12, weight: .medium)
+                self.title.textColor = .white
+                self.title.lineBreakMode = .byTruncatingTail
+                addSubview(self.title)
+            }
         }
 
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError() }
 
-        private var buttons: [NSButton] { [close, back, rewind, pause, forward] }
+        private var buttons: [NSButton] { presentation == .video ? [close, back, rewind, pause, forward] : [close, back] }
 
         private func dress(
             _ button: NSButton,
@@ -331,6 +461,12 @@ final class Float {
 
         override func layout() {
             super.layout()
+            if presentation == .page {
+                close.frame = NSRect(x: 10, y: 10, width: 24, height: 24)
+                back.frame = NSRect(x: bounds.width - 34, y: 10, width: 24, height: 24)
+                title.frame = NSRect(x: 48, y: 14, width: max(0, bounds.width - 96), height: 16)
+                return
+            }
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             scrim.frame = bounds
@@ -349,6 +485,7 @@ final class Float {
 
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
+            guard presentation == .video else { return }
             trackingAreas.forEach(removeTrackingArea)
             addTrackingArea(
                 NSTrackingArea(
@@ -363,6 +500,7 @@ final class Float {
         override func mouseExited(with event: NSEvent) { fade(to: 0) }
 
         private func fade(to value: CGFloat) {
+            guard presentation == .video else { return }
             near = value > 0
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.16
@@ -384,6 +522,7 @@ final class Float {
         /// the window sees it. So every gesture is taken here, above it.
         override func hitTest(_ point: NSPoint) -> NSView? {
             let inside = convert(point, from: superview)
+            if presentation == .page, !bounds.contains(inside) { return nil }
             if near {
                 for button in buttons where button.frame.contains(inside) {
                     return button
@@ -399,10 +538,11 @@ final class Float {
         private var stretching = false
 
         private func atCorner(_ point: NSPoint) -> Bool {
-            point.x > bounds.maxX - 22 && point.y < bounds.minY + 22
+            presentation == .video && point.x > bounds.maxX - 22 && point.y < bounds.minY + 22
         }
 
         override func resetCursorRects() {
+            guard presentation == .video else { return }
             addCursorRect(
                 NSRect(x: bounds.maxX - 22, y: bounds.minY, width: 22, height: 22),
                 cursor: .crosshair
@@ -419,21 +559,21 @@ final class Float {
             }
             ignoringDrag = false
             stopGlide()
-            grab = NSEvent.mouseLocation
             origin = window.frame
             stretching = atCorner(convert(event.locationInWindow, from: nil))
+            if stretching {
+                grab = NSEvent.mouseLocation
+            } else {
+                // WindowServer tracks the original event, rather than sampling
+                // a newer global cursor position for each queued drag event.
+                window.performDrag(with: event)
+            }
         }
 
         override func mouseDragged(with event: NSEvent) {
-            guard let window, !ignoringDrag else { return }
+            guard window != nil, !ignoringDrag, stretching else { return }
             let now = NSEvent.mouseLocation
             let dx = now.x - grab.x
-            let dy = now.y - grab.y
-
-            guard stretching else {
-                window.setFrameOrigin(NSPoint(x: origin.minX + dx, y: origin.minY + dy))
-                return
-            }
             resize(to: origin.width + dx, from: origin)
         }
 
@@ -746,7 +886,11 @@ final class Float {
             let limit = NSScreen.main?.visibleFrame.width ?? 1600
             // Keeps the shape: a video window that can be squashed is a video
             // window showing bars.
-            let wide = min(max(window.minSize.width, width), limit * 0.85)
+            let maximum = presentation == .page
+                ? min(window.maxSize.width, window.maxSize.height * was.width / was.height) : limit * 0.85
+            let minimum = presentation == .page
+                ? max(window.minSize.width, window.minSize.height * was.width / was.height) : window.minSize.width
+            let wide = min(max(minimum, width), maximum)
             let tall = wide * was.height / was.width
 
             let spot: NSPoint
@@ -780,7 +924,7 @@ final class Float {
         /// How far through, along the bottom edge. Quiet enough to ignore.
         final class Line: NSView {
             var through: Double = 0 {
-                didSet { needsDisplay = true }
+                didSet { if through != oldValue { needsDisplay = true } }
             }
 
             override func draw(_ dirty: NSRect) {
@@ -801,6 +945,61 @@ final class Float {
 /// and the difference isn't something a script can tell from the outside. So
 /// the list is of places people go to watch, and the shortcut covers the rest.
 enum Players {
+    /// Explicit meeting routes, not a marketing page or a lookalike host.
+    static func meeting(_ url: URL?) -> Bool {
+        guard let url, url.scheme == "https", let host = url.host()?.lowercased() else { return false }
+        let path = url.path.lowercased()
+        if host == "meet.google.com" {
+            return path.range(of: "^/[a-z]{3}-[a-z]{4}-[a-z]{3}/?$", options: .regularExpression) != nil
+                || path.hasPrefix("/lookup/")
+        }
+        if host == "teams.microsoft.com" || host == "teams.live.com" || host == "teams.cloud.microsoft" {
+            return path.hasPrefix("/l/meetup-join/") || path == "/v2" || path.hasPrefix("/v2/")
+        }
+        if host == "zoom.us" || host.hasSuffix(".zoom.us") {
+            return path.hasPrefix("/wc/")
+        }
+        return false
+    }
+
+    /// Read-only, provider-specific evidence. Device capture is not membership:
+    /// a joined call can have both camera and microphone off.
+    static func meetingState(_ url: URL?) -> String? {
+        guard meeting(url), let host = url?.host()?.lowercased() else { return nil }
+        let provider = host == "meet.google.com" ? "meet" : host.hasSuffix("zoom.us") ? "zoom" : "teams"
+        return """
+        (function () {
+          function visible(element) {
+            return element && element.getClientRects().length > 0
+              && getComputedStyle(element).visibility !== 'hidden';
+          }
+          var provider = '\(provider)';
+          var joined = false;
+          if (provider === 'teams') {
+            joined = Array.from(document.querySelectorAll('#hangup-button, [data-inp="hangup-button"]')).some(visible);
+          } else if (provider === 'meet') {
+            var buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
+            joined = buttons.some(function (button) {
+              return (/leave (call|meeting)/i.test(button.getAttribute('aria-label') || '')
+                || Array.from(button.querySelectorAll('i, span')).some(function (icon) {
+                  return icon.textContent.trim() === 'call_end';
+                })) && visible(button);
+            });
+            if (document.querySelector('[data-call-ended="true"]')) return 'ended';
+          } else {
+            joined = Array.from(document.querySelectorAll('button[aria-label*="mute my microphone" i], [role="button"][aria-label*="mute my microphone" i]')).some(visible);
+          }
+          // A quoted chat message must not end a call whose controls are up.
+          if (joined) return 'joined';
+          var text = (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ');
+          if (/you(?:'ve|’ve)? left the (meeting|call)|this meeting has been ended|you have been removed/i.test(text)) {
+            return 'ended';
+          }
+          return 'unknown';
+        })();
+        """
+    }
+
     /// A host suffix, and for a few shops that also stream, the path that
     /// separates the film from the product page.
     private static let known: [(host: String, path: String?)] = [
@@ -862,7 +1061,8 @@ enum Isolate {
     /// hiding the body and turning it back on for the video alone leaves the
     /// player's own machinery running untouched — which is what keeps the
     /// stream alive where cutting the DOM about would kill it.
-    static let on = """
+    static func on(_ request: UUID) -> String {
+        """
     (function () {
       var videos = document.querySelectorAll('video');
       var best = null, area = 0;
@@ -873,10 +1073,14 @@ enum Isolate {
         if (box.width * box.height >= area) { area = box.width * box.height; best = v; }
       }
       if (!best) return 'none';
+      var box = best.getBoundingClientRect();
+      if (box.width <= 0 || box.height <= 0) return 'none';
 
       // A landing still waiting for its tab is called off: the page is out
       // again.
       window.__officeFloatLanding = null;
+      window.__officeFloatRequest = '\(request.uuidString)';
+      document.documentElement.classList.remove('office-floating', 'office-float-fit');
       best.setAttribute('data-office-float', '');
       var sheet = document.getElementById('office-float');
       if (!sheet) {
@@ -885,13 +1089,14 @@ enum Isolate {
         (document.head || document.documentElement).appendChild(sheet);
       }
       sheet.textContent = [
-        'html.office-floating, html.office-floating body {',
+        'html.office-float-fit, html.office-float-fit body {',
         'background:#000 !important; overflow:hidden !important; margin:0 !important}',
         'html.office-floating body > * { visibility:hidden !important }',
-        'html.office-floating [data-office-float] {',
-        'visibility:visible !important; position:fixed !important;',
+        'html.office-floating [data-office-float] {visibility:visible !important}',
+        'html.office-float-fit [data-office-float] {',
+        'position:fixed !important;',
         'left:0 !important; top:0 !important; right:0 !important; bottom:0 !important;',
-        'width:100vw !important; height:100vh !important;',
+        'width:' + box.width + 'px !important; height:' + box.height + 'px !important;',
         'max-width:none !important; max-height:none !important;',
         // Players such as Netflix center the element with a translation.
         // With our top/left at zero, that moves it out of the floating window.
@@ -908,7 +1113,7 @@ enum Isolate {
         // that clips — YouTube's player does — and in a window this small
         // that box sits partly or wholly off screen, more so on a page that
         // was scrolled. That was the black window.
-        'html.office-floating body :has([data-office-float]) {',
+        'html.office-float-fit body :has([data-office-float]) {',
         'overflow:visible !important;',
         // And fixed is only fixed to the window while no ancestor makes a
         // box of its own for it: a transform, a filter, containment, a
@@ -928,7 +1133,6 @@ enum Isolate {
         'html.office-floating [data-office-float]::-webkit-media-controls {',
         'display:none !important}'
       ].join('');
-      document.documentElement.classList.add('office-floating');
 
       // The mark has to be defended.
       //
@@ -957,7 +1161,23 @@ enum Isolate {
         if (again) again.setAttribute('data-office-float', '');
       }, 250);
 
-      return 'floating';
+      document.documentElement.classList.add('office-floating');
+      return [box.x, box.y, box.width, box.height];
+    })();
+    """
+    }
+
+    /// The native destination geometry is installed. Preparing the stylesheet
+    /// earlier must not stretch the video in its source tab.
+    static let present = """
+    (function () {
+      if (!window.__officeFloatRequest) return false;
+      var sheet = document.getElementById('office-float');
+      if (sheet) sheet.textContent += 'html.office-floating [data-office-float] {width:100vw !important; height:100vh !important}';
+      document.documentElement.classList.add('office-floating', 'office-float-fit');
+      var video = document.querySelector('[data-office-float]');
+      if (video) video.getBoundingClientRect();
+      return true;
     })();
     """
 
@@ -995,13 +1215,33 @@ enum Isolate {
     })();
     """
 
+    /// The stage has installed the destination frame. Allow page resize
+    /// handlers to run, even when returning did not change the viewport.
+    static let landed = """
+    (function () {
+      var landing = window.__officeFloatLanding;
+      if (!landing || !landing.put) return;
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          if (window.__officeFloatLanding === landing) landing.put();
+        });
+      });
+    })();
+    """
+
     /// Everything back as it was — once the page is back in its tab and laid
     /// out at the tab's size. Put back at once, while the page still had
     /// the little window's size, the player fitted the video to that, and
     /// the tab's first frames could show it so: YouTube's, 720×240 in a
     /// 720×405 window, dropped to a strip before it grew again (#257).
-    static let off = """
+    static func off(_ request: UUID? = nil, waitForResize: Bool = true) -> String {
+        """
     (function () {
+      // A cancelled request must not undo a newer lift of the same page.
+      var request = '\(request?.uuidString ?? "")';
+      if (request && window.__officeFloatRequest !== request) return 'obsolete';
+      clearInterval(window.__officeFloatWatch);
+      window.__officeFloatWatch = null;
       // The engine may have put the video in its own floating window as well —
       // some players ask for that themselves. Leaving one and not the other
       // leaves you with two.
@@ -1024,14 +1264,15 @@ enum Isolate {
         // Floated again in the meantime: that is the float's now.
         if (window.__officeFloatLanding !== landing) return;
         window.__officeFloatLanding = null;
-        clearInterval(window.__officeFloatWatch);
-        window.__officeFloatWatch = null;
-        root.classList.remove('office-floating');
+        window.__officeFloatRequest = null;
+        root.classList.remove('office-floating', 'office-float-fit');
         var sheet = document.getElementById('office-float');
         if (sheet) sheet.textContent = '';
         var video = document.querySelector('[data-office-float]');
         if (video) video.removeAttribute('data-office-float');
       }
+      landing.put = put;
+      if (!\(waitForResize)) { put(); return 'landed'; }
       // Each frame until the page is laid out at another size than the
       // little window's — the tab's — and its player has had that frame's
       // resize to fit the video to it. A page not drawn, its tab no longer
@@ -1046,4 +1287,5 @@ enum Isolate {
       return 'landing';
     })();
     """
+    }
 }

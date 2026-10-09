@@ -270,6 +270,15 @@ final class Preferences: ObservableObject {
     @Published var floatsAway: Bool {
         didSet { store.set(floatsAway, forKey: "float.away") }
     }
+    /// View › Float Page keeps the whole page interactive. Off unless asked for.
+    @Published var floatsPages: Bool {
+        didSet {
+            store.set(floatsPages, forKey: "float.pages")
+            if !floatsPages, Shared.floater.presentation == .page {
+                Browsers.all.first { $0.floating != nil }?.land()
+            }
+        }
+    }
     /// Videos wait for a click instead of starting by themselves, as Safari's
     /// Never Auto-Play has it (see Web.configuration). Off unless asked for.
     @Published var waitsForPlay: Bool {
@@ -444,6 +453,7 @@ final class Preferences: ObservableObject {
         floatFlicks = flicks
         Float.flicks = flicks
         floatsAway = store.bool(forKey: "float.away")
+        floatsPages = store.bool(forKey: "float.pages")
         floatsOnLeave = store.object(forKey: "float.leave") as? Bool ?? true
         waitsForPlay = store.bool(forKey: Preferences.waitsKey)
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
