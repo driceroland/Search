@@ -91,9 +91,10 @@ enum SiteCardPanel {
         glass.layer?.masksToBounds = true
         glass.layer?.borderWidth = 0.5
         glass.layer?.borderColor = MenuMetrics.edge.cgColor
-        // Before macOS 26 the material behind the window ignores the layer's
-        // corners, and showed square ones; a mask rounds it there too.
-        if #unavailable(macOS 26) { glass.maskImage = Self.rounded(MenuMetrics.corner) }
+        // The material behind the window ignores the layer's corners: a pale
+        // square showed past each rounded one, before macOS 26 and on it too.
+        // A mask rounds the material, and the window's shadow with it.
+        glass.maskImage = Self.rounded(MenuMetrics.corner)
         host.frame = glass.bounds
         host.autoresizingMask = [.width, .height]
         glass.addSubview(host)
