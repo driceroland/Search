@@ -1057,69 +1057,76 @@ enum ExtensionShims {
           if (typeof f === "function") put(runtime, name, f.bind(runtime));
         }
       }
-      // Installed before the content-script return. Swift owns the restart
-      // decision, including wake and recovery requested by another page.
-      // There is one passive subscription per context, never a port probe.
+      // Installed before the content-script return. Each passive subscription
+      // is bound natively to the background that this port connected to. A
+      // fresh connection that wakes a replacement must not lose its own port.
       let checkWorker = () => {}, heard = 0;
-      let workerGeneration = Number("__SEARCH_WORKER_GENERATION__") || 0;
-      let workerPorts = new Set(), workerWatch = null, workerSequence = 0;
+      let workerGeneration = Number("__SEARCH_WORKER_GENERATION__") || 0, workerSequence = 0;
       const workerObserver = Math.random().toString(36).slice(2);
-      const workerDisconnect = new WeakMap();
+      const workerPorts = new Set(), workerDisconnect = new WeakMap();
+      const cancelWorkerWatch = (watch) => {
+        if (!watch || !watch.waiting) return;
+        watch.waiting = false;
+        try {
+          if (inContent) root.webkit?.messageHandlers?.searchWorkerRecovery?.postMessage({ token: watch.token, cancel: true }).catch(() => {});
+          else native("background.unobserve", [watch.token]).catch(() => {});
+        } catch (e) {}
+      };
+      const collectedWorkerPort = typeof FinalizationRegistry === "function" ? new FinalizationRegistry((watch) => {
+        workerPorts.delete(watch);
+        cancelWorkerWatch(watch);
+      }) : null;
       const watchWorker = () => {
-        if (workerWatch || !hasWorker) return;
-        const snapshot = workerPorts, token = workerObserver + ":" + (++workerSequence);
-        const watching = { snapshot, token };
+        if (!hasWorker) return null;
+        const token = workerObserver + ":" + (++workerSequence), expected = workerGeneration;
         let answer;
         try {
           if (inContent) {
             const bridge = root.webkit?.messageHandlers?.searchWorkerRecovery;
-            if (!bridge) return; // Unknown WebKit world layout: keep native behavior.
-            answer = bridge.postMessage({ generation: workerGeneration, token });
-          } else {
-            answer = native("background.observe", [workerGeneration, token]);
-          }
-        } catch (e) { return; }
-        workerWatch = watching;
+            if (!bridge) return null; // Unknown WebKit world layout: keep native behavior.
+            answer = bridge.postMessage({ generation: expected, token });
+          } else answer = native("background.observe", [expected, token]);
+        } catch (e) { return null; }
+        const watch = { token, generation: expected, waiting: true, ref: null };
         Promise.resolve(answer).then((generation) => {
-          if (workerWatch !== watching) return;
-          workerWatch = null;
-          if (!Number.isSafeInteger(generation) || generation <= workerGeneration) return;
-          workerGeneration = generation;
-          // A listener may immediately connect again. Those ports belong to
-          // the new generation, not the snapshot being retired here.
-          workerPorts = new Set();
-          for (const ref of snapshot) {
-            const port = ref.deref();
-            if (port) workerDisconnect.get(port)?.(true);
-          }
-        }, () => { if (workerWatch === watching) workerWatch = null; });
-      };
-      const unwatchWorker = (ports) => {
-        if (!workerWatch || (ports && (workerWatch.snapshot !== ports || ports.size))) return;
-        const { token } = workerWatch;
-        workerWatch = null;
-        try {
-          if (inContent) root.webkit?.messageHandlers?.searchWorkerRecovery?.postMessage({ token, cancel: true }).catch(() => {});
-          else native("background.unobserve", [token]).catch(() => {});
-        } catch (e) {}
+          if (!watch.waiting) return;
+          watch.waiting = false;
+          // nil means cancellation. The same context generation is valid:
+          // WebKit can replace only the background, as during an idle wake.
+          if (!Number.isSafeInteger(generation) || generation < watch.generation) return;
+          workerGeneration = Math.max(workerGeneration, generation);
+          const port = watch.ref && watch.ref.deref();
+          if (port) workerDisconnect.get(port)?.(true);
+        }, () => { watch.waiting = false; });
+        return watch;
       };
       if (typeof document !== "undefined" && root.addEventListener) {
-        root.addEventListener("pagehide", (event) => { if (!event.persisted) unwatchWorker(); });
+        root.addEventListener("pagehide", (event) => {
+          if (!event.persisted) for (const watch of workerPorts) cancelWorkerWatch(watch);
+        });
       }
       if (typeof document !== "undefined" && runtime && typeof runtime.connect === "function") {
-        const track = (port) => {
+        const track = (port, watch) => {
           if (workerDisconnect.has(port)) return port;
-          watchWorker();
-          const ports = workerPorts;
+          watch = watch === undefined ? watchWorker() : watch;
+          if (watch) {
+            watch.ref = new WeakRef(port);
+            workerPorts.add(watch);
+            collectedWorkerPort?.register(port, watch, watch);
+          }
           try { port.onMessage.addListener(() => { heard = Date.now(); }); } catch (e) {}
-          const ref = new WeakRef(port), disconnected = event();
-          const post = port.postMessage, disconnect = port.disconnect;
+          const disconnected = event(), post = port.postMessage, disconnect = port.disconnect;
           let closed = false;
+          const release = () => {
+            if (!watch) return;
+            workerPorts.delete(watch);
+            collectedWorkerPort?.unregister(watch);
+            cancelWorkerWatch(watch);
+          };
           const finish = (synthetic = false) => {
             if (closed) return;
             closed = true;
-            ports.delete(ref);
-            unwatchWorker(ports);
+            release();
             if (synthetic) try { disconnect.call(port); } catch (e) {}
             for (const f of [...disconnected.listeners]) {
               try { f(port); } catch (e) { setTimeout(() => { throw e; }); }
@@ -1136,25 +1143,21 @@ enum ExtensionShims {
           set("disconnect", () => {
             if (closed) return;
             closed = true;
-            ports.delete(ref);
-            unwatchWorker(ports);
+            release();
             disconnect.call(port);
           });
-          for (const old of ports) { if (!old.deref()) ports.delete(old); }
-          ports.add(ref);
           workerDisconnect.set(port, finish);
           return port;
         };
         const connect = runtime.connect.bind(runtime);
         put(runtime, "connect", (...args) => {
           if (typeof args[0] === "string" && args[0] && args[0] !== runtime.id) return connect(...args);
-          watchWorker();
           checkWorker();
-          try { return track(connect(...args)); }
-          catch (error) { unwatchWorker(workerPorts); throw error; }
+          // WebKit selects the connection's background before the following
+          // observation reads its identity. An absent/loading background is
+          // bound to the next creation, never to a retired worker.
+          return track(connect(...args));
         });
-        // A worker may initiate the connection with tabs.connect instead.
-        // Internal onConnect is separate from onConnectExternal.
         const incoming = runtime.onConnect;
         if (incoming && typeof incoming.addListener === "function") {
           const add = incoming.addListener.bind(incoming), remove = incoming.removeListener.bind(incoming);

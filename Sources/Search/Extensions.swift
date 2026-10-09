@@ -486,8 +486,9 @@ final class Extensions: NSObject, ObservableObject {
             }
             Extensions.fence(context)
             Extensions.watchTouches()
-            ExtensionWorkerRecovery.shared.register(item.id)
-            try controller.load(context)
+            let undoRecovery = ExtensionWorkerRecovery.shared.register(context)
+            do { try controller.load(context) }
+            catch { undoRecovery(); throw error }
             watch(context)
             if contexts[item.id] == nil, loadsThisRun.contains(item.id) { loadedBefore.insert(item.id) }
             loadsThisRun.insert(item.id)
@@ -1486,6 +1487,13 @@ extension Extensions: WKWebExtensionControllerDelegate {
         action.closePopup()
         guard let url else { return }
         ExtensionPopup.shared.show(url, for: context, from: anchor(for: context.uniqueIdentifier))
+    }
+
+    // WebKit supplies this before loading each new background view, including
+    // a worker woken inside the same extension context. No timer or JS probe.
+    @objc(_webExtensionController:didCreateBackgroundWebView:forExtensionContext:)
+    func createdBackground(_ controller: WKWebExtensionController, webView: WKWebView, context: WKWebExtensionContext) {
+        ExtensionWorkerRecovery.shared.created(webView, in: context)
     }
 
     /// `runtime.sendNativeMessage`. To "search" — the APIs WebKit doesn't

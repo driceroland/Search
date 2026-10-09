@@ -22,11 +22,27 @@ On macOS 15.4+, also run `swift test --filter ExtensionWorkerPortTests` and
 deduplication and lastError, explicit disconnect, fresh/reentrant connections,
 second recovery, external extensions, missing bridge, delayed ping, rejected
 subscriptions and generation fanout. Swift additionally checks native generation
-isolation and late subscribers.
+isolation, late subscribers, and old-worker versus newly waking-port lifetime binding.
 
-## Live test still required
+## Live WebKit fixture
 
-This checkout has NOT been run as a live macOS extension. Use a disposable
+After building, run `python3 Tests/ExtensionWorkerRecovery/live.py` on macOS
+15.4 or newer. On Intel, copy `build/intel/Search.app` to `build/Search.app`
+first, as the existing hidden bench harness expects. It creates and removes
+its own disposable profile and serves only the local fixture. The suite has
+an eight-minute deadline plus bounded cleanup. It prints environment/version,
+per-port counts, PASS/FAIL and explicit NOT COVERED entries.
+
+It exercises healthy wake, a bounded real worker event-loop stall, two explicit
+native revives separated by the unchanged 60-second cooldown, refusal during
+cooldown, fresh echoes and a 160-second silent-port idle/wake window. The
+worker's per-start nonce establishes whether WebKit really replaced it within
+the same context. If it did not, that branch is reported as not covered.
+Application-level withheld replies do not claim dead-worker detection, and the
+brief stall is not proof of slow initial startup. Cross-origin child frames,
+truly hung workers and failed-start wake recovery still require separate checks.
+
+For manual inspection: Use a disposable
 Search test profile, not a signed-in extension or model service. No model calls
 are involved. Build with the repository's `./build.sh` instructions.
 
@@ -45,7 +61,7 @@ are involved. Build with the repository's `./build.sh` instructions.
 4. Separately exercise real failure detection with the worker stopped/unresponsive
    in Web Inspector, or a controlled native startup failure. Trigger the existing
    send/connect worker check and record which native path performed recovery.
-   Exercise `background.wake` recovery independently; a successful wake and a
+   Exercise `background.wake` recovery independently; a healthy no-op wake and a
    cooldown-refused revive must not generate a synthetic disconnect.
 5. Pause startup briefly (below the existing worker-check deadline), open ports,
    then resume. Record no synthetic disconnect while startup is merely slow.
@@ -58,10 +74,17 @@ suite or from a normal Release build.
 
 ## Native notification route
 
-Swift advances one generation only after `WKWebExtensionController.unload`
-succeeds. All teardown paths complete old observers, including wake/revive,
+Swift advances the installed-shim context generation only after
+`WKWebExtensionController.unload` succeeds. All teardown paths complete old observers, including wake/revive,
 manual reload, disable and removal. Rejected unload, healthy wake and the
-revive cooldown do not advance it. Own extension pages use the existing native
+revive cooldown do not advance it. A worker replaced inside the same context
+uses a separate native background-view lifetime. Each port has one passive
+subscription bound to that lifetime, with no health request, timeout or periodic
+traffic. A new connection that wakes a background is bound to the new lifetime;
+only ports bound to the retired background receive its notification. An incoming
+port is observed once even when several extension listeners receive it.
+
+Own extension pages use the existing native
 message bridge. Content scripts use a reply-only handler in their isolated
 world; websites get no new main-world handler and the bridge can only observe
 or cancel a notification, never request a restart or another native API.
@@ -73,9 +96,27 @@ and current WebKit; public `WKContentWorld.world(name:)` accesses that shared
 world. If that layout changes, the shim fails closed to native port behavior
 rather than synthesizing recovery. No promise is made about an untested WebKit
 version. A pending native reply's source path survives unload, but actual
-cross-process delivery still needs the live test above.
+cross-process delivery is checked by the live fixture, not inferred from source.
 
-Observers cancel when the last port closes or the document leaves. BFCache
-keeps the subscription. Abrupt process death without pagehide can retain a
+The same-context path adds two private WebKit interfaces:
+`_webExtensionController:didCreateBackgroundWebView:forExtensionContext:` and
+the read-only `_backgroundWebView` getter. Both exist in the
+[March 2025 source](https://github.com/WebKit/WebKit/blob/8b6bee932bfd57c53cbe234e87cb820d8328cff5/Source/WebKit/UIProcess/Extensions/Cocoa/WebExtensionContextCocoa.mm#L3636-L3644)
+and current WebKit. The getter is guarded with `responds(to:)`; the callback
+is optional to WebKit. These are new dependencies for this recovery path,
+although Search already uses guarded private getters and delegate callbacks in
+ExtensionPopup, ExtensionCapture, Inspector and Tab. The callback occurs before
+worker script loading. Views and contexts are held weakly; no delegate, system
+setting or extension permission is changed.
+
+This is a compatibility dependency, not a public API guarantee. If unavailable,
+same-context wake notification degrades rather than guessing a restart; confirmed
+whole-context teardown still works. Observation is sent after runtime.connect
+selects its native backend, relying on WebKit's IPC ordering. A process crash
+between those operations is a separate lifecycle interleaving that requires
+additional live coverage.
+
+Observers cancel when their port closes, is collected, or its document leaves.
+BFCache keeps subscriptions. Abrupt process death without pagehide can retain a
 pending native reply until that extension is next unloaded; no timer is added
 to probe for that condition.

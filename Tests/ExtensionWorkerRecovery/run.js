@@ -42,7 +42,7 @@ async function test(name, run) { await run(); console.log('PASS ' + name); passe
       first.onDisconnect.addListener(() => { firstCount++; nativeError = state.runtime.lastError; });
       second.onDisconnect.addListener(() => secondCount++);
       await drain();
-      assert.equal(state.subscriptions.length, 1, 'subscription is per context');
+      assert.equal(state.subscriptions.length, 2, 'each port has a passive lifetime subscription');
       const timers = state.timers.length;
       first.postMessage('one'); second.postMessage('two');
       await drain();
@@ -81,11 +81,11 @@ async function test(name, run) { await run(); console.log('PASS ' + name); passe
       assert.equal(oldCount, 1); assert.equal(freshCount, 1);
     });
     await test(kind + ': no restart evidence means no disconnect', async () => {
-      for (const outcome of ['pending', 'same', 'rejected']) {
+      for (const outcome of ['pending', 'cancelled', 'rejected']) {
         const state = load(content), port = state.runtime.connect();
         let count = 0;
         port.onDisconnect.addListener(() => count++);
-        if (outcome === 'same') state.subscriptions[0].resolve(0);
+        if (outcome === 'cancelled') state.subscriptions[0].resolve(null);
         if (outcome === 'rejected') state.subscriptions[0].reject(new Error('closed page'));
         await drain();
         assert.equal(count, 0, outcome);
@@ -114,11 +114,11 @@ async function test(name, run) { await run(); console.log('PASS ' + name); passe
       state.runtime.connect(); leave(false); await drain();
       if (!content) assert.equal(state.calls.includes('background.unobserve'), true);
     });
-    await test(kind + ': throwing connect cancels an empty subscription', async () => {
+    await test(kind + ': throwing connect creates no subscription', async () => {
       const failure = new Error('native connect refused');
       const state = load(content, 0, state => { state.runtime.connect = () => { throw failure; }; });
       assert.throws(() => state.runtime.connect(), error => error === failure);
-      assert.equal(state.cancellations, 1);
+      assert.equal(state.subscriptions.length, 0);
       assert.equal(state.nativePorts.length, 0);
     });
     await test(kind + ': external ports untouched', async () => {
@@ -129,6 +129,30 @@ async function test(name, run) { await run(); console.log('PASS ' + name); passe
       assert.equal(state.subscriptions.length, 0);
     });
   }
+  await test('delayed worker-only event is not lost behind a newer context event', async () => {
+    for (const content of [true, false]) {
+      const state = load(content), older = state.runtime.connect(), newer = state.runtime.connect();
+      let oldCount = 0, newCount = 0;
+      older.onDisconnect.addListener(() => oldCount++);
+      newer.onDisconnect.addListener(() => newCount++);
+      state.subscriptions[1].resolve(1); await drain();
+      state.subscriptions[0].resolve(0); await drain();
+      assert.equal(newCount, 1); assert.equal(oldCount, 1);
+    }
+  });
+  await test('same-context worker replacement retires only native-selected old port', async () => {
+    for (const content of [true, false]) {
+      const state = load(content), old = state.runtime.connect(), fresh = state.runtime.connect();
+      let oldCount = 0, freshCount = 0;
+      old.onDisconnect.addListener(() => oldCount++);
+      fresh.onDisconnect.addListener(() => freshCount++);
+      // Swift binds each subscription to its actual background. The new
+      // connection waiting for the replacement is deliberately not resolved.
+      state.subscriptions[0].resolve(0); await drain();
+      assert.equal(oldCount, 1); assert.equal(freshCount, 0);
+      fresh.postMessage({ usable: true });
+    }
+  });
   await test('slow worker startup has no synthetic disconnect or port deadline', async () => {
     let answerPing;
     const state = load(false, 0, state => {
@@ -166,7 +190,7 @@ async function test(name, run) { await run(); console.log('PASS ' + name); passe
       const state = load(content, 3), port = state.runtime.connect(); let count = 0;
       port.onDisconnect.addListener(() => count++);
       assert.equal(state.subscriptions[0].expected, 3);
-      state.subscriptions[0].resolve(3); await drain(); assert.equal(count, 0);
+      state.subscriptions[0].resolve(null); await drain(); assert.equal(count, 0);
     }
   });
   console.log(passed + ' full-shim regression cases passed');

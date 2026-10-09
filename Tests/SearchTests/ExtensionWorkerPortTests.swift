@@ -47,11 +47,29 @@ final class ExtensionWorkerPortTests: XCTestCase {
     @MainActor
     func testCancellationDoesNotAdvanceNativeGeneration() {
         let recovery = ExtensionWorkerRecovery()
-        var value: Int?
-        recovery.observe("first", generation: 0, token: "closing-page") { value = $0 }
+        var value: Int?, replies = 0
+        recovery.observe("first", generation: 0, token: "closing-page", lifetime: nil) { value = $0; replies += 1 }
         recovery.cancel("first", token: "closing-page")
-        XCTAssertEqual(value, 0)
+        XCTAssertNil(value)
+        XCTAssertEqual(replies, 1)
         XCTAssertEqual(recovery.generation(for: "first"), 0)
+    }
+
+    @MainActor
+    func testWorkerOnlyWakeRetiresOldPortsButKeepsTheConnectionWakingIt() {
+        let recovery = ExtensionWorkerRecovery(), oldWorker = UUID(), freshWorker = UUID()
+        var old: [Int?] = [], waking: [Int?] = []
+        recovery.observe("first", generation: 0, token: "old-port", lifetime: oldWorker) { old.append($0) }
+        recovery.observe("first", generation: 0, token: "new-port", lifetime: nil) { waking.append($0) }
+        recovery.createdWorker("first", lifetime: freshWorker)
+        XCTAssertEqual(old, [0])
+        XCTAssertTrue(waking.isEmpty)
+        XCTAssertEqual(recovery.generation(for: "first"), 0)
+        recovery.createdWorker("first", lifetime: freshWorker)
+        XCTAssertEqual(old, [0], "A repeated creation report is not another restart")
+        XCTAssertTrue(waking.isEmpty)
+        recovery.createdWorker("first", lifetime: UUID())
+        XCTAssertEqual(waking, [0], "The fresh port retires only on the following worker")
     }
 
     private func drain(_ js: JSContext) {
