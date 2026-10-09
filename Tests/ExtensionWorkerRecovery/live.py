@@ -37,9 +37,20 @@ ROOT = HERE.parents[1]
 APP = ROOT / 'build' / 'Search.app'
 ATTRIBUTE = 'data-search-port-fixture'
 TOTAL_TIMEOUT = 504
-# Reserve time for delayed OS crash reports (20s), other diagnostics, and the
-# existing isolated lifecycle cleanup. The normal suite takes about 5 minutes.
-WORK_TIMEOUT = TOTAL_TIMEOUT - 74
+# Cold Intel Xcode discovery and symbol loading need more time than a bench
+# request. Reserve diagnostics and each cleanup phase separately: even their
+# worst-case sum remains below the overall 504-second diagnostic budget.
+WORK_TIMEOUT = 430
+LLDB_WORK_TIMEOUT = 400
+LLDB_DISCOVERY_TIMEOUT = 30
+LLDB_STARTUP_TIMEOUT = 60
+LLDB_CAPTURE_TIMEOUT = 30
+LLDB_INTERRUPT_TIMEOUT = 10
+LLDB_DIAGNOSTICS_TIMEOUT = 60
+DIAGNOSTICS_TIMEOUT = 30
+PROFILE_CLEANUP_TIMEOUT = 25
+OWNED_CLEANUP_TIMEOUT = 13
+SERVER_CLEANUP_TIMEOUT = 5
 MAX_REPORT_BYTES = 8 * 1024 * 1024
 LLDB_MAX_THREADS = 32
 LLDB_MAX_FRAMES = 48
@@ -469,7 +480,11 @@ def self_test():
     assert len(backtrace.split()[4:]) == LLDB_MAX_THREADS
     assert backtrace.split()[4] == '999'
     assert process.killed
-    print('PASS 45 pure-Python diagnostic selection, symbolication, summary and argument checks', flush=True)
+    assert LLDB_WORK_TIMEOUT + LLDB_DIAGNOSTICS_TIMEOUT + PROFILE_CLEANUP_TIMEOUT + OWNED_CLEANUP_TIMEOUT + SERVER_CLEANUP_TIMEOUT < TOTAL_TIMEOUT
+    assert WORK_TIMEOUT + DIAGNOSTICS_TIMEOUT + PROFILE_CLEANUP_TIMEOUT + OWNED_CLEANUP_TIMEOUT + SERVER_CLEANUP_TIMEOUT < TOTAL_TIMEOUT
+    assert LLDB_CAPTURE_TIMEOUT + LLDB_INTERRUPT_TIMEOUT < LLDB_DIAGNOSTICS_TIMEOUT
+    assert LLDB_DISCOVERY_TIMEOUT == 30 and LLDB_STARTUP_TIMEOUT == 60
+    print('PASS 49 pure-Python diagnostic selection, symbolication, summary and argument checks', flush=True)
     return 0
 
 
@@ -557,7 +572,7 @@ class Live:
         if socket.exists():
             socket.unlink()
         try:
-            found = subprocess.run(['/usr/bin/xcrun', '--find', 'lldb'], capture_output=True, text=True, timeout=5)
+            found = subprocess.run(['/usr/bin/xcrun', '--find', 'lldb'], capture_output=True, text=True, timeout=LLDB_DISCOVERY_TIMEOUT)
         except (OSError, subprocess.TimeoutExpired) as error:
             raise Failure('BLOCKED: LLDB is unavailable: ' + str(error))
         debugger = Path(found.stdout.strip())
@@ -571,7 +586,7 @@ class Live:
         with self.lldb_paths['transcript'].open('wb') as transcript:
             self.debugger = subprocess.Popen(command, cwd=ROOT, env=direct_environment(self.sv.W),
                                              stdin=subprocess.DEVNULL, stdout=transcript, stderr=subprocess.STDOUT)
-        until = time.monotonic() + 30
+        until = time.monotonic() + LLDB_STARTUP_TIMEOUT
         while time.monotonic() < until:
             self.save_lldb_pid()
             if socket.exists() or self.debugger.poll() is not None:
@@ -592,12 +607,12 @@ class Live:
         self.save_lldb_pid()
         if self.failed and self.debugger.poll() is None:
             try:
-                self.debugger.wait(timeout=8)
+                self.debugger.wait(timeout=LLDB_CAPTURE_TIMEOUT)
             except subprocess.TimeoutExpired:
                 print('LLDB_INTERRUPT_FOR_DIAGNOSTICS: fixture failed; interrupting only its owned debugger', flush=True)
                 self.debugger.send_signal(signal.SIGINT)
                 try:
-                    self.debugger.wait(timeout=8)
+                    self.debugger.wait(timeout=LLDB_INTERRUPT_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     print('LLDB_CAPTURE_INCOMPLETE: debugger did not finish within the bounded diagnostic wait', flush=True)
         print('LLDB_DEBUGGER_PROCESS', json.dumps(dict(pid=self.debugger.pid, **process_status(self.debugger.poll()))), flush=True)
@@ -1013,7 +1028,7 @@ def main(argv=None):
         print(f'NOT RUN: built app missing at {APP}; build first (copy build/intel/Search.app here on Intel).', flush=True)
         return 2
     signal.signal(signal.SIGALRM, expired)
-    signal.alarm(WORK_TIMEOUT)
+    signal.alarm(LLDB_WORK_TIMEOUT if options.lldb_launch else WORK_TIMEOUT)
     print('ENVIRONMENT', json.dumps(dict(environment(), launchMode='lldb' if options.lldb_launch else 'direct' if options.direct_launch else 'open'), sort_keys=True), flush=True)
     sys.path.insert(0, str(ROOT / 'Tests'))
     import split_view as sv
@@ -1042,12 +1057,12 @@ def main(argv=None):
     finally:
         # Failure diagnostics and teardown are also bounded. finish() can only
         # stop/wipe this checkout's named probe, never the user's main profile.
-        signal.alarm(30)
+        signal.alarm(LLDB_DIAGNOSTICS_TIMEOUT if options.lldb_launch else DIAGNOSTICS_TIMEOUT)
         try:
             live.diagnostics()
         except Exception as error:
             print('DIAGNOSTICS_UNAVAILABLE', str(error), flush=True)
-        signal.alarm(25)
+        signal.alarm(PROFILE_CLEANUP_TIMEOUT)
         try:
             try:
                 sv.finish()
@@ -1055,13 +1070,13 @@ def main(argv=None):
                 # A bench timeout may have armed expired()'s one-second retry.
                 # Give the mutually exclusive owned launcher its own bound so
                 # that alarm cannot repeatedly interrupt debugger cleanup.
-                signal.alarm(13)
+                signal.alarm(OWNED_CLEANUP_TIMEOUT)
                 live.finish_direct()
                 live.finish_lldb()
             live.check('isolated probe cleaned up', not Path(sv.SUPPORT).exists() and not sv.pids())
         except Exception as error:
             live.check('isolated probe cleaned up', False, str(error))
-        signal.alarm(5)
+        signal.alarm(SERVER_CLEANUP_TIMEOUT)
         try:
             server.shutdown()
             server.server_close()
