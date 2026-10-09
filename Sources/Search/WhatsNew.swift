@@ -31,9 +31,10 @@ enum WhatsNew {
 
     /// Every switch worth meeting, oldest last. The card shows this
     /// version's, and the older ones still off.
-    static let toggles: [Toggle] = [
+    static let toggles: [Toggle] = (AI.shipped ? [
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
+    ] : []) + [
         Toggle(title: "Split View", detail: "Two tabs side by side: drag a tab to the edge of a page, or press ⌥⌘N.",
                since: "1.0.5", get: { $0.splitView }, set: { $0.splitView = $1 }),
         Toggle(title: "Search a site from the address field", detail: "The start of a site's name, then Tab: red, Tab, and your words search Reddit.",

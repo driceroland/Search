@@ -61,7 +61,8 @@ enum AISignIn {
     /// The callback, about to load in `tab`: taken — true — when it is the
     /// flow's. The tab is closed once the key is kept.
     static func intercept(_ url: URL, mainFrame: Bool, in tab: Tab?, browser: Browser) -> Bool {
-        guard url.scheme?.lowercased() == "https", url.host()?.lowercased() == callback.host(),
+        guard AI.shipped || Store.testing,
+              url.scheme?.lowercased() == "https", url.host()?.lowercased() == callback.host(),
               url.path == callback.path, mainFrame,
               let flow, let tab, tab.id == flow.tab
         else { return false }
