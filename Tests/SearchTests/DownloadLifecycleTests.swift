@@ -247,8 +247,7 @@ final class DownloadLifecycleTests: XCTestCase {
         try await waitUntil { tab.committed == fixture.url("/page") && !tab.loading }
         try await waitUntil { fixture.completed("/page") == 1 }
 
-        let download = try await requestDownload("/private.bin", from: tab.web)
-        browser.keep(download, from: tab.web)
+        _ = try await requestDownload("/private.bin", from: tab.web)
         XCTAssertTrue(browser.fetches.entries.isEmpty)
 
         try await waitUntil {
@@ -272,7 +271,6 @@ final class DownloadLifecycleTests: XCTestCase {
 
     private func startDownload(_ path: String, in tab: BrowserTab) async throws -> FetchEntry {
         let download = try await requestDownload(path, from: tab.web)
-        browser.keep(download, from: tab.web)
         return try XCTUnwrap(browser.fetches.entry(for: download))
     }
 
@@ -280,6 +278,10 @@ final class DownloadLifecycleTests: XCTestCase {
         let request = URLRequest(url: fixture.url(path))
         return await withCheckedContinuation { continuation in
             webView.startDownload(using: request) { download in
+                // WebKit requires the delegate before this callback returns.
+                // Attaching after await leaves a scheduling gap in which the
+                // destination or failure callback can be lost on a cold runner.
+                self.browser.keep(download, from: webView)
                 continuation.resume(returning: download)
             }
         }
@@ -321,8 +323,10 @@ final class DownloadLifecycleTests: XCTestCase {
         throw WaitError.timedOut
     }
 
+    // Hosted runners initialize WebKit services from a clean image.
+    // Preserve the state assertions with a larger bounded CI deadline.
     private func waitUntil(
-        timeout: TimeInterval = 15,
+        timeout: TimeInterval = ProcessInfo.processInfo.environment["CI"] == "true" ? 60 : 15,
         file: StaticString = #filePath,
         line: UInt = #line,
         _ condition: @MainActor () -> Bool
@@ -333,7 +337,8 @@ final class DownloadLifecycleTests: XCTestCase {
             if condition() { return }
             try await Task.sleep(nanoseconds: 20_000_000)
         }
-        XCTFail("Timed out waiting for the download state", file: file, line: line)
+        let entries = browser.fetches.entries.map { "\($0.name): \($0.state), \($0.completedBytes) bytes" }
+        XCTFail("Timed out waiting for the download state; entries: \(entries); completed: \(browser.loot.kept.map(\.name))", file: file, line: line)
         throw WaitError.timedOut
     }
 
