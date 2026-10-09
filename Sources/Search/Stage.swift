@@ -366,7 +366,7 @@ final class StageView: NSView {
 
 /// What there is to say when the page never came. One line, and the only thing
 /// worth offering — another go.
-private struct Trouble: View {
+struct Trouble: View {
     let message: String
     let retry: () -> Void
 

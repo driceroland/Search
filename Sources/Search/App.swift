@@ -1084,6 +1084,10 @@ struct ContentView: View {
     ]
 
     private func take(_ event: NSEvent) -> Bool {
+        // A question hanging from the window (Ask) answers its own keys. Esc
+        // there is its Cancel: taken here, it closed the panel under it and
+        // left the question up, with Return still on its first button.
+        if event.window?.sheetParent != nil { return false }
         // A small window's keys are its own (see Little.swift).
         if let little = LittleWindow.owning(event.window) { return little.take(event) }
         // An extension's popup window: ⌘W closes it, not a tab of the

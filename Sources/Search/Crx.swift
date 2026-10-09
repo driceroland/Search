@@ -37,6 +37,19 @@ enum Crx {
     /// browser that says it is older.
     static let chromeVersion = "140.0.0.0"
 
+    /// The id Chrome gives a folder loaded unpacked, from its real path:
+    /// native messaging hosts shipped for such a folder list this id. The
+    /// manifest's "key" is ignored, as nothing checks it and store keys are
+    /// public, so a folder could otherwise take any extension's id.
+    static func unpackedID(for folder: URL) -> String {
+        letters(Array(SHA256.hash(data: Data(realPath(of: folder).utf8)).prefix(16)))
+    }
+
+    /// Where a folder really is, every link on the way resolved.
+    static func realPath(of folder: URL) -> String {
+        realpath(folder.path, nil).map { real in defer { free(real) }; return String(cString: real) } ?? folder.standardizedFileURL.path
+    }
+
     /// Thirty-two letters from a to p, wherever they are — a bare id, a store
     /// link, an old chrome.google.com/webstore link.
     static func id(in text: String) -> String? {

@@ -84,6 +84,7 @@
     ./bench import-file-start PATH   test run: start file import without waiting for completion
     ./bench import-file-status       test run: current filename, stage, counts and cancellation state
     ./bench import-file-cancel       test run: request cancellation of the current file import
+    ./bench remove-folder TITLE        test run: the bookmarks list's Remove on a top-level folder, its question left up
     ./bench menu [open]                test run: the Bookmarks menu as it is about to open, and its first
                                        folder (open: its first bookmark picked)
     ./bench bookmark URL [new]         test run: a bookmark picked from the list, timed until it loads
@@ -405,6 +406,9 @@ def main(argv):
     elif verb in ("import-file", "import-file-start"):
         if len(args) != 1: sys.exit(f"usage: bench {verb} PATH")
         request["path"] = os.path.abspath(args[0])
+    elif verb == "remove-folder":
+        if len(args) != 1: sys.exit("usage: bench remove-folder TITLE")
+        request["title"] = args[0]
     elif verb in ("import-file-status", "import-file-cancel"):
         if args: sys.exit(f"usage: bench {verb}")
     elif verb == "menu":
