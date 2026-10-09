@@ -284,6 +284,10 @@ final class Tab: ObservableObject, Identifiable {
     /// connection, and which passwords a sign-in box is offered, go by this
     /// one, set when the new page has arrived.
     @Published private(set) var committed: URL?
+    /// The view has drawn its first frame; until then the peek shows its
+    /// skeleton (see PeekSkeleton). True from the start on a WebKit that
+    /// doesn't say when.
+    @Published private(set) var painted = false
     var pageAddress: URL? { committed ?? address }
 
     func didCommit() {
@@ -518,6 +522,10 @@ final class Tab: ObservableObject, Identifiable {
     var home: URL?
     /// For a pin, which of the pins it is, in every window (see Pins.swift).
     var pinID: UUID?
+    /// For a pin, the site a link from it was just peeked at, and when: the
+    /// page's own script sending the pin there after all is turned away
+    /// (see Browser.peek).
+    var peeked: (site: String, at: Date)?
     /// For a pin, kept as a row under the squares rather than as a square:
     /// Arc's pinned list, below its favourites. Still a pin in every other
     /// way: put down by ⌘W, the same in every window, never in a group.
@@ -607,7 +615,9 @@ final class Tab: ObservableObject, Identifiable {
             guard let self else { return }
             self.onSearch?(self, text)
         }
+        web.onFirstFrame = { [weak self] in self?.painted = true }
         web.holdForFirstFrame()
+        painted = !web.unpainted
         // Pages follow the appearance of the window they are drawn in, and the
         // window follows Settings › Appearance — so a site that honours
         // prefers-color-scheme goes dark with the frame, and not otherwise.
@@ -983,8 +993,10 @@ final class Tab: ObservableObject, Identifiable {
     /// ⌘W on a pinned tab. The letter keeps its place in the row and the
     /// address is remembered; everything the page was holding is let go, so a
     /// pin you are not reading costs a line in a file and nothing else.
-    func rest() {
-        guard let url = address else { return }
+    /// `home`, when given, is where it wakes instead of where it was.
+    func rest(at home: URL? = nil) {
+        guard let url = home ?? address else { return }
+        if let home { setAddressOptimistically(home) }
         pending = url
         memory = nil
         picture = nil
@@ -1571,6 +1583,8 @@ final class PageView: WKWebView {
     /// Told the moment the page is reached for — a click, a scroll — so the
     /// picture of a tab waking up never stands between you and the page.
     var onTouch: (() -> Void)?
+    /// The page's first frame is on screen (see showFirstFrame).
+    var onFirstFrame: (() -> Void)?
     /// Told when the keys come to this page, however they got here — a
     /// click, or Tab walked past the other page's last field. With two
     /// pages up it makes this one the focused page (Browser.prepare), which
@@ -1676,6 +1690,7 @@ final class PageView: WKWebView {
     func showFirstFrame() {
         guard unpainted else { return }
         unpainted = false
+        onFirstFrame?()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.12
             animator().alphaValue = 1
