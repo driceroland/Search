@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 const workflow = await readFile(new URL('../../../.github/workflows/midscene.yml', import.meta.url), 'utf8');
 function job(name) {
@@ -64,4 +67,17 @@ test('all visual shards consume one secret-free app build from this attempt', ()
   assert.match(job('visual'), /needs: \[validation, desktop-capability, build\]/);
   assert.match(job('build'), /name: search-midscene-app-\$\{\{ github.run_attempt \}\}/);
   assert.match(job('visual'), /name: search-midscene-app-\$\{\{ github.run_attempt \}\}/);
+});
+
+test('a failed case keeps its generated Summary table while the final job stays red', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'search-failed-summary-'));
+  try {
+    await writeFile(path.join(root, 'npm'), '#!/bin/sh\nprintf "| Case | Report | Screenshot |\\n| failed case | retained report | retained screenshot |\\n" > "$MIDSCENE_SUMMARY_PATH"\nexit 1\n', { mode: 0o755 });
+    const summary = path.join(root, 'job-summary.md');
+    const script = job('report-results').split('      - name: Write the consolidated run Summary')[1].split('        run: |\n')[1].replace(/^          /gm, '');
+    const result = spawnSync('bash', ['-e', '-c', script], { encoding: 'utf8', env: { ...process.env, PATH: `${root}:${process.env.PATH}`, RUNNER_TEMP: root, GITHUB_STEP_SUMMARY: summary, GITHUB_SERVER_URL: 'https://github.test', GITHUB_REPOSITORY: 'fixture/Search', GITHUB_RUN_ID: '1', GITHUB_RUN_ATTEMPT: '1', PAGE_URL: 'https://pages.test', REPORT_SOURCE_RUN_ID: '', REPORTS_DIR: 'reports', PRODUCER_RESULT: 'failure', REPORT_RESULT: 'failure', PUBLICATION_RESULT: 'success' } });
+    assert.equal(result.status, 1);
+    assert.match(await readFile(summary, 'utf8'), /failed case.*retained report.*retained screenshot/);
+    assert.doesNotMatch(await readFile(summary, 'utf8'), /Summary unavailable/);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -472,7 +472,9 @@ jobs:
           export MIDSCENE_REPORT_RESULT="$REPORT_RESULT"
           export MIDSCENE_PUBLICATION_RESULT="$PUBLICATION_RESULT"
           export MIDSCENE_SUMMARY_PATH="$RUNNER_TEMP/midscene-summary.md"
-          if npm --prefix Tests/Midscene run report -- "$RUNNER_TEMP/$REPORTS_DIR" --summary-only; then
+          reader_status=0
+          npm --prefix Tests/Midscene run report -- "$RUNNER_TEMP/$REPORTS_DIR" --summary-only || reader_status=$?
+          if [ -s "$MIDSCENE_SUMMARY_PATH" ]; then
             cat "$RUNNER_TEMP/midscene-summary.md" >> "$GITHUB_STEP_SUMMARY"
           else
             {
@@ -487,3 +489,4 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+          exit "$reader_status"
