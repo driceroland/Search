@@ -167,6 +167,22 @@ enum Motion {
     static var quick: Animation? {
         reduced ? nil : .easeOut(duration: 0.14)
     }
+
+    /// The folded column or strip coming out over the page, and going back.
+    /// On glide it was slow both ways, next to Arc and Dia timed frame by
+    /// frame on the same Mac: each slides its sidebar 90% of the way out in
+    /// about 95ms and back in about 70ms, where glide took over 200ms. These
+    /// match them. Going in is damped all the way, since nothing is arriving
+    /// to settle. Fold.slide moves the window's buttons on the same numbers,
+    /// in Core Animation's terms.
+    static func fold(out: Bool) -> (response: Double, damping: Double) {
+        out ? (0.14, 0.86) : (0.13, 1)
+    }
+
+    static func folding(out: Bool) -> Animation? {
+        let spring = fold(out: out)
+        return reduced ? nil : .spring(response: spring.response, dampingFraction: spring.damping)
+    }
 }
 
 /// Search's mark — Drice's Subtract.svg, a pill with an S cut out of it,
