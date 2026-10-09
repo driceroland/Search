@@ -3,13 +3,15 @@
 
 Build first (`./build.sh` or `./build.sh debug`), then run
 `python3 Tests/split_view.py`. The app is started hidden in a world of its
-own (SEARCH_PROBE=split-tests), driven through ./bench's socket, and quit;
+own (SEARCH_PROBE=split-tests-<checkout>, see use()), driven through
+./bench's socket, and quit;
 its settings and files are removed afterwards. Nothing here makes, shows or
 brings forward a window: what can only be seen — dragging onto a page's
 edge, the divider under the pointer, the motion itself — is checked by
 hand on a release candidate.
 """
 
+import hashlib
 import json
 import os
 import socket
@@ -23,10 +25,19 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 ROOT = Path(__file__).resolve().parents[1]
 APP = str(ROOT / "build" / "Search.app")
-W = "split-tests"
 HOME = os.path.expanduser("~")
-SUPPORT = f"{HOME}/Library/Application Support/Search ({W})"
-SUITE = f"com.officecommun.search.test.{W}"
+def use(name):
+    """This checkout's own world for a suite: the name, then a tag made from
+    the checkout's path. Two checkouts testing at once (a worktree beside
+    the main one, another session's) share no socket, settings or folder,
+    so a run in one is never answered by the other's build. A suite that
+    wants a world apart from the split suite's calls it with its own name."""
+    global W, SUPPORT, SUITE, SOCK
+    W = f"{name}-{hashlib.sha1(str(ROOT).encode()).hexdigest()[:8]}"
+    SUPPORT = f"{HOME}/Library/Application Support/Search ({W})"
+    SUITE = f"com.officecommun.search.test.{W}"
+    SOCK = f"{SUPPORT}/bench.sock"
+use("split-tests")
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
         port = self.server.server_port
@@ -40,7 +51,6 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 srv = ThreadingHTTPServer(("127.0.0.1", 0), H); threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = f"http://127.0.0.1:{srv.server_port}"
-SOCK = f"{SUPPORT}/bench.sock"
 # Only ever a probe of this world: the one this run started, or one a run
 # before left holding this world's socket. Never the Search someone is using,
 # even one running from this very build (see running()).

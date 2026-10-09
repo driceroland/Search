@@ -91,6 +91,9 @@ enum SiteCardPanel {
         glass.layer?.masksToBounds = true
         glass.layer?.borderWidth = 0.5
         glass.layer?.borderColor = MenuMetrics.edge.cgColor
+        // Before macOS 26 the material behind the window ignores the layer's
+        // corners, and showed square ones; a mask rounds it there too.
+        if #unavailable(macOS 26) { glass.maskImage = Self.rounded(MenuMetrics.corner) }
         host.frame = glass.bounds
         host.autoresizingMask = [.width, .height]
         glass.addSubview(host)
@@ -132,6 +135,19 @@ enum SiteCardPanel {
         resign = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { SiteCardPanel.hide() }
         }
+    }
+
+    /// A rounded rectangle that stretches to any size, its corners kept.
+    private static func rounded(_ corner: CGFloat) -> NSImage {
+        let side = corner * 2 + 1
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: corner, yRadius: corner).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: corner, left: corner, bottom: corner, right: corner)
+        image.resizingMode = .stretch
+        return image
     }
 
     static func hide() {
