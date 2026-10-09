@@ -486,7 +486,6 @@ final class Tab: ObservableObject, Identifiable {
     private let shop = StoreRelay()
     private let iconChanges = IconRelay()
     private let middles = MiddleRelay()
-    private let popupGestures = PopupGestureRelay()
     var popupGesture = PopupGesture()
     private let passkeyRelay = PasskeyRelay()
     private let hovered = HoveredLink()
@@ -640,8 +639,7 @@ final class Tab: ObservableObject, Identifiable {
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
-        popupGestures.tab = self
-        controller.add(popupGestures, contentWorld: Web.world, name: PopupGestureRelay.name)
+        PopupGestureRelay.install(on: controller)
         Shield.shared.protect(controller)
         built = web
         // A tab muted before it went to sleep wakes muted.
@@ -665,9 +663,9 @@ final class Tab: ObservableObject, Identifiable {
                         if fresh == self.heldOver { return }
                         self.held = nil
                     }
-                    let freshHost = fresh.host()?.lowercased()
-                    let currentHost = self.address?.host()?.lowercased()
-                    let moved = freshHost != currentHost
+                    // By site, port included: localhost:3000 to localhost:5173
+                    // is another project, with another icon.
+                    let moved = Favicons.site(fresh) != self.address.flatMap(Favicons.site)
                     self.address = fresh
                     // Within the same origin — history.pushState, a fragment —
                     // the page on screen is the one at the new address.
@@ -735,9 +733,7 @@ final class Tab: ObservableObject, Identifiable {
         guard let built else { return }
         let controller = built.configuration.userContentController
         controller.removeAllUserScripts()
-        controller.addUserScript(
-            WKUserScript(source: PopupGestureRelay.script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
-        )
+        controller.addUserScript(PopupGestureRelay.userScript)
         controller.addUserScript(
             WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
@@ -788,6 +784,13 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: LiveRate.script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
         )
+        // Every frame, in the page's own world: a page an extension lists
+        // reaches it as chrome.runtime (see ExtensionExternal.swift).
+        if let external = ExtensionExternal.script {
+            controller.addUserScript(
+                WKUserScript(source: external, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
+            )
+        }
         // Passkeys stand in the page's own world — they replace the page's
         // functions — and reach Search through a bridge in Search's, off or on:
         // an extension's page script can carry the patch either way (see
@@ -1316,6 +1319,7 @@ final class Tab: ObservableObject, Identifiable {
     /// back-forward cache. The tab keeps its address; `web` builds again the
     /// next time anyone asks for it.
     private func discard() {
+        popupGesture.clear()
         watch = []
         ears.stop()
         guard let web = built else { return }
@@ -1324,6 +1328,13 @@ final class Tab: ObservableObject, Identifiable {
         let controller = web.configuration.userContentController
         Web.release(controller)
         controller.removeAllUserScripts()
+        // Other extension tabs still use this controller. Their existing
+        // listeners need the relay, and their next documents need its script.
+        if #available(macOS 15.4, *), controller === Extensions.pages {
+            PopupGestureRelay.install(on: controller)
+            controller.addUserScript(PopupGestureRelay.userScript)
+        }
+        web.onMenuClosed = nil
         web.onPull = nil
         web.onTouch = nil
         web.onKeys = nil
@@ -1473,9 +1484,41 @@ final class PageView: WKWebView {
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         // WebKit names it for a window, but a new window's page arrives here
-        // as a new tab (Browser's createWebViewWith), so it says so.
-        if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierOpenLinkInNewWindow" }) {
+        // as a new tab (Browser's createWebViewWith), so it says so. The tab
+        // stays behind this one, as in Safari and Chrome, and as a ⌘-click's
+        // does; with ⌥ held the item becomes one that goes to it, WebKit's
+        // own, as it always was. Without a mouse's middle button, this is
+        // the way to a tab in the background that needs no key held.
+        if let index = menu.items.firstIndex(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierOpenLinkInNewWindow" }) {
+            let item = menu.items[index]
+            if let front = item.copy() as? NSMenuItem {
+                front.title = "Open Link in New Tab and Go to It"
+                front.keyEquivalentModifierMask = .option
+                front.isAlternate = true
+                menu.insertItem(front, at: index + 1)
+            }
+            openLink = (item.target, item.action)
             item.title = "Open Link in New Tab"
+            item.keyEquivalentModifierMask = []
+            item.target = self
+            item.action = #selector(openLinkBehind(_:))
+        }
+        // The bench's linkmenu: the item it names is chosen as the menu
+        // comes up, the way a hand would choose it, and the menu goes.
+        if Store.testing, let title = PageView.picking {
+            PageView.picking = nil
+            let timer = Timer(timeInterval: PageView.pickingDelay, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    menu.cancelTracking()
+                    // AppKit dismisses the menu before dispatching its action.
+                    DispatchQueue.main.async {
+                        if let index = menu.items.firstIndex(where: { $0.title == title }) { menu.performActionForItem(at: index) }
+                    }
+                }
+            }
+            PageView.pickingDelay = 0
+            RunLoop.main.add(timer, forMode: .eventTracking)
+            RunLoop.main.add(timer, forMode: .default)
         }
         if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierSearchWeb" }),
            let name = searchName?() {
@@ -1490,6 +1533,9 @@ final class PageView: WKWebView {
         }
     }
 
+    /// The item the bench's linkmenu will choose in the next menu.
+    static var picking: String?
+    static var pickingDelay: TimeInterval = 0
     var searchName: (() -> String?)?
     var onSearch: ((String) -> Void)?
     private var selection: String?
@@ -1518,6 +1564,25 @@ final class PageView: WKWebView {
     })(document)
     """
     private var webSearch: (target: AnyObject?, action: Selector?) = (nil, nil)
+
+    /// WebKit's Open Link in New Window, handed on once the tab it makes is
+    /// marked to stay behind. WebKit asks for that tab a moment later, from
+    /// the page's process (Browser's createWebViewWith), so the mark lasts a
+    /// second and is used up by the first tab asked for.
+    private var openLink: (target: AnyObject?, action: Selector?) = (nil, nil)
+    private var behindSince: Date?
+
+    @objc private func openLinkBehind(_ item: NSMenuItem) {
+        guard let action = openLink.action else { return }
+        behindSince = Date()
+        NSApp.sendAction(action, to: openLink.target, from: item)
+    }
+
+    /// Whether the tab being made now is the menu's, to stay behind.
+    func takeBehind() -> Bool {
+        defer { behindSince = nil }
+        return behindSince.map { Date().timeIntervalSince($0) < 1 } ?? false
+    }
 
     @objc private func searchSelection(_ item: NSMenuItem) {
         defer { selection = nil }
