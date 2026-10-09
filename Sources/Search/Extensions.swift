@@ -504,12 +504,21 @@ final class Extensions: NSObject, ObservableObject {
     }
 
     @discardableResult
-    private func unload(_ id: String) -> Bool {
+    private func unload(_ id: String, replacingContext: Bool = true) -> Bool {
         guard let context = contexts[id] else { return false }
         do { try controller.unload(context) } catch { return false }
         // All paths retire the same endpoint: recovery, reload, disable and
         // remove. Complete observers before their views are closed, too.
-        ExtensionWorkerRecovery.shared.restarted(id)
+        ExtensionWorkerRecovery.shared.restarted(id, replacingContext: replacingContext)
+        // A reused context keeps native ports' weak context reference alive.
+        // Retire only this extension's host/socket resources explicitly, rather
+        // than waiting for isDisconnected to notice a deallocated context.
+        for port in nativePorts.removeValue(forKey: id)?.allObjects ?? [] {
+            let cleanup = port.disconnectHandler
+            port.disconnectHandler = nil
+            cleanup?(nil)
+            if !port.isDisconnected { port.disconnect() }
+        }
         Browsers.closePopups(of: id)
         // What it kept going outside WebKit goes with it: its offscreen
         // page, and a Mac kept awake on its behalf.
@@ -693,6 +702,7 @@ final class Extensions: NSObject, ObservableObject {
     private var reloading: Set<String> = []
     /// Recent failed native messages, per extension and host.
     private var failures: [String: [Date]] = [:]
+    private var nativePorts: [String: NSHashTable<WKWebExtension.MessagePort>] = [:]
 
     /// Loaded at least once since the browser started, and loaded again.
     private var loadsThisRun: Set<String> = []
@@ -701,18 +711,32 @@ final class Extensions: NSObject, ObservableObject {
     @discardableResult
     func revive(_ id: String, because reason: String) -> Bool {
         guard let item = installed.first(where: { $0.id == id }), item.enabled,
+              let context = contexts[id],
               Date().timeIntervalSince(revived[id] ?? .distantPast) > 60 else { return false }
-        // Its popup goes with it; it is opened again once the extension is back.
         let popup = ExtensionPopup.shared.extensionID == id ? ExtensionPopup.shared.view?.url : nil
-        guard unload(id) else { return false }
+        guard unload(id, replacingContext: false) else { return false }
         revived[id] = Date()
         workersChanged()
         noteError("restarted the extension: \(reason)", for: id)
-        Task {
-            guard await load(item), let popup, let context = contexts[id] else { return }
-            // Its button as it is now: the one it hung from may have gone
-            // with a folded column meanwhile.
-            ExtensionPopup.shared.show(popup, for: context, from: anchor(for: id))
+        // WebKit API objects held by existing pages address this context's
+        // internal identifier. A different context with the same extension id
+        // strands fresh connects in those pages. Match WebKit's own reload:
+        // unload and load the same instance, keeping its prepared resources.
+        do {
+            loadedBefore.insert(id)
+            try controller.load(context)
+            contexts[id] = context
+            watch(context)
+            ShortcutStore.shared.adopt(context, id: id)
+            actionsChanged += 1
+            if let popup {
+                Task { [weak self] in
+                    guard let self, self.contexts[id] === context, context.isLoaded else { return }
+                    ExtensionPopup.shared.show(popup, for: context, from: self.anchor(for: id))
+                }
+            }
+        } catch {
+            noteError("couldn't reload the extension: \(error.localizedDescription)", for: id)
         }
         return true
     }
@@ -1524,6 +1548,10 @@ extension Extensions: WKWebExtensionControllerDelegate {
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, connectUsing port: WKWebExtension.MessagePort, for extensionContext: WKWebExtensionContext) async throws {
+        let id = extensionContext.uniqueIdentifier
+        let ports = nativePorts[id] ?? NSHashTable<WKWebExtension.MessagePort>.weakObjects()
+        ports.add(port)
+        nativePorts[id] = ports
         if port.applicationIdentifier == ExtensionSocket.name {
             ExtensionSocket.connect(port, from: extensionContext.uniqueIdentifier)
             return

@@ -88,8 +88,8 @@ final class ExtensionWorkerRecovery {
         if waiting[id]?.isEmpty == true { waiting[id] = nil }
     }
 
-    func restarted(_ id: String) {
-        let generation = generation(for: id) + 1
+    func restarted(_ id: String, replacingContext: Bool = true) {
+        let generation = generation(for: id) + (replacingContext ? 1 : 0)
         generations[id] = generation
         backgrounds[id] = nil
         let replies = waiting.removeValue(forKey: id) ?? [:]

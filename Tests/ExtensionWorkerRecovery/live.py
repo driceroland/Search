@@ -20,6 +20,7 @@ manual coverage; the final report says so explicitly.
 
 import argparse
 import json
+import os
 import re
 import platform
 import signal
@@ -75,6 +76,9 @@ def environment():
         'workingTree': command_output('git', '-C', str(ROOT), 'status', '--short'),
         'app': str(APP),
         'appVersion': command_output('/usr/libexec/PlistBuddy', '-c', 'Print :CFBundleShortVersionString', str(APP / 'Contents/Info.plist')),
+        'codesignDescription': command_output('/usr/bin/codesign', '-dv', '--verbose=2', str(APP)),
+        'codesignEntitlements': command_output('/usr/bin/codesign', '-d', '--entitlements', ':-', str(APP)),
+        'codesignVerification': command_output('/usr/bin/codesign', '--verify', '--strict', '--verbose=2', str(APP)),
     }
 
 
@@ -82,9 +86,29 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--admission-only', action='store_true',
                         help='install the fixture and verify its initial real ports, then clean up')
+    parser.add_argument('--direct-launch', action='store_true',
+                        help='diagnostic only: launch the exact built executable and capture its exit and output')
     parser.add_argument('--self-test', action='store_true',
                         help='run pure-Python diagnostic selection checks; no app or macOS required')
     return parser.parse_args(argv)
+
+
+def direct_environment(world, inherited=None):
+    result = dict(os.environ if inherited is None else inherited)
+    result['SEARCH_PROBE'] = world
+    return result
+
+
+def process_status(code):
+    if code is None:
+        return {'state': 'running', 'returncode': None}
+    result = {'state': 'exited', 'returncode': code}
+    if code < 0:
+        try:
+            result['signal'] = signal.Signals(-code).name
+        except ValueError:
+            result['signal'] = str(-code)
+    return result
 
 
 def parse_report(text):
@@ -285,7 +309,15 @@ def self_test():
     assert parse_args(['--admission-only']).admission_only
     assert not parse_args([]).admission_only
     assert parse_args(['--self-test']).self_test
-    print('PASS 17 pure-Python diagnostic selection, symbolication, summary and argument checks', flush=True)
+    assert parse_args(['--direct-launch', '--admission-only']).direct_launch
+    assert not parse_args([]).direct_launch
+    inherited = {'PATH': '/usr/bin', 'SEARCH_PROBE': 'old-world'}
+    assert direct_environment('isolated-world', inherited) == {'PATH': '/usr/bin', 'SEARCH_PROBE': 'isolated-world'}
+    assert inherited['SEARCH_PROBE'] == 'old-world'
+    assert process_status(-6)['signal'] == 'SIGABRT'
+    assert process_status(0) == {'state': 'exited', 'returncode': 0}
+    assert process_status(None)['state'] == 'running'
+    print('PASS 24 pure-Python diagnostic selection, symbolication, summary and argument checks', flush=True)
     return 0
 
 
@@ -318,6 +350,67 @@ class Live:
         self.last = {}
         self.owned_pids = set()
         self.launched_at = None
+        self.process = None
+        self.output_paths = {}
+
+    def launch(self, direct=False):
+        self.launched_at = time.time()
+        if not direct:
+            self.sv.launch()
+            self.owned_pids = {int(pid) for pid in self.sv.started}
+        else:
+            # Keep the imported split_view real-profile guard and exact probe
+            # world. Only the launch route changes; no resigning, permissions,
+            # preferences, app arguments, or production source are changed.
+            support = Path(self.sv.SUPPORT)
+            support.mkdir(parents=True, exist_ok=True)
+            socket = Path(self.sv.SOCK)
+            if socket.exists():
+                socket.unlink()
+            self.output_paths = {stream: support / ('direct-' + stream + '.log') for stream in ('stdout', 'stderr')}
+            with self.output_paths['stdout'].open('wb') as stdout, self.output_paths['stderr'].open('wb') as stderr:
+                self.process = subprocess.Popen([str(APP / 'Contents/MacOS/Search')],
+                                                env=direct_environment(self.sv.W), cwd=ROOT,
+                                                stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr)
+            self.owned_pids.add(self.process.pid)
+            self.sv.started.add(str(self.process.pid))
+            until = time.monotonic() + 15
+            while not socket.exists() and self.process.poll() is None and time.monotonic() < until:
+                time.sleep(0.1)
+            time.sleep(2)
+        print('PROBE_LAUNCH', json.dumps({'mode': 'direct' if direct else 'open', 'at': self.launched_at,
+              'pids': sorted(self.owned_pids), 'process': process_status(self.process.poll()) if self.process else None}), flush=True)
+
+    def direct_diagnostics(self):
+        if self.process is None:
+            return
+        print('DIRECT_PROCESS', json.dumps(dict(pid=self.process.pid, **process_status(self.process.poll()))), flush=True)
+        for name, path in self.output_paths.items():
+            try:
+                with path.open('rb') as stream:
+                    stream.seek(0, os.SEEK_END)
+                    size = stream.tell()
+                    stream.seek(max(0, size - 32000))
+                    output = stream.read(32000).decode('utf-8', errors='replace')
+                print('DIRECT_' + name.upper(), json.dumps({'bytes': size, 'tail': output}), flush=True)
+            except OSError as error:
+                print('DIRECT_' + name.upper() + '_UNAVAILABLE', str(error), flush=True)
+
+    def finish_direct(self):
+        if self.process is None:
+            return
+        try:
+            self.process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            # This exact Popen child is ours even if it never opened a socket.
+            # split_view.finish remains responsible for the isolated profile.
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.check('owned direct process stopped', False, {'pid': self.process.pid})
+                return
+        print('DIRECT_PROCESS_AFTER_CLEANUP', json.dumps(process_status(self.process.returncode)), flush=True)
 
     def check(self, name, condition, detail=None, fatal=False):
         if condition:
@@ -635,6 +728,8 @@ class Live:
                   'the bounded event-loop stall covers an already-running worker; this runner uses top-level fixture documents')
 
     def diagnostics(self):
+        # Capture before the report wait and before finish removes the logs.
+        self.direct_diagnostics()
         # Capture the app's own exception report before isolated cleanup erases
         # it. A broken bench connection must not hide the original native fault.
         crash = Path(self.sv.SUPPORT) / 'crash.log'
@@ -671,7 +766,7 @@ def main(argv=None):
         return 2
     signal.signal(signal.SIGALRM, expired)
     signal.alarm(WORK_TIMEOUT)
-    print('ENVIRONMENT', json.dumps(environment(), sort_keys=True), flush=True)
+    print('ENVIRONMENT', json.dumps(dict(environment(), launchMode='direct' if options.direct_launch else 'open'), sort_keys=True), flush=True)
     sys.path.insert(0, str(ROOT / 'Tests'))
     import split_view as sv
     sv.use('extension-worker-recovery')
@@ -685,10 +780,7 @@ def main(argv=None):
     live = Live(sv)
     try:
         sv.setup()
-        live.launched_at = time.time()
-        sv.launch()
-        live.owned_pids = {int(pid) for pid in sv.started}
-        print('PROBE_LAUNCH', json.dumps({'at': live.launched_at, 'pids': sorted(live.owned_pids)}), flush=True)
+        live.launch(direct=options.direct_launch)
         live.check('isolated hidden Search bench is available', Path(sv.SOCK).exists(), sv.SOCK, fatal=True)
         base = f'http://127.0.0.1:{server.server_port}'
         if options.admission_only:
@@ -709,7 +801,10 @@ def main(argv=None):
             print('DIAGNOSTICS_UNAVAILABLE', str(error), flush=True)
         signal.alarm(25)
         try:
-            sv.finish()
+            try:
+                sv.finish()
+            finally:
+                live.finish_direct()
             live.check('isolated probe cleaned up', not Path(sv.SUPPORT).exists() and not sv.pids())
         except Exception as error:
             live.check('isolated probe cleaned up', False, str(error))

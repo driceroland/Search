@@ -38,6 +38,13 @@ native revives separated by the unchanged 60-second cooldown, refusal during
 cooldown, fresh echoes and a 160-second silent-port idle/wake window. The
 worker's per-start nonce establishes whether WebKit really replaced it within
 the same context. If it did not, that branch is reported as not covered.
+`--admission-only` runs just local extension admission and initial echoes for
+baseline comparisons. `--direct-launch` is an explicit diagnostic route using
+the exact built executable, unchanged signature/entitlements and the same probe
+profile/window isolation; it records stdout, stderr and the actual child exit
+status. The default continues to use the existing `open` launcher. OS crash
+reports and symbolication are restricted to the captured test process.
+
 Application-level withheld replies do not claim dead-worker detection, and the
 brief stall is not proof of slow initial startup. Cross-origin child frames,
 truly hung workers and failed-start wake recovery still require separate checks.
@@ -74,10 +81,19 @@ suite or from a normal Release build.
 
 ## Native notification route
 
-Swift advances the installed-shim context generation only after
-`WKWebExtensionController.unload` succeeds. All teardown paths complete old observers, including wake/revive,
+Swift advances the installed-shim context generation when a successfully unloaded
+`WKWebExtensionContext` will be replaced. All teardown paths complete old observers, including wake/revive,
 manual reload, disable and removal. Rejected unload, healthy wake and the
-revive cooldown do not advance it. A worker replaced inside the same context
+revive cooldown do not advance it. Automatic recovery unloads and loads the
+same context instance, following WebKit's own reload implementation: existing
+API objects keep their internal context identifier. Those retirements use the
+unchanged context generation, so newly loaded pages using cached prepared shim
+resources do not mistake an earlier recovery for their own. Retained privileged
+page APIs and event registrations still require live verification. Native host
+and socket ports belonging to that extension are explicitly cleaned up, because
+keeping the context alive cannot rely on its deallocation to end them.
+
+A worker replaced inside the same context
 uses a separate native background-view lifetime. Each port has one passive
 subscription bound to that lifetime, with no health request, timeout or periodic
 traffic. A new connection that wakes a background is bound to the new lifetime;

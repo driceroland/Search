@@ -72,6 +72,20 @@ final class ExtensionWorkerPortTests: XCTestCase {
         XCTAssertEqual(waking, [0], "The fresh port retires only on the following worker")
     }
 
+    @MainActor
+    func testReloadingSameContextRetiresPortsWithoutStalingCachedShims() {
+        let recovery = ExtensionWorkerRecovery()
+        var old: [Int?] = [], fresh: [Int?] = []
+        recovery.observe("first", generation: 0, token: "old", lifetime: UUID()) { old.append($0) }
+        recovery.restarted("first", replacingContext: false)
+        XCTAssertEqual(old, [0])
+        XCTAssertEqual(recovery.generation(for: "first"), 0)
+        recovery.observe("first", generation: 0, token: "fresh", lifetime: nil) { fresh.append($0) }
+        recovery.createdWorker("first", lifetime: UUID())
+        XCTAssertTrue(fresh.isEmpty)
+        recovery.cancel("first", token: "fresh")
+    }
+
     private func drain(_ js: JSContext) {
         for _ in 0..<40 { js.evaluateScript("void 0") }
         XCTAssertNil(js.exception?.toString())
