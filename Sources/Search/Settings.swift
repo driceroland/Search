@@ -152,6 +152,9 @@ struct SettingsPanel: View {
                 }
                 .padding(.bottom, 4)
             }
+            // A page of its own opens at its top. One scroll view kept for
+            // them all opened Tabs as far down as General had been read.
+            .id(page)
         }
         .padding(.horizontal, 22)
         .padding(.top, 18)

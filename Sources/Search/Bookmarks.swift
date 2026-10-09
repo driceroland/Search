@@ -1006,9 +1006,7 @@ struct BookmarkCard: View {
         }
         .padding(14)
         .frame(width: 280)
-        .background(Palette.ground)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+        .popoverGround(card: true)
         .onAppear {
             title = bookmarks.bookmark(id)?.title ?? ""
             // The popover's window takes the keyboard only after this, and
@@ -1134,9 +1132,7 @@ struct BookmarksDropdown: View {
             .padding(6)
         }
         .frame(width: 280)
-        .background(Palette.ground)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+        .popoverGround(card: true)
     }
 
     /// The list as tall as the whole tree would be with every folder open,
@@ -1412,21 +1408,63 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
                     self?.wrap()
                 }
             },
+            // However the menu bar is let go of, even if SwiftUI's delegate
+            // got the menu's own close instead.
+            centre.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: nil) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard (note.object as? NSMenu) === NSApp.mainMenu else { return }
+                    self?.closed()
+                }
+            },
         ]
         wrap()
     }
 
+    private var menu: NSMenu? { NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu }
+
+    /// Looks, while the menu is open, after each turn of the run loop.
+    private var looking: CFRunLoopObserver?
+
+    /// An open menu is updated by SwiftUI itself, straight through its own
+    /// delegate, whenever anything it shows could have changed — a tab's
+    /// title, every second on a download page — and that took the bookmarks
+    /// out from under the pointer. While it is open, they go back in as soon
+    /// as a turn of the run loop finds them gone.
+    fileprivate func opened(_ menu: NSMenu) {
+        guard looking == nil else { return }
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 0) { [weak self, weak menu] _, _ in
+            MainActor.assumeIsolated {
+                guard let self, let menu, !menu.items.contains(where: { $0.tag == Self.mark }) else { return }
+                self.fill(menu)
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        looking = observer
+    }
+
+    fileprivate func closed() {
+        guard let looking else { return }
+        CFRunLoopObserverInvalidate(looking)
+        self.looking = nil
+    }
+
     private func wrap() {
-        guard let menu = NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu,
-              menu.delegate !== relay
+        guard let menu, menu.delegate !== relay
         else { return }
         relay.inner = menu.delegate
         menu.delegate = relay
     }
 
+    /// SwiftUI's own update of the menu, without ours after it: what it
+    /// does by itself to a menu that is open. For the bench.
+    func swiftUIUpdate() {
+        guard let menu else { return }
+        relay.inner?.menuNeedsUpdate?(menu)
+    }
+
     /// How many items this has put in the menu, for the bench.
     var count: Int {
-        NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu?.items.filter { $0.tag == Self.mark }.count ?? 0
+        menu?.items.filter { $0.tag == Self.mark }.count ?? 0
     }
 
     /// The top of the list, after SwiftUI's items, in place of any left
@@ -1513,7 +1551,15 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
             MainActor.assumeIsolated { after?(menu) }
         }
 
-        func menuDidClose(_ menu: NSMenu) { inner?.menuDidClose?(menu) }
+        func menuWillOpen(_ menu: NSMenu) {
+            inner?.menuWillOpen?(menu)
+            MainActor.assumeIsolated { BookmarkMenu.shared.opened(menu) }
+        }
+
+        func menuDidClose(_ menu: NSMenu) {
+            inner?.menuDidClose?(menu)
+            MainActor.assumeIsolated { BookmarkMenu.shared.closed() }
+        }
 
         /// Only for its own items: the bookmarks aren't SwiftUI's to know.
         func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
