@@ -226,7 +226,7 @@ enum Browsers {
 
     private static func comeForward() {
         // Never a test run's: a probe started hidden stays off every screen.
-        guard !Store.testing else { return }
+        guard !Store.hiddenProbe else { return }
         if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
     }
 

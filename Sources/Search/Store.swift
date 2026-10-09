@@ -19,6 +19,12 @@ enum Store {
         return Bundle.main.executablePath?.contains("/.build/") == true
     }
 
+    /// Probe scripts normally stay hidden. Visual E2E opts into a visible
+    /// window while retaining the same isolated settings and data stores.
+    static var hiddenProbe: Bool {
+        testing && ProcessInfo.processInfo.environment["SEARCH_E2E_VISIBLE"] != "1"
+    }
+
     /// Which test world a test run lives in. SEARCH_PROBE=1, or a run from
     /// the build folder, is the test world, "Search (test)". SEARCH_PROBE=
     /// <name> is a world of its own, "Search (<name>)", with settings and

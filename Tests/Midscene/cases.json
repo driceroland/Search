@@ -1,0 +1,17 @@
+[
+  {
+    "id": "bookmarks-import",
+    "shard": "import",
+    "title": "Import exported bookmarks and browse a folder"
+  },
+  {
+    "id": "bookmarks-repeat",
+    "shard": "import",
+    "title": "Repeated file import keeps bookmarks unique"
+  },
+  {
+    "id": "page-find",
+    "shard": "navigation",
+    "title": "Find a word on a local page"
+  }
+]

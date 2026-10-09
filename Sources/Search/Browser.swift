@@ -1633,7 +1633,7 @@ final class Browser: NSObject, ObservableObject {
                 self.select(tab)
             }
             // Never a test run's: a probe started hidden stays off every screen.
-            guard !Store.testing else { return }
+            guard !Store.hiddenProbe else { return }
             NSApp.activate(ignoringOtherApps: true)
             NSApp.windows.first { $0.contentView != nil }?.makeKeyAndOrderFront(nil)
         }

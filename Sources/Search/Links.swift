@@ -137,7 +137,7 @@ final class Links: NSObject, NSApplicationDelegate {
         // A test run started hidden stays so: another launch of the same app
         // (`open -n` of a second probe) can reach it as a reopen, and nothing
         // is brought back, made or brought forward for it.
-        guard !Store.testing else { return false }
+        guard !Store.hiddenProbe else { return false }
         if !flag { Browsers.ensureWindow() }
         return true
     }
@@ -227,7 +227,7 @@ final class Links: NSObject, NSApplicationDelegate {
     @MainActor
     private static func comeForward() {
         // Never a test run's: a probe started hidden stays off every screen.
-        guard !Store.testing else { return }
+        guard !Store.hiddenProbe else { return }
         guard #available(macOS 14, *) else {
             NSApp.activate(ignoringOtherApps: true)
             return

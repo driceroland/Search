@@ -1,0 +1,10 @@
+cases:
+  - name: page-find
+    tags: [navigation]
+    steps:
+      - app.open:
+          id: page-find
+      - aiAct: "Press Command+L, type the local Orchard URL provided in the test context and press Return."
+      - aiAssert: "The page shows the heading E2E Orchard and the text amber apple, amber pear, amber plum."
+      - aiAct: "Press Command+F and type amber into Find on page."
+      - aiAssert: "The Find on page field contains amber and its visible result counter shows 1 of 3."

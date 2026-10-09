@@ -13,3 +13,12 @@ __pycache__/
 *.provisionprofile
 *.p12
 *.mobileprovision
+
+# Standalone Midscene desktop E2E harness.
+Tests/Midscene/node_modules/
+Tests/Midscene/midscene_run/
+Tests/Midscene/.midscene/
+Tests/Midscene/.env
+Tests/Midscene/summary.md
+Tests/Midscene/midscene-node-spec.*.md
+Tests/Midscene/desktop-health/

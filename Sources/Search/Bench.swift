@@ -107,7 +107,7 @@ final class Bench {
     func start(for browser: Browser) {
         guard !running else { return }
         self.browser = browser
-        if Store.testing { Bench.watchScreens() }
+        if Store.hiddenProbe { Bench.watchScreens() }
         // Nor App Nap, which a test run behind other windows falls into.
         if Store.testing, !Store.measuring, awake == nil {
             awake = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Bench")

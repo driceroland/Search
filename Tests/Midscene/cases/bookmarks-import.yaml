@@ -1,0 +1,9 @@
+cases:
+  - name: bookmarks-import
+    tags: [import]
+    steps:
+      - app.open:
+          id: bookmarks-import
+      - aiAct: "Open Search's File menu, choose Bring Things Over, then choose the option to import from a file another browser exported. In the file chooser press Command+Shift+G, enter the bookmarks fixture path provided in the test context, press Return, then click Bring In."
+      - aiAct: "Open the Bookmarks menu and choose Show Bookmarks. Expand the E2E Reading folder if it is collapsed."
+      - aiAssert: "The bookmarks panel visibly contains the E2E Reading folder with E2E Orchard and E2E Harbor bookmarks."

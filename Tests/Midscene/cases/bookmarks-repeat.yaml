@@ -1,0 +1,12 @@
+cases:
+  - name: bookmarks-repeat
+    tags: [import]
+    steps:
+      - app.open:
+          id: bookmarks-repeat
+      - aiAct: "Open Search's File menu, choose Bring Things Over, then choose the option to import from a file another browser exported. In the file chooser press Command+Shift+G, enter the bookmarks fixture path provided in the test context, press Return, then click Bring In."
+      - aiAssert: "The visible import completion message says 2 bookmarks were imported."
+      - aiAct: "Dismiss the import panel with Escape if still open. Open the File menu, choose Bring Things Over, choose the option to import from a file, and use Command+Shift+G to select the bookmarks fixture path provided in the test context again. Click Bring In."
+      - aiAssert: "The visible import completion message says 0 new bookmarks, 2 already here."
+      - aiAct: "Open the Bookmarks menu and choose Show Bookmarks. Expand E2E Reading if collapsed."
+      - aiAssert: "The bookmarks panel contains exactly one E2E Reading folder, and inside it exactly one E2E Orchard and one E2E Harbor bookmark, with no duplicate entries."
