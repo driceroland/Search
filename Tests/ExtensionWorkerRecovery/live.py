@@ -36,6 +36,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 APP = ROOT / 'build' / 'Search.app'
 ATTRIBUTE = 'data-search-port-fixture'
+WORKER_READY_PREFIX = 'fixture-worker-ready:'
 TOTAL_TIMEOUT = 504
 # Cold Intel Xcode discovery and symbol loading need more time than a bench
 # request. Reserve diagnostics and each cleanup phase separately: even their
@@ -114,6 +115,19 @@ def direct_environment(world, inherited=None):
     result = dict(os.environ if inherited is None else inherited)
     result['SEARCH_PROBE'] = world
     return result
+
+
+def worker_ready_tokens(reported):
+    if not isinstance(reported, list):
+        return []
+    tokens = []
+    for message in reported:
+        if not isinstance(message, str):
+            continue
+        match = re.fullmatch(re.escape(WORKER_READY_PREFIX) + r'([0-9]{1,17}-[a-z0-9]{1,32})', message)
+        if match and match[1] not in tokens:
+            tokens.append(match[1])
+    return tokens
 
 
 def process_status(code):
@@ -484,7 +498,16 @@ def self_test():
     assert WORK_TIMEOUT + DIAGNOSTICS_TIMEOUT + PROFILE_CLEANUP_TIMEOUT + OWNED_CLEANUP_TIMEOUT + SERVER_CLEANUP_TIMEOUT < TOTAL_TIMEOUT
     assert LLDB_CAPTURE_TIMEOUT + LLDB_INTERRUPT_TIMEOUT < LLDB_DIAGNOSTICS_TIMEOUT
     assert LLDB_DISCOVERY_TIMEOUT == 30 and LLDB_STARTUP_TIMEOUT == 60
-    print('PASS 49 pure-Python diagnostic selection, symbolication, summary and argument checks', flush=True)
+    ready = WORKER_READY_PREFIX + '1720000000000-ab12'
+    newer = WORKER_READY_PREFIX + '1720000000001-cd34'
+    assert worker_ready_tokens([ready]) == ['1720000000000-ab12']
+    assert worker_ready_tokens([ready, ready, newer]) == ['1720000000000-ab12', '1720000000001-cd34']
+    assert worker_ready_tokens(['prefix ' + ready, ready + ' extra', 'fixture-worker-ready:bad']) == []
+    assert worker_ready_tokens([None, {}, 5, 'restarted the extension: test']) == []
+    assert worker_ready_tokens(None) == []
+    assert worker_ready_tokens(['fixture-worker-entry:1720000000000-ab12']) == []
+    assert [token for token in worker_ready_tokens([ready, newer]) if token not in {'1720000000000-ab12'}] == ['1720000000001-cd34']
+    print('PASS 56 pure-Python diagnostic selection, symbolication, summary and argument checks', flush=True)
     return 0
 
 
@@ -741,6 +764,20 @@ class Live:
         return [message for message in self.extension_state().get('reported', [])
                 if 'restarted the extension:' in message]
 
+    def ready_tokens(self):
+        state = self.extension_state()
+        return worker_ready_tokens(state.get('reported', [])) if state else []
+
+    def wait_worker_ready(self, label, excluding=(), expected=None):
+        prior = set(excluding)
+        def acceptable(tokens):
+            return expected in tokens if expected is not None else any(token not in prior for token in tokens)
+        tokens = self.poll(label + ' worker listener-registration marker', self.ready_tokens, acceptable, timeout=30)
+        token = expected if expected is not None else next(token for token in reversed(tokens) if token not in prior)
+        self.check(label + ': worker reported listener registration', True, token)
+        print('WORKER_READY', label, token, flush=True)
+        return token
+
     def native(self, action, expected=None, timeout=30):
         token = self.click('requester', action)
         record = self.poll('background.' + action, lambda: next(
@@ -816,6 +853,7 @@ class Live:
         self.check('only the local fixture is installed in isolated profile', len(status['extensions']) == 1 and len(installed) == 1,
                    status, fatal=True)
         self.extension = installed[0]['id']
+        ready_worker = self.wait_worker_ready('initial')
         self.tabs['content'] = self.sv.cmd({'do': 'open', 'url': base + '/site.html'})['id']
         for label in ['page', 'requester']:
             self.tabs[label] = self.sv.cmd({'do': 'ext-page', 'id': self.extension, 'path': 'page.html'})['id']
@@ -828,6 +866,8 @@ class Live:
                        any('echo' in message for message in state['ports'][0]['messages']), state, fatal=True)
             workers.append(state['ports'][0]['messages'][0].get('worker'))
         self.check('site and both extension pages share one worker', len(set(workers)) == 1 and bool(workers[0]), workers, fatal=True)
+        self.check('initial port echoes match the listener-ready worker', all(worker == ready_worker for worker in workers),
+                   {'ready': ready_worker, 'echoes': workers}, fatal=True)
         self.check('website main world has no recovery handler', self.eval('content',
                    "typeof window.webkit?.messageHandlers?.searchWorkerRecovery === 'undefined'") is True)
         print('USER_AGENT', self.eval('content', 'navigator.userAgent'), flush=True)
@@ -879,6 +919,7 @@ class Live:
                    self.restart_notes() == before, self.extension_state())
 
     def recover(self, generation, previous_worker):
+        prior_ready = self.ready_tokens()
         token = self.click('page', 'withhold')
         state = self.poll('withholding acknowledged', lambda: self.state('page'),
                           lambda value: self.control(value, token, 'withhold'))
@@ -908,9 +949,12 @@ class Live:
         self.check(f'recovery {generation}: native restart diagnostic recorded',
                    len(reported) > len(before) and any('restarted the extension:' in item for item in reported), reported)
         self.native('wake')
+        ready_worker = self.wait_worker_ready(f'recovery {generation}', excluding=prior_ready)
         workers = [self.send_echo(label, fresh=True) for label in self.tabs]
         self.check(f'recovery {generation}: fresh ports reach a new shared worker',
                    len(set(workers)) == 1 and workers[0] != previous_worker, workers)
+        self.check(f'recovery {generation}: fresh echoes match the listener-ready worker',
+                   all(worker == ready_worker for worker in workers), {'ready': ready_worker, 'echoes': workers})
         self.stable_for(2, generation + 1, generation, f'recovery {generation}: fresh ports stay open')
         for label, token in withheld.items():
             self.check(f'recovery {generation}: {label} withheld messages were not replayed', not self.echo(self.state(label), token))
@@ -946,6 +990,10 @@ class Live:
         self.check('idle wake: runtime reply identifies real worker',
                    result['status'] == 'fulfilled' and value.get('echo', {}).get('token') == token
                    and bool(value.get('worker')), result, fatal=True)
+        # The existing roundtrip decides whether idle wake replaced the worker.
+        # Correlate that result with its registration marker before fresh ports;
+        # never assume elapsed idle time guarantees a replacement.
+        self.wait_worker_ready('idle wake', expected=value['worker'])
         reported = self.restart_notes()
         self.check('idle wake: no controller-reload recovery was recorded', reported == before, reported)
         if value['worker'] == previous_worker:

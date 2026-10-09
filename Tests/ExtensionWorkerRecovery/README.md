@@ -58,6 +58,21 @@ and reports debugger permission failures as BLOCKED without changing permissions
 The default continues to use the existing `open` launcher. OS crash reports and
 symbolication are restricted to the captured test process.
 
+Before opening initial ports, the fixture now requires its worker's one-shot
+`fixture-worker-ready:<bootNonce>` diagnostic after both application listeners
+have registered. Initial echoes must match that nonce. Explicit revives require
+a new readiness nonce before the existing manual fresh connections; old-port
+counts and message-replay checks are unchanged. The diagnostic uses Search's
+existing `debug.error` route, so it appears under reported diagnostics; it is
+fixture evidence rather than a native failure. A separate one-shot worker-entry
+note distinguishes code reaching the fixture from completing registration; both
+notes defer native IPC until the startup task ends. Delivery failures are logged
+explicitly through console.error. Missing readiness fails within
+30 seconds, without port retries. This milestone proves the fixture reached
+listener registration, while only successful port echoes prove backend delivery.
+The separate brief-busy-worker assertions remain unchanged; readiness gating is
+not a new claim about connections made during cold worker startup.
+
 Application-level withheld replies do not claim dead-worker detection, and the
 brief stall is not proof of slow initial startup. Cross-origin child frames,
 truly hung workers and failed-start wake recovery still require separate checks.
