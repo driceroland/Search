@@ -126,10 +126,21 @@ def order(st): return [x["id"] for x in st["tabs"]]
 def url(st, id): return next(x["url"] for x in st["tabs"] if x["id"] == id)
 def ev(id, js): return cmd({"do": "eval", "id": id, "js": js}).get("value")
 def qs(): return sp("state")["questions"]
-def sample(n=12, every=0.03):
-    out = []
-    for _ in range(n):
-        out.append(sp("motion")["motion"]); time.sleep(every)
+def asked(id, within=10):
+    """The questions once page id has one up: a page's question reaches the
+    app a moment after the page asks, longer on a busy machine."""
+    until = time.time() + within
+    while not any(q["tab"] == id for q in qs()) and time.time() < until: time.sleep(0.1)
+    return qs()
+def sample(n=12, every=0.03, within=3):
+    """n looks at what moves, from the first that shows something moving:
+    on a busy machine the move can start a while after it was asked for.
+    Nothing moving by `within` seconds, and the n looks are taken then."""
+    out = []; until = time.time() + within
+    while len(out) < n:
+        m = sp("motion")["motion"]
+        if m or out or time.time() > until: out.append(m)
+        time.sleep(every)
     return out
 
 
@@ -366,7 +377,7 @@ def case_slice5b(t):
     setup(splitView=True); launch()
     a = page("a"); b = page("b")
     sp("pair", id=b, **{"with": a}, side="right"); sp("focus", id=a); time.sleep(0.8)
-    ev(b, "setTimeout(function(){ window.__r = confirm('Leave this page?') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ window.__r = confirm('Leave this page?') }, 0); 1"); asked(b)
     st = sp("state"); q = st["questions"]
     t.ok("confirm from the other page: a card over it", len(q) == 1 and q[0]["tab"] == b and q[0]["kind"] == "confirm" and q[0]["message"] == "Leave this page?", q)
     t.ok("named for the site asking", q and q[0]["host"] == "127.0.0.1", q)
@@ -374,38 +385,38 @@ def case_slice5b(t):
     t.ok("not held for later, not a sheet", st["held"] == {}, st["held"])
     sp("answer", id=b, ok=True); time.sleep(0.4)
     t.ok("OK answers true, once", ev(b, "window.__r") is True and qs() == [])
-    ev(b, "setTimeout(function(){ window.__r = prompt('Name?', 'x') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ window.__r = prompt('Name?', 'x') }, 0); 1"); asked(b)
     t.ok("prompt: a card", qs() and qs()[0]["kind"] == "prompt")
     sp("answer", id=b, ok=True, text="hello"); time.sleep(0.4)
     t.ok("prompt answers what was typed", ev(b, "window.__r") == "hello")
-    ev(b, "setTimeout(function(){ window.__r = prompt('Name?') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ window.__r = prompt('Name?') }, 0); 1"); asked(b)
     sp("answer", id=b, ok=False); time.sleep(0.4)
     t.ok("prompt cancelled answers null", ev(b, "window.__r") is None)
     # a page asking again and again: one at a time, in order
-    ev(b, "setTimeout(function(){ window.__n = 0; for (var i = 0; i < 3; i++) { alert('again ' + i); window.__n++ } }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ window.__n = 0; for (var i = 0; i < 3; i++) { alert('again ' + i); window.__n++ } }, 0); 1")
     seen = []
     for i in range(3):
-        q = qs(); seen.append((len(q), q[0]["message"] if q else None))
+        q = asked(b); seen.append((len(q), q[0]["message"] if q else None))
         sp("answer", id=b, ok=True); time.sleep(0.5)
     t.ok("asked again and again: one card at a time, in order", seen == [(1, "again 0"), (1, "again 1"), (1, "again 2")], seen)
     t.ok("…every one answered", ev(b, "window.__n") == 3)
     # the other page keeps working meanwhile
-    ev(b, "setTimeout(function(){ confirm('Still there?') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ confirm('Still there?') }, 0); 1"); asked(b)
     t.ok("the other page answers while one waits", ev(a, "1 + 1") == 2)
     # closed while asking: answered as dismissed, no hang
     st = sp("close", id=b); time.sleep(0.4)
     t.ok("page closed while asking: its card goes", qs() == [])
     b = page("b2"); sp("pair", id=b, **{"with": a}, side="right"); time.sleep(0.8)
-    ev(b, "setTimeout(function(){ confirm('Leave?') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ confirm('Leave?') }, 0); 1"); asked(b)
     sp("go", id=b, url=f"{BASE}/elsewhere") if False else cmd({"do": "go", "id": b, "url": f"{BASE}/elsewhere"}); time.sleep(1.5)
     t.ok("page gone elsewhere: its card goes", qs() == [], qs())
-    ev(b, "setTimeout(function(){ confirm('Leave?') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ confirm('Leave?') }, 0); 1"); asked(b)
     sp("enabled", on=False); time.sleep(0.4)
     t.ok("Split View off: the card is answered as dismissed", qs() == [])
     sp("enabled", on=True); sp("select", id=a); time.sleep(0.5)
     # a frame from another site is named as itself
-    c = page("asker"); sp("pair", id=c, **{"with": a}, side="right"); sp("focus", id=a); time.sleep(3)
-    q = qs()
+    c = page("asker"); sp("pair", id=c, **{"with": a}, side="right"); sp("focus", id=a)
+    q = asked(c)
     t.ok("a frame from another site is named as itself", q and q[0]["tab"] == c and q[0]["host"] == "localhost", q)
     if q: sp("answer", id=c, ok=True)
     # one page alone: the sheet path as before (a test run writes it down)
