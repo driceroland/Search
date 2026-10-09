@@ -4,51 +4,58 @@ import XCTest
 
 @available(macOS 15.4, *)
 final class ExtensionWorkerPortTests: XCTestCase {
-    func testPortsDisconnectOnlyAfterWorkerRecoveryActuallyRestartsIt() throws {
-        let script = ExtensionShims.script
-        let start = try XCTUnwrap(script.range(of: "let checkWorker = () => {};"))
-        let end = try XCTUnwrap(script.range(of: "gather(runtime && runtime.onMessage, true);", range: start.upperBound..<script.endIndex))
-        let section = String(script[start.lowerBound..<end.lowerBound])
-        for (reply, restarted, expected) in [("pong", true, 0), ("gone", false, 0), ("gone", true, 1)] {
+    func testRealShimEntryCoversContentScriptsAndExtensionPages() throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("ExtensionWorkerRecovery/shim-harness.js")
+        let harness = try String(contentsOf: fixture, encoding: .utf8)
+        for content in [true, false] {
             let js = try XCTUnwrap(JSContext())
-            js.evaluateScript(#"""
-            const hasWorker = true, inContent = true, __SEARCH_VERBOSE__ = false;
-            const location = { pathname: "/fixture" }, document = {};
-            Date.now = () => 100000;
-            let timerDelays = [], pings = 0, disconnects = 0, posts = 0, revives = 0;
-            const setTimeout = (f, delay) => { timerDelays.push(delay); if (delay === 1000) f(); return 1; };
-            const put = (target, key, value) => { target[key] = value; };
-            const tell = () => {}, relay = () => {}, withLastError = () => {};
-            const event = () => {
-              const listeners = new Set();
-              return { listeners, addListener: f => listeners.add(f), removeListener: f => listeners.delete(f),
-                       hasListener: f => listeners.has(f), hasListeners: () => listeners.size > 0 };
-            };
-            const native = (name) => { if (name === "background.revive") revives++; return Promise.resolve(\#(restarted)); };
-            const prototype = { sendMessage: () => { pings++; return Promise.resolve(\#(reply == "pong" ? "\"pong\"" : "undefined")); } };
-            const runtime = Object.assign(Object.create(prototype), {
-              id: "test", connect: () => ({ onMessage: event(), onDisconnect: event(),
-                                         postMessage: () => { posts++; }, disconnect: () => {} })
-            });
-            const chrome = { runtime };
-            \#(section)
-            const port = runtime.connect();
-            port.onDisconnect.addListener(() => { disconnects++; });
-            port.postMessage({ question: "hello" });
-            """#)
+            js.evaluateScript("const console = { log() {}, error() {} };\n" + harness)
+            js.evaluateScript("const fixture = recoveryFixture(\(content)); Object.assign(globalThis, fixture.root); window = globalThis; top = globalThis;")
+            // Execute the whole shim: slicing after the content-script return
+            // would falsely claim that the content path is covered (#506).
+            js.evaluateScript(ExtensionShims.script.replacingOccurrences(of: "__SEARCH_WORKER_GENERATION__", with: "0"))
             XCTAssertNil(js.exception?.toString())
-            // Drain JavaScriptCore's promise jobs without real timer delays.
-            for _ in 0..<20 { js.evaluateScript("void 0") }
-            XCTAssertEqual(js.evaluateScript("disconnects")?.toInt32(), Int32(expected), reply)
-            XCTAssertEqual(js.evaluateScript("posts")?.toInt32(), 1)
-            XCTAssertEqual(js.evaluateScript("timerDelays.includes(10000)")?.toBool(), false)
-            if reply == "pong" { XCTAssertEqual(js.evaluateScript("revives")?.toInt32(), 0) }
-            if expected == 1 {
-                js.evaluateScript("disconnectWorkerPorts();")
-                XCTAssertEqual(js.evaluateScript("disconnects")?.toInt32(), 1)
-                js.evaluateScript("try { port.postMessage({}); } catch(e) { var closedError = e.message; }")
-                XCTAssertEqual(js.evaluateScript("closedError")?.toString(), "Attempting to use a disconnected port object")
-            }
+            js.evaluateScript("const port = chrome.runtime.connect(); let count = 0; port.onDisconnect.addListener(() => count++); port.postMessage({ question: 'hello' });")
+            drain(js)
+            XCTAssertEqual(js.evaluateScript("fixture.subscriptions.length")?.toInt32(), 1)
+            XCTAssertEqual(js.evaluateScript("count")?.toInt32(), 0)
+            js.evaluateScript("fixture.subscriptions[0].resolve(1);")
+            drain(js)
+            XCTAssertEqual(js.evaluateScript("count")?.toInt32(), 1, "content: \(content)")
+            js.evaluateScript("port.nativeDisconnect.fire(port);")
+            XCTAssertEqual(js.evaluateScript("count")?.toInt32(), 1)
+            XCTAssertEqual(js.evaluateScript("fixture.nativePorts.length")?.toInt32(), 1, "No automatic reconnect")
+            XCTAssertEqual(js.evaluateScript("port.posts.length")?.toInt32(), 1, "No replay")
+            XCTAssertNil(js.exception?.toString())
         }
+    }
+
+    @MainActor
+    func testNativeGenerationCatchesLateSubscribersAndIsolatesExtensions() async {
+        let recovery = ExtensionWorkerRecovery()
+        XCTAssertEqual(recovery.generation(for: "first"), 0)
+        recovery.restarted("first")
+        let late = await recovery.observe("first", generation: 0, token: "old-page")
+        XCTAssertEqual(late, 1)
+        XCTAssertEqual(recovery.generation(for: "second"), 0)
+        recovery.restarted("first")
+        let twice = await recovery.observe("first", generation: 1, token: "old-page")
+        XCTAssertEqual(twice, 2)
+    }
+
+    @MainActor
+    func testCancellationDoesNotAdvanceNativeGeneration() {
+        let recovery = ExtensionWorkerRecovery()
+        var value: Int?
+        recovery.observe("first", generation: 0, token: "closing-page") { value = $0 }
+        recovery.cancel("first", token: "closing-page")
+        XCTAssertEqual(value, 0)
+        XCTAssertEqual(recovery.generation(for: "first"), 0)
+    }
+
+    private func drain(_ js: JSContext) {
+        for _ in 0..<40 { js.evaluateScript("void 0") }
+        XCTAssertNil(js.exception?.toString())
     }
 }

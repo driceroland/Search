@@ -20,7 +20,8 @@ import Combine
 
 /// One installed extension, as the list in Settings shows it.
 struct Installed: Codable, Identifiable, Equatable {
-    /// The Chrome Web Store id, or "local-…" for one loaded from a folder.
+    /// The Chrome Web Store id, or for one loaded from a folder the id
+    /// Chrome would give it ("local-…" in lists written before that).
     let id: String
     var name: String
     var version: String
@@ -33,8 +34,17 @@ struct Installed: Codable, Identifiable, Equatable {
     /// a list written before there was pinning still reads.
     var pinned: Bool? = nil
     /// For one loaded from a folder: where that folder is, so Reload can
-    /// bring the author's latest edits in.
+    /// bring the author's latest edits in. Kept with its links resolved:
+    /// the path its id was worked out from.
     var source: String? = nil
+
+    /// Whether Reload may copy from `source` under this id: a link put on
+    /// the way since would bring in another folder, which has another id.
+    /// "local-…" ids came from no path, and reload as they always did.
+    var sourceKeepsID: Bool {
+        guard let source, !fromStore, !id.hasPrefix("local-") else { return true }
+        return Crx.unpackedID(for: URL(fileURLWithPath: source, isDirectory: true)) == id
+    }
 }
 
 @available(macOS 15.4, *)
@@ -46,6 +56,7 @@ final class Extensions: NSObject, ObservableObject {
     /// it can't be given one later.
     static func attach(_ configuration: WKWebViewConfiguration) {
         configuration.webExtensionController = shared.controller
+        ExtensionWorkerRecovery.shared.attach(configuration.userContentController)
     }
 
     let controller: WKWebExtensionController
@@ -118,6 +129,29 @@ final class Extensions: NSObject, ObservableObject {
         folder.appendingPathComponent(".staging-\(id)-\(UUID().uuidString)", isDirectory: true)
     }
 
+    /// One loaded from a folder is copied in links and all, and both WebKit,
+    /// serving its files, and the shim, rewriting its pages, go where a link
+    /// points. So a link stays only if what it names is there and inside the
+    /// package; one leading anywhere else, or nowhere, is taken out. (A
+    /// package from the store with any link in it is refused whole: see
+    /// Crx.) Throws if one couldn't be taken out.
+    nonisolated static func unlinkOutside(_ root: URL) throws {
+        guard let base = realpath(root.path, nil) else { return }
+        let inside = String(cString: base) + "/"
+        free(base)
+        let files = FileManager.default
+        let found = files.enumerator(at: root, includingPropertiesForKeys: [.isSymbolicLinkKey])
+        while let item = found?.nextObject() as? URL {
+            guard (try? item.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true else { continue }
+            var kept = false
+            if let real = realpath(item.path, nil) {
+                kept = String(cString: real).hasPrefix(inside)
+                free(real)
+            }
+            if !kept { try files.removeItem(at: item) }
+        }
+    }
+
     private override init() {
         WKWebExtension.MatchPattern.registerCustomURLScheme(Extensions.scheme)
         // A test run keeps its extensions' storage apart, as it does its
@@ -146,6 +180,7 @@ final class Extensions: NSObject, ObservableObject {
         // which knows which page is asking (see ExtensionCapture).
         views.userContentController.addScriptMessageHandler(ExtensionCapture.shared, contentWorld: .page, name: ExtensionCapture.channel)
         Extensions.pages = views.userContentController
+        ExtensionWorkerRecovery.shared.attach(views.userContentController)
         ExtensionCapture.mockDevices(views.preferences)
         configuration.webViewConfiguration = views
         controller = WKWebExtensionController(configuration: configuration)
@@ -162,6 +197,7 @@ final class Extensions: NSObject, ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 await forgetWorkersIfChanged()
+                await forgetLeftOver()
                 // One after another, a moment apart: started all at once, WebKit
                 // fails some of their workers and never tries them again.
                 let enabled = installed.filter(\.enabled)
@@ -409,12 +445,19 @@ final class Extensions: NSObject, ObservableObject {
 
     @discardableResult
     private func load(_ item: Installed) async -> Bool {
+        if let forgetting = forgetting[item.id] { await forgetting.value }
         // The shim this build of Search carries, in place of whatever the
         // build that installed it carried — away from the main thread: the
         // first launch after an update reads and rewrites every script and
         // page each extension ships (Grammarly: 450 ms).
         let folder = Extensions.folder(for: item.id)
-        try? await Task.detached(priority: .userInitiated) { try ExtensionShims.prepare(folder) }.value
+        // One installed from a folder before links were looked at.
+        if item.source != nil {
+            do { try await Task.detached(priority: .userInitiated) { try Extensions.unlinkOutside(folder) }.value }
+            catch { return false }
+        }
+        let generation = ExtensionWorkerRecovery.shared.generation(for: item.id)
+        try? await Task.detached(priority: .userInitiated) { try ExtensionShims.prepare(folder, workerGeneration: generation) }.value
         do {
             let found = try await WKWebExtension(resourceBaseURL: Extensions.folder(for: item.id))
             let context = WKWebExtensionContext(for: found)
@@ -431,11 +474,7 @@ final class Extensions: NSObject, ObservableObject {
                 context.setPermissionStatus(.grantedExplicitly, for: permission)
             }
             context.setPermissionStatus(.grantedExplicitly, for: .nativeMessaging)
-            // Never one for extension pages, another's or all of them (see
-            // `fence`).
-            for pattern in found.allRequestedMatchPatterns where !Extensions.reachesExtensions(pattern) {
-                context.setPermissionStatus(.grantedExplicitly, for: pattern)
-            }
+            Extensions.grantSites(context)
             // Its own sign-in address, https://<id>.chromiumapp.org, which
             // is never loaded (see ExtensionAuth.handOver). WebKit shows an
             // extension a tab's address only where it has access, where
@@ -447,6 +486,7 @@ final class Extensions: NSObject, ObservableObject {
             }
             Extensions.fence(context)
             Extensions.watchTouches()
+            ExtensionWorkerRecovery.shared.register(item.id)
             try controller.load(context)
             watch(context)
             if contexts[item.id] == nil, loadsThisRun.contains(item.id) { loadedBefore.insert(item.id) }
@@ -462,10 +502,14 @@ final class Extensions: NSObject, ObservableObject {
         }
     }
 
-    private func unload(_ id: String) {
-        guard let context = contexts[id] else { return }
+    @discardableResult
+    private func unload(_ id: String) -> Bool {
+        guard let context = contexts[id] else { return false }
+        do { try controller.unload(context) } catch { return false }
+        // All paths retire the same endpoint: recovery, reload, disable and
+        // remove. Complete observers before their views are closed, too.
+        ExtensionWorkerRecovery.shared.restarted(id)
         Browsers.closePopups(of: id)
-        try? controller.unload(context)
         // What it kept going outside WebKit goes with it: its offscreen
         // page, and a Mac kept awake on its behalf.
         ExtensionOffscreen.close(for: id)
@@ -475,6 +519,7 @@ final class Extensions: NSObject, ObservableObject {
         DispatchQueue.main.async { ExtensionNative.stopOrphans() }
         contexts[id] = nil
         actionsChanged += 1
+        return true
     }
 
     private func save() {
@@ -542,13 +587,20 @@ final class Extensions: NSObject, ObservableObject {
             browser?.announce("That folder has no manifest.json")
             return
         }
-        let id = "local-" + String(UUID().uuidString.prefix(8)).lowercased()
+        let source = URL(fileURLWithPath: Crx.realPath(of: source), isDirectory: true)
+        let id = Crx.unpackedID(for: source)
+        if installed.contains(where: { $0.id == id }) {
+            browser?.announce("Already installed. Press Reload to take its changes")
+            return
+        }
         let staged = Extensions.stagingFolder(for: id)
         Task {
             defer { try? FileManager.default.removeItem(at: staged) }
             do {
                 try FileManager.default.createDirectory(at: Extensions.folder, withIntermediateDirectories: true)
-                try FileManager.default.copyItem(at: source, to: staged)
+                // The folder itself, wherever a link to it leads.
+                try FileManager.default.copyItem(at: source.resolvingSymlinksInPath(), to: staged)
+                try Extensions.unlinkOutside(staged)
                 try ExtensionShims.prepare(staged, fresh: true)
                 try await admit(staged, as: id, fromStore: false, finalFolder: Extensions.folder(for: id), confirm: confirm || !Store.testing, source: source)
             } catch {
@@ -577,8 +629,13 @@ final class Extensions: NSObject, ObservableObject {
                     browser?.announce("The folder \(original.name) was loaded from is gone")
                     return
                 }
+                guard original.sourceKeepsID else {
+                    browser?.announce("\(original.name) wasn't reloaded — its folder now leads somewhere else")
+                    return
+                }
                 do {
-                    try FileManager.default.copyItem(at: source, to: staged)
+                    try FileManager.default.copyItem(at: source.resolvingSymlinksInPath(), to: staged)
+                    try Extensions.unlinkOutside(staged)
                     try ExtensionShims.prepare(staged, fresh: true)
                 } catch {
                     browser?.announce("Couldn't copy \(original.name) again: \(error.localizedDescription)")
@@ -644,12 +701,12 @@ final class Extensions: NSObject, ObservableObject {
     func revive(_ id: String, because reason: String) -> Bool {
         guard let item = installed.first(where: { $0.id == id }), item.enabled,
               Date().timeIntervalSince(revived[id] ?? .distantPast) > 60 else { return false }
+        // Its popup goes with it; it is opened again once the extension is back.
+        let popup = ExtensionPopup.shared.extensionID == id ? ExtensionPopup.shared.view?.url : nil
+        guard unload(id) else { return false }
         revived[id] = Date()
         workersChanged()
         noteError("restarted the extension: \(reason)", for: id)
-        // Its popup goes with it; it is opened again once the extension is back.
-        let popup = ExtensionPopup.shared.extensionID == id ? ExtensionPopup.shared.view?.url : nil
-        unload(id)
         Task {
             guard await load(item), let popup, let context = contexts[id] else { return }
             // Its button as it is now: the one it hung from may have gone
@@ -729,7 +786,79 @@ final class Extensions: NSObject, ObservableObject {
         installed.removeAll { $0.id == id }
         save()
         try? FileManager.default.removeItem(at: Extensions.folder(for: id))
+        var left = Store.settings.stringArray(forKey: Extensions.forgettingKey) ?? []
+        if !left.contains(id) { left.append(id) }
+        Store.settings.set(left, forKey: Extensions.forgettingKey)
+        forgetting[id] = Task { if await forgetData(of: id) { forgotten(id) } }
     }
+
+    /// Ids whose data is still to clear, kept until it is: a quit or a crash
+    /// in the middle of clearing would otherwise leave it for the next
+    /// extension loaded at the same path, which gets the same id.
+    private static let forgettingKey = "extensions.forgetting"
+
+    private func forgotten(_ id: String) {
+        let left = (Store.settings.stringArray(forKey: Extensions.forgettingKey) ?? []).filter { $0 != id }
+        if left.isEmpty { Store.settings.removeObject(forKey: Extensions.forgettingKey) }
+        else { Store.settings.set(left, forKey: Extensions.forgettingKey) }
+    }
+
+    /// At launch, before anything loads: what a removal didn't finish clearing.
+    private func forgetLeftOver() async {
+        for id in Store.settings.stringArray(forKey: Extensions.forgettingKey) ?? [] where forgetting[id] == nil {
+            if await forgetData(of: id) { forgotten(id) }
+        }
+    }
+
+    /// What removed extensions kept, still being cleared. The same folder
+    /// loaded again, or another put at its path, gets the same id, and
+    /// starts with nothing of the one before, as in Chrome: loading waits.
+    private var forgetting: [String: Task<Void, Never>] = [:]
+
+    /// Its chrome.storage, which WebKit keeps by id, and what its pages
+    /// kept at chrome-extension://<id>. WebKit lists no website records
+    /// for that origin (see `workersKey`), so the second is cleared from a
+    /// blank page at that origin, which only an extension context can
+    /// host: a stand-in with no worker, scripts or pages of its own, so
+    /// nothing of the removed extension runs again.
+    /// Whether all of it was cleared.
+    private func forgetData(of id: String) async -> Bool {
+        defer { forgetting[id] = nil }
+        let types = WKWebExtensionController.allExtensionDataTypes
+        let records = await controller.dataRecords(ofTypes: types).filter { $0.uniqueIdentifier == id }
+        if !records.isEmpty { await controller.removeData(ofTypes: types, from: records) }
+        guard let base = URL(string: "\(Extensions.scheme)://\(id)/") else { return false }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("search-forget-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data(#"{"manifest_version": 3, "name": "Search", "version": "1"}"#.utf8).write(to: folder.appendingPathComponent("manifest.json"))
+            let standIn = WKWebExtensionContext(for: try await WKWebExtension(resourceBaseURL: folder))
+            standIn.uniqueIdentifier = id
+            standIn.baseURL = base
+            try controller.load(standIn)
+            defer { try? controller.unload(standIn) }
+            guard let configuration = standIn.webViewConfiguration else { return false }
+            let page = HiddenPage(configuration)
+            guard await page.loadBlank(at: base) else {
+                NSLog("Extensions: couldn't open %@ to clear what it kept", id)
+                return false
+            }
+            _ = try await page.web.callAsyncJavaScript(Extensions.forgetScript, contentWorld: .defaultClient)
+            return true
+        } catch {
+            NSLog("Extensions: couldn't clear what %@ kept: %@", id, error.localizedDescription)
+            return false
+        }
+    }
+
+    private static let forgetScript = """
+        localStorage.clear();
+        for (const db of await indexedDB.databases()) {
+            await new Promise(done => { const q = indexedDB.deleteDatabase(db.name); q.onsuccess = q.onerror = q.onblocked = done; });
+        }
+        for (const key of await caches.keys()) await caches.delete(key);
+        """
 
     // MARK: - new tab pages
 
@@ -901,6 +1030,29 @@ final class Extensions: NSObject, ObservableObject {
         return [Extensions.scheme, Extensions.formerScheme, "webkit-extension"].contains(scheme)
     }
 
+    /// Files on this Mac aren't an extension's to reach either, whatever its
+    /// manifest names: Chrome keeps them from every extension until "Allow
+    /// access to file URLs" is turned on for it, and Search has no such
+    /// switch. WebKit's <all_urls> leaves file: out; a pattern naming it
+    /// (file:///*) would be granted with the rest.
+    nonisolated static func reachesFiles(_ pattern: WKWebExtension.MatchPattern) -> Bool {
+        pattern.scheme?.lowercased() == "file"
+    }
+
+    /// What no extension is given or asked about: extension pages and files.
+    nonisolated static func withheld(_ pattern: WKWebExtension.MatchPattern) -> Bool {
+        reachesExtensions(pattern) || reachesFiles(pattern)
+    }
+
+    /// The sites its manifest names, granted as it loads: never one for
+    /// extension pages, another's or all of them, nor for files on this Mac
+    /// (see `fence`, which is set after).
+    static func grantSites(_ context: WKWebExtensionContext) {
+        for pattern in context.webExtension.allRequestedMatchPatterns where !withheld(pattern) {
+            context.setPermissionStatus(.grantedExplicitly, for: pattern)
+        }
+    }
+
     /// Other extensions' pages are never among "all sites" either: with
     /// chrome-extension registered as a scheme, WebKit counts them in
     /// <all_urls>, which Chrome doesn't, so they are refused outright. A
@@ -911,6 +1063,12 @@ final class Extensions: NSObject, ObservableObject {
         for scheme in Set([Extensions.scheme, Extensions.formerScheme, "webkit-extension"]) {
             if let pages = try? WKWebExtension.MatchPattern(string: "\(scheme)://*/*") {
                 context.setPermissionStatus(.deniedExplicitly, for: pages)
+            }
+        }
+        // Nor files (see `reachesFiles`).
+        for string in ["file:///*", "file://*/*"] {
+            if let files = try? WKWebExtension.MatchPattern(string: string) {
+                context.setPermissionStatus(.deniedExplicitly, for: files)
             }
         }
     }
@@ -1306,8 +1464,8 @@ extension Extensions: WKWebExtensionControllerDelegate {
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, promptForPermissionMatchPatterns matchPatterns: Set<WKWebExtension.MatchPattern>, in tab: (any WKWebExtensionTab)?, for extensionContext: WKWebExtensionContext) async -> (Set<WKWebExtension.MatchPattern>, Date?) {
-        // Extension pages are never given, so never asked about.
-        let wanted = matchPatterns.filter { !Extensions.reachesExtensions($0) }
+        // Extension pages and files are never given, so never asked about.
+        let wanted = matchPatterns.filter { !Extensions.withheld($0) }
         guard !wanted.isEmpty else { return ([], nil) }
         let all = wanted.contains { $0.matchesAllHosts || $0.matchesAllURLs }
         let what = all ? "every website" : wanted.map(\.string).sorted().joined(separator: ", ")
@@ -1532,10 +1690,13 @@ struct ExtensionSlot: View {
     /// The side the list opens toward: down from the top row, out to the
     /// right from the sidebar.
     var edge: Edge = .bottom
+    /// How many pinned ones the row has room for; the rest are only in the
+    /// list. Nil: all of them.
+    var room: Int? = nil
 
     var body: some View {
         if #available(macOS 15.4, *) {
-            ExtensionButtons(extensions: .shared, edge: edge)
+            ExtensionButtons(extensions: .shared, edge: edge, room: room)
         }
     }
 }
@@ -1544,11 +1705,12 @@ struct ExtensionSlot: View {
 private struct ExtensionButtons: View {
     @ObservedObject var extensions: Extensions
     let edge: Edge
+    var room: Int?
 
     var body: some View {
         if !extensions.installed.isEmpty {
             HStack(spacing: 2) {
-                ForEach(extensions.buttons.filter(\.pinned)) { button in
+                ForEach(extensions.buttons.filter(\.pinned).prefix(room ?? .max)) { button in
                     ActionButton(button: button) { extensions.press(button.id) }
                         .background(Anchor(id: button.id))
                         .contextMenu { ExtensionActions(id: button.id, name: button.name, extensions: extensions) }
@@ -1725,7 +1887,7 @@ private struct ExtensionMenu: View {
             .padding(6)
         }
         .frame(width: 280)
-        .background(Palette.ground)
+        .popoverGround()
     }
 
     private struct Row: View {
@@ -1821,4 +1983,37 @@ private struct ExtensionMenu: View {
 
 private extension CGRect {
     var area: CGFloat { isNull ? 0 : width * height }
+}
+
+/// A page nobody sees, loaded for one job.
+@MainActor
+private final class HiddenPage: NSObject, WKNavigationDelegate {
+    let web: WKWebView
+    private var loaded: CheckedContinuation<Bool, Never>?
+
+    init(_ configuration: WKWebViewConfiguration) {
+        web = WKWebView(frame: .zero, configuration: configuration)
+        super.init()
+        web.navigationDelegate = self
+    }
+
+    /// Whether an empty page at `base` loaded within `limit` seconds.
+    func loadBlank(at base: URL, within limit: TimeInterval = 10) async -> Bool {
+        await withCheckedContinuation { done in
+            loaded = done
+            web.loadHTMLString("<!doctype html>", baseURL: base)
+            DispatchQueue.main.asyncAfter(deadline: .now() + limit) { [weak self] in
+                MainActor.assumeIsolated { self?.finish(false) }
+            }
+        }
+    }
+
+    private func finish(_ ok: Bool) {
+        loaded?.resume(returning: ok)
+        loaded = nil
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finish(true) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finish(false) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { finish(false) }
 }

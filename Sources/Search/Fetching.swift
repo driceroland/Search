@@ -619,10 +619,15 @@ struct FetchDoor: View {
         self.prefs = browser.prefs
     }
 
+    /// Whether it is in the row, for those that make room for it.
+    static func shows(_ fetches: Fetches, _ prefs: Preferences) -> Bool {
+        fetches.showing || !fetches.entries.isEmpty || prefs.alwaysShowsDownloads
+    }
+
     var body: some View {
         // Always there with Settings › Downloads › Always show the downloads
         // button: an arrow at rest, the circle while a file comes in.
-        if fetches.showing || !fetches.entries.isEmpty || prefs.alwaysShowsDownloads {
+        if Self.shows(fetches, prefs) {
             Button { browser.hoarding = true } label: {
                 ZStack {
                     if !fetches.showing {

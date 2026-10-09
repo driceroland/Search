@@ -39,27 +39,31 @@ enum ExtensionShims {
     /// one needs nothing redone, which matters at launch — preparing reads
     /// every script and page an extension ships.
     nonisolated static let stamp = ".search-shim"
+    /// Raised when `prepare` changes what it does to a package, so that
+    /// extensions prepared before are prepared again.
+    nonisolated private static let preparation = "2"
     nonisolated static let version: String = {
-        SHA256.hash(data: Data((script + PasskeyRelay.page).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
+        SHA256.hash(data: Data((script + PasskeyRelay.page + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
 
     /// `fresh`: a package just unpacked or copied in. What only Search writes
     /// beside an extension — which permissions it added, which shim it
     /// carries — is Search's to say, never the package's: anything by those
     /// names that came inside it goes before a word of it is read.
-    nonisolated static func prepare(_ folder: URL, fresh: Bool = false) throws {
+    nonisolated static func prepare(_ folder: URL, fresh: Bool = false, workerGeneration: Int = 0) throws {
         let files = FileManager.default
         if fresh {
             for name in [stamp, ".search-added"] { try? files.removeItem(at: folder.appendingPathComponent(name)) }
         }
         let stampURL = folder.appendingPathComponent(stamp)
-        if (try? String(contentsOf: stampURL, encoding: .utf8)) == version { return }
-        defer { try? version.write(to: stampURL, atomically: true, encoding: .utf8) }
+        let revision = version + "-worker-\(workerGeneration)"
+        if (try? String(contentsOf: stampURL, encoding: .utf8)) == revision { return }
+        defer { try? revision.write(to: stampURL, atomically: true, encoding: .utf8) }
         let manifestURL = folder.appendingPathComponent("manifest.json")
         guard var manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
         else { throw Crx.Refused.unpack }
 
-        let script = shim(for: folder)
+        let script = shim(for: folder).replacingOccurrences(of: "__SEARCH_WORKER_GENERATION__", with: String(workerGeneration))
         try script.write(to: folder.appendingPathComponent(file), atomically: true, encoding: .utf8)
         try PasskeyRelay.page.write(to: folder.appendingPathComponent(passkeys), atomically: true, encoding: .utf8)
 
@@ -86,6 +90,7 @@ enum ExtensionShims {
         if var background = manifest["background"] as? [String: Any] {
             // A manifest is not a way out of its own package: a worker path
             // that resolves outside the folder, or is a link, is left alone.
+            if let worker = background["service_worker"] as? String { unlink(worker, in: folder) }
             if let worker = background["service_worker"] as? String,
                let path = inside(worker, of: folder) {
                 if var source = try? String(contentsOf: path, encoding: .utf8) {
@@ -151,6 +156,27 @@ enum ExtensionShims {
             }
             try? html.write(to: url, atomically: true, encoding: .utf8)
         }
+    }
+
+    /// A worker that is a link to another file of its own package
+    /// (StopTheMadness ships `background-143.js` → `background.js`) is made
+    /// a copy of that file, so it can carry the shim. A link that leads out
+    /// of the package is left as it is, and so left alone.
+    nonisolated private static func unlink(_ name: String, in folder: URL) {
+        let path = folder.appendingPathComponent(name.trimmingCharacters(in: CharacterSet(charactersIn: "/"))).standardizedFileURL
+        guard path.path.hasPrefix(folder.standardizedFileURL.path + "/"),
+              (try? path.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+        else { return }
+        let root = folder.resolvingSymlinksInPath().path
+        let parent = path.deletingLastPathComponent().resolvingSymlinksInPath().path
+        let target = path.resolvingSymlinksInPath()
+        guard parent == root || parent.hasPrefix(root + "/"),
+              target.path.hasPrefix(root + "/"),
+              (try? target.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+              let data = try? Data(contentsOf: target)
+        else { return }
+        try? FileManager.default.removeItem(at: path)
+        try? data.write(to: path)
     }
 
     /// A path a package names, resolved and kept inside the folder it came
@@ -1031,6 +1057,119 @@ enum ExtensionShims {
           if (typeof f === "function") put(runtime, name, f.bind(runtime));
         }
       }
+      // Installed before the content-script return. Swift owns the restart
+      // decision, including wake and recovery requested by another page.
+      // There is one passive subscription per context, never a port probe.
+      let checkWorker = () => {}, heard = 0;
+      let workerGeneration = Number("__SEARCH_WORKER_GENERATION__") || 0;
+      let workerPorts = new Set(), workerWatch = null, workerSequence = 0;
+      const workerObserver = Math.random().toString(36).slice(2);
+      const workerDisconnect = new WeakMap();
+      const watchWorker = () => {
+        if (workerWatch || !hasWorker) return;
+        const snapshot = workerPorts, token = workerObserver + ":" + (++workerSequence);
+        const watching = { snapshot, token };
+        let answer;
+        try {
+          if (inContent) {
+            const bridge = root.webkit?.messageHandlers?.searchWorkerRecovery;
+            if (!bridge) return; // Unknown WebKit world layout: keep native behavior.
+            answer = bridge.postMessage({ generation: workerGeneration, token });
+          } else {
+            answer = native("background.observe", [workerGeneration, token]);
+          }
+        } catch (e) { return; }
+        workerWatch = watching;
+        Promise.resolve(answer).then((generation) => {
+          if (workerWatch !== watching) return;
+          workerWatch = null;
+          if (!Number.isSafeInteger(generation) || generation <= workerGeneration) return;
+          workerGeneration = generation;
+          // A listener may immediately connect again. Those ports belong to
+          // the new generation, not the snapshot being retired here.
+          workerPorts = new Set();
+          for (const ref of snapshot) {
+            const port = ref.deref();
+            if (port) workerDisconnect.get(port)?.(true);
+          }
+        }, () => { if (workerWatch === watching) workerWatch = null; });
+      };
+      const unwatchWorker = (ports) => {
+        if (!workerWatch || (ports && (workerWatch.snapshot !== ports || ports.size))) return;
+        const { token } = workerWatch;
+        workerWatch = null;
+        try {
+          if (inContent) root.webkit?.messageHandlers?.searchWorkerRecovery?.postMessage({ token, cancel: true }).catch(() => {});
+          else native("background.unobserve", [token]).catch(() => {});
+        } catch (e) {}
+      };
+      if (typeof document !== "undefined" && root.addEventListener) {
+        root.addEventListener("pagehide", (event) => { if (!event.persisted) unwatchWorker(); });
+      }
+      if (typeof document !== "undefined" && runtime && typeof runtime.connect === "function") {
+        const track = (port) => {
+          if (workerDisconnect.has(port)) return port;
+          watchWorker();
+          const ports = workerPorts;
+          try { port.onMessage.addListener(() => { heard = Date.now(); }); } catch (e) {}
+          const ref = new WeakRef(port), disconnected = event();
+          const post = port.postMessage, disconnect = port.disconnect;
+          let closed = false;
+          const finish = (synthetic = false) => {
+            if (closed) return;
+            closed = true;
+            ports.delete(ref);
+            unwatchWorker(ports);
+            if (synthetic) try { disconnect.call(port); } catch (e) {}
+            for (const f of [...disconnected.listeners]) {
+              try { f(port); } catch (e) { setTimeout(() => { throw e; }); }
+            }
+          };
+          port.onDisconnect.addListener(() => finish());
+          const set = (key, value) => Object.defineProperty(port, key, { value, configurable: true, writable: true });
+          set("onDisconnect", disconnected);
+          set("postMessage", (message) => {
+            if (closed) throw new Error("Attempting to use a disconnected port object");
+            checkWorker();
+            return post.call(port, message);
+          });
+          set("disconnect", () => {
+            if (closed) return;
+            closed = true;
+            ports.delete(ref);
+            unwatchWorker(ports);
+            disconnect.call(port);
+          });
+          for (const old of ports) { if (!old.deref()) ports.delete(old); }
+          ports.add(ref);
+          workerDisconnect.set(port, finish);
+          return port;
+        };
+        const connect = runtime.connect.bind(runtime);
+        put(runtime, "connect", (...args) => {
+          if (typeof args[0] === "string" && args[0] && args[0] !== runtime.id) return connect(...args);
+          watchWorker();
+          checkWorker();
+          try { return track(connect(...args)); }
+          catch (error) { unwatchWorker(workerPorts); throw error; }
+        });
+        // A worker may initiate the connection with tabs.connect instead.
+        // Internal onConnect is separate from onConnectExternal.
+        const incoming = runtime.onConnect;
+        if (incoming && typeof incoming.addListener === "function") {
+          const add = incoming.addListener.bind(incoming), remove = incoming.removeListener.bind(incoming);
+          const has = incoming.hasListener.bind(incoming), wrapped = new WeakMap();
+          put(incoming, "addListener", (listener) => {
+            if (typeof listener !== "function") return add(listener);
+            let wrapper = wrapped.get(listener);
+            if (!wrapper) { wrapper = (port) => listener(track(port)); wrapped.set(listener, wrapper); }
+            return add(wrapper);
+          });
+          put(incoming, "removeListener", (listener) => remove(wrapped.get(listener) || listener));
+          put(incoming, "hasListener", (listener) => has(wrapped.get(listener) || listener));
+        }
+      }
+
       if (inContent) {
         // A frame inside this extension's own page — its offscreen
         // document reading a site, say — is part of that page's tab, and
@@ -1151,18 +1290,6 @@ enum ExtensionShims {
         promise.then((r) => r === undefined ? withLastError(new Error(gone), callback) : callback(r),
           (e) => withLastError(e, callback));
       };
-      let checkWorker = () => {};
-      // A page owns its ports; this list must not keep an abandoned one alive.
-      const workerPorts = new Set(), workerDisconnect = new WeakMap();
-      const disconnectWorkerPorts = () => {
-        for (const ref of [...workerPorts]) {
-          const port = ref.deref();
-          if (port) workerDisconnect.get(port)?.();
-          else workerPorts.delete(ref);
-        }
-      };
-      // When the worker was last heard from — a reply, a port message.
-      let heard = 0;
       if (runtime && typeof runtime.sendMessage === "function") {
         const page = typeof document !== "undefined";
         // WebKit's own, looked up at each call — not held from the page's
@@ -1199,9 +1326,7 @@ enum ExtensionShims {
             if (r === "pong" || heard >= started) heard = Math.max(heard, Date.now());
             else {
               if (__SEARCH_VERBOSE__) native("debug.error", ["worker check: " + String(r) + " from " + location.pathname]).catch(() => {});
-              native("background.revive", []).then((restarted) => {
-                if (restarted) disconnectWorkerPorts();
-              }).catch(() => {});
+              native("background.revive", []).catch(() => {});
             }
           }).finally(() => { asking = false; });
         };
@@ -1245,46 +1370,6 @@ enum ExtensionShims {
           if (typeof options === "function") { callback = options; options = undefined; }
           const p = options === undefined ? send(tabId, message) : send(tabId, message, options);
           return replied(background ? alsoFramed(p, tabId, message, options) : p, callback, "Could not establish connection. Receiving end does not exist.");
-        });
-      }
-      if (typeof document !== "undefined" && runtime && typeof runtime.connect === "function") {
-        const connect = runtime.connect.bind(runtime);
-        put(runtime, "connect", (...args) => {
-          checkWorker();
-          const port = connect(...args);
-          try { port.onMessage.addListener(() => { heard = Date.now(); }); } catch (e) {}
-          // An external extension isn't served by our worker.
-          if (typeof args[0] === "string" && args[0] !== runtime.id) return port;
-          const ref = new WeakRef(port), disconnected = event();
-          const post = port.postMessage, disconnect = port.disconnect;
-          let closed = false;
-          const finish = () => {
-            if (closed) return;
-            closed = true;
-            workerPorts.delete(ref);
-            try { disconnect.call(port); } catch (e) {}
-            for (const f of [...disconnected.listeners]) {
-              try { f(port); } catch (e) { setTimeout(() => { throw e; }); }
-            }
-          };
-          port.onDisconnect.addListener(finish);
-          // Unlike put(), these properties don't retain every port globally.
-          const set = (key, value) => Object.defineProperty(port, key, { value, configurable: true, writable: true });
-          set("onDisconnect", disconnected);
-          set("postMessage", (message) => {
-            if (closed) throw new Error("Attempting to use a disconnected port object");
-            checkWorker();
-            return post.call(port, message);
-          });
-          set("disconnect", () => {
-            closed = true;
-            workerPorts.delete(ref);
-            disconnect.call(port);
-          });
-          for (const old of workerPorts) { if (!old.deref()) workerPorts.delete(old); }
-          workerPorts.add(ref);
-          workerDisconnect.set(port, finish);
-          return port;
         });
       }
 
@@ -2434,8 +2519,9 @@ enum ExtensionShims {
         };
         // Extension pages are never an extension's to reach, as in Chrome,
         // where such a pattern isn't even valid (see
-        // Extensions.reachesExtensions): never held, never asked for.
-        const extensionPages = (origins) => origins.some((o) => /^(chrome|webkit)-extension:/i.test(String(o)));
+        // Extensions.reachesExtensions): never held, never asked for. Nor
+        // files, as in Chrome with file access left off (Extensions.reachesFiles).
+        const extensionPages = (origins) => origins.some((o) => /^((chrome|webkit)-extension|file):/i.test(String(o)));
         put(p, "contains", withCb(async ({ permissions = [], origins = [] }) => {
           const { theirs, mine, unknown } = split(permissions);
           if (unknown.length || extensionPages(origins)) return false;
@@ -2715,11 +2801,14 @@ enum ExtensionShims {
           return port;
         };
         const connect = runtime.connect;
-        // Only a port to the extension itself: another extension would hear
-        // the numbered wrapper, not the message.
+        // Only a port to the extension itself, and never a content script's:
+        // another extension would hear the numbered wrapper, not the message,
+        // and a content script's port reaches the worker with the website as
+        // sender, so the worker leaves it plain; numbering one end only hides
+        // its messages from the extension.
         put(runtime, "connect", (...args) => {
           const port = connect.apply(runtime, args);
-          return typeof args[0] === "string" && args[0] !== runtime.id ? port : number(port);
+          return inContent || (typeof args[0] === "string" && args[0] !== runtime.id) ? port : number(port);
         });
         const onConnect = runtime.onConnect;
         const add = onConnect.addListener, remove = onConnect.removeListener, has = onConnect.hasListener;
@@ -3539,7 +3628,7 @@ enum ExtensionShims {
         case "downloads.download":
             let spec = first as? [String: Any] ?? [:]
             guard let url = (spec["url"] as? String).flatMap(URL.init(string:)) else { throw Unsupported(what: "No url to download") }
-            guard let web = browser.active?.built ?? browser.tabs.lazy.compactMap(\.built).first else {
+            guard let web = ExtensionShims.downloadPage(active: browser.active, tabs: browser.tabs) else {
                 throw Unsupported(what: "No page to download through")
             }
             if let name = spec["filename"] as? String, !name.isEmpty {
@@ -3643,7 +3732,7 @@ enum ExtensionShims {
             let found = context.webExtension
             return ["id": id, "name": found.displayName ?? "", "shortName": found.displayShortName ?? "",
                     "version": found.version ?? "", "description": found.displayDescription ?? "",
-                    "enabled": true, "type": "extension", "installType": id.hasPrefix("local-") ? "development" : "normal",
+                    "enabled": true, "type": "extension", "installType": owner.installed.first { $0.id == id }?.fromStore == false ? "development" : "normal",
                     "mayDisable": true, "offlineEnabled": true, "isApp": false, "hostPermissions": [], "permissions": []]
         case "management.getAll":
             return []
@@ -3741,6 +3830,11 @@ enum ExtensionShims {
             }
 
         // MARK: the worker, up before a page talks to it
+        case "background.observe":
+            return await ExtensionWorkerRecovery.shared.observe(id, generation: first as? Int ?? 0, token: args.dropFirst().first as? String ?? "")
+        case "background.unobserve":
+            ExtensionWorkerRecovery.shared.cancel(id, token: first as? String ?? "")
+            return nil
         case "background.wake":
             guard context.webExtension.hasBackgroundContent else { return nil }
             // WebKit sometimes fails to start a worker again after unloading
@@ -3871,7 +3965,7 @@ enum ExtensionShims {
             let found = context.webExtension
             let wanted = ((first as? [String]) ?? []).map { WKWebExtension.Permission(rawValue: $0) }
             let origins = ((args.dropFirst().first as? [String]) ?? []).compactMap { try? WKWebExtension.MatchPattern(string: $0) }
-                .filter { !Extensions.reachesExtensions($0) }
+                .filter { !Extensions.withheld($0) }
             let named = found.requestedPermissions.union(found.optionalPermissions)
             // Sites as the manifest names them, optional ones included —
             // which allRequestedMatchPatterns leaves out.
@@ -4198,6 +4292,14 @@ enum ExtensionShims {
 
     /// Popups extensions set for their buttons: per tab, or "*" for all.
     static var popups: [String: [String: String]] = [:]
+    /// The page an extension's downloads.download goes through: the tab in
+    /// front, or another of yours, never a private tab — a download goes
+    /// with the sign-ins of the page it's made through, and a private tab's
+    /// are its own, whatever the extension may see.
+    static func downloadPage(active: Tab?, tabs: [Tab]) -> WKWebView? {
+        ([active].compactMap { $0 } + tabs).filter { !$0.shy }.lazy.compactMap(\.built).first
+    }
+
     /// Downloads an extension asked for, by address, until they land; then
     /// the files they became, which are the only ones it may open.
     static var askedDownloads: [URL: String] = [:]

@@ -31,7 +31,8 @@ struct SplitStage: View {
                     case .closeBoth: browser.closeSplit()
                     }
                 },
-                hover: { hovered = $0 }
+                hover: { hovered = $0 },
+                find: browser.finding ? browser : nil
             )
             ForEach(shown) { tab in
                 if let frame = frames[tab.id] {
@@ -119,14 +120,6 @@ private struct PaneLayers: View {
             // Over the page the link is on, focused or not.
             if browser.prefs.showsLinks {
                 LinkBubble(status: browser.linkStatus, page: paired ? tab.built : nil)
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            if browser.finding, focused {
-                FindBar(browser: browser, availableWidth: width)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .clipped()
-                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .overlay(alignment: .topLeading) {
