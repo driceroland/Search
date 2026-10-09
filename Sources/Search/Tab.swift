@@ -1509,11 +1509,10 @@ final class PageView: WKWebView {
             PageView.picking = nil
             let timer = Timer(timeInterval: PageView.pickingDelay, repeats: false) { _ in
                 MainActor.assumeIsolated {
+                    // Keep the native item and its link target alive until
+                    // dispatched, as in the immediate link-menu probe.
+                    if let index = menu.items.firstIndex(where: { $0.title == title }) { menu.performActionForItem(at: index) }
                     menu.cancelTracking()
-                    // AppKit dismisses the menu before dispatching its action.
-                    DispatchQueue.main.async {
-                        if let index = menu.items.firstIndex(where: { $0.title == title }) { menu.performActionForItem(at: index) }
-                    }
                 }
             }
             PageView.pickingDelay = 0
