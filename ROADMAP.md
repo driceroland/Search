@@ -91,6 +91,11 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [x] **⌘W closes the panel in front** With Settings or another panel open, ⌘W closes it (after a peek), in Escape's order, instead of the page behind. *([#452](https://github.com/driceroland/Search/pull/452))*
 - [x] **One ⇧⌘T undoes Clear** The tabs one Clear closes come back with a single ⇧⌘T, each in its place. *([#432](https://github.com/driceroland/Search/pull/432))*
 - [x] **Switcher previews while Find is open** ⌃Tab skipped the switcher's previews when the find bar was open. *([#553](https://github.com/driceroland/Search/issues/553))*
+- [x] **Pages talking to extensions** A site an extension lists in externally_connectable can send it messages (Claude in Chrome sign-in). *([#496](https://github.com/driceroland/Search/issues/496))*
+- [x] **New window in full screen** ⌘N in full screen gives the new window a full-screen space of its own. *([#515](https://github.com/driceroland/Search/issues/515), [#531](https://github.com/driceroland/Search/pull/531))*
+- [x] **Pinned extensions push the column off the side** *([#535](https://github.com/driceroland/Search/issues/535))*
+- [x] **Bookmarks menu empties on a changing title** With a tab whose title keeps changing (a download page showing its speed), the open Bookmarks menu lost its bookmarks. *(email)*
+- [x] **Square corners on popovers (macOS 15)** Before macOS 26, the bookmarks and extensions popovers and the site card showed square corners. *(email)*
 
 ## Now — fixes for the next update
 
@@ -108,15 +113,16 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Loading shown with the column hidden** With the column hidden nothing says a page is loading; the new layout's bar above the page will show it. *([#443](https://github.com/driceroland/Search/issues/443))*
 - [ ] **Arc import twice: a second pin** Bringing Arc over again adds a second pin for a site whose pin has moved address (Gmail): the guard compares the pin's current address. *([#482](https://github.com/driceroland/Search/issues/482))*
 - [ ] **Remove all saved passwords** A Remove All… in the passwords panel, for someone moving to a password manager. *([#469](https://github.com/driceroland/Search/issues/469))*
-- [ ] **Swipe between pages as the Mac says** A sideways scroll goes back or forward only when the Mac's own Swipe between pages setting allows it. *([#464](https://github.com/driceroland/Search/issues/464))*
+- [ ] **Swipe between pages as the Mac says** A sideways scroll goes back or forward only when the Mac's own Swipe between pages setting allows it. *([#464](https://github.com/driceroland/Search/issues/464), [#467](https://github.com/driceroland/Search/pull/467))*
+- [ ] **Proxy for the whole browser** HTTP and SOCKS5 proxy in Settings, off by default, everything through it. *([#510](https://github.com/driceroland/Search/pull/510))*
 
 ## Next — small additions people asked for
 
-- [ ] **Pins shared by every space** Pins shared by every space, plus each space's own, as in Arc. *(email)*
+- [ ] **Pins shared by every space** Pins shared by every space, plus each space's own, as in Arc. *(email, [#463](https://github.com/driceroland/Search/pull/463))*
 - [ ] **Box Tools** Let app.box.com reach its local helper on this Mac, as Chrome does. The person who asked offered to test a build. *(email)*
 - [ ] **1Password desktop app, in the FAQ** 1Password with its desktop app. Say in the FAQ that Search is added in 1Password › Settings › Browser › Add Browser.
-- [ ] **Import: extension-only profiles, ego lite, a protected folder** Find browser profiles that only hold extensions, add ego lite as a source (no passwords), and let you choose a browser's data folder when macOS refuses Search access to it. *([#415](https://github.com/driceroland/Search/pull/415))*
-- [ ] **Export as PDF** File › Export as PDF…: the whole page as one long PDF, as Safari does, through WebKit's createPDF. *([#446](https://github.com/driceroland/Search/issues/446))*
+- [ ] **Import: extension-only profiles, ego lite, a protected folder** Find browser profiles that only hold extensions, add ego lite as a source (no passwords), and let you choose a browser's data folder when macOS refuses Search access to it. *([#415](https://github.com/driceroland/Search/pull/415) ×2, [#507](https://github.com/driceroland/Search/pull/507))*
+- [ ] **Export as PDF** File › Export as PDF…: the whole page as one long PDF, as Safari does, through WebKit's createPDF. *([#446](https://github.com/driceroland/Search/issues/446), [#461](https://github.com/driceroland/Search/pull/461))*
 - [ ] **Arc import keeps its shape** Arc's folders are dropped when tab groups are off; its pinned pages come as ordinary tabs rather than pinned rows. *([#478](https://github.com/driceroland/Search/issues/478))*
 - [ ] **A user agent per tab** Presets and a string of your own, per tab, as in Safari's Develop menu; shares its plumbing with Responsive Design Mode. *([#460](https://github.com/driceroland/Search/issues/460))*
 
@@ -128,7 +134,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Faster animations** Spaces especially, compared with Zen. *(email)*
 - [ ] **Extensions per space** Each space with the extensions it wants, on and off apart from the others. WebKit has one extension controller for the whole app, so this means one per space. Drice's call, 24 Sep: later. *(X)*
 - [ ] **User scripts fail on GitHub** Tampermonkey runs each script through an inline script, and WebKit holds it to the page's content security policy, where Chrome exempts it; GitHub's policy blocks it. No safe narrow fix yet. *([#289](https://github.com/driceroland/Search/issues/289), [#319](https://github.com/driceroland/Search/issues/319))*
-- [ ] **Select several tabs** Select tabs with ⌘-click and ⇧-click, then copy all their addresses at once. *([#309](https://github.com/driceroland/Search/issues/309), email)*
+- [ ] **Select several tabs** Select tabs with ⌘-click and ⇧-click, then copy all their addresses at once. *([#309](https://github.com/driceroland/Search/issues/309), email, [#454](https://github.com/driceroland/Search/pull/454))*
 - [ ] **Optional ad-blocking add-on** A stronger blocker as an optional add-on in Settings, downloaded on demand so it only takes space for those who want it. Search's built-in blocker stays as it is meanwhile. *(message)*
 - [ ] **Tabs that close themselves** Close tabs left untouched for a long time, as Arc does. *(email, [#445](https://github.com/driceroland/Search/issues/445), [#429](https://github.com/driceroland/Search/pull/429))*
 - [ ] **Unsaved text on move to window** A tab moved into a window that shows another space signs in with that space, as Move to Space does; unlike Move to Space, it doesn't first ask about text typed and not sent.
@@ -137,6 +143,23 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Tabs shared across windows** A space's tabs belong to the space, and any window can show them, with a stand-in where a tab is open in another window, as in Arc. Pins already are the same in every window. *([#417](https://github.com/driceroland/Search/issues/417))*
 - [ ] **A picture behind the new tab** An image behind the new tab page, perhaps from Unsplash. Off unless turned on, if it ever comes. *([#447](https://github.com/driceroland/Search/issues/447))*
 - [ ] **The page behind a new tab** The page you came from stays visible behind the new tab, as in Arc. *([#465](https://github.com/driceroland/Search/issues/465))*
+- [ ] **Main process grows over days** The app's own process grew to several times its fresh size over a week of use; find what accumulates (closed windows, caches).
+- [ ] **How soon tabs sleep** A choice for how long a tab waits before it sleeps, off unless changed. *([#448](https://github.com/driceroland/Search/pull/448))*
+- [ ] **Light pages darkened** Light pages shown in their own colours, darkened, while Search is dark. Off by default. *([#450](https://github.com/driceroland/Search/pull/450))*
+- [ ] **Ports after a worker restart** Extension ports are told when their worker restarted, so they reconnect. *([#453](https://github.com/driceroland/Search/pull/453), [#514](https://github.com/driceroland/Search/pull/514))*
+- [ ] **Small windows: alone and keyed** A link small window opens alone, takes its keys, closes with a swipe back, cascades, and shows in the switcher. *([#431](https://github.com/driceroland/Search/pull/431), [#519](https://github.com/driceroland/Search/pull/519), [#474](https://github.com/driceroland/Search/pull/474), [#493](https://github.com/driceroland/Search/pull/493), [#480](https://github.com/driceroland/Search/pull/480))*
+- [ ] **Keys in the tab switcher** Arrow keys and more in the ⌃Tab switcher, off unless turned on. *([#495](https://github.com/driceroland/Search/pull/495))*
+- [ ] **Home page from an extension** Settings › General › Home page, while an extension offers a page for new tabs. *([#472](https://github.com/driceroland/Search/pull/472))*
+- [ ] **Native hosts end on EOF** A native messaging host's connection ends when its output closes. *([#483](https://github.com/driceroland/Search/pull/483))*
+- [ ] **UTF-8 in extension scripts** Non-ASCII text in injected extension scripts stays intact. *([#521](https://github.com/driceroland/Search/pull/521))*
+- [ ] **Closed windows freed** A window closed while others stay open gives its memory back, and one put away in the Dock can be found. *([#549](https://github.com/driceroland/Search/pull/549), [#554](https://github.com/driceroland/Search/pull/554))*
+- [ ] **Framed sites keep cookies** With Prevent cross-site tracking off, a framed site keeps its cookies, as in Chrome. *([#550](https://github.com/driceroland/Search/pull/550))*
+- [ ] **Back and Forward lists** Hold or right-click Back and Forward to pick a page from that way. *([#567](https://github.com/driceroland/Search/pull/567))*
+- [ ] **Shortcuts on any keyboard layout** Shortcuts work on Cyrillic and other non-Latin layouts. *([#568](https://github.com/driceroland/Search/pull/568))*
+- [ ] **Reload from origin by right-click** Right-click Reload for Reload from Origin. *([#571](https://github.com/driceroland/Search/pull/571))*
+- [ ] **Pages at 120 Hz: never, on power, always** The 120 Hz switch becomes three choices. *([#572](https://github.com/driceroland/Search/pull/572))*
+- [ ] **Pages sized inside the window** A page's ideal size is kept inside the window without moving its safe areas. *([#468](https://github.com/driceroland/Search/pull/468))*
+- [ ] **Remove all passwords** Remove All… in the passwords panel, behind Touch ID. *([#469](https://github.com/driceroland/Search/issues/469), [#471](https://github.com/driceroland/Search/pull/471))*
 
 ## Drice's call
 
@@ -172,12 +195,10 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Open tabs from Helium** Bringing things over from Helium takes its bookmarks, history, passwords and extensions, but not the tabs it has open. *(email)*
 - [ ] **⌘L again closes the address** A second ⌘L puts away the address field it opened, as Esc does. *(email)*
 - [ ] **A right-click menu on the bookmarks bar** *([#438](https://github.com/driceroland/Search/issues/438), [#439](https://github.com/driceroland/Search/pull/439))*
-- [ ] **Pages talking to extensions** A site an extension lists in externally_connectable can send it messages (Claude in Chrome sign-in). *([#496](https://github.com/driceroland/Search/issues/496))*
 - [ ] **Change the keys for spaces and the peek click** *([#498](https://github.com/driceroland/Search/issues/498))*
 - [ ] **Extensions on private tabs when allowed** *([#508](https://github.com/driceroland/Search/issues/508), [#536](https://github.com/driceroland/Search/pull/536))*
 - [ ] **Pop-ups after a click and a request** A window a page opens a few seconds after your click, once its server answers, is let through. *([#511](https://github.com/driceroland/Search/issues/511), [#503](https://github.com/driceroland/Search/pull/503), [#509](https://github.com/driceroland/Search/pull/509))*
 - [ ] **Media keys back to the music app** Once a video is paused, the media keys go back to Spotify or Music. *([#512](https://github.com/driceroland/Search/issues/512))*
-- [ ] **New window in full screen** ⌘N in full screen gives the new window a full-screen space of its own. *([#515](https://github.com/driceroland/Search/issues/515), [#531](https://github.com/driceroland/Search/pull/531))*
 - [ ] **Tabs that pause, not reload** An option to keep a resting tab's page and let WebKit suspend it, off by default. *([#520](https://github.com/driceroland/Search/issues/520))*
 - [ ] **Open a typed file path** A full or ~/ path that names a file opens it instead of searching. *([#523](https://github.com/driceroland/Search/issues/523), [#557](https://github.com/driceroland/Search/pull/557))*
 - [ ] **Search under Open With** Listed as an alternate app for PDFs, pictures and text files. *([#524](https://github.com/driceroland/Search/issues/524))*
@@ -185,12 +206,11 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Ask before a website shares the screen** *([#528](https://github.com/driceroland/Search/issues/528), [#530](https://github.com/driceroland/Search/pull/530))*
 - [ ] **Option-Command arrows to move between tabs** *([#532](https://github.com/driceroland/Search/issues/532))*
 - [ ] **Suggestions in the tab's address field** History suggestions while editing the address inside the tab, as in the ⌘L field. *([#534](https://github.com/driceroland/Search/issues/534))*
-- [ ] **Pinned extensions push the column off the side** *([#535](https://github.com/driceroland/Search/issues/535))*
 - [ ] **A new tab when the last tab closes** Closing the last tab beside the pins leaves a new tab instead of waking a pin (switch, off). *([#537](https://github.com/driceroland/Search/issues/537), [#538](https://github.com/driceroland/Search/pull/538))*
 - [ ] **Extension updates while Search stays open** *([#539](https://github.com/driceroland/Search/issues/539))*
 - [ ] **Share the screen with its sound** *([#540](https://github.com/driceroland/Search/issues/540))*
 - [ ] **Bitwarden popup spins** Its background never answers the popup (no runtime.onConnect listener). *([#541](https://github.com/driceroland/Search/issues/541))*
-- [ ] **Floating video flickers popping out** The video shifts and flickers as it pops out of the page. *([#543](https://github.com/driceroland/Search/issues/543), [#547](https://github.com/driceroland/Search/pull/547))*
+- [ ] **Floating video flickers popping out** The video shifts and flickers as it pops out of the page. *([#543](https://github.com/driceroland/Search/issues/543), [#547](https://github.com/driceroland/Search/pull/547), [#562](https://github.com/driceroland/Search/pull/562))*
 - [ ] **Float a meeting page when you switch away** *([#544](https://github.com/driceroland/Search/issues/544), [#547](https://github.com/driceroland/Search/pull/547))*
 - [ ] **Crash on a two-step sign-in page** *([#548](https://github.com/driceroland/Search/issues/548))*
 - [ ] **Sized pop-ups as small windows** A pop-up a page asks for at its own size opens as a small window, off by default. *([#552](https://github.com/driceroland/Search/issues/552))*

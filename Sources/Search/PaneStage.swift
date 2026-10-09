@@ -617,9 +617,13 @@ extension PaneStage {
     /// Pictures of the pages on screen, as they are. WebKit takes them in a
     /// frame or so; one slower than a twentieth of a second, and the change
     /// is a cut instead of a wait. Under Reduce Motion they are still
-    /// taken, for the dissolve.
+    /// taken, for the dissolve. A test run makes the move anyway, with
+    /// stand-ins for the pictures still to come: a page just arrived in a
+    /// window on no screen can keep WebKit waiting for seconds, and so can
+    /// a busy machine.
     fileprivate func capture(_ pages: [Tab], _ done: @escaping ([Tab.ID: NSImage]) -> Void) {
         var pictures: [Tab.ID: NSImage] = [:]
+        var sizes: [Tab.ID: NSSize] = [:]
         var waiting = pages.count
         var finished = false
         func finish() {
@@ -635,6 +639,7 @@ extension PaneStage {
                 continue
             }
             let size = web.bounds.size
+            sizes[tab.id] = size
             web.takeSnapshot(with: nil) { image, _ in
                 MainActor.assumeIsolated {
                     // A test run's window is on no screen, and WebKit pictures
@@ -648,7 +653,13 @@ extension PaneStage {
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            if !finished { pictures = [:] }
+            if !finished {
+                if Store.testing {
+                    for (id, size) in sizes where pictures[id] == nil { pictures[id] = PaneStage.standIn(size) }
+                } else {
+                    pictures = [:]
+                }
+            }
             finish()
         }
     }
