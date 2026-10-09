@@ -1,4 +1,5 @@
 import JavaScriptCore
+import WebKit
 import XCTest
 @testable import Search
 
@@ -104,17 +105,12 @@ final class ExtensionWorkerPortTests: XCTestCase {
         XCTAssertEqual(other.count, 1)
     }
 
-    private final class OpaqueError: NSError, @unchecked Sendable {
-        override var userInfo: [String: Any] { fatalError("The benchmark must not traverse nested error payloads") }
-        override var localizedDescription: String { fatalError("The benchmark must not ask nested diagnostics to describe themselves") }
-    }
-
     @MainActor
-    func testBenchErrorSummaryPreservesIdentityWithoutTraversingPayloads() {
-        let error = OpaqueError(domain: "WKWebExtensionErrorDomain", code: 6, userInfo: nil)
-        XCTAssertEqual(Bench.extensionErrorSummary(error), "WKWebExtensionErrorDomain (6)")
-        let long = NSError(domain: String(repeating: "a", count: 1000), code: 1)
-        XCTAssertEqual(Bench.extensionErrorSummary(long), String(repeating: "a", count: 200) + " (1)")
+    func testLiveFixtureParsesWithoutWebKitErrors() async throws {
+        let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("ExtensionWorkerRecovery/extension")
+        let fixture = try await WKWebExtension(resourceBaseURL: folder)
+        XCTAssertTrue(fixture.errors.isEmpty, "The live fixture must not create WebKit manifest errors")
     }
 
     private func drain(_ js: JSContext) {

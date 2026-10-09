@@ -33,11 +33,14 @@ its own disposable profile and serves only the local fixture. The suite has
 an eight-minute deadline plus bounded cleanup. It prints environment/version,
 per-port counts, PASS/FAIL and explicit NOT COVERED entries.
 
-The fixture waits for Search's initial extension scan before admission. The
-bench preserves each native error's domain/code without traversing nested
-`userInfo` descriptions, which crashed the existing formatter on the tested
-Intel WebKit build. A successful status query is not proof of a healthy worker;
-initial echoes and recovery counts remain required.
+The fixture waits for Search's initial extension scan before admission. Its
+manifest includes the description WebKit requires, and a native regression
+checks that parsing creates no manifest errors. Earlier fixture versions omitted
+it and exposed a crash while Swift read WebKit's proxy error objects on Intel
+macOS 15.7.9. Changing the error formatter to scalar domain/code did not fix that
+bridge path, so the original error reporting is retained. This fixture correction
+does not establish that malformed-extension error reporting is safe. Initial
+echoes and recovery counts remain required.
 
 It exercises healthy wake, a bounded real worker event-loop stall, two explicit
 native revives separated by the unchanged 60-second cooldown, refusal during
