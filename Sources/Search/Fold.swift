@@ -111,18 +111,22 @@ struct Fold: View {
                 // tabs, and the shadow fell from every title and icon rather
                 // than from the row's edge.
                 TabBar(browser: browser)
-                    .background {
-                        Palette.ground
-                            .shadow(color: .black.opacity(0.14), radius: 20, y: 4)
-                    }
-                    .transition(.move(edge: .top))
+                    .transition(.casting(FoldShadow(y: 4, behind: true))
+                        .combined(with: .move(edge: .top)))
             }
             ZStack(alignment: onRight ? .trailing : .leading) {
                 Color.clear.frame(width: 0)
                 if folding, prefs.sidebar, browser.peeking {
+                    // Its shadow falls from a ground laid under it, as the
+                    // strip's does. Cast by the column itself, it was drawn
+                    // again from every row, icon and title on each frame of
+                    // the slide, the column's full height over: in full
+                    // screen, the whole screen's, and the slide lagged there.
+                    // The column's own ground is opaque, so it is the same
+                    // rectangle either way.
                     SideBar(browser: browser, prefs: prefs)
-                        .shadow(color: .black.opacity(0.14), radius: 20, x: onRight ? -4 : 4)
-                        .transition(.move(edge: onRight ? .trailing : .leading))
+                        .transition(.casting(FoldShadow(x: onRight ? -4 : 4, behind: true))
+                            .combined(with: .move(edge: onRight ? .trailing : .leading)))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity,
@@ -434,6 +438,44 @@ struct Fold: View {
         }
         layer.add(spring, forKey: "fold")
         CATransaction.commit()
+    }
+}
+
+/// The shadow the column or the strip casts over the page while it is out.
+/// It draws past their edge, where a slide by their own size doesn't take
+/// it: sliding away, the column was gone and its shadow still lay along the
+/// window's edge, until it vanished at once (#441). So it goes with the
+/// slide, from full to nothing, and is gone when they are. The slide itself
+/// stays their size: the window's buttons ride in the column's corner by
+/// exactly that much.
+private struct FoldShadow: ViewModifier {
+    var x: CGFloat = 0
+    var y: CGFloat = 0
+    /// Cast from a ground laid behind: the strip has no ground of its own,
+    /// and a shadow from the row itself fell from every title and icon.
+    /// Combined with the slide, this comes first and the move second: the
+    /// move's offset moves only what it wraps, and a ground laid outside it
+    /// stayed where the column or the strip had been, a blank band over the
+    /// page until the slide was over.
+    var behind = false
+    var strength: Double = 1
+
+    func body(content: Content) -> some View {
+        let color = Color.black.opacity(0.14 * strength)
+        if behind {
+            content.background { Palette.ground.shadow(color: color, radius: 20, x: x, y: y) }
+        } else {
+            content.shadow(color: color, radius: 20, x: x, y: y)
+        }
+    }
+}
+
+private extension AnyTransition {
+    /// The shadow at full while in place, and at nothing off the window.
+    static func casting(_ shadow: FoldShadow) -> AnyTransition {
+        var gone = shadow
+        gone.strength = 0
+        return .modifier(active: gone, identity: shadow)
     }
 }
 

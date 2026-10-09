@@ -78,7 +78,7 @@ struct SettingsPanel: View {
                 .padding(.horizontal, 10)
                 .padding(.top, 14)
                 .padding(.bottom, 12)
-            ForEach(Page.allCases) { item in
+            ForEach(Page.allCases.filter { $0 != .ai || AI.shipped }) { item in
                 PageRow(page: item, on: page == item) { page = item }
             }
             Spacer(minLength: 0)
@@ -146,12 +146,15 @@ struct SettingsPanel: View {
                     case .passwords: passwords
                     case .downloads: downloads
                     case .privacy: privacy
-                    case .ai: AISettings(browser: browser, prefs: prefs)
+                    case .ai: if AI.shipped { AISettings(browser: browser, prefs: prefs) }
                     case .about: about
                     }
                 }
                 .padding(.bottom, 4)
             }
+            // A page of its own opens at its top. One scroll view kept for
+            // them all opened Tabs as far down as General had been read.
+            .id(page)
         }
         .padding(.horizontal, 22)
         .padding(.top, 18)

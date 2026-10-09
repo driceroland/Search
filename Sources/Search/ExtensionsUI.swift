@@ -164,30 +164,48 @@ struct ExtensionsPage: View {
                         .help(item.source ?? "")
                 }
                 Spacer(minLength: 8)
-                if hovering {
-                    Quick(item.pinned == true ? "Unpin" : "Pin to Toolbar") {
-                        extensions.setPinned(item.id, !(item.pinned ?? false))
-                    }
-                    if context?.overrideNewTabPageURL != nil {
-                        let on = extensions.newTabPageID == item.id
-                        Quick(on ? "Stop in New Tabs" : "Show in New Tabs") {
-                            extensions.setNewTabPage(on ? nil : item.id)
-                        }
-                    }
-                    if item.source != nil || !item.fromStore {
-                        Quick("Reload") { extensions.reload(item.id) }
-                    }
-                    if context?.optionsPageURL != nil {
-                        Quick("Options") { extensions.openOptions(item.id) }
-                    }
-                    Quick("Remove", tint: .red.opacity(0.75)) { extensions.remove(item.id) }
+                // Five pills don't fit beside the name in a settings page's
+                // width, and wrapped a letter at a time when they tried. One
+                // menu holds them all, there without hovering to find it.
+                Menu { actions(context) } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(hovering ? Palette.ink : Palette.muted)
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
                 }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("More for \(item.name)")
                 Switch(on: Binding(get: { item.enabled }, set: { extensions.setEnabled(item.id, $0) }))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(hovering ? Palette.hover : .clear)
             .onHover { hovering = $0 }
+            .contextMenu { actions(context) }
+        }
+
+        @ViewBuilder
+        private func actions(_ context: WKWebExtensionContext?) -> some View {
+            Button(item.pinned == true ? "Unpin" : "Pin to Toolbar") {
+                extensions.setPinned(item.id, !(item.pinned ?? false))
+            }
+            if context?.overrideNewTabPageURL != nil {
+                let on = extensions.newTabPageID == item.id
+                Button(on ? "Stop Showing in New Tabs" : "Show in New Tabs") {
+                    extensions.setNewTabPage(on ? nil : item.id)
+                }
+            }
+            if context?.optionsPageURL != nil {
+                Button("Options") { extensions.openOptions(item.id) }
+            }
+            if item.source != nil || !item.fromStore {
+                Button("Reload") { extensions.reload(item.id) }
+            }
+            Divider()
+            Button("Remove", role: .destructive) { extensions.remove(item.id) }
         }
 
         /// Where it was loaded from, by the folder's name — the whole path

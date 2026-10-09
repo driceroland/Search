@@ -381,9 +381,12 @@ struct AddressField: NSViewRepresentable {
         field.focusRingType = .none
         field.font = .systemFont(ofSize: 15.5)
         field.textColor = Palette.NS.ink
-        field.lineBreakMode = .byTruncatingTail
+        field.lineBreakMode = .byClipping
         field.cell?.usesSingleLineMode = true
         field.cell?.wraps = false
+        // Scrolls with the caret, so a long address can be read and edited
+        // all the way along rather than cut off at the field's edge.
+        field.cell?.isScrollable = true
         // SwiftUI picks its own colour for a placeholder, and on a pale ground
         // that colour was near-white.
         field.placeholderAttributedString = NSAttributedString(
