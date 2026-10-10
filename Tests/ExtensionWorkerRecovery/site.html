@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8"><title>Content port fixture</title>
+<script>
+(() => {
+  // Independent page-world evidence survives extension-world replacement.
+  // Only serialized fixture observations enter this log, never extension APIs.
+  const audit = { document: Date.now() + '-' + Math.random().toString(36).slice(2),
+    timeOrigin: performance.timeOrigin, observations: 0, counts: {}, instances: {}, events: [], omittedEvents: 0, errors: [] };
+  globalThis.__searchPortDocumentFixture = audit;
+  document.documentElement.setAttribute('data-search-port-document', audit.document);
+  document.addEventListener('search-port-fixture-report', event => {
+    try {
+      const { reason, port, state } = JSON.parse(event.detail);
+      if (!state || state.kind !== 'content' || state.document !== audit.document || typeof state.instance !== 'string') {
+        throw new Error('Invalid fixture observation');
+      }
+      audit.observations++;
+      audit.counts[reason] = (audit.counts[reason] || 0) + 1;
+      audit.instances[state.instance] = state;
+      if (audit.events.length < 256) audit.events.push({ reason, port, instance: state.instance,
+        opened: state.opened, disconnected: state.disconnected, replies: state.replies, at: Date.now() });
+      else audit.omittedEvents++;
+    } catch (error) { audit.errors.push(String(error)); }
+  });
+})();
+</script>
+<button id="connect-content">Fresh content connection</button><button id="send-content">Send</button>
+<p>The content fixture preserves actual ports across same-world reinjection. The page's independent audit distinguishes document or isolated-world replacement.</p>

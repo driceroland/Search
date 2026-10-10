@@ -50,19 +50,20 @@ enum ExtensionShims {
     /// beside an extension — which permissions it added, which shim it
     /// carries — is Search's to say, never the package's: anything by those
     /// names that came inside it goes before a word of it is read.
-    nonisolated static func prepare(_ folder: URL, fresh: Bool = false) throws {
+    nonisolated static func prepare(_ folder: URL, fresh: Bool = false, workerGeneration: Int = 0) throws {
         let files = FileManager.default
         if fresh {
             for name in [stamp, ".search-added"] { try? files.removeItem(at: folder.appendingPathComponent(name)) }
         }
         let stampURL = folder.appendingPathComponent(stamp)
-        if (try? String(contentsOf: stampURL, encoding: .utf8)) == version { return }
-        defer { try? version.write(to: stampURL, atomically: true, encoding: .utf8) }
+        let revision = version + "-worker-\(workerGeneration)"
+        if (try? String(contentsOf: stampURL, encoding: .utf8)) == revision { return }
+        defer { try? revision.write(to: stampURL, atomically: true, encoding: .utf8) }
         let manifestURL = folder.appendingPathComponent("manifest.json")
         guard var manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
         else { throw Crx.Refused.unpack }
 
-        let script = shim(for: folder)
+        let script = shim(for: folder).replacingOccurrences(of: "__SEARCH_WORKER_GENERATION__", with: String(workerGeneration))
         try script.write(to: folder.appendingPathComponent(file), atomically: true, encoding: .utf8)
         try PasskeyRelay.page.write(to: folder.appendingPathComponent(passkeys), atomically: true, encoding: .utf8)
 
@@ -1056,6 +1057,122 @@ enum ExtensionShims {
           if (typeof f === "function") put(runtime, name, f.bind(runtime));
         }
       }
+      // Installed before the content-script return. Each passive subscription
+      // is bound natively to the background that this port connected to. A
+      // fresh connection that wakes a replacement must not lose its own port.
+      let checkWorker = () => {}, heard = 0;
+      let workerGeneration = Number("__SEARCH_WORKER_GENERATION__") || 0, workerSequence = 0;
+      const workerObserver = Math.random().toString(36).slice(2);
+      const workerPorts = new Set(), workerDisconnect = new WeakMap();
+      const cancelWorkerWatch = (watch) => {
+        if (!watch || !watch.waiting) return;
+        watch.waiting = false;
+        try {
+          if (inContent) root.webkit?.messageHandlers?.searchWorkerRecovery?.postMessage({ token: watch.token, cancel: true }).catch(() => {});
+          else native("background.unobserve", [watch.token]).catch(() => {});
+        } catch (e) {}
+      };
+      const collectedWorkerPort = typeof FinalizationRegistry === "function" ? new FinalizationRegistry((watch) => {
+        workerPorts.delete(watch);
+        cancelWorkerWatch(watch);
+      }) : null;
+      const watchWorker = () => {
+        if (!hasWorker) return null;
+        const token = workerObserver + ":" + (++workerSequence), expected = workerGeneration;
+        let answer;
+        try {
+          if (inContent) {
+            const bridge = root.webkit?.messageHandlers?.searchWorkerRecovery;
+            if (!bridge) return null; // Unknown WebKit world layout: keep native behavior.
+            answer = bridge.postMessage({ generation: expected, token });
+          } else answer = native("background.observe", [expected, token]);
+        } catch (e) { return null; }
+        const watch = { token, generation: expected, waiting: true, ref: null };
+        Promise.resolve(answer).then((generation) => {
+          if (!watch.waiting) return;
+          watch.waiting = false;
+          // nil means cancellation. The same context generation is valid:
+          // WebKit can replace only the background, as during an idle wake.
+          if (!Number.isSafeInteger(generation) || generation < watch.generation) return;
+          workerGeneration = Math.max(workerGeneration, generation);
+          const port = watch.ref && watch.ref.deref();
+          if (port) workerDisconnect.get(port)?.(true);
+        }, () => { watch.waiting = false; });
+        return watch;
+      };
+      if (typeof document !== "undefined" && root.addEventListener) {
+        root.addEventListener("pagehide", (event) => {
+          if (!event.persisted) for (const watch of workerPorts) cancelWorkerWatch(watch);
+        });
+      }
+      if (typeof document !== "undefined" && runtime && typeof runtime.connect === "function") {
+        const track = (port, watch) => {
+          if (workerDisconnect.has(port)) return port;
+          watch = watch === undefined ? watchWorker() : watch;
+          if (watch) {
+            watch.ref = new WeakRef(port);
+            workerPorts.add(watch);
+            collectedWorkerPort?.register(port, watch, watch);
+          }
+          try { port.onMessage.addListener(() => { heard = Date.now(); }); } catch (e) {}
+          const disconnected = event(), post = port.postMessage, disconnect = port.disconnect;
+          let closed = false;
+          const release = () => {
+            if (!watch) return;
+            workerPorts.delete(watch);
+            collectedWorkerPort?.unregister(watch);
+            cancelWorkerWatch(watch);
+          };
+          const finish = (synthetic = false) => {
+            if (closed) return;
+            closed = true;
+            release();
+            if (synthetic) try { disconnect.call(port); } catch (e) {}
+            for (const f of [...disconnected.listeners]) {
+              try { f(port); } catch (e) { setTimeout(() => { throw e; }); }
+            }
+          };
+          port.onDisconnect.addListener(() => finish());
+          const set = (key, value) => Object.defineProperty(port, key, { value, configurable: true, writable: true });
+          set("onDisconnect", disconnected);
+          set("postMessage", (message) => {
+            if (closed) throw new Error("Attempting to use a disconnected port object");
+            checkWorker();
+            return post.call(port, message);
+          });
+          set("disconnect", () => {
+            if (closed) return;
+            closed = true;
+            release();
+            disconnect.call(port);
+          });
+          workerDisconnect.set(port, finish);
+          return port;
+        };
+        const connect = runtime.connect.bind(runtime);
+        put(runtime, "connect", (...args) => {
+          if (typeof args[0] === "string" && args[0] && args[0] !== runtime.id) return connect(...args);
+          checkWorker();
+          // WebKit selects the connection's background before the following
+          // observation reads its identity. An absent/loading background is
+          // bound to the next creation, never to a retired worker.
+          return track(connect(...args));
+        });
+        const incoming = runtime.onConnect;
+        if (incoming && typeof incoming.addListener === "function") {
+          const add = incoming.addListener.bind(incoming), remove = incoming.removeListener.bind(incoming);
+          const has = incoming.hasListener.bind(incoming), wrapped = new WeakMap();
+          put(incoming, "addListener", (listener) => {
+            if (typeof listener !== "function") return add(listener);
+            let wrapper = wrapped.get(listener);
+            if (!wrapper) { wrapper = (port) => listener(track(port)); wrapped.set(listener, wrapper); }
+            return add(wrapper);
+          });
+          put(incoming, "removeListener", (listener) => remove(wrapped.get(listener) || listener));
+          put(incoming, "hasListener", (listener) => has(wrapped.get(listener) || listener));
+        }
+      }
+
       if (inContent) {
         // A frame inside this extension's own page — its offscreen
         // document reading a site, say — is part of that page's tab, and
@@ -1176,9 +1293,6 @@ enum ExtensionShims {
         promise.then((r) => r === undefined ? withLastError(new Error(gone), callback) : callback(r),
           (e) => withLastError(e, callback));
       };
-      let checkWorker = () => {};
-      // When the worker was last heard from — a reply, a port message.
-      let heard = 0;
       if (runtime && typeof runtime.sendMessage === "function") {
         const page = typeof document !== "undefined";
         // WebKit's own, looked up at each call — not held from the page's
@@ -1259,15 +1373,6 @@ enum ExtensionShims {
           if (typeof options === "function") { callback = options; options = undefined; }
           const p = options === undefined ? send(tabId, message) : send(tabId, message, options);
           return replied(background ? alsoFramed(p, tabId, message, options) : p, callback, "Could not establish connection. Receiving end does not exist.");
-        });
-      }
-      if (typeof document !== "undefined" && runtime && typeof runtime.connect === "function") {
-        const connect = runtime.connect.bind(runtime);
-        put(runtime, "connect", (...args) => {
-          checkWorker();
-          const port = connect(...args);
-          try { port.onMessage.addListener(() => { heard = Date.now(); }); } catch (e) {}
-          return port;
         });
       }
 
@@ -3728,6 +3833,13 @@ enum ExtensionShims {
             }
 
         // MARK: the worker, up before a page talks to it
+        case "background.observe":
+            guard owner.contexts[id] === context, context.isLoaded else { return nil }
+            return await ExtensionWorkerRecovery.shared.observe(id, generation: first as? Int ?? 0, token: args.dropFirst().first as? String ?? "")
+        case "background.unobserve":
+            guard owner.contexts[id] === context else { return nil }
+            ExtensionWorkerRecovery.shared.cancel(id, token: first as? String ?? "")
+            return nil
         case "background.wake":
             guard context.webExtension.hasBackgroundContent else { return nil }
             // WebKit sometimes fails to start a worker again after unloading
@@ -3758,8 +3870,7 @@ enum ExtensionShims {
         // A page found the worker gone though WebKit believes it runs (see
         // the shim's ping).
         case "background.revive":
-            owner.revive(id, because: "its worker stopped answering")
-            return nil
+            return owner.revive(id, because: "its worker stopped answering")
 
         // MARK: what went wrong inside
         case "debug.error":
