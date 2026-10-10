@@ -270,7 +270,7 @@ enum Chromium {
 
             for (host, url) in wanted where out[host] == nil {
                 var doors = [url.absoluteString]
-                if let scheme = url.scheme, let home = url.host() {
+                if let scheme = url.scheme, let home = Favicons.site(url) {
                     doors.append("\(scheme)://\(home)/")
                 }
                 for door in doors {
@@ -816,7 +816,7 @@ enum Mozilla {
 
             for (host, url) in wanted where out[host] == nil {
                 var doors = [url.absoluteString]
-                if let scheme = url.scheme, let home = url.host() {
+                if let scheme = url.scheme, let home = Favicons.site(url) {
                     doors.append("\(scheme)://\(home)/")
                 }
                 for door in doors {

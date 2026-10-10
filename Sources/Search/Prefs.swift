@@ -313,7 +313,12 @@ final class Preferences: ObservableObject {
     /// The AI add-on: summaries of the page and questions about it (see
     /// AIAssist). Off unless asked for; nothing is sent until you ask.
     @Published var ai: Bool {
-        didSet { store.set(ai, forKey: "ai") }
+        didSet {
+            // Never on in a build without it (AI.shipped); a test run's
+            // bench may still turn it on to exercise the code.
+            if ai, !AI.shipped, !Store.testing { ai = false; return }
+            store.set(ai, forKey: "ai")
+        }
     }
     /// Where its answers come from. None until you choose.
     @Published var aiProvider: AIProvider? {
@@ -426,7 +431,7 @@ final class Preferences: ObservableObject {
         usesTabGroups = store.bool(forKey: "tabs.groups")
         listsPins = store.bool(forKey: "pins.list")
         splitView = store.bool(forKey: "splitView")
-        ai = store.bool(forKey: "ai")
+        ai = AI.shipped && store.bool(forKey: "ai")
         aiProvider = store.string(forKey: "ai.provider").flatMap(AIProvider.init(rawValue:))
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
         commandBar = store.bool(forKey: "commandbar")
