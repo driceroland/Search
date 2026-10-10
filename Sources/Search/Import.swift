@@ -59,7 +59,13 @@ enum Chromium {
         func file(_ name: String, in folder: URL? = nil) -> URL? {
             let root = root.resolvingSymlinksInPath()
             let url = (folder ?? root).appendingPathComponent(name)
-            return contains(url, in: root) ? url : nil
+            return contains(url, in: root) ? url.resolvingSymlinksInPath() : nil
+        }
+
+        /// Check the opened file, then read at most 64 MB of JSON from it.
+        func data(_ name: String, in folder: URL? = nil) throws -> Data {
+            guard let url = file(name, in: folder) else { throw Trouble.unreadable }
+            return try ImportRead.data(url, inside: root.resolvingSymlinksInPath())
         }
 
         private func contains(_ url: URL, in root: URL) -> Bool {
@@ -86,7 +92,7 @@ enum Chromium {
         /// folder used last — "last_used", or failing that the first of
         /// "last_active_profiles".
         var localState: (names: [String: String], last: [String]) {
-            guard let file = file("Local State"), let data = try? Data(contentsOf: file),
+            guard let data = try? data("Local State"),
                   let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let profile = top["profile"] as? [String: Any]
             else { return ([:], []) }
@@ -236,7 +242,7 @@ enum Chromium {
         for profile in profiles {
             guard let marks = source.file("Bookmarks", in: profile) else { complete = false; continue }
             guard FileManager.default.fileExists(atPath: marks.path) else { continue }
-            guard let data = try? Data(contentsOf: marks),
+            guard let data = try? source.data("Bookmarks", in: profile),
                   let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let roots = top["roots"] as? [String: Any]
             else {
@@ -436,7 +442,7 @@ enum Chromium {
         for folder in source.profiles(only: profile) {
             var settings: [String: [String: Any]] = [:]
             for name in ["Preferences", "Secure Preferences"] {
-                guard let file = source.file(name, in: folder), let data = try? Data(contentsOf: file),
+                guard let data = try? source.data(name, in: folder),
                       let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let all = (top["extensions"] as? [String: Any])?["settings"] as? [String: Any]
                 else { continue }
@@ -1383,6 +1389,47 @@ enum ImportSource: Identifiable, Hashable {
     }
 }
 
+/// Import reads validate the opened descriptor, not just a path checked earlier.
+/// JSON has a byte limit both before and during reading, including file growth.
+private enum ImportRead {
+    static let jsonLimit = 64 * 1024 * 1024
+
+    static func openRegular(_ url: URL, inside root: URL? = nil, limit: Int? = nil) throws -> Int32 {
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        do {
+            var info = stat()
+            guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+                  info.st_size >= 0 else { throw Chromium.Trouble.unreadable }
+            if let limit, info.st_size > limit { throw Chromium.Trouble.unreadable }
+            if let root {
+                var path = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+                let result = path.withUnsafeMutableBufferPointer { fcntl(fd, F_GETPATH, $0.baseAddress!) }
+                guard result == 0 else { throw Chromium.Trouble.unreadable }
+                let opened = URL(fileURLWithPath: String(cString: path)).standardizedFileURL.path
+                let base = root.standardizedFileURL.path
+                guard opened.hasPrefix(base + "/") else { throw Chromium.Trouble.unreadable }
+            }
+            return fd
+        } catch {
+            close(fd)
+            throw error
+        }
+    }
+
+    static func data(_ url: URL, inside root: URL) throws -> Data {
+        let fd = try openRegular(url, inside: root, limit: jsonLimit)
+        defer { close(fd) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+        var data = Data()
+        while let chunk = try handle.read(upToCount: min(64 * 1024, jsonLimit - data.count + 1)), !chunk.isEmpty {
+            guard chunk.count <= jsonLimit - data.count else { throw Chromium.Trouble.unreadable }
+            data.append(chunk)
+        }
+        return data
+    }
+}
+
 /// A copy of one of another browser's SQLite files to read from, with the
 /// two files SQLite keeps beside it while the browser runs: what was
 /// written last is often still in "-wal", and a copy without it misses the
@@ -1410,14 +1457,10 @@ final class Snapshot {
     /// Open without following a final link, then copy from that descriptor.
     /// Checking a path and opening it later could copy a replacement link.
     private static func copyRegular(_ source: URL, to target: URL, optional: Bool = false) throws {
-        let input = open(source.path, O_RDONLY | O_NOFOLLOW)
-        guard input >= 0 else {
-            if optional && errno == ENOENT { return }
-            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-        }
+        let input: Int32
+        do { input = try ImportRead.openRegular(source) }
+        catch let error as POSIXError where optional && error.code == .ENOENT { return }
         defer { close(input) }
-        var info = stat()
-        guard fstat(input, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { throw Chromium.Trouble.unreadable }
         let output = open(target.path, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR)
         guard output >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { close(output) }

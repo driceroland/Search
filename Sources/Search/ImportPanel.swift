@@ -218,19 +218,25 @@ struct ImportPanel: View {
         panel.prompt = "Use Folder"
         panel.begin { answer in
             guard answer == .OK, let folder = panel.url else { return }
-            var selected = source
-            selected.rootOverride = folder
-            guard !selected.profiles.isEmpty else {
-                folderError = "No browser profile was found in \(folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")). Choose the folder that contains Default or Profile 1."
-                return
-            }
-            Chromium.useForSession(folder, for: source)
-            folderError = nil
-            previews = [:]
-            profiles = [:]
-            usual = [:]
             looking = true
-            look()
+            DispatchQueue.global(qos: .userInitiated).async {
+                var selected = source
+                selected.rootOverride = folder.resolvingSymlinksInPath()
+                let found = !selected.profiles.isEmpty
+                DispatchQueue.main.async {
+                    guard found else {
+                        looking = false
+                        folderError = "No browser profile was found in \(folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")). Choose the folder that contains Default or Profile 1."
+                        return
+                    }
+                    Chromium.useForSession(folder, for: source)
+                    folderError = nil
+                    previews = [:]
+                    profiles = [:]
+                    usual = [:]
+                    look()
+                }
+            }
         }
     }
 
@@ -238,6 +244,14 @@ struct ImportPanel: View {
         let preview = previews[key(source, profile(of: source))]
         let extensions = fresh(source)
         return Card {
+            if case .chromium(let chromium) = source,
+               let root = Chromium.chosenRoot(for: chromium.name), !Store.testing {
+                Text("From \(root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                    .textSelection(.enabled)
+                Rule()
+            }
             if let record = ImportRecords.of(source.name) {
                 Line("Brought before", broughtBefore(record)) { EmptyView() }
                 Rule()
