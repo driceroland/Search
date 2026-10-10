@@ -2990,7 +2990,18 @@ final class Browser: NSObject, ObservableObject {
         // Its group stays behind: the space it goes to has groups of its own.
         tab.groupID = nil
         var row = parked[id] ?? loadRow(id)
-        let place = tab.pin == nil ? row.tabs.count : (row.tabs.firstIndex { $0.pin == nil } ?? row.tabs.count)
+        // A pin is that space's pin from now on, in pins.json too: kept only
+        // in its row, the next look at the space's pins (another window's
+        // change, or a relaunch before the space was opened) found it in no
+        // list and closed it.
+        // Squares ahead of rows there too (see Browser.tiered).
+        if tab.pin != nil, let pin = pinDefs([tab]).first {
+            let defs = Pins.defs(id).filter { $0.id != pin.id } + [pin]
+            Pins.set(id, defs.filter { $0.listed != true } + defs.filter { $0.listed == true }, from: self)
+        }
+        let squares = row.tabs.filter { $0.pin != nil && !$0.listed }.count
+        let pins = row.tabs.firstIndex { $0.pin == nil } ?? row.tabs.count
+        let place = tab.pin == nil ? row.tabs.count : (tab.listed ? pins : squares)
         row.tabs.insert(tab, at: place)
         if row.active == nil { row.active = tab.id }
         parked[id] = row
