@@ -104,19 +104,34 @@ struct Fold: View {
                     .frame(height: Fold.top)
                     .frame(maxWidth: .infinity)
             }
-            if folding, !prefs.sidebar, browser.peeking {
+            if folding, !prefs.sidebar {
+                // Kept while folded, above the window's top edge, and slid
+                // down and back up, as the column is (see below).
+                //
                 // The row has no ground of its own: in the window it lies on
                 // the window's. Out over the page it brings that ground along,
                 // as the column does, or the page showed through between the
                 // tabs, and the shadow fell from every title and icon rather
                 // than from the row's edge.
                 TabBar(browser: browser)
-                    .transition(.casting(FoldShadow(y: 4, behind: true))
-                        .combined(with: .move(edge: .top)))
+                    .modifier(FoldShadow(y: 4, behind: true, strength: browser.peeking ? 1 : 0))
+                    .offset(y: browser.peeking ? 0 : -Metrics.strip)
+                    .allowsHitTesting(browser.peeking)
             }
             ZStack(alignment: onRight ? .trailing : .leading) {
                 Color.clear.frame(width: 0)
-                if folding, prefs.sidebar, browser.peeking {
+                if folding, prefs.sidebar {
+                    // Kept while folded, off the window's edge, and slid out
+                    // and back rather than made anew each time. Made anew,
+                    // every row was built again on every peek, about 60ms of
+                    // the main thread before the first frame, so the column
+                    // came out late; and a pointer turning back met a new
+                    // column rather than the one on its way in. It stays in
+                    // accessibility while away: taken out of it as it went
+                    // and put back as it came, its rows had the window's
+                    // whole accessibility tree rebuilt each time, up to
+                    // 120ms of the main thread with the slide waiting.
+                    //
                     // Its shadow falls from a ground laid under it, as the
                     // strip's does. Cast by the column itself, it was drawn
                     // again from every row, icon and title on each frame of
@@ -125,8 +140,9 @@ struct Fold: View {
                     // The column's own ground is opaque, so it is the same
                     // rectangle either way.
                     SideBar(browser: browser, prefs: prefs)
-                        .transition(.casting(FoldShadow(x: onRight ? -4 : 4, behind: true))
-                            .combined(with: .move(edge: onRight ? .trailing : .leading)))
+                        .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true, strength: browser.peeking ? 1 : 0))
+                        .offset(x: browser.peeking ? 0 : (onRight ? prefs.sideWidth : -prefs.sideWidth))
+                        .allowsHitTesting(browser.peeking)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity,
@@ -453,8 +469,8 @@ private struct FoldShadow: ViewModifier {
     var y: CGFloat = 0
     /// Cast from a ground laid behind: the strip has no ground of its own,
     /// and a shadow from the row itself fell from every title and icon.
-    /// Combined with the slide, this comes first and the move second: the
-    /// move's offset moves only what it wraps, and a ground laid outside it
+    /// Combined with the slide, this comes first and the offset second: the
+    /// offset moves only what it wraps, and a ground laid outside it
     /// stayed where the column or the strip had been, a blank band over the
     /// page until the slide was over.
     var behind = false
@@ -467,15 +483,6 @@ private struct FoldShadow: ViewModifier {
         } else {
             content.shadow(color: color, radius: 20, x: x, y: y)
         }
-    }
-}
-
-private extension AnyTransition {
-    /// The shadow at full while in place, and at nothing off the window.
-    static func casting(_ shadow: FoldShadow) -> AnyTransition {
-        var gone = shadow
-        gone.strength = 0
-        return .modifier(active: gone, identity: shadow)
     }
 }
 
