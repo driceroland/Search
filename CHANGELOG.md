@@ -15,6 +15,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - A bookmark opens in a tab of its own, from the bookmarks bar, the Bookmarks menu or the list: opened from a pinned tab it used to take the pin's place. An empty new tab is used as it is, and ⌘ opens the bookmark behind the tab you are on.
 
+### Fixed
+
+- A pin moved to another space with Move to Space stays there. Moved to a space you didn't open before quitting, it was gone after a relaunch. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#587](https://github.com/driceroland/Search/pull/587))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
