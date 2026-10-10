@@ -2399,7 +2399,7 @@ final class Bench {
                 }
                 browser.prefs.sidePosition = position
             }
-            if let on = request["pages120"] as? Bool { browser.prefs.fastPages = on }
+            if let mode = (request["pages120"] as? String).flatMap(FastPages.init) { browser.prefs.fastPages = mode }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
