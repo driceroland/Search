@@ -4,7 +4,7 @@
 Build first (`./build.sh`), then `python3 Tests/remove_passwords.py`. It uses
 the split suite's harness: started hidden, no window made or shown, everything
 removed afterwards. The accounts are made up and kept under this test world's
-own label ("Search (remove-passwords)"), never among the ones Search keeps for
+own label ("Search (remove-passwords-<checkout>)"), never among the ones Search keeps for
 the person. Anything a crashed run left under that label is removed first,
 and the last step removes whatever is left of this run's.
 """
@@ -18,11 +18,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
 
-# A world of its own, its socket included: launch() waits on SOCK.
-sv.W = "remove-passwords"
-sv.SUPPORT = f"{sv.HOME}/Library/Application Support/Search ({sv.W})"
-sv.SUITE = f"com.officecommun.search.test.{sv.W}"
-sv.SOCK = f"{sv.SUPPORT}/bench.sock"
+# Its own world, apart from the split suite's in this checkout, and from
+# another checkout's run of it: its keychain label is the world's (see use()).
+sv.use("remove-passwords")
 
 t = sv.T()
 LABEL = f"Search ({sv.W})"  # Vault's label in this world
@@ -33,8 +31,10 @@ def sweep():
     login keychain is touched."""
     for _ in range(100):
         r = subprocess.run(["security", "delete-internet-password", "-l", LABEL],
-                           capture_output=True)
-        if r.returncode != 0: return
+                           capture_output=True, text=True)
+        if r.returncode == 44: return  # none left
+        if r.returncode != 0: sys.exit(f"sweep: couldn't remove {LABEL!r}: {r.stderr.strip()}")
+    sys.exit(f"sweep: more than 100 items under {LABEL!r}")
 
 def passwords(**f): r = sv.cmd({"do": "passwords", **f}); time.sleep(0.2); return r
 def confirm(yes): sv.cmd({"do": "ui", "confirm": yes})
@@ -63,6 +63,7 @@ try:
     confirm(True)
     r = passwords(filter="bank", remove=True)
     t.ok("removed: only the two the list showed", r["count"] == 1 and r["shown"] == 0, r)
+    t.ok("removed: says how many went", r.get("announced") == "Removed 2 passwords", r.get("announced"))
 
     r = passwords(filter="", remove=True)
     t.ok("no filter: every one removed", r["count"] == 0, r)

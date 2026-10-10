@@ -1214,7 +1214,8 @@ final class Bench {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { settled() }
                     return
                 }
-                answer(["count": browser.saved.count, "shown": browser.shownSites.reduce(0) { $0 + $1.logins.count }])
+                answer(["count": browser.saved.count, "shown": browser.shownSites.reduce(0) { $0 + $1.logins.count },
+                        "announced": browser.announcement ?? ""])
             }
             settled()
 

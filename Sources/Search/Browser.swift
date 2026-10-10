@@ -859,7 +859,9 @@ final class Browser: NSObject, ObservableObject {
                         self.forgetting = false
                         self.relist()
                         let removed = gone == 1 ? "1 password" : "\(gone) passwords"
-                        self.announce(gone == count ? "Removed \(removed)" : "Removed \(removed) of \(count)")
+                        self.announce(gone == count ? "Removed \(removed)"
+                            : gone == 0 ? "The keychain refused them"
+                            : "Removed \(gone) of \(many)")
                     }
                 }
             }
