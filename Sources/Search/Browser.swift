@@ -852,11 +852,14 @@ final class Browser: NSObject, ObservableObject {
                 // them a second: off the main thread, as imports are (#380).
                 self.forgetting = true
                 DispatchQueue.global(qos: .userInitiated).async {
-                    for login in shown { Vault.forget(host: login.host, user: login.user) }
+                    // Counted as the keychain answers, not as asked: one
+                    // it kept is not reported gone.
+                    let gone = shown.filter { Vault.forget(host: $0.host, user: $0.user) }.count
                     DispatchQueue.main.async {
                         self.forgetting = false
                         self.relist()
-                        self.announce("Removed \(many)")
+                        let removed = gone == 1 ? "1 password" : "\(gone) passwords"
+                        self.announce(gone == count ? "Removed \(removed)" : "Removed \(removed) of \(count)")
                     }
                 }
             }

@@ -196,13 +196,15 @@ enum Vault {
         save(host: login.host, user: login.user, password: login.password, used: Date(), clear: login.clear)
     }
 
-    static func forget(host: String, user: String) {
+    /// Whether the keychain let it go: Remove All… counts only those.
+    @discardableResult
+    static func forget(host: String, user: String) -> Bool {
         SecItemDelete([
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrServer as String: host,
             kSecAttrAccount as String: user,
             kSecAttrLabel as String: label,
-        ] as CFDictionary)
+        ] as CFDictionary) == errSecSuccess
     }
 
     // MARK: - sites that asked not to be asked

@@ -5,9 +5,11 @@ Build first (`./build.sh`), then `python3 Tests/remove_passwords.py`. It uses
 the split suite's harness: started hidden, no window made or shown, everything
 removed afterwards. The accounts are made up and kept under this test world's
 own label ("Search (remove-passwords)"), never among the ones Search keeps for
-the person, and the last step removes whatever is left of them.
+the person. Anything a crashed run left under that label is removed first,
+and the last step removes whatever is left of this run's.
 """
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -23,6 +25,17 @@ sv.SUITE = f"com.officecommun.search.test.{sv.W}"
 sv.SOCK = f"{sv.SUPPORT}/bench.sock"
 
 t = sv.T()
+LABEL = f"Search ({sv.W})"  # Vault's label in this world
+
+def sweep():
+    """Leftovers of a run that crashed before its cleanup: this world's own
+    items, by label, deleted until the keychain has none. Nothing else in the
+    login keychain is touched."""
+    for _ in range(100):
+        r = subprocess.run(["security", "delete-internet-password", "-l", LABEL],
+                           capture_output=True)
+        if r.returncode != 0: return
+
 def passwords(**f): r = sv.cmd({"do": "passwords", **f}); time.sleep(0.2); return r
 def confirm(yes): sv.cmd({"do": "ui", "confirm": yes})
 
@@ -34,6 +47,7 @@ export.write("name,url,username,password,note\n"
 export.close()
 
 try:
+    sweep()
     sv.setup(); sv.launch()
     took = sv.cmd({"do": "import-file", "path": export.name})
     t.ok("three made-up accounts brought in", took.get("kept") == 3, took)
@@ -78,4 +92,5 @@ finally:
         pass
     os.unlink(export.name)
     t.done(); sv.finish()
+    sweep()
 sys.exit(1 if t.failed else 0)
