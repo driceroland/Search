@@ -4149,6 +4149,11 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
     ) {
         decide(webView, action) { [weak self] policy in
+            // Revoke before WebKit can run the old document's unload handlers.
+            // A nil target is a new window, not this tab leaving its document.
+            if policy == .allow, action.targetFrame?.isMainFrame == true {
+                self?.popupTab(for: webView)?.popupGesture.clear()
+            }
             if policy == .allow, action.targetFrame?.isMainFrame ?? true, let url = action.request.url {
                 let shy = self?.tab(for: webView)?.shy == true || !webView.configuration.websiteDataStore.isPersistent
                 Autoplay.apply(to: preferences, for: url, shy: shy)
@@ -4371,7 +4376,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         for action: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        let from = tab(for: webView)?.id ?? activeID
+        guard let opener = popupTab(for: webView),
+              opener.popupGesture.take(origin: PopupGesture.origin(action.sourceFrame), mainFrame: action.sourceFrame.isMainFrame) else { return nil }
+        let from = opener.id
         // WebKit's copy of the opener's configuration still holds the
         // opener's user content controller — its scripts and its message
         // handlers. Shared, the new tab claimed the opener's handlers as its
@@ -4379,7 +4386,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // right-click on a picture on X, after following a link out of it,
         // did nothing at all. Each tab gets a controller of its own.
         configuration.userContentController = WKUserContentController()
-        let tab = Tab(shy: tab(for: webView)?.shy ?? false, configuration: configuration)
+        let tab = Tab(shy: opener.shy, configuration: configuration)
         tab.popup = windowFeatures.width != nil || windowFeatures.height != nil
             || windowFeatures.toolbarsVisibility?.boolValue == false
         tab.opener = from
@@ -4793,6 +4800,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        popupTab(for: webView)?.popupGesture.clear()
         guard let tab = tab(for: webView) else {
             // A small window's page came: what failed before it is over.
             littleTab(for: webView)?.failure = nil
@@ -4897,6 +4905,15 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// and a link that failed to load there left the window blank.
     private func littleTab(for webView: WKWebView) -> Tab? {
         LittleWindow.all.first { $0.tab.built === webView }?.tab
+    }
+
+    /// Popups belong to the view that received the gesture, including pages
+    /// in a Peek or Little window that have no row in this browser yet.
+    func popupTab(for webView: WKWebView) -> Tab? {
+        guard webView.navigationDelegate === self else { return nil }
+        return anyTab(for: webView)
+            ?? (peekTab?.built === webView ? peekTab : nil)
+            ?? littleTab(for: webView)
     }
 
     /// The tab a page belongs to, in the space on screen or another: a page
