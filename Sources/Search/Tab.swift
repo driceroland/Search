@@ -1460,6 +1460,9 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 
 /// A web view that reads the two-finger swipe for itself.
 final class PageView: WKWebView {
+    /// Consumed by the stage after a floated page is back at its tab's size.
+    var onFloatReturn: (() -> Void)?
+
     /// The page's own right-click menu. WebKit puts extensions' items for the
     /// page in it itself; Search adding them again showed each one twice.
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {

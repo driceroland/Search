@@ -18,6 +18,7 @@ enum Shared {
     static let curtain = Curtain()
     static let loot = Loot()
     static let floater = Float()
+    static var pendingFloat: (owner: Browser, tab: Tab.ID, request: UUID)?
     static let fetches = Fetches()
 }
 
@@ -1635,7 +1636,7 @@ final class Browser: NSObject, ObservableObject {
             // Never a test run's: a probe started hidden stays off every screen.
             guard !Store.testing else { return }
             NSApp.activate(ignoringOtherApps: true)
-            NSApp.windows.first { $0.contentView != nil }?.makeKeyAndOrderFront(nil)
+            self.window?.makeKeyAndOrderFront(nil)
         }
         floater.onSkip = { [weak self] seconds in
             guard let self, let id = self.floating,
@@ -1643,13 +1644,18 @@ final class Browser: NSObject, ObservableObject {
             else { return }
             tab.web.evaluateInSearch(Isolate.skip(seconds))
         }
+        // A busy web process must not accumulate half-second requests.
+        var checking = false
         floater.onProgress = { [weak self] answer in
-            guard let self, let id = self.floating,
-                  let tab = self.tabs.first(where: { $0.id == id })
+            guard !checking, let self, let id = self.floating,
+                  let tab = self.tabs.first(where: { $0.id == id }), let window = tab.web.window
             else { return }
-            tab.web.evaluateInSearch(Isolate.where_) { found in
+            checking = true
+            tab.web.evaluateInSearch(Isolate.where_) { [weak self] found in
                 MainActor.assumeIsolated {
-                    guard let pair = found as? [Any], pair.count == 2,
+                    defer { checking = false }
+                    guard let self, self.floating == id, tab.web.window === window,
+                          let pair = found as? [Any], pair.count == 2,
                           let through = pair[0] as? Double,
                           let playing = pair[1] as? Bool
                     else { return }
@@ -2619,12 +2625,14 @@ final class Browser: NSObject, ObservableObject {
         suggesting = nil
         // Back on a tab with the caret still in a box, the list may come again.
         looked = nil
+        // Return cancels a lift still waiting on JavaScript too, including
+        // one explicitly requested from the tab that is already selected.
+        if floating == tab.id || Shared.pendingFloat?.tab == tab.id { land() }
         guard tab.id != activeID else { return }
         // The AI panel is about the page it was opened on.
         if assisting != nil { closeAssistant() }
         // Coming back to the tab whose video is out brings it home first, so
         // it is never lifted and landed in the same breath.
-        if floating == tab.id { land() }
         if floatPrevious { leaving() }
         activeID = tab.id
         tab.touch()
@@ -3653,19 +3661,21 @@ final class Browser: NSObject, ObservableObject {
 
     func appLeft() {
         guard prefs.floatsAway, Browsers.front == nil || Browsers.front === self else { return }
-        liftedAway = !floater.showing
+        guard !floater.showing, Shared.pendingFloat == nil else { return }
+        liftedAway = true
         lift(active, quietly: true, otherwise: otherPane)
     }
 
     /// Back, and still on the tab it came from: into the tab again.
     func appBack() {
         defer { liftedAway = false }
-        if liftedAway, let id = floating, id == activeID { land() }
+        let pending = Shared.pendingFloat.flatMap { $0.owner === self ? $0.tab : nil }
+        if liftedAway, let id = floating ?? pending, id == activeID { land() }
     }
 
     /// ⌘⇧P, for lifting one out by hand.
     func toggleFloat() {
-        if floater.showing {
+        if floater.showing || Shared.pendingFloat != nil {
             land()
             return
         }
@@ -3679,6 +3689,7 @@ final class Browser: NSObject, ObservableObject {
     private func lift(_ tab: Tab?, quietly: Bool, otherwise: Tab? = nil) {
         // A tab just put down with ⌘W has no page to lift a video out of, and
         // asking it would only build an empty view to ask.
+        guard Shared.pendingFloat == nil else { return }
         guard let tab, !tab.isBlank, !tab.asleep, !floater.showing else {
             if let otherwise { lift(otherwise, quietly: quietly) }
             return
@@ -3696,18 +3707,41 @@ final class Browser: NSObject, ObservableObject {
             if let otherwise { lift(otherwise, quietly: quietly) }
             return
         }
-        tab.web.evaluateInSearch(Isolate.on) { [weak self] answer in
+        let web = tab.web
+        let address = web.url
+        let request = UUID()
+        Shared.pendingFloat = (self, tab.id, request)
+        web.evaluateInSearch(Isolate.on(request)) { [weak self] answer in
             MainActor.assumeIsolated {
-                guard let self else { return }
-                guard (answer as? String) == "floating" else {
+                guard let self, Shared.pendingFloat?.request == request else {
+                    web.evaluateInSearch(Isolate.off(request, waitForResize: false))
+                    return
+                }
+                Shared.pendingFloat = nil
+                guard self.tabs.contains(where: { $0 === tab }), tab.built === web,
+                      web.url == address, !web.isLoading, !tab.asleep, !self.floater.showing,
+                      web.fullscreenState == .notInFullscreen else {
+                    web.evaluateInSearch(Isolate.off(request, waitForResize: false))
+                    return
+                }
+                var videoRect: NSRect?
+                if let box = answer as? [Double], box.count == 4,
+                   box[2] > 0, box[3] > 0 {
+                    videoRect = NSRect(x: box[0] * web.pageZoom, y: box[1] * web.pageZoom,
+                                       width: box[2] * web.pageZoom, height: box[3] * web.pageZoom)
+                }
+                guard let videoRect else {
+                    web.evaluateInSearch(Isolate.off(request, waitForResize: false))
                     if let otherwise { return self.lift(otherwise, quietly: quietly) }
+                    self.liftedAway = false
                     if !quietly { self.announce("Nothing is playing here") }
                     return
                 }
                 self.floating = tab.id
+                web.onFloatReturn = nil
                 tab.floating = true
                 self.ownFloater()
-                self.floater.lift(tab.web)
+                self.floater.lift(web, videoRect: videoRect)
             }
         }
     }
@@ -3715,6 +3749,10 @@ final class Browser: NSObject, ObservableObject {
     /// Back into its tab. The stage takes the page again on its next layout,
     /// which is what the self-healing there is for.
     func land() {
+        if let pending = Shared.pendingFloat {
+            if pending.owner !== self { return pending.owner.land() }
+            Shared.pendingFloat = nil
+        }
         // Another window's video: that window takes it back.
         if floating == nil, let owner = Browsers.all.first(where: { $0 !== self && $0.floating != nil }) {
             return owner.land()
@@ -3724,8 +3762,10 @@ final class Browser: NSObject, ObservableObject {
         if floater.showing { floater.drop() }
         guard let id = floating, let tab = tabs.first(where: { $0.id == id }) else { return }
         floating = nil
+        let web = tab.web
+        web.evaluateInSearch(Isolate.off())
+        web.onFloatReturn = { [weak web] in web?.evaluateInSearch(Isolate.landed) }
         tab.floating = false
-        tab.web.evaluateInSearch(Isolate.off)
     }
 
     func prepare(_ tab: Tab) {
@@ -4302,6 +4342,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard let navigation else { return }
+        if let pending = Shared.pendingFloat, pending.owner === self,
+           tab(for: webView)?.id == pending.tab { land() }
         tab(for: webView)?.extensionReturn.started(navigation, at: webView.url)
     }
 
