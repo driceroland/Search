@@ -173,6 +173,18 @@ struct ImportPanel: View {
         }
     }
 
+    /// What Arc's side of the import will do, which depends on whether pinned
+    /// rows are on: with them on, the pages Arc keeps loose become rows under
+    /// the pins and the ones it filed stay tabs in a group of that folder's
+    /// name, so that neither the keeping nor the folder is lost.
+    private func arcDetail(_ arc: (spaces: Int, pinned: Int)) -> String {
+        let spaces = arc.spaces == 1 ? "1 space" : "\(arc.spaces) spaces"
+        let head = "\(spaces), \(arc.pinned) pinned — each a space here, the favourites as pins"
+        return browser.prefs.listsPins
+            ? head + ", its pinned pages as rows under them, and the ones it filed in a folder as tabs in a group of that name"
+            : head + ", its pinned tabs asleep in it"
+    }
+
     /// Safari, and browsers on this Mac with nothing where their data should
     /// be: said by name rather than left out.
     @ViewBuilder
@@ -252,9 +264,23 @@ struct ImportPanel: View {
             // Arc's own: its spaces, what is pinned in them, its favourites.
             if let arc = arcCounts[key(source, profile(of: source))], arc.spaces + arc.pinned > 0 {
                 Rule()
-                Line("Spaces and pinned tabs",
-                     "\(arc.spaces == 1 ? "1 space" : "\(arc.spaces) spaces"), \(arc.pinned) pinned — each a space here, its pinned tabs asleep in it, the favourites as pins") {
+                Line("Spaces and pinned tabs", arcDetail(arc)) {
                     Switch(on: $wantsArc)
+                }
+                // Arc's pinned pages only keep their shape as pinned rows, and
+                // those are off until asked for. This is the moment someone
+                // would ask, so the sheet offers the switch here, once, rather
+                // than bringing them in as tabs and leaving the setting to be
+                // found afterwards.
+                if wantsArc, arc.pinned > 0, !browser.prefs.listsPins {
+                    Rule()
+                    Line("Keep them as pinned rows",
+                         "As in Arc: each pinned page a row with its name, under your pins. Turned on, it stays in Settings › Tabs › Pinned rows"
+                         + (browser.prefs.sidebar ? "" : "; rows show with the tabs down the side")) {
+                        Pill("Turn on pinned rows") {
+                            withAnimation(Motion.glide) { browser.prefs.listsPins = true }
+                        }
+                    }
                 }
             }
             if !extensions.isEmpty {
