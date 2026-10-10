@@ -26,6 +26,8 @@ struct WelcomePanel: View {
     @State private var isDefault = Links.isDefault
     @State private var asked = false
 
+    private var importsPasswords: Bool { (source ?? ImportSource.installed().first)?.importsPasswords ?? false }
+
     private let pages = 4
 
     var body: some View {
@@ -101,7 +103,7 @@ struct WelcomePanel: View {
                             .font(.system(size: 13))
                             .foregroundStyle(Palette.muted)
                     }
-                    if (source ?? sources[0]).importsPasswords {
+                    if importsPasswords {
                         Choice("Passwords", "macOS will ask once for that browser's keychain key", on: $wantsPasswords)
                     } else {
                         Text("Passwords from \((source ?? sources[0]).name) aren't supported yet.")
@@ -113,7 +115,7 @@ struct WelcomePanel: View {
 
                 HStack(spacing: 12) {
                     Big(bringing ? "Bringing…" : "Bring them in", filled: true) { bringAll() }
-                        .disabled(bringing || brought != nil || !(((source ?? sources[0]).importsPasswords && wantsPasswords) || wantsHistory || wantsBookmarks))
+                        .disabled(bringing || brought != nil || !((importsPasswords && wantsPasswords) || wantsHistory || wantsBookmarks))
                     if bringing { Ring(size: 10) }
                     if let brought {
                         Text(brought)
