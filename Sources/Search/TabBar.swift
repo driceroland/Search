@@ -470,6 +470,16 @@ struct Helm: View {
                 }
                 .disabled(tab.isBlank)
                 .opacity(tab.isBlank ? 0.3 : 1)
+                // The menu's second item is the reason for it: ⌥⌘R has no
+                // button. Nothing to offer while the door is Stop.
+                .contextMenu {
+                    if !tab.loading && !tab.isBlank {
+                        Button("Reload Page") { browser.reload() }
+                            .shortcut("view.reload")
+                        Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
+                            .shortcut("view.reloadOrigin")
+                    }
+                }
             }
             .animation(Motion.quick, value: back)
             .animation(Motion.quick, value: forward)
