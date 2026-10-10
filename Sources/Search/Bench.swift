@@ -2400,6 +2400,7 @@ final class Bench {
                 browser.prefs.sidePosition = position
             }
             if let on = request["pages120"] as? Bool { browser.prefs.fastPages = on }
+            if let on = request["dusk"] as? Bool { browser.prefs.darkensPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
@@ -2960,6 +2961,11 @@ final class Bench {
             "shy": tab.shy,
             "noisy": tab.noisy,
             "muted": tab.muted,
+            // Darkened by Search, as the page last said, and what the page
+            // was seen to be: dark by itself, light, or not looked at (see
+            // Dusk.swift).
+            "dusked": tab.dusked,
+            "duskNative": tab.duskNative.map { $0 ? "dark" : "light" } ?? "",
             "extensions": { if #available(macOS 15.4, *) { return tab.carriesExtensions } else { return false } }(),
             // The page's WebKit process, for measuring what it holds.
             "process": tab.built.flatMap { $0.value(forKey: "_webProcessIdentifier") as? Int } ?? 0,

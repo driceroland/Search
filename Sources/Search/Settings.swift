@@ -287,6 +287,13 @@ struct SettingsPanel: View {
             Line("Appearance", "Light, dark, or whatever the Mac is doing — pages follow it too") {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
+            // Only where it can do something: in Light, nothing is darkened.
+            if prefs.look != .light {
+                Rule()
+                Line("Darken pages that stay light", "Sites with a dark look of their own already follow it; the rest are darkened too. ⇧⌘D for the site you're on, ⌥⇧⌘D to pause everywhere") {
+                    Switch(on: $prefs.darkensPages)
+                }
+            }
             Rule()
             Line("Page zoom", "Where every site starts. ⌘+ and ⌘− are still remembered for each site.") {
                 // The number itself takes it back to 100%.

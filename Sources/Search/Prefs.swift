@@ -205,6 +205,15 @@ final class Preferences: ObservableObject {
     /// anyone reads to as big as a page is worth.
     static let zooms: [Double] = stride(from: 50, through: 300, by: 5).map { Double($0) / 100 }
 
+    /// Pages with no dark look of their own darkened while the frame is
+    /// dark (see Dusk.swift). Off unless asked for.
+    @Published var darkensPages: Bool {
+        didSet {
+            store.set(darkensPages, forKey: "pages.dusk")
+            Dusk.shared.on = darkensPages
+        }
+    }
+
     /// A click of the wheel scrolls the page as on Windows (see AutoScroll.swift).
     /// Off unless asked for.
     @Published var autoScroll: Bool {
@@ -454,6 +463,9 @@ final class Preferences: ObservableObject {
         let links = store.object(forKey: "links.show") as? Bool ?? true
         showsLinks = links
         HoveredLink.on = links
+        let dusk = store.bool(forKey: "pages.dusk")
+        darkensPages = dusk
+        Dusk.shared.on = dusk
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls

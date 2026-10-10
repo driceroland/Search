@@ -28,7 +28,7 @@ enum Web {
     /// included, and registering a name twice is a hard crash.
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name,
-                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name] {
+                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, DuskRelay.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
@@ -429,6 +429,14 @@ final class Tab: ObservableObject, Identifiable {
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
     @Published var noisy = false
+    /// Darkened by Search, as its page last said (see Dusk.swift).
+    @Published var dusked = false
+    /// What the page measured: true, dark by itself; nil, not yet measured.
+    var duskNative: Bool?
+    /// The page's frames that asked whether it is darkened, to be told
+    /// when that changes. Let go of with the page (see Browser's
+    /// decidePolicyFor).
+    var duskFrames: [WKFrameInfo] = []
     /// Silenced by hand from its speaker or its menu: the page plays on and
     /// is not heard. WebKit keeps the mute on the view from one page to the
     /// next, so it is only set again on a view built new, as a sleeping tab
@@ -486,6 +494,7 @@ final class Tab: ObservableObject, Identifiable {
     private let shop = StoreRelay()
     private let iconChanges = IconRelay()
     private let middles = MiddleRelay()
+    private let dusk = DuskRelay()
     private let passkeyRelay = PasskeyRelay()
     private let hovered = HoveredLink()
     private let ears = AudioWatch()
@@ -637,6 +646,7 @@ final class Tab: ObservableObject, Identifiable {
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
+        controller.add(dusk, contentWorld: Web.world, name: DuskRelay.name)
         Shield.shared.protect(controller)
         built = web
         // A tab muted before it went to sleep wakes muted.
@@ -670,6 +680,9 @@ final class Tab: ObservableObject, Identifiable {
                         self.committed = fresh
                     }
                     if moved { self.adoptIcon() }
+                    // A darkened page that moved to another address of its
+                    // own is watched again for a while (see Dusk.swift).
+                    if self.dusked, !moved { self.built?.evaluateInSearch("window.__officeDusk && window.__officeDusk.again()") }
                 }
             },
             web.observe(\.estimatedProgress, options: [.new]) { [weak self] _, _ in
@@ -693,6 +706,7 @@ final class Tab: ObservableObject, Identifiable {
         shop.tab = self
         iconChanges.tab = self
         middles.tab = self
+        dusk.tab = self
         ears.watch(web) { [weak self] on in self?.noisy = on }
         return web
     }
@@ -725,7 +739,10 @@ final class Tab: ObservableObject, Identifiable {
     /// pointing mode, and this site's stylesheet of things you have hidden. The
     /// stylesheet goes in before the document has a body, so nothing is ever
     /// seen arriving and then leaving again.
-    func arm(hiding css: String) {
+    /// `to`: where the next document comes from, when that isn't the page up
+    /// now (a navigation just decided). Dark pages hand that one site's
+    /// answer over, and nothing at all to a page that isn't to be darkened.
+    func arm(hiding css: String, to url: URL? = nil) {
         veils = css
         guard let built else { return }
         let controller = built.configuration.userContentController
@@ -803,6 +820,15 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: PasskeyRelay.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
         )
+        // Only while it is on and not paused: otherwise pages get nothing
+        // (see Dusk.swift). Before the document, so a site known to be light
+        // is never seen white. Every frame: a frame darkens its own document,
+        // led by its page.
+        if let dusk = Dusk.shared.script(for: Dusk.host(of: url ?? pageAddress)) {
+            controller.addUserScript(
+                WKUserScript(source: dusk, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
+            )
+        }
         guard !css.isEmpty else { return }
         controller.addUserScript(
             WKUserScript(source: Veiling.style(css), injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
