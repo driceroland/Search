@@ -107,9 +107,13 @@
     ./bench pages on|off               test run: let a hidden probe's pages be painted, off every screen (for picture)
     ./bench picture PATH               test run: the whole window, pages included, drawn to a PNG (start the probe hidden)
     ./bench film peek|unpeek|fold PATH [N] [SECS]  the window drawn N times while it animates → PATH-00.png… — --test runs only
-    ./bench film float|land PATH [SECS]  the tab in front's video out into its floating window, or back: every
+    ./bench film float|land PATH [SECS] [key|switch|app]
+                                       the tab in front's video out into its floating window, or back, by ⇧⌘P,
+                                       by going to another tab (and back), or by another app coming forward: every
                                        frame the page draws for SECS (1), its size, the video's box and how much
-                                       of the view it fills → PATH.json; from a probe started hidden, both
+                                       of the view it fills, when the covers over the little window and the
+                                       tab are up, and what WebKit has handed over to draw → PATH.json; from a
+                                       probe started hidden, both
                                        windows kept off every screen — --test runs only
     ./bench float screens [two] | place X Y | swipe DX DY [STEPS] [MS] | wheel DX DY | click
                                        test run: the floating window's gestures (after film float, so it is
@@ -474,6 +478,9 @@ def main(argv):
         request["action"], request["path"] = args[0], os.path.abspath(args[1])
         if args[0] in ("float", "land"):
             if len(args) > 2: request["seconds"] = float(args[2])
+            if len(args) > 3:
+                if args[3] not in ("key", "switch", "app"): sys.exit("usage: bench film float|land PATH [SECS] [key|switch|app]")
+                request["via"] = args[3]
         else:
             if len(args) > 2: request["frames"] = int(args[2])
             if len(args) > 3: request["every"] = float(args[3])

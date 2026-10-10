@@ -39,6 +39,18 @@ final class Float {
 
     var showing: Bool { panel != nil }
 
+    /// Over the page while it is still laid out for the tab it came from: the
+    /// video's last frame there, or the window's black where there is none.
+    /// Until then the window showed that old layout, the video a fraction of
+    /// itself in one corner, and then the video jumped to fill it.
+    private var cover: NSView?
+    private let settling = Settling()
+
+    /// Whether the cover is up, and whether it shows a frame of the video
+    /// (see `film float` in Bench.swift).
+    var covered: Bool { cover != nil }
+    var coveredByStill: Bool { cover?.layer?.contents != nil }
+
     /// Where a test run's bench opens the window instead: off every screen,
     /// at the size it would have had, and not remembered (see `film float`
     /// in Bench.swift). Nil everywhere else.
@@ -81,7 +93,10 @@ final class Float {
     /// everywhere else.
     static var benchScreens: [NSRect]?
 
-    func lift(_ page: NSView) {
+    /// `still`: the video as it was in its tab, cut out of a picture of the
+    /// page (see `still(of:picture:page:)`), shown until the page is laid out
+    /// at this window's size.
+    func lift(_ page: NSView, still: NSImage? = nil) {
         guard panel == nil else { return }
         self.page = page
 
@@ -157,6 +172,18 @@ final class Float {
         page.autoresizingMask = [.width, .height]
         ground.addSubview(page)
 
+        // WebKit takes a moment to lay a page out at a new size, a third of
+        // a second for YouTube's, and shows the layout it had meanwhile. The
+        // still covers that moment, fitted as the video itself will be.
+        let cover = NSView(frame: ground.bounds)
+        cover.wantsLayer = true
+        cover.layer?.backgroundColor = NSColor.black.cgColor
+        cover.layer?.contents = still?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        cover.layer?.contentsGravity = .resizeAspect
+        cover.autoresizingMask = [.width, .height]
+        ground.addSubview(cover)
+        self.cover = cover
+
         let controls = Controls(frame: ground.bounds)
         controls.autoresizingMask = [.width, .height]
         controls.onClose = { [weak self] in self?.onClose?() }
@@ -173,6 +200,17 @@ final class Float {
         panel.contentView = ground
         panel.orderFrontRegardless()
         self.panel = panel
+
+        // Off once the page has drawn a frame at the window's size with the
+        // video alone in it, and never later than the limit: a page that
+        // stops answering does not leave the window frozen.
+        if let web = page as? WKWebView {
+            let zoom = max(web.pageZoom, 0.1)
+            web.evaluateInSearch(Isolate.fits(width: spot.width / zoom, height: spot.height / zoom))
+            settling.watch(web, within: 0.8) { [weak self] in self?.uncover() }
+        } else {
+            uncover()
+        }
 
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -228,6 +266,8 @@ final class Float {
     /// their next layout.
     func drop() {
         guard let panel else { return }
+        settling.stop()
+        cover = nil
         if let frame = restingFrame { Float.remembered = frame }
         keeping.forEach(NotificationCenter.default.removeObserver)
         keeping = []
@@ -240,6 +280,40 @@ final class Float {
         panel.orderOut(nil)
         panel.close()
         self.panel = nil
+    }
+
+    /// The live page from under the still. A short fade, for the frames of
+    /// film that went by while it was up.
+    private func uncover() {
+        guard let cover else { return }
+        self.cover = nil
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.12
+            cover.animator().alphaValue = 0
+        }, completionHandler: {
+            cover.removeFromSuperview()
+        })
+    }
+
+    /// The video's picture, cut out of a picture of its whole page. `picture`
+    /// is where the video's picture sits in the page, and `page` the page's
+    /// size, both in the page's own pixels. Nil unless nearly all of it was
+    /// on screen: half a video, stretched to fill the window, is not the
+    /// video.
+    static func still(of shot: NSImage, picture: [Double], page: [Double]) -> NSImage? {
+        guard picture.count == 4, page.count == 2, page[0] > 0, page[1] > 0,
+              picture[2] > 0, picture[3] > 0,
+              let whole = shot.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return nil }
+        let box = CGRect(x: picture[0], y: picture[1], width: picture[2], height: picture[3])
+        let seen = box.intersection(CGRect(x: 0, y: 0, width: page[0], height: page[1]))
+        guard !seen.isNull, seen.width * seen.height >= 0.95 * box.width * box.height else { return nil }
+        // An image's rows run down from the top, as a page's do.
+        let scale = CGFloat(whole.width) / page[0]
+        let cut = CGRect(x: seen.minX * scale, y: seen.minY * scale, width: seen.width * scale, height: seen.height * scale)
+            .integral.intersection(CGRect(x: 0, y: 0, width: whole.width, height: whole.height))
+        guard let part = whole.cropping(to: cut) else { return nil }
+        return NSImage(cgImage: part, size: NSSize(width: seen.width, height: seen.height))
     }
 
     /// What a small window of video needs, and nothing else: a way out, a way
@@ -816,8 +890,13 @@ enum Players {
         ("ted.com", nil), ("nebula.tv", nil), ("curiositystream.com", nil),
     ]
 
+    /// Hosts a test run's bench counts as players' (see `film float` in
+    /// Bench.swift). Empty everywhere else.
+    static var benchHosts: Set<String> = []
+
     static func knows(_ url: URL?) -> Bool {
         guard let url, let host = url.host()?.lowercased() else { return false }
+        if benchHosts.contains(host) { return true }
         let path = url.path().lowercased()
         return known.contains { entry in
             guard host == entry.host || host.hasSuffix("." + entry.host) else { return false }
@@ -857,6 +936,113 @@ private final class Panel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// Waits for a page moved between the tab and the floating window to settle
+/// where it now is (`Isolate.fits` going out, `Isolate.off` coming back), so
+/// that what covers it meanwhile comes off once, onto the page as it will
+/// stay. The page is asked as often as the screen draws, one question at a
+/// time, since an answer from JavaScript comes back once and not when
+/// something changes; and whatever it says, the wait is over at the limit.
+@MainActor
+final class Settling {
+    private var clock: Timer?
+    private var then: (() -> Void)?
+    private var asking = false
+    private var drawn = false
+
+    func watch(_ web: WKWebView, within limit: TimeInterval, then: @escaping () -> Void) {
+        stop()
+        self.then = then
+        let began = CACurrentMediaTime()
+        let clock = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self, weak web] timer in
+            MainActor.assumeIsolated {
+                guard let self, self.clock === timer else { return }
+                guard let web, CACurrentMediaTime() - began < limit else { return self.end() }
+                // The page is drawn as it will stay: only the videos' own
+                // pictures are left to catch up, which this side can see.
+                if self.drawn {
+                    if Settling.picturesFit(web) { self.end() }
+                    return
+                }
+                guard !self.asking else { return }
+                self.asking = true
+                web.evaluateInSearch(Isolate.settled) { answer in
+                    MainActor.assumeIsolated {
+                        guard self.clock === timer else { return }
+                        guard (answer as? Bool) == true else {
+                            self.asking = false
+                            return
+                        }
+                        // Laid out as it will stay, and drawn so by the page;
+                        // over once that frame is on screen too, video and
+                        // all. Nothing more is asked meanwhile.
+                        Settling.afterDrawing(web) {
+                            guard self.clock === timer else { return }
+                            self.drawn = true
+                            if Settling.picturesFit(web) { self.end() }
+                        }
+                    }
+                }
+            }
+        }
+        // Common modes: a landing begun by a click in the floating window is
+        // still waited for while the pointer holds something down.
+        RunLoop.main.add(clock, forMode: .common)
+        self.clock = clock
+    }
+
+    /// Once the page's view has shown what the page has drawn so far: WebKit
+    /// draws in the page's own process and hands it to this one a moment
+    /// later. At once where WebKit has no way to say.
+    private static func afterDrawing(_ web: WKWebView, _ then: @escaping () -> Void) {
+        let selector = NSSelectorFromString("_doAfterNextPresentationUpdate:")
+        guard web.responds(to: selector) else { return then() }
+        typealias Call = @convention(c) (AnyObject, Selector, @escaping @convention(block) () -> Void) -> Void
+        unsafeBitCast(web.method(for: selector), to: Call.self)(web, selector) {
+            MainActor.assumeIsolated { then() }
+        }
+    }
+
+    /// Whether every video in the page is drawn at the size it is shown.
+    /// WebKit draws a video's picture in another of its processes, into a
+    /// layer of its own inside the room the page gives it, and when the
+    /// room changes size it stretches the old picture to fill it until that
+    /// process draws again at the new size, a third of a second on. A
+    /// player that keeps its video small for longer than that while it
+    /// finds its feet (landing, Isolate.off) has its picture redrawn small,
+    /// and then stretched back up: blurred, or in part of its room, until
+    /// drawn once more. The layers are WebKit's own and unnamed outside it,
+    /// so where they can't be found there is nothing to wait for.
+    private static func picturesFit(_ web: WKWebView) -> Bool {
+        func fits(_ layer: CALayer) -> Bool {
+            if String(describing: type(of: layer)) == "WebAVPlayerLayer" {
+                for host in layer.sublayers ?? [] where String(describing: type(of: host)) == "CALayerHost" {
+                    if abs(host.bounds.width - layer.bounds.width) > 2 || abs(host.bounds.height - layer.bounds.height) > 2 {
+                        return false
+                    }
+                }
+            }
+            return (layer.sublayers ?? []).allSatisfy(fits)
+        }
+        return web.layer.map(fits) ?? true
+    }
+
+    /// Over now, whatever the page says: what was waiting is done.
+    func end() {
+        let then = self.then
+        stop()
+        then?()
+    }
+
+    /// Over, and nothing done: whatever was covered went with its window.
+    func stop() {
+        clock?.invalidate()
+        clock = nil
+        then = nil
+        asking = false
+        drawn = false
+    }
+}
+
 enum Isolate {
     /// Everything but the video, out of the way. Visibility is inherited, so
     /// hiding the body and turning it back on for the video alone leaves the
@@ -874,9 +1060,33 @@ enum Isolate {
       }
       if (!best) return 'none';
 
+      // Where the video's picture is, for cutting it out of a picture of the
+      // page (Float.still): inside its box as `contain` fits it, which is
+      // how a video is drawn unless the page says otherwise.
+      var r = best.getBoundingClientRect(), pic = [r.left, r.top, r.width, r.height];
+      var vw = best.videoWidth, vh = best.videoHeight;
+      if (vw && vh && r.width && r.height && getComputedStyle(best).objectFit === 'contain') {
+        var fit = Math.min(r.width / vw, r.height / vh);
+        pic = [r.left + (r.width - vw * fit) / 2, r.top + (r.height - vh * fit) / 2, vw * fit, vh * fit];
+      }
+      // And where the video was in the page, at what size of page, for the
+      // landing to wait for (see off). Not while the last float is still
+      // landing: the page isn't as it was yet, and the place it is going
+      // back to is the one kept from before.
+      var wait = window.__officeFloatWait;
+      if (!window.__officeFloatHome || !(window.__officeFloatLanding || (wait && wait.landing && !wait.settled))) {
+        window.__officeFloatHome = {
+          box: [r.left + scrollX, r.top + scrollY, r.width, r.height],
+          size: [best.offsetWidth, best.offsetHeight],
+          wide: innerWidth, high: innerHeight
+        };
+      }
+      var size = window.__officeFloatHome.size;
+
       // A landing still waiting for its tab is called off: the page is out
       // again.
       window.__officeFloatLanding = null;
+      window.__officeFloatWait = null;
       best.setAttribute('data-office-float', '');
       var sheet = document.getElementById('office-float');
       if (!sheet) {
@@ -897,6 +1107,23 @@ enum Isolate {
         // With our top/left at zero, that moves it out of the floating window.
         'transform:none !important; translate:none !important; rotate:none !important; scale:none !important;',
         'opacity:1 !important; object-fit:contain !important; z-index:2147483647 !important}',
+        // Better, where WebKit can divide one length by another: the video
+        // keeps the size it had in its tab, and is only scaled to the
+        // window, as large as it goes whole and in the middle. Made the
+        // window's size, its picture is redrawn at that size by another of
+        // WebKit's processes a third of a second after everything else, and
+        // until then it showed at its old size shrunk with the page, in a
+        // part of the window, before growing to fill it.
+        size[0] && size[1] ? [
+          '@supports (scale: calc(100vw / 1px)) {',
+          'html.office-floating [data-office-float] {',
+          '--office-float-by: min(calc(100vw / ' + size[0] + 'px), calc(100vh / ' + size[1] + 'px));',
+          'right:auto !important; bottom:auto !important; margin:0 !important; box-sizing:border-box !important;',
+          'width:' + size[0] + 'px !important; height:' + size[1] + 'px !important;',
+          'min-width:0 !important; min-height:0 !important; transform-origin:0 0 !important;',
+          'transform:translate(calc((100vw - ' + size[0] + 'px * var(--office-float-by)) / 2),',
+          ' calc((100vh - ' + size[1] + 'px * var(--office-float-by)) / 2)) scale(var(--office-float-by)) !important}}'
+        ].join('') : '',
         // Netflix renders timed text after the video, in a layer of its own
         // beside it or one level up. Keep it above the video without
         // exposing the rest of the player.
@@ -957,9 +1184,34 @@ enum Isolate {
         if (again) again.setAttribute('data-office-float', '');
       }, 250);
 
-      return 'floating';
+      return { floating: true, picture: pic, page: [innerWidth, innerHeight] };
     })();
     """
+
+    /// Whether the page has settled where it now is: see `fits` and `off`,
+    /// which set what this reads.
+    static let settled = "!!(window.__officeFloatWait && window.__officeFloatWait.settled)"
+
+    /// Out in the floating window: settled once the page is laid out at the
+    /// window's size, CSS pixels, with the video alone in it. Checked as
+    /// each frame is drawn, so the frame it answers for is drawn so too.
+    static func fits(width: Double, height: Double) -> String {
+        """
+        (function () {
+          var wait = window.__officeFloatWait = { settled: false }, began = Date.now();
+          (function frame() {
+            if (window.__officeFloatWait !== wait || Date.now() - began > 3000) return;
+            var on = document.documentElement.classList.contains('office-floating');
+            if (on && Math.abs(innerWidth - \(width)) <= 2 && Math.abs(innerHeight - \(height)) <= 2) {
+              wait.settled = true;
+              return;
+            }
+            requestAnimationFrame(frame);
+          })();
+          return true;
+        })();
+        """
+    }
 
     /// Stop or start it, and say which it is now.
     /// Step over the bit you missed, or back to it.
@@ -1020,6 +1272,7 @@ enum Isolate {
 
       var root = document.documentElement;
       var landing = window.__officeFloatLanding = {};
+      var wait = window.__officeFloatWait = { settled: false, landing: true };
       function put() {
         // Floated again in the meantime: that is the float's now.
         if (window.__officeFloatLanding !== landing) return;
@@ -1031,6 +1284,37 @@ enum Isolate {
         if (sheet) sheet.textContent = '';
         var video = document.querySelector('[data-office-float]');
         if (video) video.removeAttribute('data-office-float');
+        settle(video);
+      }
+      // The tab covers the page with a picture of it as it was left, until
+      // it is that again (Browser.land). Put back, the page still has the
+      // player at the size it was given in the little window, and a player
+      // such as YouTube's measures again on a clock of its own, half a
+      // second later. So: settled once the video is back where it was, at
+      // the size it was, in a page of the size it was, looked at as each
+      // frame is drawn. A window resized meanwhile has no such place to go
+      // back to, and settles once the video has kept still for 0.3 s.
+      function settle(video) {
+        var home = window.__officeFloatHome, began = Date.now(), last = null, still = 0;
+        function near(a, b) {
+          for (var i = 0; i < 4; i++) if (Math.abs(a[i] - b[i]) > 2) return false;
+          return true;
+        }
+        function done() { wait.settled = true; }
+        (function frame() {
+          if (window.__officeFloatWait !== wait) return;
+          var v = video && video.isConnected ? video : document.querySelector('video');
+          if (!home || !v || Date.now() - began > 3000) return done();
+          var r = v.getBoundingClientRect(), box = [r.left + scrollX, r.top + scrollY, r.width, r.height];
+          if (innerWidth === home.wide && innerHeight === home.high) {
+            if (near(box, home.box)) return done();
+          } else {
+            still = last && near(box, last) ? still || Date.now() : 0;
+            last = box;
+            if (still && Date.now() - still >= 300) return done();
+          }
+          requestAnimationFrame(frame);
+        })();
       }
       // Each frame until the page is laid out at another size than the
       // little window's — the tab's — and its player has had that frame's

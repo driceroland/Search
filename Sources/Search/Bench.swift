@@ -1934,6 +1934,14 @@ final class Bench {
             let floated = browser.floating.flatMap { id in browser.tabs.first { $0.id == id } }
             guard let tab = out ? browser.active : floated, out != browser.floater.showing
             else { answer(["error": out ? "already floating, or no tab" : "nothing is floating"]); return }
+            // How it goes: ⇧⌘P (the default), going to another tab and back
+            // ("switch", Settings › Float the video when you switch tabs), or
+            // another app coming forward and Search again ("app"). A page the
+            // bench serves itself is taken for a player's, for those two.
+            let via = request["via"] as? String ?? "key"
+            let other = browser.tabs.first { $0.id != tab.id && !$0.isBlank && !$0.asleep }
+            if via == "switch", out, other == nil { answer(["error": "film float via switch needs another tab"]); return }
+            if via != "key", let host = tab.address?.host() { Players.benchHosts.insert(host) }
             func stages(in view: NSView) -> [StageView] {
                 (view as? StageView).map { [$0] } ?? view.subviews.flatMap(stages)
             }
@@ -1984,6 +1992,7 @@ final class Bench {
             let record = """
             (function () {
               var log = window.__benchFilm = [], t0 = performance.now();
+              window.__benchWall = Date.now();
               function look() {
                 var v = document.querySelector('[data-office-float]');
                 if (!v) {
@@ -2019,9 +2028,12 @@ final class Bench {
               return true;
             })();
             """
-            // Where the page is, from this side, every few hundredths.
+            // Where the page is, from this side, every few hundredths, and
+            // what covers it meanwhile: the still over the little window,
+            // the picture of the page over its tab.
             var hosts: [[String: Any]] = []
             var started = CACurrentMediaTime()
+            var startedWall = Date().timeIntervalSince1970
             // Every size the web view is given on the way, however briefly:
             // each one is a layout WebKit is asked for.
             var sizes: [[Int]] = []
@@ -2034,24 +2046,68 @@ final class Bench {
                     }
                 }
             }
+            // What WebKit has handed this side to show, as against what the
+            // page has laid out: the size of the page's frame in the layers
+            // it last sent, and of the video's own layer in them. And the
+            // picture itself: drawn by another of WebKit's processes into a
+            // layer of its own (`host`, its size, and whether it is shown at
+            // that size or stretched to another) inside the one it has been
+            // given room in (`room`). The two disagree while that process has
+            // still to draw at the new size.
+            func drawn() -> [String: Any] {
+                var frame: CGSize?, video: CGSize?, host: [Int] = [], room: [Int] = []
+                func walk(_ layer: CALayer) {
+                    let name = layer.name ?? ""
+                    if frame == nil, name == "frame clipping" { frame = layer.bounds.size }
+                    if host.isEmpty, "\(type(of: layer))" == "CALayerHost", let player = layer.superlayer,
+                       "\(type(of: player))" == "WebAVPlayerLayer" {
+                        host = [Int(layer.bounds.width), Int(layer.bounds.height), CATransform3DIsIdentity(layer.transform) ? 1 : 0]
+                        room = [Int(player.bounds.width), Int(player.bounds.height)]
+                    }
+                    if name.contains(" VIDEO "), layer.bounds.width * layer.bounds.height > (video.map { $0.width * $0.height } ?? -1) {
+                        video = layer.bounds.size
+                    }
+                    layer.sublayers?.forEach(walk)
+                }
+                if let root = web.layer { walk(root) }
+                return ["page": frame.map { [Int($0.width), Int($0.height)] } ?? [], "video": video.map { [Int($0.width), Int($0.height)] } ?? [],
+                        "host": host, "room": room]
+            }
+            // Each time round the run loop that the page is in no window at
+            // all: too brief, some of them, for the samples to catch.
+            var unwindowed: [Int] = []
+            let looking = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.allActivities.rawValue, true, 0) { _, _ in
+                MainActor.assumeIsolated {
+                    let now = Int((CACurrentMediaTime() - started) * 1000)
+                    if web.window == nil, unwindowed.last != now { unwindowed.append(now) }
+                }
+            }
+            CFRunLoopAddObserver(CFRunLoopGetMain(), looking, .commonModes)
             func watch() {
                 let showing = NSApp.windows.filter { w in w.isVisible && NSScreen.screens.contains { $0.frame.intersects(w.frame) } }
                 if !showing.isEmpty { NSApp.hide(nil) }
                 let view = web.bounds.size
                 hosts.append(["t": Int((CACurrentMediaTime() - started) * 1000),
-                              "in": web.window === hall ? "tab" : web.window == nil ? "none" : "float",
-                              "view": [Int(view.width), Int(view.height)], "showing": showing.map { "\(type(of: $0))" }])
+                              // "held": kept unseen by its stage on the way out (see StageView.keep).
+                              "in": web.window === hall ? (web.alphaValue == 0 ? "held" : "tab") : web.window == nil ? "none" : "float",
+                              "view": [Int(view.width), Int(view.height)], "showing": showing.map { "\(type(of: $0))" },
+                              "still": browser.floater.covered ? (browser.floater.coveredByStill ? "frame" : "black") : "none",
+                              "cover": tab.cover != nil, "drawn": drawn()])
                 guard CACurrentMediaTime() - started < seconds else { return finish(view) }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { watch() }
             }
             func finish(_ view: NSSize) {
                 NotificationCenter.default.removeObserver(resized)
-                web.evaluateInSearch("[window.__benchFilm, window.__benchTurns]") { found in
+                CFRunLoopRemoveObserver(CFRunLoopGetMain(), looking, .commonModes)
+                web.evaluateInSearch("[window.__benchFilm, window.__benchTurns, window.__benchWall]") { found in
                     MainActor.assumeIsolated {
                         giveBack()
                         let both = found as? [Any] ?? []
                         let rows = (both.first as? [[Any]] ?? []).map { $0.map { ($0 as? NSNumber)?.doubleValue ?? 0 } }
-                        let turns = (both.last as? [[Any]] ?? []).map { $0.map { ($0 as? NSNumber)?.intValue ?? 0 } }
+                        // Added to a frame's or a turn's time, puts it on the
+                        // hosts' clock, which starts as the float is asked for.
+                        let shift = both.count > 2 ? Int(((both[2] as? NSNumber)?.doubleValue ?? 0) - startedWall * 1000) : 0
+                        let turns = (both.count > 1 ? both[1] as? [[Any]] ?? [] : []).map { $0.map { ($0 as? NSNumber)?.intValue ?? 0 } }
                         let fill = { (part: CGFloat, whole: CGFloat) in whole > 0 ? (part / whole * 1000).rounded() / 1000 : 0 }
                         let frames: [[String: Any]] = rows.filter { $0.count == 12 }.map { n in
                             // The picture inside the video's box, fitted as
@@ -2069,7 +2125,8 @@ final class Bench {
                                     "fill": seen.isNull ? [0, 0] : [fill(seen.width, view.width), fill(seen.height, view.height)]]
                         }
                         let result: [String: Any] = ["view": [Int(view.width), Int(view.height)], "frames": frames, "hosts": hosts,
-                                                     "sizes": sizes, "turns": turns]
+                                                     "sizes": sizes, "turns": turns, "shift": shift,
+                                                     "unwindowed": unwindowed]
                         if let data = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted]) {
                             try? data.write(to: URL(fileURLWithPath: path + ".json"))
                         }
@@ -2098,8 +2155,17 @@ final class Bench {
                             MainActor.assumeIsolated {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                     started = CACurrentMediaTime()
+                                    startedWall = Date().timeIntervalSince1970
                                     watch()
-                                    browser.toggleFloat()
+                                    switch via {
+                                    case "switch": browser.select(out ? other! : tab)
+                                    case "app":
+                                        let away = browser.prefs.floatsAway
+                                        browser.prefs.floatsAway = true
+                                        if out { browser.appLeft() } else { browser.appBack() }
+                                        browser.prefs.floatsAway = away
+                                    default: browser.toggleFloat()
+                                    }
                                 }
                             }
                         }
