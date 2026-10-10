@@ -1380,15 +1380,20 @@ final class Browser: NSObject, ObservableObject {
     /// links, not a bare address to explain in your own words.
     func copyMarkdownLink() {
         guard let tab = active, let url = tab.address else { return }
-        // A backslash first, so the ones added next aren't doubled; then both
-        // brackets, either of which would end or break the link's text.
-        let title = tab.label
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(Browser.markdownLink(tab.label, url), forType: .string)
+        announce("Link copied")
+    }
+
+    /// A page as a Markdown link, its title the text. A backslash first, so
+    /// the ones added next aren't doubled; then both brackets, either of
+    /// which would end or break the link's text.
+    static func markdownLink(_ title: String, _ url: URL) -> String {
+        let text = title
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "[", with: "\\[")
             .replacingOccurrences(of: "]", with: "\\]")
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString("[\(title)](\(url.absoluteString))", forType: .string)
-        announce("Link copied")
+        return "[\(text)](\(url.absoluteString))"
     }
 
     func announce(_ text: String, file: URL? = nil) {

@@ -129,6 +129,7 @@ enum Browsers {
     /// app running — comes back first, as a window always did; otherwise a
     /// new one, with one empty tab, in the space of the window in front.
     static func newWindow() {
+        if bringBack() { return }
         if let kept = all.first(where: { !$0.isOpen }) {
             show(kept)
             return
@@ -153,6 +154,7 @@ enum Browsers {
     /// front, or one brought back.
     @discardableResult
     static func ensureWindow() -> Browser {
+        bringBack()
         if let front, front.isOpen { return front }
         if let open = all.last(where: { $0.isOpen && $0.extensionPopup == nil }) { return open }
         let kept = all.first ?? SceneSlot.shared.browser
@@ -212,10 +214,71 @@ enum Browsers {
         // a window with no frame and no NSWindow behind it (#408, lulkebit).
         register(browser)
         Bench.keepOff(window)
+        // A window brought back from last time while a link's small window
+        // keeps them away: off screen with the rest (see keepAway).
+        if keptAway, !popup {
+            away.append(window)
+            return
+        }
         window.makeKeyAndOrderFront(nil)
         // Never in a test run: full screen would put a probe's window on a screen.
         if fullScreen, !Store.testing { window.toggleFullScreen(nil) }
         comeForward()
+    }
+
+    // MARK: - kept away
+
+    /// A launch made for a link's small window keeps every browser window
+    /// off screen until one is wanted: Open in Search, another link, the
+    /// Dock icon or ⌘N (see Links.little). Put away, never closed: a window
+    /// closed while another is open is retired (see closing), its tabs out
+    /// of the session and windows.json, and a launch with several windows
+    /// came back with one.
+    private(set) static var keptAway = false
+    private static var away: [NSWindow] = []
+
+    static func keepAway() { keptAway = true }
+
+    /// Whether a window is one kept off screen — for the bench.
+    static func isAway(_ window: NSWindow?) -> Bool { away.contains { $0 === window } }
+
+    /// Every browser window there is now goes off screen, kept as it is.
+    /// Asked as the app finishes launching and as each window is dressed,
+    /// so SwiftUI's window, which it opens at every launch and asks nobody
+    /// about, goes before it is drawn.
+    static func putAway() {
+        guard keptAway else { return }
+        for window in NSApp.windows where isBrowserWindow(window) && !isAway(window) {
+            window.orderOut(nil)
+            away.append(window)
+        }
+    }
+
+    /// A browser's window, or SwiftUI's own before ContentView has tied it to
+    /// its browser: known then by the name its frame is kept under.
+    private static func isBrowserWindow(_ window: NSWindow) -> Bool {
+        guard window.contentView != nil, !(window is NSPanel), LittleWindow.owning(window) == nil else { return false }
+        if let browser = browser(for: window) { return browser.extensionPopup == nil }
+        return window.frameAutosaveName == sceneID
+    }
+
+    /// The windows kept away, back on screen all together, with any of last
+    /// time's not brought back yet, the one in front key. True if there were
+    /// any to bring.
+    @discardableResult
+    static func bringBack() -> Bool {
+        guard keptAway else { return false }
+        keptAway = false
+        let windows = away
+        away = []
+        for window in windows {
+            Bench.keepOff(window)
+            window.orderFront(nil)
+        }
+        restoreOnce()
+        (front?.window ?? windows.first)?.makeKeyAndOrderFront(nil)
+        comeForward()
+        return true
     }
 
     /// An extension unloaded, turned off or removed: the popup windows it
@@ -315,6 +378,11 @@ enum Browsers {
         var records = [record(of: primary, rows: false)]
         records[0].rows = [:]
         for browser in saved.dropFirst() { records.append(record(of: browser, rows: true)) }
+        // Last time's other windows, while they haven't been brought back:
+        // as they were written, not dropped. They come back once the first
+        // window is on screen, and a launch for a small window can end
+        // before one ever is.
+        if !restored { records += read().dropFirst() }
         // Frozen before it goes to the Disk queue.
         let snapshot = records
         Disk.write(file, now: now) { try? JSONEncoder().encode(snapshot) }
@@ -361,8 +429,12 @@ enum Browsers {
         for record in records.dropFirst() {
             open(Browser(record: record), frame: record.rect)
         }
-        // The first window in front, as the app opens.
-        DispatchQueue.main.async { primary?.window?.makeKeyAndOrderFront(nil) }
+        // The first window in front, as the app opens; not while they are
+        // kept away.
+        DispatchQueue.main.async {
+            guard !keptAway else { return }
+            primary?.window?.makeKeyAndOrderFront(nil)
+        }
     }
 
     /// Quitting: every window written, now.

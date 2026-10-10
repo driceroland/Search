@@ -921,6 +921,9 @@ struct ContentView: View {
 
     private func dress(_ window: NSWindow) {
         browser.window = window
+        // Off screen at once, while a link's small window keeps the browser's
+        // windows away (see Browsers.keepAway).
+        Browsers.putAway()
         window.tabbingMode = .disallowed
         // Light or dark is the app's to say (Settings › Appearance); the
         // window only has to be the ground colour that goes with it.
