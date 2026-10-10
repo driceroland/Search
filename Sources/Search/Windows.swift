@@ -267,6 +267,7 @@ enum Browsers {
         all.removeAll { $0 === browser }
         if #available(macOS 15.4, *) { Extensions.shared.detach(browser) }
         browser.closeAll()
+        ContentView.forget(browser)
         frames[ObjectIdentifier(browser)] = nil
         if Front.shared.browser === browser {
             Front.shared.set(all.last { $0.isOpen && $0.extensionPopup == nil } ?? all.last { $0.extensionPopup == nil })
