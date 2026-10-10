@@ -1094,14 +1094,14 @@ struct ContentView: View {
         // window menus act on; every other key is its page's.
         if let popup = Browsers.browser(for: event.window), popup.extensionPopup != nil {
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            guard event.charactersIgnoringModifiers?.lowercased() == "w", flags == .command else { return false }
+            guard event.shortcutCharacters == "w", flags == .command else { return false }
             popup.window?.performClose(nil)
             return true
         }
         // A key being typed into Settings › Shortcuts is for the box.
         guard !ShortcutStore.shared.recording else { return false }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let key = event.shortcutCharacters
         let controlTab = event.keyCode == 48 && flags.contains(.control)
             && flags.isDisjoint(with: [.command, .option])
 
@@ -1277,7 +1277,7 @@ struct ContentView: View {
         let shifted = flags.contains(.shift)
 
         if flags.contains(.option), !shifted, !flags.contains(.control),
-           event.characters(byApplyingModifiers: [])?.lowercased() == "r" {
+           event.shortcutKey == "r" {
             if pageFirst(event, key: "r", shifted: false) { return false }
             browser.reload(fromOrigin: true)
             return true
