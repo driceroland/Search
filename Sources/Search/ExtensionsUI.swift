@@ -193,10 +193,9 @@ struct ExtensionsPage: View {
                 extensions.setPinned(item.id, !(item.pinned ?? false))
             }
             if context?.overrideNewTabPageURL != nil {
-                let on = Store.settings.object(forKey: "extensions.newtab.\(item.id)") as? Bool == true
+                let on = extensions.newTabPageID == item.id
                 Button(on ? "Stop Showing in New Tabs" : "Show in New Tabs") {
-                    Store.settings.set(!on, forKey: "extensions.newtab.\(item.id)")
-                    extensions.objectWillChange.send()
+                    extensions.setNewTabPage(on ? nil : item.id)
                 }
             }
             if context?.optionsPageURL != nil {
@@ -218,7 +217,7 @@ struct ExtensionsPage: View {
         private func detail(_ context: WKWebExtensionContext?) -> String {
             var parts = ["Version \(item.version)", item.fromStore ? "Chrome Web Store" : folder]
             if item.enabled, context == nil { parts.append("couldn't start") }
-            if context?.overrideNewTabPageURL != nil, Store.settings.object(forKey: "extensions.newtab.\(item.id)") as? Bool == true {
+            if extensions.newTabPageID == item.id {
                 parts.append("shows in new tabs")
             }
             if let errors = context?.errors, !errors.isEmpty { parts.append("\(errors.count) warning\(errors.count == 1 ? "" : "s")") }
@@ -283,5 +282,53 @@ struct StoreOffer: View {
         let host = url.host()?.lowercased() ?? ""
         return host == "chromewebstore.google.com"
             || (host == "chrome.google.com" && url.path.hasPrefix("/webstore"))
+    }
+}
+
+/// Settings › General › Home page: what a new tab opens to, while an
+/// extension offers a page for it. Search's own page with the address field
+/// ready, or the page of an extension that asked to take its place, and
+/// the way back from one that did. With nothing offered there is nothing to
+/// pick, so the line isn't there at all, and neither is its hairline.
+struct HomePageLine: View {
+    var body: some View {
+        if #available(macOS 15.4, *) {
+            Chooser(extensions: .shared)
+        }
+    }
+
+    @available(macOS 15.4, *)
+    private struct Chooser: View {
+        @ObservedObject var extensions: Extensions
+
+        var body: some View {
+            let askers = extensions.newTabAskers
+            let current = extensions.newTabPageID
+            if !askers.isEmpty {
+                Line("Home page", detail(askers, current)) {
+                    Picker("", selection: Binding(
+                        get: { current ?? "" },
+                        set: { extensions.setNewTabPage($0.isEmpty ? nil : $0) }
+                    )) {
+                        Text("Search's own").tag("")
+                        Divider()
+                        ForEach(askers) { Text($0.name).tag($0.id) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                }
+                Rule()
+            }
+        }
+
+        private func detail(_ askers: [Installed], _ current: String?) -> String {
+            if let current, let name = askers.first(where: { $0.id == current })?.name {
+                return "New tabs show \(name)'s page, since you let it replace them"
+            }
+            return askers.count == 1
+                ? "New tabs open blank. \(askers[0].name) asked to show its page instead"
+                : "New tabs open blank. \(askers.count) extensions asked to show their page instead"
+        }
     }
 }
