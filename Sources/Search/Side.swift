@@ -628,13 +628,24 @@ private struct PinSquare: View {
                     .matchedGeometryEffect(id: "live", in: pill)
             } else {
                 RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
-                    .fill(hovering ? Palette.hover : Palette.wash.opacity(0.55))
+                    .fill(browser.selectedTabIDs.contains(tab.id) ? Palette.wash :
+                          hovering ? Palette.hover : Palette.wash.opacity(0.55))
+            }
+        }
+        .overlay {
+            if browser.selectedTabIDs.contains(tab.id) {
+                RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
+                    .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
+                    .allowsHitTesting(false)
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
         .modifier(OneClick(double: live) {
+            guard NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+            browser.clearTabSelection()
             if live { browser.goHome(tab) } else { browser.select(tab) }
         })
+        .modifier(ModifiedTabClick { browser.extendTabSelection(to: tab, modifiers: $0) })
         // Put down, like ⌘W: close() is what knows a pin isn't removed.
         .overlay { MiddleClick { browser.close(tab) } }
         .onHover { hovering = $0 }
@@ -764,12 +775,21 @@ private struct SideRow: View {
         .animation(Motion.quick, value: tab.loading)
         .animation(Motion.quick, value: speaker)
         .background { ground }
+        .overlay {
+            if browser.selectedTabIDs.contains(tab.id) {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
-            guard interactive else { return }
+            guard interactive, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+            browser.clearTabSelection()
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })
+        .modifier(ModifiedTabClick { if interactive && !editing { browser.extendTabSelection(to: tab, modifiers: $0) } })
         .overlay { if interactive { MiddleClick(act: close) } }
         .onHover { hovering = $0 }
         .contextMenu { if interactive { TabMenu(browser: browser, tab: tab, close: close) } }
@@ -801,6 +821,9 @@ private struct SideRow: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .matchedGeometryEffect(id: "live", in: pill)
+        } else if browser.selectedTabIDs.contains(tab.id) {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Palette.wash)
         } else if hovering {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.hover)

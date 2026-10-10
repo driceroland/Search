@@ -40,8 +40,20 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘1–9, ⌃Tab and the extensions' tab indexes read this row, so it and
     /// what is on screen never disagree.
     @Published private(set) var tabs: [Tab] = [] {
-        didSet { arrangeGroupedTabs() }
+        didSet {
+            arrangeGroupedTabs()
+            if !selectedTabIDs.isEmpty {
+                let valid = selectedTabIDs.intersection(Set(tabs.map(\.id)))
+                if valid != selectedTabIDs { selectedTabIDs = valid }
+            }
+            if let selectionAnchor, !tabs.contains(where: { $0.id == selectionAnchor }) {
+                self.selectionAnchor = nil
+            }
+        }
     }
+    /// Tabs picked with Command or Shift. The active page remains where it is.
+    @Published private(set) var selectedTabIDs: Set<Tab.ID> = []
+    private var selectionAnchor: Tab.ID?
     @Published private(set) var splits: [TabSplit] = []
     /// Named tab sections in the current space, in display order.
     @Published var tabGroups: [TabGroup] = []
@@ -56,6 +68,7 @@ final class Browser: NSObject, ObservableObject {
                 DispatchQueue.main.async { held.forEach { $0.present() } }
             }
             guard oldValue != activeID else { return }
+            clearTabSelection()
             // What was found belongs to the page just left; the words typed
             // go on to be looked for on this one.
             invalidateFindPage(retryOnActiveTab: true)
@@ -3226,6 +3239,60 @@ final class Browser: NSObject, ObservableObject {
         return displayedTabs.filter { $0.pin != nil }
             + tabGroups.flatMap { visibleTabs(in: $0) }
             + tabs(in: nil).filter(standsInRow)
+    }
+
+    func clearTabSelection() {
+        if !selectedTabIDs.isEmpty { selectedTabIDs.removeAll() }
+        selectionAnchor = nil
+    }
+
+    /// Command toggles one tab; Shift picks the visible run from the last
+    /// clicked tab (or the active tab when a selection begins).
+    func extendTabSelection(to tab: Tab, modifiers: NSEvent.ModifierFlags) {
+        let shown = selectableTabs.map(\.id)
+        guard let end = shown.firstIndex(of: tab.id) else { return }
+        if modifiers.contains(.shift) {
+            let startID = selectionAnchor ?? activeID ?? tab.id
+            let start = shown.firstIndex(of: startID) ?? end
+            let range = Set(shown[min(start, end)...max(start, end)])
+            selectedTabIDs = modifiers.contains(.command) ? selectedTabIDs.union(range) : range
+            selectionAnchor = shown[start]
+        } else if modifiers.contains(.command) {
+            if selectedTabIDs.isEmpty, let active = activeID,
+               shown.contains(active) {
+                selectedTabIDs.insert(active)
+            }
+            if !selectedTabIDs.insert(tab.id).inserted { selectedTabIDs.remove(tab.id) }
+            selectionAnchor = tab.id
+        }
+    }
+
+    private var selectableTabs: [Tab] {
+        shownTabs.flatMap { tab in
+            split(for: tab).map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? [tab]
+        }
+    }
+
+    var visibleSelectedTabCount: Int {
+        selectableTabs.filter { selectedTabIDs.contains($0.id) }.count
+    }
+
+    var selectedTabLinkCount: Int {
+        selectedTabLinks.count
+    }
+
+    var selectedTabLinks: [String] {
+        selectableTabs.compactMap { tab in
+            selectedTabIDs.contains(tab.id) ? tab.address?.absoluteString : nil
+        }
+    }
+
+    func copySelectedTabLinks() {
+        let links = selectedTabLinks
+        guard !links.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(links.joined(separator: "\n"), forType: .string)
+        announce(links.count == 1 ? "1 address copied" : "\(links.count) addresses copied")
     }
 
     /// ⌃Tab, ⌃⇧Tab: the next tab on screen, round to the first again. It
