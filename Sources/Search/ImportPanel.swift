@@ -224,10 +224,10 @@ struct ImportPanel: View {
                 Rule()
             }
             // A kind the browser has none of is said so, and can't be picked.
-            Line("Passwords", preview?.passwords == 0 ? "None in \(source.name)" : source.asksForKey
+            Line("Passwords", !source.importsPasswords ? "Not supported for \(source.name)" : preview?.passwords == 0 ? "None in \(source.name)" : source.asksForKey
                  ? "macOS asks once for \(source.name)'s keychain key"
                  : "Read from \(source.name)'s own files, unless it has a primary password") {
-                option($wantsPasswords, none: preview?.passwords == 0)
+                option($wantsPasswords, none: !source.importsPasswords || preview?.passwords == 0)
             }
             Rule()
             Line("Bookmarks", preview?.bookmarks == 0 ? "None in \(source.name)" : "In a “\(source.name)” folder, or at the top if you have none yet") {
@@ -373,7 +373,7 @@ struct ImportPanel: View {
         // A kind it has none of isn't read at all: no keychain question for
         // a browser with no passwords.
         let preview = previews[key(source, profile)]
-        let passwords = wantsPasswords && preview?.passwords != 0
+        let passwords = wantsPasswords && source.importsPasswords && preview?.passwords != 0
         let marks = wantsBookmarks && preview?.bookmarks != 0
         let places = wantsHistory && preview?.places != 0
         bringing = true
