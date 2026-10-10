@@ -123,10 +123,12 @@
 
 Needs Settings › General › "Let a script drive Search" switched on in the
 running app. IDs are the first characters of a tab's id, as `tabs` prints
-them. With --test, talks to a SEARCH_PROBE run instead of the real one;
-with --world NAME, to a SEARCH_PROBE=NAME run, the world "Search (NAME)".
+them. With --test, talks to a SEARCH_PROBE run of this checkout's build
+instead of the real one, the world "Search (test-<checkout>)"; with
+--world NAME, to a SEARCH_PROBE=NAME run, the world "Search (NAME)".
 """
 
+import hashlib
 import json
 import os
 import socket
@@ -137,6 +139,13 @@ def clean(text):
     change its colours, or turn the line around."""
     import re
     return re.sub(r"[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]", "", str(text or ""))
+
+def test_world():
+    """This checkout's test world, named as Store.world names it for a build
+    made here: test, then the first eight hex digits of a SHA-1 of the
+    checkout's real path."""
+    root = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
+    return "test-" + hashlib.sha1(root.encode()).hexdigest()[:8]
 
 def folder(world):
     name = f"Search ({world})" if world else "Search"
@@ -160,12 +169,12 @@ def ask(path, request):
     return json.loads(line or b"{}")
 
 def main(argv):
-    world = "test" if "--test" in argv else None
+    world = test_world() if "--test" in argv else None
     if "--world" in argv:
         at = argv.index("--world")
         if at + 1 >= len(argv): sys.exit("usage: bench --world NAME COMMAND …")
         world = "".join(c for c in argv[at + 1].lower() if c.isascii() and (c.isalnum() or c == "-"))
-        if world in ("", "1"): world = "test"
+        if world in ("", "1", "test"): world = test_world()
         argv = argv[:at] + argv[at + 2:]
     window = None
     if "--window" in argv:
