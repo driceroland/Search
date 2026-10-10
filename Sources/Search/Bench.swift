@@ -732,14 +732,22 @@ final class Bench {
             }
             // "repeat": the press a key held down sends again and again.
             let repeats = (request["mods"] as? [String] ?? []).contains("repeat")
-            for type in [NSEvent.EventType.keyDown, .keyUp] {
+            // "window": "little", in the newest small window instead.
+            // "sheet": to the question hanging from the window, as a key
+            // typed while it is up goes to it.
+            let number = request["window"] as? String == "little"
+                ? LittleWindow.all.last?.windowNumber ?? 0
+                : (request["sheet"] as? Bool == true ? browser.window?.attachedSheet : nil)?.windowNumber
+                    ?? (browser.window ?? Links.window)?.windowNumber ?? 0
+            // "letgo": the modifiers let go of, as a flags change with
+            // none left, after the press.
+            let types: [NSEvent.EventType] = request["letgo"] as? Bool == true
+                ? [.keyDown, .keyUp, .flagsChanged] : [.keyDown, .keyUp]
+            for type in types {
                 guard let event = NSEvent.keyEvent(
-                    with: type, location: .zero, modifierFlags: flags,
+                    with: type, location: .zero, modifierFlags: type == .flagsChanged ? [] : flags,
                     timestamp: ProcessInfo.processInfo.systemUptime,
-                    // "sheet": to the question hanging from the window, as a
-                    // key typed while it is up goes to it.
-                    windowNumber: (request["sheet"] as? Bool == true ? browser.window?.attachedSheet : nil)?.windowNumber
-                        ?? (browser.window ?? Links.window)?.windowNumber ?? 0, context: nil,
+                    windowNumber: number, context: nil,
                     characters: chars, charactersIgnoringModifiers: chars,
                     isARepeat: repeats && type == .keyDown, keyCode: UInt16(code)
                 ) else { continue }
@@ -934,14 +942,19 @@ final class Bench {
             // The ⌃Tab switcher as it stands: up or not, the pick, and where
             // the panel and each card are in the window (top-left points).
             let sw = browser.tabSwitcher
+            // A moon (a small window's tab) by its address.
             func short(_ id: Tab.ID?) -> String {
-                guard let id, let tab = browser.tabs.first(where: { $0.id == id }) else { return "" }
+                guard let id else { return "" }
+                guard let tab = browser.tabs.first(where: { $0.id == id }) else {
+                    return LittleWindow.holding(id)?.tab.address?.absoluteString ?? ""
+                }
                 return Bench.short(tab)
             }
             func box(_ r: CGRect) -> [Double] { [r.minX, r.minY, r.width, r.height].map { Double($0) } }
             answer([
                 "visible": sw.visible, "selected": short(sw.selectedID),
                 "candidates": sw.candidates.map { short($0) },
+                "moons": sw.moons.map { LittleWindow.holding($0)?.tab.address?.absoluteString ?? "" },
                 "panel": box(sw.panelFrame),
                 "cards": Dictionary(sw.cardFrames.map { (short($0.key), box($0.value)) }, uniquingKeysWith: { a, _ in a }),
                 "active": short(browser.activeID),
@@ -2249,11 +2262,28 @@ final class Bench {
             switch request["what"] as? String ?? "" {
             case "keep": LittleWindow.all.last?.keep()
             case "close": LittleWindow.all.last?.close()
+            case "state": break
             default:
                 guard let text = request["what"] as? String, let url = URL(string: text) else { answer(["error": "little needs a url, keep or close"]); return }
                 LittleWindow.show(url, for: browser, front: false)
             }
+            // Its own switcher (⌃Tab in a small window): the moons by
+            // address, the planet's tabs as the bench names them.
+            let sw = LittleWindow.switcher
+            func address(_ id: Tab.ID?) -> String {
+                guard let id else { return "" }
+                if let little = LittleWindow.holding(id) { return little.tab.address?.absoluteString ?? "" }
+                return browser.tabs.first { $0.id == id }.map { Bench.short($0) } ?? ""
+            }
             answer([
+                "switcher": [
+                    "visible": sw.visible, "selected": address(sw.selectedID),
+                    "candidates": sw.candidates.map { address($0) },
+                    "moons": sw.moons.map { address($0) },
+                ] as [String: Any],
+                "screens": LittleWindow.all.map { $0.tab.screens ?? 0 },
+                "activeID": browser.activeID.map { String($0.uuidString.prefix(8)).lowercased() } ?? "",
+                "fronted": address(LittleWindow.fronted),
                 "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" },
                 "failures": LittleWindow.all.map { $0.tab.failure ?? "" },
                 "tabs": browser.tabs.map { ($0.pin != nil ? "PIN " : "") + ($0.address?.host() ?? "blank") },

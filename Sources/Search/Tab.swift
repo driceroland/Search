@@ -324,6 +324,11 @@ final class Tab: ObservableObject, Identifiable {
     /// with it. Kept apart from the rest of the tab (see Reading): it changes
     /// all the way down a page, and only the fill has any use for it.
     let meter = Reading()
+    /// How long the page is, in screens of it: one for a page that doesn't
+    /// scroll. Read with the meter, from the same report; nothing is drawn
+    /// from it as it changes (see TabSwitcher's moons). None before the page
+    /// has said.
+    private(set) var screens: Double?
     var reading: Double {
         get { meter.value }
         set { if meter.value != newValue { meter.value = newValue } }
@@ -925,7 +930,8 @@ final class Tab: ObservableObject, Identifiable {
 
     /// Called from the page, a few dozen times a second at most — the script
     /// already waits for a frame before it says anything.
-    func scrolled(to y: Double, of ceiling: Double) {
+    func scrolled(to y: Double, of ceiling: Double, screens: Double? = nil) {
+        if let screens { self.screens = (max(1, screens) * 10).rounded() / 10 }
         // In hundredths, and only when that changes. The page reports once a
         // frame while it scrolls — 120 times a second on a 120 Hz screen — and
         // each new value had the window redraw the tab's fill, a third of a
@@ -2047,7 +2053,8 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
         guard let y = body["y"] as? Double,
               let ceiling = body["max"] as? Double
         else { return }
-        MainActor.assumeIsolated { tab?.scrolled(to: y, of: ceiling) }
+        let screens = body["screens"] as? Double
+        MainActor.assumeIsolated { tab?.scrolled(to: y, of: ceiling, screens: screens) }
     }
 
     /// Reports at most once a frame, and passively, so a page that scrolls
@@ -2059,7 +2066,8 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
         var root = document.documentElement;
         var y = window.scrollY || root.scrollTop || 0;
         var ceiling = Math.max(1, (root.scrollHeight || 0) - window.innerHeight);
-        window.webkit.messageHandlers.\(name).postMessage({ y: y, max: ceiling });
+        var screens = (root.scrollHeight || 0) / Math.max(1, window.innerHeight);
+        window.webkit.messageHandlers.\(name).postMessage({ y: y, max: ceiling, screens: screens });
       }
       window.addEventListener('scroll', function () {
         if (waiting) return;

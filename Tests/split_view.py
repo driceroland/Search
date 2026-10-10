@@ -45,6 +45,8 @@ class H(BaseHTTPRequestHandler):
         port = self.server.server_port
         if self.path == "/asker":
             body = f"<!doctype html><title>asker</title><iframe src='http://localhost:{port}/frame'></iframe>".encode()
+        elif self.path == "/long":
+            body = b"<!doctype html><title>long</title><div style='height:20000px'>long</div>"
         elif self.path == "/frame":
             body = b"<!doctype html><script>setTimeout(function(){ alert('from the frame') }, 1200)</script>"
         else:
