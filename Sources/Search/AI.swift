@@ -10,6 +10,15 @@ import Security
 // This file: where it runs, and the keys. The requests are AIClient's, the
 // page's text AIPage's.
 
+/// Whether the AI add-on is in this build at all. Held back from 1.0.5
+/// (8 Oct 2026): with it off, none of it shows or runs — no Settings page, no
+/// menu items or shortcuts, no line on the welcome or What's New cards — and
+/// a setting left on by a test build reads as off. The code stays; this is
+/// the one line that brings it back.
+enum AI {
+    static let shipped = false
+}
+
 /// Where the answers come from.
 enum AIProvider: String, CaseIterable, Identifiable {
     /// The model downloaded to this Mac, run by Search's own engine (AIEngine).

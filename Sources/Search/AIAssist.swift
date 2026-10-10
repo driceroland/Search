@@ -185,7 +185,7 @@ extension Browser {
     func askAboutPage() { startAssistant(summary: false) }
 
     private func startAssistant(summary: Bool) {
-        guard let tab = active, !tab.isBlank else { return }
+        guard AI.shipped || Store.testing, let tab = active, !tab.isBlank else { return }
         guard prefs.ai, let provider = prefs.aiProvider else {
             settingsPage = .ai
             tuning = true
