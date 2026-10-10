@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import WebKit
 
 // Two fingers sideways means back, or forward.
@@ -17,6 +17,22 @@ import WebKit
 // is before there is anything to show.
 
 enum Swipe {
+    /// Whether a sideways scroll may mean back or forward: the Mac's own
+    /// Swipe between pages, in System Settings › Trackpad and › Mouse, the
+    /// one Safari follows. Search draws its own swipe, with WebKit's turned
+    /// off, so it has to ask: a one-finger Magic Mouse scroll swiped with the
+    /// setting off, taking a Google Sheet's sideways scroll for a way back
+    /// (#464). The Mac answers for the device of the event being handled —
+    /// the Mouse's switch for a mouse, the Trackpad's for a trackpad — so it
+    /// is asked in scrollWheel, for that event, and never ahead of time or
+    /// kept. A test run stands in for the setting (`ui swipepages`), since
+    /// the Mac's own is the person's, not a test's.
+    @MainActor static var followsTheMac: Bool {
+        testing ?? NSEvent.isSwipeTrackingFromScrollEventsEnabled
+    }
+    /// Set only by a test run (see Bench), never by the browser people use.
+    @MainActor static var testing: Bool?
+
     /// No rubber-banding. Pulling past the top of a page showed a band of
     /// blank ground above it, and nobody who came from Chrome read that as
     /// anything but a fault. WebKit lets a view turn off the bounce along
