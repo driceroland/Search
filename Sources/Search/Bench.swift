@@ -631,6 +631,8 @@ final class Bench {
                 "passwords": browser.managing,
                 // A question hanging from the window (Ask), still unanswered.
                 "sheet": browser.window?.attachedSheet != nil,
+                // The button of that question that Return presses.
+                "sheetReturn": browser.window?.attachedSheet?.defaultButtonCell?.title ?? "",
                 "history": browser.recalling,
                 "downloads": browser.hoarding,
                 "bookmarks": browser.bookmarking,
@@ -1197,6 +1199,24 @@ final class Bench {
             else { answer(["error": "no top-level folder by that title"]); return }
             browser.bookmarks.askRemove(folder)
             answer(["asked": title])
+        case "passwords":
+            // The passwords panel's list, narrowed as its search box would
+            // narrow it, and with "remove" its Remove All… / Remove N…, which
+            // `ui confirm` answers. Only on a SEARCH_PROBE run: it takes
+            // passwords out of the keychain (the test world's own, by label).
+            guard Store.testing else { answer(["error": "passwords only works on a --test run"]); return }
+            if let filter = request["filter"] as? String { browser.hunting = filter }
+            browser.relist()
+            if request["remove"] as? Bool == true { browser.forgetShown() }
+            // Answered once the removals, off the main thread, are done.
+            func settled() {
+                guard !browser.forgetting else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { settled() }
+                    return
+                }
+                answer(["count": browser.saved.count, "shown": browser.shownSites.reduce(0) { $0 + $1.logins.count }])
+            }
+            settled()
 
         case "import-file-start":
             guard Store.testing else { answer(["error": "import-file only works on a --test run"]); return }
@@ -2401,6 +2421,11 @@ final class Bench {
             }
             if let on = request["pages120"] as? Bool { browser.prefs.fastPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
+            // Ask.sure answered without a sheet: yes or no to every question
+            // from now on, until "ask".
+            if let yes = request["confirm"] as? Bool, Store.testing { Ask.testing = yes }
+            // "ask": the real question again, as a person gets it.
+            if request["confirm"] as? String == "ask" { Ask.testing = nil }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
@@ -2433,7 +2458,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "accounts", "find", "answer", "visible", "ai", "notifications",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications",
             ]])
         }
     }

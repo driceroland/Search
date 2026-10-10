@@ -196,13 +196,15 @@ enum Vault {
         save(host: login.host, user: login.user, password: login.password, used: Date(), clear: login.clear)
     }
 
-    static func forget(host: String, user: String) {
+    /// Whether the keychain let it go: Remove All… counts only those.
+    @discardableResult
+    static func forget(host: String, user: String) -> Bool {
         SecItemDelete([
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrServer as String: host,
             kSecAttrAccount as String: user,
             kSecAttrLabel as String: label,
-        ] as CFDictionary)
+        ] as CFDictionary) == errSecSuccess
     }
 
     // MARK: - sites that asked not to be asked
@@ -221,7 +223,12 @@ enum Vault {
 
     /// A password is shown only to the person the Mac belongs to. Touch ID,
     /// the watch, or the account password — whatever the Mac itself takes.
-    static func prove(_ reason: String, _ done: @escaping (Bool) -> Void) {
+    @MainActor static func prove(_ reason: String, _ done: @escaping (Bool) -> Void) {
+        // A test run answers as it answers Ask.sure (`ui confirm on|off`).
+        if Store.testing, let yes = Ask.testing {
+            done(yes)
+            return
+        }
         let context = LAContext()
         var trouble: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &trouble) else {
