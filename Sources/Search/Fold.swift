@@ -45,12 +45,12 @@ extension Browser {
     /// ⌘S. The column, or the strip across the top, out of the way, or back.
     func toggleFold() {
         peeking = false
-        withAnimation(Motion.glide) { folded.toggle() }
+        withAnimation(Motion.folding(out: folded)) { folded.toggle() }
     }
 
     /// The folded column out over the page, or back in.
     func peek(_ out: Bool) {
-        withAnimation(Motion.glide) { peeking = out }
+        withAnimation(Motion.folding(out: out)) { peeking = out }
     }
 }
 
@@ -74,8 +74,11 @@ struct Fold: View {
     /// How far past the window's edge, on the column's side, the pointer
     /// still counts as on it.
     private static let overshoot: CGFloat = 48
-    /// The grace before the column goes back in.
-    private static let grace: TimeInterval = 0.3
+    /// The grace before the column goes back in. With the time the slide
+    /// takes to start, the column begins to go as soon after the pointer
+    /// leaves as Dia's does. Arc doesn't wait at all, which loses the column
+    /// to a hand that overshoots on the way back in.
+    private static let grace: TimeInterval = 0.065
     /// How far down from the top, in full screen, the edge leaves the
     /// window's buttons alone: the menu bar and the title bar macOS brings
     /// down with it.
@@ -183,7 +186,7 @@ struct Fold: View {
             resetPending()
             guard prefs.sidebar else { return }
             browser.peeking = false
-            withAnimation(Motion.glide) { browser.folded = hides }
+            withAnimation(Motion.folding(out: !hides)) { browser.folded = hides }
         }
         // The address typed into a row is done with, and the pointer went
         // elsewhere while it was: the column goes the way it would have.
@@ -379,7 +382,7 @@ struct Fold: View {
     /// does. Shown or hidden at once, they stood in their place while the
     /// column was still sliding in under them, and vanished before it had
     /// gone. So they come in from the chosen edge and go back off it, on the
-    /// column's own spring (Motion.glide, in Core Animation's terms) — from
+    /// column's own spring (Motion.fold, in Core Animation's terms) — from
     /// wherever they are, when the pointer turns back halfway. `up` sends
     /// the strip's lights off the top edge.
     static func slide(_ bar: NSView, off: Bool, by width: CGFloat, up: Bool = false,
@@ -418,10 +421,11 @@ struct Fold: View {
             bar.isHidden = off
             return
         }
+        let fold = Motion.fold(out: !off)
         let spring = CASpringAnimation(keyPath: path)
         spring.mass = 1
-        spring.stiffness = pow(2 * .pi / 0.34, 2)
-        spring.damping = 4 * .pi * 0.82 / 0.34
+        spring.stiffness = pow(2 * .pi / fold.response, 2)
+        spring.damping = 4 * .pi * fold.damping / fold.response
         spring.fromValue = from
         spring.toValue = to
         spring.duration = spring.settlingDuration
