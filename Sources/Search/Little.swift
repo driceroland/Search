@@ -64,6 +64,9 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         window.minSize = NSSize(width: 420, height: 320)
         window.delegate = self
         window.contentView = NSHostingView(rootView: LittleView(tab: tab, keep: { [weak self] in self?.keep() }))
+        // Back from the page it opened on is back to before it opened: a
+        // swipe closes it (see PageView.leave).
+        tab.leave = { [weak self] in self?.close() }
     }
 
     /// Its keys, before the browser's: ⌘O keeps it, Escape and ⌘W close it.
@@ -88,6 +91,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         // Into the window in front, whichever that is now.
         guard let browser = Browsers.front ?? browser else { return }
         kept = true
+        // In the row, back from the first page goes nowhere, as any tab's.
+        tab.leave = nil
         // As a tab moved from another window is: this window's delegate,
         // and this window's space, with its sign-ins.
         browser.receive(tab)
@@ -97,6 +102,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        tab.leave = nil
         if !kept { tab.close() }
         LittleWindow.open.removeAll { $0 === self }
     }
@@ -135,8 +141,10 @@ struct LittleView: View {
                     Trouble(message: failure) { tab.reload() }
                         .transition(.opacity)
                 }
+                Swiping(pull: tab.pull)
             }
             .animation(Motion.quick, value: tab.failure)
+            .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
         }
         .background(Palette.ground)
         .ignoresSafeArea()
