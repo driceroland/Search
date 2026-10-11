@@ -39,6 +39,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 
 - [ ] **Window stutters between screens** Dragging the window from one screen to another stutters. Needs a trace recorded on two screens. *(X)*
 - [ ] **Figma and LinkedIn feel slow** Figma blurs for a moment as you zoom in; LinkedIn's feed and profiles scroll with lag. *(email)*
+- [ ] **Suggestions in the tab's address field** History suggestions while editing the address inside the tab, as in the ⌘L field. *([#534](https://github.com/driceroland/Search/issues/534))*
 
 ## Done, in the next version
 
@@ -123,8 +124,11 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **1Password desktop app, in the FAQ** 1Password with its desktop app. Say in the FAQ that Search is added in 1Password › Settings › Browser › Add Browser.
 - [ ] **Import: extension-only profiles, ego lite, a protected folder** Find browser profiles that only hold extensions, add ego lite as a source (no passwords), and let you choose a browser's data folder when macOS refuses Search access to it. *([#415](https://github.com/driceroland/Search/pull/415) ×2, [#507](https://github.com/driceroland/Search/pull/507))*
 - [ ] **Export as PDF** File › Export as PDF…: the whole page as one long PDF, as Safari does, through WebKit's createPDF. *([#446](https://github.com/driceroland/Search/issues/446), [#461](https://github.com/driceroland/Search/pull/461))*
-- [ ] **Arc import keeps its shape** Arc's folders are dropped when tab groups are off; its pinned pages come as ordinary tabs rather than pinned rows. *([#478](https://github.com/driceroland/Search/issues/478))*
+- [ ] **Arc import keeps its shape** Arc's folders are dropped when tab groups are off; its pinned pages come as ordinary tabs rather than pinned rows. *([#478](https://github.com/driceroland/Search/issues/478), [#582](https://github.com/driceroland/Search/pull/582))*
 - [ ] **A user agent per tab** Presets and a string of your own, per tab, as in Safari's Develop menu; shares its plumbing with Responsive Design Mode. *([#460](https://github.com/driceroland/Search/issues/460))*
+- [ ] **Import says when macOS refuses a browser's folder** When macOS won't let Search read another browser's folder, the import sheet says so and points to choosing the folder, instead of reporting that nothing was found. *([#583](https://github.com/driceroland/Search/issues/583))*
+- [ ] **The folded column comes out faster** The folded column and tab bar slide out as quickly as Arc's and Dia's, and are kept ready instead of being built again on every peek. *([#585](https://github.com/driceroland/Search/pull/585), [#586](https://github.com/driceroland/Search/pull/586))*
+- [ ] **Site card corners on macOS 26** The site card keeps its rounded corners on macOS 26 too. *([#576](https://github.com/driceroland/Search/pull/576))*
 
 ## Later — bigger pieces of work
 
@@ -160,12 +164,15 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Pages at 120 Hz: never, on power, always** The 120 Hz switch becomes three choices. *([#572](https://github.com/driceroland/Search/pull/572))*
 - [ ] **Pages sized inside the window** A page's ideal size is kept inside the window without moving its safe areas. *([#468](https://github.com/driceroland/Search/pull/468))*
 - [ ] **Remove all passwords** Remove All… in the passwords panel, behind Touch ID. *([#469](https://github.com/driceroland/Search/issues/469), [#471](https://github.com/driceroland/Search/pull/471))*
+- [ ] **Side panel and private tabs** A window-wide extension panel stays up while a private tab is in front; hide it then unless that extension may run in private tabs (after #536).
+- [ ] **Float a whole page** Any page, not only a video, in the floating window, and meetings that float when you switch away. Off unless turned on. *([#584](https://github.com/driceroland/Search/pull/584))*
 
 ## Drice's call
 
 - [ ] **Pressing a pin's number again** ⌘1–⌘9 pressed again on the pin you are on takes it back to the page it was pinned at, as a double-click on it does. *(email)*
 - [ ] **Pin letters of your own** A pin without an icon wears a capital letter; choose a lowercase one, two letters, or a symbol instead. *(email)*
 - [ ] **Responsive Design Mode** Look at a page as an iPhone, a Pixel or an iPad would, from the View menu, as in Safari's Develop menu. *([#412](https://github.com/driceroland/Search/pull/412))*
+- [ ] **Links from a pin open in a peek** As in Arc: a link from a pinned tab to another site opens in a peek, so the pin stays on its site. Off unless turned on. *([#577](https://github.com/driceroland/Search/issues/577), [#581](https://github.com/driceroland/Search/pull/581))*
 
 ## Asked to try again on the latest version
 
@@ -205,7 +212,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **A local text file opens as text** *([#525](https://github.com/driceroland/Search/issues/525))*
 - [ ] **Ask before a website shares the screen** *([#528](https://github.com/driceroland/Search/issues/528), [#530](https://github.com/driceroland/Search/pull/530))*
 - [ ] **Option-Command arrows to move between tabs** *([#532](https://github.com/driceroland/Search/issues/532))*
-- [ ] **Suggestions in the tab's address field** History suggestions while editing the address inside the tab, as in the ⌘L field. *([#534](https://github.com/driceroland/Search/issues/534))*
 - [ ] **A new tab when the last tab closes** Closing the last tab beside the pins leaves a new tab instead of waking a pin (switch, off). *([#537](https://github.com/driceroland/Search/issues/537), [#538](https://github.com/driceroland/Search/pull/538))*
 - [ ] **Extension updates while Search stays open** *([#539](https://github.com/driceroland/Search/issues/539))*
 - [ ] **Share the screen with its sound** *([#540](https://github.com/driceroland/Search/issues/540))*
