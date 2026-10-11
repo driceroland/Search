@@ -14,7 +14,7 @@ struct ImportPanel: View {
     @ObservedObject var browser: Browser
 
     @State private var sources: [ImportSource] = []
-    @State private var unreadable: [(source: Chromium.Source, looked: String)] = []
+    @State private var unreadable: [Chromium.Unavailable] = []
     @State private var folderError: String?
     @State private var looking = true
     @State private var pick: ImportSource?
@@ -200,7 +200,7 @@ struct ImportPanel: View {
                 ForEach(unreadable.indices, id: \.self) { index in
                     let missing = unreadable[index]
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("\(missing.source.name) is on this Mac, but Search couldn't read its data in \(missing.looked).")
+                        Text(missing.message)
                         Spacer(minLength: 4)
                         Pill("Choose folder…") { chooseFolder(for: missing.source) }
                     }

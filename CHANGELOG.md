@@ -33,6 +33,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Browser import distinguishes macOS refusing access from an empty or missing data folder, and points to the session folder picker ([#583](https://github.com/driceroland/Search/issues/583)).
+
 - A browser folder chosen for import is kept only for the current session and shown in the import sheet; Chromium JSON reads are limited to 64 MB and checked through the opened file.
 
 - A website an extension lists in its manifest can send it messages, as in Chrome: claude.ai, for one, hands Claude in Chrome its sign-in that way, and approving it ended in "Authorization failed". Only the sites an extension names get to, by Chrome's own rules, and Google's sites are left out. A page already open when Search starts needs a reload first. Thanks [@cunyiles](https://github.com/cunyiles) for tracking it down ([#496](https://github.com/driceroland/Search/issues/496))

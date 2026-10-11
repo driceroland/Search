@@ -43,15 +43,25 @@ enum Chromium {
         /// Every profile: a folder holding passwords, bookmarks or history.
         /// Most browsers keep one folder per profile ("Default", "Profile 1");
         /// Opera keeps its only profile in the browser's folder itself.
-        var profiles: [URL] {
+        var profiles: [URL] { discovery.profiles }
+
+        /// Keep directory errors separate from an empty, readable folder.
+        var discovery: (profiles: [URL], error: Error?) {
             let root = root.resolvingSymlinksInPath()
-            let inside = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
-            return ([root] + inside).filter { folder in
+            var inside: [URL] = []
+            var error: Error?
+            do {
+                inside = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+            } catch let failure {
+                error = failure
+            }
+            let found = ([root] + inside).filter { folder in
                 guard contains(folder, in: root) else { return false }
                 return ["Login Data", "Bookmarks", "History"].contains {
                     file($0, in: folder).map { FileManager.default.fileExists(atPath: $0.path) } ?? false
                 }
             }
+            return (found, error)
         }
 
         /// Resolve before reading: a profile or file link cannot leave the
@@ -163,13 +173,42 @@ enum Chromium {
         selectedRoots[source.name] = folder.resolvingSymlinksInPath()
     }
 
-    /// Browsers that are on this Mac with nothing found where their data
-    /// should be — said by name, with where Search looked, rather than
-    /// "no other browser found".
-    static func unreadable() -> [(source: Source, looked: String)] {
+    struct Unavailable {
+        let source: Source
+        let error: Error?
+
+        var message: String {
+            let looked = source.root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+            guard let error else {
+                return "\(source.name) is on this Mac, but no browser profile was found in \(looked)."
+            }
+            let failure = error as NSError
+            if failure.domain == NSCocoaErrorDomain && failure.code == NSFileReadNoSuchFileError {
+                return "\(source.name) is on this Mac, but its data folder was not found at \(looked)."
+            }
+            if Self.permissionDenied(failure) {
+                return "macOS hasn't allowed Search to read \(source.name)'s data in \(looked). Choose its data folder in Settings › Bring Things Over to allow access for this session."
+            }
+            return "Search couldn't read \(source.name)'s data in \(looked): \(failure.localizedDescription)"
+        }
+
+        private static func permissionDenied(_ error: NSError) -> Bool {
+            if error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoPermissionError { return true }
+            if error.domain == NSPOSIXErrorDomain && [Int(EACCES), Int(EPERM)].contains(error.code) { return true }
+            if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+                return permissionDenied(underlying)
+            }
+            return false
+        }
+    }
+
+    /// Installed browsers with no discovered profile retain the reason.
+    static func unreadable() -> [Unavailable] {
         guard !Store.testing else { return [] }
-        return known.filter { $0.appInstalled && $0.profiles.isEmpty }.map {
-            ($0, $0.root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+        return known.filter(\.appInstalled).compactMap { source in
+            let discovery = source.discovery
+            guard discovery.profiles.isEmpty else { return nil }
+            return Unavailable(source: source, error: discovery.error)
         }
     }
 

@@ -85,7 +85,7 @@ struct WelcomePanel: View {
             if sources.isEmpty {
                 Text(unreadable.isEmpty
                      ? "No other browser found on this Mac — nothing to bring."
-                     : unreadable.map { "\($0.source.name) is on this Mac, but nothing of it was found in \($0.looked)." }.joined(separator: "\n"))
+                     : unreadable.map(\.message).joined(separator: "\n"))
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.faint)
                     .fixedSize(horizontal: false, vertical: true)
