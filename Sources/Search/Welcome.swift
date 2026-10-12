@@ -83,12 +83,12 @@ struct WelcomePanel: View {
             let sources = ImportSource.installed()
             let unreadable = Chromium.unreadable()
             if sources.isEmpty {
-                Text(unreadable.isEmpty
-                     ? "No other browser found on this Mac — nothing to bring."
-                     : unreadable.map(\.message).joined(separator: "\n"))
-                    .font(.system(size: 13))
-                    .foregroundStyle(Palette.faint)
-                    .fixedSize(horizontal: false, vertical: true)
+                if unreadable.isEmpty {
+                    Text("No other browser found on this Mac — nothing to bring.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else {
                 VStack(alignment: .leading, spacing: 14) {
                     if sources.count > 1 {
@@ -118,6 +118,13 @@ struct WelcomePanel: View {
                     }
                 }
                 .animation(Motion.settle, value: brought)
+            }
+
+            if !unreadable.isEmpty {
+                Text(unreadable.map(\.message).joined(separator: "\n"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.faint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             // Safari, a browser on another Mac, one Search can't read: what

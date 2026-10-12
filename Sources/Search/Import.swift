@@ -57,6 +57,14 @@ enum Chromium {
             }
             let found = ([root] + inside).filter { folder in
                 guard contains(folder, in: root) else { return false }
+                if folder != root {
+                    guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return false }
+                    do {
+                        _ = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+                    } catch let failure {
+                        if error == nil { error = failure }
+                    }
+                }
                 return ["Login Data", "Bookmarks", "History"].contains {
                     file($0, in: folder).map { FileManager.default.fileExists(atPath: $0.path) } ?? false
                 }
@@ -176,6 +184,7 @@ enum Chromium {
     struct Unavailable {
         let source: Source
         let error: Error?
+        var partial = false
 
         var message: String {
             let looked = source.root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
@@ -185,6 +194,12 @@ enum Chromium {
             let failure = error as NSError
             if failure.domain == NSCocoaErrorDomain && failure.code == NSFileReadNoSuchFileError {
                 return "\(source.name) is on this Mac, but its data folder was not found at \(looked)."
+            }
+            if partial {
+                let reason = Self.permissionDenied(failure)
+                    ? "macOS hasn't allowed Search to read all of them."
+                    : failure.localizedDescription
+                return "Some of \(source.name)'s profiles in \(looked) couldn't be read: \(reason) Choose its data folder in Settings › Bring Things Over to allow access for this session."
             }
             if Self.permissionDenied(failure) {
                 return "macOS hasn't allowed Search to read \(source.name)'s data in \(looked). Choose its data folder in Settings › Bring Things Over to allow access for this session."
@@ -202,13 +217,13 @@ enum Chromium {
         }
     }
 
-    /// Installed browsers with no discovered profile retain the reason.
+    /// Keep read failures visible even when another profile can be imported.
     static func unreadable() -> [Unavailable] {
         guard !Store.testing else { return [] }
         return known.filter(\.appInstalled).compactMap { source in
             let discovery = source.discovery
-            guard discovery.profiles.isEmpty else { return nil }
-            return Unavailable(source: source, error: discovery.error)
+            guard discovery.profiles.isEmpty || discovery.error != nil else { return nil }
+            return Unavailable(source: source, error: discovery.error, partial: !discovery.profiles.isEmpty)
         }
     }
 

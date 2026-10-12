@@ -33,7 +33,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- Browser import distinguishes macOS refusing access from an empty or missing data folder, and points to the session folder picker ([#583](https://github.com/driceroland/Search/issues/583)).
+- Browser import distinguishes macOS refusing access from an empty or missing data folder, keeps partially unreadable profiles visible alongside readable ones, and shows permission guidance in Welcome even when another browser is available ([#583](https://github.com/driceroland/Search/issues/583)).
 
 - A browser folder chosen for import is kept only for the current session and shown in the import sheet; Chromium JSON reads are limited to 64 MB and checked through the opened file.
 
