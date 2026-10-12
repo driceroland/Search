@@ -23,6 +23,7 @@ enum Shared {
 
 @MainActor
 final class Browser: NSObject, ObservableObject {
+    var routingQuestionOpen = false
     private static var activeFileImports: [UUID: ImportFile.Control] = [:]
     private static var fileImportTerminating = false
 
@@ -1330,7 +1331,7 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         editingTab = nil
-        tab.go(to: url)
+        navigateInternal(url, in: tab)
     }
 
     func cancelTabEdit() {
@@ -2795,7 +2796,7 @@ final class Browser: NSObject, ObservableObject {
                     // that extension's own powers.
                     guard let url, !["javascript", "chrome-extension", "webkit-extension"].contains(url.scheme?.lowercased() ?? "")
                     else { return }
-                    DispatchQueue.main.async { self.open(url, foreground: true) }
+                    DispatchQueue.main.async { self.openInternal(url, foreground: true, from: self.active) }
                 }
             } else if provider.canLoadObject(ofClass: String.self) {
                 took = true
@@ -2803,7 +2804,7 @@ final class Browser: NSObject, ObservableObject {
                     guard let text, let url = Address.url(from: text),
                           !["javascript", "chrome-extension", "webkit-extension"].contains(url.scheme?.lowercased() ?? "")
                     else { return }
-                    DispatchQueue.main.async { self.open(url, foreground: true) }
+                    DispatchQueue.main.async { self.openInternal(url, foreground: true, from: self.active) }
                 }
             }
         }
@@ -3441,11 +3442,11 @@ final class Browser: NSObject, ObservableObject {
     func visit(_ url: URL) {
         let apart = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
         if let active, !apart, !active.floating {
-            active.go(to: url)
+            navigateInternal(url, in: active)
             editing = false
             typed = ""
         } else {
-            open(url, foreground: true, from: active)
+            openInternal(url, foreground: true, from: active)
         }
     }
 
@@ -3461,7 +3462,7 @@ final class Browser: NSObject, ObservableObject {
             bookmarksOpen = false
         }
         if inNewTab {
-            open(url, foreground: foreground, from: active, mayWait: true)
+            openInternal(url, foreground: foreground, from: active, mayWait: true)
         } else {
             visit(url)
         }
@@ -3511,7 +3512,7 @@ final class Browser: NSObject, ObservableObject {
             refusals += 1
             return
         }
-        (active ?? tabs.first)?.go(to: url)
+        navigateInternal(url, in: active ?? tabs.first)
         editing = false
         typed = ""
     }
@@ -3763,13 +3764,16 @@ final class Browser: NSObject, ObservableObject {
         tab.onSearch = { [weak self] tab, text in
             guard let self, let url = self.searchURL(for: text) else { return }
             // From a private tab, the search is private too (see open(_:foreground:atEnd:from:)).
-            self.open(url, foreground: true, from: tab)
+            self.openInternal(url, foreground: true, from: tab)
         }
         tab.onStoreAdd = { [weak self] tab in self?.addFromStore(tab) }
         // The middle button on a link opens it beside the tab you are on, as
         // it does in every other browser (see MiddleRelay).
         // From a private tab, the new one is private too, as for ⌘-click.
-        tab.onMiddleClick = { [weak self] tab, url in self?.open(url, foreground: false, from: tab, mayWait: true) }
+        tab.onMiddleClick = { [weak self] tab, url, download in
+            if download { self?.open(url, foreground: false, from: tab, mayWait: true) }
+            else { self?.openInternal(url, foreground: false, from: tab, mayWait: true) }
+        }
         tab.onCross = { [weak self] tab, url in self?.replace(tab, going: url) }
 
         // The caret in a sign-in box: the accounts kept for this site hang
@@ -3963,7 +3967,7 @@ final class Browser: NSObject, ObservableObject {
         } else if let id = offer.tab, let tab = tabs.first(where: { $0.id == id }) {
             select(tab)
         } else {
-            (active ?? tabs.first)?.go(to: offer.url)
+            navigateInternal(offer.url, in: active ?? tabs.first)
         }
         editing = false
         typed = ""
@@ -4108,9 +4112,9 @@ final class Browser: NSObject, ObservableObject {
         if aside {
             // Opened behind the page by hand, as a ⌘-clicked link is: it may
             // wait to load (Settings › Tabs › Load background tabs…).
-            open(url, foreground: front, from: active, mayWait: true)
+            openInternal(url, foreground: front, from: active, mayWait: true)
         } else {
-            (active ?? tabs.first)?.go(to: url)
+            navigateInternal(url, in: active ?? tabs.first)
         }
         editing = false
         typed = ""
@@ -4233,6 +4237,22 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             decisionHandler(.cancel)
             return
         }
+        if action.navigationType == .linkActivated, action.sourceFrame.isMainFrame,
+           action.targetFrame?.isMainFrame == true,
+           (action.request.httpMethod ?? "GET").uppercased() == "GET" {
+            let foreground = !action.modifierFlags.contains(.command) || action.modifierFlags.contains(.shift)
+            let current = { [weak self] in
+                if action.modifierFlags.contains(.command) {
+                    self?.open(url, foreground: foreground, from: self?.tab(for: webView), mayWait: true)
+                } else { webView.load(action.request) }
+            }
+            if routeInternal(url, from: tab(for: webView), foreground: foreground, current: current) {
+                // Do not hold a WebKit policy callback while a sheet is open.
+                // A current-space answer performs the original request below.
+                decisionHandler(.cancel)
+                return
+            }
+        }
         // Shift-click, when Settings says so: a peek at the link, over this
         // page (see Peek.swift). Only from a tab in the row — within a peek,
         // a link just goes.
@@ -4247,7 +4267,12 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         if action.navigationType == .linkActivated,
            ["http", "https"].contains(scheme),
            action.modifierFlags.contains(.command) {
-            open(url, foreground: action.modifierFlags.contains(.shift), from: tab(for: webView), mayWait: true)
+            if action.sourceFrame.isMainFrame, !action.shouldPerformDownload,
+               (action.request.httpMethod ?? "GET").uppercased() == "GET" {
+                openInternal(url, foreground: action.modifierFlags.contains(.shift), from: tab(for: webView), mayWait: true)
+            } else {
+                open(url, foreground: action.modifierFlags.contains(.shift), from: tab(for: webView), mayWait: true)
+            }
             decisionHandler(.cancel)
             return
         }
@@ -4371,6 +4396,17 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         for action: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
+        let behind = (webView as? PageView)?.takeBehind() == true
+        let linkMenu = (webView as? PageView)?.takeLinkMenu() == true
+        if (action.navigationType == .linkActivated || linkMenu), action.sourceFrame.isMainFrame,
+           !action.shouldPerformDownload, (action.request.httpMethod ?? "GET").uppercased() == "GET",
+           let url = action.request.url {
+            let source = tab(for: webView)
+            let foreground = !behind && (!action.modifierFlags.contains(.command) || action.modifierFlags.contains(.shift))
+            if routeInternal(url, from: source, foreground: foreground, current: { [weak self, weak source] in
+                self?.open(url, foreground: foreground, from: source, mayWait: true)
+            }) { return nil }
+        }
         let from = tab(for: webView)?.id ?? activeID
         // WebKit's copy of the opener's configuration still holds the
         // opener's user content controller — its scripts and its message
@@ -4385,7 +4421,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         tab.opener = from
         // The link menu's Open Link in New Tab: behind this tab, where a
         // ⌘-click's goes (see open(_:foreground:)).
-        if (webView as? PageView)?.takeBehind() == true, let source = self.tab(for: webView) {
+        if behind, let source = self.tab(for: webView) {
             prepare(tab)
             if prefs.usesTabGroups, !tab.shy, !tab.bench { tab.groupID = source.groupID }
             tabs.insert(tab, at: placeForNew())

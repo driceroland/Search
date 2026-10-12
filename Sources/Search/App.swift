@@ -243,7 +243,7 @@ struct SearchApp: App {
                 Section("Recently Visited") {
                     ForEach(browser.recentlyVisited) { trace in
                         Button {
-                            browser.open(trace.url, foreground: true)
+                            browser.openInternal(trace.url, foreground: true, from: browser.active)
                         } label: {
                             MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
                         }

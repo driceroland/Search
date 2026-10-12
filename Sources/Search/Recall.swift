@@ -75,7 +75,7 @@ struct HistoryPanel: View {
                                             trace: trace,
                                             go: {
                                                 browser.recalling = false
-                                                browser.active?.go(to: trace.url)
+                                                browser.navigateInternal(trace.url, in: browser.active)
                                             },
                                             forget: {
                                                 browser.history.forget(trace.key)

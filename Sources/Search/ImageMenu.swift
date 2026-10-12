@@ -105,7 +105,7 @@ extension Browser {
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.addItem(ImageMenuItem("Open Image in New Tab") { [weak self] in
-            self?.open(url, foreground: true, from: tab)
+            self?.openInternal(url, foreground: true, from: tab)
         })
         menu.addItem(.separator())
         menu.addItem(ImageMenuItem("Copy Image") { [weak self] in

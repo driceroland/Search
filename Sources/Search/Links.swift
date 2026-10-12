@@ -160,6 +160,20 @@ final class Links: NSObject, NSApplicationDelegate {
         MainActor.assumeIsolated { Browsers.newWindow() }
     }
 
+    /// Only addresses handed over by another application use this policy.
+    @MainActor
+    private static func prepareExternal(_ url: URL, in browser: Browser) -> Bool {
+        guard let rule = Routing.shared.config.match(url) else { return true }
+        guard browser.prefs.usesSpaces,
+              let destination = browser.spaces.first(where: { $0.id == rule.spaceID }) else {
+            browser.announce("Link not opened: enable Spaces and choose a destination in Settings → Routing")
+            return false
+        }
+        // Switch before arrive/open constructs the tab's WebKit data store.
+        browser.switchSpace(to: destination.id)
+        return browser.spaceID == destination.id
+    }
+
     /// The browser, once it has a window. Anything that came earlier is
     /// handed over now — but none of it before the window is on screen.
     ///
@@ -178,7 +192,8 @@ final class Links: NSObject, NSApplicationDelegate {
             // the link lands where you are, not in the first window.
             let browser = Browsers.ensureWindow()
             // In a small window of its own, for whoever chose that.
-            if browser.prefs.littleLinks {
+            guard prepareExternal(url, in: browser) else { return }
+            if Routing.shared.config.match(url) == nil && browser.prefs.littleLinks {
                 LittleWindow.show(url, for: browser)
                 return
             }
@@ -193,11 +208,12 @@ final class Links: NSObject, NSApplicationDelegate {
         waiting = []
         guard let first = early.first else { return }
         onceShown { [weak browser] in
-            browser?.arrive(first)
+            if let browser, prepareExternal(first, in: browser) { browser.arrive(first) }
             comeForward()
             for (n, url) in early.dropFirst().enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15 * Double(n + 1)) { [weak browser] in
-                    browser?.open(url, foreground: false, atEnd: true, mayWait: true)
+                    guard let browser, prepareExternal(url, in: browser) else { return }
+                    browser.open(url, foreground: false, atEnd: true, mayWait: true)
                 }
             }
         }
