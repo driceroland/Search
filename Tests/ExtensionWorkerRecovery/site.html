@@ -24,4 +24,26 @@
 })();
 </script>
 <button id="connect-content">Fresh content connection</button><button id="send-content">Send</button>
+<button id="roundtrip-content">Scheduled content runtime message</button>
 <p>The content fixture preserves actual ports across same-world reinjection. The page's independent audit distinguishes document or isolated-world replacement.</p>
+
+<script>
+(() => {
+  if (parent === window) return;
+  const expectedParent = `http://localhost:${location.port}`;
+  document.addEventListener('search-port-fixture-report', event => {
+    parent.postMessage({ kind: 'child-port-observation', state: JSON.parse(event.detail).state,
+      audit: globalThis.__searchPortDocumentFixture }, expectedParent);
+  });
+  addEventListener('message', event => {
+    if (event.source !== parent || event.origin !== expectedParent) return;
+    const value = event.data;
+    if (!value || value.kind !== 'child-port-command' ||
+        !['connect-content', 'send-content', 'roundtrip-content'].includes(value.button) || typeof value.token !== 'string') return;
+    const button = document.getElementById(value.button);
+    button.dataset.token = value.token;
+    button.dataset.scheduledAt = value.scheduledAt;
+    button.click();
+  });
+})();
+</script>

@@ -177,5 +177,28 @@ const click = (fixture, id, token) => fixture.document.dispatchEvent({ type: 'cl
       assert.equal(errors.length, deliveryFailure ? 2 : 0);
     });
   }
+  const overlapFixture = documentFixture(), overlapPorts = [], overlapWorld = contentWorld(overlapFixture, overlapPorts);
+  let scheduled, callAt, clock = 10000;
+  overlapWorld.Date = { now: () => clock++ };
+  overlapWorld.setTimeout = (callback, delay) => { scheduled = { callback, delay }; };
+  overlapWorld.chrome.runtime.sendMessage = message => { callAt = clock; return Promise.resolve({ echo: message }); };
+  inject(overlapWorld);
+  overlapFixture.document.dispatchEvent({ type: 'click', target: { id: 'roundtrip-content', dataset: { token: 'actual-call', scheduledAt: '11000' } } });
+  test('scheduled content message does not manufacture an invocation time at arm time', () => {
+    assert.equal(overlapFixture.state().roundtrips[0].status, 'armed');
+    assert.equal(overlapFixture.state().roundtrips[0].startedAt, undefined);
+    assert.equal(callAt, undefined);
+    assert.ok(scheduled.delay > 0);
+  });
+  scheduled.callback();
+  await new Promise(resolve => setImmediate(resolve));
+  test('content message records the actual API call and never reconnects ports', () => {
+    const record = overlapFixture.state().roundtrips[0];
+    assert.equal(record.status, 'fulfilled');
+    assert.equal(record.startedAt + 1, callAt);
+    assert.equal(record.value.echo.token, 'actual-call');
+    assert.equal(overlapPorts.length, 1);
+    assert.equal(overlapFixture.state().disconnected, 0);
+  });
   console.log(`${passed} fixture observation checks passed (VM; not live WebKit)`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

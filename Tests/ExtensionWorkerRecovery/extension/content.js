@@ -13,7 +13,7 @@
   const held = [];
   const state = { kind: 'content', instance: Math.random().toString(36).slice(2),
     document: documentID, reinjections: 0, worldReplaced,
-    opened: 0, disconnected: 0, replies: 0, ports: [], errors: [] };
+    opened: 0, disconnected: 0, replies: 0, ports: [], roundtrips: [], errors: [] };
   const report = (reason, port = null) => {
     element.setAttribute('data-search-port-fixture', JSON.stringify(state));
     // Strings cross isolated-world boundaries without exporting extension APIs.
@@ -58,11 +58,30 @@
       send(token || 'initial-content');
     } catch (error) { fail(error); }
   };
+  // Schedule from the ordinary website's isolated world rather than from an
+  // extension page that may be co-delayed by the worker event loop.
+  const roundtrip = (token, scheduledAt) => {
+    if (!Number.isFinite(scheduledAt)) { fail(new Error('Invalid scheduled request time')); return; }
+    const record = { token, scheduledAt, armedAt: Date.now(), status: 'armed' };
+    state.roundtrips.push(record); report('roundtrip-armed');
+    setTimeout(() => {
+      Promise.resolve().then(() => {
+        record.startedAt = Date.now(); record.status = 'pending';
+        const requested = chrome.runtime.sendMessage({ fixture: 'roundtrip', token });
+        record.callReturnedAt = Date.now(); report('roundtrip-started');
+        return requested;
+      })
+        .then(value => { record.status = 'fulfilled'; record.value = value ?? null; },
+          error => { record.status = 'rejected'; record.error = String(error); })
+        .finally(() => { record.finishedAt = Date.now(); report('roundtrip-finished'); });
+    }, Math.max(0, Math.min(5000, scheduledAt - Date.now())));
+  };
   // Installed once in this actual world. Every fresh connection remains an
   // explicit click; neither reinjection nor a disconnect calls connect().
   document.addEventListener('click', event => {
     if (event.target.id === 'connect-content') connect(event.target.dataset.token);
     if (event.target.id === 'send-content') send(event.target.dataset.token || 'manual-content');
+    if (event.target.id === 'roundtrip-content') roundtrip(event.target.dataset.token, Number(event.target.dataset.scheduledAt));
   });
   connect();
 })();

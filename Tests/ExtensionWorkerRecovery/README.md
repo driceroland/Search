@@ -6,6 +6,9 @@ Run `node Tests/ExtensionWorkerRecovery/run.js`. It executes the **whole**
 installed shim, including the real content-script early return. The tests use
 mock WebKit objects; they are not a live extension recovery result.
 
+Run `node Tests/ExtensionWorkerRecovery/cross-origin-checks.js` to check the
+origin- and frame-validated observation bridge.
+
 Run `node Tests/ExtensionWorkerRecovery/fixture-checks.js` to check the fixture's
 same-world reinjection, replacement refusal, serialized audit and worker-ready
 ordering. These VM checks validate observation mechanics, not native recovery.
@@ -88,8 +91,9 @@ duplicate callbacks remain failures; a successful newly injected port cannot mas
 the original port's result. Main-world observations expose no extension APIs.
 
 Application-level withheld replies do not claim dead-worker detection, and the
-brief stall is not proof of slow initial startup. Cross-origin child frames,
-truly hung workers and failed-start wake recovery still require separate checks.
+brief stall is not proof of slow initial startup. Truly hung workers and
+failed-start wake recovery still require separate checks. Cross-origin child
+frames and actual content-message overlap are now covered as described below.
 
 For manual inspection: Use a disposable
 Search test profile, not a signed-in extension or model service. No model calls
@@ -184,3 +188,35 @@ subscriptions belonging to a replacement.
 Abrupt process death without pagehide can retain a
 pending native reply until that extension is next unloaded; no timer is added
 to probe for that condition.
+
+## Cross-origin and message-overlap coverage
+
+The normal live run now embeds a `127.0.0.1` child frame in a `localhost`
+parent. Admission verifies that the parent cannot read the child's
+`contentDocument`; observation messages must match both the child window and
+its origin. The child reports its independent document audit and actual
+content-script port callbacks. The parent never reconstructs port counts.
+The child retains its original document and isolated fixture through two
+explicit revives and the existing idle/wake sequence.
+
+The brief-busy case schedules an ordinary `runtime.sendMessage` from that
+content script, recording the actual API invocation and Promise-return times.
+The live run requires the invocation to overlap the worker's measured stall,
+a matching token and worker nonce, and at least 250 ms of reply latency.
+A missed overlap fails rather than becoming a passing delay test. It then
+observes the original ports for 18 seconds, with no synthetic disconnect or
+native recovery allowed.
+
+The independently hosted run `38263205701` checked product `7ad610d` plus
+fixture `d341d6c`: 265 checkpoints passed, none failed, and three cases remained
+uncovered. The worker stalled for 1,802 ms; the content call began 201 ms after
+stall onset, returned its Promise in 1 ms, and received the echo after 1,604 ms.
+The original cross-origin content and extension-page port counts finished at
+`[1, 1, 1, 0]`. This fixture's six files are copied unchanged from that validated
+revision; the recovery implementation is unchanged.
+
+This does not exercise an extension page's `checkWorker` while stalled.
+Content-script messaging does not enter that health-check path. A genuinely
+unresponsive worker/failed-start recovery and delayed cold startup also remain
+unverified. The earlier extension-page scheduling experiment `38233569310`
+failed to establish overlap and remains valid failed coverage evidence.
