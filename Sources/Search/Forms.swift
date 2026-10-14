@@ -30,6 +30,8 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
                     user: body["user"] as? String ?? "",
                     password: body["password"] as? String ?? ""
                 )
+            case "name":
+                tab?.gaveName(body["user"] as? String ?? "")
             case "settled":
                 tab?.settleSignIn(navigated: false)
             case "focus":
@@ -43,7 +45,8 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
                 // passkeys alone ("webauthn"), which takes no password.
                 if let rect = body["rect"] as? [String: Double],
                    let x = rect["x"], let y = rect["y"], let w = rect["w"], let h = rect["h"] {
-                    tab?.fieldFocused(CGRect(x: x, y: y, width: w, height: h), passwords: body["passwords"] as? Bool ?? true)
+                    tab?.fieldFocused(CGRect(x: x, y: y, width: w, height: h), passwords: body["passwords"] as? Bool ?? true,
+                                      name: body["name"] as? Bool ?? false)
                 } else {
                     tab?.fieldFocused(nil)
                 }
@@ -152,6 +155,51 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return { user: user, pass: pass };
       }
 
+      // A sign-in that asks for the name first and the password on a page
+      // of its own after it — impots.gouv.fr, Google, Microsoft, Okta. With
+      // no password box in sight, a box is the name's when the page says so
+      // (autocomplete "username" or "email") beside one other box at most,
+      // or when it is the only box to type in that its form has, with a
+      // button to send it. Never a search box, a code's or a coupon's.
+      function texty(el) {
+        if (!el || (el.tagName || '').toLowerCase() !== 'input' || el.disabled || el.readOnly) return false;
+        var kind = (el.type || 'text').toLowerCase();
+        if (['text', 'email', 'tel', 'number'].indexOf(kind) < 0) return false;
+        var r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      }
+      function aside(el) {
+        var words = ((el.name || '') + ' ' + (el.id || '') + ' ' + (el.getAttribute('autocomplete') || '')).toLowerCase();
+        if (/(^|[\\s_-])q($|[\\s_-])|query|search|otp|otc|one-time|captcha|code|coupon|promo/.test(words)) return true;
+        return !!(el.closest && el.closest('[role="search"]'));
+      }
+      function nameBox(el) {
+        if (!texty(el) || aside(el)) return false;
+        var scope = el.form || (el.closest && el.closest('form')) || document;
+        var all = scope.querySelectorAll('input'), others = 0;
+        for (var i = 0; i < all.length; i++) {
+          if (all[i] !== el && texty(all[i]) && !aside(all[i])) others++;
+        }
+        if (/(^|\\s)(username|email)(\\s|$)/i.test(el.getAttribute('autocomplete') || '')) return others <= 1;
+        return others === 0 &&
+          !!scope.querySelector('button, input[type="submit"], input[type="image"], [role="button"]');
+      }
+      // The name box of a first step, if this page is one: the box the
+      // caret is in, or else the one box on the page that is. A page with
+      // more than a handful of boxes to type in is not a first step.
+      function named() {
+        if (pair()) return null;
+        var el = document.activeElement;
+        if (nameBox(el)) return el;
+        var all = document.querySelectorAll('input'), seen = [];
+        for (var i = 0; i < all.length; i++) {
+          if (texty(all[i]) && !aside(all[i])) seen.push(all[i]);
+          if (seen.length > 6) return null;
+        }
+        for (var j = 0; j < seen.length; j++) { if (nameBox(seen[j])) return seen[j]; }
+        return null;
+      }
+
       function put(box, value) {
         if (!box) return;
         var setter = Object.getOwnPropertyDescriptor(
@@ -201,6 +249,14 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           put(both.pass, password);
           return true;
         },
+        // The name alone, into a first step's box: there is no password
+        // box yet, and none is filled anywhere.
+        name: function (user) {
+          var box = named();
+          if (!box) return false;
+          put(box, user);
+          return true;
+        },
         // Whether there is still a sign-in on the page. Asked after a
         // password went out, to tell a sign-in that took from one refused.
         hasPassword: function () { return !!pair(); }
@@ -209,9 +265,19 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // What is in the boxes when they are sent. Said every time — a click
       // on "show password" says it too — because the browser only listens
       // once the page has moved on, and keeps the last thing it heard.
+      //
+      // A first step says the name it is sending: the page after it asks
+      // for the password alone, and the name is what the browser saves it
+      // under.
       function offer() {
         var both = pair();
-        if (!both || !both.pass.value) return;
+        if (!both) {
+          var box = named();
+          var name = box ? box.value.trim() : '';
+          if (name) window.webkit.messageHandlers.officeForms.postMessage({ kind: 'name', user: name });
+          return;
+        }
+        if (!both.pass.value) return;
         window.webkit.messageHandlers.officeForms.postMessage({
           kind: 'submit',
           user: both.user ? both.user.value : '',
@@ -224,6 +290,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         if (e.key !== 'Enter') return;
         var both = pair();
         if (both && (document.activeElement === both.pass || document.activeElement === both.user)) offer();
+        else if (!both && nameBox(document.activeElement)) offer();
       }, true);
       // Plenty of sign-in buttons aren't in a form and never fire submit.
       document.addEventListener('click', function (e) {
@@ -308,19 +375,24 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         var both = el && (el.tagName || '').toLowerCase() === 'input' ? pair() : null;
         var rect = null;
         var passwords = !!(both && el && (el === both.user || el === both.pass));
+        // A first step's name box: the accounts hang from it as from a
+        // name box beside a password, and a pick puts in the name alone.
+        var name = !both && !!el && (el.tagName || '').toLowerCase() === 'input' && nameBox(el);
+        if (name) passwords = true;
         if (passwords || forPasskeys(el)) {
           var r = el.getBoundingClientRect();
           if (r.width > 0 && r.height > 0) rect = { x: r.left, y: r.top, w: r.width, h: r.height };
         }
         var typing = editable(el);
-        var now = typing + (rect ? ' ' + passwords + ' ' + rect.x + ' ' + rect.y + ' ' + rect.w + ' ' + rect.h : '');
+        var now = typing + (rect ? ' ' + passwords + ' ' + name + ' ' + rect.x + ' ' + rect.y + ' ' + rect.w + ' ' + rect.h : '');
         if (scrolled === true && now === said) return;
         said = now;
         window.webkit.messageHandlers.officeForms.postMessage({
           kind: 'focus',
           typing: typing,
           rect: rect,
-          passwords: passwords
+          passwords: passwords,
+          name: name
         });
       }
 

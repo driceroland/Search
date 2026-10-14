@@ -9,6 +9,9 @@ import SwiftUI
 struct SideBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
+    /// On the window's ground, beside the page's card (see CardEdge): the
+    /// ground's colour and no edge of its own, the card's edge being the line.
+    var onFrame = false
 
     @Namespace private var pill
 
@@ -93,14 +96,14 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
-                landing ? Palette.hover : Palette.ground
+                landing ? Palette.sideHover : onFrame ? Palette.frame : Palette.ground
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
             }
         }
         .overlay(alignment: innerEdge) {
-            Rectangle().fill(Palette.hairline).frame(width: 1)
+            if !onFrame { Rectangle().fill(Palette.hairline).frame(width: 1) }
         }
         .overlay(alignment: innerEdge) { edge }
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
@@ -518,18 +521,44 @@ struct SideBar: View {
 
     /// One small door at the bottom: the settings.
     private var foot: some View {
+        SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches)
+    }
+
+}
+
+/// The row at the bottom of the column. Never wider than the column: wider,
+/// the column took its width, and centred in its own frame it slid half the
+/// overflow off each side (#535). The space's door, the puzzle, bookmarks and
+/// downloads stay put; the pinned extensions that don't fit give way, from
+/// the last, and are still in the puzzle's list.
+private struct SideFoot: View {
+    @ObservedObject var browser: Browser
+    @ObservedObject var prefs: Preferences
+    @ObservedObject var fetches: Fetches
+
+    var body: some View {
         HStack(spacing: 2) {
-            if browser.prefs.usesSpaces { SpaceDot(browser: browser) }
-            ExtensionSlot(edge: .trailing)
+            if prefs.usesSpaces { SpaceDot(browser: browser) }
+            ExtensionSlot(edge: .trailing, room: room)
             BookmarkDoor(browser: browser, arrowEdge: .trailing)
             // Only while a download is running, and a moment after.
-            FetchDoor(browser: browser, fetches: browser.fetches)
+            FetchDoor(browser: browser, fetches: fetches)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
         .padding(.bottom, 10)
     }
 
+    /// How many pinned extensions fit beside the doors that stay. Every door
+    /// is 26 points, with 2 between them.
+    private var room: Int {
+        let door: CGFloat = 26 + 2
+        var kept = 2  // the puzzle and bookmarks
+        if prefs.usesSpaces { kept += 1 }
+        if FetchDoor.shows(fetches, prefs) { kept += 1 }
+        let free = prefs.sideWidth - 2 * 10 + 2 - CGFloat(kept) * door
+        return max(0, Int((free / door).rounded(.down)))
+    }
 }
 
 /// The pinned squares' grid, every cell laid out at once. A lazy grid makes
@@ -598,11 +627,11 @@ private struct PinSquare: View {
                 // row is darker than the white it sits on (Drice: the live
                 // pin barely showed among the others).
                 RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
-                    .fill(Palette.pinLive)
+                    .fill(Palette.sidePinLive)
                     .matchedGeometryEffect(id: "live", in: pill)
             } else {
                 RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
-                    .fill(hovering ? Palette.hover : Palette.wash.opacity(0.55))
+                    .fill(hovering ? Palette.sideHover : Palette.sideTile)
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
@@ -766,7 +795,7 @@ private struct SideRow: View {
     private var ground: some View {
         if live {
             ZStack(alignment: .leading) {
-                Rectangle().fill(Palette.wash)
+                Rectangle().fill(Palette.sideWash)
                 if prefs.showsReading {
                     GeometryReader { geo in
                         ReadingFill(meter: tab.meter, width: geo.size.width)
@@ -777,7 +806,7 @@ private struct SideRow: View {
             .matchedGeometryEffect(id: "live", in: pill)
         } else if hovering {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Palette.hover)
+                .fill(Palette.sideHover)
         }
     }
 
@@ -812,7 +841,7 @@ struct Quiet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(hovering ? Palette.hover : .clear)
+                    .fill(hovering ? Palette.sideHover : .clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
@@ -850,7 +879,7 @@ struct KeepLine: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Close the tabs under the line. Pins and groups stay; ⇧⌘T brings a tab back.")
+                .help("Close the tabs under the line. Pins and groups stay; ⇧⌘T brings them all back.")
                 .transition(.opacity)
             }
         }
@@ -904,7 +933,7 @@ struct Door: View {
                 .frame(width: 26, height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(on ? Palette.wash : (hovering ? Palette.hover : .clear))
+                        .fill(on ? Palette.sideWash : (hovering ? Palette.sideHover : .clear))
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }

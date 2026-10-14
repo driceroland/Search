@@ -827,6 +827,27 @@ enum Players {
     }
 }
 
+/// Sites whose videos never float out on their own: the site card's Don't
+/// Float Videos Here (#267). Only switching tabs or apps is held back; ⇧⌘P
+/// still lifts one by hand. Kept by host, as a site's sound is, and
+/// forgotten with the other site choices (Browser.forgetCaptureChoices).
+enum Grounded {
+    static let prefix = "nofloat."
+
+    static func holds(_ host: String) -> Bool {
+        Store.settings.bool(forKey: prefix + host)
+    }
+
+    /// Off keeps nothing, as Autoplay's does.
+    static func set(_ on: Bool, for host: String) {
+        if on {
+            Store.settings.set(true, forKey: prefix + host)
+        } else {
+            Store.settings.removeObject(forKey: prefix + host)
+        }
+    }
+}
+
 /// A panel that takes key status without bringing the whole app forward.
 ///
 /// Borderless windows refuse to become key by default, and a window that never

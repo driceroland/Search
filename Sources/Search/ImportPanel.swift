@@ -41,6 +41,9 @@ struct ImportPanel: View {
     @State private var forExtensions = false
     @State private var bringing = false
     @State private var brought: [Said]?
+    /// Whether that import left any bookmarks behind, which is what the
+    /// offer to show the bar is for.
+    @State private var marksLanded = false
 
     struct Said: Hashable {
         let ok: Bool
@@ -118,6 +121,16 @@ struct ImportPanel: View {
                             browser.bringingIn = nil
                             browser.bookmarking = true
                         }
+                        // The bar is off until it is asked for, and nobody asks
+                        // for a row that has nothing in it. Bookmarks having just
+                        // arrived is the one moment it is worth offering, and the
+                        // sheet goes so that the bar is seen where it appears.
+                        if marksLanded, !browser.prefs.bookmarksBar {
+                            Pill("Show the bookmarks bar") {
+                                withAnimation(Motion.glide) { browser.prefs.bookmarksBar = true }
+                                browser.bringingIn = nil
+                            }
+                        }
                         Pill("Show passwords") {
                             browser.bringingIn = nil
                             browser.managing = true
@@ -129,7 +142,7 @@ struct ImportPanel: View {
                         if bringing { Ring(size: 10) }
                     }
                     Spacer(minLength: 8)
-                    Pill("Or from a file another browser exported…") { browser.importFile() }
+                    Pill("File…") { browser.importFile() }
                         .disabled(bringing)
                 }
             }
@@ -158,6 +171,18 @@ struct ImportPanel: View {
             pick = found
             brought = nil
         }
+    }
+
+    /// What Arc's side of the import will do, which depends on whether pinned
+    /// rows are on: with them on, the pages Arc keeps loose become rows under
+    /// the pins and the ones it filed stay tabs in a group of that folder's
+    /// name, so that neither the keeping nor the folder is lost.
+    private func arcDetail(_ arc: (spaces: Int, pinned: Int)) -> String {
+        let spaces = arc.spaces == 1 ? "1 space" : "\(arc.spaces) spaces"
+        let head = "\(spaces), \(arc.pinned) pinned — each a space here, the favourites as pins"
+        return browser.prefs.listsPins
+            ? head + ", its pinned pages as rows under them, and the ones it filed in a folder as tabs in a group of that name"
+            : head + ", its pinned tabs asleep in it"
     }
 
     /// Safari, and browsers on this Mac with nothing where their data should
@@ -239,9 +264,23 @@ struct ImportPanel: View {
             // Arc's own: its spaces, what is pinned in them, its favourites.
             if let arc = arcCounts[key(source, profile(of: source))], arc.spaces + arc.pinned > 0 {
                 Rule()
-                Line("Spaces and pinned tabs",
-                     "\(arc.spaces == 1 ? "1 space" : "\(arc.spaces) spaces"), \(arc.pinned) pinned — each a space here, its pinned tabs asleep in it, the favourites as pins") {
+                Line("Spaces and pinned tabs", arcDetail(arc)) {
                     Switch(on: $wantsArc)
+                }
+                // Arc's pinned pages only keep their shape as pinned rows, and
+                // those are off until asked for. This is the moment someone
+                // would ask, so the sheet offers the switch here, once, rather
+                // than bringing them in as tabs and leaving the setting to be
+                // found afterwards.
+                if wantsArc, arc.pinned > 0, !browser.prefs.listsPins {
+                    Rule()
+                    Line("Keep them as pinned rows",
+                         "As in Arc: each pinned page a row with its name, under your pins. Turned on, it stays in Settings › Tabs › Pinned rows"
+                         + (browser.prefs.sidebar ? "" : "; rows show with the tabs down the side")) {
+                        Pill("Turn on pinned rows") {
+                            withAnimation(Motion.glide) { browser.prefs.listsPins = true }
+                        }
+                    }
                 }
             }
             if !extensions.isEmpty {
@@ -353,6 +392,8 @@ struct ImportPanel: View {
     // MARK: - bringing
 
     private func bring(from source: ImportSource) {
+        // This import's own answer, not the one before it in the same sheet.
+        marksLanded = false
         let profile = profile(of: source)
         let extensions = wantsExtensions ? fresh(source) : []
         // A kind it has none of isn't read at all: no keychain question for
@@ -389,6 +430,7 @@ struct ImportPanel: View {
         }
         if marks {
             let (added, already, kept) = browser.takeBookmarks(from: source, profile: profile, replacing: replaceBookmarks)
+            marksLanded = added + already > 0
             said[1] = kept
                 ? Said(ok: false, text: "Couldn't read all of \(source.name)'s bookmarks: what came from it before was kept, \(added.formatted()) new")
                 : Said(ok: true, text: added == 0 && already == 0 ? "No bookmarks in \(source.name)"

@@ -52,7 +52,7 @@ struct SearchApp: App {
                     .shortcut("file.newTab")
                 Button("New Private Tab") { browser.newShyTab() }
                     .shortcut("file.newPrivateTab")
-                Button("Reopen Closed Tab") { browser.reopen() }
+                Button(browser.reopenTitle) { browser.reopen() }
                     .shortcut("file.reopen")
                     .disabled(browser.ghosts.isEmpty && Browsers.lastClosedAt == nil)
                 Divider()
@@ -65,7 +65,7 @@ struct SearchApp: App {
                 Button("Bring Things Over…") { browser.bringingIn = "" }
                     .shortcut("file.import")
                 Divider()
-                Button("Close Tab") { if let tab = browser.active { browser.close(tab) } }
+                Button("Close Tab") { browser.closeFront() }
                     .shortcut("file.closeTab")
             }
             CommandGroup(replacing: .printItem) {
@@ -87,6 +87,19 @@ struct SearchApp: App {
                 Button("Find Previous") { browser.look(forward: false) }
                     .shortcut("edit.findPrevious")
                     .disabled(!browser.finding)
+                Divider()
+                // As in Safari: each follows the Mac until switched here
+                // (see Substitutions.swift).
+                Menu("Substitutions") {
+                    Button("Show Substitutions") { Substitution.showPanel() }
+                    Divider()
+                    ForEach(Substitution.allCases, id: \.self) { kind in
+                        Toggle(kind.title, isOn: Binding(
+                            get: { browser.substitutes(kind) },
+                            set: { _ in browser.toggleSubstitution(kind) }
+                        ))
+                    }
+                }
             }
             CommandGroup(replacing: .toolbar) {
                 Toggle("Show Tabs in Sidebar", isOn: Binding(
@@ -366,7 +379,9 @@ struct ContentView: View {
         ZStack(alignment: sideOnRight ? .topTrailing : .topLeading) {
             // Black while a page has the screen, so the frame of our own window
             // that survives the transition is not a white band across the top.
-            (fullscreenTab != nil ? Color.black : Palette.ground)
+            // With the tabs down the side, the ground the page's card and the
+            // column sit on (see CardEdge).
+            (fullscreenTab != nil ? Color.black : cards ? Palette.frame : Palette.ground)
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
@@ -376,7 +391,16 @@ struct ContentView: View {
             // it and is resized once, not on every frame of the slide: laid out
             // again thirty times a second, the page juddered along its right
             // edge and overshot the window with the spring (see `room`).
+            //
+            // With the tabs down the side the page is a card on the window's
+            // ground: a gap on the far side and along the bottom here, at the
+            // top and on the column's side in the room (see chrome). Two pages
+            // side by side are a card each (see PaneStage).
             stage
+                .modifier(CardEdge(on: cards && !browser.prefs.splitView))
+                .padding(.leading, sideOnRight ? farGap : 0)
+                .padding(.trailing, sideOnRight ? 0 : farGap)
+                .padding(.bottom, farGap)
                 .padding(.leading, sideOnRight ? 0 : roomed.width)
                 .padding(.trailing, sideOnRight ? roomed.width : 0)
                 .padding(.top, roomed.height)
@@ -387,7 +411,7 @@ struct ContentView: View {
             // height, so the traffic lights sit in its own corner rather than
             // over the page.
             if sidebar {
-                SideBar(browser: browser, prefs: browser.prefs)
+                SideBar(browser: browser, prefs: browser.prefs, onFrame: cards)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .transition(.move(edge: sideOnRight ? .trailing : .leading))
             }
@@ -397,11 +421,12 @@ struct ContentView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            // The bookmarks bar, under the strip or beside the column's top.
+            // The bookmarks bar, under the strip or beside the column's top —
+            // there on the window's ground above the page's card, and no wider.
             if barShown {
-                BookmarksBar(browser: browser, bookmarks: browser.bookmarks)
-                    .padding(.leading, sideOnRight ? 0 : chrome.width)
-                    .padding(.trailing, sideOnRight ? chrome.width : 0)
+                BookmarksBar(browser: browser, bookmarks: browser.bookmarks, onFrame: cards)
+                    .padding(.leading, sideOnRight ? farGap : chrome.width)
+                    .padding(.trailing, sideOnRight ? chrome.width : farGap)
                     .padding(.top, band)
                     .transition(.opacity)
             }
@@ -420,9 +445,9 @@ struct ContentView: View {
     @ViewBuilder
     private var stage: some View {
         if browser.prefs.splitView {
-            SplitStage(browser: browser)
+            SplitStage(browser: browser, corner: cards ? Metrics.cardRadius : 0)
         } else if let tab = browser.active {
-            Page(tab: tab)
+            Page(tab: tab, corner: cards ? Metrics.cardRadius : 0)
                 .overlay {
                     if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
                 }
@@ -454,10 +479,26 @@ struct ContentView: View {
     }
 
     /// What the column and the strip take from the page right now: animated
-    /// as they come and go.
+    /// as they come and go. With the page as a card, the column folded away
+    /// still leaves the card's gap, and so does the top, unless the bookmarks
+    /// bar is there.
     private var chrome: CGSize {
-        CGSize(width: sidebar ? browser.prefs.sideWidth : 0, height: band + (barShown ? BookmarksBar.height : 0))
+        let bar = barShown ? BookmarksBar.height : 0
+        if cards {
+            return CGSize(width: sidebar ? browser.prefs.sideWidth : Metrics.cardGap,
+                          height: barShown ? bar : Metrics.cardGap)
+        }
+        return CGSize(width: sidebar ? browser.prefs.sideWidth : 0, height: band + bar)
     }
+
+    /// The page as a card on the window's ground: with the tabs down the
+    /// side, the column out or folded away, and no page filling the screen.
+    private var cards: Bool {
+        browser.prefs.sidebar && fullscreenTab == nil
+    }
+
+    /// The card's gap on the side away from the column, and along the bottom.
+    private var farGap: CGFloat { cards ? Metrics.cardGap : 0 }
 
     /// The bookmarks bar is up: asked for, there are bookmarks, and the tabs
     /// aren't folded away or under a video filling the screen.
@@ -479,7 +520,10 @@ struct ContentView: View {
     /// A column being dragged wider or narrower is followed as it goes.
     private func make(room new: CGSize, after old: CGSize) {
         let now = roomed
-        let arriving = (old.width == 0 && new.width > 0, old.height == 0 && new.height > 0)
+        // Out of nothing, or out of the card's gap (see chrome): never more
+        // than that unless something is there.
+        let floor = Metrics.cardGap
+        let arriving = (old.width <= floor && new.width > floor, old.height <= floor && new.height > floor)
         var at = now
         if !arriving.0 { at.width = new.width }
         if !arriving.1 { at.height = new.height }
@@ -525,7 +569,10 @@ struct ContentView: View {
     /// own whenever a tab has nowhere to be yet.
     @ViewBuilder
     private var field: some View {
-        if browser.fieldShowing, browser.activeSplit == nil {
+        // SplitStage owns the field whenever Split View is enabled, including
+        // an ordinary tab that is not currently paired. Drawing it here too
+        // leaves two offset address fields on a blank tab.
+        if browser.fieldShowing, !browser.prefs.splitView {
             Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
@@ -623,7 +670,9 @@ struct ContentView: View {
             // there is to watch.
             .animation(browser.fieldShowing ? Motion.settle : Motion.quick, value: browser.fieldShowing)
             .background(WindowSetup { window = $0; dress($0) })
-            .onChange(of: browser.prefs.sidebar) { _, _ in
+            .onChange(of: browser.prefs.sidebar) { _, side in
+                // The ground the page's card sits on, or the page's own.
+                window?.backgroundColor = side ? Palette.NS.frame : Palette.NS.ground
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             .onChange(of: browser.prefs.sidePosition) { _, _ in
@@ -923,7 +972,7 @@ struct ContentView: View {
         // window only has to be the ground colour that goes with it.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.backgroundColor = Palette.NS.ground
+        window.backgroundColor = browser.prefs.sidebar ? Palette.NS.frame : Palette.NS.ground
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
@@ -1063,12 +1112,13 @@ struct ContentView: View {
     }
 
     /// Whether the tab switcher can come up: in this window, with nothing
-    /// over the page it would have to cover.
+    /// over the page it would have to cover. The find bar isn't one: it sits
+    /// in a corner, stays open, and looks again on the tab picked (#553).
     private func canSwitchTabs(_ event: NSEvent) -> Bool {
         guard let window, event.window === window else { return false }
         return !browser.tuning && !browser.recalling && !browser.hoarding &&
             !browser.bookmarking && !browser.welcoming && !browser.managing &&
-            !browser.reviewing && !browser.finding && !browser.bookmarksOpen &&
+            !browser.reviewing && !browser.bookmarksOpen &&
             !browser.veiling && !browser.summoning && !browser.makingSpace &&
             browser.peekTab == nil && browser.editingTab == nil &&
             browser.asking == nil && browser.offering == nil && browser.suggesting == nil
@@ -1080,6 +1130,10 @@ struct ContentView: View {
     ]
 
     private func take(_ event: NSEvent) -> Bool {
+        // A question hanging from the window (Ask) answers its own keys. Esc
+        // there is its Cancel: taken here, it closed the panel under it and
+        // left the question up, with Return still on its first button.
+        if event.window?.sheetParent != nil { return false }
         // A small window's keys are its own (see Little.swift).
         if let little = LittleWindow.owning(event.window) { return little.take(event) }
         // An extension's popup window: ⌘W closes it, not a tab of the
@@ -1134,38 +1188,8 @@ struct ContentView: View {
                 withAnimation(Motion.glide) { browser.makingSpace = false }
                 return true
             }
-            if browser.notesShowing {
-                browser.notesShowing = false
-                return true
-            }
-            if browser.newsShowing {
-                browser.newsShowing = false
-                return true
-            }
-            if browser.tuning {
-                browser.tuning = false
-                return true
-            }
-            if browser.bookmarking {
-                browser.bookmarking = false
-                return true
-            }
-            if browser.managing {
-                browser.managing = false
-                return true
-            }
-            if browser.bringingIn != nil {
-                browser.bringingIn = nil
-                return true
-            }
-            if browser.recalling {
-                browser.recalling = false
-                return true
-            }
-            if browser.hoarding {
-                browser.hoarding = false
-                return true
-            }
+            // The same panels in the same order as ⌘W (Browser.closeFront).
+            if browser.closePanel() { return true }
             if browser.suggesting != nil {
                 browser.dropChoice()
                 return true
@@ -1418,11 +1442,7 @@ struct ContentView: View {
         case "0":
             browser.resetZoom()
         case "w" where !shifted:
-            if browser.peekTab != nil {
-                browser.closePeek()
-            } else if let tab = browser.active {
-                browser.close(tab)
-            }
+            browser.closeFront()
         case "l" where !shifted:
             browser.edit()
         case "r" where !shifted:

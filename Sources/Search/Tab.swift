@@ -449,8 +449,10 @@ final class Tab: ObservableObject, Identifiable {
     /// The page has a sign-in on it; the page has just sent one.
     var onSignIn: ((Tab) -> Void)?
     /// The caret has entered or left one of the sign-in boxes; where the box
-    /// is, in the web view's points, or nil when it has left.
-    var onField: ((Tab, CGRect?, Bool) -> Void)?
+    /// is, in the web view's points, or nil when it has left. Then whether
+    /// it goes with a password, and whether it is a first step's name box,
+    /// which takes the name alone.
+    var onField: ((Tab, CGRect?, Bool, Bool) -> Void)?
     /// The site the sign-in was sent from — not the one it landed on —
     /// then the name and the password, and whether that page came over
     /// plain http.
@@ -660,9 +662,9 @@ final class Tab: ObservableObject, Identifiable {
                         if fresh == self.heldOver { return }
                         self.held = nil
                     }
-                    let freshHost = fresh.host()?.lowercased()
-                    let currentHost = self.address?.host()?.lowercased()
-                    let moved = freshHost != currentHost
+                    // By site, port included: localhost:3000 to localhost:5173
+                    // is another project, with another icon.
+                    let moved = Favicons.site(fresh) != self.address.flatMap(Favicons.site)
                     self.address = fresh
                     // Within the same origin — history.pushState, a fragment —
                     // the page on screen is the one at the new address.
@@ -780,6 +782,13 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: LiveRate.script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
         )
+        // Every frame, in the page's own world: a page an extension lists
+        // reaches it as chrome.runtime (see ExtensionExternal.swift).
+        if let external = ExtensionExternal.script {
+            controller.addUserScript(
+                WKUserScript(source: external, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
+            )
+        }
         // Passkeys stand in the page's own world — they replace the page's
         // functions — and reach Search through a bridge in Search's, off or on:
         // an extension's page script can carry the patch either way (see
@@ -815,17 +824,42 @@ final class Tab: ObservableObject, Identifiable {
     /// From the page, in CSS pixels; passed on in points. Page zoom is the
     /// only scale between the two that matters here.
     /// `passwords`: a box of a sign-in with a password, not one only for
-    /// passkeys.
-    func fieldFocused(_ rect: CGRect?, passwords: Bool = true) {
+    /// passkeys. `name`: the name box of a sign-in that asks for the
+    /// password on the next page.
+    func fieldFocused(_ rect: CGRect?, passwords: Bool = true, name: Bool = false) {
         guard let rect else {
-            onField?(self, nil, false)
+            onField?(self, nil, false, false)
             return
         }
         let zoom = built?.pageZoom ?? 1
         onField?(self, CGRect(
             x: rect.minX * zoom, y: rect.minY * zoom,
             width: rect.width * zoom, height: rect.height * zoom
-        ), passwords)
+        ), passwords, name)
+    }
+
+    /// The name a sign-in that asks for it first was just sent, for the
+    /// page after it: that one asks for the password alone, with no box
+    /// for the name, and a password saved without its name is half a
+    /// login. In memory only — never written down — for this tab alone,
+    /// a few minutes, and only for the same site: a private tab's name
+    /// never reaches another tab, and another site never sees it.
+    private var named: (site: String, user: String, at: Date)?
+
+    func gaveName(_ user: String) {
+        guard !user.isEmpty, user.count <= 256,
+              let host = pageAddress?.host()?.lowercased()
+        else { return }
+        named = (Vault.registrable(host), user, Date())
+    }
+
+    /// The name sent on the step before, if it was this site's and recent.
+    func givenName() -> String? {
+        guard let named, Date().timeIntervalSince(named.at) < 300,
+              let host = pageAddress?.host()?.lowercased(),
+              Vault.registrable(host) == named.site
+        else { return nil }
+        return named.user
     }
 
     /// A name and password the page has just sent — held, not yet offered.
@@ -840,6 +874,9 @@ final class Tab: ObservableObject, Identifiable {
         // the password belongs.
         guard let host = pageAddress?.host()?.lowercased() else { return }
         let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        // A password page with no name on it: the name is the one the step
+        // before was sent with.
+        let user = user.isEmpty ? givenName() ?? "" : user
         sent = (bare, user, password, pageAddress?.scheme?.lowercased() == "http", Date())
     }
 
@@ -875,6 +912,7 @@ final class Tab: ObservableObject, Identifiable {
                 // still on its way.
                 if (still as? Bool) == true { return }
                 self.sent = nil
+                self.named = nil
                 self.onCredentials?(self, sent.host, sent.user, sent.password, sent.clear)
             }
         }
@@ -888,6 +926,15 @@ final class Tab: ObservableObject, Identifiable {
     func fill(user: String, password: String, done: ((Bool) -> Void)? = nil) {
         web.evaluateInSearch(
             "window.__officeForms && window.__officeForms.fill(`\(escape(user))`, `\(escape(password))`)"
+        ) { result in
+            done?((result as? Bool) ?? false)
+        }
+    }
+
+    /// A first step's name alone, picked from the accounts under its box.
+    func fillName(_ user: String, done: ((Bool) -> Void)? = nil) {
+        web.evaluateInSearch(
+            "window.__officeForms && window.__officeForms.name(`\(escape(user))`)"
         ) { result in
             done?((result as? Bool) ?? false)
         }
@@ -1453,13 +1500,38 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 
 /// A web view that reads the two-finger swipe for itself.
 final class PageView: WKWebView {
-    /// What extensions added to the right-click menu, at the end of it.
+    /// The page's own right-click menu. WebKit puts extensions' items for the
+    /// page in it itself; Search adding them again showed each one twice.
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         // WebKit names it for a window, but a new window's page arrives here
-        // as a new tab (Browser's createWebViewWith), so it says so.
-        if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierOpenLinkInNewWindow" }) {
+        // as a new tab (Browser's createWebViewWith), so it says so. The tab
+        // stays behind this one, as in Safari and Chrome, and as a ⌘-click's
+        // does; with ⌥ held the item becomes one that goes to it, WebKit's
+        // own, as it always was. Without a mouse's middle button, this is
+        // the way to a tab in the background that needs no key held.
+        if let index = menu.items.firstIndex(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierOpenLinkInNewWindow" }) {
+            let item = menu.items[index]
+            if let front = item.copy() as? NSMenuItem {
+                front.title = "Open Link in New Tab and Go to It"
+                front.keyEquivalentModifierMask = .option
+                front.isAlternate = true
+                menu.insertItem(front, at: index + 1)
+            }
+            openLink = (item.target, item.action)
             item.title = "Open Link in New Tab"
+            item.keyEquivalentModifierMask = []
+            item.target = self
+            item.action = #selector(openLinkBehind(_:))
+        }
+        // The bench's linkmenu: the item it names is chosen as the menu
+        // comes up, the way a hand would choose it, and the menu goes.
+        if Store.testing, let title = PageView.picking {
+            PageView.picking = nil
+            RunLoop.main.perform(inModes: [.eventTracking, .default]) {
+                if let index = menu.items.firstIndex(where: { $0.title == title }) { menu.performActionForItem(at: index) }
+                menu.cancelTracking()
+            }
         }
         if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierSearchWeb" }),
            let name = searchName?() {
@@ -1472,15 +1544,10 @@ final class PageView: WKWebView {
             item.target = self
             item.action = #selector(searchSelection(_:))
         }
-        guard #available(macOS 15.4, *),
-              let tab = Browsers.all.lazy.flatMap(\.tabs).first(where: { $0.built === self })
-        else { return }
-        let items = Extensions.shared.menuItems(for: tab)
-        guard !items.isEmpty else { return }
-        menu.addItem(.separator())
-        items.forEach { menu.addItem($0) }
     }
 
+    /// The item the bench's linkmenu will choose in the next menu.
+    static var picking: String?
     var searchName: (() -> String?)?
     var onSearch: ((String) -> Void)?
     private var selection: String?
@@ -1509,6 +1576,25 @@ final class PageView: WKWebView {
     })(document)
     """
     private var webSearch: (target: AnyObject?, action: Selector?) = (nil, nil)
+
+    /// WebKit's Open Link in New Window, handed on once the tab it makes is
+    /// marked to stay behind. WebKit asks for that tab a moment later, from
+    /// the page's process (Browser's createWebViewWith), so the mark lasts a
+    /// second and is used up by the first tab asked for.
+    private var openLink: (target: AnyObject?, action: Selector?) = (nil, nil)
+    private var behindSince: Date?
+
+    @objc private func openLinkBehind(_ item: NSMenuItem) {
+        guard let action = openLink.action else { return }
+        behindSince = Date()
+        NSApp.sendAction(action, to: openLink.target, from: item)
+    }
+
+    /// Whether the tab being made now is the menu's, to stay behind.
+    func takeBehind() -> Bool {
+        defer { behindSince = nil }
+        return behindSince.map { Date().timeIntervalSince($0) < 1 } ?? false
+    }
 
     @objc private func searchSelection(_ item: NSMenuItem) {
         defer { selection = nil }

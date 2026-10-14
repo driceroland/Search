@@ -5,6 +5,9 @@ build/
 *.xcuserstate
 .DS_Store
 
+# Python's bytecode cache, left in Tests/ by the probe scripts.
+__pycache__/
+
 # Signing material that's tied to one Apple Developer account and should
 # never be committed, even though the scripts happily run without it.
 *.provisionprofile

@@ -495,8 +495,10 @@ private struct TabPill: View {
     private var editing: Bool { browser.editingTab == tab.id }
     private var pinned: Bool { tab.pin != nil && !editing }
     /// Too narrow for a title: the site's mark alone, the title in the
-    /// tooltip, and ⌘W or the menu to close it — a cross on something this
-    /// small would be what a click to pick the tab lands on.
+    /// tooltip. A cross on something this small would be what a click to
+    /// pick the tab lands on, so only the tab you're on, already picked,
+    /// wears one, in place of its mark while the pointer is on it, as in
+    /// Chrome.
     private var compact: Bool { !editing && !pinned && width < Metrics.tabTitled }
     /// A speaker to press at the end of the pill: the page plays sound, or
     /// was muted. The ring, while the page is still coming, goes first.
@@ -581,13 +583,27 @@ private struct TabPill: View {
     private var loose: some View {
         if compact {
             ZStack {
-                if tab.loading {
+                if live && hovering {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 15, height: 15)
+                        .background(Palette.ink.opacity(0.07), in: Circle())
+                        .transition(.opacity)
+                } else if tab.loading {
                     Ring()
                 } else {
                     Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15, dim: tab.asleep)
                 }
             }
             .frame(width: 16, height: 16)
+            // The cross alone; the rest of the tab still edits its address.
+            .overlay {
+                if live {
+                    CloseClick(armed: hovering, act: close)
+                        .frame(width: 22, height: 22)
+                }
+            }
             .padding(.vertical, 6)
             .frame(width: span)
         } else {
@@ -840,6 +856,11 @@ struct TabAddressField: NSViewRepresentable {
         field.textColor = Palette.NS.ink
         field.cell?.usesSingleLineMode = true
         field.cell?.wraps = false
+        // Without this the field editor stays as wide as the field: the text
+        // past the edge is cut off, and the caret, Home/End and a click can't
+        // reach it. Scrollable, the editor grows to the text and follows the caret.
+        field.cell?.isScrollable = true
+        field.lineBreakMode = .byClipping
         field.stringValue = browser.tabDraft
         context.coordinator.watch(field)
         // The site card stands under whichever field the address is in.
@@ -1084,7 +1105,7 @@ struct TabMenu: View {
             .disabled(browser.tabs.count < 2)
         // ⌘⇧T, and the History menu's Recently Closed, where few think to
         // look for it: here too, where tabs are closed.
-        Button("Reopen Closed Tab") { browser.reopen() }
+        Button(browser.reopenTitle) { browser.reopen() }
             .disabled(browser.ghosts.isEmpty)
     }
 }

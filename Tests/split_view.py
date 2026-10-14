@@ -3,30 +3,43 @@
 
 Build first (`./build.sh` or `./build.sh debug`), then run
 `python3 Tests/split_view.py`. The app is started hidden in a world of its
-own (SEARCH_PROBE=split-tests), driven through ./bench's socket, and quit;
+own (SEARCH_PROBE=split-tests-<checkout>, see use()), driven through
+./bench's socket, and quit;
 its settings and files are removed afterwards. Nothing here makes, shows or
 brings forward a window: what can only be seen — dragging onto a page's
 edge, the divider under the pointer, the motion itself — is checked by
 hand on a release candidate.
 """
 
+import hashlib
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
 import threading
 import time
+import uuid
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 ROOT = Path(__file__).resolve().parents[1]
 APP = str(ROOT / "build" / "Search.app")
-W = "split-tests"
 HOME = os.path.expanduser("~")
-SUPPORT = f"{HOME}/Library/Application Support/Search ({W})"
-SUITE = f"com.officecommun.search.test.{W}"
+def use(name):
+    """This checkout's own world for a suite: the name, then a tag made from
+    the checkout's path. Two checkouts testing at once (a worktree beside
+    the main one, another session's) share no socket, settings or folder,
+    so a run in one is never answered by the other's build. A suite that
+    wants a world apart from the split suite's calls it with its own name."""
+    global W, SUPPORT, SUITE, SOCK
+    W = f"{name}-{hashlib.sha1(str(ROOT).encode()).hexdigest()[:8]}"
+    SUPPORT = f"{HOME}/Library/Application Support/Search ({W})"
+    SUITE = f"com.officecommun.search.test.{W}"
+    SOCK = f"{SUPPORT}/bench.sock"
+use("split-tests")
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
         port = self.server.server_port
@@ -40,7 +53,6 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 srv = ThreadingHTTPServer(("127.0.0.1", 0), H); threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = f"http://127.0.0.1:{srv.server_port}"
-SOCK = f"{SUPPORT}/bench.sock"
 # Only ever a probe of this world: the one this run started, or one a run
 # before left holding this world's socket. Never the Search someone is using,
 # even one running from this very build (see running()).
@@ -48,7 +60,55 @@ started = set()
 def running(): return set(subprocess.run(["pgrep", "-f", APP + "/Contents/MacOS"], capture_output=True, text=True).stdout.split())
 def holding(): return set(subprocess.run(["lsof", "-t", "--", SOCK], capture_output=True, text=True).stdout.split()) if os.path.exists(SOCK) else set()
 def pids(): return sorted((started & running()) | (holding() & running()))
+WEBKIT = f"{HOME}/Library/WebKit/com.officecommun.search"
+def stores():
+    """The WebKit stores this world's runs made, where WebKit keeps them and
+    named as the app names them (Store.probeStore, Spaces.store): its
+    websites', its extensions', and one for each of its spaces with sign-ins
+    of its own, read from its own list of spaces and of spaces it was still
+    erasing. Only those: a real Search's spaces keep their stores beside
+    them, and a store is never guessed at by its look."""
+    h = 2166136261
+    for byte in W.encode(): h = ((h ^ byte) * 16777619) & 0xFFFFFFFF
+    probe = lambda kind: f"5E4C{h >> 16:04X}-{h & 0xFFFF:04X}-4000-8000-{kind:012X}"
+    found = [f"{WEBKIT}/WebsiteDataStore/{probe(1).lower()}", f"{WEBKIT}/WebExtensions/{probe(2)}"]
+    ids = []
+    try:
+        ids += [space["id"] for space in json.load(open(f"{SUPPORT}/spaces.json")) if space.get("sharesSignIns") is not True]
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    erasing = subprocess.run(["defaults", "read", SUITE, "spaces.erasing"], capture_output=True, text=True).stdout
+    ids += re.findall(r"[0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}", erasing)
+    for id in ids:
+        try: id = str(uuid.UUID(id))
+        except (ValueError, AttributeError, TypeError): continue
+        # The first space is signed in where the world is: no store of its own.
+        if id != FIRST_SPACE:
+            found.append(f"{WEBKIT}/WebsiteDataStore/{id}")
+    return found
+# The real Search's folder, beside whose stores these are removed.
+REAL = f"{HOME}/Library/Application Support/Search"
+FIRST_SPACE = "00000000-0000-0000-0000-000000000001"
+def guarded():
+    """Store ids no wipe removes, whatever stores() names: every space of the
+    real Search's own list, and the first space's fixed id. A wrong hash, or
+    a test world's list holding a real space's id, then never reaches a real
+    space's sign-ins: rm -rf runs in the folder where those live."""
+    ids = {FIRST_SPACE}
+    try:
+        ids |= {str(uuid.UUID(space["id"])) for space in json.load(open(f"{REAL}/spaces.json"))}
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        pass
+    return ids
 def wipe():
+    # The stores first: which spaces had one is in the folder and settings
+    # about to go.
+    keep = guarded()
+    for path in stores():
+        if os.path.basename(path).lower() in keep:
+            print(f"wipe: not removing {path}: the real Search's spaces use that id", file=sys.stderr)
+            continue
+        subprocess.run(["rm", "-rf", path])
     subprocess.run(["rm", "-rf", SUPPORT]); subprocess.run(["defaults", "delete", SUITE], capture_output=True)
 def probe(pid):
     names = subprocess.run(["lsof", "-a", "-U", "-p", pid, "-Fn"], capture_output=True, text=True).stdout
@@ -116,10 +176,21 @@ def order(st): return [x["id"] for x in st["tabs"]]
 def url(st, id): return next(x["url"] for x in st["tabs"] if x["id"] == id)
 def ev(id, js): return cmd({"do": "eval", "id": id, "js": js}).get("value")
 def qs(): return sp("state")["questions"]
-def sample(n=12, every=0.03):
-    out = []
-    for _ in range(n):
-        out.append(sp("motion")["motion"]); time.sleep(every)
+def asked(id, within=10):
+    """The questions once page id has one up: a page's question reaches the
+    app a moment after the page asks, longer on a busy machine."""
+    until = time.time() + within
+    while not any(q["tab"] == id for q in qs()) and time.time() < until: time.sleep(0.1)
+    return qs()
+def sample(n=12, every=0.03, within=3):
+    """n looks at what moves, from the first that shows something moving:
+    on a busy machine the move can start a while after it was asked for.
+    Nothing moving by `within` seconds, and the n looks are taken then."""
+    out = []; until = time.time() + within
+    while len(out) < n:
+        m = sp("motion")["motion"]
+        if m or out or time.time() > until: out.append(m)
+        time.sleep(every)
     return out
 
 
@@ -356,7 +427,7 @@ def case_slice5b(t):
     setup(splitView=True); launch()
     a = page("a"); b = page("b")
     sp("pair", id=b, **{"with": a}, side="right"); sp("focus", id=a); time.sleep(0.8)
-    ev(b, "setTimeout(function(){ window.__r = confirm('Leave this page?') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ window.__r = confirm('Leave this page?') }, 0); 1"); asked(b)
     st = sp("state"); q = st["questions"]
     t.ok("confirm from the other page: a card over it", len(q) == 1 and q[0]["tab"] == b and q[0]["kind"] == "confirm" and q[0]["message"] == "Leave this page?", q)
     t.ok("named for the site asking", q and q[0]["host"] == "127.0.0.1", q)
@@ -364,38 +435,38 @@ def case_slice5b(t):
     t.ok("not held for later, not a sheet", st["held"] == {}, st["held"])
     sp("answer", id=b, ok=True); time.sleep(0.4)
     t.ok("OK answers true, once", ev(b, "window.__r") is True and qs() == [])
-    ev(b, "setTimeout(function(){ window.__r = prompt('Name?', 'x') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ window.__r = prompt('Name?', 'x') }, 0); 1"); asked(b)
     t.ok("prompt: a card", qs() and qs()[0]["kind"] == "prompt")
     sp("answer", id=b, ok=True, text="hello"); time.sleep(0.4)
     t.ok("prompt answers what was typed", ev(b, "window.__r") == "hello")
-    ev(b, "setTimeout(function(){ window.__r = prompt('Name?') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ window.__r = prompt('Name?') }, 0); 1"); asked(b)
     sp("answer", id=b, ok=False); time.sleep(0.4)
     t.ok("prompt cancelled answers null", ev(b, "window.__r") is None)
     # a page asking again and again: one at a time, in order
-    ev(b, "setTimeout(function(){ window.__n = 0; for (var i = 0; i < 3; i++) { alert('again ' + i); window.__n++ } }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ window.__n = 0; for (var i = 0; i < 3; i++) { alert('again ' + i); window.__n++ } }, 0); 1")
     seen = []
     for i in range(3):
-        q = qs(); seen.append((len(q), q[0]["message"] if q else None))
+        q = asked(b); seen.append((len(q), q[0]["message"] if q else None))
         sp("answer", id=b, ok=True); time.sleep(0.5)
     t.ok("asked again and again: one card at a time, in order", seen == [(1, "again 0"), (1, "again 1"), (1, "again 2")], seen)
     t.ok("…every one answered", ev(b, "window.__n") == 3)
     # the other page keeps working meanwhile
-    ev(b, "setTimeout(function(){ confirm('Still there?') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ confirm('Still there?') }, 0); 1"); asked(b)
     t.ok("the other page answers while one waits", ev(a, "1 + 1") == 2)
     # closed while asking: answered as dismissed, no hang
     st = sp("close", id=b); time.sleep(0.4)
     t.ok("page closed while asking: its card goes", qs() == [])
     b = page("b2"); sp("pair", id=b, **{"with": a}, side="right"); time.sleep(0.8)
-    ev(b, "setTimeout(function(){ confirm('Leave?') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ confirm('Leave?') }, 0); 1"); asked(b)
     sp("go", id=b, url=f"{BASE}/elsewhere") if False else cmd({"do": "go", "id": b, "url": f"{BASE}/elsewhere"}); time.sleep(1.5)
     t.ok("page gone elsewhere: its card goes", qs() == [], qs())
-    ev(b, "setTimeout(function(){ confirm('Leave?') }, 0); 1"); time.sleep(1.5)
+    ev(b, "setTimeout(function(){ confirm('Leave?') }, 0); 1"); asked(b)
     sp("enabled", on=False); time.sleep(0.4)
     t.ok("Split View off: the card is answered as dismissed", qs() == [])
     sp("enabled", on=True); sp("select", id=a); time.sleep(0.5)
     # a frame from another site is named as itself
-    c = page("asker"); sp("pair", id=c, **{"with": a}, side="right"); sp("focus", id=a); time.sleep(3)
-    q = qs()
+    c = page("asker"); sp("pair", id=c, **{"with": a}, side="right"); sp("focus", id=a)
+    q = asked(c)
     t.ok("a frame from another site is named as itself", q and q[0]["tab"] == c and q[0]["host"] == "localhost", q)
     if q: sp("answer", id=c, ok=True)
     # one page alone: the sheet path as before (a test run writes it down)
