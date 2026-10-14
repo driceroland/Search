@@ -63,7 +63,7 @@ struct GroupHeading: View {
         .frame(maxWidth: horizontal ? nil : .infinity, alignment: .leading)
         .fixedSize(horizontal: horizontal, vertical: false)
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .fill(dropping ? Palette.wash : (hovering ? Palette.hover : .clear)))
+            .fill(dropping ? Palette.sideWash : (hovering ? Palette.sideHover : .clear)))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onTapGesture { if !editing { browser.toggleTabGroup(group.id) } }
         .background {
