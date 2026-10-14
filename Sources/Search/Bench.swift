@@ -399,6 +399,26 @@ final class Bench {
                 }
             }
 
+        case "nowplaying":
+            // Whether this app is the Mac's Now Playing app, the one the media
+            // keys and AirPods taps go to, as WebKit has it for the tab's
+            // page (#512). WebKit's own tests ask the same way; a test run
+            // only, since it is WebKit's private side.
+            guard Store.testing else { answer(["error": "nowplaying only works on a --test run"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            let ask = NSSelectorFromString("_requestActiveNowPlayingSessionInfo:")
+            guard tab.web.responds(to: ask), let imp = tab.web.method(for: ask) else {
+                answer(["error": "this WebKit has no Now Playing info"]); return
+            }
+            typealias Reply = @convention(block) (ObjCBool, ObjCBool, NSString?, Double, Double, Int) -> Void
+            typealias Ask = @convention(c) (AnyObject, Selector, Reply) -> Void
+            let reply: Reply = { active, registered, title, _, _, _ in
+                MainActor.assumeIsolated {
+                    answer(["active": active.boolValue, "registered": registered.boolValue, "title": (title as String?) ?? ""])
+                }
+            }
+            unsafeBitCast(imp, to: Ask.self)(tab.web, ask, reply)
+
         case "eval":
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             guard let js = request["js"] as? String else { answer(["error": "eval needs js"]); return }
@@ -2707,7 +2727,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications",
             ]])
         }
     }
