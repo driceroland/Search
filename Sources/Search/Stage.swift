@@ -14,6 +14,8 @@ struct Page: View {
     /// False where the page itself is held elsewhere (see PaneStage.swift)
     /// and only what goes over it is wanted here.
     var holdsPage = true
+    /// The page's corners, as a card on the window's frame (see CardEdge).
+    var corner: CGFloat = 0
 
     var body: some View {
         ZStack {
@@ -25,7 +27,7 @@ struct Page: View {
             // the stage was never told to take it back when it landed, and
             // the tab stayed empty. Nothing, then the page, is a change.
             if holdsPage {
-                WebStage(page: tab.isBlank || tab.asleep || tab.floating ? nil : tab.web)
+                WebStage(page: tab.isBlank || tab.asleep || tab.floating ? nil : tab.web, corner: corner)
             }
 
             if let cover = tab.cover {
@@ -200,10 +202,12 @@ private struct HistoryList: View {
 /// reload, no lost scroll position, no forgotten form.
 struct WebStage: NSViewRepresentable {
     let page: NSView?
+    var corner: CGFloat = 0
 
     func makeNSView(context: Context) -> StageView { StageView() }
 
     func updateNSView(_ view: StageView, context: Context) {
+        view.corner = corner
         view.show(page)
     }
 }
@@ -228,6 +232,19 @@ final class StageView: NSView {
     /// takes its entry with it, and an inspector is kept by WebKit while it
     /// is open, never by this.
     private static let docks = NSMapTable<NSView, NSView>.weakToWeakObjects()
+
+    /// Round, as the page's card is (see CardEdge): the web view is cut to
+    /// the corners by this view's own layer, which a clip of SwiftUI's isn't
+    /// always carried down to.
+    var corner: CGFloat = 0 {
+        didSet {
+            guard corner != oldValue else { return }
+            wantsLayer = true
+            layer?.cornerRadius = corner
+            layer?.cornerCurve = .continuous
+            layer?.masksToBounds = corner > 0
+        }
+    }
 
     override func layout() {
         super.layout()
