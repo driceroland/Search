@@ -500,9 +500,12 @@ enum SpaceMenu {
 /// bookmarks list borrows `name` for Rename….
 @MainActor
 enum Ask {
-    static func name(_ title: String, placeholder: String, initial: String = "", confirm: String, then: @escaping (String) -> Void) {
+    /// `empty`: an empty name is an answer too (a bookmark's, see
+    /// BookmarkOutline.rename); otherwise it is taken as no answer.
+    static func name(_ title: String, detail: String? = nil, placeholder: String, initial: String = "", confirm: String, empty: Bool = false, then: @escaping (String) -> Void) {
         let alert = NSAlert()
         alert.messageText = title
+        if let detail { alert.informativeText = detail }
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         field.placeholderString = placeholder
         field.stringValue = initial
@@ -512,7 +515,7 @@ enum Ask {
         alert.window.initialFirstResponder = field
         show(alert) { ok in
             let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if ok, !name.isEmpty { then(name) }
+            if ok, empty || !name.isEmpty { then(name) }
         }
     }
 
