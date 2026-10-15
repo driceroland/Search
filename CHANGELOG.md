@@ -15,6 +15,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - A bookmark opens in a tab of its own, from the bookmarks bar, the Bookmarks menu or the list: opened from a pinned tab it used to take the pin's place. An empty new tab is used as it is, and ⌘ opens the bookmark behind the tab you are on.
 
+### Fixed
+
+- Signing in to Affinity Pathfinder from its panel on a website works. Connect Affinity reloaded the website instead of opening the sign-in window: an extension's page in a website's frame that opens, moves or closes a window now has it done by the extension's background, as its other calls already were, where WebKit ended the website's process. Once signed in, the panel never heard of it: a content script reading the address of its own extension's frame got a hidden one, and posting to it threw. And an extension's popup window whose page closes itself now closes, instead of staying open on a blank page.
+
 ### Held back
 
 Not in this version, kept on main for a later one:

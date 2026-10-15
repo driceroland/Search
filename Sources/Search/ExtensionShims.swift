@@ -1057,6 +1057,37 @@ enum ExtensionShims {
         }
       }
       if (inContent) {
+        // A content script reads an extension page's frame as
+        // webkit-masked-url://hidden/, src and attribute alike, even a frame
+        // of its own extension that it put there itself. Chrome gives the
+        // address back, and code that posts to the frame with that address as
+        // the target origin throws instead (Affinity Pathfinder hands its
+        // panel the finished sign-in so). So an address of this extension
+        // that its scripts set is what src gives them back, and only that.
+        if (root.HTMLIFrameElement && runtime && typeof runtime.getURL === "function") {
+          const ownBase = runtime.getURL("");
+          const given = new WeakMap();
+          const remember = (frame, value) => {
+            const address = String(value);
+            if (address.startsWith(ownBase)) given.set(frame, address); else given.delete(frame);
+          };
+          const proto = HTMLIFrameElement.prototype;
+          const d = Object.getOwnPropertyDescriptor(proto, "src");
+          if (d && d.get && d.set && d.configurable) {
+            Object.defineProperty(proto, "src", Object.assign({}, d, {
+              get() {
+                const shown = d.get.call(this);
+                return given.has(this) && shown.startsWith("webkit-masked-url:") ? given.get(this) : shown;
+              },
+              set(value) { remember(this, value); d.set.call(this, value); },
+            }));
+            const setAttribute = Element.prototype.setAttribute;
+            Element.prototype.setAttribute = function (name, value) {
+              if (this instanceof HTMLIFrameElement && String(name).toLowerCase() === "src") remember(this, value);
+              return setAttribute.apply(this, arguments);
+            };
+          }
+        }
         // A frame inside this extension's own page — its offscreen
         // document reading a site, say — is part of that page's tab, and
         // WebKit brings none of its messages to the page around it. So a
@@ -1128,12 +1159,23 @@ enum ExtensionShims {
             return reply.value;
           });
         };
+        // Some members WebKit answers from the object itself, ahead of
+        // anything set on it: windows.create, update and remove, and
+        // chrome.windows on chrome. Put there, ours reads back as WebKit's,
+        // and the call still ends the process (Affinity Pathfinder's sign-in
+        // button). A namespace like that is given through a stand-in
+        // `chrome` instead, which has ours for those members and WebKit's
+        // own objects for the rest, so listeners still go on WebKit's
+        // events. `browser` is left as WebKit's.
+        const stand = new Map();
         for (const space of spaces) {
           if (direct.has(space)) continue;
           let ns; try { ns = chrome[space]; } catch (e) { continue; }
           if (!ns || typeof ns !== "object") continue;
           const names = new Set();
           for (let o = ns; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) Object.getOwnPropertyNames(o).forEach((k) => names.add(k));
+          const ours = new Map();
+          const own = (name, value) => { put(ns, name, value); ours.set(name, value); };
           for (const name of names) {
             if (name === "constructor" || /^on[A-Z]/.test(name)) continue;
             let f; try { f = ns[name]; } catch (e) { continue; }
@@ -1141,7 +1183,7 @@ enum ExtensionShims {
             // A port can't be carried over: one that closes at once, as
             // Chrome's does when nothing answers, rather than a dead process.
             if (name === "connect") {
-              put(ns, name, (...args) => {
+              own(name, (...args) => {
                 const port = { name: (args.find((a) => a && typeof a === "object") || {}).name || "", sender: undefined,
                   postMessage: () => {}, disconnect: () => {}, onMessage: event(), onDisconnect: event() };
                 setTimeout(() => {
@@ -1152,13 +1194,26 @@ enum ExtensionShims {
               });
               continue;
             }
-            put(ns, name, (...args) => {
+            own(name, (...args) => {
               const callback = args.length && typeof args[args.length - 1] === "function" ? args.pop() : null;
               const answer = ask(space, name, args);
               if (!callback) return answer;
               answer.then((value) => callback(value), (error) => withLastError(error, callback));
             });
           }
+          const lost = new Map([...ours].filter(([name, value]) => ns[name] !== value));
+          if (!lost.size) continue;
+          // What is set on the stand-in later (the blob: mending further
+          // down) replaces ours there, as it would have on WebKit's object.
+          stand.set(space, new Proxy(ns, {
+            get: (target, key) => lost.has(key) ? lost.get(key) : Reflect.get(target, key),
+            defineProperty: (target, key, d) => lost.has(key) && "value" in d ? (lost.set(key, d.value), true) : Reflect.defineProperty(target, key, d),
+          }));
+        }
+        // Set through the fixed accessor above, which takes a replacement
+        // that still carries the APIs.
+        if (stand.size) {
+          try { root.chrome = new Proxy(chrome, { get: (target, key) => stand.has(key) ? stand.get(key) : Reflect.get(target, key) }); } catch (e) {}
         }
       }
 

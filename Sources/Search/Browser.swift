@@ -4829,6 +4829,13 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// reload to fetch, because there is no longer an address to fetch.
     func webViewDidClose(_ webView: WKWebView) {
         guard let tab = tab(for: webView) else { return }
+        // An extension's popup window is the one page it opened: when that
+        // page closes itself (Affinity Pathfinder's sign-in, once done), the
+        // window goes too, as in Chrome, instead of staying on a blank tab.
+        if extensionPopup != nil, tabs.count == 1 {
+            window?.close()
+            return
+        }
         // Back to whoever opened it, so you land where you started the sign-in
         // rather than wherever the row happens to put you.
         if let opener = tab.opener, let home = tabs.first(where: { $0.id == opener }) {
