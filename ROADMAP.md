@@ -41,63 +41,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Figma and LinkedIn feel slow** Figma blurs for a moment as you zoom in; LinkedIn's feed and profiles scroll with lag. *(email)*
 - [ ] **Suggestions in the tab's address field** History suggestions while editing the address inside the tab, as in the ⌘L field. *([#534](https://github.com/driceroland/Search/issues/534))*
 
-## Done, in the next version
-
-- [x] **Passkeys under the sign-in field** Passkeys listed under the sign-in field, as Safari does. About two days of work, and it needs a real passkey test on a signed build. *([#17](https://github.com/driceroland/Search/issues/17), X)*
-- [x] **Stuttering pages** Some pages stutter while scrolling: X, Instagram, WhatsApp Web, heavy pages with images and video. 1.0.4 halved what scrolling costs Search; what's left is being traced page by page. *([#211](https://github.com/driceroland/Search/issues/211), [#357](https://github.com/driceroland/Search/issues/357), email ×2)*
-- [x] **Floating video on Twitch, Netflix, X** Netflix: the picture now stays inside the floating window and subtitles show ([#190](https://github.com/driceroland/Search/pull/190), on main). Still open: part of the picture on Twitch, sometimes no picture on YouTube, only some of the time on X. *([#123](https://github.com/driceroland/Search/issues/123), email ×2, [#190](https://github.com/driceroland/Search/pull/190))*
-- [x] **Chatbot pages struggle or crash** grok.com and other chatbot pages; details asked. *(email)*
-- [x] **Extension popups miss messages** An extension's pages never heard what its background sent them, so Bitwarden's passkey window stayed blank and its sync timed out. #383 passes each message on. *([#383](https://github.com/driceroland/Search/pull/383), [#388](https://github.com/driceroland/Search/issues/388))*
-- [x] **Dragging a pin redraws the column** Dragging a pin redraws the whole column each frame, as dragging a tab did before 1.0.2.
-- [x] **Don't reopen tabs at launch** A switch to start with a fresh window instead of last time's tabs. *(email, [#406](https://github.com/driceroland/Search/issues/406))*
-- [x] **Pins as a list** Pins as a list, in rows instead of small squares. Also: site icons on pins without them in the tab list (one setting does both today), and Arc-style pinned rows above New Tab. *([#183](https://github.com/driceroland/Search/issues/183), email ×2, [#426](https://github.com/driceroland/Search/pull/426))*
-- [x] **Intel Macs** Search on Intel Macs, tested on a real one. A universal app would double its size (about 12 MB), so the choice is between that and a separate download for Intel. The build itself already works. *([#46](https://github.com/driceroland/Search/issues/46), X)*
-- [x] **Notifications from sites** Sites like WhatsApp, Slack or Gmail can show notifications while Search is open, after asking you, site by site. Not when Search is closed: WebKit gives apps other than Safari no web push. *(X, [#328](https://github.com/driceroland/Search/issues/328))*
-- [x] **Split view** Two tabs or more side by side in one window. *([#173](https://github.com/driceroland/Search/issues/173), [#277](https://github.com/driceroland/Search/issues/277), [#280](https://github.com/driceroland/Search/pull/280), email, [#381](https://github.com/driceroland/Search/pull/381), [#484](https://github.com/driceroland/Search/issues/484), [#513](https://github.com/driceroland/Search/issues/513))*
-- [x] **Turn the floating video off per site** Choose the sites where a video never floats. *([#267](https://github.com/driceroland/Search/issues/267))*
-- [x] **Copying images on WhatsApp Web** Copying an image from WhatsApp Web, and its attachment screen, don't work as expected. Copy Image couldn't read pictures a page makes itself (blob: addresses), which WhatsApp's photos are: fixed for the next version. The attachment screen needs checking with an account. *(email)*
-- [x] **Bookmark icons inside folders** Site icons disappear for bookmarks inside folders. *(email)*
-- [x] **Empty corner in full screen** In full screen, an empty corner shows where the window buttons were. *(email)*
-- [x] **Tampermonkey can't install from a link** Its rule that catches .user.js links is one WebKit refuses (a regular expression it doesn't support), so a script has to be pasted into Tampermonkey's editor. *([#289](https://github.com/driceroland/Search/issues/289))*
-- [x] **Faster import of huge folders** Big imports run in the background with their progress and a Cancel, so Search keeps answering while 250,000 bookmarks come in. *([#380](https://github.com/driceroland/Search/pull/380))*
-- [x] **Find counts its matches** Find on Page shows “3 of 17”, with Match Case and Whole Words, and the current match stands out. *([#377](https://github.com/driceroland/Search/pull/377))*
-- [x] **Bitwarden's popup, pop-out and unlock** The popup follows a narrower width its page asks for, windows.update moves and sizes the pop-out, and a PIN typed into an extension's own page is no longer offered as a password. *([#384](https://github.com/driceroland/Search/pull/384), [#385](https://github.com/driceroland/Search/pull/385), [#386](https://github.com/driceroland/Search/pull/386), [#408](https://github.com/driceroland/Search/pull/408))*
-- [x] **Update actions in the Search menu** Check for Updates becomes Download, Install or Restart to Update as the update moves along, with its progress shown there. *([#373](https://github.com/driceroland/Search/pull/373))*
-- [x] **History keeps similar addresses apart** localhost:3000 and localhost:4000, or /A and /a, no longer overwrite each other in history and suggestions. *([#374](https://github.com/driceroland/Search/pull/374))*
-- [x] **A failed extension update keeps the old one** Installing or updating an extension swaps it in whole, so a failure leaves the working version in place. *([#376](https://github.com/driceroland/Search/pull/376))*
-- [x] **Pause and resume downloads** Pause, resume and retry a download, and see why one failed, in Downloads. *([#378](https://github.com/driceroland/Search/pull/378))*
-- [x] **Sites can ask for your location** A site that asks for your location gets nothing today. It will ask, as in Safari, and you allow it once or always for that site. *([#387](https://github.com/driceroland/Search/issues/387), email)*
-- [x] **AI, optional** Off by default: summarize a page or ask about it, with a model you download to run on your Mac, or with your own key. Nothing is sent anywhere unless you choose a provider. *(X, [#397](https://github.com/driceroland/Search/issues/397))*
-- [x] **Screen recording from extensions** Loom, Screencastify, Awesome Screenshot, Tella, ScreenPal and Vidyard record your screen or a window from their Chrome extensions: macOS asks what to share each time, and a pill says who is recording, with Stop. Not a single tab, and not the tab's sound: WebKit has neither. *(email)*
-- [x] **Esc closes an untouched new tab** Esc on a tab just opened with ⌘T, with nothing typed, closes it and goes back to the tab you were on. *([#389](https://github.com/driceroland/Search/issues/389), [#393](https://github.com/driceroland/Search/pull/393))*
-- [x] **A new tab keeps what was typed** Words typed into a new tab's field and not yet sent stay with that tab when you look at another and come back. *([#390](https://github.com/driceroland/Search/issues/390), [#394](https://github.com/driceroland/Search/pull/394))*
-- [x] **Bookmarks look broken at some sizes** The bookmarks' look breaks at some window or column sizes; to look at with the screenshots in the report. *([#391](https://github.com/driceroland/Search/issues/391))*
-- [x] **Find paints every match** Every match on the page painted, the current one in another colour. *([#409](https://github.com/driceroland/Search/pull/409))*
-- [x] **Passkey sign-in on GitHub** Signing in to GitHub with a passkey kept on the Mac fails, where Safari and Chrome succeed. *([#407](https://github.com/driceroland/Search/issues/407))*
-- [x] **Keys beep in games** Arrow keys in some web games make the Mac's beep on each press. *([#402](https://github.com/driceroland/Search/issues/402), [#410](https://github.com/driceroland/Search/pull/410))*
-- [x] **Extension scripts from inside a page** An extension page shown inside a website can run a function in a tab, as a web clipper does.
-- [x] **SingleFile saves pages** SingleFile's worker starts, and the file it makes is saved.
-- [x] **Find paints every match** Find on Page paints every match yellow, the current one orange. *([#409](https://github.com/driceroland/Search/pull/409))*
-- [x] **Search a site from the address field** Type the start of a site's name, then Tab: what you type next searches that site. Popular sites built in; sites that offer a search join by themselves. *(X)*
-- [x] **Test worlds from fresh.sh refuse the bench** fresh.sh launches a world meant to be driven without -g -j, so the no-window guard trips at once. A pull request is coming from the reporter. *([#411](https://github.com/driceroland/Search/issues/411))*
-- [x] **Arc pins without icons** Spaces, pins and asleep tabs brought over from Arc wear a letter until each is opened: the import adopts Arc's icons for bookmarks only. *([#416](https://github.com/driceroland/Search/issues/416))*
-- [x] **Icons that change after load** An icon a page swaps after loading, like GitHub's with its theme, isn't followed, and a light and a dark icon overwrite each other. *([#423](https://github.com/driceroland/Search/issues/423))*
-- [x] **Live video jumps** A live stream on X jumped every few seconds: its player nudges the speed between 1 and 1.04, and each step through exactly 1 made WebKit rebuild the sound and hold the picture. *(message)*
-- [x] **Tab address field scrolls with the caret** Editing a tab's address, the field was wider than the row, so the caret and the end of a long address went out of sight. *([#419](https://github.com/driceroland/Search/issues/419), [#517](https://github.com/driceroland/Search/issues/517), [#555](https://github.com/driceroland/Search/pull/555))*
-- [x] **Site card never covers the address** Near the bottom of the screen, the site card was pushed up over the address being edited; it opens above it now. *([#418](https://github.com/driceroland/Search/issues/418))*
-- [x] **Icons per port** localhost:3000 and localhost:4321 shared one icon; icons are kept by host and port now. *([#413](https://github.com/driceroland/Search/issues/413))*
-- [x] **Column gone after a video's full screen** Leaving a YouTube video's full screen with Esc left the tab column hidden until it was switched off and on in the View menu. *(email)*
-- [x] **Close a tab group** Close Group in a group's menu closes the group and every tab in it; ⇧⌘T brings them back into it. *(email)*
-- [x] **Hidden column's shadow lingers** When the hidden column slides away, its shadow stays a moment after it's gone, then vanishes at once. *([#441](https://github.com/driceroland/Search/issues/441))*
-- [x] **⌘W closes the panel in front** With Settings or another panel open, ⌘W closes it (after a peek), in Escape's order, instead of the page behind. *([#452](https://github.com/driceroland/Search/pull/452))*
-- [x] **One ⇧⌘T undoes Clear** The tabs one Clear closes come back with a single ⇧⌘T, each in its place. *([#432](https://github.com/driceroland/Search/pull/432))*
-- [x] **Switcher previews while Find is open** ⌃Tab skipped the switcher's previews when the find bar was open. *([#553](https://github.com/driceroland/Search/issues/553))*
-- [x] **Pages talking to extensions** A site an extension lists in externally_connectable can send it messages (Claude in Chrome sign-in). *([#496](https://github.com/driceroland/Search/issues/496))*
-- [x] **New window in full screen** ⌘N in full screen gives the new window a full-screen space of its own. *([#515](https://github.com/driceroland/Search/issues/515), [#531](https://github.com/driceroland/Search/pull/531))*
-- [x] **Pinned extensions push the column off the side** *([#535](https://github.com/driceroland/Search/issues/535))*
-- [x] **Bookmarks menu empties on a changing title** With a tab whose title keeps changing (a download page showing its speed), the open Bookmarks menu lost its bookmarks. *(email)*
-- [x] **Square corners on popovers (macOS 15)** Before macOS 26, the bookmarks and extensions popovers and the site card showed square corners. *(email)*
-
 ## Now — fixes for the next update
 
 - [ ] **Spaces sometimes don't switch** *(email)*
@@ -124,8 +67,8 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **1Password desktop app, in the FAQ** 1Password with its desktop app. Say in the FAQ that Search is added in 1Password › Settings › Browser › Add Browser.
 - [ ] **Import: extension-only profiles, ego lite, a protected folder** Find browser profiles that only hold extensions, add ego lite as a source (no passwords), and let you choose a browser's data folder when macOS refuses Search access to it. *([#415](https://github.com/driceroland/Search/pull/415) ×2, [#507](https://github.com/driceroland/Search/pull/507))*
 - [ ] **Export as PDF** File › Export as PDF…: the whole page as one long PDF, as Safari does, through WebKit's createPDF. *([#446](https://github.com/driceroland/Search/issues/446), [#461](https://github.com/driceroland/Search/pull/461))*
-- [ ] **Arc import keeps its shape** Arc's folders are dropped when tab groups are off; its pinned pages come as ordinary tabs rather than pinned rows. *([#478](https://github.com/driceroland/Search/issues/478), [#582](https://github.com/driceroland/Search/pull/582))*
 - [ ] **A user agent per tab** Presets and a string of your own, per tab, as in Safari's Develop menu; shares its plumbing with Responsive Design Mode. *([#460](https://github.com/driceroland/Search/issues/460))*
+- [ ] **Links from a pin open in a peek** As in Arc: a link from a pinned tab to another site opens in a peek, so the pin stays on its site. Off unless turned on. *([#577](https://github.com/driceroland/Search/issues/577), [#581](https://github.com/driceroland/Search/pull/581))*
 - [ ] **Import says when macOS refuses a browser's folder** When macOS won't let Search read another browser's folder, the import sheet says so and points to choosing the folder, instead of reporting that nothing was found. *([#583](https://github.com/driceroland/Search/issues/583))*
 - [ ] **The folded column comes out faster** The folded column and tab bar slide out as quickly as Arc's and Dia's, and are kept ready instead of being built again on every peek. *([#585](https://github.com/driceroland/Search/pull/585), [#586](https://github.com/driceroland/Search/pull/586))*
 - [ ] **Site card corners on macOS 26** The site card keeps its rounded corners on macOS 26 too. *([#576](https://github.com/driceroland/Search/pull/576))*
@@ -172,13 +115,11 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Pressing a pin's number again** ⌘1–⌘9 pressed again on the pin you are on takes it back to the page it was pinned at, as a double-click on it does. *(email)*
 - [ ] **Pin letters of your own** A pin without an icon wears a capital letter; choose a lowercase one, two letters, or a symbol instead. *(email)*
 - [ ] **Responsive Design Mode** Look at a page as an iPhone, a Pixel or an iPad would, from the View menu, as in Safari's Develop menu. *([#412](https://github.com/driceroland/Search/pull/412))*
-- [ ] **Links from a pin open in a peek** As in Arc: a link from a pinned tab to another site opens in a peek, so the pin stays on its site. Off unless turned on. *([#577](https://github.com/driceroland/Search/issues/577), [#581](https://github.com/driceroland/Search/pull/581))*
 
 ## Asked to try again on the latest version
 
 - [ ] **Google sign-in flashes with Proton Pass** With Proton Pass signed in, Google's sign-in page reloads every half second. Presumed fixed in 1.0.2 by [#126](https://github.com/driceroland/Search/pull/126) and the passkey changes; to confirm with the person who saw it. *(X)*
 - [ ] **Hidden sidebar closes too soon** It closes while the pointer is over the extension buttons at its foot. Maybe fixed by [#115](https://github.com/driceroland/Search/pull/115) in 1.0.2; unconfirmed. *(email)*
-- [ ] **macOS text replacements in pages** The Mac's own text replacements don't work in text boxes on web pages. Tried on 1.0.3 and on the next version: a replacement typed then followed by a space is replaced in a text field, a text area and an editable page area. To ask: on which site, with which replacement, and does it work in Safari there? *(email)*
 - [ ] **The column seems to refresh** Reported as a sidebar refresh issue. Asked whether the column itself redraws or the page reloads as it comes out. *(email)*
 - [ ] **Black screen after full screen** In full screen, opening another window leaves the screen black. Asked which window: another app's, or one a page opens. *(email)*
 - [ ] **Cesturify's sessions command** An extension command that uses the sessions permission does nothing. Asked which command. *(email)*

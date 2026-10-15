@@ -1086,6 +1086,68 @@ final class Bench {
                     "shown": Double(NSHostingView(rootView: shown).fittingSize.height),
                     "opening": opening.count])
 
+        case "marks":
+            // Each bookmark wherever it is shown, nothing drawn on a screen:
+            // the bar's buttons laid out off every screen, with their size;
+            // each of the bar's folders as the menu it opens, and the menu
+            // bar's Bookmarks menu, every folder in them opened; and the
+            // button's list, row by row — each with what it reads and
+            // whether it wears the site's icon or a letter in its place.
+            guard Store.testing else { answer(["error": "marks only works on a --test run"]); return }
+            // "rename": [url, name] — typed into the ⇧⌘B card's Name field.
+            if let pair = request["rename"] as? [String], pair.count == 2,
+               let url = URL(string: pair[0]), let kept = browser.bookmarks.bookmark(for: url) {
+                BookmarkCard.rename(kept.id, pair[1], in: browser.bookmarks)
+            }
+            func line(_ depth: Int, _ item: NSMenuItem) -> [String: Any] {
+                ["depth": depth, "title": item.title, "folder": item.submenu != nil, "image": item.image != nil]
+            }
+            let bar = browser.bookmarks.roots.map { node -> [String: Any] in
+                let size = NSHostingView(rootView: BookmarksBar.Item(node: node, act: {})).fittingSize
+                return ["label": node.label, "title": node.title, "unnamed": node.unnamed,
+                        "width": Double(size.width), "height": Double(size.height)]
+            }
+            let folders = browser.bookmarks.roots.filter(\.isFolder).map { folder -> [String: Any] in
+                ["folder": folder.title, "items": BookmarkMenu.shared.walk(folder).map { line($0.depth, $0.item) }]
+            }
+            var menu: [[String: Any]] = []
+            if let main = NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu {
+                main.delegate?.menuNeedsUpdate?(main)
+                func down(_ items: [NSMenuItem], _ depth: Int) {
+                    for item in items where item.tag == 0x5EAC && !item.isSeparatorItem {
+                        menu.append(line(depth, item))
+                        if let sub = item.submenu {
+                            sub.delegate?.menuNeedsUpdate?(sub)
+                            down(sub.items, depth + 1)
+                        }
+                    }
+                }
+                down(main.items, 0)
+            }
+            func rows(_ nodes: [Bookmark], _ depth: Int) -> [[String: Any]] {
+                nodes.flatMap { node -> [[String: Any]] in
+                    [["depth": depth, "label": node.label, "folder": node.isFolder,
+                      "icon": !node.isFolder && Favicons.shared.cached(node.site ?? "") != nil]] + rows(node.children ?? [], depth + 1)
+                }
+            }
+            // "path": the button's list drawn there, every folder open, in
+            // the light, off every screen.
+            if let path = request["path"] as? String {
+                let all = Set(Bookmarks.folders(browser.bookmarks.roots).map(\.node.id))
+                let host = NSHostingView(rootView: BookmarkOutline(bookmarks: browser.bookmarks, expanded: .constant(all), open: { _ in }, openInNewTab: { _ in })
+                    .padding(6)
+                    .frame(width: 280)
+                    .background(Palette.ground))
+                host.appearance = NSAppearance(named: .aqua)
+                host.frame = NSRect(origin: .zero, size: host.fittingSize)
+                host.layoutSubtreeIfNeeded()
+                if let picture = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                    host.cacheDisplay(in: host.bounds, to: picture)
+                    try? picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                }
+            }
+            answer(["bar": bar, "folders": folders, "menu": menu, "list": rows(browser.bookmarks.roots, 0)])
+
         case "import":
             // Another browser's passwords, bookmarks and history, brought in
             // through the same calls the Welcome and the panels make. Only on
@@ -1230,6 +1292,44 @@ final class Bench {
             answer(["menus": menus, "ai": browser.prefs.ai, "shipped": AI.shipped,
                     "settingsPages": SettingsPanel.Page.allCases.filter { $0 != .ai || AI.shipped }.map(\.rawValue),
                     "settingsPage": browser.settingsPage.rawValue])
+
+        case "textcheck":
+            // Text replacement, smart quotes and smart dashes: what the Mac
+            // says, what the page's view says, and Edit › Substitutions as it
+            // would open, with its ticks. toggle NAME: the menu's own action,
+            // which writes WebKit's default in the app's standard domain —
+            // the real Search's, for a probe of the real app — so only in a
+            // copy under a bundle id of its own (Tests/text_replacement.py).
+            guard Store.testing else { answer(["error": "textcheck only works on a --test run"]); return }
+            let web = find(request, in: browser)?.built ?? browser.active?.built
+            if let name = request["toggle"] as? String {
+                guard Store.ownContainer else {
+                    answer(["error": "textcheck toggle only works in a copy under its own bundle id — it would switch the real Search's setting"])
+                    return
+                }
+                guard let kind = Substitution(rawValue: name) else { answer(["error": "toggle quotes|dashes|replacement"]); return }
+                browser.toggleSubstitution(kind, in: web)
+            }
+            // The menu bar is drawn again a moment after the browser changes.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                var mac: [String: Bool] = [:], page: [String: Bool] = [:], kept: [String: Any] = [:]
+                let domain = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]
+                for kind in Substitution.allCases {
+                    mac[kind.rawValue] = kind.mac
+                    page[kind.rawValue] = kind.isOn(in: web)
+                    kept[kind.rawValue] = domain[kind.key] ?? NSNull()
+                }
+                var items: [[String: Any]] = []
+                if let edit = NSApp.mainMenu?.items.first(where: { $0.title == "Edit" })?.submenu {
+                    edit.delegate?.menuNeedsUpdate?(edit)
+                    if let sub = edit.items.first(where: { $0.title == "Substitutions" })?.submenu {
+                        sub.delegate?.menuNeedsUpdate?(sub)
+                        items = sub.items.filter { !$0.isSeparatorItem && !$0.isHidden }
+                            .map { ["title": $0.title, "on": $0.state == .on] }
+                    }
+                }
+                answer(["mac": mac, "page": page, "kept": kept, "menu": items, "web": web != nil])
+            }
 
         case "menu":
             // The Bookmarks menu as it is about to open: the menu bar
@@ -1498,14 +1598,31 @@ final class Bench {
             // The list under the sign-in box the caret is in — passkeys, then
             // passwords — and, with "pick", a click on its row by number,
             // counted from 0. Only on a SEARCH_PROBE run: it would sign in.
+            // Also the name the save question would keep ("offer"), and,
+            // with "forget", every login this test world kept — its own
+            // label's, never another world's or the real one's. "keep" is
+            // the save question's Save.
             guard Store.testing else { answer(["error": "accounts only works on a --test run"]); return }
-            guard let list = browser.suggesting else { answer(["shown": false]); return }
+            if request["keep"] as? Bool == true { browser.keepOffer() }
+            if request["forget"] as? Bool == true {
+                Vault.all().forEach { Vault.forget(host: $0.host, user: $0.user) }
+                browser.dropOffer()
+            } else if let user = request["forget"] as? String {
+                // One account's, as Settings › Passwords forgets it: "" is
+                // the login kept under no name.
+                Vault.all().filter { $0.user == user }.forEach { Vault.forget(host: $0.host, user: $0.user) }
+            }
+            let offer: [String: Any] = browser.offering.map { ["user": $0.login.user, "host": $0.login.host, "changed": $0.changed] } ?? [:]
+            // Every account this world keeps, by name, without a secret.
+            let users = Vault.all().map(\.user)
+            guard let list = browser.suggesting else { answer(["shown": false, "offer": offer, "kept": users.count, "users": users]); return }
             let rows = list.passkeys.map { ["passkey": $0.name] } + list.logins.map { ["login": $0.user] }
             if let pick = request["pick"] as? Int {
                 guard rows.indices.contains(pick) else { answer(["error": "no row \(pick)"]); return }
                 if pick < list.passkeys.count { browser.choose(list.passkeys[pick]) } else { browser.choose(list.logins[pick - list.passkeys.count]) }
             }
-            answer(["shown": true, "rows": rows, "spot": [list.spot.minX, list.spot.minY, list.spot.width, list.spot.height]])
+            answer(["shown": true, "rows": rows, "nameOnly": list.nameOnly, "offer": offer, "kept": users.count, "users": users,
+                    "spot": [list.spot.minX, list.spot.minY, list.spot.width, list.spot.height]])
 
         case "fill":
             // What the window spends on the page scrolling: the page's report
@@ -2433,7 +2550,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "accounts", "find", "answer", "visible", "ai", "notifications",
+                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "accounts", "find", "answer", "visible", "ai", "notifications",
             ]])
         }
     }
