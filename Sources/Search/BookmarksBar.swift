@@ -11,6 +11,10 @@ import SwiftUI
 struct BookmarksBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var bookmarks: Bookmarks
+    /// On the window's ground, above the page's card, with the tabs down the
+    /// side: the ground's colour and no line of its own, the card's edge
+    /// being the line (see CardEdge).
+    var onFrame = false
 
     static let height: CGFloat = 30
 
@@ -36,13 +40,15 @@ struct BookmarksBar: View {
         }
         .frame(height: BookmarksBar.height)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.ground)
+        .background(onFrame ? Palette.frame : Palette.ground)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Palette.hairline).frame(height: 1)
+            if !onFrame { Rectangle().fill(Palette.hairline).frame(height: 1) }
         }
     }
 
-    private struct Item: View {
+    /// One on the bar. A bookmark without a name is its icon alone, in a
+    /// square as tall as the others, its address on hover.
+    struct Item: View {
         let node: Bookmark
         let act: () -> Void
         @State private var hovering = false
@@ -56,19 +62,22 @@ struct BookmarksBar: View {
                 } else {
                     Mark(icon: Favicons.shared.cached(node.site ?? ""), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 13)
                 }
-                Text(node.title)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.ink)
-                    .lineLimit(1)
-                    .frame(maxWidth: 150, alignment: .leading)
-                    .fixedSize(horizontal: true, vertical: false)
+                if !node.unnamed {
+                    Text(node.title)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                        .frame(maxWidth: 150, alignment: .leading)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
                 if node.isFolder {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 7.5, weight: .semibold))
                         .foregroundStyle(Palette.faint)
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, node.unnamed ? 0 : 8)
+            .frame(minWidth: node.unnamed ? 22 : nil)
             .frame(height: 22)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? Palette.hover : .clear))
             .contentShape(Rectangle())

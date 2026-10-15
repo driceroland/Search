@@ -468,6 +468,7 @@ final class Preferences: ObservableObject {
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.
         Preferences.tellWebKit(autocorrect: corrects)
+        Substitution.register()
         pageZoom = store.object(forKey: "pageZoom") as? Double ?? 1
         // Left behind by an assistant this browser no longer has.
         for key in ["mind.model", "mind.effort", "mind.acting", "mind.width", "mind.open"] {
@@ -477,12 +478,9 @@ final class Preferences: ObservableObject {
 
     /// WebKit's text checker takes its orders from the app's standard
     /// defaults — the real ones, not the test suite, because it is WebKit
-    /// reading them and not us. Smart quotes and dashes go off outright: in a
-    /// browser they are wrong in every code field and wanted in almost none.
+    /// reading them and not us. Text replacement, smart quotes and smart
+    /// dashes are Edit › Substitutions' (see Substitutions.swift).
     static func tellWebKit(autocorrect: Bool) {
-        let defaults = UserDefaults.standard
-        defaults.set(autocorrect, forKey: "WebAutomaticSpellingCorrectionEnabled")
-        defaults.set(false, forKey: "WebAutomaticQuoteSubstitutionEnabled")
-        defaults.set(false, forKey: "WebAutomaticDashSubstitutionEnabled")
+        UserDefaults.standard.set(autocorrect, forKey: "WebAutomaticSpellingCorrectionEnabled")
     }
 }
