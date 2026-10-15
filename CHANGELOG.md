@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Find on Page's close button and other controls respond to clicks with Split View enabled, instead of letting them reach the page underneath. Clicks outside the find bar still reach the page. ([#615](https://github.com/driceroland/Search/issues/615))
+
 ### Changed
 
 - A bookmark opens in a tab of its own, from the bookmarks bar, the Bookmarks menu or the list: opened from a pinned tab it used to take the pin's place. An empty new tab is used as it is, and ⌘ opens the bookmark behind the tab you are on.
