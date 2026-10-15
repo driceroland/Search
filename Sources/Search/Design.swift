@@ -21,6 +21,19 @@ enum Palette {
     /// you are on stands out from them as a live row does from the white.
     static let pinLive = Color(nsColor: NS.pinLive)
     static let hover = Color(nsColor: NS.hover)         // the one under the pointer
+    /// Around the page's card, with the tabs down the side: the column, the
+    /// bookmarks bar and the gaps share it, a touch off the page's white, so
+    /// the card reads as one (see CardEdge).
+    static let frame = Color(nsColor: NS.frame)
+    /// The column's own greys, on that ground: the live tab, the one under the
+    /// pointer, the resting pin squares and the live pin. The white column's
+    /// wash, hover and pinLive all but vanished on it (Drice: the pins' squares
+    /// and the open tab no longer showed), so these keep the same steps of
+    /// contrast from the frame that those kept from the white.
+    static let sideWash = Color(nsColor: NS.sideWash)
+    static let sideHover = Color(nsColor: NS.sideHover)
+    static let sideTile = Color(nsColor: NS.sideTile)
+    static let sidePinLive = Color(nsColor: NS.sidePinLive)
     /// The only two that aren't grey: a connection nobody can read on the
     /// way, and one anybody can (see SiteCard.swift).
     static let safe = Color(nsColor: NS.safe)           // green-700 · green-400
@@ -37,6 +50,11 @@ enum Palette {
         static let wash = pair(0.937, 0.175)
         static let pinLive = pair(0.90, 0.21)
         static let hover = pair(0.965, 0.15)
+        static let frame = pair(0.955, 0.075)
+        static let sideWash = pair(0.895, 0.155)
+        static let sideHover = pair(0.915, 0.13)
+        static let sideTile = pair(0.925, 0.115)
+        static let sidePinLive = pair(0.86, 0.19)
         /// The resting traffic lights, drawn by hand when the app is behind.
         static let resting = pair(0.80, 0.30)
         static let safe = tint(light: (0.08, 0.50, 0.24), dark: (0.29, 0.87, 0.50))
@@ -105,6 +123,11 @@ enum Metrics {
     /// to breathe just leaves it sitting below three buttons it used to line
     /// up with.
     static let strip: CGFloat = 52
+    /// With the tabs down the side the page is a card: this far from the
+    /// window's edges (and from the column, folded away), and its corners
+    /// this round.
+    static let cardGap: CGFloat = 8
+    static let cardRadius: CGFloat = 10
     /// Where the first tab starts. The traffic lights run from 19 to 79 —
     /// measured, not guessed — so this leaves them the same air on their right
     /// that the window gives them on their left.
@@ -295,5 +318,59 @@ private struct PopoverGround: ViewModifier {
         } else {
             content.presentationBackground(Palette.ground)
         }
+    }
+}
+
+/// The page as a card in the window, with the tabs down the side: round
+/// corners, a hairline edge and a soft shadow under it. The shadow is drawn
+/// by a shape behind the page, never by the page's own layers, which would
+/// make WebKit's drawing go through it; the page's view is rounded by its own
+/// layer as well (see StageView), since a web view is AppKit's and a clip of
+/// SwiftUI's is not always carried down to it. Two pages side by side are a
+/// card each, drawn by the stage that holds them (see PaneStage).
+struct CardEdge: ViewModifier {
+    let on: Bool
+
+    // One shape of view, on or off: a page whose view were rebuilt as the
+    // card comes and goes (the tabs across the top, a video taking the
+    // screen) would be handed to a new stage just as WebKit takes it to its
+    // full screen window. Off, the clip reaches far past the page and cuts
+    // nothing, and the edge and shadow are clear.
+    func body(content: Content) -> some View {
+        content
+            .clipShape(CardShape(on: on))
+            .background {
+                CardShape(on: on)
+                    .fill(on ? Palette.ground : .clear)
+                    .shadow(color: .black.opacity(on ? CardEdge.shadow : 0), radius: 6, y: 1)
+            }
+            .overlay {
+                CardShape(on: on)
+                    .strokeBorder(Color.primary.opacity(on ? CardEdge.edge : 0), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+    }
+
+    /// How dark the shadow and the edge are, for the stage's own cards too.
+    static let shadow: Double = 0.07
+    static let edge: Double = 0.08
+}
+
+/// The card's outline: round at its corners, or, off, a rectangle reaching
+/// far past the page on every side.
+private struct CardShape: InsettableShape {
+    let on: Bool
+    var inset: CGFloat = 0
+
+    func path(in rect: CGRect) -> Path {
+        guard on else { return Path(rect.insetBy(dx: -10_000, dy: -10_000)) }
+        return RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous)
+            .path(in: rect.insetBy(dx: inset, dy: inset))
+    }
+
+    func inset(by amount: CGFloat) -> CardShape {
+        var shape = self
+        shape.inset += amount
+        return shape
     }
 }

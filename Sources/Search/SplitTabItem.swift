@@ -176,7 +176,7 @@ private struct SplitTabHalf: View {
     private var ground: some View {
         if focused {
             ZStack(alignment: .leading) {
-                Rectangle().fill(Palette.wash)
+                Rectangle().fill(Palette.sideWash)
                 if prefs.showsReading, !narrow {
                     GeometryReader { geo in
                         ReadingFill(meter: tab.meter, width: geo.size.width)
@@ -189,7 +189,7 @@ private struct SplitTabHalf: View {
             RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Palette.wash)
         } else if hovering {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Palette.hover)
+                .fill(Palette.sideHover)
         }
     }
 

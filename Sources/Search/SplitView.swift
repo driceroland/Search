@@ -7,6 +7,8 @@ import SwiftUI
 /// stage says the pages are.
 struct SplitStage: View {
     @ObservedObject var browser: Browser
+    /// Each page's corners, as a card (see CardEdge).
+    var corner: CGFloat = 0
     @ObservedObject private var drag = TabDrag.shared
     /// Where each page on screen is, as the stage last said.
     @State private var frames: [Tab.ID: CGRect] = [:]
@@ -17,36 +19,46 @@ struct SplitStage: View {
         let split = browser.activeSplit
         let shown: [Tab] = split.map { pair in pair.tabs.compactMap { id in browser.tabs.first { $0.id == id } } }
             ?? browser.active.map { [$0] } ?? []
-        ZStack(alignment: .topLeading) {
-            PaneStageView(
-                tabs: shown, split: split, focused: browser.activeID,
-                commit: { id, sizes in browser.setSplitFraction(id, fraction: sizes[0]) },
-                focus: { tab in browser.focusPane(tab) },
-                frames: { frames = $0 },
-                action: { action in
-                    switch action {
-                    case .swap: browser.swapSplit()
-                    case .even: browser.evenSplit()
-                    case .separate: if let tab = browser.active { browser.detachSplit(tab) }
-                    case .closeBoth: browser.closeSplit()
-                    }
-                },
-                hover: { hovered = $0 },
-                find: browser.finding ? browser : nil
-            )
-            ForEach(shown) { tab in
-                if let frame = frames[tab.id] {
-                    PaneLayers(browser: browser, tab: tab, paired: shown.count > 1, width: frame.width,
-                               hovered: hovered == tab.id)
-                        .frame(width: frame.width, height: frame.height)
-                        .offset(x: frame.minX, y: frame.minY)
+        // The stage alone says how big it is; what is drawn over each page
+        // follows the frames it reports and has no say. Laid out beside the
+        // stage, a page's frame from a moment ago held the stage at that
+        // width: back from a video's full screen, the pages kept the whole
+        // window's width, the stage reported it again, and the window's
+        // content, too wide, was centred in it — the column cut off at the
+        // left and the pages past the right edge, for good.
+        PaneStageView(
+            tabs: shown, split: split, focused: browser.activeID,
+            commit: { id, sizes in browser.setSplitFraction(id, fraction: sizes[0]) },
+            focus: { tab in browser.focusPane(tab) },
+            frames: { frames = $0 },
+            action: { action in
+                switch action {
+                case .swap: browser.swapSplit()
+                case .even: browser.evenSplit()
+                case .separate: if let tab = browser.active { browser.detachSplit(tab) }
+                case .closeBoth: browser.closeSplit()
                 }
-            }
-            if let preview = drag.preview, preview.browserID == ObjectIdentifier(browser) {
-                SplitDropPreview(preview: preview, tabs: browser.tabs)
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+            },
+            hover: { hovered = $0 },
+            find: browser.finding ? browser : nil,
+            corner: corner
+        )
+        .overlay(alignment: .topLeading) {
+            ZStack(alignment: .topLeading) {
+                ForEach(shown) { tab in
+                    if let frame = frames[tab.id] {
+                        PaneLayers(browser: browser, tab: tab, paired: shown.count > 1, width: frame.width,
+                                   hovered: hovered == tab.id)
+                            .frame(width: frame.width, height: frame.height)
+                            .offset(x: frame.minX, y: frame.minY)
+                    }
+                }
+                if let preview = drag.preview, preview.browserID == ObjectIdentifier(browser) {
+                    SplitDropPreview(preview: preview, tabs: browser.tabs)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
