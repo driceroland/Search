@@ -98,14 +98,19 @@ final class Shield: ObservableObject {
         (["*cnn.com"], ".ad-slot-header__wrapper"),
     ]
 
+    static func networkFilter(for domain: String) -> String {
+        let escaped = domain.replacingOccurrences(of: ".", with: "\\.")
+        // WebKit's canonical HTTP URLs end the host with a port or a slash.
+        return "^https?://([^/]+\\.)?\(escaped)[:/]"
+    }
+
     func compile() {
         guard list == nil else { return }
         trouble = nil
         var rules: [[String: Any]] = Shield.unwanted.map { domain in
-            let escaped = domain.replacingOccurrences(of: ".", with: "\\.")
             return [
                 "trigger": [
-                    "url-filter": "^https?://([^/]+\\.)?\(escaped)",
+                    "url-filter": Shield.networkFilter(for: domain),
                     "load-type": ["third-party"],
                 ],
                 "action": ["type": "block"],
