@@ -15,6 +15,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - A small window for a link from another app closes with a swipe back from the page it opened on, since back from there is back to before it opened. The disc shows a cross instead of an arrow when letting go will close it. Pages you clicked through inside it go back as usual first
 
+### Changed
+
+- A bookmark opens in a tab of its own, from the bookmarks bar, the Bookmarks menu or the list: opened from a pinned tab it used to take the pin's place. An empty new tab is used as it is, and ⌘ opens the bookmark behind the tab you are on.
+
 ### Held back
 
 Not in this version, kept on main for a later one:

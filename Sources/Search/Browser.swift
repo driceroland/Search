@@ -3480,6 +3480,21 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// A bookmark, from the bar, the Bookmarks menu or a list of them: in a
+    /// tab of its own, never in place of the one you are on (Drice: opened
+    /// from a pin, it took the pin's place). An empty new tab is the one
+    /// exception, since nothing is lost by using it. With ⌘ it opens behind.
+    func openBookmark(_ url: URL) {
+        let behind = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+        if !behind, let active, active.isBlank, active.pin == nil, !active.floating {
+            active.go(to: url)
+            editing = false
+            typed = ""
+        } else {
+            open(url, foreground: !behind, from: active, mayWait: behind)
+        }
+    }
+
     /// A bookmark picked from the button's list or the full one. Either
     /// goes as the page starts: the list off the button used to stay open
     /// over the page it had just sent you to. A middle-click opens it in a
@@ -3494,7 +3509,7 @@ final class Browser: NSObject, ObservableObject {
         if inNewTab {
             open(url, foreground: foreground, from: active, mayWait: true)
         } else {
-            visit(url)
+            openBookmark(url)
         }
     }
 

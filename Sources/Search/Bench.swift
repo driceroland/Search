@@ -350,6 +350,13 @@ final class Bench {
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             browser.sleep(tab) { said in answer(["said": said, "asleep": tab.asleep]) }
 
+        case "openmark":
+            // A bookmark opened as the bar opens one. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "openmark only works on a --test run"]); return }
+            guard let text = request["url"] as? String, let url = URL(string: text) else { answer(["error": "openmark needs a url"]); return }
+            browser.openBookmark(url)
+            answer(["active": browser.active?.id.uuidString ?? ""])
+
         case "pin":
             // Pin a tab, or unpin it with "off". Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "pin only works on a --test run"]); return }
@@ -2550,7 +2557,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "accounts", "find", "answer", "visible", "ai", "notifications",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "accounts", "find", "answer", "visible", "ai", "notifications",
             ]])
         }
     }

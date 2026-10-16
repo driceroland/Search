@@ -26,7 +26,7 @@ struct BookmarksBar: View {
                         if node.isFolder {
                             BookmarkMenu.shared.popUp(node)
                         } else if let text = node.url, let url = URL(string: text) {
-                            browser.visit(url)
+                            browser.openBookmark(url)
                         }
                     }
                     .overlay {
