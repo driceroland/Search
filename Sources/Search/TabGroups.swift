@@ -13,6 +13,7 @@ struct GroupDropFrames: PreferenceKey {
 
 /// A quiet name above the tabs it contains, in either layout.
 struct GroupHeading: View {
+    @Environment(\.greys) private var greys
     @ObservedObject var browser: Browser
     let group: TabGroup
     var horizontal = false
@@ -63,7 +64,7 @@ struct GroupHeading: View {
         .frame(maxWidth: horizontal ? nil : .infinity, alignment: .leading)
         .fixedSize(horizontal: horizontal, vertical: false)
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .fill(dropping ? Palette.sideWash : (hovering ? Palette.sideHover : .clear)))
+            .fill(dropping ? greys.wash : (hovering ? greys.hover : .clear)))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onTapGesture { if !editing { browser.toggleTabGroup(group.id) } }
         .background {

@@ -506,11 +506,12 @@ final class Extensions: NSObject, ObservableObject {
     @discardableResult
     private func unload(_ id: String, replacingContext: Bool = true) -> Bool {
         guard let context = contexts[id] else { return false }
-        do { try controller.unload(context) } catch { return false }
+        var unloaded = false
+        do { try controller.unload(context); unloaded = true } catch {}
         // All paths retire the same endpoint: recovery, reload, disable and
         // remove. Complete observers before their views are closed, too.
-        ExtensionWorkerRecovery.shared.restarted(id, replacingContext: replacingContext)
-        if replacingContext { ExtensionWorkerRecovery.shared.unregister(id) }
+        if unloaded { ExtensionWorkerRecovery.shared.restarted(id, replacingContext: replacingContext) }
+        if replacingContext || !unloaded { ExtensionWorkerRecovery.shared.unregister(id) }
         // A reused context keeps native ports' weak context reference alive.
         // Retire only this extension's host/socket resources explicitly, rather
         // than waiting for isDisconnected to notice a deallocated context.
@@ -530,7 +531,9 @@ final class Extensions: NSObject, ObservableObject {
         DispatchQueue.main.async { ExtensionNative.stopOrphans() }
         contexts[id] = nil
         actionsChanged += 1
-        return true
+        // Disable/remove must release resources even when WebKit refuses the
+        // unload. Only revive uses this result to decide whether to reload.
+        return unloaded
     }
 
     private func save() {
@@ -891,32 +894,52 @@ final class Extensions: NSObject, ObservableObject {
 
     // MARK: - new tab pages
 
-    /// The page an extension asks to show in new tabs, from the one added
-    /// last — once you've said yes to it. Nil while nobody asks, or you
-    /// said no.
+    /// The page an extension asks to show in new tabs — once you've said
+    /// yes to it. Nil while nobody asks, or you said no.
     var newTabPage: URL? {
-        guard let (id, url) = newTabCandidate else { return nil }
-        return Store.settings.object(forKey: "extensions.newtab.\(id)") as? Bool == true ? url : nil
+        newTabPageID.flatMap { contexts[$0]?.overrideNewTabPageURL }
     }
 
-    private var newTabCandidate: (String, URL)? {
-        for item in installed.reversed() where item.enabled {
-            if let url = contexts[item.id]?.overrideNewTabPageURL { return (item.id, url) }
+    /// The extension new tabs show, the one added last of those you said
+    /// yes to.
+    var newTabPageID: String? {
+        newTabAskers.last { Store.settings.object(forKey: "extensions.newtab.\($0.id)") as? Bool == true }?.id
+    }
+
+    /// The extensions, on and running, that ask to replace the new tab page,
+    /// in the order they were added.
+    var newTabAskers: [Installed] {
+        installed.filter { $0.enabled && contexts[$0.id]?.overrideNewTabPageURL != nil }
+    }
+
+    /// Settings › General › Home page: one extension's page in new tabs, or
+    /// nil for Search's own. Every other one that asks is answered no, so
+    /// none of them puts its page back in by asking again.
+    func setNewTabPage(_ id: String?) {
+        for item in newTabAskers {
+            Store.settings.set(item.id == id, forKey: "extensions.newtab.\(item.id)")
         }
-        return nil
+        objectWillChange.send()
     }
 
     /// Chrome asks the first time an extension's page takes the place of
     /// the new tab — an extension that did it quietly could be anything.
-    /// So does Search, and then shows the page in the tab just opened.
+    /// So does Search, and then shows the page in the tab just opened. It
+    /// asks even while another extension's page has new tabs, naming that
+    /// one, so the first to ask doesn't keep them for good.
     func offerNewTabPage(into tab: Tab) {
-        guard let (id, url) = newTabCandidate, Store.settings.object(forKey: "extensions.newtab.\(id)") == nil,
-              let name = installed.first(where: { $0.id == id })?.name else { return }
+        guard let item = newTabAskers.last(where: { Store.settings.object(forKey: "extensions.newtab.\($0.id)") == nil }),
+              let url = contexts[item.id]?.overrideNewTabPageURL else { return }
+        let holder = newTabPageID.flatMap { id in installed.first { $0.id == id } }
+        let shown = newTabPage.flatMap(Browser.extensionHost(of:))
+        let replacing = holder.map { "It asked to replace the new tab page, which “\($0.name)” shows now." } ?? "It asked to replace the new tab page."
         Task {
-            let yes = await ask("Show “\(name)” in new tabs?", detail: "It asked to replace the new tab page. You can change this later in Settings › Extensions.",
-                                icon: contexts[id]?.webExtension.icon(for: CGSize(width: 64, height: 64)), yes: "Keep It", no: "Don't Allow")
-            Store.settings.set(yes, forKey: "extensions.newtab.\(id)")
-            if yes, tab.isBlank, let browser { browser.replaceBlank(tab, with: url) }
+            let yes = await ask("Show “\(item.name)” in new tabs?", detail: "\(replacing) You can change this later in Settings › General › Home page.",
+                                icon: contexts[item.id]?.webExtension.icon(for: CGSize(width: 64, height: 64)), yes: "Keep It", no: "Don't Allow")
+            if yes { setNewTabPage(item.id) } else { Store.settings.set(false, forKey: "extensions.newtab.\(item.id)") }
+            // The tab just opened, if it is still the page it opened on.
+            let untouched = tab.isBlank || (shown != nil && tab.address.flatMap(Browser.extensionHost(of:)) == shown)
+            if yes, untouched, let browser { browser.replaceNewTab(tab, with: url) }
         }
     }
 

@@ -46,6 +46,36 @@ final class ExtensionWorkerPortTests: XCTestCase {
     }
 
     @MainActor
+    func testObserverLimitIsPerExtensionAndCancellationReleasesCapacity() {
+        let recovery = ExtensionWorkerRecovery()
+        var retired = 0, rejected = 0, replacement = 0, other = 0
+        for index in 0..<ExtensionWorkerRecovery.observerLimit {
+            recovery.observe("first", generation: 0, token: "port-\(index)", lifetime: nil) { _ in retired += 1 }
+        }
+        recovery.observe("first", generation: 0, token: "overflow", lifetime: nil) {
+            XCTAssertNil($0); rejected += 1
+        }
+        XCTAssertEqual(rejected, 1)
+        XCTAssertEqual(retired, 0, "Overflow must not evict working ports")
+        recovery.observe("second", generation: 0, token: "other", lifetime: nil) { _ in other += 1 }
+        XCTAssertEqual(other, 0, "Another extension has its own capacity")
+        recovery.observe("first", generation: 0, token: "port-0", lifetime: nil) { _ in replacement += 1 }
+        XCTAssertEqual(retired, 1, "Replacing a token at capacity must remain possible")
+        XCTAssertEqual(replacement, 0)
+        recovery.cancel("first", token: "port-1")
+        XCTAssertEqual(retired, 2)
+        recovery.observe("first", generation: 0, token: "new", lifetime: nil) { _ in replacement += 1 }
+        XCTAssertEqual(replacement, 0)
+        recovery.restarted("first")
+        XCTAssertEqual(retired, ExtensionWorkerRecovery.observerLimit)
+        XCTAssertEqual(replacement, 2)
+        XCTAssertEqual(rejected, 1, "A rejected observer is never queued")
+        XCTAssertEqual(other, 0)
+        recovery.unregister("second")
+        XCTAssertEqual(other, 1)
+    }
+
+    @MainActor
     func testCancellationDoesNotAdvanceNativeGeneration() {
         let recovery = ExtensionWorkerRecovery()
         var value: Int?, replies = 0

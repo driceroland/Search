@@ -34,7 +34,8 @@ struct KeyCombo: Codable, Hashable {
     init?(event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let named = KeyCombo.names[event.keyCode] ?? ContentView.digits[event.keyCode].map(String.init)
-        guard let key = named ?? event.characters(byApplyingModifiers: [])?.lowercased(), !key.isEmpty else { return nil }
+        let key = named ?? event.shortcutKey
+        guard !key.isEmpty else { return nil }
         self.init(key, command: flags.contains(.command), shift: flags.contains(.shift),
                   option: flags.contains(.option), control: flags.contains(.control))
     }
@@ -153,6 +154,7 @@ struct Command: Identifiable {
         Command("file.closeTab", "Close Tab", .file, KeyCombo("w")) { $0.closeFront() },
         Command("file.import", "Bring Things Over…", .file, nil) { $0.bringingIn = "" },
         Command("file.share", "Share…", .file, nil) { $0.share() },
+        Command("file.exportPDF", "Export as PDF…", .file, nil) { $0.exportPDF() },
         Command("file.print", "Print…", .file, KeyCombo("p")) { $0.printPage() },
 
         Command("edit.find", "Find on Page…", .edit, KeyCombo("f")) { $0.openFind() },

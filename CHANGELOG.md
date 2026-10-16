@@ -11,9 +11,36 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- The page as a card can be turned off, in Settings › Tabs › The page as a card, beside the sidebar's settings. Off, the page reaches the window's edges and the column is white with its fine line, as before 1.0.5. It stays on unless you turn it off. Asked for on [#607](https://github.com/driceroland/Search/issues/607)
+- A small window for a link from another app closes with a swipe back from the page it opened on, since back from there is back to before it opened. The disc shows a cross instead of an arrow when letting go will close it. Pages you clicked through inside it go back as usual first
+- Settings › General › Home page, while an extension offers to replace the new tab page: a menu of Search's own page and each extension that asked, and the way back after one took over. One extension has new tabs at a time, and the newest one you said yes to wins; before, saying no to a newer extension also took new tabs away from an older one you'd said yes to. An extension added while another has new tabs is asked too, naming the one it would replace. Thanks [@oddharsh](https://github.com/oddharsh) ([#472](https://github.com/driceroland/Search/pull/472))
+- How soon tabs sleep is a choice: Settings › Tabs › How soon tabs sleep puts a tab you aren't using to sleep after two hours (Later), half an hour (Normal, as before) or ten minutes (Sooner). Memory running short still puts them to sleep sooner, whichever you chose.
+- A page can be exported as a PDF from the File menu, at its current full length and in the layout on screen rather than broken into sheets for printing. The export stays with the tab it was opened for, even if another becomes active before saving. Thanks [@Qddog23](https://github.com/Qddog23) for asking ([#446](https://github.com/driceroland/Search/issues/446)), and [@Rahuletto](https://github.com/Rahuletto) for the implementation.
+- Closing the last tab that isn't a pin can leave a new tab, as closing the only tab does, instead of taking you into a pin and waking it if it was asleep. The pins stay where they are, untouched, and ⇧⌘T brings the page back; closed behind a pin, it leaves the pin on screen. Off unless you turn it on in Settings › Tabs › Leave a new tab when the last tab closes. Thanks [@kingsleydon](https://github.com/kingsleydon) for reporting and [@Adithya-Sakaray](https://github.com/Adithya-Sakaray) for the fix ([#537](https://github.com/driceroland/Search/issues/537), [#538](https://github.com/driceroland/Search/pull/538))
+- Import extension-only browser profiles and ego lite; ego lite passwords are shown as unsupported.
+- Select several tabs with ⌘-click or ⇧-click, including Split View pairs, and copy their addresses from the tab menu.
+
+### Changed
+
+- A bookmark opens in a tab of its own, from the bookmarks bar, the Bookmarks menu or the list: opened from a pinned tab it used to take the pin's place. An empty new tab is used as it is, and ⌘ opens the bookmark behind the tab you are on.
+
 ### Fixed
 
 - Extensions hear once when Search actually restarts their worker, from content scripts and their own pages alike, including a recovery requested by another page. Old ports close without polling, replaying messages or reconnecting behind the extension’s back.
+
+- A pin moved to another space with Move to Space stays there. Moved to a space you didn't open before quitting, it was gone after a relaunch. Thanks [@karadoganyi](https://github.com/karadoganyi) ([#587](https://github.com/driceroland/Search/pull/587))
+- A website whose name begins with what reads as a private address is opened over https. The address field chose plain http for anything typed that started with "10." or "192.168.", which is how a server on this Mac or on the local network is reached, but those were tests on a name rather than on an address: 10.io, 10.ai, 10.org, 10.net and 10.fr are all registered websites, and so is 10.0.0.1.example.com. http://10.io/ answers without redirecting, so the page arrived unencrypted and stayed that way. A local server still gets http, now only when what was typed is four numbers and nothing more, as Dialogs.isLoopback already had it ([#590](https://github.com/driceroland/Search/issues/590))
+- Find on Page's close button and other controls respond to clicks with Split View enabled, instead of letting them reach the page underneath. Clicks outside the find bar still reach the page. ([#615](https://github.com/driceroland/Search/issues/615))
+- A folded column comes out on the tab you are on, as it was meant to: with more tabs than the window holds, the scroll to it could be lost as the column slid out, and the tab could be out of sight. Thanks [@oddharsh](https://github.com/oddharsh) ([#599](https://github.com/driceroland/Search/pull/599))
+- Shortcuts Search reads itself, rather than through its menus, work with a Russian, Greek or any other non-Latin keyboard layout on: ⌘W in the small window, for one, did nothing. They were matched by the character the key types, Ц instead of W; they are now read through the Latin layout that goes with it, as macOS reads the menus' own. Latin layouts, AZERTY included, are unchanged. Thanks [@hnnsly](https://github.com/hnnsly)
+- A sideways scroll swipes back or forward only when the Mac's own Swipe between pages is on, in System Settings › Trackpad or › Mouse, as in Safari. With it off, a one-finger Magic Mouse scroll inside a page such as a Google Sheet went back a page once the sheet's edge was reached. Thanks [@nourspace](https://github.com/nourspace) for reporting and [@karadoganyi](https://github.com/karadoganyi) for the fix ([#464](https://github.com/driceroland/Search/issues/464), [#467](https://github.com/driceroland/Search/pull/467))
+- With the window in full screen, the page goes edge to edge: no room around it and no rounded corners, as with a video filling the screen. Out of full screen, the card comes back. Asked for on [#607](https://github.com/driceroland/Search/issues/607)
+- The column's greys stay on the strip across the top, in Settings and in the panels: the live tab of a Split View pair, a tab group's name and the buttons there took the darker greys made for the column beside the card.
+- The native page accepts the window layout's offered size, so its previous bounds do not set the browser's minimum layout width.
+- AdBlock blocks ads again. Its background asked WebKit to watch every kind of request Chrome names, two of which ("webtransport" and "webbundle") WebKit doesn't know, and WebKit refused the listener and stopped the background there: the few network rules built into its lists still applied, but nothing else did, so ads hidden by the page's own layout stayed and its button had nothing behind it. Those two are now left out of the list and the rest is watched as asked
+- A build of your own put in place of a release stops offering passkeys on its first run, as it can't do them: sites took the passkey path and failed every time. A build that can offers them again on its first run; from then on the switch is yours. Thanks [@FabianoC13](https://github.com/FabianoC13) ([#608](https://github.com/driceroland/Search/pull/608))
 
 ### Held back
 

@@ -16,6 +16,7 @@ final class ExtensionWorkerRecovery {
         let reply: (Int?) -> Void
     }
     private var waiting: [String: [String: Observation]] = [:]
+    static let observerLimit = 4096
 
     private final class WeakContext {
         weak var value: WKWebExtensionContext?
@@ -93,6 +94,7 @@ final class ExtensionWorkerRecovery {
         if generation < current { reply(current) }
         else {
             cancel(id, token: token)
+            guard waiting[id, default: [:]].count < Self.observerLimit else { reply(nil); return }
             waiting[id, default: [:]][token] = Observation(lifetime: lifetime, reply: reply)
         }
     }

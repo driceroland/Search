@@ -131,6 +131,11 @@ Swift advances the installed-shim context generation when a successfully unloade
 `WKWebExtensionContext` will be replaced. All teardown paths complete old observers, including wake/revive,
 manual reload, disable and removal. Rejected unload, healthy wake and the
 revive cooldown do not advance it. Automatic recovery unloads and loads the
+same context only after a successful unload. Even if WebKit rejects unloading,
+disable/remove still close native ports, popups and offscreen pages, purge
+captures, release keep-awake assertions and clear the stored context. Pending
+observers are cancelled without claiming a restart.
+Automatic recovery reloads the
 same context instance, following WebKit's own reload implementation: existing
 API objects keep their internal context identifier. Those retirements use the
 unchanged context generation, so newly loaded pages using cached prepared shim
@@ -187,7 +192,9 @@ it unless reloading fails with no loaded context. Stale registrations cannot can
 subscriptions belonging to a replacement.
 Abrupt process death without pagehide can retain a
 pending native reply until that extension is next unloaded; no timer is added
-to probe for that condition.
+to probe for that condition. Each extension can retain at most 4,096 pending
+observers; excess subscriptions finish with no restart notification. Existing
+observers are not evicted, and cancellation or replacement frees capacity.
 
 ## Cross-origin and message-overlap coverage
 
