@@ -18,15 +18,24 @@ checked is the one https takes.
 
 Measured (macOS 26.6, 16 Oct 2026): tracking prevention is not what stops
 them. With it on, the panel's fetch and frame are sent the site's
-SameSite=None and unset cookies, whatever store or switch. SameSite=Lax ones
-are never sent: WebKit takes a request from an extension page to any other
-site as cross-site (Document::isSameSiteForCookies compares the top
-document's site, here the extension's, with no exception for extensions or
-the hosts they may reach, and no SPI to give one), where Chrome counts a host
-the extension has access to as same-site. A site whose session cookie is Lax
-(claude.ai's, most likely) looks signed out in an extension's page. The
-checks below hold that line: if WebKit ever sends Lax cookies there, the
-"Lax withheld" check fails and the panel should start working as in Chrome.
+SameSite=None and unset cookies, whatever store or switch, from the first
+load, and still after a relaunch (the cookies here last an hour, so they
+outlive it). An extension page is already spared third-party cookie
+blocking, so a storage access grant, the popup heuristic's included, has
+nothing left to give it: grants only lift that blocking and never touch
+SameSite. SameSite=Lax ones are never sent: WebKit takes a request from an
+extension page to any other site as cross-site (FrameLoader::
+addSameSiteInfoToRequestIfNeeded, Document::isSameSiteForCookies compare the
+top document's site, here the extension's), where Chrome counts a host the
+extension has access to as same-site. claude.ai's sessionKey, sessionKeyV3
+and routingHint are all SameSite=Lax (read from the cookie store's attribute
+bits, never the values), so the panel looks signed out. WebKit's own fix
+landed on its main branch on 5 Oct 2026 (322707@main, "Give extension page
+subframes unpartitioned cookie access", then storage access on 7 Oct); no
+shipping macOS has it yet, and Search has no switch that reaches it. The
+"Lax withheld" checks below hold that line: once a macOS carries the fix
+the frame's fail (the fetch's may stay: the fix is for frames), and the
+panel's frame should be signed in as in Chrome.
 """
 import json
 import shutil
@@ -51,7 +60,9 @@ class Site(BaseHTTPRequestHandler):
         headers = [("Content-Type", "text/html")]
         if path == "/login":
             body = "<!doctype html><title>signed in</title>"
-            for c in ("lax=1; Path=/; SameSite=Lax", "none=1; Path=/; SameSite=None", "plain=1; Path=/"):
+            # An hour long, so they outlive the relaunch below.
+            for c in ("lax=1; Path=/; Max-Age=3600; SameSite=Lax", "none=1; Path=/; Max-Age=3600; SameSite=None",
+                      "plain=1; Path=/; Max-Age=3600"):
                 headers.append(("Set-Cookie", c))
         elif path == "/api":
             # What the site was sent, as claude.ai/api/bootstrap answers: no
@@ -149,6 +160,17 @@ def main():
         # WebKit's limit, not Search's: see the top of this file.
         t.ok("with access: Lax withheld from the fetch (WebKit: cross-site)", "lax=1" not in (api or ""), api)
         t.ok("with access: Lax withheld from the frame (WebKit: cross-site)", "lax=1" not in (frame or ""), frame)
+
+        # Relaunched: the same, from WebKit's store on disk. Nothing an earlier
+        # page or popup was given lingers or goes away.
+        sv.quit(); time.sleep(1); sv.launch()
+        got, api, frame = panel_result(ext)
+        print("  after a relaunch:", got, "| site sent: api", repr(api), "frame", repr(frame))
+        for c in ("none=1", "plain=1"):
+            t.ok(f"after a relaunch: the panel's fetch sends {c}", c in (api or ""), (got, api))
+            t.ok(f"after a relaunch: the panel's frame is sent {c}", c in (frame or ""), (got, frame))
+        t.ok("after a relaunch: Lax still withheld (WebKit: cross-site)",
+             "lax=1" not in (api or "") and "lax=1" not in (frame or ""), (api, frame))
 
         sv.cmd({"do": "ext-remove", "id": ext["id"]}); time.sleep(0.8)
         other = add(without, "Panel Without")
