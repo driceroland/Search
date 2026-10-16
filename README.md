@@ -4,7 +4,7 @@ A small, fast, quiet web browser for the Mac, by [Office Commun](https://officec
 
 ![Search, with its tabs down the left and a page taking the rest of the window](.github/screenshot.png)
 
-**[Download for macOS →](https://officecommun.com/search)** · macOS 14 or later · free · about 6 MB
+**[Download for macOS →](https://officecommun.com/search)** · macOS 14 or later · free · about 7 MB
 
 Or with [Homebrew](https://brew.sh): `brew install --cask driceroland/tap/search`
 
@@ -64,7 +64,7 @@ Apps you allow in System Settings › Privacy & Security › Automation can read
 | `⇧⌘S` tabs across the top or down the left · `⌘S` fold the sidebar away · `⇧⌘B` bookmark this page | `⇧⌘R` reading mode · `⇧⌘P` float the video · `⇧⌘H` hide something · `⇧⌘U` what is hidden here |
 | `⌘F` find · `⌘D` duplicate tab · `⇧⌘C` copy address · `⇧⌘V` paste and go | `⌘Y` history · `⇧⌘J` downloads · `⌘,` settings · `⌥⌘L` passwords |
 
-`⌘R` reloads the page; `⌥⌘R` reloads it from origin, checking everything cached with the site again, as Safari's Reload Page From Origin.
+`⌘R` reloads the page; `⌥⌘R` reloads it from origin, checking everything cached with the site again, as Safari's Reload Page From Origin, which is also in a right-click on the reload button.
 
 `⌃Tab` and `⌃⇧Tab` walk along the row of tabs; `Tab` stays the page's, for moving through a form. `esc` puts away whatever is open.
 

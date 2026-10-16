@@ -128,7 +128,7 @@ struct TabBar: View {
                     // The way to a new page, right after the tabs rather than
                     // at the end of their run, so it is there however far the
                     // run has scrolled. Out of sight until the pointer is up here.
-                    Button { browser.newTab() } label: {
+                    Button { browser.launch() } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(Palette.muted)
@@ -470,6 +470,16 @@ struct Helm: View {
                 }
                 .disabled(tab.isBlank)
                 .opacity(tab.isBlank ? 0.3 : 1)
+                // The menu's second item is the reason for it: ⌥⌘R has no
+                // button. Nothing to offer while the door is Stop.
+                .contextMenu {
+                    if !tab.loading && !tab.isBlank {
+                        Button("Reload Page") { browser.reload() }
+                            .shortcut("view.reload")
+                        Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
+                            .shortcut("view.reloadOrigin")
+                    }
+                }
             }
             .animation(Motion.quick, value: back)
             .animation(Motion.quick, value: forward)
@@ -540,6 +550,13 @@ private struct TabPill: View {
             }
         }
         .background { ground }
+        .overlay {
+            if browser.selectedTabIDs.contains(tab.id) {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        }
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         // Never both at once.
@@ -555,6 +572,8 @@ private struct TabPill: View {
         // edits its letter; everything else answers the first click at
         // once. Change Letter in the menu covers the rest.
         .modifier(OneClick(double: live && pinned) {
+            guard NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+            browser.clearTabSelection()
             if live && pinned {
                 browser.goHome(tab)
             } else if live && !pinned {
@@ -563,6 +582,7 @@ private struct TabPill: View {
                 browser.select(tab)
             }
         })
+        .modifier(ModifiedTabClick { if !editing { browser.extendTabSelection(to: tab, modifiers: $0) } })
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
@@ -719,6 +739,9 @@ private struct TabPill: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .matchedGeometryEffect(id: "live", in: pill)
+        } else if browser.selectedTabIDs.contains(tab.id) {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Palette.wash)
         } else if hovering {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.hover)
@@ -863,8 +886,10 @@ struct TabAddressField: NSViewRepresentable {
         field.lineBreakMode = .byClipping
         field.stringValue = browser.tabDraft
         context.coordinator.watch(field)
-        // The site card stands under whichever field the address is in.
+        // The site card stands under whichever field the address is in, and
+        // the list of places once something is typed.
         SiteCardPanel.follow(browser, anchor: field)
+        TabOffersPanel.follow(browser, anchor: field)
         return field
     }
 
@@ -905,14 +930,26 @@ struct TabAddressField: NSViewRepresentable {
         var browser: Browser
         var claimed = false
         var typing = false
+        /// A key that takes letters off: the field mustn't put the same
+        /// letters straight back as a completion, or it can't be shortened.
+        private var deleting = false
 
         init(browser: Browser) { self.browser = browser }
 
         func controlTextDidChange(_ note: Notification) {
             guard let field = note.object as? NSTextField else { return }
             typing = true
+            defer { typing = false }
+            let text = field.stringValue
+            let ending = browser.tabTyped(text)
+            // The rest of a place you have been, typed in selected, as ⌘L's
+            // field does: the next key replaces it and Return takes it.
+            if !deleting, let ending, let editor = field.currentEditor() as? NSTextView {
+                field.stringValue = text + ending
+                editor.selectedRange = NSRange(location: (text as NSString).length, length: (ending as NSString).length)
+            }
+            deleting = false
             browser.tabDraft = field.stringValue
-            typing = false
         }
 
         func control(
@@ -929,6 +966,19 @@ struct TabAddressField: NSViewRepresentable {
             case #selector(NSResponder.cancelOperation(_:)):
                 browser.cancelTabEdit()
                 return true
+            case #selector(NSResponder.moveDown(_:)) where !browser.tabOffers.isEmpty:
+                browser.walkTab(1)
+                return true
+            case #selector(NSResponder.moveUp(_:)) where !browser.tabOffers.isEmpty:
+                browser.walkTab(-1)
+                return true
+            case #selector(NSResponder.deleteBackward(_:)),
+                 #selector(NSResponder.deleteForward(_:)),
+                 #selector(NSResponder.deleteWordBackward(_:)),
+                 #selector(NSResponder.deleteWordForward(_:)),
+                 #selector(NSResponder.deleteToBeginningOfLine(_:)):
+                deleting = true
+                return false
             default:
                 return false
             }
@@ -973,6 +1023,16 @@ struct TabMenu: View {
     let close: () -> Void
 
     var body: some View {
+        singleMenu
+        if browser.selectedTabIDs.contains(tab.id) && browser.visibleSelectedTabCount > 1 {
+            Divider()
+            Button("Copy Addresses") { browser.copySelectedTabLinks() }
+                .disabled(browser.selectedTabLinkCount == 0)
+        }
+    }
+
+    @ViewBuilder
+    private var singleMenu: some View {
         if browser.prefs.usesTabGroups && tab.pin == nil && !tab.shy && !tab.bench {
             Menu("Move to Group") {
                 Button("New Group") { browser.addTabGroup(containing: tab) }
@@ -1008,9 +1068,15 @@ struct TabMenu: View {
             } else {
                 Button("Change Letter") { browser.editLetter(tab) }
             }
+            if browser.prefs.showsSharedPins {
+                Button(tab.everywhere ? "Only in This Space" : "Keep in Every Space") {
+                    if tab.everywhere { browser.keepHere(tab) } else { browser.shareEverywhere(tab) }
+                }
+            }
             Button("Unpin") { browser.unpin(tab) }
         }
-        if browser.prefs.usesSpaces, !tab.bench,
+        // A shared pin is in every space already: nowhere to move it.
+        if browser.prefs.usesSpaces, !tab.bench, !tab.everywhere,
            tab.address.flatMap({ Browser.extensionHost(of: $0) }) == nil {
             Menu("Move to Space") {
                 ForEach(browser.spaces.filter { $0.id != browser.spaceID }) { space in
@@ -1107,6 +1173,18 @@ struct TabMenu: View {
         // look for it: here too, where tabs are closed.
         Button(browser.reopenTitle) { browser.reopen() }
             .disabled(browser.ghosts.isEmpty)
+    }
+}
+
+/// A modified tap selects tabs; a drag stays with the row's drag gesture.
+struct ModifiedTabClick: ViewModifier {
+    let act: (NSEvent.ModifierFlags) -> Void
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(TapGesture().onEnded {
+            let modifiers = NSEvent.modifierFlags
+            if !modifiers.intersection([.command, .shift]).isEmpty { act(modifiers) }
+        })
     }
 }
 

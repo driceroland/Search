@@ -28,21 +28,74 @@ enum Chromium {
         /// The app itself, to say so when it is on this Mac but its data
         /// isn't where it should be.
         let app: String
+        /// Some Chromium browsers keep passwords with a key Search does not
+        /// know how to read. Their bookmarks, history and extensions still
+        /// belong in the import list.
+        var importsPasswords = true
+        var rootOverride: URL? = nil
 
         var id: String { name }
 
-        var root: URL { Chromium.base.appendingPathComponent(folder, isDirectory: true) }
+        var root: URL {
+            if let rootOverride { return rootOverride }
+            if !Store.testing, let selected = Chromium.chosenRoot(for: name) {
+                return selected
+            }
+            return Chromium.base.appendingPathComponent(folder, isDirectory: true)
+        }
 
-        /// Every profile: a folder holding passwords, bookmarks or history.
+        /// Every profile: a folder holding passwords, bookmarks, history or
+        /// extensions. A browser used only for extensions still has something
+        /// to bring over.
         /// Most browsers keep one folder per profile ("Default", "Profile 1");
         /// Opera keeps its only profile in the browser's folder itself.
-        var profiles: [URL] {
-            let inside = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
-            return ([root] + inside).filter { folder in
-                ["Login Data", "Bookmarks", "History"].contains {
-                    FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+        var profiles: [URL] { discovery.profiles }
+
+        /// Keep directory errors separate from an empty, readable folder.
+        var discovery: (profiles: [URL], error: Error?) {
+            let root = root.resolvingSymlinksInPath()
+            var inside: [URL] = []
+            var error: Error?
+            do {
+                inside = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+            } catch let failure {
+                error = failure
+            }
+            let found = ([root] + inside).filter { folder in
+                guard contains(folder, in: root) else { return false }
+                if folder != root {
+                    guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return false }
+                    do {
+                        _ = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+                    } catch let failure {
+                        if error == nil { error = failure }
+                    }
+                }
+                return ["Login Data", "Bookmarks", "History", "Extensions"].contains {
+                    file($0, in: folder).map { FileManager.default.fileExists(atPath: $0.path) } ?? false
                 }
             }
+            return (found, error)
+        }
+
+        /// Resolve before reading: a profile or file link cannot leave the
+        /// browser root, whether it was picked or found in the normal place.
+        func file(_ name: String, in folder: URL? = nil) -> URL? {
+            let root = root.resolvingSymlinksInPath()
+            let url = (folder ?? root).appendingPathComponent(name)
+            return contains(url, in: root) ? url.resolvingSymlinksInPath() : nil
+        }
+
+        /// Check the opened file, then read at most 64 MB of JSON from it.
+        func data(_ name: String, in folder: URL? = nil) throws -> Data {
+            guard let url = file(name, in: folder) else { throw Trouble.unreadable }
+            return try ImportRead.data(url, inside: root.resolvingSymlinksInPath())
+        }
+
+        private func contains(_ url: URL, in root: URL) -> Bool {
+            let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+            let base = root.standardizedFileURL.path
+            return path == base || path.hasPrefix(base + "/")
         }
 
         /// The profiles to read: the one whose folder is named, or every
@@ -54,7 +107,7 @@ enum Chromium {
 
         /// Every profile's passwords file, or the one profile's.
         func files(only: String? = nil) -> [URL] {
-            profiles(only: only).map { $0.appendingPathComponent("Login Data") }
+            (importsPasswords ? profiles(only: only) : []).compactMap { file("Login Data", in: $0) }
                 .filter { FileManager.default.fileExists(atPath: $0.path) }
         }
 
@@ -63,8 +116,7 @@ enum Chromium {
         /// folder used last — "last_used", or failing that the first of
         /// "last_active_profiles".
         var localState: (names: [String: String], last: [String]) {
-            let file = root.appendingPathComponent("Local State")
-            guard let data = try? Data(contentsOf: file),
+            guard let data = try? data("Local State"),
                   let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let profile = top["profile"] as? [String: Any]
             else { return ([:], []) }
@@ -88,6 +140,7 @@ enum Chromium {
     static let known: [Source] = [
         Source(name: "Dia", folder: "Dia/User Data", service: "Dia Safe Storage", account: "Dia", app: "Dia.app"),
         Source(name: "Chrome", folder: "Google/Chrome", service: "Chrome Safe Storage", account: "Chrome", app: "Google Chrome.app"),
+        Source(name: "ego lite", folder: "Citro Labs/ego lite", service: "", account: "", app: "ego lite.app", importsPasswords: false),
         Source(name: "Arc", folder: "Arc/User Data", service: "Arc Safe Storage", account: "Arc", app: "Arc.app"),
         Source(name: "Brave", folder: "BraveSoftware/Brave-Browser", service: "Brave Safe Storage", account: "Brave", app: "Brave Browser.app"),
         Source(name: "Edge", folder: "Microsoft Edge", service: "Microsoft Edge Safe Storage", account: "Microsoft Edge", app: "Microsoft Edge.app"),
@@ -117,13 +170,67 @@ enum Chromium {
         known.filter { !$0.profiles.isEmpty }
     }
 
-    /// Browsers that are on this Mac with nothing found where their data
-    /// should be — said by name, with where Search looked, rather than
-    /// "no other browser found".
-    static func unreadable() -> [(source: Source, looked: String)] {
+    /// A picked folder is trusted only while this process is running. A saved
+    /// path could be changed by another process and silently redirect imports.
+    private static let selectionLock = NSLock()
+    private static var selectedRoots: [String: URL] = [:]
+
+    static func chosenRoot(for name: String) -> URL? {
+        selectionLock.lock()
+        defer { selectionLock.unlock() }
+        return selectedRoots[name]
+    }
+
+    static func useForSession(_ folder: URL, for source: Source) {
+        guard !Store.testing else { return }
+        selectionLock.lock()
+        defer { selectionLock.unlock() }
+        selectedRoots[source.name] = folder.resolvingSymlinksInPath()
+    }
+
+    struct Unavailable {
+        let source: Source
+        let error: Error?
+        var partial = false
+
+        var message: String {
+            let looked = source.root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+            guard let error else {
+                return "\(source.name) is on this Mac, but no browser profile was found in \(looked)."
+            }
+            let failure = error as NSError
+            if failure.domain == NSCocoaErrorDomain && failure.code == NSFileReadNoSuchFileError {
+                return "\(source.name) is on this Mac, but its data folder was not found at \(looked)."
+            }
+            if partial {
+                let reason = Self.permissionDenied(failure)
+                    ? "macOS hasn't allowed Search to read all of them."
+                    : failure.localizedDescription
+                return "Some of \(source.name)'s profiles in \(looked) couldn't be read: \(reason) Choose its data folder in Settings › Bring Things Over to allow access for this session."
+            }
+            if Self.permissionDenied(failure) {
+                return "macOS hasn't allowed Search to read \(source.name)'s data in \(looked). Choose its data folder in Settings › Bring Things Over to allow access for this session."
+            }
+            return "Search couldn't read \(source.name)'s data in \(looked): \(failure.localizedDescription)"
+        }
+
+        private static func permissionDenied(_ error: NSError) -> Bool {
+            if error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoPermissionError { return true }
+            if error.domain == NSPOSIXErrorDomain && [Int(EACCES), Int(EPERM)].contains(error.code) { return true }
+            if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+                return permissionDenied(underlying)
+            }
+            return false
+        }
+    }
+
+    /// Keep read failures visible even when another profile can be imported.
+    static func unreadable() -> [Unavailable] {
         guard !Store.testing else { return [] }
-        return known.filter { $0.appInstalled && $0.profiles.isEmpty }.map {
-            ($0, $0.root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+        return known.filter(\.appInstalled).compactMap { source in
+            let discovery = source.discovery
+            guard discovery.profiles.isEmpty || discovery.error != nil else { return nil }
+            return Unavailable(source: source, error: discovery.error, partial: !discovery.profiles.isEmpty)
         }
     }
 
@@ -143,6 +250,7 @@ enum Chromium {
     /// The passwords of one profile, or of all of them when `profile` is
     /// nil. The key is asked for once, here, whichever it is.
     static func read(_ source: Source, profile: String? = nil) throws -> Found {
+        guard source.importsPasswords else { throw Trouble.unreadable }
         guard let passphrase = safeStorage(source) else { throw Trouble.noPassphrase }
         let key = stretch(passphrase)
 
@@ -194,9 +302,9 @@ enum Chromium {
         let profiles = source.profiles(only: profile)
         var complete = !profiles.isEmpty
         for profile in profiles {
-            let marks = profile.appendingPathComponent("Bookmarks")
+            guard let marks = source.file("Bookmarks", in: profile) else { complete = false; continue }
             guard FileManager.default.fileExists(atPath: marks.path) else { continue }
-            guard let data = try? Data(contentsOf: marks),
+            guard let data = try? source.data("Bookmarks", in: profile),
                   let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let roots = top["roots"] as? [String: Any]
             else {
@@ -248,8 +356,7 @@ enum Chromium {
         guard !wanted.isEmpty else { return out }
 
         for profile in source.profiles(only: profile) {
-            let icons = profile.appendingPathComponent("Favicons")
-            guard FileManager.default.fileExists(atPath: icons.path),
+            guard let icons = source.file("Favicons", in: profile), FileManager.default.fileExists(atPath: icons.path),
                   let copy = try? Snapshot(of: icons)
             else { continue }
             let temp = copy.file
@@ -301,8 +408,7 @@ enum Chromium {
     static func places(in source: Source, profile: String? = nil, limit: Int = 3000) -> [Place] {
         var out: [Place] = []
         for profile in source.profiles(only: profile) {
-            let history = profile.appendingPathComponent("History")
-            guard FileManager.default.fileExists(atPath: history.path) else { continue }
+            guard let history = source.file("History", in: profile), FileManager.default.fileExists(atPath: history.path) else { continue }
             out += (try? placeRows(in: history, limit: limit)) ?? []
         }
         return Array(out.sorted { $0.last > $1.last }.prefix(limit))
@@ -355,10 +461,11 @@ enum Chromium {
     static func preview(of source: Source, profile: String?, limit: Int = 3000) -> ImportSource.Preview {
         let files = source.profiles(only: profile)
         let places = files.reduce(0) { sum, folder in
-            sum + count("""
+            guard let history = source.file("History", in: folder) else { return sum }
+            return sum + count("""
             SELECT COUNT(*) FROM urls WHERE hidden = 0 AND visit_count > 0
             AND (url LIKE 'http:%' OR url LIKE 'https:%')
-            """, in: folder.appendingPathComponent("History"))
+            """, in: history)
         }
         let passwords = source.files(only: profile).reduce(0) { sum, file in
             sum + count("SELECT COUNT(*) FROM logins WHERE blacklisted_by_user = 0 AND length(password_value) > 0", in: file)
@@ -397,7 +504,7 @@ enum Chromium {
         for folder in source.profiles(only: profile) {
             var settings: [String: [String: Any]] = [:]
             for name in ["Preferences", "Secure Preferences"] {
-                guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)),
+                guard let data = try? source.data(name, in: folder),
                       let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let all = (top["extensions"] as? [String: Any])?["settings"] as? [String: Any]
                 else { continue }
@@ -408,7 +515,8 @@ enum Chromium {
             }
             var ids: [String]
             if settings.isEmpty {
-                ids = (try? FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("Extensions").path)) ?? []
+                guard let extensions = source.file("Extensions", in: folder) else { continue }
+                ids = (try? FileManager.default.contentsOfDirectory(atPath: extensions.path)) ?? []
             } else {
                 ids = settings.compactMap { id, entry in
                     // Location 1 is Chromium's "internal": added by the person.
@@ -1256,6 +1364,11 @@ enum ImportSource: Identifiable, Hashable {
         }
     }
 
+    var importsPasswords: Bool {
+        if case .chromium(let source) = self { return source.importsPasswords }
+        return true
+    }
+
     /// Whether its passwords are behind a key macOS asks about.
     var asksForKey: Bool {
         if case .chromium = self { return true }
@@ -1343,6 +1456,47 @@ enum ImportSource: Identifiable, Hashable {
     }
 }
 
+/// Import reads validate the opened descriptor, not just a path checked earlier.
+/// JSON has a byte limit both before and during reading, including file growth.
+private enum ImportRead {
+    static let jsonLimit = 64 * 1024 * 1024
+
+    static func openRegular(_ url: URL, inside root: URL? = nil, limit: Int? = nil) throws -> Int32 {
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        do {
+            var info = stat()
+            guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+                  info.st_size >= 0 else { throw Chromium.Trouble.unreadable }
+            if let limit, info.st_size > limit { throw Chromium.Trouble.unreadable }
+            if let root {
+                var path = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+                let result = path.withUnsafeMutableBufferPointer { fcntl(fd, F_GETPATH, $0.baseAddress!) }
+                guard result == 0 else { throw Chromium.Trouble.unreadable }
+                let opened = URL(fileURLWithPath: String(cString: path)).standardizedFileURL.path
+                let base = root.standardizedFileURL.path
+                guard opened.hasPrefix(base + "/") else { throw Chromium.Trouble.unreadable }
+            }
+            return fd
+        } catch {
+            close(fd)
+            throw error
+        }
+    }
+
+    static func data(_ url: URL, inside root: URL) throws -> Data {
+        let fd = try openRegular(url, inside: root, limit: jsonLimit)
+        defer { close(fd) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+        var data = Data()
+        while let chunk = try handle.read(upToCount: min(64 * 1024, jsonLimit - data.count + 1)), !chunk.isEmpty {
+            guard chunk.count <= jsonLimit - data.count else { throw Chromium.Trouble.unreadable }
+            data.append(chunk)
+        }
+        return data
+    }
+}
+
 /// A copy of one of another browser's SQLite files to read from, with the
 /// two files SQLite keeps beside it while the browser runs: what was
 /// written last is often still in "-wal", and a copy without it misses the
@@ -1356,16 +1510,29 @@ final class Snapshot {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         file = folder.appendingPathComponent(source.lastPathComponent)
         do {
-            try FileManager.default.copyItem(at: source, to: file)
+            try Self.copyRegular(source, to: file)
+            for side in ["-wal", "-shm"] {
+                let beside = URL(fileURLWithPath: source.path + side)
+                try Self.copyRegular(beside, to: URL(fileURLWithPath: file.path + side), optional: true)
+            }
         } catch {
             try? FileManager.default.removeItem(at: folder)
             throw error
         }
-        for side in ["-wal", "-shm"] {
-            let beside = URL(fileURLWithPath: source.path + side)
-            guard FileManager.default.fileExists(atPath: beside.path) else { continue }
-            try? FileManager.default.copyItem(at: beside, to: URL(fileURLWithPath: file.path + side))
-        }
+    }
+
+    /// Open without following a final link, then copy from that descriptor.
+    /// Checking a path and opening it later could copy a replacement link.
+    private static func copyRegular(_ source: URL, to target: URL, optional: Bool = false) throws {
+        let input: Int32
+        do { input = try ImportRead.openRegular(source) }
+        catch let error as POSIXError where optional && error.code == .ENOENT { return }
+        defer { close(input) }
+        let output = open(target.path, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR)
+        guard output >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { close(output) }
+        guard fcopyfile(input, output, nil, copyfile_flags_t(COPYFILE_DATA)) == 0
+        else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
     }
 
     deinit { try? FileManager.default.removeItem(at: folder) }

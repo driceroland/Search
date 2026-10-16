@@ -77,6 +77,9 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         // where Browser.prepare pointed it; kept, the tab is prepared again
         // and says it there.
         tab.onZoom = { [weak note] _, value in note?.say("\(Int((value * 100).rounded()))%") }
+        // Back from the page it opened on is back to before it opened: a
+        // swipe closes it (see PageView.leave).
+        tab.leave = { [weak self] in self?.close() }
     }
 
     /// Its own key monitor. A browser window's (see ContentView.watchKeys)
@@ -113,7 +116,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             if combo == keys.key(for: "view.actualSize") { tab.resetZoom(); return true }
         }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let key = event.shortcutCharacters
         if event.keyCode == 53 && flags.isEmpty || key == "w" && flags == .command {
             window.performClose(nil)
             return true
@@ -141,6 +144,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     func keep() {
         let browser = Browsers.ensureWindow()
         kept = true
+        // In the row, back from the first page goes nowhere, as any tab's.
+        tab.leave = nil
         // As a tab moved from another window is: this window's delegate,
         // and this window's space, with its sign-ins.
         browser.receive(tab)
@@ -152,6 +157,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        tab.leave = nil
         if !kept { tab.close() }
         LittleWindow.open.removeAll { $0 === self }
     }
@@ -192,8 +198,10 @@ struct LittleView: View {
                     Trouble(message: failure) { tab.reload() }
                         .transition(.opacity)
                 }
+                Swiping(pull: tab.pull)
             }
             .animation(Motion.quick, value: tab.failure)
+            .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
         }
         .background(Palette.ground)
         .overlay(alignment: .bottom) { if let note { LittleToast(note: note) } }
