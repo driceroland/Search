@@ -123,8 +123,9 @@ struct Fold: View {
                     // the slide, the column's full height over: in full
                     // screen, the whole screen's, and the slide lagged there.
                     // The column's own ground is opaque, so it is the same
-                    // rectangle either way.
-                    SideBar(browser: browser, prefs: prefs)
+                    // rectangle either way. It wears the window's ground, as
+                    // it does beside the page's card (see CardEdge).
+                    SideBar(browser: browser, prefs: prefs, onFrame: true)
                         .transition(.casting(FoldShadow(x: onRight ? -4 : 4, behind: true))
                             .combined(with: .move(edge: onRight ? .trailing : .leading)))
                 }
