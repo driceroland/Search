@@ -83,6 +83,13 @@ final class Preferences: ObservableObject {
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
     }
+    /// With the tabs down the side, the page as a card: a little room
+    /// around it and rounded corners (see CardEdge). On unless turned off,
+    /// since 1.0.5 shipped with it; off, the page reaches the window's edges
+    /// and the column is white with its hairline, as before 1.0.5 (#607).
+    @Published var cards: Bool {
+        didSet { store.set(cards, forKey: "layout.cards") }
+    }
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
     }
@@ -102,6 +109,10 @@ final class Preferences: ObservableObject {
     @Published var sleepsTabs: Bool {
         didSet { store.set(sleepsTabs, forKey: "tabs.sleep") }
     }
+    /// How soon they do (see SleepPace). Normal unless chosen.
+    @Published var sleepPace: SleepPace {
+        didSet { store.set(sleepPace.rawValue, forKey: SleepPace.key) }
+    }
     /// A tab opened behind the page — ⌘-click, the middle button, a batch
     /// of links from another app — waits to load until it is gone to, as a
     /// tab brought back from the last session does (see Browser.open).
@@ -113,6 +124,12 @@ final class Preferences: ObservableObject {
     }
     @Published var lazyTabs: Bool {
         didSet { store.set(lazyTabs, forKey: "tabs.lazy") }
+    }
+    /// Closing the last tab that isn't a pin, with pins beside it, leaves a
+    /// new tab instead of taking you to a pin (see Browser.close, #537).
+    /// Off unless asked for.
+    @Published var newTabAfterLast: Bool {
+        didSet { store.set(newTabAfterLast, forKey: "tabs.newAfterLast") }
     }
     /// Each launch starts with a fresh window: the pins stay, last time's
     /// other tabs don't come back (see Session.startFresh). Off unless
@@ -381,13 +398,16 @@ final class Preferences: ObservableObject {
         sideHides = store.bool(forKey: "sidebar.hides")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
+        cards = store.object(forKey: "layout.cards") as? Bool ?? true
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
         keywords = store.data(forKey: "search.keywords")
             .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
+        sleepPace = SleepPace.chosen
         lazyTabs = store.bool(forKey: "tabs.lazy")
+        newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         startsFresh = store.bool(forKey: Preferences.freshKey)
         searchesSites = store.bool(forKey: "search.sites")
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
@@ -400,17 +420,25 @@ final class Preferences: ObservableObject {
         extensionsInPrivate = store.bool(forKey: "extensions.private")
         // Offered by default only in a build that can actually do them —
         // one with Apple's browser entitlement and its profile embedded. A
-        // choice made while they couldn't work is not a choice about them:
-        // the first run of a build that can offers them, whatever was set
-        // before; from then on the switch is the person's.
+        // choice made under the other kind of build is not a choice about
+        // this one: the first run of a build that can offers them, and the
+        // first run of one that can't — a release swapped for a build of your
+        // own — stops offering them, which would strand every sign-in on a
+        // passkey path that can only fail. From then on the switch is the
+        // person's. "passkeys.for" is the kind of build the switch was last
+        // set under; before it there was only "passkeys.entitled", which a
+        // build that couldn't wrote on its first run as well.
         let entitled = Preferences.entitledToPasskeys
         passkeysPossible = entitled
-        if entitled, !store.bool(forKey: "passkeys.entitled") {
-            passkeys = true
-            store.set(true, forKey: "passkeys")
+        let settledFor = store.object(forKey: "passkeys.for") as? Bool
+            ?? (entitled && store.bool(forKey: "passkeys.entitled") ? true : nil)
+        if settledFor != entitled {
+            passkeys = entitled
+            store.set(entitled, forKey: "passkeys")
         } else {
             passkeys = store.object(forKey: "passkeys") as? Bool ?? entitled
         }
+        store.set(entitled, forKey: "passkeys.for")
         store.set(entitled, forKey: "passkeys.entitled")
         // A test run downloads into its own folder: ~/Downloads would have
         // macOS stop it to ask for access, with a dialog on the screen of
@@ -468,6 +496,7 @@ final class Preferences: ObservableObject {
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.
         Preferences.tellWebKit(autocorrect: corrects)
+        Substitution.register()
         pageZoom = store.object(forKey: "pageZoom") as? Double ?? 1
         // Left behind by an assistant this browser no longer has.
         for key in ["mind.model", "mind.effort", "mind.acting", "mind.width", "mind.open"] {
@@ -477,12 +506,9 @@ final class Preferences: ObservableObject {
 
     /// WebKit's text checker takes its orders from the app's standard
     /// defaults — the real ones, not the test suite, because it is WebKit
-    /// reading them and not us. Smart quotes and dashes go off outright: in a
-    /// browser they are wrong in every code field and wanted in almost none.
+    /// reading them and not us. Text replacement, smart quotes and smart
+    /// dashes are Edit › Substitutions' (see Substitutions.swift).
     static func tellWebKit(autocorrect: Bool) {
-        let defaults = UserDefaults.standard
-        defaults.set(autocorrect, forKey: "WebAutomaticSpellingCorrectionEnabled")
-        defaults.set(false, forKey: "WebAutomaticQuoteSubstitutionEnabled")
-        defaults.set(false, forKey: "WebAutomaticDashSubstitutionEnabled")
+        UserDefaults.standard.set(autocorrect, forKey: "WebAutomaticSpellingCorrectionEnabled")
     }
 }
