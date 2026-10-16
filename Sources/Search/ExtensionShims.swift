@@ -2230,6 +2230,15 @@ enum ExtensionShims {
             if (!urls.length) return;
             filter = { ...filter, urls };
           }
+          // Nor "webtransport" or "webbundle", which Chrome's ResourceType
+          // lists and WebKit refuses the whole listener over. AdBlock asks
+          // for every type in that list, so its worker stopped at startup and
+          // nothing was blocked. The listener is kept for the types WebKit has.
+          if (filter && Array.isArray(filter.types)) {
+            const types = filter.types.filter((t) => t !== "webtransport" && t !== "webbundle");
+            if (!types.length) return;
+            filter = { ...filter, types };
+          }
           // Added after a worker's startup, WebKit refuses it; Chrome takes
           // it. It isn't heard, but neither does it stop the code that added
           // it — a listener for every request can't join the late list

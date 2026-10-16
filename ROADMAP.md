@@ -59,6 +59,10 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Remove all saved passwords** A Remove All… in the passwords panel, for someone moving to a password manager. *([#469](https://github.com/driceroland/Search/issues/469))*
 - [ ] **Swipe between pages as the Mac says** A sideways scroll goes back or forward only when the Mac's own Swipe between pages setting allows it. *([#464](https://github.com/driceroland/Search/issues/464), [#467](https://github.com/driceroland/Search/pull/467))*
 - [ ] **Proxy for the whole browser** HTTP and SOCKS5 proxy in Settings, off by default, everything through it. *([#510](https://github.com/driceroland/Search/pull/510))*
+- [ ] **The page edge to edge again** The page as a card stays out of full screen windows, and a switch puts the page edge to edge with the tabs down the side. *([#607](https://github.com/driceroland/Search/issues/607))*
+- [ ] **iCloud Passwords keeps its pairing** On macOS 27 iCloud Passwords asks for its code again every couple of minutes; the keep-alive no longer holds. *([#610](https://github.com/driceroland/Search/issues/610))*
+- [ ] **Find's close button in Split View** With Split View on, a click on the find bar's buttons went through to the page. *([#615](https://github.com/driceroland/Search/issues/615), [#616](https://github.com/driceroland/Search/pull/616))*
+- [ ] **Local names starting with 10. or 192.168.** A website name like 10.io opens over https, not plain http. *([#590](https://github.com/driceroland/Search/issues/590), [#592](https://github.com/driceroland/Search/pull/592))*
 
 ## Next — small additions people asked for
 
@@ -72,6 +76,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Import says when macOS refuses a browser's folder** When macOS won't let Search read another browser's folder, the import sheet says so and points to choosing the folder, instead of reporting that nothing was found. *([#583](https://github.com/driceroland/Search/issues/583))*
 - [ ] **The folded column comes out faster** The folded column and tab bar slide out as quickly as Arc's and Dia's, and are kept ready instead of being built again on every peek. *([#585](https://github.com/driceroland/Search/pull/585), [#586](https://github.com/driceroland/Search/pull/586))*
 - [ ] **Site card corners on macOS 26** The site card keeps its rounded corners on macOS 26 too. *([#576](https://github.com/driceroland/Search/pull/576))*
+- [ ] **Open a tab on mouse down** A tab in the column opens on the press, not the release, without breaking drag. *([#598](https://github.com/driceroland/Search/issues/598))*
 
 ## Later — bigger pieces of work
 
@@ -109,12 +114,15 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Remove all passwords** Remove All… in the passwords panel, behind Touch ID. *([#469](https://github.com/driceroland/Search/issues/469), [#471](https://github.com/driceroland/Search/pull/471))*
 - [ ] **Side panel and private tabs** A window-wide extension panel stays up while a private tab is in front; hide it then unless that extension may run in private tabs (after #536).
 - [ ] **Float a whole page** Any page, not only a video, in the floating window, and meetings that float when you switch away. Off unless turned on. *([#584](https://github.com/driceroland/Search/pull/584))*
+- [ ] **One window per space** A switch so each space opens in a window of its own. *([#611](https://github.com/driceroland/Search/issues/611))*
 
 ## Drice's call
 
 - [ ] **Pressing a pin's number again** ⌘1–⌘9 pressed again on the pin you are on takes it back to the page it was pinned at, as a double-click on it does. *(email)*
 - [ ] **Pin letters of your own** A pin without an icon wears a capital letter; choose a lowercase one, two letters, or a symbol instead. *(email)*
 - [ ] **Responsive Design Mode** Look at a page as an iPhone, a Pixel or an iPad would, from the View menu, as in Safari's Develop menu. *([#412](https://github.com/driceroland/Search/pull/412))*
+- [ ] **Copy Clean Link** In a tab's menu: copy its address without tracking parameters. *([#594](https://github.com/driceroland/Search/issues/594))*
+- [ ] **Where new tabs go** New tabs at the top or the end of the list. *([#606](https://github.com/driceroland/Search/issues/606), [#613](https://github.com/driceroland/Search/pull/613))*
 
 ## Asked to try again on the latest version
 
@@ -138,7 +146,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Window colours** A colour for the window, or for each space, with a light and a dark version, as in Helium and Arc. *(email ×2)*
 - [ ] **Extension side panels** Extensions that open in Chrome's side panel, like ChatGPT's and Claude's, have nowhere to open: WebKit has no side panel. *(email)*
 - [ ] **Group tabs by dropping one on another** Drop a tab onto another in the column and the two become a group. *(email)*
-- [ ] **Send links to a space** Links from chosen sites open in a given space, with its sign-ins, as Arc's Air Traffic Control does. *(email)*
+- [ ] **Send links to a space** Links from chosen sites open in a given space, with its sign-ins, as Arc's Air Traffic Control does. *(email, [#595](https://github.com/driceroland/Search/issues/595), [#596](https://github.com/driceroland/Search/pull/596))*
 - [ ] **One place for ⌘T, ⌘K and ⌘Y** New tab, the open tabs and history reached from a single field. *(email)*
 - [ ] **Open tabs from Helium** Bringing things over from Helium takes its bookmarks, history, passwords and extensions, but not the tabs it has open. *(email)*
 - [ ] **⌘L again closes the address** A second ⌘L puts away the address field it opened, as Esc does. *(email)*
