@@ -194,6 +194,10 @@ struct SettingsPanel: View {
                 }
             }
             Rule()
+            // What ⌘T opens to, and the way back after an extension took
+            // it. Only there while an extension offers a page; it brings
+            // its own hairline.
+            HomePageLine()
             Line("Search with", searchDetail) {
                 Picker("", selection: $prefs.engine) {
                     ForEach(Engine.allCases) { engine in
@@ -411,6 +415,13 @@ struct SettingsPanel: View {
                 Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its \(prefs.sidePosition.rawValue) edge for the tabs. ⌘S keeps them out.") {
                     Switch(on: $prefs.sideHides)
                 }
+                Rule()
+                Line("The page as a card", "A little room around the page, with rounded corners. Off, the page reaches the window's edges") {
+                    Switch(on: Binding(
+                        get: { prefs.cards },
+                        set: { on in withAnimation(Motion.glide) { prefs.cards = on } }
+                    ))
+                }
             }
             Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {
@@ -425,12 +436,22 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.showsReading)
             }
             Rule()
-            Line("Sleep tabs you aren't using", "After half an hour away they come back where you left them. Pinned tabs, sound, calls and anything typed stay awake.") {
+            Line("Sleep tabs you aren't using", "A tab left alone lets its page go and comes back where you left it. Pinned tabs, sound, calls and anything typed stay awake.") {
                 Switch(on: $prefs.sleepsTabs)
+            }
+            if prefs.sleepsTabs {
+                Rule()
+                Line("How soon tabs sleep", prefs.sleepPace.detail) {
+                    Segmented(options: SleepPace.allCases.map { ($0, $0.title) }, selection: $prefs.sleepPace)
+                }
             }
             Rule()
             Line("Load background tabs when you go to them", "A link opened behind the page, with ⌘-click or the middle button, or a batch of links from another app, waits until you go to its tab. ⇧⌘-click still takes you there at once.") {
                 Switch(on: $prefs.lazyTabs)
+            }
+            Rule()
+            Line("Leave a new tab when the last tab closes", "Close the last tab that isn't pinned and a new tab takes its place, ready for an address. Otherwise you land on a pinned tab.") {
+                Switch(on: $prefs.newTabAfterLast)
             }
             Rule()
             Line("Search a site from the address field", "Type the start of a site's name, like red or yout, then Tab, and what you type next searches that site. Sites you visit that offer a search join the list.") {

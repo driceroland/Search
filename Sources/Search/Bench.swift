@@ -350,6 +350,13 @@ final class Bench {
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             browser.sleep(tab) { said in answer(["said": said, "asleep": tab.asleep]) }
 
+        case "openmark":
+            // A bookmark opened as the bar opens one. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "openmark only works on a --test run"]); return }
+            guard let text = request["url"] as? String, let url = URL(string: text) else { answer(["error": "openmark needs a url"]); return }
+            browser.openBookmark(url)
+            answer(["active": browser.active?.id.uuidString ?? ""])
+
         case "pin":
             // Pin a tab, or unpin it with "off". Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "pin only works on a --test run"]); return }
@@ -696,6 +703,9 @@ final class Bench {
             out["folded"] = browser.folded
             out["peeking"] = browser.peeking
             out["sideHides"] = browser.prefs.sideHides
+            // The page as a card (see Browser.asCards), and what it is made of.
+            out["cards"] = ["switch": browser.prefs.cards, "fullScreen": browser.fullScreen, "on": browser.asCards,
+                            "windowFullScreen": (browser.window ?? Links.window)?.styleMask.contains(.fullScreen) ?? false]
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
             out["siteCard"] = SiteCardPanel.isShown
             // Whether this Mac lets the browser use its passkeys at all — the
@@ -1677,8 +1687,17 @@ final class Bench {
             let steps = max(2, request["steps"] as? Int ?? 10)
             let ms = max(1, request["ms"] as? Double ?? 200)
             let before = tab.address?.absoluteString ?? ""
+            // Over the middle of the page. An event made here has no window,
+            // so AppKit hands WebKit its screen point as the point in the
+            // window: left where it starts, the pointer's, the page saw the
+            // scroll only while the pointer happened to be over it. Put where
+            // the page's middle is in its window, measured the way AppKit
+            // measures a screen point (from the top of the main screen).
+            let middle = web.convert(NSPoint(x: web.bounds.midX, y: web.bounds.midY), to: nil)
+            let over = CGPoint(x: middle.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - middle.y)
             func send(_ phase: Int64, _ delta: Double) {
                 guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: Int32(delta), wheel3: 0) else { return }
+                cg.location = over
                 cg.setIntegerValueField(CGEventField(rawValue: 88)!, value: 1) // kCGScrollWheelEventIsContinuous
                 cg.setIntegerValueField(CGEventField(rawValue: 99)!, value: phase) // kCGScrollWheelEventScrollPhase
                 cg.setIntegerValueField(CGEventField(rawValue: 97)!, value: Int64(delta)) // kCGScrollWheelEventPointDeltaAxis2
@@ -2304,6 +2323,21 @@ final class Bench {
                 window.contentView = nil
             }
 
+        case "pdf":
+            // The page on screen as File › Export as PDF… makes it, without
+            // a save panel. A test path only: a real browser never lets the
+            // bench write a file chosen behind its person's back.
+            guard Store.testing else { answer(["error": "pdf only works on a --test run"]); return }
+            guard let path = request["path"] as? String, !path.isEmpty else {
+                answer(["error": "pdf needs a path"])
+                return
+            }
+            guard let tab = browser.active else { answer(["error": "page wasn't exported"]); return }
+            let file = URL(fileURLWithPath: path)
+            browser.exportPDF(tab, to: file) { worked in
+                answer(worked ? ["saved": file.path] : ["error": "page wasn't exported"])
+            }
+
         case "update":
             // The updater, for a test run pointed at its own feed: `check`
             // is the menu's Check for Updates…, `disk` the Download button.
@@ -2518,8 +2552,11 @@ final class Bench {
             }
             if let on = request["pages120"] as? Bool { browser.prefs.fastPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
+            // Swipe between pages, standing in for the Mac's own setting.
+            if let on = request["swipepages"] as? Bool, Store.testing { Swipe.testing = on }
             if let on = request["spaces"] as? Bool { browser.prefs.usesSpaces = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
+            if let on = request["cards"] as? Bool { browser.prefs.cards = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
             // The window's own full screen as the chrome sees it, without
             // the window going there: a test run never takes the screen.
@@ -2550,7 +2587,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "accounts", "find", "answer", "visible", "ai", "notifications",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "accounts", "find", "answer", "visible", "ai", "notifications",
             ]])
         }
     }

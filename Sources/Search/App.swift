@@ -72,6 +72,9 @@ struct SearchApp: App {
                 Button("Share…") { browser.share() }
                     .shortcut("file.share")
                     .disabled(browser.active?.isBlank ?? true)
+                Button("Export as PDF…") { browser.exportPDF() }
+                    .shortcut("file.exportPDF")
+                    .disabled(browser.active?.isBlank ?? true)
                 Button("Print…") { browser.printPage() }
                     .shortcut("file.print")
                     .disabled(browser.active?.isBlank ?? true)
@@ -492,9 +495,10 @@ struct ContentView: View {
     }
 
     /// The page as a card on the window's ground: with the tabs down the
-    /// side, the column out or folded away, and no page filling the screen.
+    /// side, the column out or folded away, the switch on, and neither the
+    /// window nor a page filling the screen (see Browser.asCards).
     private var cards: Bool {
-        browser.prefs.sidebar && fullscreenTab == nil
+        browser.asCards && fullscreenTab == nil
     }
 
     /// The card's gap on the side away from the column, and along the bottom.
@@ -670,10 +674,12 @@ struct ContentView: View {
             // there is to watch.
             .animation(browser.fieldShowing ? Motion.settle : Motion.quick, value: browser.fieldShowing)
             .background(WindowSetup { window = $0; dress($0) })
-            .onChange(of: browser.prefs.sidebar) { _, side in
-                // The ground the page's card sits on, or the page's own.
-                window?.backgroundColor = side ? Palette.NS.frame : Palette.NS.ground
+            .onChange(of: browser.prefs.sidebar) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
+            }
+            .onChange(of: browser.asCards) { _, cards in
+                // The ground the page's card sits on, or the page's own.
+                window?.backgroundColor = cards ? Palette.NS.frame : Palette.NS.ground
             }
             .onChange(of: browser.prefs.sidePosition) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
@@ -702,6 +708,14 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { browser.fullScreen = false }
+            }
+            // And as it is once there, or back: a way in that macOS gave up
+            // on half way says so only by where the window ends up.
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
+                if let window, (note.object as? NSWindow) === window { browser.fullScreen = window.styleMask.contains(.fullScreen) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
+                if let window, (note.object as? NSWindow) === window { browser.fullScreen = window.styleMask.contains(.fullScreen) }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
@@ -972,7 +986,9 @@ struct ContentView: View {
         // window only has to be the ground colour that goes with it.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.backgroundColor = browser.prefs.sidebar ? Palette.NS.frame : Palette.NS.ground
+        // A window put back in full screen is so before any notice says it.
+        browser.fullScreen = window.styleMask.contains(.fullScreen)
+        window.backgroundColor = browser.asCards ? Palette.NS.frame : Palette.NS.ground
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
@@ -1140,14 +1156,14 @@ struct ContentView: View {
         // window menus act on; every other key is its page's.
         if let popup = Browsers.browser(for: event.window), popup.extensionPopup != nil {
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            guard event.charactersIgnoringModifiers?.lowercased() == "w", flags == .command else { return false }
+            guard event.shortcutCharacters == "w", flags == .command else { return false }
             popup.window?.performClose(nil)
             return true
         }
         // A key being typed into Settings › Shortcuts is for the box.
         guard !ShortcutStore.shared.recording else { return false }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let key = event.shortcutCharacters
         let controlTab = event.keyCode == 48 && flags.contains(.control)
             && flags.isDisjoint(with: [.command, .option])
 
@@ -1323,7 +1339,7 @@ struct ContentView: View {
         let shifted = flags.contains(.shift)
 
         if flags.contains(.option), !shifted, !flags.contains(.control),
-           event.characters(byApplyingModifiers: [])?.lowercased() == "r" {
+           event.shortcutKey == "r" {
             if pageFirst(event, key: "r", shifted: false) { return false }
             browser.reload(fromOrigin: true)
             return true

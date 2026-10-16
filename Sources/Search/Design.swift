@@ -76,6 +76,34 @@ enum Palette {
     }
 }
 
+/// The greys of the column's rows, pins and buttons, for the ground they lie
+/// on: the white's (the strip, a panel, the column with the page edge to
+/// edge) or the window's beside the page's card, set by the column for
+/// what is in it (see SideBar.onFrame). Read through the environment, so a
+/// row, a pin or a door is the same view on either ground.
+struct Greys {
+    let wash: Color
+    let hover: Color
+    let tile: Color
+    let pinLive: Color
+
+    static let white = Greys(wash: Palette.wash, hover: Palette.hover,
+                             tile: Palette.wash.opacity(0.55), pinLive: Palette.pinLive)
+    static let frame = Greys(wash: Palette.sideWash, hover: Palette.sideHover,
+                             tile: Palette.sideTile, pinLive: Palette.sidePinLive)
+}
+
+private struct GreysKey: EnvironmentKey {
+    static let defaultValue = Greys.white
+}
+
+extension EnvironmentValues {
+    var greys: Greys {
+        get { self[GreysKey.self] }
+        set { self[GreysKey.self] = newValue }
+    }
+}
+
 /// Light, dark, or the Mac's own — the one choice that colours everything.
 enum Look: String, CaseIterable, Identifiable {
     case light, dark, system
