@@ -9,6 +9,10 @@ struct SplitStage: View {
     @ObservedObject var browser: Browser
     /// Each page's corners, as a card (see CardEdge).
     var corner: CGFloat = 0
+    /// The page lent to WebKit's full screen window, as the window has it:
+    /// told with the rest of the chrome, in the same pass (see
+    /// ContentView.immersing), never on the stage's own.
+    var immersed: Tab.ID? = nil
     @ObservedObject private var drag = TabDrag.shared
     /// Where each page on screen is, as the stage last said.
     @State private var frames: [Tab.ID: CGRect] = [:]
@@ -41,7 +45,8 @@ struct SplitStage: View {
             },
             hover: { hovered = $0 },
             find: browser.finding ? browser : nil,
-            corner: corner
+            corner: corner,
+            immersed: immersed
         )
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {

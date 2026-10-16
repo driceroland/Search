@@ -1,3 +1,4 @@
+import Combine
 import ImageIO
 import SwiftUI
 import WebKit
@@ -379,8 +380,17 @@ final class Tab: ObservableObject, Identifiable {
 
     /// True while the caret is in something on the page that takes typing.
     @Published var typing = false
-    /// True while the page has taken over the screen.
-    @Published var immersed = false
+    /// True while the page has taken over the screen: from the moment
+    /// WebKit has the page in its own full-screen window until it starts
+    /// giving it back (see the fullscreenState watch in `build`), so the
+    /// window's chrome steps aside and comes back while that window covers
+    /// ours, and the page comes home once, at its own size.
+    @Published var immersed = false {
+        didSet { if immersed != oldValue { immersion.send(immersed) } }
+    }
+    /// `immersed`, once it has changed: $immersed speaks before the value
+    /// is set, and what the window works out from it has to see the new one.
+    let immersion = PassthroughSubject<Bool, Never>()
 
     /// True while this tab's page is out in the little window.
     @Published var floating = false
@@ -698,6 +708,21 @@ final class Tab: ObservableObject, Identifiable {
             },
             web.observe(\.canGoForward, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.canGoForward = self?.built?.canGoForward ?? false }
+            },
+            // A page's full screen, as WebKit has it. In once its own window
+            // has the page (a placeholder is left in ours, so the chrome going
+            // away resizes nothing the page sees); back as soon as it starts
+            // to give it back, while that window still covers ours: the
+            // chrome is then in place before the page returns, and the page
+            // is laid out once, at the size it had, where WebKit's animation
+            // lands it. The page's own fullscreenchange (Forms.swift) comes
+            // after each and changes nothing.
+            web.observe(\.fullscreenState, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated {
+                    guard let self, let state = self.built?.fullscreenState else { return }
+                    let on = state == .enteringFullscreen || state == .inFullscreen
+                    if self.immersed != on { self.immersed = on }
+                }
             },
         ]
 
@@ -1183,6 +1208,18 @@ final class Tab: ObservableObject, Identifiable {
             guard let self, self.cover === shown else { return }
             self.cover = nil
         }
+    }
+
+    /// The page as it was when its video went out to the floating window,
+    /// over it while it lands (see Browser.land).
+    func cover(with picture: NSImage) {
+        cover = picture
+    }
+
+    /// That picture off, if it is still the one up.
+    func uncover(_ picture: NSImage) {
+        guard cover === picture else { return }
+        cover = nil
     }
 
     /// Set when WebKit said the page's process went away while nobody was
