@@ -6,7 +6,7 @@ Build first (`./build.sh`), then `python3 Tests/little_window.py`. It uses the
 split suite's harness in a world of its own (little-tests): started hidden,
 no window shown, everything removed afterwards. Small windows are made unseen
 by the bench, and keys are pressed on them through the app's own event queue
-(`press` with "little"), so they meet the same monitors a real press does.
+(`press` with "window": "little"), so they meet the same monitors a real press does.
 
 A test run takes no links from outside, so a launch made by a link is a
 launch handed SEARCH_LINK, taken where the Apple Event would be.
@@ -28,7 +28,7 @@ t = sv.T()
 
 
 def little(what): return sv.cmd({"do": "little", "what": what})
-def press(code, chars, *mods): sv.cmd({"do": "press", "code": code, "chars": chars, "mods": list(mods), "little": True}); time.sleep(0.3)
+def press(code, chars, *mods): sv.cmd({"do": "press", "code": code, "chars": chars, "mods": list(mods), "window": "little"}); time.sleep(0.3)
 def paste(): return subprocess.run(["pbpaste"], capture_output=True, text=True).stdout
 def windows(**f): return sv.cmd({"do": "windows", **f})
 def records(): return json.load(open(f"{sv.SUPPORT}/windows.json"))
@@ -57,34 +57,34 @@ try:
     subprocess.run(["pbcopy"], input=b"before")
     press(8, "c", "cmd", "shift")
     t.ok("⌘⇧C copies the small window's address", paste() == f"{sv.BASE}/copied", paste())
-    t.ok("⌘⇧C says so in the small window", little("look")["said"] == "Address copied", little("look"))
+    t.ok("⌘⇧C says so in the small window", little("state")["said"] == "Address copied", little("state"))
     time.sleep(2)
-    t.ok("and then stops saying it", little("look")["said"] == "")
+    t.ok("and then stops saying it", little("state")["said"] == "")
 
     # Zoom: its page, by the browser's steps, said at its own foot.
     press(24, "=", "cmd")
-    st = little("look")
+    st = little("state")
     t.ok("⌘+ zooms the small window's page", abs(st["zoom"] - 1.1) < 0.01, st["zoom"])
     t.ok("and says so there", st["said"] == "110%", st["said"])
     press(27, "-", "cmd"); press(27, "-", "cmd")
-    t.ok("⌘- zooms it out", little("look")["zoom"] < 1, little("look")["zoom"])
+    t.ok("⌘- zooms it out", little("state")["zoom"] < 1, little("state")["zoom"])
     press(29, "0", "cmd")
-    t.ok("⌘0 puts it back", abs(little("look")["zoom"] - 1) < 0.01, little("look")["zoom"])
+    t.ok("⌘0 puts it back", abs(little("state")["zoom"] - 1) < 0.01, little("state")["zoom"])
 
     # ⌘W and Escape close it; the browser's row is as it was.
-    tabs = little("look")["tabs"]
+    tabs = little("state")["tabs"]
     press(13, "w", "cmd")
-    st = little("look")
+    st = little("state")
     t.ok("⌘W closes the small window", st["littles"] == [], st["littles"])
     t.ok("⌘W leaves the browser's tabs alone", st["tabs"] == tabs, (tabs, st["tabs"]))
     little(f"{sv.BASE}/escaped"); time.sleep(1.5)
     press(53, "\u001b")
-    t.ok("Escape closes it", little("look")["littles"] == [])
+    t.ok("Escape closes it", little("state")["littles"] == [])
 
     # Kept: into the row, the small window gone.
     little(f"{sv.BASE}/kept"); time.sleep(1.5)
     little("keep"); time.sleep(0.5)
-    st = little("look")
+    st = little("state")
     t.ok("Open in Search moves the page into the row", "127.0.0.1" in st["tabs"] and st["littles"] == [], st)
 
     # Three windows, each with a page, written down; then a launch made by a

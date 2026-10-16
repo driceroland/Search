@@ -773,17 +773,22 @@ final class Bench {
             }
             // "repeat": the press a key held down sends again and again.
             let repeats = (request["mods"] as? [String] ?? []).contains("repeat")
-            // "little": on the newest small window instead (see Little.swift).
-            let little = request["little"] as? Bool == true ? LittleWindow.all.last?.windowNumber : nil
-            for type in [NSEvent.EventType.keyDown, .keyUp] {
+            // "window": "little", in the newest small window instead.
+            // "sheet": to the question hanging from the window, as a key
+            // typed while it is up goes to it.
+            let number = request["window"] as? String == "little"
+                ? LittleWindow.all.last?.windowNumber ?? 0
+                : (request["sheet"] as? Bool == true ? browser.window?.attachedSheet : nil)?.windowNumber
+                    ?? (browser.window ?? Links.window)?.windowNumber ?? 0
+            // "letgo": the modifiers let go of, as a flags change with
+            // none left, after the press.
+            let types: [NSEvent.EventType] = request["letgo"] as? Bool == true
+                ? [.keyDown, .keyUp, .flagsChanged] : [.keyDown, .keyUp]
+            for type in types {
                 guard let event = NSEvent.keyEvent(
-                    with: type, location: .zero, modifierFlags: flags,
+                    with: type, location: .zero, modifierFlags: type == .flagsChanged ? [] : flags,
                     timestamp: ProcessInfo.processInfo.systemUptime,
-                    // "sheet": to the question hanging from the window, as a
-                    // key typed while it is up goes to it.
-                    windowNumber: little
-                        ?? (request["sheet"] as? Bool == true ? browser.window?.attachedSheet : nil)?.windowNumber
-                        ?? (browser.window ?? Links.window)?.windowNumber ?? 0, context: nil,
+                    windowNumber: number, context: nil,
                     characters: chars, charactersIgnoringModifiers: chars,
                     isARepeat: repeats && type == .keyDown, keyCode: UInt16(code)
                 ) else { continue }
@@ -978,14 +983,19 @@ final class Bench {
             // The ⌃Tab switcher as it stands: up or not, the pick, and where
             // the panel and each card are in the window (top-left points).
             let sw = browser.tabSwitcher
+            // A moon (a small window's tab) by its address.
             func short(_ id: Tab.ID?) -> String {
-                guard let id, let tab = browser.tabs.first(where: { $0.id == id }) else { return "" }
+                guard let id else { return "" }
+                guard let tab = browser.tabs.first(where: { $0.id == id }) else {
+                    return LittleWindow.holding(id)?.tab.address?.absoluteString ?? ""
+                }
                 return Bench.short(tab)
             }
             func box(_ r: CGRect) -> [Double] { [r.minX, r.minY, r.width, r.height].map { Double($0) } }
             answer([
                 "visible": sw.visible, "selected": short(sw.selectedID),
                 "candidates": sw.candidates.map { short($0) },
+                "moons": sw.moons.map { LittleWindow.holding($0)?.tab.address?.absoluteString ?? "" },
                 "panel": box(sw.panelFrame),
                 "cards": Dictionary(sw.cardFrames.map { (short($0.key), box($0.value)) }, uniquingKeysWith: { a, _ in a }),
                 "active": short(browser.activeID),
@@ -2555,12 +2565,28 @@ final class Bench {
             switch request["what"] as? String ?? "" {
             case "keep": LittleWindow.all.last?.keep()
             case "close": LittleWindow.all.last?.close()
-            case "look": break
+            case "state": break
             default:
                 guard let text = request["what"] as? String, let url = URL(string: text) else { answer(["error": "little needs a url, keep or close"]); return }
                 LittleWindow.show(url, for: browser, front: false)
             }
+            // Its own switcher (⌃Tab in a small window): the moons by
+            // address, the planet's tabs as the bench names them.
+            let sw = LittleWindow.switcher
+            func address(_ id: Tab.ID?) -> String {
+                guard let id else { return "" }
+                if let little = LittleWindow.holding(id) { return little.tab.address?.absoluteString ?? "" }
+                return browser.tabs.first { $0.id == id }.map { Bench.short($0) } ?? ""
+            }
             answer([
+                "switcher": [
+                    "visible": sw.visible, "selected": address(sw.selectedID),
+                    "candidates": sw.candidates.map { address($0) },
+                    "moons": sw.moons.map { address($0) },
+                ] as [String: Any],
+                "screens": LittleWindow.all.map { $0.tab.screens ?? 0 },
+                "activeID": browser.activeID.map { String($0.uuidString.prefix(8)).lowercased() } ?? "",
+                "fronted": address(LittleWindow.fronted),
                 "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" },
                 "said": LittleWindow.all.last?.said ?? "",
                 "zoom": LittleWindow.all.last?.tab.built.map { Double($0.pageZoom) } ?? 0,
@@ -2709,6 +2735,7 @@ final class Bench {
                 browser.prefs.sidePosition = position
             }
             if let mode = (request["pages120"] as? String).flatMap(FastPages.init) { browser.prefs.fastPages = mode }
+            if let on = request["dusk"] as? Bool { browser.prefs.darkensPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             // Swipe between pages, standing in for the Mac's own setting.
             if let on = request["swipepages"] as? Bool, Store.testing { Swipe.testing = on }
@@ -3050,6 +3077,28 @@ final class Bench {
             guard let page = tab() else { answer(["error": "split sleep needs id"]); return }
             browser.sleep(page) { result in reply(["sleepResult": result]) }
 
+        case "age":
+            // As if the tab had been left `seconds` ago (see Closing.swift).
+            guard let page = tab() ?? browser.parkedTabs.first(where: { Bench.short($0) == request["id"] as? String }),
+                  let seconds = request["seconds"] as? Double else {
+                answer(["error": "split age needs id and seconds"])
+                return
+            }
+            page.touch(at: Date().addingTimeInterval(-seconds))
+            page.letGo = nil
+            reply()
+
+        case "name":
+            // Named, or its name taken away with none.
+            guard let page = tab() else { answer(["error": "split name needs id"]); return }
+            page.name = request["name"] as? String
+            reply()
+
+        case "tidy":
+            browser.closeLeftAlone()
+            // Each close waits for the page to say it holds nothing typed.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { reply() }
+
         case "save":
             browser.writeSession(now: true)
             // And pins.json, which goes by the Disk queue: a test reads it
@@ -3133,6 +3182,11 @@ final class Bench {
                     "bench": tab.bench,
                     "asleep": tab.asleep,
                     "awakeReason": browser.awake(because: tab) ?? "",
+                    "staysReason": browser.stays(because: tab) ?? "",
+                    // How long it counts as left (Closing.swift), and when
+                    // you last looked, for ⌃Tab: letting go moves only the first.
+                    "idle": Date().timeIntervalSince(tab.leftSince),
+                    "looked": Date().timeIntervalSince(tab.touched),
                 ] as [String: Any]
             },
             "splits": browser.splits.map { pair in
@@ -3335,6 +3389,11 @@ final class Bench {
             "shy": tab.shy,
             "noisy": tab.noisy,
             "muted": tab.muted,
+            // Darkened by Search, as the page last said, and what the page
+            // was seen to be: dark by itself, light, or not looked at (see
+            // Dusk.swift).
+            "dusked": tab.dusked,
+            "duskNative": tab.duskNative.map { $0 ? "dark" : "light" } ?? "",
             "extensions": { if #available(macOS 15.4, *) { return tab.carriesExtensions } else { return false } }(),
             // The page's WebKit process, for measuring what it holds.
             "process": tab.built.flatMap { $0.value(forKey: "_webProcessIdentifier") as? Int } ?? 0,

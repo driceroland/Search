@@ -23,6 +23,26 @@ enum Glyph: String, CaseIterable, Identifiable {
     }
 }
 
+/// How long a tab you aren't keeping stays open once you leave it (see
+/// Closing.swift): never, or one of Arc's four choices, counted in hours.
+enum TabLife: Int, CaseIterable, Identifiable {
+    case never = 0, halfDay = 12, day = 24, week = 168, month = 720
+
+    var id: Int { rawValue }
+    /// Nil when tabs never close.
+    var interval: TimeInterval? { self == .never ? nil : TimeInterval(rawValue) * 60 * 60 }
+
+    var title: String {
+        switch self {
+        case .never: return "Never"
+        case .halfDay: return "After 12 hours"
+        case .day: return "After a day"
+        case .week: return "After a week"
+        case .month: return "After a month"
+        }
+    }
+}
+
 /// Where a new tab goes in the row (Settings › Tabs). Only `next` and
 /// `end` for now; a place at the top (#606) would be one more case.
 enum NewTabPlace: String {
@@ -130,6 +150,11 @@ final class Preferences: ObservableObject {
     /// keep where they were. On unless turned off.
     @Published var sleepsTabs: Bool {
         didSet { store.set(sleepsTabs, forKey: "tabs.sleep") }
+    }
+    /// Tabs you haven't pinned, named or grouped close once left alone this
+    /// long, as in Arc. Never unless asked for.
+    @Published var tabLife: TabLife {
+        didSet { store.set(tabLife.rawValue, forKey: "tabs.close.after") }
     }
     /// How soon they do (see SleepPace). Normal unless chosen.
     @Published var sleepPace: SleepPace {
@@ -249,6 +274,15 @@ final class Preferences: ObservableObject {
     /// The stops the setting steps through — every 5%, from as small as
     /// anyone reads to as big as a page is worth.
     static let zooms: [Double] = stride(from: 50, through: 300, by: 5).map { Double($0) / 100 }
+
+    /// Pages with no dark look of their own darkened while the frame is
+    /// dark (see Dusk.swift). Off unless asked for.
+    @Published var darkensPages: Bool {
+        didSet {
+            store.set(darkensPages, forKey: "pages.dusk")
+            Dusk.shared.on = darkensPages
+        }
+    }
 
     /// A click of the wheel scrolls the page as on Windows (see AutoScroll.swift).
     /// Off unless asked for.
@@ -457,6 +491,7 @@ final class Preferences: ObservableObject {
         keywords = store.data(forKey: "search.keywords")
             .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
+        tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
@@ -539,6 +574,9 @@ final class Preferences: ObservableObject {
         let links = store.object(forKey: "links.show") as? Bool ?? true
         showsLinks = links
         HoveredLink.on = links
+        let dusk = store.bool(forKey: "pages.dusk")
+        darkensPages = dusk
+        Dusk.shared.on = dusk
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls
