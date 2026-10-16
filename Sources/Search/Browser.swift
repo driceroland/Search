@@ -649,6 +649,8 @@ final class Browser: NSObject, ObservableObject {
         /// the clear. A click fills only a page that still is that one.
         let host: String
         let clear: Bool
+        /// Hung from a first step's name box: a pick puts in the name alone.
+        var nameOnly = false
         /// When it came up. A page can put the caret in a sign-in box
         /// itself, an invisible one under the pointer included: a click that
         /// was already on its way is not a choice, so the list takes none for
@@ -665,10 +667,10 @@ final class Browser: NSObject, ObservableObject {
     /// The page whose accounts were last looked up for the box the caret is
     /// in. The box reports where it is on every frame of a scroll so the
     /// list can follow it; the keychain is asked once per box, not per frame.
-    private var looked: (tab: Tab.ID, host: String, clear: Bool)?
+    private var looked: (tab: Tab.ID, host: String, clear: Bool, name: Bool)?
     /// The sign-in box the caret is in, for a list that changes while it is
     /// there: the page's passkeys arrive when they arrive.
-    private var field: (tab: Tab.ID, spot: CGRect, passwords: Bool)?
+    private var field: (tab: Tab.ID, spot: CGRect, passwords: Bool, name: Bool)?
 
     func keepOffer() {
         guard let offer = offering else { return }
@@ -697,7 +699,7 @@ final class Browser: NSObject, ObservableObject {
     /// Mac's passkeys for a page waiting for one, hang from the box, and go
     /// when the caret does. Nothing is filled on its own — the way Safari
     /// does it, and what a person expects.
-    private func hang(from tab: Tab, _ spot: CGRect?, passwords: Bool) {
+    private func hang(from tab: Tab, _ spot: CGRect?, passwords: Bool, name: Bool = false) {
         guard let spot else {
             if field?.tab == tab.id { field = nil }
             if looked?.tab == tab.id { looked = nil }
@@ -713,7 +715,7 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         lowering?.cancel()
-        field = (tab.id, spot, passwords)
+        field = (tab.id, spot, passwords, name)
         guard tab.id == activeID, pickedInto != tab.id,
               let host = curtain.host(of: tab.pageAddress)
         else { return }
@@ -727,29 +729,36 @@ final class Browser: NSObject, ObservableObject {
         // its first half second, which every frame used to start again);
         // a box with no accounts stays without, and the keychain isn't
         // asked again until the caret leaves.
-        if let looked, looked.tab == tab.id, looked.host == host, looked.clear == inTheClear {
+        if let looked, looked.tab == tab.id, looked.host == host, looked.clear == inTheClear, looked.name == name {
             if var up = suggesting, up.tab == tab.id, up.spot != spot {
                 up.spot = spot
                 suggesting = up
             }
             return
         }
-        looked = (tab.id, host, inTheClear)
+        looked = (tab.id, host, inTheClear, name)
         // Passwords only for a box that goes with one: a box for passkeys
         // alone has no password to put anywhere.
-        let known = prefs.fillsPasswords && passwords
-            ? Array(Vault.logins(matching: host).filter { !inTheClear || $0.clear }.prefix(5)) : []
+        var kept = prefs.fillsPasswords && passwords
+            ? Vault.logins(matching: host).filter { !inTheClear || $0.clear } : []
+        // The account whose name the step before was sent with comes first:
+        // the password page of a sign-in that asks for the name first.
+        if let given = tab.givenName(),
+           let at = kept.firstIndex(where: { $0.user.caseInsensitiveCompare(given) == .orderedSame }) {
+            kept.insert(kept.remove(at: at), at: 0)
+        }
+        let known = Array(kept.prefix(5))
         let passkeys = Passkeys.shared.offered(in: tab.built)
         guard !known.isEmpty || !passkeys.isEmpty else {
             suggesting = nil
             return
         }
         // What is under the pointer changed: the half second starts again.
-        if let up = suggesting, up.tab == tab.id, up.logins == known, up.passkeys == passkeys {
+        if let up = suggesting, up.tab == tab.id, up.logins == known, up.passkeys == passkeys, up.nameOnly == name {
             suggesting?.spot = spot
             return
         }
-        suggesting = Suggesting(tab: tab.id, spot: spot, logins: known, passkeys: passkeys, host: host, clear: inTheClear)
+        suggesting = Suggesting(tab: tab.id, spot: spot, logins: known, passkeys: passkeys, host: host, clear: inTheClear, nameOnly: name)
     }
 
     /// One of the accounts in the list, picked by name.
@@ -765,6 +774,13 @@ final class Browser: NSObject, ObservableObject {
               (tab.pageAddress?.scheme?.lowercased() == "http") == list.clear
         else { return }
         pickedInto = tab.id
+        // A first step: the name alone, the password waits for its page.
+        if list.nameOnly {
+            tab.fillName(login.user) { [weak self] worked in
+                if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
+            }
+            return
+        }
         tab.fill(user: login.user, password: login.password) { [weak self] worked in
             if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
         }
@@ -1573,7 +1589,7 @@ final class Browser: NSObject, ObservableObject {
                       tab.id == field.tab
                 else { return }
                 looked = nil
-                hang(from: tab, field.spot, passwords: field.passwords)
+                hang(from: tab, field.spot, passwords: field.passwords, name: field.name)
             }
             .store(in: &bag)
 
@@ -1873,6 +1889,21 @@ final class Browser: NSObject, ObservableObject {
             .store(in: &bag)
     }
 
+    /// Edit › Substitutions: whether one is on in pages. WebKit keeps a
+    /// single answer for every page, so the tab in front's view speaks for
+    /// all of them.
+    func substitutes(_ kind: Substitution) -> Bool {
+        kind.isOn(in: active?.built)
+    }
+
+    /// Edit › Substitutions: one switched for every page. Sent to the page's
+    /// view rather than to whatever has the keyboard, so the address field
+    /// having the caret doesn't make it switch only that field.
+    func toggleSubstitution(_ kind: Substitution, in web: WKWebView? = nil) {
+        kind.toggle(in: web ?? active?.built ?? (tabs + parkedTabs).lazy.compactMap(\.built).first)
+        objectWillChange.send()
+    }
+
     private func relook() {
         Favicons.shared.relook(tabs.filter { !$0.asleep })
     }
@@ -2014,11 +2045,26 @@ final class Browser: NSObject, ObservableObject {
                 pins += 1
                 brought.append(favourite.url)
             }
-            Pins.set(target.id, defs, from: self)
-            pinsChanged(in: target.id)
             let pinned = Browser.opened(target.space?.pinned ?? [])
             brought += pinned.map(\.item.url)
-            added += takeAsleep(pinned, into: target.id)
+            // Arc's pinned list, split the way Arc itself holds it. A page it
+            // keeps loose is a page you keep, which is what a row is for, so
+            // it comes in as one. A page it filed in a folder stays a tab in a
+            // group of that name, because a pin is never in a group and the
+            // folder is the thing that would be lost (see #478). With rows off
+            // nothing is split: the whole list comes in as tabs, as before.
+            let rows = prefs.listsPins ? pinned.filter { $0.folder == nil } : []
+            for page in rows where !had.contains(where: { Browser.samePin($0, page.item.url) })
+                && !defs.contains(where: { $0.home == page.item.url.absoluteString }) {
+                let host = page.item.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+                defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
+                                   home: page.item.url.absoluteString, title: page.item.title,
+                                   name: nil, listed: true))
+                pins += 1
+            }
+            Pins.set(target.id, defs, from: self)
+            pinsChanged(in: target.id)
+            added += takeAsleep(rows.isEmpty ? pinned : pinned.filter { $0.folder != nil }, into: target.id)
         }
         adoptIcons(for: brought, from: source, profile: profile)
         return (made, pins, added)
@@ -3846,8 +3892,8 @@ final class Browser: NSObject, ObservableObject {
         // The caret in a sign-in box: the accounts kept for this site hang
         // from the box, and go when the caret does. Nothing is filled on
         // its own — the way Safari does it, and what a person expects.
-        tab.onField = { [weak self] tab, spot, passwords in
-            self?.hang(from: tab, spot, passwords: passwords)
+        tab.onField = { [weak self] tab, spot, passwords, name in
+            self?.hang(from: tab, spot, passwords: passwords, name: name)
         }
 
         tab.onCredentials = { [weak self] tab, host, user, password, clear in

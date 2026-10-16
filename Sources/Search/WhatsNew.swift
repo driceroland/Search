@@ -39,6 +39,8 @@ enum WhatsNew {
                since: "1.0.5", get: { $0.splitView }, set: { $0.splitView = $1 }),
         Toggle(title: "Search a site from the address field", detail: "The start of a site's name, then Tab: red, Tab, and your words search Reddit.",
                since: "1.0.5", get: { $0.searchesSites }, set: { $0.searchesSites = $1 }),
+        Toggle(title: "Pinned rows", detail: "Pins as rows with their names, under the squares, as in Arc. Right-click a tab to pin it as a row.",
+               since: "1.0.5", get: { $0.listsPins }, set: { $0.listsPins = $1 }),
         Toggle(title: "Start with a fresh window", detail: "Your pinned tabs, and none of last time's others.",
                since: "1.0.5", get: { $0.startsFresh }, set: { $0.startsFresh = $1 }),
 
@@ -74,6 +76,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.5"),
         Release(version: "1.0.4"),
     ]
 
@@ -123,6 +126,53 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.5", date: "14 October 2026",
+            headline: "Split View, pinned rows, notifications and screen recorders. What's new is off until you turn it on, and the card after the update offers it.",
+            new: [
+                "With the tabs down the side, the page sits in the window as a card, a little apart from the column.",
+                "Split View: two tabs side by side. Drag a tab to the left or right edge of a page, choose Open in Split View in its menu, or press ⌥⌘N.",
+                "Pinned rows, as in Arc: a pin can be a row with its name, under the squares, and Clear closes the tabs below.",
+                "Websites can send notifications and ask for your location, as in Safari, site by site.",
+                "Loom and other screen recorders work: macOS asks what to share each time, and a pill says who is recording, with Stop.",
+                "Search a site straight from the address field, as in Arc: type its name, then Tab.",
+                "Passkeys show under the sign-in field, beside your saved passwords.",
+                "Sign-ins that ask for your name first, or for a password alone, offer your saved accounts too.",
+                "Your Mac's text replacements work in pages, and Edit › Substitutions turns them, smart quotes and smart dashes on or off.",
+                "Find says “3 of 17”, paints every match, and can match case or whole words.",
+                "Downloads pause and resume.",
+                "Open Link in New Tab leaves you where you are; hold ⌥ to go to it.",
+                "Search can start with a fresh window: your pinned tabs, and none of last time's others.",
+                "Intel Macs get a download of their own.",
+            ],
+            better: [
+                "Search is built for size, so all of this fits in 6.8 MB, and pages that change all the time, like a chat writing its answer, stay quick.",
+                "An extension's popup window opens as a small window, as in Chrome: a password manager's vault, a sign-in.",
+                "Esc closes a new tab you haven't used, and words typed into a new tab wait for you.",
+                "Tampermonkey installs scripts from a link, and SingleFile saves pages again.",
+                "Close Group in a tab group's menu, and one ⇧⌘T brings the whole group back.",
+                "Don't Float Videos Here, in a site's card.",
+                "Bringing Arc over keeps its shape: pinned pages as pinned rows, its folders as named tab groups.",
+                "Too many pinned extensions no longer push the column off screen.",
+                "Empty a bookmark's name and it is its icon alone on the bookmarks bar.",
+            ],
+            fixed: [
+                "A live video, on X and elsewhere, no longer jumps every few seconds.",
+                "A site's icon follows the page: GitHub's in the dark, a chat's unread count, and each port of localhost its own.",
+                "Pins brought over from Arc wear their icons straight away.",
+                "The tabs come back after a video's full screen.",
+                "A folder in the bookmarks list opens whole.",
+                "Signing in with a passkey works on GitHub again.",
+                "Bitwarden's passkey window, its sync and its narrow popup.",
+                "Keys in games no longer make the Mac beep.",
+                "History keeps localhost:3000 and localhost:4000 apart.",
+                "Copy Image works on WhatsApp Web's photos.",
+                "Signing in to Claude's extension finishes on claude.ai.",
+                "The Bookmarks menu keeps its bookmarks while a tab's title keeps changing.",
+                "Popovers keep their rounded corners on macOS 15.",
+                "Security hardening from a third careful private report, and many smaller fixes.",
+            ]
+        ),
         Notes(
             version: "1.0.4", date: "27 September 2026",
             headline: "Several windows, and a lot to discover. Most of what's new is off until you turn it on, and the card after the update offers it.",
