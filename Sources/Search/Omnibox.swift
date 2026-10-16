@@ -146,7 +146,8 @@ struct Omnibox: View {
         .transition(.scale(scale: 0.98, anchor: .top).combined(with: .opacity))
     }
 
-    private struct Row: View {
+    /// One row of a list of places, here and under the field in the tab.
+    struct Row: View {
         let offer: Suggestion
         /// Where the arrow keys have walked to. The pointer gets its own,
         /// quieter mark, and changes nothing but the look of the row.

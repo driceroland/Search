@@ -174,6 +174,19 @@ cat > "$APP/Contents/Info.plist" <<PLIST
       <key>LSItemContentTypes</key>
       <array><string>public.xhtml</string></array>
     </dict>
+    <!-- What a browser shows besides pages, listed under the Finder's Open
+         With (#524): a PDF, a picture, plain text (code and logs conform to
+         it), JSON. Alternate, so Search is offered there and never becomes
+         what opens them on a double-click. Pictures by name rather than
+         public.image, which takes in SVG: an SVG can carry a script, and
+         opened from the Finder it would run with its folder to read. -->
+    <dict>
+      <key>CFBundleTypeName</key><string>Document</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array><string>com.adobe.pdf</string><string>public.png</string><string>public.jpeg</string><string>com.compuserve.gif</string><string>public.heic</string><string>org.webmproject.webp</string><string>public.tiff</string><string>public.plain-text</string><string>public.json</string></array>
+    </dict>
   </array>
   <!-- A browser goes wherever it is pointed, including at http sites and at
        whatever is running on localhost. -->

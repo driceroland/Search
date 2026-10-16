@@ -26,6 +26,8 @@ struct WelcomePanel: View {
     @State private var isDefault = Links.isDefault
     @State private var asked = false
 
+    private var importsPasswords: Bool { (source ?? ImportSource.installed().first)?.importsPasswords ?? false }
+
     private let pages = 4
 
     var body: some View {
@@ -83,12 +85,12 @@ struct WelcomePanel: View {
             let sources = ImportSource.installed()
             let unreadable = Chromium.unreadable()
             if sources.isEmpty {
-                Text(unreadable.isEmpty
-                     ? "No other browser found on this Mac — nothing to bring."
-                     : unreadable.map { "\($0.source.name) is on this Mac, but nothing of it was found in \($0.looked)." }.joined(separator: "\n"))
-                    .font(.system(size: 13))
-                    .foregroundStyle(Palette.faint)
-                    .fixedSize(horizontal: false, vertical: true)
+                if unreadable.isEmpty {
+                    Text("No other browser found on this Mac — nothing to bring.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else {
                 VStack(alignment: .leading, spacing: 14) {
                     if sources.count > 1 {
@@ -101,14 +103,19 @@ struct WelcomePanel: View {
                             .font(.system(size: 13))
                             .foregroundStyle(Palette.muted)
                     }
-                    Choice("Passwords", "macOS will ask once for that browser's keychain key", on: $wantsPasswords)
+                    if importsPasswords {
+                        Choice("Passwords", "macOS will ask once for that browser's keychain key", on: $wantsPasswords)
+                    } else {
+                        Text("Passwords from \((source ?? sources[0]).name) aren't supported yet.")
+                            .font(.system(size: 13)).foregroundStyle(Palette.muted)
+                    }
                     Choice("Bookmarks", "Folders and all, behind the bookmark button", on: $wantsBookmarks)
                     Choice("History", "The last few thousand places, for finishing addresses", on: $wantsHistory)
                 }
 
                 HStack(spacing: 12) {
                     Big(bringing ? "Bringing…" : "Bring them in", filled: true) { bringAll() }
-                        .disabled(bringing || brought != nil || !(wantsPasswords || wantsHistory || wantsBookmarks))
+                        .disabled(bringing || brought != nil || !((importsPasswords && wantsPasswords) || wantsHistory || wantsBookmarks))
                     if bringing { Ring(size: 10) }
                     if let brought {
                         Text(brought)
@@ -118,6 +125,13 @@ struct WelcomePanel: View {
                     }
                 }
                 .animation(Motion.settle, value: brought)
+            }
+
+            if !unreadable.isEmpty {
+                Text(unreadable.map(\.message).joined(separator: "\n"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.faint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             // Safari, a browser on another Mac, one Search can't read: what
@@ -234,7 +248,7 @@ struct WelcomePanel: View {
         bringing = true
         var lines: [String] = []
         let group = DispatchGroup()
-        if wantsPasswords {
+        if wantsPasswords && source.importsPasswords {
             group.enter()
             DispatchQueue.global(qos: .userInitiated).async {
                 let outcome = Result { try source.read(profile: profile) }

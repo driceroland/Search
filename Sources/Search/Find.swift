@@ -5,6 +5,7 @@ import SwiftUI
 struct FindBar: View {
     @ObservedObject var browser: Browser
     var availableWidth: CGFloat? = nil
+    var onPillFrame: ((CGRect) -> Void)? = nil
 
     @FocusState private var focused: Bool
 
@@ -88,11 +89,15 @@ struct FindBar: View {
                 lineWidth: 1
             )
         )
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("find")) }) {
+            onPillFrame?($0)
+        }
         .shadow(color: .black.opacity(0.10), radius: 18, y: 5)
         .padding(.top, 12)
         .padding(.trailing, 14)
         .frame(maxWidth: availableWidth == nil ? nil : .infinity,
                maxHeight: availableWidth == nil ? nil : .infinity, alignment: .topTrailing)
+        .coordinateSpace(name: "find")
         .animation(Motion.quick, value: browser.missed)
         .onAppear(perform: focus)
         .onChange(of: browser.findFocus) { _, _ in focus() }

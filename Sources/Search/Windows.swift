@@ -142,7 +142,10 @@ enum Browsers {
         browser.shut = false
         if let window = browser.window {
             Bench.keepOff(window)
-            window.makeKeyAndOrderFront(nil)
+            // A hidden probe stays hidden: ordered front, its window shows
+            // the app again (an extension's windows.update focused, which
+            // Claude's panel asks for whenever its window isn't key).
+            if !(Store.testing && NSApp.isHidden) { window.makeKeyAndOrderFront(nil) }
         } else if browser.inScene {
             _ = NSApp.delegate?.applicationOpenUntitledFile?(NSApp)
         }

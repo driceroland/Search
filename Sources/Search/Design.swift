@@ -76,6 +76,34 @@ enum Palette {
     }
 }
 
+/// The greys of the column's rows, pins and buttons, for the ground they lie
+/// on: the white's (the strip, a panel, the column with the page edge to
+/// edge) or the window's beside the page's card, set by the column for
+/// what is in it (see SideBar.onFrame). Read through the environment, so a
+/// row, a pin or a door is the same view on either ground.
+struct Greys {
+    let wash: Color
+    let hover: Color
+    let tile: Color
+    let pinLive: Color
+
+    static let white = Greys(wash: Palette.wash, hover: Palette.hover,
+                             tile: Palette.wash.opacity(0.55), pinLive: Palette.pinLive)
+    static let frame = Greys(wash: Palette.sideWash, hover: Palette.sideHover,
+                             tile: Palette.sideTile, pinLive: Palette.sidePinLive)
+}
+
+private struct GreysKey: EnvironmentKey {
+    static let defaultValue = Greys.white
+}
+
+extension EnvironmentValues {
+    var greys: Greys {
+        get { self[GreysKey.self] }
+        set { self[GreysKey.self] = newValue }
+    }
+}
+
 /// Light, dark, or the Mac's own — the one choice that colours everything.
 enum Look: String, CaseIterable, Identifiable {
     case light, dark, system
@@ -189,6 +217,22 @@ enum Motion {
 
     static var quick: Animation? {
         reduced ? nil : .easeOut(duration: 0.14)
+    }
+
+    /// The folded column or strip coming out over the page, and going back.
+    /// On glide it was slow both ways, next to Arc and Dia timed frame by
+    /// frame on the same Mac: each slides its sidebar 90% of the way out in
+    /// about 95ms and back in about 70ms, where glide took over 200ms. These
+    /// match them. Going in is damped all the way, since nothing is arriving
+    /// to settle. Fold.slide moves the window's buttons on the same numbers,
+    /// in Core Animation's terms.
+    static func fold(out: Bool) -> (response: Double, damping: Double) {
+        out ? (0.14, 0.86) : (0.13, 1)
+    }
+
+    static func folding(out: Bool) -> Animation? {
+        let spring = fold(out: out)
+        return reduced ? nil : .spring(response: spring.response, dampingFraction: spring.damping)
     }
 }
 

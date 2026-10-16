@@ -24,6 +24,7 @@
     ./bench type ID SELECTOR TEXT
     ./bench submit ID SELECTOR         the form around SELECTOR
     ./bench shot ID [PATH] [WIDTH]     a PNG of the page → its path
+    ./bench pdf PATH                   test run: export the page on screen as a continuous, screen-layout PDF
     ./bench close ID | all             only tabs the bench opened
     ./bench probe                      the window's own state: panels, modal, windows
     ./bench extensions                 installed extensions, loaded or not, with their warnings
@@ -42,6 +43,7 @@
     ./bench ext-enable ID on|off       switch an extension on or off
     ./bench capture                    extensions' screen recording: ids given, what records, who may, last request
     ./bench capture-stop ID            stop what an extension is recording, as the pill's Stop does
+    ./bench sidepanel [eval JS|touch|close]  the side panel: what is in it and where; test run: JS in its page, a click, or close it
     ./bench ext-remove ID
     ./bench strip PATH [WIDTH]         the row of tabs across the top, drawn off screen to a PNG
     ./bench column PATH [HEIGHT]       the column of tabs, drawn off screen to a PNG
@@ -88,6 +90,7 @@
     ./bench import-file-status       test run: current filename, stage, counts and cancellation state
     ./bench import-file-cancel       test run: request cancellation of the current file import
     ./bench remove-folder TITLE        test run: the bookmarks list's Remove on a top-level folder, its question left up
+    ./bench passwords [TEXT] [remove]  test run: the passwords list, narrowed to TEXT; remove: its Remove All… / Remove N… (ui confirm on|off answers it, Touch ID included)
     ./bench menu [open]                test run: the Bookmarks menu as it is about to open, and its first
                                        folder (open: its first bookmark picked)
     ./bench marks                      test run: each bookmark on the bar (its size), in the bar's folders'
@@ -124,8 +127,10 @@
                                        leaves it, and how far it swings on the way
     ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
                                        import on|off|extensions|BROWSER,
-                                       look light|dark|system, sidebar on|off, side left|right, spaces on|off, hides on|off,
-                                       folded on|off, peek on|off, peeklink keep|close, pages120 on|off
+                                       look light|dark|system, sidebar on|off, side left|right, spaces on|off, sharedpins on|off, swipepages on|off, confirm on|off, hides on|off,
+                                       folded on|off, peek on|off, peeklink keep|close, pages120 never|onPower|always,
+                                       cards on|off (the page as a card), fullscreen on|off (test run: the
+                                       window's full screen as the chrome sees it, the window staying put)
 
 Needs Settings › General › "Let a script drive Search" switched on in the
 running app. IDs are the first characters of a tab's id, as `tabs` prints
@@ -218,6 +223,9 @@ def main(argv):
         request["id"] = args[0]
         if len(args) > 1: request["path"] = os.path.abspath(args[1])
         if len(args) > 2: request["width"] = float(args[2])
+    elif verb == "pdf":
+        if len(args) != 1: sys.exit("usage: bench pdf PATH")
+        request["path"] = os.path.abspath(args[0])
     elif verb == "sitesearch":
         request["action"] = args[0] if args else "state"
         if len(args) == 3 and args[0] == "learn":
@@ -226,13 +234,18 @@ def main(argv):
         if len(args) != 2: sys.exit("usage: bench ui KEY VALUE")
         key, value = args
         if key == "side" and value not in ("left", "right"): sys.exit("usage: bench ui side left|right")
-        request[key] = value if key in ("look", "edittab", "peeklink", "import", "side") else value in ("on", "true", "1", "yes")
+        request[key] = value if key in ("look", "edittab", "peeklink", "import", "side", "pages120") else value in ("on", "true", "1", "yes")
     elif verb in ("ext-add", "ext-press", "ext-remove", "ext-reload"):
         if len(args) != 1: sys.exit(f"usage: bench {verb} ID")
         request["id"] = args[0]
         request["yes"] = yes
     elif verb == "capture":
         pass
+    elif verb == "sidepanel":
+        request["action"] = args[0] if args else "state"
+        if args and args[0] == "eval":
+            if len(args) != 2: sys.exit("usage: bench sidepanel eval JS")
+            request["js"] = args[1]
     elif verb == "capture-stop":
         if len(args) != 1: sys.exit("usage: bench capture-stop ID")
         request["id"] = args[0]
@@ -415,6 +428,10 @@ def main(argv):
     elif verb == "remove-folder":
         if len(args) != 1: sys.exit("usage: bench remove-folder TITLE")
         request["title"] = args[0]
+    elif verb == "passwords":
+        for a in args:
+            if a == "remove": request["remove"] = True
+            else: request["filter"] = a
     elif verb in ("import-file-status", "import-file-cancel"):
         if args: sys.exit(f"usage: bench {verb}")
     elif verb == "menu":
