@@ -446,7 +446,6 @@ struct ContentView: View {
             .onChange(of: geo.size.width) { _, width in across = width } } }
         .animation(Motion.glide, value: browser.prefs.sidebar)
         .animation(Motion.glide, value: browser.prefs.sidePosition)
-        .animation(.easeOut(duration: 0.12), value: fullscreenTab?.id)
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
     }
@@ -456,7 +455,7 @@ struct ContentView: View {
     @ViewBuilder
     private var stage: some View {
         if browser.prefs.splitView {
-            SplitStage(browser: browser, corner: cards ? Metrics.cardRadius : 0)
+            SplitStage(browser: browser, corner: cards ? Metrics.cardRadius : 0, immersed: fullscreenTab?.id)
         } else if let tab = browser.active {
             Page(tab: tab, corner: cards ? Metrics.cardRadius : 0)
                 .overlay {
@@ -564,6 +563,11 @@ struct ContentView: View {
     /// A column being dragged wider or narrower is followed as it goes.
     private func make(room new: CGSize, after old: CGSize) {
         let now = roomed
+        // Given already, with the chrome itself (see `immersing`).
+        if now == new {
+            roomTicket += 1
+            return
+        }
         // Out of nothing, or out of the card's gap (see chrome): never more
         // than that unless something is there.
         let floor = Metrics.cardGap
@@ -989,13 +993,32 @@ struct ContentView: View {
     private var fullscreenWatch: some View {
         if browser.prefs.splitView, let split = browser.activeSplit {
             if let left = browser.tabs.first(where: { $0.id == split.left }) {
-                TabImmersionWatch(tab: left) { immersionRevision += 1 }.id(left.id)
+                TabImmersionWatch(tab: left) { immersing() }.id(left.id)
             }
             if let right = browser.tabs.first(where: { $0.id == split.right }) {
-                TabImmersionWatch(tab: right) { immersionRevision += 1 }.id(right.id)
+                TabImmersionWatch(tab: right) { immersing() }.id(right.id)
             }
         } else if let active = browser.active {
-            TabImmersionWatch(tab: active) { immersionRevision += 1 }.id(active.id)
+            TabImmersionWatch(tab: active) { immersing() }.id(active.id)
+        }
+    }
+
+    /// A page going full screen or coming back: everything around it at
+    /// once, in one transaction and without animation — the column, the
+    /// strip, the card's gap and corners, the bookmarks bar, the side panel,
+    /// Split View's other page, and the room the page leaves them, given
+    /// with them rather than after a slide (see `make(room:after:)`). WebKit's
+    /// window covers ours both ways when this happens (see Tab.immersed), so
+    /// there is nothing to watch move; one at a time, each in its own turn
+    /// and on its own curve, they resized the page four or five times on the
+    /// way back from a YouTube video.
+    private func immersing() {
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) {
+            immersionRevision += 1
+            roomTicket += 1
+            room = chrome
         }
     }
 
@@ -1527,15 +1550,12 @@ struct ContentView: View {
 private struct TabImmersionWatch: View {
     let tab: Tab
     let changed: () -> Void
-    @State private var previous: Bool?
 
     var body: some View {
+        // Once the flag has changed (Tab.immersion), never before: what the
+        // window works out from it at once must read the new value.
         Color.clear.frame(width: 0, height: 0)
-            .onReceive(tab.$immersed.removeDuplicates()) { value in
-                let didChange = previous != nil && previous != value
-                previous = value
-                if didChange { changed() }
-            }
+            .onReceive(tab.immersion) { _ in changed() }
     }
 }
 

@@ -27,11 +27,14 @@ struct PaneStageView: NSViewRepresentable {
     var find: Browser? = nil
     /// Each page's corners, as a card (see CardEdge).
     var corner: CGFloat = 0
+    /// The page filling the screen, if one is (see SplitStage.immersed).
+    var immersed: Tab.ID? = nil
 
     func makeNSView(context: Context) -> PaneStage { PaneStage() }
 
     func updateNSView(_ stage: PaneStage, context: Context) {
         stage.corner = corner
+        stage.immersedID = immersed
         stage.onCommit = commit
         stage.onFocus = focus
         stage.onFrames = frames
@@ -225,7 +228,10 @@ final class PaneStage: NSView {
             addSubview(cue, positioned: .below, relativeTo: divider)
             cues.append(cue)
         }
-        feed()
+        // Which page each slot holds is put right with where the slots are,
+        // in layout(), not here: told from SwiftUI's update, a page filling
+        // the screen took the other one off a frame before the stage grew
+        // to give it the room.
         paint()
         needsLayout = true
         watchClicks()
@@ -288,7 +294,13 @@ final class PaneStage: NSView {
     }
 
     /// A page lent to WebKit's full screen window: its slot has the stage.
-    fileprivate var immersed: Int? { tabs.firstIndex { $0.immersed } }
+    /// As the window says it, with its chrome, not from the tab: read from
+    /// the tab, the other page went (or came back) a turn before the column
+    /// and the card did, one more jump.
+    var immersedID: Tab.ID? = nil {
+        didSet { if immersedID != oldValue { needsLayout = true } }
+    }
+    fileprivate var immersed: Int? { immersedID.flatMap { id in tabs.firstIndex { $0.id == id } } }
 
     /// Whether the page in this slot is on screen.
     private func shown(_ index: Int) -> Bool {
@@ -656,8 +668,7 @@ extension PaneStage {
     fileprivate func motion(to next: [Tab], split next2: TabSplit?) -> Move? {
         let old = tabs.map(\.id), new = next.map(\.id)
         defer { dragged = false }
-        guard bounds.width - PaneStage.gutter >= 2 * PaneStage.narrowest, immersed == nil,
-              !next.contains(where: \.immersed) else { return nil }
+        guard bounds.width - PaneStage.gutter >= 2 * PaneStage.narrowest, immersedID == nil else { return nil }
         if old.count == 1, new.count == 2, new.contains(old[0]), let other = new.first(where: { $0 != old[0] }) {
             return .enter(other)
         }

@@ -33,14 +33,16 @@ struct Page: View {
             if let cover = tab.cover {
                 // The page as it was left, while it is rebuilt underneath —
                 // anchored where the page itself starts, and never in the
-                // way of a click meant for the page.
+                // way of a click meant for the page. Up at once, since what
+                // it covers is not fit to be seen (a page waking up, or one
+                // landing from the floating window); off with a fade.
                 Image(nsImage: cover)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .clipped()
                     .allowsHitTesting(false)
-                    .transition(.opacity)
+                    .transition(.asymmetric(insertion: .identity, removal: .opacity))
             }
 
             if tab.floating {
@@ -247,6 +249,27 @@ final class StageView: NSView {
     /// every layout. Nothing to fall out of step with.
     private weak var wanted: NSView?
 
+    /// A page on its way out to the floating window (Browser.lift), kept
+    /// here unseen under the one on show until the little window takes it,
+    /// or it turns out to have nothing playing. Taken out of every window
+    /// as the tab changed, the page let go of the layers it had drawn and
+    /// built them all again in the little window, its video last; going out
+    /// by switching tabs still jumped where ⇧⌘P didn't. Kept in a window,
+    /// it goes out the way ⇧⌘P sends it.
+    private weak var parting: NSView?
+
+    func keep(_ page: NSView) {
+        guard page.superview === self else { return }
+        parting = page
+    }
+
+    func letGo(_ page: NSView) {
+        guard parting === page else { return }
+        parting = nil
+        if page.superview === self, page !== wanted { page.removeFromSuperview() }
+        page.alphaValue = 1
+    }
+
     /// The Web Inspector each page off show had docked beside it. WebKit
     /// docks it once, on show; a page coming back without it was laid out
     /// short, beside an empty space. Weak both ways: a closed tab's page
@@ -288,6 +311,10 @@ final class StageView: NSView {
     }
 
     func show(_ page: NSView?) {
+        if let page, page === parting {
+            parting = nil
+            page.alphaValue = 1
+        }
         if let leaving = wanted, leaving !== page, let dock = subviews.first(where: Self.isInspector) {
             Self.docks.setObject(dock, forKey: leaving)
             dock.removeFromSuperview()
@@ -301,8 +328,16 @@ final class StageView: NSView {
         // window, with a placeholder left here in its place. The chrome
         // stepping aside lays this stage out again in that same moment, and
         // taking the page back then left the screen black with the sound
-        // still playing. WebKit puts it back itself on the way out.
-        if let web = wanted as? WKWebView, web.fullscreenState != .notInFullscreen { return }
+        // still playing. WebKit puts it back itself on the way out, at the
+        // placeholder's frame: kept at this stage's size, the chrome having
+        // come back before that (see Tab.immersed), the page comes home at
+        // its own size and is laid out once.
+        if let web = wanted as? WKWebView, web.fullscreenState != .notInFullscreen {
+            for view in subviews where view !== web && Self.isPlaceholder(view) && view.frame != bounds {
+                view.frame = bounds
+            }
+            return
+        }
 
         // Anything here that isn't wanted, out. Only ever what is actually
         // ours: a page may be somewhere else on purpose. Except the Web
@@ -311,6 +346,12 @@ final class StageView: NSView {
         // resize, it left the page shrunk beside nothing (#91).
         let docked = inspecting
         for view in subviews where view !== wanted && !(docked && Self.isInspector(view)) {
+            // Unseen, and still drawn: WebKit asks whether its view is in a
+            // window and not hidden, not whether anything shows of it.
+            if view === parting {
+                view.alphaValue = 0
+                continue
+            }
             view.removeFromSuperview()
         }
 
@@ -344,6 +385,13 @@ final class StageView: NSView {
         }
     }
 
+    /// Nothing reaches a page kept unseen.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        if let parting, let hit, hit === parting || hit.isDescendant(of: parting) { return nil }
+        return hit
+    }
+
     /// Whether the page on show has its Web Inspector up. WebKit answers only
     /// through names outside its public framework, asked for before use (see
     /// Inspector.swift).
@@ -355,6 +403,11 @@ final class StageView: NSView {
         guard inspector.responds(to: visible) else { return false }
         typealias Getter = @convention(c) (AnyObject, Selector) -> Bool
         return unsafeBitCast(inspector.method(for: visible), to: Getter.self)(inspector, visible)
+    }
+
+    /// What WebKit leaves in a page's place while it fills the screen.
+    private static func isPlaceholder(_ view: NSView) -> Bool {
+        String(describing: type(of: view)).contains("FullScreenPlaceholder")
     }
 
     private static func isInspector(_ view: NSView) -> Bool {

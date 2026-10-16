@@ -12,6 +12,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
 
+sv.use("tab-switcher")
+
 
 def switcher():
     return sv.cmd({"do": "switcher"})
@@ -37,6 +39,19 @@ def main():
         sv.sp("mouse", points=[[5, 5], [5, 5]]); time.sleep(0.6)
         s = switcher()
         t.ok("a click outside the panel puts the switcher away, the tab unchanged", not s["visible"] and s["active"] == a, s)
+        # A split pair is one switcher card, and keeps the page with focus.
+        sv.sp("enabled", on=True)
+        a = sv.page("pair-left"); b = sv.page("pair-right"); c = sv.page("outside-pair")
+        sv.sp("pair", id=b, **{"with": a}, side="right")
+        sv.sp("select", id=c)
+        sv.cmd({"do": "press", "code": 48, "chars": "\t", "mods": ["ctrl"]})
+        time.sleep(0.3)
+        s = switcher()
+        t.ok("a split pair is one card", s["candidates"].count(a) == 1 and b not in s["candidates"] and s["selected"] == a, s)
+        x, y, w, h = s["cards"][a]
+        sv.sp("mouse", points=[[x + w / 2, y + h / 2], [x + w / 2, y + h / 2]])
+        st = sv.sp("state")
+        t.ok("picking the pair restores its focused page", st["activeID"] == b and set(st["visibleIDs"]) == {a, b}, st)
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)
