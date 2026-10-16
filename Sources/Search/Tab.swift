@@ -28,7 +28,7 @@ enum Web {
     /// included, and registering a name twice is a hard crash.
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name,
-                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name] {
+                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
@@ -108,11 +108,10 @@ enum Web {
         // Off by default on macOS, which is why a full-screen button on a video
         // did nothing at all: the page asks, and WebKit refuses without a word.
         config.preferences.isElementFullscreenEnabled = true
-        // On by default on macOS: a page could open a new tab, and take you
-        // to it, whenever it liked — on load, on a timer. Off, window.open
-        // works only from a click or a key, as Safari's pop-up blocking has
-        // it; a sign-in window opened by its button still opens.
-        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // WebKit's synchronous popup check rejects async POST sign-ins.
+        // The UI delegate instead consumes a recent trusted interaction
+        // recorded in Search's isolated world (see PopupGesture.swift).
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
         // Sound waits for a click, as everywhere; video too when Settings
         // says videos wait (Never Auto-Play, in Safari's words).
         config.mediaTypesRequiringUserActionForPlayback = Web.playback
@@ -287,6 +286,7 @@ final class Tab: ObservableObject, Identifiable {
     var pageAddress: URL? { committed ?? address }
 
     func didCommit() {
+        popupGesture.clear()
         // A new document: whatever the old one waited for under its field
         // went with it.
         if let built { Passkeys.shared.forget(built) }
@@ -388,6 +388,12 @@ final class Tab: ObservableObject, Identifiable {
     /// A sideways swipe in progress, for the disc that shows it.
     @Published var pull: Pull?
 
+    /// What going back from the first page does, for a tab where it does
+    /// anything (see PageView.leave).
+    var leave: (() -> Void)? {
+        didSet { built?.leave = leave }
+    }
+
     /// What a site opens at until you zoom it yourself: Settings › General ›
     /// Page zoom. Read from the file, not from the one object the window holds.
     static var defaultZoom: CGFloat {
@@ -488,6 +494,7 @@ final class Tab: ObservableObject, Identifiable {
     private let shop = StoreRelay()
     private let iconChanges = IconRelay()
     private let middles = MiddleRelay()
+    var popupGesture = PopupGesture()
     private let passkeyRelay = PasskeyRelay()
     private let hovered = HoveredLink()
     private let ears = AudioWatch()
@@ -520,6 +527,9 @@ final class Tab: ObservableObject, Identifiable {
     var home: URL?
     /// For a pin, which of the pins it is, in every window (see Pins.swift).
     var pinID: UUID?
+    /// For a pin, one every space shows (see Pins.shared). Set when the row
+    /// is built; pins.json, not the session, says which pins these are.
+    var everywhere = false
     /// For a pin, kept as a row under the squares rather than as a square:
     /// Arc's pinned list, below its favourites. Still a pin in every other
     /// way: put down by ⌘W, the same in every window, never in a group.
@@ -602,7 +612,9 @@ final class Tab: ObservableObject, Identifiable {
         web.allowsBackForwardNavigationGestures = false
         Swipe.calm(web)
         web.onPull = { [weak self] pull in self?.pull = pull }
+        web.leave = leave
         web.onTouch = { [weak self] in self?.uncover() }
+        web.onMenuClosed = { [weak self] in self?.popupGesture.menuClosed() }
         web.onKeys = { [weak self] in if let self { self.onKeys?(self) } }
         web.searchName = { [weak self] in self?.searchName?() }
         web.onSearch = { [weak self] text in
@@ -639,6 +651,7 @@ final class Tab: ObservableObject, Identifiable {
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
+        PopupGestureRelay.install(on: controller)
         Shield.shared.protect(controller)
         built = web
         // A tab muted before it went to sleep wakes muted.
@@ -732,6 +745,7 @@ final class Tab: ObservableObject, Identifiable {
         guard let built else { return }
         let controller = built.configuration.userContentController
         controller.removeAllUserScripts()
+        controller.addUserScript(PopupGestureRelay.userScript)
         controller.addUserScript(
             WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
@@ -1023,8 +1037,16 @@ final class Tab: ObservableObject, Identifiable {
     /// ⌘W on a pinned tab. The letter keeps its place in the row and the
     /// address is remembered; everything the page was holding is let go, so a
     /// pin you are not reading costs a line in a file and nothing else.
-    func rest() {
-        guard let url = address else { return }
+    /// Given `home`, it is put down there instead of where it was: Arc's pin
+    /// that goes back to its pinned page once closed (see Preferences.pinsGoHome).
+    func rest(at home: URL? = nil) {
+        guard let url = home ?? address else { return }
+        // The title was the page it is leaving; the host stands in until the
+        // pinned page is woken and names itself.
+        if let home, address != home {
+            address = home
+            title = home.host ?? ""
+        }
         pending = url
         memory = nil
         picture = nil
@@ -1367,6 +1389,7 @@ final class Tab: ObservableObject, Identifiable {
     /// back-forward cache. The tab keeps its address; `web` builds again the
     /// next time anyone asks for it.
     private func discard() {
+        popupGesture.clear()
         watch = []
         ears.stop()
         guard let web = built else { return }
@@ -1375,7 +1398,15 @@ final class Tab: ObservableObject, Identifiable {
         let controller = web.configuration.userContentController
         Web.release(controller)
         controller.removeAllUserScripts()
+        // Other extension tabs still use this controller. Their existing
+        // listeners need the relay, and their next documents need its script.
+        if #available(macOS 15.4, *), controller === Extensions.pages {
+            PopupGestureRelay.install(on: controller)
+            controller.addUserScript(PopupGestureRelay.userScript)
+        }
+        web.onMenuClosed = nil
         web.onPull = nil
+        web.leave = nil
         web.onTouch = nil
         web.onKeys = nil
         web.searchName = nil
@@ -1512,6 +1543,13 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 
 /// A web view that reads the two-finger swipe for itself.
 final class PageView: WKWebView {
+    var onMenuClosed: (() -> Void)?
+
+    override func didCloseMenu(_ menu: NSMenu, with event: NSEvent?) {
+        super.didCloseMenu(menu, with: event)
+        onMenuClosed?()
+    }
+
     /// The page's own right-click menu. WebKit puts extensions' items for the
     /// page in it itself; Search adding them again showed each one twice.
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
@@ -1620,6 +1658,13 @@ final class PageView: WKWebView {
 
     /// Told where a sideways swipe has got to, and nil when there is none.
     var onPull: ((Pull?) -> Void)?
+    /// What a swipe back means with nothing to go back to, where it means
+    /// anything: a small window's first page was, a step back, no window at
+    /// all (see Little.swift). Nil everywhere else, where back there does
+    /// nothing. Only the swipe: it shows the disc and can be drawn back
+    /// before letting go, and a mouse's back button can't, so a stray press
+    /// would lose the page with no way to reopen it.
+    var leave: (() -> Void)?
     /// Told the moment the page is reached for — a click, a scroll — so the
     /// picture of a tab waking up never stands between you and the page.
     var onTouch: (() -> Void)?
@@ -1877,6 +1922,8 @@ final class PageView: WKWebView {
         // Only a live trackpad gesture — not its glide afterwards, and not a
         // mouse wheel, which has no beginning or end to speak of.
         guard event.momentumPhase == [] else { return }
+        // And only while the Mac says a swipe may go between pages.
+        guard Swipe.followsTheMac else { return }
 
         switch event.phase {
         case .mayBegin, .began:
@@ -1918,7 +1965,7 @@ final class PageView: WKWebView {
                 back = sideways > 0
                 // Nowhere to go that way: nothing to show, and nothing more
                 // to read from this gesture.
-                if back ? !canGoBack : !canGoForward {
+                if back ? !canGoBack && leave == nil : !canGoForward {
                     spent = true
                     return
                 }
@@ -1951,6 +1998,15 @@ final class PageView: WKWebView {
         guard free == nil else { return }
         free = true
         tell()
+    }
+
+    /// Back from the first page, where that means leaving.
+    private var leaves: Bool { back && !canGoBack && leave != nil }
+
+    /// Not from inside the event: leaving closes the window this view is in,
+    /// and the page with it.
+    private func leaveSoon() {
+        DispatchQueue.main.async { [weak self] in self?.leave?() }
     }
 
     /// Only the distance in the direction it set off in. Past the origin the
@@ -1992,7 +2048,7 @@ final class PageView: WKWebView {
             )
         }
         armedNow = armed
-        settle(Pull(back: back, travel: travel, armed: armed, going: false, stops: stops, picked: picked))
+        settle(Pull(back: back, travel: travel, armed: armed, going: false, stops: stops, picked: picked, leaves: leaves))
     }
 
     /// Held long enough: the pages that way, nearest to the fingers — at the
@@ -2047,9 +2103,11 @@ final class PageView: WKWebView {
             return
         }
         going = true
-        settle(Pull(back: back, travel: travel, armed: true, going: true, stops: stops, picked: picked))
+        settle(Pull(back: back, travel: travel, armed: true, going: true, stops: stops, picked: picked, leaves: leaves))
         if stops != nil, items.indices.contains(picked) {
             go(to: items[picked])
+        } else if leaves {
+            leaveSoon()
         } else if back {
             goBack()
         } else {

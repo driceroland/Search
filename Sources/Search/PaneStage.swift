@@ -99,6 +99,7 @@ final class PaneStage: NSView {
         }
         if findBar == nil {
             let bar = FindHost(rootView: FindBar(browser: browser))
+            bar.rootView.onPillFrame = { [weak bar] in bar?.pillFrame = $0 }
             findBar = bar
             addSubview(bar, positioned: .above, relativeTo: nil)
         }
@@ -242,7 +243,7 @@ final class PaneStage: NSView {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let edge = NSColor.labelColor.withAlphaComponent(CardEdge.edge).cgColor
             let ground = Palette.NS.ground.cgColor
-            if card { layer?.backgroundColor = NSColor.clear.cgColor }
+            layer?.backgroundColor = card ? NSColor.clear.cgColor : ground
             for slot in slots {
                 slot.layer?.borderWidth = card ? 1 : 0
                 slot.layer?.borderColor = edge
@@ -834,8 +835,14 @@ extension PaneStage {
 /// pill; a press where the pill isn't goes to the page under it, rather than
 /// to the box, which would have kept the click or carried the window off.
 private final class FindHost: NSHostingView<FindBar> {
+    var pillFrame = CGRect.zero
+
     override func hitTest(_ point: NSPoint) -> NSView? {
+        // Native controls keep their own hits while SwiftUI animates the pill.
         let hit = super.hitTest(point)
-        return hit === self ? nil : hit
+        guard hit === self else { return hit }
+        let inside = convert(point, from: superview)
+        // SwiftUI buttons can be hit on the hosting view itself.
+        return Capsule().path(in: pillFrame).contains(inside) ? hit : nil
     }
 }

@@ -99,6 +99,7 @@ struct SplitTabItem: View {
 }
 
 private struct SplitTabHalf: View {
+    @Environment(\.greys) private var greys
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
@@ -130,10 +131,21 @@ private struct SplitTabHalf: View {
     private var handled: some View {
         laidOut
             .modifier(OneClick(double: false) {
-                guard interactive else { return }
+                guard interactive, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+                browser.clearTabSelection()
                 if focused { browser.beginTabEdit(tab) }
                 else { browser.focusPane(tab) }
             })
+            .modifier(ModifiedTabClick {
+                if interactive && !editing { browser.extendTabSelection(to: tab, modifiers: $0) }
+            })
+            .overlay {
+                if browser.selectedTabIDs.contains(tab.id) {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+            }
             .overlay {
                 if interactive { MiddleClick { browser.close(tab) } }
             }
@@ -165,7 +177,7 @@ private struct SplitTabHalf: View {
     private var ground: some View {
         if focused {
             ZStack(alignment: .leading) {
-                Rectangle().fill(Palette.sideWash)
+                Rectangle().fill(greys.wash)
                 if prefs.showsReading, !narrow {
                     GeometryReader { geo in
                         ReadingFill(meter: tab.meter, width: geo.size.width)
@@ -174,9 +186,11 @@ private struct SplitTabHalf: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .matchedGeometryEffect(id: "live", in: pill)
+        } else if browser.selectedTabIDs.contains(tab.id) {
+            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(greys.wash)
         } else if hovering {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Palette.sideHover)
+                .fill(greys.hover)
         }
     }
 
@@ -218,7 +232,7 @@ private struct SplitTabHalf: View {
                 }
                 if !narrow {
                     Text(title)
-                        .font(.system(size: stacked ? 12.5 : 12))
+                        .font(.system(size: stacked ? prefs.sideTitle : 12))
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundStyle(focused ? Palette.ink : hovering ? Palette.ink.opacity(0.7) : Palette.muted)

@@ -17,16 +17,25 @@ import Foundation
 // as Chrome's match patterns, gets `chrome.runtime` — the same two calls,
 // with Chrome's callbacks as well as promises — and only if it has no
 // `chrome` of its own. The list is read again for every page that loads.
+//
+// A message for an extension that isn't there, or doesn't list the page,
+// fails as in Chrome ("Receiving end does not exist") instead of going to
+// WebKit, which answers it with nothing. claude.ai's sign-in tries Anthropic's
+// own build of Claude in Chrome first and takes any answer but a refusal for
+// done: given nothing, it never asked the real one and spun for good.
 
 enum ExtensionExternal {
     /// The `externally_connectable` patterns of every extension loaded now,
-    /// those Chrome would take and no others.
-    @MainActor static var patterns: [String] {
-        guard #available(macOS 15.4, *) else { return [] }
-        return Extensions.shared.contexts.values.flatMap { context -> [String] in
+    /// those Chrome would take and no others, by the extension's id.
+    @MainActor static var listings: [String: [String]] {
+        guard #available(macOS 15.4, *) else { return [:] }
+        var found: [String: [String]] = [:]
+        for (id, context) in Extensions.shared.contexts {
             let listed = context.webExtension.manifest["externally_connectable"] as? [String: Any]
-            return ((listed?["matches"] as? [String]) ?? []).filter(allowed)
+            let patterns = ((listed?["matches"] as? [String]) ?? []).filter(allowed)
+            if !patterns.isEmpty { found[id] = Array(Set(patterns)).sorted() }
         }
+        return found
     }
 
     /// Chrome refuses a pattern for every site (`*://*/*`) and a wildcard
@@ -58,13 +67,13 @@ enum ExtensionExternal {
     /// For the page about to load, in its own world before any of its
     /// scripts; nil with nothing listed anywhere.
     @MainActor static var script: String? {
-        let patterns = Array(Set(patterns)).sorted()
-        guard !patterns.isEmpty,
-              let data = try? JSONSerialization.data(withJSONObject: patterns),
+        let found = listings
+        guard !found.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: found, options: .sortedKeys),
               let list = String(data: data, encoding: .utf8)
         else { return nil }
         return """
-        (function (patterns) {
+        (function (listings) {
           var made = window.browser, runtime = made && made.runtime;
           if (typeof window.chrome !== 'undefined' || !runtime || typeof runtime.sendMessage !== 'function') return;
           // Chrome's match patterns: scheme, host, then path. A host with a
@@ -89,11 +98,15 @@ enum ExtensionExternal {
             } else if (host !== here) return false;
             return glob(parts[3]).test(location.pathname + location.search);
           };
-          if (!patterns.some(listed)) return;
+          // The extensions that list this page: the only ones it can reach.
+          var reached = Object.keys(listings).filter(function (id) { return listings[id].some(listed); });
+          if (!reached.length) return;
           var chromeRuntime = {
             sendMessage: function (id, message, options, callback) {
               if (typeof options === 'function') { callback = options; options = undefined; }
-              var sent = options === undefined ? runtime.sendMessage(id, message) : runtime.sendMessage(id, message, options);
+              var sent = reached.indexOf(id) < 0
+                ? Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'))
+                : options === undefined ? runtime.sendMessage(id, message) : runtime.sendMessage(id, message, options);
               if (typeof callback !== 'function') return sent;
               Promise.resolve(sent).then(function (reply) { callback(reply); }, function (error) {
                 chromeRuntime.lastError = { message: String(error && error.message || error) };

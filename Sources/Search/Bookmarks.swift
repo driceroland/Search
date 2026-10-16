@@ -1603,7 +1603,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
 
     @objc private func open(_ item: NSMenuItem) {
         guard let url = item.representedObject as? URL else { return }
-        browser?.visit(url)
+        browser?.openBookmark(url)
     }
 
     /// SwiftUI's delegate, with the bookmarks put in after its update.
