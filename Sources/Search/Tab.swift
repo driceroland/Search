@@ -796,6 +796,11 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: LiveRate.script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
         )
+        // Every frame, in the page's own world and ahead of its scripts: a
+        // paused video gives the media keys back (see MediaKeys.swift).
+        controller.addUserScript(
+            WKUserScript(source: MediaKeys.script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
+        )
         // Every frame, in the page's own world: a page an extension lists
         // reaches it as chrome.runtime (see ExtensionExternal.swift).
         if let external = ExtensionExternal.script {
