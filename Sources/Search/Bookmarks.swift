@@ -16,6 +16,20 @@ struct Bookmark: Codable, Identifiable, Hashable {
 
     var isFolder: Bool { url == nil }
 
+    /// A bookmark whose name was emptied, as in Chrome and Safari: on the
+    /// bar it is its icon alone. There is no setting; emptying it is the
+    /// choice. A folder always has a name.
+    var unnamed: Bool {
+        !isFolder && title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// What a list reads it as: its name, or for one without, its address
+    /// as the address field shows it, so the list is still readable.
+    var label: String {
+        guard unnamed else { return title }
+        return url.flatMap { URL(string: $0) }.map(Address.pretty) ?? url ?? ""
+    }
+
     var host: String? {
         url.flatMap { URL(string: $0)?.host()?.lowercased() }
     }
@@ -697,10 +711,18 @@ struct BookmarkOutline: View {
     /// A name of your own for a bookmark or a folder, asked for the way a
     /// space's is: the page's title is what a bookmark starts with, and a
     /// folder brought in from another browser is called after it. The name
-    /// it has arrives in the field; an empty one changes nothing.
+    /// it has arrives in the field. An empty one changes nothing for a
+    /// folder; a bookmark left without one is its icon alone on the bar.
     private func rename(_ node: Bookmark) {
-        Ask.name(node.isFolder ? "Rename Folder" : "Rename Bookmark", placeholder: node.title, initial: node.title, confirm: "Rename") {
-            bookmarks.update(node.id, title: $0, url: nil)
+        if node.isFolder {
+            Ask.name("Rename Folder", placeholder: node.title, initial: node.title, confirm: "Rename") {
+                bookmarks.update(node.id, title: $0, url: nil)
+            }
+        } else {
+            Ask.name("Rename Bookmark", detail: "Without a name, the bookmarks bar shows its icon alone.",
+                     placeholder: node.label, initial: node.title, confirm: "Rename", empty: true) {
+                bookmarks.update(node.id, title: $0, url: nil)
+            }
         }
     }
 
@@ -859,9 +881,10 @@ struct BookmarkOutline: View {
                     if arrows { Spacer().frame(width: 10) }
                     Mark(icon: Favicons.shared.cached(node.site ?? ""), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 15)
                 }
-                Text(node.title)
+                // One without a name reads as its address, a shade lighter.
+                Text(node.label)
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Palette.ink)
+                    .foregroundStyle(node.unnamed ? Palette.muted : Palette.ink)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if node.isFolder, let kids = node.children, !kids.isEmpty {
@@ -981,7 +1004,8 @@ struct BookmarkCard: View {
 
             VStack(spacing: 8) {
                 line("Name") {
-                    TextField("", text: $title)
+                    // Emptied, the field shows what the lists will read.
+                    TextField(bookmarks.bookmark(id)?.url.flatMap(URL.init(string:)).map(Address.pretty) ?? "", text: $title)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12.5))
                         .foregroundStyle(Palette.ink)
@@ -1006,9 +1030,7 @@ struct BookmarkCard: View {
         }
         .padding(14)
         .frame(width: 280)
-        .background(Palette.ground)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+        .popoverGround(card: true)
         .onAppear {
             title = bookmarks.bookmark(id)?.title ?? ""
             // The popover's window takes the keyboard only after this, and
@@ -1072,10 +1094,16 @@ struct BookmarkCard: View {
         }
     }
 
-    /// An empty name keeps the one it had.
+    /// An empty name is kept as empty: the bookmarks bar then shows the
+    /// bookmark's icon alone, as Chrome's and Safari's do.
     private func rename(_ typed: String) {
+        BookmarkCard.rename(id, typed, in: bookmarks)
+    }
+
+    /// The same, for the bench.
+    static func rename(_ id: Bookmark.ID, _ typed: String, in bookmarks: Bookmarks) {
         let name = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name != bookmarks.bookmark(id)?.title else { return }
+        guard name != bookmarks.bookmark(id)?.title else { return }
         bookmarks.update(id, title: name, url: nil)
     }
 
@@ -1134,9 +1162,7 @@ struct BookmarksDropdown: View {
             .padding(6)
         }
         .frame(width: 280)
-        .background(Palette.ground)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+        .popoverGround(card: true)
     }
 
     /// The list as tall as the whole tree would be with every folder open,
@@ -1332,9 +1358,9 @@ struct BookmarksPanel: View {
                     Mark(icon: Favicons.shared.cached(node.site ?? ""), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 16)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(node.title)
+                    Text(node.label)
                         .font(.system(size: 13))
-                        .foregroundStyle(Palette.ink)
+                        .foregroundStyle(node.unnamed ? Palette.muted : Palette.ink)
                         .lineLimit(1)
                     Text(whereabouts)
                         .font(.system(size: 11.5))
@@ -1412,21 +1438,63 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
                     self?.wrap()
                 }
             },
+            // However the menu bar is let go of, even if SwiftUI's delegate
+            // got the menu's own close instead.
+            centre.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: nil) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard (note.object as? NSMenu) === NSApp.mainMenu else { return }
+                    self?.closed()
+                }
+            },
         ]
         wrap()
     }
 
+    private var menu: NSMenu? { NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu }
+
+    /// Looks, while the menu is open, after each turn of the run loop.
+    private var looking: CFRunLoopObserver?
+
+    /// An open menu is updated by SwiftUI itself, straight through its own
+    /// delegate, whenever anything it shows could have changed — a tab's
+    /// title, every second on a download page — and that took the bookmarks
+    /// out from under the pointer. While it is open, they go back in as soon
+    /// as a turn of the run loop finds them gone.
+    fileprivate func opened(_ menu: NSMenu) {
+        guard looking == nil else { return }
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 0) { [weak self, weak menu] _, _ in
+            MainActor.assumeIsolated {
+                guard let self, let menu, !menu.items.contains(where: { $0.tag == Self.mark }) else { return }
+                self.fill(menu)
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        looking = observer
+    }
+
+    fileprivate func closed() {
+        guard let looking else { return }
+        CFRunLoopObserverInvalidate(looking)
+        self.looking = nil
+    }
+
     private func wrap() {
-        guard let menu = NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu,
-              menu.delegate !== relay
+        guard let menu, menu.delegate !== relay
         else { return }
         relay.inner = menu.delegate
         menu.delegate = relay
     }
 
+    /// SwiftUI's own update of the menu, without ours after it: what it
+    /// does by itself to a menu that is open. For the bench.
+    func swiftUIUpdate() {
+        guard let menu else { return }
+        relay.inner?.menuNeedsUpdate?(menu)
+    }
+
     /// How many items this has put in the menu, for the bench.
     var count: Int {
-        NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu?.items.filter { $0.tag == Self.mark }.count ?? 0
+        menu?.items.filter { $0.tag == Self.mark }.count ?? 0
     }
 
     /// The top of the list, after SwiftUI's items, in place of any left
@@ -1466,15 +1534,21 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
                 folders[ObjectIdentifier(sub)] = node.children ?? []
                 item.submenu = sub
             } else if let text = node.url, let url = URL(string: text) {
-                item = NSMenuItem(title: node.title, action: #selector(open(_:)), keyEquivalent: "")
+                // One without a name reads as its address here.
+                item = NSMenuItem(title: node.label, action: #selector(open(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = url
                 // The site's icon, as the bar wears it: a folder opened from
-                // the bar, or the Bookmarks menu, had none (idea 183).
+                // the bar, or the Bookmarks menu, had none (idea 183). A site
+                // whose icon isn't kept yet (brought in, never visited) wears
+                // the bar's letter in its place, rather than nothing and its
+                // title out of line with the others'.
                 if let icon = Favicons.shared.cached(node.site ?? "") {
                     let small = icon.copy() as? NSImage ?? icon
                     small.size = NSSize(width: 16, height: 16)
                     item.image = small
+                } else {
+                    item.image = BookmarkMenu.letter(String((node.host ?? "•").prefix(1)).uppercased())
                 }
             } else {
                 return nil
@@ -1482,6 +1556,36 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
             item.tag = Self.mark
             return item
         }
+    }
+
+    /// The bar's Mark with no icon, for a menu: the letter, muted, on a
+    /// faint square, drawn as the menu draws so it follows light and dark.
+    private static func letter(_ letter: String) -> NSImage {
+        let size: CGFloat = 16
+        return NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            Palette.NS.ink.withAlphaComponent(0.06).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: size * 0.22, yRadius: size * 0.22).fill()
+            let text = NSAttributedString(string: letter, attributes: [
+                .font: NSFont.systemFont(ofSize: size * 0.56, weight: .medium),
+                .foregroundColor: Palette.NS.muted,
+            ])
+            let drawn = text.size()
+            text.draw(at: NSPoint(x: rect.midX - drawn.width / 2, y: rect.midY - drawn.height / 2))
+            return true
+        }
+    }
+
+    /// What a folder of the bar holds as its menu: every item, its folders
+    /// opened as a click would, deepest last. For the bench.
+    func walk(_ folder: Bookmark) -> [(depth: Int, item: NSMenuItem)] {
+        func down(_ items: [NSMenuItem], _ depth: Int) -> [(depth: Int, item: NSMenuItem)] {
+            items.flatMap { item -> [(depth: Int, item: NSMenuItem)] in
+                guard let sub = item.submenu else { return [(depth, item)] }
+                menuNeedsUpdate(sub)
+                return [(depth, item)] + down(sub.items, depth + 1)
+            }
+        }
+        return down(items(for: folder.children ?? []), 0)
     }
 
     /// A folder, opening.
@@ -1499,7 +1603,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
 
     @objc private func open(_ item: NSMenuItem) {
         guard let url = item.representedObject as? URL else { return }
-        browser?.visit(url)
+        browser?.openBookmark(url)
     }
 
     /// SwiftUI's delegate, with the bookmarks put in after its update.
@@ -1513,7 +1617,15 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
             MainActor.assumeIsolated { after?(menu) }
         }
 
-        func menuDidClose(_ menu: NSMenu) { inner?.menuDidClose?(menu) }
+        func menuWillOpen(_ menu: NSMenu) {
+            inner?.menuWillOpen?(menu)
+            MainActor.assumeIsolated { BookmarkMenu.shared.opened(menu) }
+        }
+
+        func menuDidClose(_ menu: NSMenu) {
+            inner?.menuDidClose?(menu)
+            MainActor.assumeIsolated { BookmarkMenu.shared.closed() }
+        }
 
         /// Only for its own items: the bookmarks aren't SwiftUI's to know.
         func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {

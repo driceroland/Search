@@ -24,20 +24,40 @@ struct PaneStageView: NSViewRepresentable {
     let frames: ([Tab.ID: CGRect]) -> Void
     let action: (PaneStage.Action) -> Void
     let hover: (Tab.ID?) -> Void
+    var find: Browser? = nil
+    /// Each page's corners, as a card (see CardEdge).
+    var corner: CGFloat = 0
 
     func makeNSView(context: Context) -> PaneStage { PaneStage() }
 
     func updateNSView(_ stage: PaneStage, context: Context) {
+        stage.corner = corner
         stage.onCommit = commit
         stage.onFocus = focus
         stage.onFrames = frames
         stage.onAction = action
         stage.onHover = hover
         stage.show(tabs, split: split, focused: focused)
+        stage.showFind(find)
     }
 }
 
 final class PaneStage: NSView {
+    /// Each page's corners, as a card (see CardEdge): with the tabs down the
+    /// side, each page on the stage is a card of its own, with the window's
+    /// ground in the gutter between two.
+    var corner: CGFloat = 0 {
+        didSet {
+            guard corner != oldValue else { return }
+            for slot in slots { slot.corner = corner }
+            for cue in cues { cue.corner = corner }
+            paint()
+            needsLayout = true
+        }
+    }
+    /// The shadow under each page's card, a layer of the stage's own behind
+    /// the page — never the page's, which is cut to its corners.
+    private var shadows: [CALayer] = []
     var onCommit: ((UUID, [Double]) -> Void)?
     var onFocus: ((Tab) -> Void)?
     /// Where each page is, from the top left, each time that changes — never
@@ -65,6 +85,26 @@ final class PaneStage: NSView {
     fileprivate var tabs: [Tab] = []
     fileprivate var split: TabSplit?
     private var focused: Tab.ID?
+    private var findBar: FindHost?
+    private var findWidth: CGFloat?
+
+    /// The controls belong to the stage so they stay above WebKit, below
+    /// window panels, and follow every layout of the focused page.
+    func showFind(_ browser: Browser?) {
+        guard let browser else {
+            findBar?.removeFromSuperview()
+            findBar = nil
+            findWidth = nil
+            return
+        }
+        if findBar == nil {
+            let bar = FindHost(rootView: FindBar(browser: browser))
+            bar.rootView.onPillFrame = { [weak bar] in bar?.pillFrame = $0 }
+            findBar = bar
+            addSubview(bar, positioned: .above, relativeTo: nil)
+        }
+        needsLayout = true
+    }
     fileprivate var slots: [StageView] = []
     private var cues: [FocusCue] = []
     fileprivate let divider = PaneDivider()
@@ -172,16 +212,53 @@ final class PaneStage: NSView {
     private func refill() {
         while slots.count < tabs.count {
             let slot = StageView()
+            slot.corner = corner
             addSubview(slot, positioned: .below, relativeTo: divider)
             slots.append(slot)
+            let shadow = CALayer()
+            shadow.actions = ["bounds": NSNull(), "position": NSNull(), "hidden": NSNull()]
+            layer?.insertSublayer(shadow, at: 0)
+            shadows.append(shadow)
             let cue = FocusCue()
+            cue.corner = corner
             cue.alphaValue = 0
             addSubview(cue, positioned: .below, relativeTo: divider)
             cues.append(cue)
         }
         feed()
+        paint()
         needsLayout = true
         watchClicks()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        paint()
+    }
+
+    /// The cards' edges and shadows, in this appearance's colours; nothing
+    /// without corners, where the pages fill the stage as they always did.
+    private func paint() {
+        let card = corner > 0
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let edge = NSColor.labelColor.withAlphaComponent(CardEdge.edge).cgColor
+            let ground = Palette.NS.ground.cgColor
+            layer?.backgroundColor = card ? NSColor.clear.cgColor : ground
+            for slot in slots {
+                slot.layer?.borderWidth = card ? 1 : 0
+                slot.layer?.borderColor = edge
+            }
+            for shadow in shadows {
+                shadow.isHidden = !card
+                shadow.backgroundColor = ground
+                shadow.cornerRadius = corner
+                shadow.cornerCurve = .continuous
+                shadow.shadowColor = NSColor.black.cgColor
+                shadow.shadowOpacity = Swift.Float(CardEdge.shadow)
+                shadow.shadowRadius = 6
+                shadow.shadowOffset = CGSize(width: 0, height: 1)
+            }
+        }
     }
 
     /// What each slot was last told to show.
@@ -241,6 +318,12 @@ final class PaneStage: NSView {
             let visible = index < tabs.count && shown(index) && frame.width > 0
             slot.isHidden = !visible
             if slot.frame != frame { slot.frame = frame }
+            if index < shadows.count {
+                // Pages run the stage's full height, so its flip is no matter.
+                let shadow = shadows[index]
+                shadow.frame = frame
+                shadow.isHidden = corner == 0 || !visible
+            }
             // Only with two pages on screen does it matter which one keys go to.
             let cue = cues[index]
             cue.frame = frame
@@ -255,6 +338,20 @@ final class PaneStage: NSView {
         // A window made too narrow for two takes the other page off, and
         // gives it back once there is room.
         feed()
+        if let bar = findBar {
+            let page = focused.flatMap { id in tabs.firstIndex { $0.id == id } }
+                .flatMap { frames.indices.contains($0) ? frames[$0] : nil }
+            bar.isHidden = page == nil || page?.width == 0
+            if let page, page.width > 0 {
+                if findWidth != page.width {
+                    findWidth = page.width
+                    bar.rootView.availableWidth = page.width
+                }
+                let width = min(390, page.width)
+                bar.frame = CGRect(x: page.maxX - width, y: page.minY,
+                                   width: width, height: min(60, page.height))
+            }
+        }
         guard live == nil else { return }
         var now: [Tab.ID: CGRect] = [:]
         for (index, tab) in tabs.enumerated() where shown(index) { now[tab.id] = frames[index] }
@@ -391,10 +488,15 @@ final class PaneStage: NSView {
 /// which shows on a white page and a dark one alike; drawn rather than a
 /// layer's border, so a picture of the window has it too. It takes no clicks.
 final class FocusCue: NSView {
+    /// Round, when the pages are cards.
+    var corner: CGFloat = 0 { didSet { if corner != oldValue { needsDisplay = true } } }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func draw(_ dirtyRect: NSRect) {
         Palette.NS.muted.withAlphaComponent(0.55).setStroke()
-        let line = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
+        let inner = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let line = corner > 0
+            ? NSBezierPath(roundedRect: inner, xRadius: corner - 0.5, yRadius: corner - 0.5)
+            : NSBezierPath(rect: inner)
         line.lineWidth = 1
         line.stroke()
     }
@@ -582,9 +684,13 @@ extension PaneStage {
     /// Pictures of the pages on screen, as they are. WebKit takes them in a
     /// frame or so; one slower than a twentieth of a second, and the change
     /// is a cut instead of a wait. Under Reduce Motion they are still
-    /// taken, for the dissolve.
+    /// taken, for the dissolve. A test run makes the move anyway, with
+    /// stand-ins for the pictures still to come: a page just arrived in a
+    /// window on no screen can keep WebKit waiting for seconds, and so can
+    /// a busy machine.
     fileprivate func capture(_ pages: [Tab], _ done: @escaping ([Tab.ID: NSImage]) -> Void) {
         var pictures: [Tab.ID: NSImage] = [:]
+        var sizes: [Tab.ID: NSSize] = [:]
         var waiting = pages.count
         var finished = false
         func finish() {
@@ -600,6 +706,7 @@ extension PaneStage {
                 continue
             }
             let size = web.bounds.size
+            sizes[tab.id] = size
             web.takeSnapshot(with: nil) { image, _ in
                 MainActor.assumeIsolated {
                     // A test run's window is on no screen, and WebKit pictures
@@ -613,7 +720,13 @@ extension PaneStage {
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            if !finished { pictures = [:] }
+            if !finished {
+                if Store.testing {
+                    for (id, size) in sizes where pictures[id] == nil { pictures[id] = PaneStage.standIn(size) }
+                } else {
+                    pictures = [:]
+                }
+            }
             finish()
         }
     }
@@ -643,6 +756,10 @@ extension PaneStage {
             view.imageAlignment = .alignTopLeft
             view.wantsLayer = true
             view.layer?.backgroundColor = Palette.NS.ground.cgColor
+            // Moving as a card, when the pages are cards.
+            view.layer?.cornerRadius = corner
+            view.layer?.cornerCurve = .continuous
+            view.layer?.masksToBounds = corner > 0
             addSubview(view, positioned: .below, relativeTo: divider)
             self.pictures.append(view)
             moving.append((view, after[id]))
@@ -711,5 +828,21 @@ extension PaneStage {
             func box(_ r: CGRect) -> [Double] { [r.minX, r.minY, r.width, r.height].map { Double($0) } }
             return ["from": box(start), "to": box(end), "now": box(now)]
         }
+    }
+}
+
+/// The find bar's box over the page's corner is wider and taller than its
+/// pill; a press where the pill isn't goes to the page under it, rather than
+/// to the box, which would have kept the click or carried the window off.
+private final class FindHost: NSHostingView<FindBar> {
+    var pillFrame = CGRect.zero
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Native controls keep their own hits while SwiftUI animates the pill.
+        let hit = super.hitTest(point)
+        guard hit === self else { return hit }
+        let inside = convert(point, from: superview)
+        // SwiftUI buttons can be hit on the hosting view itself.
+        return Capsule().path(in: pillFrame).contains(inside) ? hit : nil
     }
 }

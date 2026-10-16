@@ -142,7 +142,10 @@ enum Browsers {
         browser.shut = false
         if let window = browser.window {
             Bench.keepOff(window)
-            window.makeKeyAndOrderFront(nil)
+            // A hidden probe stays hidden: ordered front, its window shows
+            // the app again (an extension's windows.update focused, which
+            // Claude's panel asks for whenever its window isn't key).
+            if !(Store.testing && NSApp.isHidden) { window.makeKeyAndOrderFront(nil) }
         } else if browser.inScene {
             _ = NSApp.delegate?.applicationOpenUntitledFile?(NSApp)
         }
@@ -173,7 +176,13 @@ enum Browsers {
             view.sizingOptions = [.minSize]
             host = view
         }
-        let size = popup ? NSSize(width: 480, height: 600) : front?.window?.frame.size ?? NSSize(width: 1180, height: 780)
+        // A new window from one in full screen: in full screen of its own,
+        // in a Space of its own, as Safari and Chrome do — sized as a window
+        // for when it leaves full screen, not as the screen.
+        let fullScreen = !popup && frame == nil && front?.window?.styleMask.contains(.fullScreen) == true
+        let size = popup ? NSSize(width: 480, height: 600)
+            : fullScreen ? NSSize(width: 1180, height: 780)
+            : front?.window?.frame.size ?? NSSize(width: 1180, height: 780)
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -192,7 +201,7 @@ enum Browsers {
         }
         if let frame {
             window.setFrame(frame, display: false)
-        } else if popup {
+        } else if popup || fullScreen {
             window.center()
         } else if let beside = front?.window {
             // Down and to the right of the window in front, as new windows go.
@@ -207,6 +216,8 @@ enum Browsers {
         register(browser)
         Bench.keepOff(window)
         window.makeKeyAndOrderFront(nil)
+        // Never in a test run: full screen would put a probe's window on a screen.
+        if fullScreen, !Store.testing { window.toggleFullScreen(nil) }
         comeForward()
     }
 

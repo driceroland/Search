@@ -146,7 +146,8 @@ struct Omnibox: View {
         .transition(.scale(scale: 0.98, anchor: .top).combined(with: .opacity))
     }
 
-    private struct Row: View {
+    /// One row of a list of places, here and under the field in the tab.
+    struct Row: View {
         let offer: Suggestion
         /// Where the arrow keys have walked to. The pointer gets its own,
         /// quieter mark, and changes nothing but the look of the row.
@@ -381,9 +382,12 @@ struct AddressField: NSViewRepresentable {
         field.focusRingType = .none
         field.font = .systemFont(ofSize: 15.5)
         field.textColor = Palette.NS.ink
-        field.lineBreakMode = .byTruncatingTail
+        field.lineBreakMode = .byClipping
         field.cell?.usesSingleLineMode = true
         field.cell?.wraps = false
+        // Scrolls with the caret, so a long address can be read and edited
+        // all the way along rather than cut off at the field's edge.
+        field.cell?.isScrollable = true
         // SwiftUI picks its own colour for a placeholder, and on a pale ground
         // that colour was near-white.
         field.placeholderAttributedString = NSAttributedString(

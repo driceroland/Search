@@ -134,7 +134,7 @@ final class AIEngine: ObservableObject {
     }
 
     func install() {
-        guard installing == nil else { return }
+        guard AI.shipped || Store.testing, installing == nil else { return }
         installing = Task { @MainActor in
             defer { installing = nil }
             do {
@@ -284,6 +284,7 @@ final class AIEngine: ObservableObject {
 
     /// The engine, running and loaded. Started if it isn't.
     private func start() async throws {
+        guard AI.shipped || Store.testing else { throw CancellationError() }
         if ready, pid != 0 { return }
         if let starting { return try await starting.value }
         let task = Task { @MainActor in try await self.launch() }
