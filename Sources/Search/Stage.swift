@@ -14,6 +14,8 @@ struct Page: View {
     /// False where the page itself is held elsewhere (see PaneStage.swift)
     /// and only what goes over it is wanted here.
     var holdsPage = true
+    /// The page's corners, as a card on the window's frame (see CardEdge).
+    var corner: CGFloat = 0
 
     var body: some View {
         ZStack {
@@ -25,7 +27,7 @@ struct Page: View {
             // the stage was never told to take it back when it landed, and
             // the tab stayed empty. Nothing, then the page, is a change.
             if holdsPage {
-                WebStage(page: tab.isBlank || tab.asleep || tab.floating ? nil : tab.web)
+                WebStage(page: tab.isBlank || tab.asleep || tab.floating ? nil : tab.web, corner: corner)
             }
 
             if let cover = tab.cover {
@@ -57,7 +59,23 @@ struct Page: View {
                     .transition(.opacity)
             }
 
-            if let pull = tab.pull, pull.stops != nil {
+            Swiping(pull: tab.pull)
+        }
+        .animation(Motion.quick, value: tab.failure)
+        .animation(Motion.quick, value: tab.floating)
+        .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
+        .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
+    }
+}
+
+/// What a sideways swipe puts over the page: the disc, or the list a held
+/// one opens. The page's own stage, and a small window's (Little.swift).
+struct Swiping: View {
+    let pull: Pull?
+
+    var body: some View {
+        ZStack {
+            if let pull, pull.stops != nil {
                 // In the disc's place, grown from its own edge: it sits in a
                 // frame as wide as the window, and grown from that frame's
                 // middle it would slide in from the middle.
@@ -67,7 +85,7 @@ struct Page: View {
                         insertion: .opacity.combined(with: .scale(scale: 0.92, anchor: pull.back ? .leading : .trailing)),
                         removal: .opacity.combined(with: .scale(scale: 0.96, anchor: pull.back ? .leading : .trailing))
                     ))
-            } else if let pull = tab.pull {
+            } else if let pull {
                 Disc(pull: pull)
                     // A disc for each edge, never one that changes edges: a
                     // view whose alignment flips is a view that glides the
@@ -79,10 +97,6 @@ struct Page: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
         }
-        .animation(Motion.quick, value: tab.failure)
-        .animation(Motion.quick, value: tab.floating)
-        .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
-        .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
     }
 }
 
@@ -116,7 +130,8 @@ private struct Disc: View {
                 .stroke(Palette.ink, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .padding(0.75)
-            Image(systemName: pull.back ? "arrow.left" : "arrow.right")
+            // Back from a small window's first page closes it, and says so.
+            Image(systemName: pull.leaves ? "xmark" : pull.back ? "arrow.left" : "arrow.right")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Palette.ink.opacity(0.4 + 0.6 * grown))
         }
@@ -200,10 +215,20 @@ private struct HistoryList: View {
 /// reload, no lost scroll position, no forgotten form.
 struct WebStage: NSViewRepresentable {
     let page: NSView?
+    var corner: CGFloat = 0
+
+    // The hosted page's previous bounds are not an ideal size for this layout.
+    // Accept the offered room so a window can shrink around its browser chrome.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: StageView, context: Context) -> CGSize? {
+        guard let width = proposal.width, let height = proposal.height,
+              width.isFinite, height.isFinite else { return nil }
+        return CGSize(width: width, height: height)
+    }
 
     func makeNSView(context: Context) -> StageView { StageView() }
 
     func updateNSView(_ view: StageView, context: Context) {
+        view.corner = corner
         view.show(page)
     }
 }
@@ -228,6 +253,19 @@ final class StageView: NSView {
     /// takes its entry with it, and an inspector is kept by WebKit while it
     /// is open, never by this.
     private static let docks = NSMapTable<NSView, NSView>.weakToWeakObjects()
+
+    /// Round, as the page's card is (see CardEdge): the web view is cut to
+    /// the corners by this view's own layer, which a clip of SwiftUI's isn't
+    /// always carried down to.
+    var corner: CGFloat = 0 {
+        didSet {
+            guard corner != oldValue else { return }
+            wantsLayer = true
+            layer?.cornerRadius = corner
+            layer?.cornerCurve = .continuous
+            layer?.masksToBounds = corner > 0
+        }
+    }
 
     override func layout() {
         super.layout()

@@ -137,19 +137,27 @@ enum Vault {
     /// One item with its secret, for the paths that hand a password over:
     /// filling a sign-in in, and telling whether one is already kept.
     private static func login(from row: [String: Any]) -> Login? {
+        let user = account(of: row)
         guard let host = row[kSecAttrServer as String] as? String,
-              let user = row[kSecAttrAccount as String] as? String,
               let password = secret(host: host, user: user)
         else { return nil }
         let (used, clear) = noted(row)
         return Login(host: host, user: user, password: password, used: used, clear: clear)
     }
 
+    /// The account an item is kept under. A sign-in with a password box
+    /// alone — an access code, a dashboard's — is kept under no name, and
+    /// the keychain lists such an item with no account at all, not an
+    /// empty one: read as missing, it was saved and never offered again,
+    /// nor shown in Settings, nor forgotten.
+    private static func account(of row: [String: Any]) -> String {
+        row[kSecAttrAccount as String] as? String ?? ""
+    }
+
     /// One item without its secret, for the list.
     private static func kept(from row: [String: Any]) -> Kept? {
-        guard let host = row[kSecAttrServer as String] as? String,
-              let user = row[kSecAttrAccount as String] as? String
-        else { return nil }
+        guard let host = row[kSecAttrServer as String] as? String else { return nil }
+        let user = account(of: row)
         let (used, clear) = noted(row)
         return Kept(host: host, user: user, used: used, clear: clear)
     }
@@ -196,13 +204,15 @@ enum Vault {
         save(host: login.host, user: login.user, password: login.password, used: Date(), clear: login.clear)
     }
 
-    static func forget(host: String, user: String) {
+    /// Whether the keychain let it go: Remove All… counts only those.
+    @discardableResult
+    static func forget(host: String, user: String) -> Bool {
         SecItemDelete([
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrServer as String: host,
             kSecAttrAccount as String: user,
             kSecAttrLabel as String: label,
-        ] as CFDictionary)
+        ] as CFDictionary) == errSecSuccess
     }
 
     // MARK: - sites that asked not to be asked
@@ -221,7 +231,12 @@ enum Vault {
 
     /// A password is shown only to the person the Mac belongs to. Touch ID,
     /// the watch, or the account password — whatever the Mac itself takes.
-    static func prove(_ reason: String, _ done: @escaping (Bool) -> Void) {
+    @MainActor static func prove(_ reason: String, _ done: @escaping (Bool) -> Void) {
+        // A test run answers as it answers Ask.sure (`ui confirm on|off`).
+        if Store.testing, let yes = Ask.testing {
+            done(yes)
+            return
+        }
         let context = LAContext()
         var trouble: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &trouble) else {

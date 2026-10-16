@@ -78,7 +78,7 @@ struct SettingsPanel: View {
                 .padding(.horizontal, 10)
                 .padding(.top, 14)
                 .padding(.bottom, 12)
-            ForEach(Page.allCases) { item in
+            ForEach(Page.allCases.filter { $0 != .ai || AI.shipped }) { item in
                 PageRow(page: item, on: page == item) { page = item }
             }
             Spacer(minLength: 0)
@@ -146,7 +146,7 @@ struct SettingsPanel: View {
                     case .passwords: passwords
                     case .downloads: downloads
                     case .privacy: privacy
-                    case .ai: AISettings(browser: browser, prefs: prefs)
+                    case .ai: if AI.shipped { AISettings(browser: browser, prefs: prefs) }
                     case .about: about
                     }
                 }
@@ -194,6 +194,10 @@ struct SettingsPanel: View {
                 }
             }
             Rule()
+            // What ⌘T opens to, and the way back after an extension took
+            // it. Only there while an extension offers a page; it brings
+            // its own hairline.
+            HomePageLine()
             Line("Search with", searchDetail) {
                 Picker("", selection: $prefs.engine) {
                     ForEach(Engine.allCases) { engine in
@@ -309,6 +313,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.commandBar)
             }
             Rule()
+            Line("New tab in a floating field", "⌘T raises the address field over the page you're on, as in Arc. Return opens what you typed in a new tab; Escape, ⌘W or a click outside puts it away and leaves the page as it was") {
+                Switch(on: $prefs.floatingNewTab)
+            }
+            Rule()
             Line("Show where links go", "Point at a link and its address shows at the bottom of the page") {
                 Switch(on: $prefs.showsLinks)
             }
@@ -317,8 +325,8 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autoScroll)
             }
             Rule()
-            Line("Pages at 120 Hz", "Animations and scrolling in pages at up to 120 frames a second on a screen that can, instead of 60 as in Safari. Uses more battery. Open tabs follow when reloaded") {
-                Switch(on: $prefs.fastPages)
+            Line("Pages at 120 Hz", "Animations and scrolling in pages at up to 120 frames a second on a screen that can, instead of 60 as in Safari. Uses more battery, so On power keeps it to when the Mac is plugged in") {
+                Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
             }
             Rule()
             Line("Hold a swipe to pick from history", "Swipe back or forward and keep your fingers down: the pages that way appear, and moving up or down picks one to go to") {
@@ -411,6 +419,20 @@ struct SettingsPanel: View {
                 Line("Hide the sidebar until the pointer reaches the edge", "The page takes the whole window; push against its \(prefs.sidePosition.rawValue) edge for the tabs. ⌘S keeps them out.") {
                     Switch(on: $prefs.sideHides)
                 }
+                Rule()
+                Line("The page as a card", "A little room around the page, with rounded corners. Off, the page reaches the window's edges") {
+                    Switch(on: Binding(
+                        get: { prefs.cards },
+                        set: { on in withAnimation(Motion.glide) { prefs.cards = on } }
+                    ))
+                }
+                Rule()
+                Line("Roomier tabs", "Taller rows and larger titles in the sidebar") {
+                    Switch(on: Binding(
+                        get: { prefs.roomyTabs },
+                        set: { on in withAnimation(Motion.glide) { prefs.roomyTabs = on } }
+                    ))
+                }
             }
             Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {
@@ -425,12 +447,26 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.showsReading)
             }
             Rule()
-            Line("Sleep tabs you aren't using", "After half an hour away they come back where you left them. Pinned tabs, sound, calls and anything typed stay awake.") {
+            Line("Sleep tabs you aren't using", "A tab left alone lets its page go and comes back where you left it. Pinned tabs, sound, calls and anything typed stay awake.") {
                 Switch(on: $prefs.sleepsTabs)
+            }
+            if prefs.sleepsTabs {
+                Rule()
+                Line("How soon tabs sleep", prefs.sleepPace.detail) {
+                    Segmented(options: SleepPace.allCases.map { ($0, $0.title) }, selection: $prefs.sleepPace)
+                }
             }
             Rule()
             Line("Load background tabs when you go to them", "A link opened behind the page, with ⌘-click or the middle button, or a batch of links from another app, waits until you go to its tab. ⇧⌘-click still takes you there at once.") {
                 Switch(on: $prefs.lazyTabs)
+            }
+            Rule()
+            Line("Leave a new tab when the last tab closes", "Close the last tab that isn't pinned and a new tab takes its place, ready for an address. Otherwise you land on a pinned tab.") {
+                Switch(on: $prefs.newTabAfterLast)
+            }
+            Rule()
+            Line("Open new tabs at the end", "A new tab, or a link opened in one, goes to the bottom of the list instead of just after the tab you're on.") {
+                Switch(on: Binding(get: { prefs.newTabPlace == .end }, set: { prefs.newTabPlace = $0 ? .end : .next }))
             }
             Rule()
             Line("Search a site from the address field", "Type the start of a site's name, like red or yout, then Tab, and what you type next searches that site. Sites you visit that offer a search join the list.") {
@@ -444,6 +480,12 @@ struct SettingsPanel: View {
             Line("Spaces", "Separate sets of tabs, signed in where the others are or starting afresh, switched with ⌃1–⌃9, two fingers sideways over the column, or the space's icon. Mission Control's own ⌃1–⌃9, if you turned them on, take those keys first.") {
                 Switch(on: $prefs.usesSpaces)
             }
+            if prefs.usesSpaces {
+                Rule()
+                Line("Pins in every space", "Keep a pin in every space: right-click it and choose Keep in Every Space. Each space signs in to it the way that space does.") {
+                    Switch(on: $prefs.sharesPins)
+                }
+            }
             Rule()
             Line("Tab groups", "Named sections in the sidebar. Right-click a tab to start a group; click its heading to hide or show its tabs.") {
                 Switch(on: $prefs.usesTabGroups)
@@ -453,6 +495,10 @@ struct SettingsPanel: View {
                 Line("Pinned rows", "As in Arc: pins as squares for the sites you live in, pins as rows under them for pages you keep, and a line over the rest with Clear. Right-click a tab to pin it as a row.") {
                     Switch(on: $prefs.listsPins)
                 }
+            }
+            Rule()
+            Line("Pins go back home", "As in Arc: a pinned tab closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at rather than wherever you went from there.") {
+                Switch(on: $prefs.pinsGoHome)
             }
             Rule()
             Line("Split View", "Show two tabs side by side. Drag a tab onto a page to pair them.") {

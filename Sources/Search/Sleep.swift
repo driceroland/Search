@@ -16,15 +16,60 @@ import WebKit
 // with ⌘W), a tab playing sound, on a call, sending a download, holding its
 // video out in the little window, or holding something typed and not sent.
 //
-// When macOS says memory is short, the half hour shrinks: to five minutes on
-// a warning, to nothing when it is critical.
+// Half an hour is Normal. Settings › Tabs › How soon tabs sleep makes it
+// two hours (Later) or ten minutes (Sooner).
+//
+// When macOS says memory is short, the wait shrinks, whatever was chosen: to
+// five minutes on a warning, to nothing when it is critical.
+
+/// How soon tabs sleep, as chosen in Settings. Three levels rather than
+/// numbers: what someone decides is how much a waking tab bothers them, not
+/// how many minutes.
+enum SleepPace: String, CaseIterable, Identifiable {
+    case later, normal, sooner
+
+    nonisolated static let key = "tabs.sleep.pace"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .later: return "Later"
+        case .normal: return "Normal"
+        case .sooner: return "Sooner"
+        }
+    }
+
+    /// Away this long, a tab sleeps.
+    var wait: TimeInterval {
+        switch self {
+        case .later: return 2 * 60 * 60
+        case .normal: return 30 * 60
+        case .sooner: return 10 * 60
+        }
+    }
+
+    /// What the line in Settings says under the choice.
+    var detail: String {
+        switch self {
+        case .later: return "After two hours away."
+        case .normal: return "After half an hour away."
+        case .sooner: return "After ten minutes away."
+        }
+    }
+
+    /// The one chosen, Normal until someone chooses.
+    nonisolated static var chosen: SleepPace {
+        Store.settings.string(forKey: key).flatMap(SleepPace.init) ?? .normal
+    }
+}
 
 extension Browser {
-    /// How long a tab has to go without being looked at. Half an hour, or
-    /// `sleep.after` in seconds — for the bench and the measurements.
+    /// How long a tab has to go without being looked at: the chosen pace's
+    /// wait, or `sleep.after` in seconds — for the bench and the measurements.
     static var sleepAfter: TimeInterval {
         let set = Store.settings.double(forKey: "sleep.after")
-        return set > 0 ? set : 30 * 60
+        return set > 0 ? set : SleepPace.chosen.wait
     }
 
     /// Started once, at launch.

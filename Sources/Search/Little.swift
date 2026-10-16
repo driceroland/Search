@@ -153,6 +153,9 @@ final class LittleWindow: NSObject, NSWindowDelegate {
                     pick: { LittleWindow.commit(picking: $0) }
                 )
             })
+        // Back from the page it opened on is back to before it opened: a
+        // swipe closes it (see PageView.leave).
+        tab.leave = { [weak self] in self?.close() }
     }
 
     /// Its keys, before the browser's: ⌃Tab goes to the other small
@@ -160,7 +163,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// page's.
     func take(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let key = event.shortcutCharacters
         let switcher = LittleWindow.switcher
         if event.keyCode == 48, flags.contains(.control), flags.isDisjoint(with: [.command, .option]) {
             // A Tab held down doesn't race through them.
@@ -211,6 +214,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         // Into the window in front, whichever that is now.
         guard let browser = Browsers.front ?? browser else { return }
         kept = true
+        // In the row, back from the first page goes nowhere, as any tab's.
+        tab.leave = nil
         // As a tab moved from another window is: this window's delegate,
         // and this window's space, with its sign-ins.
         browser.receive(tab)
@@ -230,6 +235,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         if LittleWindow.switcher.home == tab.id { LittleWindow.switcher.cancel() }
+        tab.leave = nil
         if !kept { tab.close() }
         LittleWindow.open.removeAll { $0 === self }
     }
@@ -268,8 +274,10 @@ struct LittleView: View {
                     Trouble(message: failure) { tab.reload() }
                         .transition(.opacity)
                 }
+                Swiping(pull: tab.pull)
             }
             .animation(Motion.quick, value: tab.failure)
+            .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
         }
         .background(Palette.ground)
         .ignoresSafeArea()
