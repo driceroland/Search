@@ -523,6 +523,14 @@ final class Tab: ObservableObject, Identifiable {
     private let hovered = HoveredLink()
     private let ears = AudioWatch()
 
+    // Private exceptions belong only to this tab, never its session record.
+    @Published var awakeSites: Set<String> = []
+
+    var awakeHost: String? {
+        guard let address, ["http", "https"].contains(address.scheme?.lowercased()) else { return nil }
+        return address.host()?.lowercased()
+    }
+
     /// A tab that keeps nothing: its own cookies, no history, no place in the
     /// session. Signed in as nobody, and forgotten when it goes.
     let shy: Bool

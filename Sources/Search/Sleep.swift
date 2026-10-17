@@ -123,9 +123,24 @@ extension Browser {
         return busy(tab)
     }
 
+    func keepsAwake(_ tab: Tab) -> Bool {
+        guard prefs.keepsSitesAwake, let host = tab.awakeHost else { return false }
+        return (tab.shy ? tab.awakeSites : prefs.awakeSites).contains(host)
+    }
+
+    func keepAwake(_ on: Bool, for tab: Tab) {
+        guard let host = tab.awakeHost else { return }
+        if tab.shy {
+            if on { tab.awakeSites.insert(host) } else { tab.awakeSites.remove(host) }
+        } else {
+            if on { prefs.awakeSites.insert(host) } else { prefs.awakeSites.remove(host) }
+        }
+    }
+
     /// What the page is in the middle of that letting it go would cut off:
     /// the part of staying awake that closing a tab asks too (Closing.swift).
     func busy(_ tab: Tab) -> String? {
+        if keepsAwake(tab) { return "kept awake for this site" }
         if tab.noisy { return "playing sound" }
         if tab.floating || floating == tab.id { return "its video is out" }
         if let web = tab.built {

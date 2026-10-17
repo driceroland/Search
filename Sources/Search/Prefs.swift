@@ -146,6 +146,12 @@ final class Preferences: ObservableObject {
     @Published var keywords: [Keyword] {
         didSet { store.set((try? JSONEncoder().encode(keywords)) ?? Data(), forKey: "search.keywords") }
     }
+    @Published var keepsSitesAwake: Bool {
+        didSet { store.set(keepsSitesAwake, forKey: "tabs.keepAwake") }
+    }
+    @Published var awakeSites: Set<String> {
+        didSet { store.set(Array(awakeSites).sorted(), forKey: "tabs.awakeSites") }
+    }
     /// Tabs nobody has looked at for half an hour give their page back and
     /// keep where they were. On unless turned off.
     @Published var sleepsTabs: Bool {
@@ -496,6 +502,8 @@ final class Preferences: ObservableObject {
         customEngine = store.string(forKey: "search.custom") ?? ""
         keywords = store.data(forKey: "search.keywords")
             .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
+        keepsSitesAwake = store.bool(forKey: "tabs.keepAwake")
+        awakeSites = Set(store.stringArray(forKey: "tabs.awakeSites") ?? [])
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen

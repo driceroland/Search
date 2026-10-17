@@ -187,6 +187,7 @@ enum SiteCardPanel {
 /// goes a step further in, to what it means and the certificate behind it.
 struct SiteCard: View {
     let browser: Browser
+    @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
     let close: () -> Void
 
@@ -198,6 +199,7 @@ struct SiteCard: View {
 
     init(browser: Browser, tab: Tab, deeper: Bool = false, close: @escaping () -> Void) {
         self.browser = browser
+        self.prefs = browser.prefs
         self.tab = tab
         self.close = close
         _deeper = State(initialValue: deeper)
@@ -246,6 +248,22 @@ struct SiteCard: View {
             sound
             grounded
             darken
+            if prefs.keepsSitesAwake, tab.awakeHost != nil {
+                HStack(spacing: 0) {
+                    Text("Keep This Site Awake").font(MenuMetrics.font)
+                    Spacer(minLength: 24)
+                    Switch(on: Binding(get: { browser.keepsAwake(tab) }, set: { browser.keepAwake($0, for: tab) }))
+                        .accessibilityRepresentation {
+                            Toggle("Keep This Site Awake", isOn: Binding(get: { browser.keepsAwake(tab) }, set: { browser.keepAwake($0, for: tab) }))
+                        }
+                        .focusable()
+                        .onKeyPress(.space) { browser.keepAwake(!browser.keepsAwake(tab), for: tab); return .handled }
+                }
+                .padding(.leading, MenuMetrics.text)
+                .padding(.trailing, MenuMetrics.trailing)
+                .frame(height: MenuMetrics.row)
+                .help(tab.shy ? "Only in this private tab, until it closes. Uses more memory." : "Prevents sleep and automatic closure, even when memory is low. You can still close the tab.")
+            }
         }
     }
 

@@ -475,6 +475,13 @@ struct SettingsPanel: View {
                 .fixedSize()
             }
             Rule()
+            Line("Keep selected sites awake", "Adds Keep This Site Awake to the site card. Chosen sites use more memory: they neither sleep nor close automatically, even under memory pressure. Private choices last only in that tab.") {
+                Switch(on: $prefs.keepsSitesAwake)
+                    .accessibilityRepresentation { Toggle("Keep selected sites awake", isOn: $prefs.keepsSitesAwake) }
+                    .focusable()
+                    .onKeyPress(.space) { prefs.keepsSitesAwake.toggle(); return .handled }
+            }
+            Rule()
             Line("Load background tabs when you go to them", "A link opened behind the page, with ⌘-click or the middle button, or a batch of links from another app, waits until you go to its tab. ⇧⌘-click still takes you there at once.") {
                 Switch(on: $prefs.lazyTabs)
             }

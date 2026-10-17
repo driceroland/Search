@@ -7,7 +7,7 @@ import Foundation
 // Tabs) closes the way ⌘W would close it: ⇧⌘T and History › Recently Closed
 // bring it back while it is recent, and History has its page for good. What
 // stays is what you said to keep: a pinned tab, a tab you named, a tab in a
-// group. There is no fourth way, and no list of exceptions to learn.
+// group, or a site explicitly kept awake from its card.
 //
 // The time counts from when you last left the tab, or let go of it (unpinned,
 // ungrouped, unnamed: Tab.letGo), and goes on counting while Search is quit:
