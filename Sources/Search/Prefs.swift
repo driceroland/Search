@@ -212,12 +212,6 @@ final class Preferences: ObservableObject {
             Store.keepsSignIns = keepsSignIns
         }
     }
-    /// A private tab gets extensions too, not just every other page. Off
-    /// unless asked for - a private tab keeps nothing by default, extensions
-    /// included, and some watch what a page does.
-    @Published var extensionsInPrivate: Bool {
-        didSet { store.set(extensionsInPrivate, forKey: "extensions.private") }
-    }
     /// Whether sites may ask for a passkey here. Off sends them to the
     /// password instead — the only thing that works in a build without
     /// Apple's browser entitlement.
@@ -512,7 +506,6 @@ final class Preferences: ObservableObject {
         // Before the first page is loaded into the store.
         Store.keepsSignIns = keeps
         Spaces.everyStore.forEach(Store.followCookies)
-        extensionsInPrivate = store.bool(forKey: "extensions.private")
         // Offered by default only in a build that can actually do them —
         // one with Apple's browser entitlement and its profile embedded. A
         // choice made under the other kind of build is not a choice about

@@ -41,6 +41,7 @@
     ./bench ext-shot ID PATH           a picture of its popup while it is open
     ./bench ext-answer yes|no|ask      test run: answer extensions' questions without asking; lists what was asked
     ./bench ext-enable ID on|off       switch an extension on or off
+    ./bench ext-private ID on|off      test run: allow one extension in private tabs
     ./bench capture                    extensions' screen recording: ids given, what records, who may, last request
     ./bench capture-stop ID            stop what an extension is recording, as the pill's Stop does
     ./bench sidepanel [eval JS|touch|close]  the side panel: what is in it and where; test run: JS in its page, a click, or close it
@@ -257,6 +258,10 @@ def main(argv):
         if len(args) != 2: sys.exit("usage: bench ext-enable ID on|off")
         request["id"] = args[0]
         request["on"] = args[1] in ("on", "true", "1", "yes")
+    elif verb == "ext-private":
+        if len(args) != 2 or args[1] not in ("on", "off"): sys.exit("usage: bench ext-private ID on|off")
+        request["id"] = args[0]
+        request["on"] = args[1] == "on"
     elif verb == "ext-pin":
         if not 1 <= len(args) <= 2: sys.exit("usage: bench ext-pin ID [on|off]")
         request["id"] = args[0]

@@ -116,6 +116,8 @@ Needs macOS 15.4 or later. Do this on a test world. Ids here are extension ids f
 
 Poll `extensions` until `busy` is `""`. Then read `loaded`, `errors`, and `reported` for that id.
 
+`ext-private ID on|off` (test only) lets one loaded extension into private tabs, or out. `extensions` reports it as `private`, which stays false for a manifest with `"incognito": "not_allowed"`. Only private tabs opened after some extension was let in carry extensions.
+
 `ext-press ID` opens its popup. While that popup is the one open, `ext-popup ID JS` runs JavaScript in it and `ext-shot ID PATH` writes a PNG. `ext-page ID [PATH]` opens one of its own pages in a bench tab, prints that tab id, and `eval` there runs with the extension's APIs. `ext-reload ID` loads it again. A folder extension is copied in fresh. `ext-pin ID [on|off]`, `ext-enable ID on|off`, and `ext-remove ID` change that world. `ext-answer yes|no|ask` (test only) answers later permission questions and lists what was asked.
 
 ## Failures

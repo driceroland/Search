@@ -76,15 +76,6 @@ struct ExtensionsPage: View {
                     }
                 }
 
-                Card {
-                    Line("Allow on private tabs", "Off by default - a private tab keeps nothing, extensions included") {
-                        Switch(on: Binding(
-                            get: { browser.prefs.extensionsInPrivate },
-                            set: { browser.prefs.extensionsInPrivate = $0 }
-                        ))
-                    }
-                }
-
                 if extensions.installed.isEmpty {
                     Card { Nothing("No extensions yet.") }
                 } else {
@@ -94,6 +85,10 @@ struct ExtensionsPage: View {
                             Row(item: item, extensions: extensions)
                         }
                     }
+                    Text("Each extension stays out of private tabs until you allow it in its … menu. One you allow can tell which tabs are private, but may still keep what you visit in them.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Recorders()
@@ -177,6 +172,7 @@ struct ExtensionsPage: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .accessibilityLabel("More for \(item.name)")
                 .help("More for \(item.name)")
                 Switch(on: Binding(get: { item.enabled }, set: { extensions.setEnabled(item.id, $0) }))
             }
@@ -204,6 +200,19 @@ struct ExtensionsPage: View {
             if item.source != nil || !item.fromStore {
                 Button("Reload") { extensions.reload(item.id) }
             }
+            if let context {
+                Divider()
+                if (context.webExtension.manifest["incognito"] as? String) == "not_allowed" {
+                    Text("Private Tabs Aren’t Supported")
+                } else {
+                    Toggle("Allow in Private Tabs", isOn: Binding(
+                        get: { context.hasAccessToPrivateData },
+                        set: { extensions.setPrivate(item.id, $0) }
+                    ))
+                    .accessibilityLabel("Allow \(item.name) in private tabs")
+                    .help("Private tabs opened before any extension was allowed need reopening. Turned off, a script already running in one stops only when the page reloads.")
+                }
+            }
             Divider()
             Button("Remove", role: .destructive) { extensions.remove(item.id) }
         }
@@ -220,6 +229,7 @@ struct ExtensionsPage: View {
             if extensions.newTabPageID == item.id {
                 parts.append("shows in new tabs")
             }
+            if context?.hasAccessToPrivateData == true { parts.append("allowed in private tabs") }
             if let errors = context?.errors, !errors.isEmpty { parts.append("\(errors.count) warning\(errors.count == 1 ? "" : "s")") }
             return parts.joined(separator: " · ")
         }
