@@ -26,7 +26,9 @@ final class TabSwitcher: ObservableObject {
         init?(_ event: NSEvent) {
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags == .control else { return nil }
-            switch event.charactersIgnoringModifiers?.lowercased() {
+            // As Search's other shortcuts read their keys: through the Latin
+            // layout when the one in use can't type Latin (see KeyLayout).
+            switch event.shortcutCharacters {
             case "w": self = .close
             case "r": self = .reload
             case "m": self = .mute
