@@ -23,6 +23,27 @@ enum Glyph: String, CaseIterable, Identifiable {
     }
 }
 
+/// Peek uses modified left clicks, leaving plain clicks and Control-click alone.
+enum PeekClick: String, CaseIterable {
+    case shift, optionShift, optionCommand
+
+    var title: String {
+        switch self {
+        case .shift: return "Shift-click"
+        case .optionShift: return "Option-Shift-click"
+        case .optionCommand: return "Option-Command-click"
+        }
+    }
+
+    var flags: NSEvent.ModifierFlags {
+        switch self {
+        case .shift: return .shift
+        case .optionShift: return [.option, .shift]
+        case .optionCommand: return [.option, .command]
+        }
+    }
+}
+
 /// How long a tab you aren't keeping stays open once you leave it (see
 /// Closing.swift): never, or one of Arc's four choices, counted in hours.
 enum TabLife: Int, CaseIterable, Identifiable {
@@ -300,8 +321,11 @@ final class Preferences: ObservableObject {
             FrameRate.mode = fastPages
         }
     }
-    /// Shift-click on a link opens it in a panel over the page (see
-    /// Peek.swift). On unless turned off.
+    /// The modifier chosen in Settings › Shortcuts; Shift-click by default.
+    @Published var peekClick: PeekClick {
+        didSet { store.set(peekClick.rawValue, forKey: "links.peekClick") }
+    }
+    /// Open a clicked link over the page (see Peek.swift). On unless turned off.
     @Published var peeksLinks: Bool {
         didSet { store.set(peeksLinks, forKey: "links.peek") }
     }
@@ -575,6 +599,7 @@ final class Preferences: ObservableObject {
         waitsForPlay = store.bool(forKey: Preferences.waitsKey)
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
+        peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         littleLinks = store.bool(forKey: "links.little")
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")

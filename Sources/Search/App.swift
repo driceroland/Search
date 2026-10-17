@@ -1436,21 +1436,11 @@ struct ContentView: View {
             return false
         }
 
-        // ⌃1–⌃9 go to that space, when there are spaces — by the key, as
-        // ⌘1–⌘9 are below, so the top row works on every layout.
-        if browser.prefs.usesSpaces, flags.contains(.control),
-           flags.isDisjoint(with: [.command, .option, .shift]),
-           let number = ContentView.digits[event.keyCode], number > 0 {
-            browser.switchSpace(index: number - 1)
-            return true
-        }
-
-        // Your own keys (Settings › Shortcuts), before an extension's and the
-        // ones below: a command you moved runs on its new key, and a key you
-        // took off a command goes on to the page. Nothing here unless you
-        // changed something.
-        if ShortcutStore.shared.anyChanged, let combo = KeyCombo(event: event) {
-            if let command = ShortcutStore.shared.changedCommand(on: combo) {
+        // Space keys have no menu; other commands arrive here when rebound.
+        // A key taken off a command goes back to the page.
+        if ShortcutStore.shared.anyChanged || browser.prefs.usesSpaces, let combo = KeyCombo(event: event) {
+            if let command = ShortcutStore.shared.customCommand(on: combo) {
+                if command.section == .spaces, !browser.prefs.usesSpaces { return false }
                 if Command.split.contains(command.id), !browser.prefs.splitView { return false }
                 if Command.ai.contains(command.id), !browser.prefs.ai { return false }
                 if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }

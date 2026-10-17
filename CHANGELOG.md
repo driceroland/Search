@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Space keys and the click that peeks at a link can be changed in Settings › Shortcuts, with their existing defaults kept. Space keys can be cleared or reset like other commands; Peek offers Shift-click, Option-Shift-click and Option-Command-click.
+
 - An extension's side panel, as in Chrome: ChatGPT's, Claude's, Sider's or Merlin's panel opens beside the page instead of in a tab, on the side away from the tabs, as wide as you leave it (drag its edge; a double-click puts it back). With the page as a card it is a card of its own; edge to edge or with the tabs across the top, it meets the page at a fine line. In Split View the two pages share the rest. Opened for one tab, it comes and goes with that tab. A panel that can't open opens as a tab, as before
 - The page as a card can be turned off, in Settings › Tabs › The page as a card, beside the sidebar's settings. Off, the page reaches the window's edges and the column is white with its fine line, as before 1.0.5. It stays on unless you turn it off. Asked for on [#607](https://github.com/driceroland/Search/issues/607)
 - A small window for a link from another app closes with a swipe back from the page it opened on, since back from there is back to before it opened. The disc shows a cross instead of an arrow when letting go will close it. Pages you clicked through inside it go back as usual first

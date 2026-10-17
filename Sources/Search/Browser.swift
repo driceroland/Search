@@ -4922,12 +4922,12 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             decisionHandler(.cancel)
             return
         }
-        // Shift-click, when Settings says so: a peek at the link, over this
+        // The chosen modified click: a peek at the link, over this
         // page (see Peek.swift). Only from a tab in the row — within a peek,
         // a link just goes.
         if prefs.peeksLinks, action.navigationType == .linkActivated,
            ["http", "https"].contains(scheme),
-           action.modifierFlags.intersection([.shift, .command, .option, .control]) == .shift,
+           action.modifierFlags.intersection([.shift, .command, .option, .control]) == prefs.peekClick.flags,
            let from = tab(for: webView), peekTab == nil {
             decisionHandler(.cancel)
             DispatchQueue.main.async { [weak self] in self?.peek(url, from: from) }

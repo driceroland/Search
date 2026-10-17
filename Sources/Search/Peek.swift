@@ -1,18 +1,18 @@
 import SwiftUI
 
-// A peek at a link, Arc's way: shift-click it and its page opens in a panel
+// A peek at a link, Arc's way: a modified click opens its page in a panel
 // over the one you are reading, which stays where it was underneath. Escape,
 // a click beside the panel or its cross puts it away; its other button keeps
 // it, as a tab beside this one, loaded as it is.
 //
-// Off unless asked for, in Settings › General: shift-click means other
-// things to some pages, and nobody who doesn't want this should meet it.
+// Settings › General turns peeking off; Settings › Shortcuts chooses the
+// click, Shift-click unless changed.
 //
 // The page is a tab of its own, only not in the row: keeping it is moving
 // it there, with nothing loaded twice.
 
 extension Browser {
-    /// Shift-click on a link, from a tab in the row.
+    /// A modified click on a link, from a tab in the row.
     func peek(_ url: URL, from tab: Tab) {
         let page = Tab(shy: tab.shy)
         prepare(page)

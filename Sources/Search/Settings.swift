@@ -141,7 +141,7 @@ struct SettingsPanel: View {
                     case .tabs:
                         tabs
                         if !prefs.sidebar { toolbar }
-                    case .shortcuts: ShortcutsPage(browser: browser, store: .shared)
+                    case .shortcuts: ShortcutsPage(browser: browser, store: .shared, prefs: prefs)
                     case .extensions: ExtensionsPage(browser: browser)
                     case .passwords: passwords
                     case .downloads: downloads
@@ -308,7 +308,7 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.autocorrect)
             }
             Rule()
-            Line("Peek at a link with a shift-click", "Its page opens in a panel over the one you're reading. Escape puts it away; the other button keeps it as a tab") {
+            Line("Peek at a link with a \(prefs.peekClick.title.lowercased())", "Its page opens in a panel over the one you're reading. Escape puts it away; the other button keeps it as a tab") {
                 Switch(on: $prefs.peeksLinks)
             }
             Rule()
