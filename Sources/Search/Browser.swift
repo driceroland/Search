@@ -2845,14 +2845,10 @@ final class Browser: NSObject, ObservableObject {
             Extensions.shared.offerNewTabPage(into: tab)
             return
         }
-        // Never two empty tabs. One already open anywhere in the row comes to
-        // its end and is the one opened, with whatever was typed into it and
-        // never gone to cleared away — a row of identical empty tabs is what
-        // pressing ⌘T twice, or holding it, used to leave.
+        // Reuse an empty tab at the chosen position, clearing its draft:
+        // repeated ⌘T must not leave a row of identical empty tabs.
         if let blank = tabs.last(where: { $0.isBlank && !$0.bench && !$0.shy && split(for: $0) == nil }) {
-            if let end = tabs.indices.last, tabs.firstIndex(where: { $0.id == blank.id }) != end {
-                move(blank, to: end)
-            }
+            placeBlank(blank)
             if activeID != blank.id { leaving() }
             activeID = blank.id
             summoning = false
@@ -2867,7 +2863,8 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         let tab = Tab(configuration: Web.configuration(space: spaceID))
-        adopt(tab)
+        prepare(tab)
+        tabs.insert(tab, at: placeForNew())
         leaving()
         activeID = tab.id
         summoning = false
@@ -3927,11 +3924,9 @@ final class Browser: NSObject, ObservableObject {
     /// history, and no place in tomorrow's session.
     func newShyTab() {
         // Never two empty private tabs, as ⌘T never makes two empty ones:
-        // one already open comes to the end of the row and is the one opened.
-        if let blank = tabs.last(where: { $0.isBlank && $0.shy && !$0.bench }) {
-            if let end = tabs.indices.last, tabs.firstIndex(where: { $0.id == blank.id }) != end {
-                move(blank, to: end)
-            }
+        // one already open is moved to the chosen position.
+        if let blank = tabs.last(where: { $0.isBlank && $0.shy && !$0.bench && split(for: $0) == nil }) {
+            placeBlank(blank)
             if activeID != blank.id { leaving() }
             activeID = blank.id
             summoning = false
@@ -3942,7 +3937,8 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         let tab = Tab(shy: true)
-        adopt(tab)
+        prepare(tab)
+        tabs.insert(tab, at: placeForNew())
         leaving()
         activeID = tab.id
         summoning = false
@@ -4113,11 +4109,18 @@ final class Browser: NSObject, ObservableObject {
     /// them. A link from another app, with a pin in front, landed between two
     /// (#219).
     func placeForNew() -> Int {
-        // Settings › Tabs › Open new tabs at the end.
+        if prefs.newTabPlace == .top { return pinnedCount }
         if prefs.newTabPlace == .end { return tabs.count }
         guard let here = tabs.firstIndex(where: { $0.id == activeID }) else { return tabs.count }
         let after = activeSplit.flatMap { pair in tabs.firstIndex { $0.id == pair.right } } ?? here
         return max(after + 1, pinnedCount)
+    }
+
+    private func placeBlank(_ tab: Tab) {
+        guard let from = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        let to = placeForNew()
+        // Moving an existing tab removes its old slot before inserting it.
+        move(tab, to: from < to ? to - 1 : to)
     }
 
     /// A tab made outside the row — a peek being kept — put in it at `index`.
@@ -5080,12 +5083,12 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         opener.popupGesture.opened(tab.id)
         // The link menu's Open Link in New Tab: behind this tab, where a
         // ⌘-click's goes (see open(_:foreground:)).
+        prepare(tab)
         if (webView as? PageView)?.takeBehind() == true, let source = self.tab(for: webView) {
-            prepare(tab)
             if prefs.usesTabGroups, !tab.shy, !tab.bench { tab.groupID = source.groupID }
             tabs.insert(tab, at: placeForNew())
         } else {
-            adopt(tab)
+            tabs.insert(tab, at: placeForNew())
             activeID = tab.id
             editing = false
         }

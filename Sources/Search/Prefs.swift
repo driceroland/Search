@@ -43,10 +43,9 @@ enum TabLife: Int, CaseIterable, Identifiable {
     }
 }
 
-/// Where a new tab goes in the row (Settings › Tabs). Only `next` and
-/// `end` for now; a place at the top (#606) would be one more case.
+/// Where a new tab goes in the row (Settings › Tabs).
 enum NewTabPlace: String {
-    case next, end
+    case next, top, end
 }
 
 /// Which edge the tab column sits on when tabs are arranged in a sidebar.
@@ -178,9 +177,7 @@ final class Preferences: ObservableObject {
     @Published var newTabAfterLast: Bool {
         didSet { store.set(newTabAfterLast, forKey: "tabs.newAfterLast") }
     }
-    /// Where a new tab goes in the row: just after the tab you are on, or at
-    /// the end of the list. One choice rather than a switch, so the top of
-    /// the list (#606) can join it. Next unless asked for.
+    /// Where a new tab goes in the row. Next unless asked for.
     @Published var newTabPlace: NewTabPlace {
         didSet { store.set(newTabPlace.rawValue, forKey: "tabs.newPlace") }
     }

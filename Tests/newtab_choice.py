@@ -7,7 +7,7 @@ removed afterwards. The extensions are two folders made here, each with only
 a new tab page.
 
 The second one is asked about even while the first has new tabs, and the
-answer decides which page ⌘T opens.
+answer decides which page ⌘T opens, with Top placement selected.
 """
 import json
 import subprocess
@@ -18,6 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
+
+sv.use("newtab-choice")
 
 t = sv.T()
 work = Path(tempfile.mkdtemp(prefix="search-newtab-"))
@@ -41,6 +43,7 @@ def add(path, name):
 def cmd_t():
     sv.cmd({"do": "press", "code": 17, "chars": "t", "mods": ["cmd"]}); time.sleep(1.5)
     st = sv.sp("state")
+    t.ok("Top placement applies to the extension new tab page", st["tabs"][0]["id"] == st["activeID"])
     return next(x for x in st["tabs"] if x["id"] == st["activeID"])
 # The bench reports what was asked only as it's given an answer, so it is
 # given the same one again: any other word goes back to asking for real.
@@ -50,7 +53,9 @@ def answer(yes):
 def asked(): return sv.cmd({"do": "ext-answer", "answer": given[0]})["asked"]
 def on(tab, ext): return tab["url"].startswith(ext["base"].rstrip("/")) if ext["base"] else ext["name"] in tab.get("title", "")
 try:
-    sv.setup(); sv.launch()
+    sv.setup()
+    subprocess.run(["defaults", "write", sv.SUITE, "tabs.newPlace", "top"], check=True)
+    sv.launch()
     a_path, b_path = make("Tab A"), make("Tab B")
 
     answer(True)
