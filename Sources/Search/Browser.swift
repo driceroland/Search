@@ -337,7 +337,13 @@ final class Browser: NSObject, ObservableObject {
     /// Bumped when what was typed isn't an address and can't be searched for.
     @Published private(set) var refusals = 0
     /// Bumped whenever the cursor should go back into the field.
-    @Published private(set) var focusRequest = 0
+    @Published private(set) var focusRequest = 0 {
+        didSet { focusAsked = CACurrentMediaTime() }
+    }
+    /// When the field was last asked for the keys and hasn't taken them yet.
+    private var focusAsked: CFTimeInterval?
+    /// What was typed in that moment, for the field once it has the keys.
+    private var heldKeys: [NSEvent] = []
 
     /// True while the field is a switcher rather than an address bar. ⌘K asks
     /// one question — which of the pages I already have open — and answering it
@@ -4427,6 +4433,44 @@ final class Browser: NSObject, ObservableObject {
 
     /// Put the cursor back in the field, from wherever asked.
     func askFocus() { focusRequest += 1 }
+
+    /// A key typed between ⌘T and the field taking the keys, kept for it.
+    ///
+    /// The field comes a turn or two of the run loop after it is asked for —
+    /// later still with Split View, where it waits for the stage to say where
+    /// the page is — and a hand already typing got there first: the first
+    /// letter or two went to the page being left, or nowhere. Held for half
+    /// a second at most, and only typing: a key with ⌘ or ⌃ is a shortcut.
+    func holdKey(_ event: NSEvent) -> Bool {
+        guard let asked = focusAsked, CACurrentMediaTime() - asked < 0.5,
+              fieldShowing, editingTab == nil,
+              event.modifierFlags.intersection([.command, .control]).isEmpty
+        else { return false }
+        if heldKeys.isEmpty {
+            // The field never came: what was typed goes where it would have.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, !self.heldKeys.isEmpty else { return }
+                self.focusAsked = nil
+                self.letGo(in: event.window)
+            }
+        }
+        heldKeys.append(event)
+        return true
+    }
+
+    /// The field has the keys: what was held goes to it, in order.
+    func fieldFocused(in window: NSWindow) {
+        focusAsked = nil
+        letGo(in: window)
+    }
+
+    private func letGo(in window: NSWindow?) {
+        let held = heldKeys
+        heldKeys = []
+        // Straight to the window, which hands a key to whatever has the
+        // keys: not back through the app, whose monitor would hold it again.
+        for event in held { window?.sendEvent(event) }
+    }
 
     // MARK: - guessing
 

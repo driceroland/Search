@@ -1177,6 +1177,7 @@ struct ContentView: View {
                 if !event.modifierFlags.contains(.command) { browser.landSummon() }
                 return event
             }
+            if browser.holdKey(event) { return nil }
             return take(event) ? nil : event
         }
         ContentView.keyHooks[id] = { event in take(event) ? nil : event }

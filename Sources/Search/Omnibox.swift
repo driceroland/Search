@@ -374,8 +374,8 @@ struct AddressField: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+    func makeNSView(context: Context) -> Field {
+        let field = Field()
         field.delegate = context.coordinator
         field.isBordered = false
         field.drawsBackground = false
@@ -400,7 +400,7 @@ struct AddressField: NSViewRepresentable {
         return field
     }
 
-    func updateNSView(_ field: NSTextField, context: Context) {
+    func updateNSView(_ field: Field, context: Context) {
         let coordinator = context.coordinator
         coordinator.browser = browser
 
@@ -421,24 +421,26 @@ struct AddressField: NSViewRepresentable {
 
         if coordinator.answered != browser.focusRequest {
             coordinator.answered = browser.focusRequest
-            DispatchQueue.main.async {
-                field.window?.makeFirstResponder(field)
-                guard let editor = field.currentEditor() as? NSTextView else { return }
-                // The system paints selected text as a block of accent colour,
-                // which over this pale field is the loudest thing in the
-                // window. A tenth of the ink says "selected" quietly enough.
-                editor.selectedTextAttributes = [
-                    .backgroundColor: NSColor(Palette.ink.opacity(0.12)),
-                    .foregroundColor: Palette.NS.ink,
-                ]
-                // A draft come back to its blank tab is carried on, not typed
-                // over: the caret after it. An address ⌘L raises is selected whole.
-                if browser.active?.isBlank == true, !browser.typed.isEmpty {
-                    coordinator.select(from: browser.typed.count, in: field)
-                } else {
-                    editor.selectAll(nil)
-                }
-            }
+            DispatchQueue.main.async { coordinator.focus(field) }
+        }
+    }
+
+    /// The field, told when it lands in a window.
+    ///
+    /// SwiftUI makes the view and updates it before it is in one, and with
+    /// Split View on it comes only once the stage has said where the page is,
+    /// a turn of the run loop later. Asked for the keys before then, the
+    /// field had no window to ask: the request went nowhere and nothing asked
+    /// again, so ⌘T left a field with no caret and typing that went nowhere
+    /// until it was clicked. Now the request waits for the window.
+    final class Field: NSTextField {
+        var arrived: (() -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard window != nil, let arrived else { return }
+            self.arrived = nil
+            arrived()
         }
     }
 
@@ -456,6 +458,37 @@ struct AddressField: NSViewRepresentable {
 
         init(browser: Browser) {
             self.browser = browser
+        }
+
+        /// The keys to the field, now if it is in a window, or the moment it is.
+        @MainActor func focus(_ field: Field) {
+            guard let window = field.window else {
+                field.arrived = { [weak self, weak field] in
+                    DispatchQueue.main.async {
+                        guard let self, let field, self.browser.fieldShowing else { return }
+                        self.focus(field)
+                    }
+                }
+                return
+            }
+            field.arrived = nil
+            window.makeFirstResponder(field)
+            guard let editor = field.currentEditor() as? NSTextView else { return }
+            defer { browser.fieldFocused(in: window) }
+            // The system paints selected text as a block of accent colour,
+            // which over this pale field is the loudest thing in the
+            // window. A tenth of the ink says "selected" quietly enough.
+            editor.selectedTextAttributes = [
+                .backgroundColor: NSColor(Palette.ink.opacity(0.12)),
+                .foregroundColor: Palette.NS.ink,
+            ]
+            // A draft come back to its blank tab is carried on, not typed
+            // over: the caret after it. An address ⌘L raises is selected whole.
+            if browser.active?.isBlank == true, !browser.typed.isEmpty {
+                select(from: browser.typed.count, in: field)
+            } else {
+                editor.selectAll(nil)
+            }
         }
 
         func controlTextDidChange(_ note: Notification) {

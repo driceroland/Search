@@ -704,6 +704,13 @@ final class Bench {
                 // a page, or a button it shouldn't be.
                 "responder": (NSApp.keyWindow ?? Links.window)?.firstResponder.map { "\(type(of: $0))" } ?? "",
             ]
+            // Whether that is the address field's own editor: a find field or
+            // a tab's title being renamed is an NSTextView too.
+            if let window = browser.window ?? Links.window, let editor = window.firstResponder as? NSTextView {
+                out["responderIsAddress"] = Bench.addressField(in: window.contentView)?.currentEditor() === editor
+            } else {
+                out["responderIsAddress"] = false
+            }
             out["windows"] = NSApp.windows.map { window -> [String: Any] in
                 [
                     "kind": "\(type(of: window))",

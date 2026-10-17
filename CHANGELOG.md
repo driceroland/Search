@@ -42,6 +42,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- ⌘T puts the caret in the address field every time, and what you type straight after it lands there. The field could arrive a moment after it was asked for the keys, more often with Split View on, and then the request went nowhere: no caret, and typing did nothing until you clicked the field. Letters typed before the field arrived went missing too; they now wait for it
 - Pinched in on a page, moving about it with two fingers no longer takes you back a page. On a site that can't scroll sideways by itself, a small pan to the left in the middle of the zoomed page went back; now it only moves the view, and a swipe goes back once you are at the page's left edge, as in Safari
 - A link ⌘-clicked or middle-clicked in Gmail opens one tab, not two. Gmail's links open by themselves and its page opens them a second time from the same click; Search's own tab for the ⌘-click came on top of the page's. One click now makes one tab, kept behind as a ⌘-click asks, and a window the page opens after it is refused
 - Leaving a video's full screen, on YouTube or anywhere, the window no longer corrects itself four or five times in a row: the tabs, the page's card, the bookmarks bar, the side panel and Split View's other page come back at once, while the video is still on its way home, and the page is laid out once, at its own size. Going full screen, the page no longer grows in the window a moment before the video leaves it
