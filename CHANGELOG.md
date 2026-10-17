@@ -38,6 +38,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- Sidebar tabs open when the mouse button is pressed, without waiting for release. Dragging, tab controls and clicking the active tab to edit its address still work ([#598](https://github.com/driceroland/Search/issues/598)).
 - A bookmark opens in a tab of its own, from the bookmarks bar, the Bookmarks menu or the list: opened from a pinned tab it used to take the pin's place. An empty new tab is used as it is, and ⌘ opens the bookmark behind the tab you are on.
 
 ### Fixed

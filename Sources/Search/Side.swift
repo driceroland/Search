@@ -610,6 +610,7 @@ private struct PinSquare: View {
     var height: CGFloat = 34
 
     @State private var hovering = false
+    @State private var selectedOnPress = false
 
     /// Everything drawn inside scales off the shorter edge — the one that
     /// stays put — so the glyph sits at its usual size, centred, rather than
@@ -655,8 +656,12 @@ private struct PinSquare: View {
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
+        .modifier(TabPress(enabled: browser.editingPin != tab.id, active: live, selected: $selectedOnPress) {
+            browser.clearTabSelection()
+            browser.select(tab)
+        })
         .modifier(OneClick(double: live) {
-            guard NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+            guard !selectedOnPress, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
             browser.clearTabSelection()
             if live { browser.goHome(tab) } else { browser.select(tab) }
         })
@@ -683,6 +688,7 @@ private struct SideRow: View {
     var interactive = true
 
     @State private var hovering = false
+    @State private var selectedOnPress = false
     @State private var shake: CGFloat = 0
 
     private var editing: Bool { browser.editingTab == tab.id }
@@ -697,41 +703,50 @@ private struct SideRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if editing {
-                TabAddressField(browser: browser)
-                    .frame(height: 16)
-            } else {
-                if prefs.glyph == .icons, !tab.isBlank {
-                    Mark(icon: tab.icon, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15)
+            HStack(spacing: 8) {
+                if editing {
+                    TabAddressField(browser: browser)
+                        .frame(height: 16)
+                } else {
+                    if prefs.glyph == .icons, !tab.isBlank {
+                        Mark(icon: tab.icon, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15)
+                    }
+                    if tab.bench {
+                        // A script's tab, not yours.
+                        Image(systemName: "flask")
+                            .font(.system(size: 9))
+                            .foregroundStyle(colour.opacity(0.7))
+                    }
+                    if tab.shy {
+                        Image(systemName: "eye.slash")
+                            .font(.system(size: 9))
+                            .foregroundStyle(colour.opacity(0.7))
+                    }
+                    if tab.recording {
+                        // An extension recording from this page (RecordingIndicator).
+                        Image(systemName: "record.circle")
+                            .font(.system(size: 10))
+                            .foregroundStyle(colour.opacity(0.8))
+                            .help("Recording")
+                    }
+                    Text(tab.label)
+                        .font(.system(size: prefs.sideTitle))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundStyle(colour)
                 }
-                if tab.bench {
-                    // A script's tab, not yours.
-                    Image(systemName: "flask")
-                        .font(.system(size: 9))
-                        .foregroundStyle(colour.opacity(0.7))
-                }
-                if tab.shy {
-                    Image(systemName: "eye.slash")
-                        .font(.system(size: 9))
-                        .foregroundStyle(colour.opacity(0.7))
-                }
-                if tab.recording {
-                    // An extension recording from this page (RecordingIndicator).
-                    Image(systemName: "record.circle")
-                        .font(.system(size: 10))
-                        .foregroundStyle(colour.opacity(0.8))
-                        .help("Recording")
-                }
-                Text(tab.label)
-                    .font(.system(size: prefs.sideTitle))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(colour)
+                Spacer(minLength: 0)
             }
+            .padding(.leading, 10)
+            .padding(.trailing, status ? 0 : 10)
+            .frame(height: prefs.sideRow)
+            .contentShape(Rectangle())
+            .modifier(TabPress(enabled: interactive && !editing, active: live, selected: $selectedOnPress) {
+                browser.clearTabSelection()
+                browser.select(tab)
+            })
 
             if status {
-                Spacer(minLength: 2)
-
                 ZStack {
                     if tab.loading {
                         Ring().transition(.opacity)
@@ -746,8 +761,7 @@ private struct SideRow: View {
                 .padding(.trailing, hovering && speaker ? 23 : 0)
             }
         }
-        .padding(.leading, 10)
-        .padding(.trailing, status ? 7 : 10)
+        .padding(.trailing, status ? 7 : 0)
         .frame(height: prefs.sideRow)
         .frame(maxWidth: .infinity, alignment: .leading)
         // The title keeps its length under the pointer and fades out
@@ -801,7 +815,7 @@ private struct SideRow: View {
         .modifier(Shake(travel: shake))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
-            guard interactive, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+            guard interactive, !selectedOnPress, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
             browser.clearTabSelection()
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })

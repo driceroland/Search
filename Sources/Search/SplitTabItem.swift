@@ -111,6 +111,7 @@ private struct SplitTabHalf: View {
     let interactive: Bool
     let pill: Namespace.ID
     @Binding var hovered: Tab.ID?
+    @State private var selectedOnPress = false
 
     private var hovering: Bool { hovered == tab.id }
     private var title: String { tab.label.isEmpty ? "New Tab" : tab.label }
@@ -119,7 +120,7 @@ private struct SplitTabHalf: View {
 
     private var laidOut: some View {
         row
-            .padding(.leading, stacked ? 10 : 9)
+            .padding(.leading, stacked ? 0 : 9)
             .padding(.trailing, stacked ? 7 : 4)
             .frame(height: stacked ? height : 28)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -131,7 +132,7 @@ private struct SplitTabHalf: View {
     private var handled: some View {
         laidOut
             .modifier(OneClick(double: false) {
-                guard interactive, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+                guard interactive, !stacked || !selectedOnPress, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
                 browser.clearTabSelection()
                 if focused { browser.beginTabEdit(tab) }
                 else { browser.focusPane(tab) }
@@ -197,7 +198,14 @@ private struct SplitTabHalf: View {
     private var row: some View {
         HStack(spacing: stacked ? 8 : 5) {
             titleContent
-            Spacer(minLength: 0)
+                .padding(.leading, stacked ? 10 : 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: stacked ? height : 16)
+                .contentShape(Rectangle())
+                .modifier(TabPress(enabled: stacked && interactive && !editing, active: focused, selected: $selectedOnPress) {
+                    browser.clearTabSelection()
+                    browser.focusPane(tab)
+                })
             if !editing {
                 status
                 // In the column each line has its own cross at its own end,

@@ -1176,6 +1176,27 @@ struct TabMenu: View {
     }
 }
 
+/// Observe the press without recognizing a hold that would take the row's drag.
+struct TabPress: ViewModifier {
+    let enabled: Bool
+    let active: Bool
+    @Binding var selected: Bool
+    let act: () -> Void
+
+    func body(content: Content) -> some View {
+        content.onLongPressGesture(minimumDuration: .infinity, maximumDistance: .infinity, pressing: { down in
+            if !down {
+                // The row's release handler must see which press selected it.
+                DispatchQueue.main.async { selected = false }
+                return
+            }
+            guard enabled, NSEvent.modifierFlags.intersection([.command, .control, .shift]).isEmpty else { return }
+            selected = !active
+            if selected { act() }
+        }, perform: {})
+    }
+}
+
 /// A modified tap selects tabs; a drag stays with the row's drag gesture.
 struct ModifiedTabClick: ViewModifier {
     let act: (NSEvent.ModifierFlags) -> Void
