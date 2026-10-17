@@ -162,6 +162,7 @@ final class Browser: NSObject, ObservableObject {
     let linkStatus = LinkStatus()
     /// The settings panel.
     @Published var tuning = false
+    @Published var activityShowing = false
     /// The first-launch walk-through, over everything. Also from the menu.
     @Published var welcoming = false
     /// What's new, once after an update (see WhatsNew.swift).
@@ -2958,6 +2959,7 @@ final class Browser: NSObject, ObservableObject {
     func closePanel() -> Bool {
         if notesShowing { notesShowing = false }
         else if newsShowing { newsShowing = false }
+        else if activityShowing { activityShowing = false }
         else if tuning { tuning = false }
         else if bookmarking { bookmarking = false }
         else if managing { managing = false }

@@ -193,6 +193,9 @@ struct SearchApp: App {
                     .shortcut("tabs.previous")
                 Button("Search Tabs…") { browser.summon() }
                     .shortcut("tabs.search")
+                if browser.prefs.showsTabActivity {
+                    Button("Tab Activity…") { browser.activityShowing = true }
+                }
                 Divider()
                 if browser.prefs.splitView {
                     Button("Split Current Page") { browser.startSplit() }
@@ -655,6 +658,9 @@ struct ContentView: View {
     /// The panels. All the same kind of thing, so they are built the same way.
     @ViewBuilder
     private var panels: some View {
+        if browser.activityShowing {
+            sheet { TabActivity(browser: browser) } close: { browser.activityShowing = false }
+        }
         if browser.recalling {
             sheet { HistoryPanel(browser: browser) } close: { browser.recalling = false }
         }
@@ -1259,7 +1265,7 @@ struct ContentView: View {
     /// in a corner, stays open, and looks again on the tab picked (#553).
     private func canSwitchTabs(_ event: NSEvent) -> Bool {
         guard let window, event.window === window else { return false }
-        return !browser.tuning && !browser.recalling && !browser.hoarding &&
+        return !browser.activityShowing && !browser.tuning && !browser.recalling && !browser.hoarding &&
             !browser.bookmarking && !browser.welcoming && !browser.managing &&
             !browser.reviewing && !browser.bookmarksOpen &&
             !browser.veiling && !browser.summoning && !browser.makingSpace &&

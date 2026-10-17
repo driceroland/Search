@@ -1182,11 +1182,16 @@ final class Tab: ObservableObject, Identifiable {
     /// half-filled form. A page that can't answer is treated as holding
     /// nothing: a PDF, an image, a page whose process has already gone.
     func unsaved(_ done: @escaping (Bool) -> Void) {
-        guard let built else { return done(false) }
+        unsavedState { done($0 == true) }
+    }
+
+    /// Nil means the page cannot report its form state, not that it is clean.
+    func unsavedState(_ done: @escaping (Bool?) -> Void) {
+        guard let built else { return done(nil) }
         built.evaluateInSearch(
-            "!!(window.__officeForms && window.__officeForms.unsaved && window.__officeForms.unsaved())"
+            "window.__officeForms && window.__officeForms.unsaved ? !!window.__officeForms.unsaved() : null"
         ) { value in
-            MainActor.assumeIsolated { done((value as? Bool) == true) }
+            MainActor.assumeIsolated { done(value as? Bool) }
         }
     }
 

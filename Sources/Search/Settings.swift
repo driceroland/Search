@@ -475,6 +475,13 @@ struct SettingsPanel: View {
                 .fixedSize()
             }
             Rule()
+            Line("Show Tab Activity", "Adds Tabs › Tab Activity: see which tabs are sleeping and why others stay awake. Refresh only when you ask; no memory estimates.") {
+                Switch(on: $prefs.showsTabActivity)
+                    .accessibilityRepresentation { Toggle("Show Tab Activity", isOn: $prefs.showsTabActivity) }
+                    .focusable()
+                    .onKeyPress(.space) { prefs.showsTabActivity.toggle(); return .handled }
+            }
+            Rule()
             Line("Load background tabs when you go to them", "A link opened behind the page, with ⌘-click or the middle button, or a batch of links from another app, waits until you go to its tab. ⇧⌘-click still takes you there at once.") {
                 Switch(on: $prefs.lazyTabs)
             }
