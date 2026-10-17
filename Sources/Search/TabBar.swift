@@ -745,10 +745,14 @@ private struct TabPill: View {
         } else if hovering {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.hover)
-        } else if pinned {
+        } else if pinned || compact {
             // A letter with nothing behind it reads as debris. A pinned tab
             // keeps a faint ground of its own so the block of them reads as
-            // one thing.
+            // one thing, and a tab down to its mark stands in the same place:
+            // the title that said it was a tab is gone, and the same faint
+            // grey says it for the mark. The live, selected and hovered
+            // grounds above are unchanged, so a mark wears this one only
+            // while it is none of those.
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.wash.opacity(0.55))
         }
