@@ -5005,6 +5005,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             // The frames that were told about the last page's darkening go
             // with it.
             tab.duskFrames.removeAll()
+            // And the frames that played, and the count to the media keys.
+            tab.leaving()
         }
 
         // chrome-extension: an extension's own pages — options, a side
