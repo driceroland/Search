@@ -167,6 +167,10 @@ struct PasswordsPanel: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .frame(minWidth: 120, alignment: .leading)
+                    // Selectable, as the password beside it is: a username is
+                    // not a secret, and it is the half of a sign-in you are
+                    // most often asked to type somewhere else.
+                    .textSelection(.enabled)
 
                 // Ten dots whatever it is: the row does not know the length
                 // until the secret is read, and a count that changed with it

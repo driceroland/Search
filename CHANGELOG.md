@@ -94,6 +94,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Extension popups such as Google Translate keep their width when the Mac always shows scrollbars, instead of shrinking to a narrow strip ([#648](https://github.com/driceroland/Search/pull/648), [#645](https://github.com/driceroland/Search/issues/645))
 - Twitch's chat is open again when the floating video comes back to its tab, as it was when the video went out. In its Studio mode, Twitch folds the chat away in a page as small as the little window and never opens it again by itself ([#642](https://github.com/driceroland/Search/pull/642))
 - The column's tab highlight reaches the tab you pick sooner, with the quick motion and no spring trailing behind when you switch fast. Reduce Motion still makes it immediate ([#649](https://github.com/driceroland/Search/pull/649), [#466](https://github.com/driceroland/Search/issues/466))
+- A username in Settings › Passwords can be selected and copied, as the password beside it already could. It was the one half of a sign-in the list would not give you back ([#634](https://github.com/driceroland/Search/issues/634))
 
 ### Held back
 
