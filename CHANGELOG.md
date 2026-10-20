@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Settings › General › Confirm before quitting asks before ⌘Q or Quit Search closes the browser. Cancel keeps the windows and tabs open. Off unless turned on ([#653](https://github.com/driceroland/Search/issues/653))
+
 - A pop-up a page opens without a click just before is still refused, and now says so, as in Safari: a small sign beside the tab's title. A click on it offers the page the pop-up would have shown, to open in a tab of its own, and Always Allow Pop-ups from the site. An allowed site's own pages then open their windows without the click; a frame from another site on them still needs one. Settings › Privacy lists the sites you allowed, each with Remove. In a private tab, Allow lasts only as long as the tab, and nothing is kept
 - An extension's side panel, as in Chrome: ChatGPT's, Claude's, Sider's or Merlin's panel opens beside the page instead of in a tab, on the side away from the tabs, as wide as you leave it (drag its edge; a double-click puts it back). With the page as a card it is a card of its own; edge to edge or with the tabs across the top, it meets the page at a fine line. In Split View the two pages share the rest. Opened for one tab, it comes and goes with that tab. A panel that can't open opens as a tab, as before
 - The page as a card can be turned off, in Settings › Tabs › The page as a card, beside the sidebar's settings. Off, the page reaches the window's edges and the column is white with its fine line, as before 1.0.5. It stays on unless you turn it off. Asked for on [#607](https://github.com/driceroland/Search/issues/607)

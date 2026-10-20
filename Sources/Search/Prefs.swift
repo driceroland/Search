@@ -221,6 +221,11 @@ final class Preferences: ObservableObject {
         didSet { store.set(startsFresh, forKey: Preferences.freshKey) }
     }
     nonisolated static let freshKey = "start.fresh"
+    /// Ask before the Quit menu or ⌘Q closes the app. Off unless asked for.
+    @Published var confirmsQuit: Bool {
+        didSet { store.set(confirmsQuit, forKey: Preferences.confirmQuitKey) }
+    }
+    nonisolated static let confirmQuitKey = "quit.confirm"
     /// Search a site from the address field: the start of its name, then
     /// Tab (see SiteSearch.swift). Off unless asked for.
     @Published var searchesSites: Bool {
@@ -539,6 +544,7 @@ final class Preferences: ObservableObject {
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
+        confirmsQuit = store.bool(forKey: Preferences.confirmQuitKey)
         searchesSites = store.bool(forKey: "search.sites")
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
         showsReading = store.object(forKey: "tabs.reading") as? Bool ?? true

@@ -288,6 +288,10 @@ struct SettingsPanel: View {
                 .padding(.bottom, 6)
             }
             Rule()
+            Line("Confirm before quitting", "Ask before ⌘Q or Quit Search closes the browser") {
+                Switch(on: $prefs.confirmsQuit)
+            }
+            Rule()
             Line("Appearance", "Light, dark, or whatever the Mac is doing — pages follow it too") {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
