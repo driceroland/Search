@@ -754,6 +754,7 @@ struct ContentView: View {
             .overlay(alignment: .topTrailing) {
                 if let job = browser.fileImport { ImportProgress(browser: browser, job: job) }
             }
+            .environment(\.tabShortcutNumbers, browser.tabShortcutNumbers)
             // The field comes on its spring, and goes quickly: once Return
             // is pressed the page is on its way, and the field is not what
             // there is to watch.
@@ -777,6 +778,7 @@ struct ContentView: View {
             // go on in their place until the app comes back.
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
                 browser.tabSwitcher.cancel()
+                if browser.commandHeld { browser.commandHeld = false }
                 measureLights()
                 resting?.isHidden = false
                 // Only the window you were in, or every window's video would come.
@@ -786,7 +788,10 @@ struct ContentView: View {
                 if let window, (note.object as? NSWindow) === window { Browsers.becameKey(browser) }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { browser.tabSwitcher.cancel() }
+                if let window, (note.object as? NSWindow) === window {
+                    browser.tabSwitcher.cancel()
+                    if browser.commandHeld { browser.commandHeld = false }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { browser.fullScreen = true }
@@ -1169,6 +1174,8 @@ struct ContentView: View {
             // window).
             guard mine(event) else { return event }
             guard event.type == .keyDown else {
+                let held = browser.prefs.showsTabShortcuts && event.modifierFlags.contains(.command)
+                if browser.commandHeld != held { browser.commandHeld = held }
                 // ⌃ let go of switches to the tab the switcher is on.
                 if browser.tabSwitcher.active, !event.modifierFlags.contains(.control) {
                     browser.commitTabSwitch()
@@ -1499,13 +1506,13 @@ struct ContentView: View {
         // types. On AZERTY and many other layouts the top row types &, é, "…
         // unless shift is held, so matching the character left these
         // shortcuts dead there; the shortcut belongs to the key, as it does
-        // in every other browser. The ninth is the last tab, however many.
-        // Only tabs on screen count: not those folded away in a group.
+        // in every other browser. The ninth is the last tab or folded group;
+        // a folded group counts once, under its heading.
         if !shifted, let number = ContentView.digits[event.keyCode] {
             if number == 0 {
                 browser.resetZoom()
             } else {
-                browser.select(index: number == 9 ? browser.shownTabs.count - 1 : number - 1)
+                browser.select(index: number == 9 ? browser.tabShortcutTargets.count - 1 : number - 1)
             }
             return true
         }

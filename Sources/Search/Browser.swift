@@ -2896,14 +2896,14 @@ final class Browser: NSObject, ObservableObject {
         if activeID == tab.id { activeID = page.id; editing = false }
     }
 
-    func select(_ tab: Tab, floatPrevious: Bool = true) {
+    func select(_ tab: Tab, floatPrevious: Bool = true, unfoldGroup: Bool = true) {
         if let pair = split(for: tab), activeSplit?.id == pair.id, activeID != tab.id {
             focusPane(tab)
             return
         }
         // A folded group opens for the tab you go to in it. With groups off,
         // they are kept as they were and nothing about them is saved.
-        if prefs.usesTabGroups, let id = tab.groupID,
+        if unfoldGroup, prefs.usesTabGroups, let id = tab.groupID,
            let index = tabGroups.firstIndex(where: { $0.id == id }), tabGroups[index].collapsed {
             tabGroups[index].collapsed = false
             writeSession(now: true)
@@ -3573,13 +3573,41 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// The tabs as they are on screen: with groups on, the ones folded away
-    /// in a group are not among them. ⌘1–9 and ⌃Tab count these, so the key
-    /// goes to the tab you see in that place, never to one you can't.
+    /// in a group are not among them. Tab cycling and selection ranges count
+    /// these; number shortcuts also give folded groups a place of their own.
     var shownTabs: [Tab] {
         guard prefs.usesTabGroups else { return displayedTabs }
         return displayedTabs.filter { $0.pin != nil }
             + tabGroups.flatMap { visibleTabs(in: $0) }
             + tabs(in: nil).filter(standsInRow)
+    }
+
+    /// Number shortcuts count a folded group once, even while its active tab
+    /// is shown below its heading. Other tab navigation keeps using shownTabs.
+    var tabShortcutTargets: [(id: UUID, tab: Tab)] {
+        let row = displayedTabs
+        guard prefs.usesTabGroups else { return row.map { ($0.id, $0) } }
+        let groups = tabGroups.flatMap { group -> [(id: UUID, tab: Tab)] in
+            let members = tabs(in: group.id).filter(standsInRow)
+            guard group.collapsed else { return members.map { ($0.id, $0) } }
+            let current = active.flatMap { self.group(of: $0) == group.id ? $0 : nil }
+            guard let tab = current ?? members.max(by: { $0.touched < $1.touched }) else { return [] }
+            return [(group.id, tab)]
+        }
+        return row.filter { $0.pin != nil }.map { ($0.id, $0) }
+            + groups
+            + tabs(in: nil).filter(standsInRow).map { ($0.id, $0) }
+    }
+
+    @Published var commandHeld = false
+
+    /// Only nine hints, worked out once for the window rather than by each tab.
+    var tabShortcutNumbers: [UUID: Int] {
+        guard prefs.showsTabShortcuts, commandHeld else { return [:] }
+        let shown = tabShortcutTargets
+        var numbers = Dictionary(uniqueKeysWithValues: shown.prefix(8).enumerated().map { ($0.element.id, $0.offset + 1) })
+        if shown.count > 8, let last = shown.last { numbers[last.id] = 9 }
+        return numbers
     }
 
     func clearTabSelection() {
@@ -3658,11 +3686,11 @@ final class Browser: NSObject, ObservableObject {
         return focused
     }
 
-    /// ⌘1–8: the tab in that place on screen.
+    /// ⌘1–8: a tab or folded group in that place, without unfolding it.
     func select(index: Int) {
-        let shown = shownTabs
-        guard shown.indices.contains(index) else { return }
-        select(entry(shown[index]))
+        let targets = tabShortcutTargets
+        guard targets.indices.contains(index) else { return }
+        select(entry(targets[index].tab), unfoldGroup: false)
     }
 
     /// ⌃Tab: the space's tabs, the most recently used first, and the small

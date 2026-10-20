@@ -450,6 +450,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.bookmarksBar)
             }
             Rule()
+            Line("Show tab shortcut numbers", "Hold ⌘ to see which tab each ⌘1–9 shortcut selects") {
+                Switch(on: $prefs.showsTabShortcuts)
+            }
+            Rule()
             Line("Show how far you've read", "The tab you're on fills with grey as you scroll down the page") {
                 Switch(on: $prefs.showsReading)
             }

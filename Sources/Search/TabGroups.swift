@@ -14,6 +14,7 @@ struct GroupDropFrames: PreferenceKey {
 /// A quiet name above the tabs it contains, in either layout.
 struct GroupHeading: View {
     @Environment(\.greys) private var greys
+    @Environment(\.tabShortcutNumbers) private var shortcutNumbers
     @ObservedObject var browser: Browser
     let group: TabGroup
     var horizontal = false
@@ -29,9 +30,9 @@ struct GroupHeading: View {
     /// Its height in the column, a little under a tab's.
     static let height: CGFloat = 24
 
-    static func width(for name: String) -> CGFloat {
+    static func width(for name: String, numbered: Bool = false) -> CGFloat {
         let font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
-        return ceil((name as NSString).size(withAttributes: [.font: font]).width) + 20
+        return ceil((name as NSString).size(withAttributes: [.font: font]).width) + 20 + (numbered ? 23 : 0)
     }
 
     var body: some View {
@@ -51,6 +52,13 @@ struct GroupHeading: View {
                     .truncationMode(.tail)
             }
             if !horizontal { Spacer(minLength: 0) }
+            if !editing, group.collapsed {
+                if let number = shortcutNumbers[group.id] {
+                    TabShortcutNumber(number: number)
+                } else if horizontal, browser.prefs.showsTabShortcuts {
+                    Color.clear.frame(width: 15, height: 15)
+                }
+            }
             if !editing && !horizontal {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .medium))

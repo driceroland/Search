@@ -372,7 +372,7 @@ struct TabBar: View {
         let extra = pairWidthExtra(in: looseTabs, base: each, splits: browser.splits)
         let headers = browser.prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) : 0
         let headingWidth = browser.prefs.usesTabGroups
-            ? browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name) } : 0
+            ? browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name, numbered: browser.prefs.showsTabShortcuts && $1.collapsed) } : 0
         let shown = Int(pinned + loose + headers)
         var total = pinned * Metrics.pinWidth + loose * each + extra
             + headingWidth + CGFloat(max(0, shown - 1)) * Metrics.tabGap
@@ -413,7 +413,7 @@ struct TabBar: View {
             guard count > 0 else { return Metrics.tabWidth }
             let extra = pairWidthExtra(in: items, base: Metrics.tabMinWidth, splits: browser.splits)
             let spent = CGFloat(pins) * Metrics.pinWidth + extra
-                + browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name) }
+                + browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name, numbered: browser.prefs.showsTabShortcuts && $1.collapsed) }
                 + CGFloat(max(0, pins + count + browser.tabGroups.count - 1)) * Metrics.tabGap
                 + (pinLine ? PinLine.space : 0)
             return max(Metrics.tabMinWidth, min(Metrics.tabWidth, (room(in: strip) - spent) / CGFloat(count)))
@@ -536,6 +536,7 @@ struct Helm: View {
 }
 
 private struct TabPill: View {
+    @Environment(\.tabShortcutNumbers) private var shortcutNumbers
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
@@ -574,6 +575,8 @@ private struct TabPill: View {
                 Group {
                     if browser.editingPin == tab.id {
                         PinField(browser: browser, tab: tab)
+                    } else if let number = shortcutNumbers[tab.id] {
+                        TabShortcutNumber(number: number)
                     } else if tab.loading {
                         // Its page on the way, as a tab's ring says; the
                         // letter or icon comes back once it is there.
@@ -657,6 +660,8 @@ private struct TabPill: View {
                         .frame(width: 15, height: 15)
                         .background(Palette.ink.opacity(0.07), in: Circle())
                         .transition(.opacity)
+                } else if let number = shortcutNumbers[tab.id] {
+                    TabShortcutNumber(number: number)
                 } else if tab.loading {
                     Ring()
                 } else {
@@ -716,6 +721,10 @@ private struct TabPill: View {
             }
 
             Spacer(minLength: 2)
+
+            if !editing, let number = shortcutNumbers[tab.id] {
+                TabShortcutNumber(number: number)
+            }
 
             // The speaker, which can be pressed, is at the end of the pill on
             // its own, and one place in under the pointer, beside the cross
