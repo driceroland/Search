@@ -283,7 +283,7 @@ final class Links: NSObject, NSApplicationDelegate {
         guard Shared.prefs.littleLinks else { return false }
         if !launched { Browsers.keepAway() }
         // The space and sign-ins of the window in front, on screen or not.
-        let browser = Browsers.front.flatMap { $0.extensionPopup == nil ? $0 : nil }
+        let browser = Browsers.front.flatMap { !$0.isPopup ? $0 : nil }
             ?? Browsers.primary ?? SceneSlot.shared.browser
         LittleWindow.show(url, for: browser)
         return true

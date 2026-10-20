@@ -158,8 +158,8 @@ enum Browsers {
     @discardableResult
     static func ensureWindow() -> Browser {
         bringBack()
-        if let front, front.isOpen { return front }
-        if let open = all.last(where: { $0.isOpen && $0.extensionPopup == nil }) { return open }
+        if let front, front.isOpen, !front.isPopup { return front }
+        if let open = all.last(where: { $0.isOpen && !$0.isPopup }) { return open }
         let kept = all.first ?? SceneSlot.shared.browser
         show(kept)
         return kept
@@ -167,10 +167,10 @@ enum Browsers {
 
     /// A window around `browser`, made here rather than by SwiftUI.
     static func open(_ browser: Browser, frame: NSRect?) {
-        let popup = browser.extensionPopup != nil
+        let popup = browser.isPopup
         let host: NSView
         if popup {
-            let view = NSHostingView(rootView: ExtensionPopupView(browser: browser).frame(minWidth: 200, minHeight: 150))
+            let view = NSHostingView(rootView: PopupWindowView(browser: browser).frame(minWidth: 200, minHeight: 150))
             view.sizingOptions = [.minSize]
             host = view
         } else {
@@ -229,6 +229,13 @@ enum Browsers {
         comeForward()
     }
 
+    /// A website controls the requested size, never the bounds of the display.
+    static func popupFrame(width: Double?, height: Double?, on screen: NSRect) -> NSRect {
+        let width = min(max(width.flatMap { $0.isFinite ? $0 : nil } ?? 480, 200), screen.width)
+        let height = min(max(height.flatMap { $0.isFinite ? $0 : nil } ?? 600, 150), screen.height)
+        return NSRect(x: screen.midX - width / 2, y: screen.midY - height / 2, width: width, height: height)
+    }
+
     // MARK: - kept away
 
     /// A launch made for a link's small window keeps every browser window
@@ -261,7 +268,7 @@ enum Browsers {
     /// its browser: known then by the name its frame is kept under.
     private static func isBrowserWindow(_ window: NSWindow) -> Bool {
         guard window.contentView != nil, !(window is NSPanel), LittleWindow.owning(window) == nil else { return false }
-        if let browser = browser(for: window) { return browser.extensionPopup == nil }
+        if let browser = browser(for: window) { return !browser.isPopup }
         return window.frameAutosaveName == sceneID
     }
 
@@ -308,12 +315,12 @@ enum Browsers {
     static func closing(_ window: NSWindow) {
         guard !quitting, let browser = browser(for: window) else { return }
         browser.cancelFileImport()
-        // An extension's popup goes, and isn't one ⇧⌘T brings back.
-        if browser.extensionPopup != nil {
+        // A popup goes, and isn't one ⇧⌘T brings back.
+        if browser.isPopup {
             retire(browser, remembered: false)
             return
         }
-        let others = all.filter { $0 !== browser && $0.isOpen && $0.extensionPopup == nil }
+        let others = all.filter { $0 !== browser && $0.isOpen && !$0.isPopup }
         guard !others.isEmpty else {
             // The last one: kept, tabs and all, and written down now.
             browser.shut = true
@@ -336,7 +343,7 @@ enum Browsers {
         ContentView.forget(browser)
         frames[ObjectIdentifier(browser)] = nil
         if Front.shared.browser === browser {
-            Front.shared.set(all.last { $0.isOpen && $0.extensionPopup == nil } ?? all.last { $0.extensionPopup == nil })
+            Front.shared.set(all.last { $0.isOpen && !$0.isPopup } ?? all.last { !$0.isPopup })
         }
         if browser.inScene { SceneSlot.shared.refresh() }
         if wasPrimary, let next = primary { next.becomePrimary() }
@@ -371,9 +378,8 @@ enum Browsers {
 
     private static var file: URL { Store.file("windows.json") }
 
-    /// The windows that are written down, the oldest first: every one but an
-    /// extension's popups, which never come back.
-    static var saved: [Browser] { all.enumerated().filter { $0.offset == 0 || $0.element.extensionPopup == nil }.map(\.element) }
+    /// The windows that are written down, oldest first: popups never come back.
+    static var saved: [Browser] { all.filter { !$0.isPopup } }
 
     /// windows.json: the oldest window's frame and space first, then every
     /// other window whole.

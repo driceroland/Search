@@ -1203,6 +1203,15 @@ final class Browser: NSObject, ObservableObject {
     func allowCaptureOnce() { answerCapture(.grant, keep: false) }
     func denyCapture() { answerCapture(.deny) }
 
+    /// A page or popup going away must settle its permission callback too.
+    func cancelCapture() {
+        let pending = decide
+        decide = nil
+        askedAbout = ""
+        asking = nil
+        pending?(.deny)
+    }
+
     private func answerCapture(_ decision: WKPermissionDecision, keep: Bool = true) {
         guard let decide, let asking, Date().timeIntervalSince(asking.shown) > 0.5 else { return }
         // Remembered per site, so a call you take every week asks once.
@@ -1666,6 +1675,9 @@ final class Browser: NSObject, ObservableObject {
     /// the page under a thin line with its site; it is never saved, never
     /// brought back, and never the window menus act on (see Windows.swift).
     var extensionPopup: String?
+    /// A sized website pop-up, kept separately from an extension's identity.
+    let websitePopup: Bool
+    var isPopup: Bool { websitePopup || extensionPopup != nil }
     /// Its saved state, for a window other than the oldest (see Windows.swift).
     var record = WindowRecord()
     /// Whether its rows are the session files' — the oldest window's — or
@@ -1679,7 +1691,8 @@ final class Browser: NSObject, ObservableObject {
 
     /// `record`: another window's, from windows.json or ⇧⌘T, or a new
     /// window's, empty.
-    init(record: WindowRecord?) {
+    init(record: WindowRecord?, websitePopup: Bool = false) {
+        self.websitePopup = websitePopup
         super.init()
         let first = !Browser.booted
         Browser.booted = true
@@ -1741,7 +1754,7 @@ final class Browser: NSObject, ObservableObject {
         // So are the pins.
         NotificationCenter.default.publisher(for: Pins.changed)
             .sink { [weak self] note in
-                guard let self, (note.object as? Browser) !== self else { return }
+                guard let self, !isPopup, (note.object as? Browser) !== self else { return }
                 if note.userInfo?["shared"] as? Bool == true { return sharedPinsChanged() }
                 guard let space = note.userInfo?["space"] as? UUID else { return }
                 pinsChanged(in: space)
@@ -1753,6 +1766,11 @@ final class Browser: NSObject, ObservableObject {
         NotificationCenter.default.publisher(for: Spaces.changed)
             .sink { [weak self] note in
                 guard let self, let list = note.object as? [Space], list != spaces else { return }
+                if websitePopup {
+                    if !list.contains(where: { $0.id == self.spaceID }) { window?.close() }
+                    return
+                }
+                guard !isPopup else { return }
                 spaces = list
                 if !list.contains(where: { $0.id == self.spaceID }) { switchSpace(to: Space.firstID) }
             }
@@ -1764,23 +1782,26 @@ final class Browser: NSObject, ObservableObject {
         // for WebKit to get up.
         defer {
             follow()
-            watchForSleep()
+            if !isPopup { watchForSleep() }
             // Before the first frame: tabs whose time ran out while Search
             // was quit are gone, rather than drawn and taken away a minute on.
-            closeLeftAlone()
+            if !isPopup { closeLeftAlone() }
         }
 
         Spaces.sharing = Set(spaces.filter { $0.sharesSignIns == true }.map(\.id))
         if let record {
             // Another window: the space it showed, and its own rows.
             self.record = record
-            if prefs.usesSpaces, spaces.contains(where: { $0.id == record.space }) { spaceID = record.space }
+            if prefs.usesSpaces || websitePopup, spaces.contains(where: { $0.id == record.space }) { spaceID = record.space }
         } else if prefs.usesSpaces, let last = Store.settings.string(forKey: "space.current").flatMap(UUID.init),
            spaces.contains(where: { $0.id == last }) {
             // The space you were in, when there are spaces (see Spaces.swift).
             spaceID = last
             Spaces.current = last
         }
+        // A website pop-up holds only the page WebKit hands over: no pins,
+        // restored tabs or warm pages from other spaces.
+        guard !websitePopup else { return }
         restoreSession()
         if prefs.usesSpaces { preloadSpaces() }
     }
@@ -1887,7 +1908,15 @@ final class Browser: NSObject, ObservableObject {
         // were before (see Spaces.swift).
         prefs.$usesSpaces
             .dropFirst()
-            .sink { [weak self] on in if on { self?.preloadSpaces() } else { self?.leaveSpaces() } }
+            .sink { [weak self] on in
+                guard let self else { return }
+                if websitePopup {
+                    if !on, spaceID != Space.firstID { window?.close() }
+                    return
+                }
+                guard !isPopup else { return }
+                if on { preloadSpaces() } else { leaveSpaces() }
+            }
             .store(in: &bag)
         // Pins in every space, or Spaces, switched: every row takes the
         // shared pins or lets them go. Received on the next turn of the run
@@ -2085,6 +2114,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func writeSession(now: Bool = false) {
+        guard !isPopup else { return }
         // The pins as they are here, for the other windows (see Pins.swift):
         // the space's own, and the ones every space shows (only from a row
         // that holds them: see Pins.sharedToWrite).
@@ -2155,6 +2185,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// Another window changed a space's pins: this window's row there follows.
     func pinsChanged(in space: UUID) {
+        guard !isPopup else { return }
         if space == spaceID {
             // Drawn again even when only a pin's letter or name changed.
             objectWillChange.send()
@@ -2485,6 +2516,10 @@ final class Browser: NSObject, ObservableObject {
 
     /// Its window closed for good, with others open: every page let go.
     func closeAll() {
+        cancelCapture()
+        for questions in heldDialogs.values { questions.forEach { $0.dismiss() } }
+        heldDialogs = [:]
+        dropQuestions()
         if floating != nil { land(covering: false) }
         if peekTab != nil { closePeek() }
         for tab in tabs + parkedTabs { tab.close() }
@@ -2834,6 +2869,10 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func newTab() {
+        if websitePopup {
+            if active?.shy == true { tabDestination.newShyTab() } else { tabDestination.newTab() }
+            return
+        }
         // On a private tab, a new one is private too: ⌘T from a page that
         // keeps nothing and landing on one that keeps everything is how a
         // private search ends up in the history.
@@ -3363,6 +3402,7 @@ final class Browser: NSObject, ObservableObject {
     /// reopens with those, as Move to Space does. Not a pin: pins are
     /// already in every window.
     func moveToWindow(_ tab: Tab, _ target: Browser?, at point: NSPoint? = nil) {
+        guard target?.isPopup != true else { return }
         guard tab.pin == nil, !tab.bench, target !== self, tabs.contains(where: { $0.id == tab.id }),
               target != nil || tabs.count > 1 || !tab.isBlank
         else { return }
@@ -3390,7 +3430,7 @@ final class Browser: NSObject, ObservableObject {
         guard tab.pin == nil, !tab.bench, let window,
               !window.frame.insetBy(dx: -12, dy: -12).contains(point)
         else { return false }
-        let over = Browsers.all.first { $0 !== self && $0.isOpen && $0.window?.frame.contains(point) == true }
+        let over = Browsers.all.first { $0 !== self && $0.isOpen && !$0.isPopup && $0.window?.frame.contains(point) == true }
         guard over != nil || tabs.count > 1 else { return false }
         // After the drag has let go, not inside it.
         DispatchQueue.main.async { [weak self] in self?.moveToWindow(tab, over, at: point) }
@@ -3750,6 +3790,14 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// A popup has one page; links that need tabs return to its Space.
+    private var tabDestination: Browser {
+        guard websitePopup else { return self }
+        let destination = Browsers.ensureWindow()
+        destination.switchSpace(to: spaceID)
+        return destination
+    }
+
     /// A link opened from a page lands next to the page it came from, not at
     /// the far end of the row — unless it is one of a batch, which keeps the
     /// order it came in.
@@ -3765,6 +3813,9 @@ final class Browser: NSObject, ObservableObject {
     /// may be waiting on its page.
     @discardableResult
     func open(_ url: URL, foreground: Bool, atEnd: Bool = false, from source: Tab? = nil, mayWait: Bool = false) -> Tab {
+        if websitePopup {
+            return tabDestination.open(url, foreground: foreground, atEnd: atEnd, from: source ?? active, mayWait: mayWait)
+        }
         // An extension's own page is served only to a view built from that
         // extension's configuration.
         let url = Browser.page(url)
@@ -3929,6 +3980,7 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘⇧N. A tab that keeps nothing — its own cookies, its own sign-ins, no
     /// history, and no place in tomorrow's session.
     func newShyTab() {
+        if websitePopup { tabDestination.newShyTab(); return }
         // Never two empty private tabs, as ⌘T never makes two empty ones:
         // one already open is moved to the chosen position.
         if let blank = tabs.last(where: { $0.isBlank && $0.shy && !$0.bench && split(for: $0) == nil }) {
@@ -5148,16 +5200,30 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             || windowFeatures.toolbarsVisibility?.boolValue == false
         tab.opener = from
         if clicked { opener.popupGesture.opened(tab.id) }
+        if prefs.popupWindows, windowFeatures.width != nil || windowFeatures.height != nil {
+            let sourceSpace = parked.first { $0.value.tabs.contains { $0 === opener } }?.key ?? spaceID
+            let popup = Browser(record: WindowRecord(space: sourceSpace), websitePopup: true)
+            popup.prepare(tab)
+            popup.tabs = [tab]
+            popup.activeID = tab.id
+            if let url = action.request.url { tab.setAddressOptimistically(url) }
+            let screen = (webView.window?.screen ?? NSScreen.main)?.visibleFrame
+            let frame = screen.map { Browsers.popupFrame(width: windowFeatures.width?.doubleValue,
+                                                        height: windowFeatures.height?.doubleValue, on: $0) }
+            Browsers.open(popup, frame: frame)
+            return tab.web
+        }
         // The link menu's Open Link in New Tab: behind this tab, where a
         // ⌘-click's goes (see open(_:foreground:)).
-        prepare(tab)
-        if (webView as? PageView)?.takeBehind() == true, let source = self.tab(for: webView) {
+        let destination = tabDestination
+        destination.prepare(tab)
+        if (webView as? PageView)?.takeBehind() == true, let source = destination.tab(for: webView) {
             if prefs.usesTabGroups, !tab.shy, !tab.bench { tab.groupID = source.groupID }
-            tabs.insert(tab, at: placeForNew())
+            destination.tabs.insert(tab, at: destination.placeForNew())
         } else {
-            tabs.insert(tab, at: placeForFront())
-            activeID = tab.id
-            editing = false
+            destination.tabs.insert(tab, at: destination.placeForFront())
+            destination.activeID = tab.id
+            destination.editing = false
         }
         // Returning the view is what makes it the target. WebKit loads the
         // request into it itself when the action carries one.
@@ -5172,7 +5238,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// the click is spent, and a window.open after it gets nothing.
     private func openClicked(_ url: URL, foreground: Bool, from source: Tab?, view: WKWebView?) {
         let opener = view.flatMap { popupTab(for: $0) }
-        if let made = opener?.popupGesture.claim(), let tab = tabs.first(where: { $0.id == made }) {
+        if let made = opener?.popupGesture.claim(),
+           let tab = Browsers.all.lazy.flatMap(\.tabs).first(where: { $0.id == made }) {
             if !foreground, activeID == tab.id, let source, tabs.contains(where: { $0.id == source.id }) {
                 activeID = source.id
             }
@@ -5588,10 +5655,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// reload to fetch, because there is no longer an address to fetch.
     func webViewDidClose(_ webView: WKWebView) {
         guard let tab = tab(for: webView) else { return }
-        // An extension's popup window is the one page it opened: when that
-        // page closes itself (Affinity Pathfinder's sign-in, once done), the
+        // A popup window is the one page it opened: when that
+        // page closes itself (a sign-in, once done), the
         // window goes too, as in Chrome, instead of staying on a blank tab.
-        if extensionPopup != nil, tabs.count == 1 {
+        if isPopup, tabs.count == 1 {
             window?.close()
             return
         }
@@ -5605,6 +5672,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        if websitePopup { cancelCapture() }
         popupTab(for: webView)?.popupGesture.clear()
         guard let tab = tab(for: webView) else {
             // A small window's page came: what failed before it is over.

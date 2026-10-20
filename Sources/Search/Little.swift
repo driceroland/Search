@@ -423,15 +423,27 @@ private struct LittleToast: View {
     }
 }
 
-/// An extension's popup window (windows.create with type "popup"): the
+/// A website's sized pop-up or an extension's popup window: the
 /// browser's tab on screen as the small window shows a page, the site over
 /// it. Its tabs, checks and passwords are the browser's, as in any window.
-struct ExtensionPopupView: View {
+struct PopupWindowView: View {
     @ObservedObject var browser: Browser
 
     var body: some View {
         if let tab = browser.active {
             LittleView(tab: tab, keep: nil).id(tab.id)
+                .overlay(alignment: .topLeading) {
+                    if let asked = browser.suggesting, asked.tab == tab.id {
+                        AccountList(browser: browser, asked: asked).offset(y: 34)
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    VStack(spacing: 8) {
+                        if let ask = browser.asking { CaptureQuestion(browser: browser, ask: ask) }
+                        if let offer = browser.offering { PasswordOffer(browser: browser, offer: offer) }
+                    }
+                    .padding(12)
+                }
         } else {
             Palette.ground
         }

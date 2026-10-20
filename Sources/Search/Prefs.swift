@@ -172,6 +172,10 @@ final class Preferences: ObservableObject {
     @Published var awakeSites: Set<String> {
         didSet { store.set(Array(awakeSites).sorted(), forKey: "tabs.awakeSites") }
     }
+    /// Sized website pop-ups may use small windows instead of tabs (#552).
+    @Published var popupWindows: Bool {
+        didSet { store.set(popupWindows, forKey: "tabs.popupWindows") }
+    }
     /// Sites whose pages may open windows without a click just before
     /// (BlockedPopups.swift), each a registrable domain. Empty until you
     /// choose Always Allow on one; Settings › Privacy lists them.
@@ -531,6 +535,7 @@ final class Preferences: ObservableObject {
             .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
         keepsSitesAwake = store.bool(forKey: "tabs.keepAwake")
         awakeSites = Set(store.stringArray(forKey: "tabs.awakeSites") ?? [])
+        popupWindows = store.bool(forKey: "tabs.popupWindows")
         popupSites = Set(store.stringArray(forKey: "privacy.popupSites") ?? [])
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never

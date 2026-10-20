@@ -446,6 +446,10 @@ struct SettingsPanel: View {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
             }
             Rule()
+            Line("Open sized pop-ups in small windows", "A website asking for a window at its own size gets one, instead of a tab. Pop-up blocking still applies") {
+                Switch(on: $prefs.popupWindows)
+            }
+            Rule()
             Line("Show the bookmarks bar", "Your bookmarks in a row above the page, folders opening as menus. It folds away with the tabs") {
                 Switch(on: $prefs.bookmarksBar)
             }

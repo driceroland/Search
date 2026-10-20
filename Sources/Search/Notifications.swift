@@ -127,7 +127,7 @@ final class SiteNotifications: NSObject {
             guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), !Store.testing else { return completionHandler(nil) }
             // A window whose space signs in with the worker's store: the page
             // it opens must be the same person's, not the front window's.
-            let fits = Browsers.all.filter { $0.extensionPopup == nil && Spaces.store(for: $0.spaceID) === store }
+            let fits = Browsers.all.filter { !$0.isPopup && Spaces.store(for: $0.spaceID) === store }
             guard let browser = fits.first(where: { $0 === Browsers.front && $0.isOpen }) ?? fits.last(where: \.isOpen) ?? fits.first
             else { return completionHandler(nil) }
             let tab = browser.open(url, foreground: true)
@@ -210,7 +210,7 @@ final class SiteNotifications: NSObject {
     /// The tab showing the site in front: one signed in with the store the
     /// notification came from if there is one, never a private tab.
     private func bringForward(_ origin: String, from store: WKWebsiteDataStore?) {
-        let found = Browsers.all.filter { $0.extensionPopup == nil }.flatMap { browser in
+        let found = Browsers.all.filter { !$0.isPopup }.flatMap { browser in
             browser.tabs.filter { tab in
                 guard !tab.shy, tab.store.isPersistent, let url = tab.address, let scheme = url.scheme, let host = url.host() else { return false }
                 return Browser.origin(scheme, host, url.port ?? 0) == origin

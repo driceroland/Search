@@ -38,7 +38,7 @@ extension Browser {
     @available(macOS 15.4, *)
     @discardableResult
     func showSidePanel(_ context: WKWebExtensionContext, url: URL, for tab: Tab.ID? = nil) -> Bool {
-        guard extensionPopup == nil else { return false }
+        guard !isPopup else { return false }
         let content = SidePanelContent.page(extensionID: context.uniqueIdentifier, url: url, tab: tab)
         guard SidePanelPages.shared.load(url, from: context, in: self) else { return false }
         if let tab { SidePanelPages.shared.bind(content, to: tab, in: self) }
