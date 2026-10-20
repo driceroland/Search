@@ -615,8 +615,11 @@ struct ContentView: View {
         VStack(spacing: 8) {
             announcement
             if let ask = browser.asking {
-                captureAsking(ask)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                Group {
+                    if ask.screen { screenAsking(ask) }
+                    else { captureAsking(ask) }
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if let offer = browser.offering {
                 keepAsking(offer)
@@ -924,6 +927,52 @@ struct ContentView: View {
         .background(Palette.ground, in: Capsule())
         .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.12), radius: 20, y: 6)
+    }
+
+    private func screenAsking(_ ask: Browser.CaptureAsk) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "macwindow.on.rectangle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.top, 2)
+                Text("\(ask.host) wants to share your screen")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 12) {
+                Button { browser.denyShare() } label: {
+                    Text("Don't allow")
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                }
+                Spacer(minLength: 8)
+                Button { browser.shareWindow() } label: {
+                    Text("Share a Window")
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                }
+                Button { browser.shareScreen() } label: {
+                    Text("Share a Screen")
+                        .foregroundStyle(Palette.ground)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Palette.ink, in: Capsule())
+                }
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Palette.ink)
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: 400, alignment: .leading)
+        .padding(18)
+        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+        .shadow(color: .black.opacity(0.12), radius: 20, y: 6)
+        .padding(.horizontal, 16)
     }
 
     /// Offered once, answered once. The password is never shown back to you —

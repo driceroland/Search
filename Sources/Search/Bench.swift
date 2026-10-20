@@ -1714,16 +1714,18 @@ final class Bench {
                     "asking": browser.asking.map { "\($0.host) \($0.wants)" } ?? ""])
 
         case "answer":
-            // The card of a page asking for the camera, microphone or your
-            // location: once, always or no. Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "answer only works on a --test run"]); return }
             switch request["with"] as? String {
             case "once": browser.allowCaptureOnce()
             case "always": browser.allowCapture()
             case "no": browser.denyCapture()
-            default: answer(["error": "answer once|always|no"]); return
+            case "screen": browser.shareScreen()
+            case "window": browser.shareWindow()
+            case "noscreen": browser.denyShare()
+            default: answer(["error": "answer once|always|no|screen|window|noscreen"]); return
             }
-            answer(["asking": browser.asking.map { "\($0.host) \($0.wants)" } ?? "", "locationAnswered": Browser.locationAnswered ?? ""])
+            answer(["asking": browser.asking.map { "\($0.host) \($0.wants)" } ?? "", "locationAnswered": Browser.locationAnswered ?? "",
+                    "displayAnswered": Browser.displayAnswered as Any? ?? NSNull()])
 
         case "accounts":
             // The list under the sign-in box the caret is in — passkeys, then

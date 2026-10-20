@@ -1505,6 +1505,7 @@ final class Tab: ObservableObject, Identifiable {
         watch = []
         ears.stop()
         guard let web = built else { return }
+        (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
         Passkeys.shared.forget(web)
         let controller = web.configuration.userContentController

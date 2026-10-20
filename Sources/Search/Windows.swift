@@ -308,6 +308,7 @@ enum Browsers {
     static func closing(_ window: NSWindow) {
         guard !quitting, let browser = browser(for: window) else { return }
         browser.cancelFileImport()
+        browser.cancelDisplay()
         // An extension's popup goes, and isn't one ⇧⌘T brings back.
         if browser.extensionPopup != nil {
             retire(browser, remembered: false)
