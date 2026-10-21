@@ -1159,7 +1159,15 @@ final class Extensions: NSObject, ObservableObject {
     /// extension pages, another's or all of them, nor for files on this Mac
     /// (see `fence`, which is set after).
     static func grantSites(_ context: WKWebExtensionContext) {
-        for pattern in context.webExtension.allRequestedMatchPatterns where !withheld(pattern) {
+        let patterns = context.webExtension.allRequestedMatchPatterns.filter { !withheld($0) }
+        for pattern in patterns {
+            // WebKit copies injected scripts per granted pattern. A wildcard
+            // already covers its named hosts; keep schemes and paths unchanged.
+            let covered = patterns.contains { other in
+                other.string != pattern.string && other.scheme == pattern.scheme && other.path == pattern.path
+                    && other.matches(pattern) && (!pattern.matches(other) || other.string < pattern.string)
+            }
+            guard !covered else { continue }
             context.setPermissionStatus(.grantedExplicitly, for: pattern)
         }
     }

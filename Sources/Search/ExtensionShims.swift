@@ -4125,7 +4125,16 @@ enum ExtensionShims {
                 throw Unsupported(what: "Only permissions specified in the manifest may be requested.")
             }
             let missing = wanted.filter { context.permissionStatus(for: $0) != .grantedExplicitly }
-            let unreached = origins.filter { context.permissionStatus(for: $0) != .grantedExplicitly }
+            let unreached = origins.filter { pattern in
+                let status = context.permissionStatus(for: pattern)
+                if status == .grantedExplicitly || status == .grantedImplicitly { return false }
+                if status == .deniedExplicitly || status == .deniedImplicitly { return true }
+                if context.deniedPermissionMatchPatterns.keys.contains(where: { !$0.matchesAllHosts && $0.matches(pattern) }) { return true }
+                // WebKit can report a named pattern as requested even when a wildcard grants it.
+                return !context.currentPermissionMatchPatterns.contains { granted in
+                    granted.scheme == pattern.scheme && granted.path == pattern.path && granted.matches(pattern)
+                }
+            }
             guard !missing.isEmpty || !unreached.isEmpty else { return true }
             let every = unreached.contains { $0.matchesAllHosts || $0.matchesAllURLs }
             let sites = every ? "every website" : unreached.map(\.string).sorted().joined(separator: ", ")

@@ -13,6 +13,17 @@ import WebKit
 // keeps what it takes to come back exactly where it was.
 
 enum Web {
+    /// Safari opts into WebKit's current SDK behavior, including shared
+    /// extension script buffers. Other clients keep separate copies per
+    /// site grant unless they opt in too (WebKit #311658). Script creation
+    /// and release must stay on the main thread. Call before making views.
+    @MainActor static func useCurrentBehaviors() {
+        let selector = NSSelectorFromString("_setLinkedOnOrAfterEverything")
+        if let pool = NSClassFromString("WKProcessPool") as? NSObject.Type, pool.responds(to: selector) {
+            pool.perform(selector)
+        }
+    }
+
     /// Where Search's own page scripts run, and where their messages come
     /// from: a world of their own beside the page's. They see the same page,
     /// and the page sees none of them — no variable of theirs, and no
