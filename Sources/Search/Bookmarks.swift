@@ -34,9 +34,8 @@ struct Bookmark: Codable, Identifiable, Hashable {
         url.flatMap { URL(string: $0)?.host()?.lowercased() }
     }
 
-    /// Its site, as its icon is kept: the host, and the port when there is one.
-    var site: String? {
-        url.flatMap { URL(string: $0) }.flatMap(Favicons.site)
+    var address: URL? {
+        url.flatMap { URL(string: $0) }
     }
 
     static func site(_ title: String, _ url: URL) -> Bookmark {
@@ -879,7 +878,7 @@ struct BookmarkOutline: View {
                         )
                 } else {
                     if arrows { Spacer().frame(width: 10) }
-                    Mark(icon: Favicons.shared.cached(node.site ?? ""), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 15)
+                    Mark(icon: Favicons.shared.cached(for: node.address), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 15)
                 }
                 // One without a name reads as its address, a shade lighter.
                 Text(node.label)
@@ -1355,7 +1354,7 @@ struct BookmarksPanel: View {
                     Mark(icon: nil, letter: "", size: 16)
                         .overlay(Image(systemName: "folder.fill").font(.system(size: 9.5)).foregroundStyle(Palette.muted))
                 } else {
-                    Mark(icon: Favicons.shared.cached(node.site ?? ""), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 16)
+                    Mark(icon: Favicons.shared.cached(for: node.address), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 16)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(node.label)
@@ -1543,7 +1542,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
                 // whose icon isn't kept yet (brought in, never visited) wears
                 // the bar's letter in its place, rather than nothing and its
                 // title out of line with the others'.
-                if let icon = Favicons.shared.cached(node.site ?? "") {
+                if let icon = Favicons.shared.cached(for: node.address) {
                     let small = icon.copy() as? NSImage ?? icon
                     small.size = NSSize(width: 16, height: 16)
                     item.image = small

@@ -13,6 +13,13 @@ extension ObservableObject {
     var objectWillChange: ChangePublisher { ChangePublisher() }
 }
 
+// History tells the icons when an address goes; this runner keeps none.
+@MainActor
+final class Favicons {
+    static let shared = Favicons()
+    func forget(_ url: URL) {}
+}
+
 enum AddressCommand {
     case settings
 

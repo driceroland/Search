@@ -1707,15 +1707,16 @@ final class Browser: NSObject, ObservableObject {
             // Once a day, quietly: is there a newer one?
             Updater.shared.checkIfDue { [weak self] line in self?.announce(line) }
             FormRelay.passkeysOffered = prefs.passkeys
-            // An icon that arrives is put on every tab showing that site, in
-            // every window, not only the one that happened to ask for it.
-            Favicons.shared.arrived = { site, image in
+            // An icon that arrives is looked for again by every tab showing
+            // that site, in every window, not only the one that asked for it:
+            // each puts on its own page's, or its nearest neighbour's.
+            Favicons.shared.arrived = { site in
                 let lower = site.lowercased()
                 for browser in Browsers.all {
                     for tab in browser.tabs + browser.parkedTabs {
                         guard let tabHost = tab.address.flatMap(Favicons.site) else { continue }
                         if tabHost == lower || tabHost == "www." + lower || lower == "www." + tabHost {
-                            tab.icon = image
+                            tab.adoptIcon()
                         }
                     }
                 }

@@ -1273,7 +1273,7 @@ final class Bench {
             func rows(_ nodes: [Bookmark], _ depth: Int) -> [[String: Any]] {
                 nodes.flatMap { node -> [[String: Any]] in
                     [["depth": depth, "label": node.label, "folder": node.isFolder,
-                      "icon": !node.isFolder && Favicons.shared.cached(node.site ?? "") != nil]] + rows(node.children ?? [], depth + 1)
+                      "icon": !node.isFolder && Favicons.shared.cached(for: node.address) != nil]] + rows(node.children ?? [], depth + 1)
                 }
             }
             // "path": the button's list drawn there, every folder open, in
@@ -1424,6 +1424,20 @@ final class Bench {
                         "announced": browser.announcement ?? ""])
             }
             settled()
+
+        case "history":
+            // History on a --test run: "take" puts an address in as an import
+            // would, since a bench tab's visits never enter it; "forget" drops
+            // one as the panel's cross does. Answers with every address kept.
+            guard Store.testing else { answer(["error": "history only works on a --test run"]); return }
+            if let text = request["take"] as? String, let url = Address.url(from: text) {
+                browser.history.take(url, title: text, count: 1, last: Date())
+                browser.history.settle()
+            }
+            if let text = request["forget"] as? String, let url = Address.url(from: text) {
+                browser.history.forget(History.identity(for: url))
+            }
+            answer(["history": browser.history.everything().map(\.url.absoluteString)])
 
         case "import-file-start":
             guard Store.testing else { answer(["error": "import-file only works on a --test run"]); return }
@@ -3609,7 +3623,22 @@ final class Bench {
             "extensions": { if #available(macOS 15.4, *) { return tab.carriesExtensions } else { return false } }(),
             // The page's WebKit process, for measuring what it holds.
             "process": tab.built.flatMap { $0.value(forKey: "_webProcessIdentifier") as? Int } ?? 0,
+            // The icon it wears, as one averaged colour: enough to tell a
+            // test's plain squares apart. "" for none.
+            "icon": tab.icon.map(Bench.colour) ?? "",
         ]
+    }
+
+    private static func colour(_ image: NSImage) -> String {
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return "" }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(x: 0, y: 0, width: 1, height: 1))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let c = rep.colorAt(x: 0, y: 0) else { return "" }
+        return String(format: "%02x%02x%02x", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
     }
 
     static func short(_ tab: Tab) -> String {
