@@ -1213,6 +1213,9 @@ final class Extensions: NSObject, ObservableObject {
                 context.didCloseTab(adapter, windowIsClosing: false)
             }
         }
+        // Its side panel goes the same way where a private tab is in front:
+        // through once it is let in, held back when it is shut out.
+        for browser in Browsers.all { browser.sidePanelPrivacyChanged() }
         actionsChanged += 1
     }
 

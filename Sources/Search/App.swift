@@ -534,10 +534,10 @@ struct ContentView: View {
     /// The card's gap on the side away from the column, and along the bottom.
     private var farGap: CGFloat { cards ? Metrics.cardGap : 0 }
 
-    /// The side panel is up: an extension's page in it, and no page filling
-    /// the screen.
+    /// The side panel is up: an extension's page in it, the tab in front one
+    /// that extension may see, and no page filling the screen.
     private var panelUp: Bool {
-        browser.sidePanelShown && browser.sidePanel != nil && fullscreenTab == nil
+        browser.sidePanelShown && browser.sidePanel != nil && !browser.sidePanelHeld && fullscreenTab == nil
     }
 
     /// The side panel's width as drawn: as you left it, or narrower in a
