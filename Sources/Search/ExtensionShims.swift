@@ -2612,9 +2612,15 @@ enum ExtensionShims {
           "clipboardRead", "geolocation", "userScripts"]);
         const manifest = (() => { try { return runtime.getManifest() || {}; } catch (e) { return {}; } })();
         const declared = new Set(manifest.permissions || []);
+        // A permission the manifest names that neither WebKit nor Search
+        // knows (pageCapture…) used to fail the whole request with no
+        // question asked. Chrome would grant it with the rest, so it is
+        // left out of the question instead; only names the manifest never
+        // gave still make the request fail, as in Chrome.
+        const named = new Set([...(manifest.permissions || []), ...(manifest.optional_permissions || [])]);
         const split = (list = []) => ({
           theirs: list.filter((p) => webkit.has(p)), mine: list.filter((p) => ours.has(p)),
-          unknown: list.filter((p) => !webkit.has(p) && !ours.has(p)),
+          unknown: list.filter((p) => !webkit.has(p) && !ours.has(p) && !named.has(p)),
         });
         const p = chrome.permissions;
         const contains = p.contains.bind(p), request = p.request.bind(p), getAll = p.getAll.bind(p), remove = p.remove.bind(p);
@@ -2629,7 +2635,10 @@ enum ExtensionShims {
         // Extensions.reachesExtensions): never held, never asked for. Nor
         // files, as in Chrome with file access left off (Extensions.reachesFiles).
         const extensionPages = (origins) => origins.some((o) => /^((chrome|webkit)-extension|file):/i.test(String(o)));
+        // <all_urls> is held as *://*/* once given (see Extensions.fence).
+        const websites = (origins) => origins.map((o) => (o === "<all_urls>" ? "*://*/*" : o));
         put(p, "contains", withCb(async ({ permissions = [], origins = [] }) => {
+          origins = websites(origins);
           const { theirs, mine, unknown } = split(permissions);
           if (unknown.length || extensionPages(origins)) return false;
           if (mine.length) { const have = await granted(); if (!mine.every((m) => have.has(m))) return false; }
@@ -2644,6 +2653,8 @@ enum ExtensionShims {
             if (missing.length && !(await native("permissions.request", [missing]))) return false;
           }
           if (!theirs.length && !origins.length) return true;
+          // Already given (<all_urls> as *://*/*): nothing to ask again.
+          if (await Promise.resolve(contains({ permissions: theirs, origins: websites(origins) })).catch(() => false)) return true;
           // Asked from a click on the extension's button: when filling in
           // the tab it was given (mend) cost WebKit the click, Search
           // knows it was one and asks the same question.
@@ -4109,10 +4120,16 @@ enum ExtensionShims {
             // WebKit lost while the shim filled in the tab it was given
             // (see `mend`). Only within seconds of that click, once, and
             // only what the manifest names, asked as WebKit would ask it.
-            guard let when = Extensions.clicked[id], Date().timeIntervalSince(when) < 10 else {
+            // A click or key in one of the extension's own pages counts too
+            // (its options page in a tab, its popup): Chrome treats that as
+            // the user gesture, and WebKit loses it as soon as the page
+            // awaits anything before calling permissions.request.
+            let when = [Extensions.clicked[id], Extensions.touched[id]].compactMap { $0 }.max()
+            guard let when, Date().timeIntervalSince(when) < 10 else {
                 throw Unsupported(what: "Invalid call to permissions.request(). Must be called during a user gesture.")
             }
             Extensions.clicked[id] = nil
+            Extensions.touched[id] = nil
             let found = context.webExtension
             let wanted = ((first as? [String]) ?? []).map { WKWebExtension.Permission(rawValue: $0) }
             let origins = ((args.dropFirst().first as? [String]) ?? []).compactMap { try? WKWebExtension.MatchPattern(string: $0) }

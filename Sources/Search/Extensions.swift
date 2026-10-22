@@ -1171,6 +1171,17 @@ final class Extensions: NSObject, ObservableObject {
     /// looks at those first — which is why none is ever made (see
     /// `reachesExtensions`). Set again after anything is granted.
     static func fence(_ context: WKWebExtensionContext) {
+        // WebKit takes back any grant that covers what is refused here, so a
+        // refusal of extension pages wipes a grant of <all_urls> the moment
+        // it is made — permissions.request said yes, contains() says no, and
+        // the extension (Figma's) waits forever. What <all_urls> means for
+        // websites is kept as *://*/*, which the refusals don't touch.
+        let everything = context.grantedPermissionMatchPatterns.keys.contains { $0.matchesAllURLs }
+        defer {
+            if everything, let web = try? WKWebExtension.MatchPattern(string: "*://*/*") {
+                context.setPermissionStatus(.grantedExplicitly, for: web)
+            }
+        }
         for scheme in Set([Extensions.scheme, Extensions.formerScheme, "webkit-extension"]) {
             if let pages = try? WKWebExtension.MatchPattern(string: "\(scheme)://*/*") {
                 context.setPermissionStatus(.deniedExplicitly, for: pages)
