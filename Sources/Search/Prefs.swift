@@ -344,6 +344,12 @@ final class Preferences: ObservableObject {
     @Published var pinsPeek: Bool {
         didSet { store.set(pinsPeek, forKey: "pins.peek") }
     }
+    /// Reading mode shows a site's own markdown copy of the page when it
+    /// publishes one, and works the article out only when it doesn't (see
+    /// Reader.twin). Off unless asked for.
+    @Published var readsTwins: Bool {
+        didSet { store.set(readsTwins, forKey: "reader.twins") }
+    }
     /// A link from another app opens in a small window of its own (see
     /// Little.swift). Off unless asked for.
     @Published var littleLinks: Bool {
@@ -619,6 +625,7 @@ final class Preferences: ObservableObject {
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         pinsPeek = store.bool(forKey: "pins.peek")
+        readsTwins = store.bool(forKey: "reader.twins")
         littleLinks = store.bool(forKey: "links.little")
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")

@@ -316,6 +316,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.peeksLinks)
             }
             Rule()
+            Line("Read the site's own Markdown", "When a page has a Markdown copy, Reading mode (⇧⌘R) shows that instead of working the article out. Most docs sites publish one") {
+                Switch(on: $prefs.readsTwins)
+            }
+            Rule()
             Line("Open links from other apps in a small window", "To read and close, or keep with Open in Search (⌘O)") {
                 Switch(on: $prefs.littleLinks)
             }
