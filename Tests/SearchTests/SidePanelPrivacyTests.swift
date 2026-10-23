@@ -23,6 +23,15 @@ final class SidePanelPrivacyTests: XCTestCase {
         XCTAssertTrue(NSApp.windows.allSatisfy { !$0.isVisible }, "a window was shown")
     }
 
+    /// A tab with somewhere to be, so the row keeps it: `receive` closes the
+    /// blank tabs behind a tab that arrives, and a pair wants both halves
+    /// still in the row.
+    private func page(_ name: String, shy: Bool = false) -> Tab {
+        let tab = Tab(shy: shy)
+        tab.restore(url: URL(string: "about:blank#\(name)")!, title: name)
+        return tab
+    }
+
     private func panelUp(in browser: Browser) {
         browser.sidePanel = .page(extensionID: "panel-test-extension", url: URL(string: "chrome-extension://panel-test-extension/panel.html")!, tab: nil)
         browser.sidePanelShown = true
@@ -62,6 +71,43 @@ final class SidePanelPrivacyTests: XCTestCase {
         browser.receive(Tab(shy: true))
         XCTAssertNil(browser.sidePanel)
         XCTAssertFalse(browser.sidePanelHeld, "nothing to hold back")
+    }
+
+    /// A pair holds two tabs of the same kind: `Browser.canSplit` asks for
+    /// `first.shy == second.shy`, so a private page never stands beside an
+    /// ordinary one. The panel is held back for the pair as it is for a tab.
+    func testAPairOfPrivatePagesHoldsThePanelBack() {
+        let browser = Browser(record: WindowRecord())
+        browser.prefs.splitView = true
+        panelUp(in: browser)
+        let first = page("one", shy: true), second = page("two", shy: true)
+        browser.receive(first)
+        browser.receive(second)
+        browser.pair(second, with: first, onLeft: false)
+        XCTAssertNotNil(browser.activeSplit, "the pair was made")
+        XCTAssertTrue(browser.sidePanelHeld)
+    }
+
+    func testAPrivatePageIsNeverPairedWithAnOrdinaryOne() {
+        let browser = Browser(record: WindowRecord())
+        browser.prefs.splitView = true
+        let plain = page("plain"), shy = page("shy", shy: true)
+        browser.receive(plain)
+        browser.receive(shy)
+        XCTAssertFalse(browser.canSplit(shy, with: plain), "a mixed pair is refused")
+        browser.pair(shy, with: plain, onLeft: false)
+        XCTAssertNil(browser.activeSplit, "so no pair was made")
+    }
+
+    func testAPairOfOrdinaryPagesKeepsThePanel() {
+        let browser = Browser(record: WindowRecord())
+        browser.prefs.splitView = true
+        panelUp(in: browser)
+        let first = page("one"), second = page("two")
+        browser.receive(first)
+        browser.receive(second)
+        browser.pair(second, with: first, onLeft: false)
+        XCTAssertFalse(browser.sidePanelHeld)
     }
 
     func testClosingThePanelLetsTheHoldGo() {

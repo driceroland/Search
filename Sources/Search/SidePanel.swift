@@ -53,7 +53,7 @@ extension Browser {
         // (Extensions' `hidden`): no address, no title, no view to run a
         // script in. A panel of its own beside that page would be a panel
         // about a page it cannot see, so it doesn't open there.
-        guard !Browser.holdsPanel(shy: panelFront(tab)?.shy == true,
+        guard !Browser.holdsPanel(shy: panelPanes(tab).contains { $0.shy },
                                   letIn: Extensions.mayGoPrivate(context))
         else { return .notHere }
         let content = SidePanelContent.page(extensionID: context.uniqueIdentifier, url: url, tab: tab)
@@ -126,26 +126,38 @@ extension Browser {
         showSidePanel(context, url: url, for: tab.id)
     }
 
-    /// The panel is up and held back beside the tab in front: a private tab,
-    /// and an extension not let into private tabs. The window gives the
-    /// panel's room to the page meanwhile, and the page in the panel is
-    /// kept, so it comes back as you left it on a tab the extension may
-    /// see. An extension gone while its panel is up is held back too,
-    /// having nothing left to say it may be there.
+    /// The panel is up and held back beside a private page: one of the
+    /// pages on screen is a private tab, and its extension hasn't been let
+    /// into private tabs. The window gives the panel's room to the page
+    /// meanwhile, and the page in the panel is kept, so it comes back as
+    /// you left it on a page the extension may see. An extension gone while
+    /// its panel is up is held back too, having nothing left to say it may
+    /// be there.
     var sidePanelHeld: Bool {
-        guard case .page(let id, _, _) = sidePanel, active?.shy == true else { return false }
+        guard case .page(let id, _, _) = sidePanel, panelPanes().contains(where: { $0.shy })
+        else { return false }
         guard #available(macOS 15.4, *), let context = Extensions.shared.contexts[id] else { return true }
         return Browser.holdsPanel(shy: true, letIn: Extensions.mayGoPrivate(context))
     }
 
-    /// The decision itself, away from a window: a private tab in front and
+    /// The decision itself, away from a window: a private page on screen and
     /// an extension not let into private tabs hold its panel back.
     static func holdsPanel(shy: Bool, letIn: Bool) -> Bool { shy && !letIn }
 
-    /// The tab a panel sits beside: the one it was opened for, else the one
-    /// in front.
-    private func panelFront(_ tab: Tab.ID?) -> Tab? {
-        tabs.first { $0.id == (tab ?? activeID) }
+    /// The pages a panel sits beside: the tab it was opened for, else the
+    /// one in front, and in Split View the other half of its pair, since
+    /// the panel stands beside both at once. A pair holds two tabs of the
+    /// same kind today (`canSplit` asks for `first.shy == second.shy`), so
+    /// the pair's half says nothing the tab in front hasn't already said;
+    /// it is written on what is on screen rather than on that rule holding.
+    /// `split(for:)` answers nothing while Split View is off, where a kept
+    /// pair shows one page as any other tab does.
+    private func panelPanes(_ tab: Tab.ID? = nil) -> [Tab] {
+        guard let here = tabs.first(where: { $0.id == (tab ?? activeID) }) else { return [] }
+        guard let pair = split(for: here), let other = pair.partner(of: here.id),
+              let beside = tabs.first(where: { $0.id == other })
+        else { return [here] }
+        return [here, beside]
     }
 }
 
