@@ -400,6 +400,13 @@ final class Preferences: ObservableObject {
     @Published var floatsOnLeave: Bool {
         didSet { store.set(floatsOnLeave, forKey: "float.leave") }
     }
+    /// Escape on a page filling the screen leaves only when pressed twice
+    /// within two seconds, as in Arc; the first puts up a reminder (see
+    /// FullScreenEscape). Off unless asked for: one press leaves, as in
+    /// Safari.
+    @Published var escapeTwice: Bool {
+        didSet { store.set(escapeTwice, forKey: "fullscreen.escapeTwice") }
+    }
     /// A newer build is fetched, checked and put in place on its own, as it
     /// always was. Off, Search still looks every hour and says so, and waits
     /// for Install in Settings (see Updater.installsOnItsOwn).
@@ -614,6 +621,7 @@ final class Preferences: ObservableObject {
         Float.flicks = flicks
         floatsAway = store.bool(forKey: "float.away")
         floatsOnLeave = store.object(forKey: "float.leave") as? Bool ?? true
+        escapeTwice = store.bool(forKey: "fullscreen.escapeTwice")
         waitsForPlay = store.bool(forKey: Preferences.waitsKey)
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true

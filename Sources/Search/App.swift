@@ -1179,7 +1179,41 @@ struct ContentView: View {
                 if !event.modifierFlags.contains(.command) { browser.landSummon() }
                 return event
             }
+            // Escape on a page filling the screen is WebKit's, which leaves
+            // on the first one, as Safari does. Its window isn't a browser's,
+            // so the key came here first and put away what was left up in
+            // the window behind the video, a find bar or the address field,
+            // and only the second press reached the page.
+            // A ⌃Tab switcher up behind it goes too, or letting ⌃ go would
+            // switch tabs as the page comes back. With Esc twice asked for
+            // (Settings › General), as in Arc, the first press only puts a
+            // reminder up (see FullScreenEscape).
+            if event.keyCode == 53, let page = ContentView.pageFillingScreen(event) {
+                if browser.tabSwitcher.active { browser.tabSwitcher.cancel() }
+                guard browser.prefs.escapeTwice else { return event }
+                return FullScreenEscape.shared.passes(event, to: page) ? event : nil
+            }
+            // A key typed while the field is on its way is the field's (holdKey),
+            // Escape in a full-screen window included.
             if browser.holdKey(event) { return nil }
+            // Escape in this window while it is itself in macOS full screen
+            // (the green button, ⌃⌘F). Nothing in Search wanting it, it went
+            // on through the page to AppKit, which takes the window out of
+            // full screen on it: one press, whatever it was meant for. With
+            // Esc twice asked for, Search's own Escape jobs still go first and
+            // at one press — the find bar, the address field, a peek, a panel,
+            // a rename, a new tab never sent anywhere, the ⌃Tab switcher —
+            // and a press none of them wants is kept from the page and from
+            // AppKit and counted instead (see FullScreenEscape): the first
+            // puts the reminder up, a second within two seconds leaves. Held
+            // down, its repeats are kept and count for nothing.
+            if event.keyCode == 53, browser.prefs.escapeTwice, let window, event.window === window,
+               window.styleMask.contains(.fullScreen) {
+                if event.isARepeat { return nil }
+                if take(event) { return nil }
+                FullScreenEscape.shared.press(event, leaving: window)
+                return nil
+            }
             return take(event) ? nil : event
         }
         ContentView.keyHooks[id] = { event in take(event) ? nil : event }
@@ -1200,6 +1234,16 @@ struct ContentView: View {
     private func mine(_ event: NSEvent) -> Bool {
         if let window = event.window, Browsers.browser(for: window) != nil { return window === self.window }
         return Browsers.acting === browser
+    }
+
+    /// The page a key goes to, if it fills the screen: one WebKit has in its
+    /// own window, where the page's view takes the keys, or one whose page
+    /// said it is going (Tab.immersed, which is how the bench fakes it).
+    private static func pageFillingScreen(_ event: NSEvent) -> PageView? {
+        guard let page = event.window?.firstResponder as? PageView else { return nil }
+        let fills = page.fullscreenState != .notInFullscreen
+            || Browsers.all.contains { $0.tabs.contains { $0.immersed && $0.built === page } }
+        return fills ? page : nil
     }
 
     /// The same handling the key monitor gives an event, for the bench to

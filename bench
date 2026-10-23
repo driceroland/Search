@@ -17,6 +17,8 @@
                                        page's, Edit › Substitutions' ticks; NAME (quotes|dashes|replacement)
                                        switches one, only in a copy under its own bundle id
     ./bench press CODE CHARS [MODS…]   press a key on the whole app (cmd shift ctrl opt, repeat) — --test runs only
+    ./bench windowfull on|off          the window into or out of macOS full screen, as its green button does —
+                                       --test runs started with windows shown only (it takes the screen)
     ./bench tap ID SELECTOR [MODS…]    a real mouse click on an element (or text=Words), shift/cmd/opt held — --test runs only
     ./bench text ID                    the page's text
     ./bench eval ID JS [search]        run JavaScript, print what it returns; search: in Search's own world
@@ -574,6 +576,9 @@ def main(argv):
         request["with"] = args[0]
     elif verb == "notifications":
         pass
+    elif verb == "windowfull":
+        if args not in (["on"], ["off"]): sys.exit("usage: bench windowfull on|off")
+        request["on"] = args[0] == "on"
     elif verb == "accounts":
         if len(args) not in (0, 1) or (args and not args[0].isdigit()): sys.exit("usage: bench accounts [ROW]")
         if args: request["pick"] = int(args[0])

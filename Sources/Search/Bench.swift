@@ -107,7 +107,10 @@ final class Bench {
     func start(for browser: Browser) {
         guard !running else { return }
         self.browser = browser
-        if Store.testing { Bench.watchScreens() }
+        // SEARCH_PROBE_SHOWN: a test run whose windows may show, for the one
+        // thing a hidden one can't do — go full screen for real (windowfull,
+        // Tests/fullscreen_window_escape.py). It takes the screen while it runs.
+        if Store.testing, ProcessInfo.processInfo.environment["SEARCH_PROBE_SHOWN"] == nil { Bench.watchScreens() }
         // Nor App Nap, which a test run behind other windows falls into.
         if Store.testing, !Store.measuring, awake == nil {
             awake = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Bench")
@@ -780,6 +783,12 @@ final class Bench {
                             "windowFullScreen": (browser.window ?? Links.window)?.styleMask.contains(.fullScreen) ?? false]
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
             out["siteCard"] = SiteCardPanel.isShown
+            // "Press Esc again to leave full screen", up over a page filling
+            // the screen (Settings › General › Press Esc twice to leave full
+            // screen).
+            out["escapeReminder"] = FullScreenEscape.shared.showing
+            // The window itself in macOS full screen (the green button, ⌃⌘F).
+            out["windowFullScreen"] = (browser.window ?? Links.window)?.styleMask.contains(.fullScreen) ?? false
             // Whether this Mac lets the browser use its passkeys at all — the
             // one-time permission macOS asks a browser other than Safari for.
             switch ASAuthorizationWebBrowserPublicKeyCredentialManager().authorizationStateForPlatformCredentials {
@@ -794,6 +803,19 @@ final class Bench {
             out["handedOff"] = Browser.handedOff
             out["passkeyLast"] = Passkeys.last
             answer(out)
+
+        case "windowfull":
+            // The window into or out of macOS full screen, as its green button
+            // takes it, answered once the move is over. Only on a test run
+            // started with its windows shown: it takes the screen, which a
+            // hidden one never does.
+            guard Store.testing else { answer(["error": "windowfull only works on a --test run — it would take your browser's window full screen"]); return }
+            guard let on = request["on"] as? Bool, let window = browser.window
+            else { answer(["error": "windowfull needs on (true or false) and a window"]); return }
+            if window.styleMask.contains(.fullScreen) != on { window.toggleFullScreen(nil) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                answer(["windowFullScreen": window.styleMask.contains(.fullScreen)])
+            }
 
         case "press":
             // A key pressed on the app as a whole, through its event queue —
@@ -3035,7 +3057,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "windowfull",
             ]])
         }
     }
