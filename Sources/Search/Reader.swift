@@ -62,9 +62,25 @@ enum Reader {
     /// Puts the reading page in place of the page: the title, where it's
     /// from, and what to read. Called with the sheet, since a script only
     /// knows what it's handed.
+    ///
+    /// The page's own stylesheets go first. Left in, they reach the reading
+    /// page through every rule written for a bare element (Tailwind's reset
+    /// took the numbers off every list) and every font the page loaded.
+    /// Search's own stay: each has an `office-` id, and Dusk and Find on Page
+    /// keep theirs in adoptedStyleSheets, which are left as they are. Done
+    /// once, as reading mode opens; a page that adds a sheet back later keeps
+    /// it, because a watcher that took it away again would fight any
+    /// extension (Dark Reader, Stylus) that puts its own back, forever.
     static let present = """
     function present(wrap, title, from, sheet) {
+      var theirs = document.querySelectorAll('style, link[rel~="stylesheet" i]');
+      for (var i = 0; i < theirs.length; i++) {
+        if ((theirs[i].id || '').indexOf('office-') !== 0) theirs[i].remove();
+      }
+      document.documentElement.removeAttribute('style');
+      document.body.removeAttribute('style');
       var style = document.createElement('style');
+      style.id = 'office-reader-sheet';
       style.textContent = sheet;
       var top = document.createElement('h1');
       top.textContent = title;
@@ -140,11 +156,39 @@ enum Reader {
         }
       }
 
+      // What the page's own styles hide, seen while they still apply: the
+      // reading page goes without them (see present), and a label meant
+      // only for screen readers, a menu folded shut or the mobile copy of a
+      // table would all come into view. Pictures' sources and the like are
+      // hidden by WebKit itself, which the reading page keeps.
+      var inherent = /^(SOURCE|TRACK|PARAM|AREA|TEMPLATE|BR|WBR|SCRIPT|STYLE|NOSCRIPT)$/;
+      var all = article.querySelectorAll('*');
+      for (var h = 0; h < all.length; h++) {
+        var el = all[h];
+        if (inherent.test(el.tagName) || el.closest('details:not([open])')) continue;
+        var look = getComputedStyle(el);
+        var gone = look.display === 'none' || look.visibility === 'hidden';
+        if (!gone && (look.overflow === 'hidden' || look.clip !== 'auto')) {
+          var box = el.getBoundingClientRect();
+          // The usual way of hiding text from sight but not from a screen
+          // reader: a box a pixel square, its overflow cut off.
+          gone = box.width <= 1 && box.height <= 1;
+        }
+        if (gone) el.setAttribute('data-office-hidden', '');
+      }
+
       var heading = document.querySelector('h1');
       var title = (heading && heading.innerText.trim()) || document.title;
 
       var wrap = document.createElement('div');
       wrap.innerHTML = article.innerHTML;
+
+      var hidden = wrap.querySelectorAll('[data-office-hidden]');
+      for (var d = 0; d < hidden.length; d++) hidden[d].remove();
+      // A style written on an element is the page's styling too: a fixed
+      // width, a white font for a dark box that isn't there any more.
+      var styled = wrap.querySelectorAll('[style]');
+      for (var y = 0; y < styled.length; y++) styled[y].removeAttribute('style');
 
       // What was arranged around the words rather than being part of them.
       // Not header: an article's opening image lives there as often as not.

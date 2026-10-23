@@ -14,6 +14,24 @@ final class ReaderTwinTests: XCTestCase {
     private static let html = "text/html; charset=utf-8"
     private static let article = "<article>" + String(repeating: "<p>" + String(repeating: "Words to read here. ", count: 20) + "</p>", count: 4) + "</article>"
 
+    /// A site's styles of the kind that reached the reading page, beside one
+    /// of Search's own (Curtain's, see Curtain.swift).
+    private static let theirStyles = """
+    <link rel="stylesheet" href="/page.css">
+    <style>ol { list-style: none } body { font-family: Papyrus }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0) }
+    .mobile { display: none }</style>
+    <style id="office-veil">.cookie-bar { display: none !important }</style>
+    """
+
+    private static let styledArticle = "<article>"
+        + String(repeating: "<p style=\"color: white\">" + String(repeating: "Words to read here. ", count: 20) + "</p>", count: 4)
+        + "<p>Steps <span class=\"sr-only\">for screen readers</span> to follow.</p>"
+        + "<table class=\"mobile\"><tr><td>Mobile copy</td></tr></table>"
+        + "<ol><li>one</li><li>two</li></ol>"
+        + "<picture><source srcset=\"/a.webp\" type=\"image/webp\"><img src=\"/a.png\" alt=\"A\"></picture>"
+        + "</article>"
+
     private static func page(_ head: String = "", body: String = "<h1>The page</h1>") -> LocalPageServer.Page {
         .init(type: html, body: "<!doctype html><html><head><title>Page title</title>\(head)</head><body>\(body)</body></html>")
     }
@@ -37,6 +55,10 @@ final class ReaderTwinTests: XCTestCase {
             "/text.md": .init(type: "text/plain", body: "# Not vouched for"),
             "/nothing": Self.page(body: Self.article),
             "/README.md": .init(type: Self.markdown, body: "# Read me\n\n- one\n- two"),
+            "/styled": Self.page(Self.theirStyles, body: Self.styledArticle),
+            "/styled-twin": Self.page(Self.theirStyles + "<link rel=\"alternate\" type=\"text/markdown\" href=\"/styled-twin.md\">"),
+            "/styled-twin.md": .init(type: Self.markdown, body: "# Twin\n\n1. one\n2. two"),
+            "/page.css": .init(type: "text/css", body: "#office-reader li { list-style: none; color: rgb(255, 0, 0); }"),
         ])
     }
 
@@ -130,6 +152,54 @@ final class ReaderTwinTests: XCTestCase {
         let title = try await call(web, "return document.querySelector('#office-reader h1').textContent;")
         XCTAssertEqual(title as? String, "Page title")
     }
+
+    // MARK: - the page's own styles
+
+    func testTheGuessLeavesThePageStylesBehind() async throws {
+        let web = try await open("/styled")
+        let answer = try await call(web, Reader.script, ["sheet": Reader.sheet], world: .page)
+        XCTAssertEqual(answer as? String, "read")
+        let left = try await call(web, Self.inspect) as? [String: Any]
+        XCTAssertEqual(left?["sheets"] as? [String], ["office-veil", "office-reader-sheet"])
+        XCTAssertEqual(left?["listStyle"] as? String, "decimal")
+        XCTAssertEqual(left?["listColour"] as? String, "rgb(23, 23, 23)")
+        XCTAssertFalse((left?["font"] as? String ?? "").contains("Papyrus"))
+        let text = try XCTUnwrap(left?["text"] as? String)
+        XCTAssertTrue(text.contains("Steps  to follow."))
+        XCTAssertFalse(text.contains("for screen readers"))
+        XCTAssertFalse(text.contains("Mobile copy"))
+        XCTAssertEqual(left?["inline"] as? Int, 0)
+        XCTAssertEqual(left?["sources"] as? Int, 1, "a picture's sources are WebKit's to hide")
+    }
+
+    func testTheTwinLeavesThePageStylesBehind() async throws {
+        let web = try await open("/styled-twin")
+        let lookup = try await call(web, Reader.twin)
+        let found = try XCTUnwrap(lookup as? [String: Any])
+        let twin = Markdown.page(try XCTUnwrap(found["text"] as? String), base: nil)
+        _ = try await call(web, Reader.show, [
+            "html": twin.html, "title": twin.title ?? "", "from": "fixture", "sheet": Reader.sheet,
+        ])
+        let left = try await call(web, Self.inspect) as? [String: Any]
+        XCTAssertEqual(left?["sheets"] as? [String], ["office-veil", "office-reader-sheet"])
+        XCTAssertEqual(left?["listStyle"] as? String, "decimal")
+    }
+
+    private static let inspect = """
+    var reader = document.getElementById('office-reader');
+    var item = reader.querySelector('li');
+    var sheets = [];
+    document.querySelectorAll('style, link[rel~="stylesheet"]').forEach(function (s) { sheets.push(s.id || s.tagName); });
+    return {
+      sheets: sheets,
+      listStyle: getComputedStyle(item).listStyleType,
+      listColour: getComputedStyle(item).color,
+      font: getComputedStyle(document.body).fontFamily,
+      text: reader.textContent,
+      inline: reader.querySelectorAll('[style]').length,
+      sources: reader.querySelectorAll('picture source').length
+    };
+    """
 
     // MARK: - plumbing
 
