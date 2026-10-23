@@ -2950,7 +2950,8 @@ final class Bench {
                 return view.subviews.flatMap(webs)
             }
             let all = webs(in: (browser.window ?? Links.window)?.contentView)
-            var state: [String: Any] = ["shown": browser.sidePanelShown, "content": content, "width": Double(browser.prefs.sidePanelWidth),
+            var state: [String: Any] = ["shown": browser.sidePanelShown, "held": browser.sidePanelHeld,
+                                        "content": content, "width": Double(browser.prefs.sidePanelWidth),
                                         "page": web?.url?.absoluteString ?? "", "title": web?.title ?? "", "loading": web?.isLoading ?? false,
                                         "opensWindows": web?.configuration.preferences.javaScriptCanOpenWindowsAutomatically ?? false]
             state["frame"] = spot(web)

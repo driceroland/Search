@@ -3857,8 +3857,9 @@ enum ExtensionShims {
                   let url = ExtensionShims.page(path, in: context), let browser = owner.browser
             else { throw Unsupported(what: "No active side panel for this extension") }
             // The panel, or, if it can't be made, the page as a tab of its
-            // own, as before there was a panel to put it in.
-            if !browser.showSidePanel(context, url: url, for: own?.path != nil ? browser.activeID : nil) {
+            // own, as before there was a panel to put it in. Beside a
+            // private tab it may not see, nothing opens at all.
+            if browser.showSidePanel(context, url: url, for: own?.path != nil ? browser.activeID : nil) == .noPanel {
                 browser.open(url, foreground: true)
             }
             return nil
@@ -4598,9 +4599,10 @@ enum ExtensionShims {
         // would be escaped into the file's name.
         guard let url = ExtensionShims.page(path, in: context) else { return }
         // In the side panel; a tab of its own if the panel can't be made,
-        // as before there was a panel to put it in.
+        // as before there was a panel to put it in. Beside a private tab
+        // this extension may not see, the button does nothing.
         guard let browser = owner.browser else { return }
-        if !browser.toggleSidePanel(context, url: url) {
+        if browser.toggleSidePanel(context, url: url) == .noPanel {
             browser.open(url, foreground: true)
         }
     }
