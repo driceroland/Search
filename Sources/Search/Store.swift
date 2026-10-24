@@ -216,6 +216,22 @@ enum Disk {
         if now { put() } else { queue.async(execute: put) }
     }
 
+    /// The file gone, after any write of it already asked for — and none
+    /// asked for before this lands it again.
+    static func remove(_ file: URL) {
+        lock.lock()
+        count += 1
+        let turn = count
+        newest[file] = turn
+        lock.unlock()
+        queue.async {
+            lock.lock()
+            defer { lock.unlock() }
+            guard newest[file] == turn else { return }
+            try? FileManager.default.removeItem(at: file)
+        }
+    }
+
     /// Everything asked for so far, written — for the way out.
     static func drain() {
         queue.sync {}

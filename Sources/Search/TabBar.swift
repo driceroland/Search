@@ -48,6 +48,8 @@ struct TabBar: View {
                     // The space on screen, first, when there are spaces.
                     // Above the tabs, for the name it shows over them a moment
                     // after a switch.
+                    // The profile, once there is more than one (see Profiles.swift).
+                    if Profiles.shared.several { ProfileBadge(browser: browser) }
                     if browser.prefs.usesSpaces { SpaceDot(browser: browser).zIndex(1) }
 
                     // The tabs, in a run of their own. While they fit, it is
@@ -1237,7 +1239,7 @@ struct TabMenu: View {
         }
         if tab.pin == nil, !tab.bench {
             // Another window, or a new one (see Browser.moveToWindow).
-            let others = Browsers.all.filter { $0 !== browser && $0.isOpen && $0.extensionPopup == nil }
+            let others = Browsers.all.filter { $0 !== browser && $0.isOpen && $0.extensionPopup == nil && $0.profileID == browser.profileID }
             if others.isEmpty {
                 Button("Move to New Window") { browser.moveToWindow(tab, nil) }
                     .disabled(browser.tabs.count < 2)

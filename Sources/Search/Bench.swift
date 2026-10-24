@@ -628,6 +628,9 @@ final class Bench {
                         "shown": b.window?.isVisible ?? false, "files": b.usesFiles,
                         "away": Browsers.isAway(b.window),
                         "space": b.space.name, "tabs": b.tabs.map { $0.address?.absoluteString ?? "" },
+                        "profile": Profiles.shared.profile(b.profileID).name,
+                        "spaces": b.spaces.map(\.name),
+                        "stores": b.tabs.map { $0.store.identifier?.uuidString ?? "default" },
                         "pins": b.tabs.filter { $0.pin != nil }.map { $0.pin ?? "" },
                         "frame": b.window.map { NSStringFromRect($0.frame) } ?? "",
                     ]
@@ -2878,6 +2881,49 @@ final class Bench {
                 window.contentView = nil
             }
 
+        case "profile":
+            // The profiles (see Profiles.swift), for a test of what one keeps
+            // apart. Test runs only: it makes and deletes profiles and windows.
+            guard Store.testing else { answer(["error": "profile only works on a --test run"]); return }
+            let profiles = Profiles.shared
+            let named = (request["name"] as? String).flatMap { name in profiles.list.first { $0.name == name } }
+            switch request["action"] as? String ?? "list" {
+            case "new":
+                let made = profiles.add(named: request["name"] as? String ?? "Test")
+                answer(["id": made.id.uuidString, "home": made.home.uuidString])
+                return
+            case "window":
+                // A window of the profile, made while the app stays hidden.
+                guard let named else { answer(["error": "no such profile"]); return }
+                Browsers.open(profile: named.id)
+            case "rename":
+                guard let named, let to = request["to"] as? String else { answer(["error": "rename needs name and to"]); return }
+                profiles.rename(named.id, to: to)
+            case "delete":
+                guard let named else { answer(["error": "no such profile"]); return }
+                profiles.delete(named.id)
+            case "history":
+                // This window's profile's history, newest first.
+                answer(["profile": profiles.profile(browser.profileID).name,
+                        "history": browser.history.everything().map { $0.url.absoluteString },
+                        "offers": browser.history.suggestions(for: request["typed"] as? String ?? "").map { $0.url.absoluteString }])
+                return
+            default: break
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                answer([
+                    "profiles": profiles.list.map { profile -> [String: Any] in
+                        ["name": profile.name, "id": profile.id.uuidString, "home": profile.home.uuidString,
+                         "spaces": Spaces.read(profile: profile.id).map(\.name),
+                         "store": Profiles.store(profile.id).identifier?.uuidString ?? "default"]
+                    },
+                    "window": profiles.profile(browser.profileID).name,
+                    "spaces": browser.spaces.map(\.name),
+                    "badge": profiles.several,
+                    "erasing": Store.settings.stringArray(forKey: "spaces.erasing") ?? [],
+                ])
+            }
+
         case "space":
             // The spaces, and switching between them, for a test of what a
             // space keeps apart. Test runs only: it moves your tabs about.
@@ -3039,6 +3085,7 @@ final class Bench {
             case .site(let url, let space): content = ["kind": "site", "url": url.absoluteString, "space": space.uuidString,
                                                        "store": web.map { $0.configuration.websiteDataStore.isPersistent } ?? false,
                                                        "sameStore": web.map { $0.configuration.websiteDataStore === Spaces.store(for: browser.spaceID) } ?? false,
+                                                       "profileStore": web.map { page in Spaces.stores(of: browser.profileID).contains { $0 === page.configuration.websiteDataStore } } ?? false,
                                                        "inspectable": web.map { if #available(macOS 13.3, *) { return $0.isInspectable } else { return false } } ?? false,
                                                        "developerExtras": web.flatMap { $0.configuration.preferences.value(forKey: "developerExtrasEnabled") as? Bool } ?? false]
                 .merging(SidePanelPages.shared.siteReport(in: browser)) { a, _ in a }
@@ -3162,7 +3209,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile",
             ]])
         }
     }

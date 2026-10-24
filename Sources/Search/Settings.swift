@@ -176,6 +176,7 @@ struct SettingsPanel: View {
                     case .general: general
                     case .tabs:
                         tabs
+                        ProfilesSettings(browser: browser)
                         if !prefs.sidebar { toolbar }
                     case .shortcuts: ShortcutsPage(browser: browser, store: .shared, prefs: prefs)
                     case .extensions: ExtensionsPage(browser: browser)

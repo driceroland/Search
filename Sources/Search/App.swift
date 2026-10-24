@@ -12,6 +12,8 @@ struct SearchApp: App {
     /// Your own keys (Settings › Shortcuts): the menus are drawn again when
     /// one changes, and show it.
     @ObservedObject private var shortcuts = ShortcutStore.shared
+    /// Only for the File menu's Profile list, once there is a second one.
+    @ObservedObject private var profiles = Profiles.shared
     /// Links from other apps, and the Dock icon.
     @NSApplicationDelegateAdaptor(Links.self) private var links
 
@@ -48,6 +50,19 @@ struct SearchApp: App {
                 // Another window, with tabs of its own (see Windows.swift).
                 Button("New Window") { Browsers.newWindow() }
                     .shortcut("file.newWindow")
+                // The profiles, once there is more than one (see Profiles.swift):
+                // each one's window, brought forward or opened.
+                if profiles.several {
+                    Menu("Profile") {
+                        ForEach(profiles.list) { profile in
+                            Button(profile.id == browser.profileID ? "\(profile.name) ✓" : profile.name) {
+                                Browsers.open(profile: profile.id)
+                            }
+                        }
+                        Divider()
+                        Button("New Profile…") { ProfileMenu.askNew() }
+                    }
+                }
                 Button("New Tab") { browser.launch() }
                     .shortcut("file.newTab")
                 Button("New Private Tab") { browser.newShyTab() }

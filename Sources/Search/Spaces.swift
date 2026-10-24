@@ -9,9 +9,10 @@ import WebKit
 // has always been and its sites use the store there has always been, so
 // turning spaces on signs nobody out.
 //
-// A space's sites live in a WebKit store of their own, made by identifier;
-// history, bookmarks, the passwords in the keychain, settings and
-// extensions are shared by every space. Switching swaps the row of tabs:
+// A space's sites live in its profile's WebKit store, or one of its own
+// made by identifier; history and bookmarks are its profile's (see
+// Profiles.swift); the passwords in the keychain, settings and extensions
+// are shared by every space. Switching swaps the row of tabs:
 // the ones left behind are parked, their sound paused, and they sleep
 // after half an hour as any tab does, pins included unless their site may
 // send notifications (Sleep.swift). ⌃1–⌃9 switch, as in Arc.
@@ -31,6 +32,11 @@ struct Space: Codable, Identifiable, Equatable {
     var sharesSignIns: Bool?
     /// Where this space's downloads go; nil for the folder in Settings.
     var downloads: String?
+    /// The profile it belongs to (see Profiles.swift); nil for Personal,
+    /// which every space from before profiles is in.
+    var profile: UUID?
+
+    var profileID: UUID { profile ?? Profile.personalID }
 
     /// The first space: the session and the store there were before spaces.
     static let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000001") ?? UUID()
@@ -69,20 +75,44 @@ enum Spaces {
 
     private static var file: URL { Store.file("spaces.json") }
 
-    /// Every space, the first one first — made on the spot if there is no
-    /// list yet.
+    /// Every space of every profile, the first one first — made on the
+    /// spot if there is no list yet.
     static func read() -> [Space] {
         let saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Space].self, from: $0) } ?? []
-        let first = saved.first(where: \.isFirst) ?? Space(id: Space.firstID, name: "Personal", colour: 0)
+        var first = saved.first(where: \.isFirst) ?? Space(id: Space.firstID, name: "Personal", colour: 0)
+        // The first space is Personal's, whatever a file says.
+        first.profile = nil
         return [first] + saved.filter { !$0.isFirst }
     }
 
+    /// One profile's spaces, its first space first: what a window of that
+    /// profile shows, and all it shows.
+    static func read(profile: UUID) -> [Space] {
+        let mine = read().filter { $0.profileID == profile }
+        let home = profile == Profile.personalID ? Space.firstID
+            : (Profiles.read().first { $0.id == profile }?.home ?? mine.first?.id ?? Space.firstID)
+        return mine.filter { $0.id == home } + mine.filter { $0.id != home }
+    }
+
+    /// The whole list, every profile's spaces.
     static func write(_ spaces: [Space]) {
         guard let data = try? JSONEncoder().encode(spaces) else { return }
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: file, options: .atomic)
+        MainActor.assumeIsolated { known = Dictionary(spaces.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
         // Every window's list follows (see Browser.init).
         NotificationCenter.default.post(name: changed, object: spaces)
+    }
+
+    /// One profile's spaces as a window now has them, in their order: the
+    /// other profiles' are kept as the file has them.
+    static func write(_ spaces: [Space], profile: UUID) {
+        let mine = spaces.map { space -> Space in
+            var space = space
+            space.profile = profile == Profile.personalID ? nil : profile
+            return space
+        }
+        write(read().filter { $0.profileID != profile } + mine)
     }
 
     /// The list of spaces changed, in one window or another.
@@ -94,11 +124,23 @@ enum Spaces {
     /// Each space's store, made once: WebKit shares processes between views
     /// that ask for the same store object.
     @MainActor private static var stores: [UUID: WKWebsiteDataStore] = [:]
-    /// The spaces signed in wherever the first one is (see Space.sharesSignIns).
-    @MainActor static var sharing: Set<UUID> = []
+    /// Every space of every profile by its id, as the file last had them:
+    /// which profile each is in, and whether it shares that profile's store.
+    @MainActor static var known: [UUID: Space] = Dictionary(read().map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 
+    /// The profile a space is in: Personal for one that isn't known.
+    @MainActor static func profile(of id: UUID) -> UUID { known[id]?.profileID ?? Profile.personalID }
+
+    /// The store a space's tabs use: its profile's — Personal's being the
+    /// store there always was — for the first space of each profile and any
+    /// space made signed in with the others; a store of its own otherwise.
     @MainActor static func store(for id: UUID) -> WKWebsiteDataStore {
-        if id == Space.firstID || sharing.contains(id) { return Store.websites }
+        let space = known[id]
+        let profile = space?.profileID ?? Profile.personalID
+        if id == Space.firstID || space?.sharesSignIns == true
+            || (profile != Profile.personalID && Profiles.shared.profile(profile).home == id) {
+            return Profiles.store(profile)
+        }
         if let made = stores[id] { return made }
         let made = WKWebsiteDataStore(forIdentifier: id)
         if Store.keepsSignIns { Store.followSignIns(made) } else { Store.followCookies(made) }
@@ -110,7 +152,17 @@ enum Spaces {
     /// tab's: each has a store of its own, out of this list on purpose, so
     /// tracking prevention stays on there whatever the switch says.
     @MainActor static var everyStore: [WKWebsiteDataStore] {
-        [Store.websites] + stores.values
+        [Store.websites] + Profiles.madeStores + stores.values
+    }
+
+    /// The stores one profile's tabs use: its own and its spaces' own.
+    @MainActor static func stores(of profile: UUID) -> [WKWebsiteDataStore] {
+        var found: [WKWebsiteDataStore] = [Profiles.store(profile)]
+        for space in read(profile: profile) {
+            let store = store(for: space.id)
+            if !found.contains(where: { $0 === store }) { found.append(store) }
+        }
+        return found
     }
 
     /// A space's store and everything in it, gone. What it holds — cookies,
@@ -125,13 +177,23 @@ enum Spaces {
         let store = store(for: id)
         // The space's downloads would have kept its store, and asked with
         // its cookies again: they go with it.
-        Browsers.acting.forgetDownloads(of: store)
-        let everything = WKWebsiteDataStore.allWebsiteDataTypes()
-        store.removeData(ofTypes: everything, modifiedSince: .distantPast) {}
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            store.removeData(ofTypes: everything, modifiedSince: .distantPast) {}
-        }
         stores[id] = nil
+        eraseStore(store, id: id)
+    }
+
+    /// A store made by identifier, emptied now and removed once WebKit lets
+    /// it go: a space's own, or a profile's (see Profiles.delete).
+    /// `store`: nil for one never opened this run, removed by its id alone.
+    @MainActor static func eraseStore(_ store: WKWebsiteDataStore?, id: UUID) {
+        if let store {
+            guard store !== Store.websites else { return }
+            Browsers.all.first?.forgetDownloads(of: store)
+            let everything = WKWebsiteDataStore.allWebsiteDataTypes()
+            store.removeData(ofTypes: everything, modifiedSince: .distantPast) {}
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                store.removeData(ofTypes: everything, modifiedSince: .distantPast) {}
+            }
+        }
         let pending = Set(Store.settings.stringArray(forKey: "spaces.erasing") ?? []).union([id.uuidString])
         Store.settings.set(pending.sorted(), forKey: "spaces.erasing")
         sweep()
@@ -221,7 +283,7 @@ extension Browser {
         enter(id)
     }
 
-    private func enter(_ id: UUID) {
+    func enter(_ id: UUID) {
         guard id != spaceID, let to = spaces.firstIndex(where: { $0.id == id }) else { return }
         // Which way the icon at the foot turns over: the way the spaces lie.
         if !makingSpace { spaceStep = to > (spaces.firstIndex { $0.id == spaceID } ?? 0) ? 1 : -1 }
@@ -243,7 +305,10 @@ extension Browser {
         // The space new pages are made in, when this is the window in front;
         // and the one to come back to, when this is the oldest window.
         if Browsers.front === self || Browsers.front == nil { Spaces.current = id }
-        if usesFiles { Store.settings.set(id.uuidString, forKey: "space.current") }
+        // The oldest window's space is the one the app comes back to; each
+        // profile's last space, the one a window of it opens at.
+        if Browsers.primary === self { Store.settings.set(id.uuidString, forKey: "space.current") }
+        Store.settings.set(id.uuidString, forKey: "space.current.\(profileID.uuidString)")
         if let back = parked.removeValue(forKey: id), !back.tabs.isEmpty {
             // Nothing in front there (a fresh start, see Session.startFresh):
             // an empty tab beside its pins, as at launch, not the first pin.
@@ -293,9 +358,10 @@ extension Browser {
     /// its own cookies and sign-ins. By default it starts empty and on screen.
     func addSpace(named name: String, icon: String? = nil, sharesSignIns: Bool = true) {
         makingSpace = false
-        let made = Space(id: UUID(), name: name, colour: 0, icon: icon ?? freeIcon, sharesSignIns: sharesSignIns)
+        let made = Space(id: UUID(), name: name, colour: 0, icon: icon ?? freeIcon, sharesSignIns: sharesSignIns,
+                         profile: profileID == Profile.personalID ? nil : profileID)
         spaces.append(made)
-        Spaces.write(spaces)
+        Spaces.write(spaces, profile: profileID)
         if let afterSpaceCreated {
             self.afterSpaceCreated = nil
             afterSpaceCreated(made)
@@ -308,7 +374,7 @@ extension Browser {
     func moveSpace(_ id: UUID, to index: Int) {
         guard let from = spaces.firstIndex(where: { $0.id == id }), spaces.indices.contains(index), from != index else { return }
         spaces.move(fromOffsets: IndexSet(integer: from), toOffset: index > from ? index + 1 : index)
-        Spaces.write(spaces)
+        Spaces.write(spaces, profile: profileID)
     }
 
     /// "New Space…": the card for a new space, in the column or the bar.
@@ -335,30 +401,34 @@ extension Browser {
     func renameSpace(_ id: UUID, to name: String) {
         guard let at = spaces.firstIndex(where: { $0.id == id }), !name.isEmpty else { return }
         spaces[at].name = name
-        Spaces.write(spaces)
+        Spaces.write(spaces, profile: profileID)
     }
 
     func setSpaceIcon(_ id: UUID, to icon: String) {
         guard let at = spaces.firstIndex(where: { $0.id == id }) else { return }
         spaces[at].icon = icon
-        Spaces.write(spaces)
+        Spaces.write(spaces, profile: profileID)
     }
 
     func setSpaceDownloads(_ id: UUID, to folder: URL?) {
         guard let at = spaces.firstIndex(where: { $0.id == id }) else { return }
         spaces[at].downloads = folder?.path
-        Spaces.write(spaces)
+        Spaces.write(spaces, profile: profileID)
     }
 
+    /// The profile's first space: the one a window shows with spaces off,
+    /// and the one that can't be deleted.
+    var homeSpaceID: UUID { spaces.first?.id ?? Space.firstID }
+
     /// A space, its tabs, and its cookies and sign-ins, gone. The first one
-    /// stays: it is where everything was before there were spaces.
+    /// of the profile stays: it is where everything was before there were spaces.
     func deleteSpace(_ id: UUID) {
-        guard id != Space.firstID, let at = spaces.firstIndex(where: { $0.id == id }) else { return }
-        if spaceID == id { switchSpace(to: Space.firstID) }
+        guard id != Space.firstID, id != homeSpaceID, let at = spaces.firstIndex(where: { $0.id == id }) else { return }
+        if spaceID == id { switchSpace(to: homeSpaceID) }
         for tab in parked.removeValue(forKey: id)?.tabs ?? [] { tab.close() }
         let shared = spaces[at].sharesSignIns == true
         spaces.remove(at: at)
-        Spaces.write(spaces)
+        Spaces.write(spaces, profile: profileID)
         Session.erase(space: id)
         // Gone from the other windows too: their rows there, and the space
         // itself if one was showing it (the list's change moves it).
@@ -372,7 +442,7 @@ extension Browser {
     /// Spaces turned off: back to the first one. The others are kept, in
     /// case they are turned on again.
     func leaveSpaces() {
-        enter(Space.firstID)
+        enter(homeSpaceID)
         for (_, row) in parked { for tab in row.tabs { tab.close() } }
         parked = [:]
     }
@@ -503,6 +573,15 @@ enum SpaceMenu {
         }
         menu.addItem(.separator())
         menu.addItem(item("New Space…") { browser.askForSpace() })
+        // The profiles, once there is more than one (see Profiles.swift).
+        if Profiles.shared.several {
+            menu.addItem(.separator())
+            let profiles = NSMenu()
+            for entry in ProfileMenu.items(for: browser) { profiles.addItem(entry) }
+            let holder = NSMenuItem(title: "Profile: \(Profiles.shared.profile(browser.profileID).name)", action: nil, keyEquivalent: "")
+            holder.submenu = profiles
+            menu.addItem(holder)
+        }
         menu.addItem(.separator())
         let here = browser.space
         menu.addItem(item("Rename “\(here.name)”…") {
@@ -529,7 +608,7 @@ enum SpaceMenu {
         if folder != nil {
             menu.addItem(item("Downloads to the Folder in Settings") { browser.setSpaceDownloads(here.id, to: nil) })
         }
-        if !here.isFirst {
+        if !here.isFirst, here.id != browser.homeSpaceID {
             menu.addItem(.separator())
             menu.addItem(item("Delete “\(here.name)”…") {
                 Ask.sure("Delete “\(here.name)”?", detail: "Its tabs close, and its cookies and sign-ins are erased from this Mac. History and bookmarks stay.", confirm: "Delete") {

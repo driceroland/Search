@@ -64,7 +64,22 @@ final class Bookmarks: ObservableObject {
     /// button, which fills in on a page that is kept.
     private var kept: Set<String> = []
 
-    init() { load() }
+    /// Its file: bookmarks.json for Personal, one of its own for each other
+    /// profile (see Profiles.swift).
+    private let fileName: String
+    /// Its profile deleted: nothing more is written.
+    private var retired = false
+
+    init(file: String = "bookmarks.json") {
+        fileName = file
+        load()
+    }
+
+    /// Its profile deleted: its file removed, and nothing written again.
+    func retire() {
+        retired = true
+        Disk.remove(file)
+    }
 
     var isEmpty: Bool { roots.isEmpty }
 
@@ -434,7 +449,7 @@ final class Bookmarks: ObservableObject {
                 } else {
                     folders[node.title] = nodes.count
                     nodes.append(node)
-                    added += try fileCount([node], control: control)
+                    added += try Bookmarks.fileCount([node], control: control)
                 }
             } else if pages.contains(node.url ?? "") {
                 already += 1
@@ -497,7 +512,7 @@ final class Bookmarks: ObservableObject {
 
     // MARK: - the file
 
-    private static var file: URL { Store.file("bookmarks.json") }
+    private var file: URL { Store.file(fileName) }
 
     // MARK: - for extensions
 
@@ -598,18 +613,19 @@ final class Bookmarks: ObservableObject {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: Bookmarks.file) else { return }
+        guard let data = try? Data(contentsOf: file) else { return }
         guard let list = try? JSONDecoder().decode([Bookmark].self, from: data) else {
-            Store.quarantine(Bookmarks.file)
+            Store.quarantine(file)
             return
         }
         roots = list
     }
 
     private func save() {
+        guard !retired else { return }
         let snapshot = roots
         // One after another, the newest last (see Disk).
-        Disk.write(Bookmarks.file) { try? JSONEncoder().encode(snapshot) }
+        Disk.write(file) { try? JSONEncoder().encode(snapshot) }
     }
 }
 
@@ -1465,6 +1481,9 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
 
     private var menu: NSMenu? { NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu }
 
+    /// The window in front's: its profile's bookmarks (see Profiles.swift).
+    private var shown: Browser? { Browsers.front.flatMap { $0.extensionPopup == nil ? $0 : nil } ?? browser }
+
     /// Looks, while the menu is open, after each turn of the run loop.
     private var looking: CFRunLoopObserver?
 
@@ -1515,7 +1534,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
     private func fill(_ menu: NSMenu) {
         for item in menu.items where item.tag == Self.mark { menu.removeItem(item) }
         folders = [:]
-        guard let roots = browser?.bookmarks.roots, !roots.isEmpty else { return }
+        guard let roots = shown?.bookmarks.roots, !roots.isEmpty else { return }
         let line = NSMenuItem.separator()
         line.tag = Self.mark
         menu.addItem(line)
@@ -1616,7 +1635,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
 
     @objc private func open(_ item: NSMenuItem) {
         guard let url = item.representedObject as? URL else { return }
-        browser?.openBookmark(url)
+        shown?.openBookmark(url)
     }
 
     /// SwiftUI's delegate, with the bookmarks put in after its update.

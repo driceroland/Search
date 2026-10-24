@@ -216,7 +216,11 @@ final class SiteNotifications: NSObject {
                 return Browser.origin(scheme, host, url.port ?? 0) == origin
             }.map { (browser, $0) }
         }
-        guard let (browser, tab) = found.first(where: { $0.1.store === store }) ?? found.first else { return }
+        // Failing that, a tab of the same profile: never one of another
+        // profile, signed in as someone else (see Profiles.swift).
+        guard let (browser, tab) = found.first(where: { $0.1.store === store })
+            ?? found.first(where: { pair in store.map { s in Spaces.stores(of: pair.0.profileID).contains { $0 === s } } ?? true })
+        else { return }
         browser.select(tab)
         Browsers.show(browser)
         NSApp.activate()

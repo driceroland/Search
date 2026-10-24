@@ -13,7 +13,7 @@ import Foundation
 // Beside the spaces' pins, the ones every space shows first, while Settings ›
 // Tabs › Pins in every space is on: Arc's favourites, above every space.
 // pins.json keeps them under "shared", which 1.0.4 reads as no space and
-// passes over.
+// passes over; another profile's (see Profiles.swift) under "shared:<id>".
 
 struct PinDef: Codable, Equatable {
     var id: UUID
@@ -31,8 +31,9 @@ struct PinDef: Codable, Equatable {
 enum Pins {
     /// Pins by space, in their order.
     private(set) static var bySpace: [UUID: [PinDef]] = [:]
-    /// The pins every space shows before its own (see Browser.reconcilePins).
-    private static var sharedList: [PinDef] = []
+    /// The pins every space of a profile shows before its own (see
+    /// Browser.reconcilePins), by profile.
+    private static var sharedBy: [UUID: [PinDef]] = [:]
     private static var loaded = false
 
     /// A space's pins changed in one window; the others follow.
@@ -48,10 +49,10 @@ enum Pins {
         return bySpace[space] ?? []
     }
 
-    /// The pins every space shows, in their order.
-    static var shared: [PinDef] {
+    /// The pins every space of a profile shows, in their order.
+    static func shared(_ profile: UUID) -> [PinDef] {
         load()
-        return sharedList
+        return sharedBy[profile] ?? []
     }
 
     /// Read once. Before there is a pins.json, the pins are the oldest
@@ -61,7 +62,7 @@ enum Pins {
         loaded = true
         if let data = try? Data(contentsOf: file), let saved = decode(data) {
             bySpace = saved.bySpace
-            sharedList = saved.shared
+            sharedBy = sharedLists(data)
             return
         }
         for space in Spaces.read() {
@@ -90,11 +91,19 @@ enum Pins {
     @discardableResult
     static func setShared(_ defs: [PinDef], from browser: Browser) -> Bool {
         load()
-        guard sharedList != defs else { return false }
-        sharedList = defs
+        let profile = browser.profileID
+        guard (sharedBy[profile] ?? []) != defs else { return false }
+        sharedBy[profile] = defs.isEmpty ? nil : defs
         save()
-        NotificationCenter.default.post(name: changed, object: browser, userInfo: ["shared": true])
+        NotificationCenter.default.post(name: changed, object: browser, userInfo: ["shared": true, "profile": profile])
         return true
+    }
+
+    /// A profile deleted: the pins its spaces all showed go with it.
+    static func forgetShared(of profile: UUID) {
+        load()
+        guard sharedBy.removeValue(forKey: profile) != nil else { return }
+        save()
     }
 
     /// A space deleted: its pins go with it.
@@ -104,8 +113,11 @@ enum Pins {
     }
 
     private static func save() {
-        let bySpace = bySpace, shared = sharedList
-        Disk.write(file) { encode(bySpace: bySpace, shared: shared) }
+        let bySpace = bySpace, all = sharedBy
+        Disk.write(file) {
+            encode(bySpace: bySpace, shared: all[Profile.personalID] ?? [],
+                   others: all.filter { $0.key != Profile.personalID })
+        }
     }
 
     // MARK: - the two lists, worked out
@@ -155,12 +167,24 @@ enum Pins {
         return (bySpace, saved[sharedKey] ?? [])
     }
 
+    /// Every profile's shared pins, Personal's under "shared".
+    nonisolated static func sharedLists(_ data: Data) -> [UUID: [PinDef]] {
+        guard let saved = try? JSONDecoder().decode([String: [PinDef]].self, from: data) else { return [:] }
+        var out: [UUID: [PinDef]] = [:]
+        for (key, defs) in saved where !defs.isEmpty {
+            if key == sharedKey { out[Profile.personalID] = defs }
+            else if key.hasPrefix(sharedKey + ":"), let id = UUID(uuidString: String(key.dropFirst(sharedKey.count + 1))) { out[id] = defs }
+        }
+        return out
+    }
+
     /// No shared pins, no "shared" key: the file stays what it was for
     /// anyone who never turns them on.
-    nonisolated static func encode(bySpace: [UUID: [PinDef]], shared: [PinDef]) -> Data? {
+    nonisolated static func encode(bySpace: [UUID: [PinDef]], shared: [PinDef], others: [UUID: [PinDef]] = [:]) -> Data? {
         var out: [String: [PinDef]] = [:]
         for (space, defs) in bySpace { out[space.uuidString] = defs }
         if !shared.isEmpty { out[sharedKey] = shared }
+        for (profile, defs) in others where !defs.isEmpty { out[sharedKey + ":" + profile.uuidString] = defs }
         return try? JSONEncoder().encode(out)
     }
 }

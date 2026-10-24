@@ -13,8 +13,6 @@ import Combine
 @MainActor
 enum Shared {
     static let prefs = Preferences()
-    static let bookmarks = Bookmarks()
-    static let history = History()
     static let curtain = Curtain()
     static let loot = Loot()
     static let floater = Float()
@@ -178,7 +176,8 @@ final class Browser: NSObject, ObservableObject {
 
     // MARK: - bookmarks
 
-    let bookmarks = Shared.bookmarks
+    /// This window's profile's (see Profiles.swift).
+    let bookmarks: Bookmarks
     /// The full list, for taking things out, in a tab.
     var bookmarking: Bool {
         get { pageTab(.bookmarks) != nil }
@@ -342,7 +341,8 @@ final class Browser: NSObject, ObservableObject {
     /// answers to this string.
     @Published var typed = "" { didSet { guess() } }
 
-    let history = Shared.history
+    /// This window's profile's (see Profiles.swift).
+    let history: History
     /// What the field is offering, best first.
     @Published private(set) var offers: [Suggestion] = []
     /// The rest of the best match, drawn grey after the caret. Tab takes it.
@@ -1333,8 +1333,9 @@ final class Browser: NSObject, ObservableObject {
     /// the point.
     func clearSites() {
         let types = WKWebsiteDataStore.allWebsiteDataTypes()
-        for space in spaces {
-            Spaces.store(for: space.id).removeData(ofTypes: types, modifiedSince: .distantPast) {}
+        // This profile's: another profile is another browser.
+        for store in Spaces.stores(of: profileID) {
+            store.removeData(ofTypes: types, modifiedSince: .distantPast) {}
         }
         announce("Signed out of everything")
     }
@@ -1346,8 +1347,8 @@ final class Browser: NSObject, ObservableObject {
             WKWebsiteDataTypeMemoryCache,
             WKWebsiteDataTypeOfflineWebApplicationCache,
         ]
-        for space in spaces {
-            Spaces.store(for: space.id).removeData(ofTypes: types, modifiedSince: .distantPast) {}
+        for store in Spaces.stores(of: profileID) {
+            store.removeData(ofTypes: types, modifiedSince: .distantPast) {}
         }
         announce("Cache cleared")
     }
@@ -1553,7 +1554,7 @@ final class Browser: NSObject, ObservableObject {
             // One every space shows: out of them all, as unpinning in one
             // window is out of every window.
             tab.everywhere = false
-            Pins.setShared(Pins.shared.filter { $0.id != id }, from: self)
+            Pins.setShared(Pins.shared(profileID).filter { $0.id != id }, from: self)
             for space in Array(parked.keys) { pinsChanged(in: space) }
         }
         tab.pin = nil
@@ -1889,9 +1890,12 @@ final class Browser: NSObject, ObservableObject {
     private var remembering = false
     /// Spaces (see Spaces.swift): every one, the one on screen, and the
     /// rows of tabs of the others.
-    @Published var spaces = Spaces.read() {
-        didSet { Spaces.sharing = Set(spaces.filter { $0.sharesSignIns == true }.map(\.id)) }
-    }
+    /// The window's profile's spaces only: another profile's never show
+    /// here (see Profiles.swift).
+    @Published var spaces: [Space]
+    /// The profile this window is in, for its whole life: its spaces, its
+    /// sign-ins, its history and bookmarks.
+    let profileID: UUID
     @Published var spaceID = Space.firstID
     var parked: [UUID: Parked] = [:]
     /// How far the column's rows have followed two fingers sideways, and
@@ -1948,10 +1952,21 @@ final class Browser: NSObject, ObservableObject {
     /// `record`: another window's, from windows.json or ⇧⌘T, or a new
     /// window's, empty.
     init(record: WindowRecord?) {
+        // The profile of the space the window shows: the one it was in, or
+        // the space the app was last in, for the first window.
+        let shown = record?.space ?? Store.settings.string(forKey: "space.current").flatMap(UUID.init) ?? Space.firstID
+        let profile = Spaces.profile(of: shown)
+        profileID = profile
+        spaces = Spaces.read(profile: profile)
+        history = Profiles.history(profile)
+        bookmarks = Profiles.bookmarks(profile)
+        spaceID = Spaces.read(profile: profile).first?.id ?? Space.firstID
         super.init()
         let first = !Browser.booted
         Browser.booted = true
-        usesFiles = record == nil
+        // The session files of a profile are its oldest window's: the first
+        // window's, and a window of a profile no open window is in.
+        usesFiles = record == nil || !Browsers.all.contains { $0.profileID == profile && $0.usesFiles && $0.extensionPopup == nil }
         if first {
             Shield.shared.enabled = prefs.shielded
             Shield.shared.compile()
@@ -2010,7 +2025,11 @@ final class Browser: NSObject, ObservableObject {
         NotificationCenter.default.publisher(for: Pins.changed)
             .sink { [weak self] note in
                 guard let self, (note.object as? Browser) !== self else { return }
-                if note.userInfo?["shared"] as? Bool == true { return sharedPinsChanged() }
+                if note.userInfo?["shared"] as? Bool == true {
+                    // Another profile's are nothing to this window.
+                    guard (note.userInfo?["profile"] as? UUID) == profileID else { return }
+                    return sharedPinsChanged()
+                }
                 guard let space = note.userInfo?["space"] as? UUID else { return }
                 pinsChanged(in: space)
             }
@@ -2020,9 +2039,12 @@ final class Browser: NSObject, ObservableObject {
         // another window is so here too.
         NotificationCenter.default.publisher(for: Spaces.changed)
             .sink { [weak self] note in
-                guard let self, let list = note.object as? [Space], list != spaces else { return }
+                guard let self, let all = note.object as? [Space] else { return }
+                // This profile's alone, its first space first.
+                let list = Spaces.read(profile: profileID)
+                guard list != spaces, !list.isEmpty, all.contains(where: { $0.id == list[0].id }) else { return }
                 spaces = list
-                if !list.contains(where: { $0.id == self.spaceID }) { switchSpace(to: Space.firstID) }
+                if !list.contains(where: { $0.id == self.spaceID }) { enter(list[0].id) }
             }
             .store(in: &bag)
 
@@ -2038,17 +2060,25 @@ final class Browser: NSObject, ObservableObject {
             closeLeftAlone()
         }
 
-        Spaces.sharing = Set(spaces.filter { $0.sharesSignIns == true }.map(\.id))
         if let record {
             // Another window: the space it showed, and its own rows.
             self.record = record
             if prefs.usesSpaces, spaces.contains(where: { $0.id == record.space }) { spaceID = record.space }
-        } else if prefs.usesSpaces, let last = Store.settings.string(forKey: "space.current").flatMap(UUID.init),
-           spaces.contains(where: { $0.id == last }) {
+            // The first window of its profile this run: its rows, if it
+            // brought any (⇧⌘T, last launch's windows.json), are the
+            // profile's session files from now on; a new one reads them.
+            if usesFiles {
+                for (key, row) in record.rows {
+                    guard let space = UUID(uuidString: key), spaces.contains(where: { $0.id == space }) else { continue }
+                    Session.write(now: true, space: space, row)
+                }
+                self.record.rows = [:]
+            }
+        } else if prefs.usesSpaces, spaces.contains(where: { $0.id == shown }) {
             // The space you were in, when there are spaces (see Spaces.swift).
-            spaceID = last
-            Spaces.current = last
+            spaceID = shown
         }
+        if record == nil { Spaces.current = spaceID }
         restoreSession()
         if prefs.usesSpaces { preloadSpaces() }
     }
@@ -2395,7 +2425,7 @@ final class Browser: NSObject, ObservableObject {
     /// then by place.
     func reconcilePins(_ row: [Tab], space: UUID) -> [Tab] {
         let showing = prefs.showsSharedPins
-        let shared = showing ? Pins.shared : []
+        let shared = showing ? Pins.shared(profileID) : []
         let sharedIDs = Set(shared.map(\.id))
         let defs = Pins.row(own: Pins.defs(space), shared: shared, showing: showing)
         var pinned = row.filter { $0.pin != nil && !$0.shy }
@@ -2480,7 +2510,7 @@ final class Browser: NSObject, ObservableObject {
         guard prefs.showsSharedPins, tab.pin != nil, !tab.everywhere, !tab.shy else { return }
         writeSession(now: true)
         guard let id = tab.pinID else { return }
-        let moved = Pins.share(id, own: Pins.defs(spaceID), shared: Pins.shared)
+        let moved = Pins.share(id, own: Pins.defs(spaceID), shared: Pins.shared(profileID))
         // The shared list first: in between, the pin is in both lists, which
         // Pins.row counts once, so every other window keeps its tab for it.
         // The other way round it was in neither, and they closed theirs.
@@ -2494,7 +2524,7 @@ final class Browser: NSObject, ObservableObject {
     /// first among its own. The other spaces close theirs.
     func keepHere(_ tab: Tab) {
         guard tab.everywhere, let id = tab.pinID else { return }
-        let moved = Pins.unshare(id, own: Pins.defs(spaceID), shared: Pins.shared)
+        let moved = Pins.unshare(id, own: Pins.defs(spaceID), shared: Pins.shared(profileID))
         Pins.set(spaceID, moved.own, from: self)
         Pins.setShared(moved.shared, from: self)
         sharedPinsChanged()
@@ -2515,27 +2545,51 @@ final class Browser: NSObject, ObservableObject {
         var made = 0, pins = 0, added = 0
         // Every address this brings in, for its icon below.
         var brought: [URL] = []
-        var targets: [(id: UUID, space: ArcSidebar.Space?)] = []
+        var targets: [(id: UUID, space: ArcSidebar.Space?, profile: UUID)] = []
+        // Arc's profiles become Search's (see Profiles.swift): its first,
+        // "Default", is this window's; each other one a profile of the same
+        // name, made if there is none, with its spaces in it, signed in
+        // with that profile's own cookies.
+        let others = Set(sidebar.spaces.map(\.profile)).subtracting(["Default"])
+        let named = others.isEmpty ? [:] : Arc.profileNames()
+        var profileFor: [String: UUID] = ["Default": profileID]
+        for folder in others.sorted() {
+            let name = named[folder] ?? folder
+            if let same = Profiles.shared.list.first(where: { $0.id != profileID && $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }) {
+                profileFor[folder] = same.id
+            } else {
+                let home = sidebar.spaces.first { $0.profile == folder }
+                    .map { Space(id: UUID(), name: $0.name, colour: 0, icon: $0.symbol, sharesSignIns: true) }
+                profileFor[folder] = Profiles.shared.add(named: name, home: home).id
+                // Its first space, made with it, is a space this brought in.
+                if home != nil { made += 1 }
+            }
+        }
         if sidebar.spaces.count > 1 || (prefs.usesSpaces && !sidebar.spaces.isEmpty) {
             if !prefs.usesSpaces { prefs.usesSpaces = true }
-            var list = spaces
+            var all = Spaces.read()
             for arc in sidebar.spaces {
-                if let same = list.first(where: { $0.name.localizedCaseInsensitiveCompare(arc.name) == .orderedSame }) {
-                    targets.append((same.id, arc))
+                let profile = profileFor[arc.profile] ?? profileID
+                let mine = all.filter { $0.profileID == profile }
+                if let same = mine.first(where: { $0.name.localizedCaseInsensitiveCompare(arc.name) == .orderedSame }) {
+                    targets.append((same.id, arc, profile))
                 } else {
-                    let space = Space(id: UUID(), name: arc.name, colour: 0, icon: arc.symbol,
-                                      sharesSignIns: arc.profile == "Default")
-                    list.append(space)
-                    targets.append((space.id, arc))
+                    let space = Space(id: UUID(), name: arc.name, colour: 0, icon: arc.symbol, sharesSignIns: true,
+                                      profile: profile == Profile.personalID ? nil : profile)
+                    all.append(space)
+                    targets.append((space.id, arc, profile))
                     made += 1
                 }
             }
-            if made > 0 {
-                spaces = list
-                Spaces.write(list)
+            if all.count != Spaces.read().count {
+                Spaces.write(all)
+                spaces = Spaces.read(profile: profileID)
             }
+        } else if let arc = sidebar.spaces.first, let profile = profileFor[arc.profile], profile != profileID {
+            // A lone space of another Arc profile: that profile's first space.
+            targets = [(Profiles.shared.profile(profile).home, arc, profile)]
         } else {
-            targets = [(spaceID, sidebar.spaces.first)]
+            targets = [(spaceID, sidebar.spaces.first, profileID)]
         }
         for target in targets {
             var defs = Pins.defs(target.id)
@@ -2576,8 +2630,17 @@ final class Browser: NSObject, ObservableObject {
                 pins += 1
             }
             Pins.set(target.id, defs, from: self)
-            pinsChanged(in: target.id)
-            added += takeAsleep(rows.isEmpty ? pinned : pinned.filter { $0.folder != nil }, into: target.id)
+            let pages = rows.isEmpty ? pinned : pinned.filter { $0.folder != nil }
+            if target.profile == profileID {
+                pinsChanged(in: target.id)
+                added += takeAsleep(pages, into: target.id)
+            } else if let owner = Browsers.all.first(where: { $0.profileID == target.profile && $0.usesFiles }) {
+                // Another profile's window holds that space's row.
+                owner.pinsChanged(in: target.id)
+                added += owner.takeAsleep(pages, into: target.id)
+            } else {
+                added += takeAsleep(pages, into: target.id, files: true)
+            }
         }
         adoptIcons(for: brought, from: source, profile: profile)
         return (made, pins, added)
@@ -2647,7 +2710,9 @@ final class Browser: NSObject, ObservableObject {
     /// With tab groups on, a page from one of Arc's folders goes into the
     /// group of that name in the space, made if there is none; with them
     /// off, the folders stay opened out. Groups are never turned on here.
-    private func takeAsleep(_ items: [(item: ArcSidebar.Item, folder: String?)], into space: UUID) -> Int {
+    /// `files`: a space of another profile no window is in, its row written
+    /// straight into the profile's session file.
+    private func takeAsleep(_ items: [(item: ArcSidebar.Item, folder: String?)], into space: UUID, files: Bool = false) -> Int {
         func asleep(_ item: ArcSidebar.Item) -> Tab {
             let tab = Tab(configuration: Web.configuration(space: space))
             prepare(tab)
@@ -2669,6 +2734,18 @@ final class Browser: NSObject, ObservableObject {
             let made = TabGroup(id: UUID(), name: folder, collapsed: false)
             groups.append(made)
             return made.id
+        }
+        if files {
+            var saved = Session.read(space: space)
+            var groups = saved.groups ?? []
+            let new = fresh(saved.tabs.map(\.url))
+            saved.tabs += new.map { page in
+                Session.Entry(url: page.item.url.absoluteString, title: page.item.title,
+                              groupID: group(page.folder, in: &groups))
+            }
+            saved.groups = groups
+            Session.write(now: true, space: space, saved)
+            return new.count
         }
         if space == spaceID {
             let new = fresh(tabs.compactMap { ($0.pending ?? $0.address)?.absoluteString })
@@ -2749,15 +2826,33 @@ final class Browser: NSObject, ObservableObject {
     /// into the session files, every space's — an empty row where it has
     /// none, or the closed window's would come back there.
     func becomePrimary() {
+        takeFiles()
+        Store.settings.set(spaceID.uuidString, forKey: "space.current")
+        // SwiftUI's window, opened next launch, comes back where this one is.
+        window?.saveFrame(usingName: Browsers.sceneID)
+    }
+
+    /// The oldest window of its profile closed: this one's rows go into the
+    /// profile's session files, every space's — an empty row where it has
+    /// none, or the closed window's would come back there.
+    func takeFiles() {
+        guard !usesFiles else { return }
         let rows = allRows()
         usesFiles = true
         for space in spaces {
             Session.write(now: true, space: space.id, rows[space.id.uuidString] ?? Session.Shape(tabs: [], active: 0))
         }
         record.rows = [:]
-        Store.settings.set(spaceID.uuidString, forKey: "space.current")
-        // SwiftUI's window, opened next launch, comes back where this one is.
-        window?.saveFrame(usingName: Browsers.sceneID)
+    }
+
+    /// The last window of its profile closing, others open: its rows stay
+    /// in the profile's files, written now, and nothing it does from here on
+    /// touches them — the next window of the profile opens with its tabs.
+    func leaveFiles() {
+        guard usesFiles else { return }
+        flushSession()
+        record.rows = allRows()
+        usesFiles = false
     }
 
     /// Its window closed for good, with others open: every page let go.
@@ -3762,7 +3857,9 @@ final class Browser: NSObject, ObservableObject {
     /// already in every window.
     func moveToWindow(_ tab: Tab, _ target: Browser?, at point: NSPoint? = nil) {
         guard tab.pin == nil, !tab.bench, target !== self, tabs.contains(where: { $0.id == tab.id }),
-              target != nil || tabs.count > 1 || !tab.isBlank
+              target != nil || tabs.count > 1 || !tab.isBlank,
+              // A window of another profile is another browser: never there.
+              target.map({ $0.profileID == profileID }) ?? true
         else { return }
         let destination = target ?? Browser(record: WindowRecord(space: spaceID))
         detach(tab)
@@ -3788,7 +3885,7 @@ final class Browser: NSObject, ObservableObject {
         guard tab.pin == nil, !tab.bench, let window,
               !window.frame.insetBy(dx: -12, dy: -12).contains(point)
         else { return false }
-        let over = Browsers.all.first { $0 !== self && $0.isOpen && $0.window?.frame.contains(point) == true }
+        let over = Browsers.all.first { $0 !== self && $0.isOpen && $0.profileID == profileID && $0.window?.frame.contains(point) == true }
         guard over != nil || tabs.count > 1 else { return false }
         // After the drag has let go, not inside it.
         DispatchQueue.main.async { [weak self] in self?.moveToWindow(tab, over, at: point) }
@@ -5101,7 +5198,7 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         // "red": Reddit's search, a Tab away.
-        let site = prefs.searchesSites && !summoning ? SiteSearch.match(typed) : nil
+        let site = prefs.searchesSites && !summoning ? SiteSearch.match(typed, learnedToo: profileID == Profile.personalID) : nil
         if siteOffer != site { siteOffer = site }
 
         (offers, ending) = placeOffers(for: typed)
@@ -6368,7 +6465,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         history.record(url, title: tab.title)
         // A site's home page that says where its search is (OpenSearch):
         // with Search a site on, it joins the list (see SiteSearch.learn).
-        if prefs.searchesSites, url.scheme == "https", url.path.isEmpty || url.path == "/" {
+        if prefs.searchesSites, profileID == Profile.personalID, url.scheme == "https", url.path.isEmpty || url.path == "/" {
             webView.evaluateInSearch(SiteSearch.lookup) { value in
                 guard let text = value as? String, let description = URL(string: text) else { return }
                 MainActor.assumeIsolated { SiteSearch.learn(from: url, description: description) }

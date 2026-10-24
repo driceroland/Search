@@ -4650,8 +4650,10 @@ enum ExtensionShims {
             "webSQL": [WKWebsiteDataTypeWebSQLDatabases], "fileSystems": [WKWebsiteDataTypeFileSystem],
         ]
         for (key, on) in what where on { types.formUnion(map[key] ?? []) }
-        let store = Store.websites
-        if !types.isEmpty {
+        // The window's profile's sites: its spaces' stores, never another
+        // profile's (see Profiles.swift).
+        let stores = Spaces.stores(of: browser.profileID)
+        for store in stores where !types.isEmpty {
             if let origins {
                 let records = await store.dataRecords(ofTypes: types)
                 let hit = records.filter { record in origins.contains { $0 == record.displayName || $0.hasSuffix("." + record.displayName) } }

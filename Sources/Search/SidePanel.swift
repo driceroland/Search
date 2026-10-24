@@ -121,6 +121,13 @@ extension Browser {
         showSiteInPanel(last ?? PanelSites.offered[0].url)
     }
 
+    /// The store this window's tabs use in `space`: that space's, inside the
+    /// window's profile (Spaces.store), or the profile's own for a space it
+    /// doesn't list. Never another profile's, whatever Spaces.current is.
+    func panelStore(_ space: UUID) -> WKWebsiteDataStore {
+        spaces.contains(where: { $0.id == space }) ? Spaces.store(for: space) : Profiles.store(profileID)
+    }
+
     /// The tab's page into the side panel, from the tab's menu. Not a
     /// private tab's: the panel is signed in as the space is.
     func openInSidePanel(_ tab: Tab) {
@@ -238,7 +245,9 @@ final class SidePanelPages: NSObject {
     /// private tab's store. No window opens from it without a click.
     func loadSite(_ url: URL, space: UUID, in browser: Browser) {
         drop(in: browser)
-        let configuration = Web.configuration(space: space)
+        // The window's profile's store for that space: signed in where
+        // this window's tabs are, never another profile's.
+        let configuration = Web.configuration(space: space, store: browser.panelStore(space))
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 380, height: 600), configuration: configuration)
         let delegate = SitePanelDelegate(browser: browser)

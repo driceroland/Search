@@ -729,6 +729,7 @@ private struct SideFoot: View {
 
     var body: some View {
         HStack(spacing: 2) {
+            if Profiles.shared.several { ProfileBadge(browser: browser) }
             if prefs.usesSpaces { SpaceDot(browser: browser) }
             ExtensionSlot(edge: .trailing, room: room)
             BookmarkDoor(browser: browser, arrowEdge: .trailing)
@@ -746,6 +747,7 @@ private struct SideFoot: View {
         let door: CGFloat = 26 + 2
         var kept = 2  // the puzzle and bookmarks
         if prefs.usesSpaces { kept += 1 }
+        if Profiles.shared.several { kept += 1 }
         if FetchDoor.shows(fetches, prefs) { kept += 1 }
         let free = prefs.sideWidth - 2 * 10 + 2 - CGFloat(kept) * door
         return max(0, Int((free / door).rounded(.down)))
