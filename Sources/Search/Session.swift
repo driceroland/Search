@@ -102,6 +102,9 @@ enum Session {
 
     static func read(space: UUID = Space.firstID) -> Shape {
         let file = file(space)
+        // A row written in the background a moment ago (a space just left,
+        // see Browser.enter) is read as written.
+        Disk.settle(file)
         guard let data = try? Data(contentsOf: file) else { return Shape(tabs: [], active: 0) }
         guard let shape = try? JSONDecoder().decode(Shape.self, from: data) else {
             // A file that's there but won't decode is not the same as no
