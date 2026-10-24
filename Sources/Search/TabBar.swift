@@ -1656,6 +1656,10 @@ struct Ring: NSViewRepresentable {
             turn.toValue = -2 * Double.pi
             turn.duration = 0.85
             turn.repeatCount = .infinity
+            // Sixty turns of a frame a second are as smooth as a ring this
+            // small gets. Asked for no more, a ProMotion screen can drop
+            // from 120 while a page loads and nothing else moves.
+            turn.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
             ring.add(turn, forKey: "turn")
         }
     }
