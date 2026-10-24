@@ -265,7 +265,14 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         },
         // Whether there is still a sign-in on the page. Asked after a
         // password went out, to tell a sign-in that took from one refused.
-        hasPassword: function () { return !!pair(); }
+        hasPassword: function () { return !!pair(); },
+        // A form the browser has just seen go out. Sent from the page's
+        // script — form.submit() fires no submit event, and the link or
+        // timer that called it is no button — nothing below heard it.
+        // Unless something did a moment ago: a page that swaps the
+        // password for a hash of it before sending would have the hash
+        // saved instead.
+        sent: function () { if (Date.now() - offered > 2000) offer(); }
       };
 
       // What is in the boxes when they are sent. Said every time — a click
@@ -275,15 +282,20 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // A first step says the name it is sending: the page after it asks
       // for the password alone, and the name is what the browser saves it
       // under.
+      var offered = 0;
       function offer() {
         var both = pair();
         if (!both) {
           var box = named();
           var name = box ? box.value.trim() : '';
-          if (name) window.webkit.messageHandlers.officeForms.postMessage({ kind: 'name', user: name });
+          if (name) {
+            offered = Date.now();
+            window.webkit.messageHandlers.officeForms.postMessage({ kind: 'name', user: name });
+          }
           return;
         }
         if (!both.pass.value) return;
+        offered = Date.now();
         window.webkit.messageHandlers.officeForms.postMessage({
           kind: 'submit',
           user: both.user ? both.user.value : '',
