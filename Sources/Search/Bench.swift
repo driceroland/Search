@@ -1510,7 +1510,9 @@ final class Bench {
             // passwords out of the keychain (the test world's own, by label).
             guard Store.testing else { answer(["error": "passwords only works on a --test run"]); return }
             if let filter = request["filter"] as? String { browser.hunting = filter }
-            browser.relist()
+            // "shown": the list as the page holds it now, not read again,
+            // so a route to the page that never read it shows as empty.
+            if request["shown"] as? Bool != true { browser.relist() }
             if request["remove"] as? Bool == true { browser.forgetShown() }
             // Answered once the removals, off the main thread, are done.
             func settled() {
@@ -1591,6 +1593,27 @@ final class Bench {
                             "active": browser.active?.address?.absoluteString ?? "", "picture": shot])
                 }
             }
+
+        case "settings":
+            // Settings as SettingsIndex has it (Tests/settings_layout.py):
+            // every row with its section, group and keys; what Find a
+            // setting finds for some words; a merged control moved as its
+            // row moves it; the merged values read back. Test runs only.
+            guard Store.testing else { answer(["error": "settings only works on a --test run"]); return }
+            if let id = request["set"] as? String {
+                guard let value = request["value"], SettingsIndex.apply(id, value, to: browser.prefs) else {
+                    answer(["error": "settings set ID VALUE: unknown id or value"]); return
+                }
+            }
+            var reply: [String: Any] = ["values": SettingsIndex.values(browser.prefs),
+                                        "settingsPage": browser.settingsPage.rawValue]
+            if let words = request["find"] as? String {
+                reply["found"] = SettingsIndex.find(words).map(SettingsIndex.describe)
+            } else {
+                reply["items"] = SettingsIndex.items.map(SettingsIndex.describe)
+                reply["pages"] = SettingsPanel.Page.blocks.flatMap { $0 }.map(\.rawValue)
+            }
+            answer(reply)
 
         case "menus":
             // Every menu of the menu bar, by title, after SwiftUI has filled
@@ -3303,7 +3326,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }

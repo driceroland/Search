@@ -30,11 +30,13 @@ def wander(id, to):
     sv.cmd({"do": "go", "id": id, "url": f"{sv.BASE}/{to}"}); sv.cmd({"do": "wait", "id": id}); time.sleep(0.3)
 
 try:
-    sv.setup(sidebar=True); sv.launch()
+    # Off, as some will have it: "Pins keep their site" is on by default
+    # since 24 Oct 2026, and an explicit off on both its keys stands.
+    sv.setup(sidebar=True, **{"pins.home": False, "pins.peek": False}); sv.launch()
     a = sv.page("a"); sv.page("b")
     pin(a)
 
-    # Off, as it always was: the pin keeps wherever it was taken.
+    # Off: the pin keeps wherever it was taken.
     wander(a, "elsewhere")
     sv.sp("close", id=a); st = sv.sp("state")
     t.ok("off: ⌘W puts a pin down where it was", last(tab(st, a)["url"]) == "elsewhere", tab(st, a)["url"])
