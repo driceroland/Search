@@ -1659,6 +1659,59 @@ final class Bench {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { settled(tries + 1) }
             }
             settled(0)
+        case "translate":
+            // Translate Page on a tab, as its menu does, answered once the
+            // first pass is in (what it measured); original puts it back;
+            // state is the tab's sign, its frames, the last page menu and
+            // the languages always translated; always/never LANG are the
+            // sign's Always Translate. Changing anything: test runs only.
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            let action = request["action"] as? String ?? "start"
+            guard Store.testing || ["state", "start", "original"].contains(action) else {
+                answer(["error": "translate \(action) only works on a --test run"]); return
+            }
+            let state: () -> [String: Any] = {
+                var mark: [String: Any] = [:]
+                if let m = tab.translation {
+                    mark = ["from": m.from ?? "", "to": m.to]
+                    switch m.phase {
+                    case .working: mark["phase"] = "working"
+                    case .done: mark["phase"] = "done"
+                    case .failed(let message): mark["phase"] = "failed"; mark["message"] = message
+                    }
+                }
+                return [
+                    "enabled": PageTranslator.enabled, "available": PageTranslator.available,
+                    "mark": mark, "running": tab.translator != nil, "frames": tab.translateFrames.count,
+                    "report": tab.translator?.report ?? [:], "menu": tab.built?.translateItem()?.title ?? "",
+                    "always": browser.prefs.translateAlways.sorted(), "tabAlways": tab.translateLanguages.sorted(),
+                    "wake": tab.translateOnWake?.to ?? "", "shy": tab.shy,
+                ]
+            }
+            switch action {
+            case "original":
+                tab.translator?.end(restore: true)
+                answer(state())
+            case "state":
+                answer(state())
+            case "toggle":
+                // What choosing the page menu's item does.
+                guard let item = tab.built?.translateItem() else { answer(["error": "no Translate Page item"]); return }
+                tab.built?.perform(item.action, with: item)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { answer(state()) }
+            case "always", "never":
+                guard let code = request["lang"] as? String else { answer(["error": "translate always|never LANG"]); return }
+                tab.setAlwaysTranslates(code, action == "always")
+                answer(state())
+            default:
+                let target = (request["lang"] as? String).map(Locale.Language.init(identifier:)) ?? PageTranslator.reader
+                if PageTranslator.start(tab, to: target, done: { report in
+                    var reply = state()
+                    reply["report"] = report
+                    answer(reply)
+                }) == nil { return }
+            }
+
         case "visible":
             // Refused: it lent the tab to a window of its own, off every
             // screen, so that WebKit would count the page as seen. No bench
@@ -3106,7 +3159,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate",
             ]])
         }
     }
