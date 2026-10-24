@@ -1529,11 +1529,6 @@ final class Browser: NSObject, ObservableObject {
         announce("History cleared")
     }
 
-    /// The last few places, for the History menu.
-    var recentlyVisited: [History.Trace] {
-        history.recent()
-    }
-
     // MARK: - the camera and the microphone
 
     /// A page asking to see or hear you, waiting for an answer. WebKit hands
@@ -2258,11 +2253,10 @@ final class Browser: NSObject, ObservableObject {
         // Asked to stay out of the way: it starts that way (see Fold.swift).
         folded = prefs.sidebar && prefs.sideHides
 
-        // The History menu lists what the history holds, and the menu is drawn
-        // from this object's changes — so the history's are passed on.
-        history.objectWillChange
-            .sink { [weak self] in self?.objectWillChange.send() }
-            .store(in: &bag)
+        // The History menu watches its few places itself (RecentPlaces), so
+        // the history's changes are not passed on. The Bookmarks menu's Add
+        // This Page or Edit Bookmark is drawn from this object's changes, and
+        // bookmarks change only when you change them, so theirs are.
         bookmarks.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &bag)
