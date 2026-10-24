@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- One letter in the address field finishes the site you go to most that starts with it, as in Safari and Chrome: "x" and Return go to x.com. Only the top row, and only a site you have been to; a page inside a site, or a letter inside a name, still waits for a second letter. Thanks [@murahovsky](https://github.com/murahovsky) for reporting ([#696](https://github.com/driceroland/Search/issues/696))
+
 ### Held back
 
 Not in this version, kept on main for a later one:

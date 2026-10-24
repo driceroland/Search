@@ -369,10 +369,17 @@ final class History: ObservableObject {
     /// What the field should draw greyed out after the caret: the rest of the
     /// best match, or nothing if it doesn't carry on from what was typed.
     func completion(for typed: String, among options: [Suggestion]) -> String? {
-        guard !typed.isEmpty, typed.count >= 2 else { return nil }
-        for option in options {
+        guard !typed.isEmpty else { return nil }
+        // One letter finishes only the top row, and only when it is the
+        // front door of a site you have been to: "x" becomes x.com, as in
+        // Safari and Chrome (#696). A room inside a site, a name the app
+        // merely knows, or a lower row waits for a second letter.
+        let single = typed.count == 1
+        if single, let first = options.first?.kind, first != .visited { return nil }
+        for option in single ? Array(options.prefix(1)) : options {
             for (key, target) in History.endings(of: option) {
                 guard key.count >= typed.count else { continue }
+                if single, key.contains("/") || key.contains("?") || key.contains("#") { continue }
                 let prefix = String(key.prefix(typed.count))
                 guard prefix.caseInsensitiveCompare(typed) == .orderedSame else { continue }
                 let rest = String(key.dropFirst(typed.count))
