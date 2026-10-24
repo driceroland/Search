@@ -8,17 +8,20 @@ import WebKit
 // real click on the page, and nothing the app does counts as one. Chromium is
 // looser, which is why this works elsewhere and refused here.
 //
-// So the engine is not asked. The page itself is moved: everything but the
-// video is made invisible, the video is stretched to fill the viewport, and the
-// whole web view is lifted out of the window and into a small floating one. The
-// video never stops, because it is the same page it always was — it has only
-// changed windows.
+// So the page itself is moved. A fully visible video keeps its page's geometry
+// inside a native crop; players needing layout or clipping repairs use the
+// viewport-fitting path. Both move the same live web view into a small floating
+// window without replacing the page or its media session.
 
 @MainActor
 final class Float {
     private var panel: NSPanel?
     private var controls: Controls?
     private weak var page: NSView?
+    private var sourceFrame = NSRect.zero
+    private var sourceAutoresizing: NSView.AutoresizingMask = []
+    private var sourceMagnification = true
+    private var cropped = false
 
     /// Asked to go away. The browser does the bookkeeping and calls back into
     /// `drop` — there is one way this window closes, and it is not this class
@@ -38,6 +41,29 @@ final class Float {
     private var ticker: Timer?
 
     var showing: Bool { panel != nil }
+
+    func holds(_ view: NSView) -> Bool { showing && page === view }
+
+    /// A measurement belongs to the current, unmagnified source viewport.
+    /// Snapshot and script replies can arrive after the source was resized.
+    static func cropRect(picture: [Double], viewport: [Double], for web: WKWebView) -> NSRect? {
+        let zoom = web.pageZoom
+        guard picture.count == 4, viewport.count == 2,
+              (picture + viewport + [zoom, web.magnification]).allSatisfy(\.isFinite),
+              zoom > 0, abs(web.magnification - 1) < 0.001,
+              abs(viewport[0] * zoom - web.bounds.width) <= zoom,
+              abs(viewport[1] * zoom - web.bounds.height) <= zoom else { return nil }
+        let rect = NSRect(x: picture[0] * zoom, y: picture[1] * zoom,
+                          width: picture[2] * zoom, height: picture[3] * zoom)
+        return validCrop(rect, in: web.bounds.size)
+    }
+
+    private static func validCrop(_ rect: NSRect, in size: NSSize) -> NSRect? {
+        guard [rect.origin.x, rect.origin.y, rect.size.width, rect.size.height].allSatisfy(\.isFinite),
+              rect.size.width > 0, rect.size.height > 0,
+              NSRect(origin: .zero, size: size).contains(rect) else { return nil }
+        return rect
+    }
 
     /// Over the page while it is still laid out for the tab it came from: the
     /// video's last frame there, or the window's black where there is none.
@@ -96,11 +122,17 @@ final class Float {
     /// `still`: the video as it was in its tab, cut out of a picture of the
     /// page (see `still(of:picture:page:)`), shown until the page is laid out
     /// at this window's size.
-    func lift(_ page: NSView, still: NSImage? = nil) {
+    func lift(_ page: NSView, still: NSImage? = nil, videoRect: NSRect? = nil) {
         guard panel == nil else { return }
         self.page = page
+        sourceFrame = page.frame
+        sourceAutoresizing = page.autoresizingMask
+        sourceMagnification = (page as? WKWebView)?.allowsMagnification ?? true
 
-        let size = NSSize(width: 440, height: 247)
+        let crop = videoRect.flatMap { Self.validCrop($0, in: page.bounds.size) }
+        cropped = crop != nil
+
+        let size = NSSize(width: 440, height: crop.map { 440 * $0.height / $0.width } ?? 247)
         let screen = NSScreen.main?.visibleFrame ?? .zero
         // Where it was last, at the size it was, if a screen still shows it;
         // otherwise the bottom right of this one.
@@ -110,6 +142,16 @@ final class Float {
             width: size.width,
             height: size.height
         )
+        if crop != nil {
+            spot.size.height = spot.width * size.height / size.width
+            // A portrait video may no longer fit at the remembered position.
+            if !NSScreen.screens.contains(where: { $0.visibleFrame.contains(spot) }) {
+                if spot.height > screen.height, screen.height > 0 {
+                    spot.size = NSSize(width: screen.height * size.width / size.height, height: screen.height)
+                }
+                spot.origin = NSPoint(x: screen.maxX - spot.width - 24, y: screen.minY + 24)
+            }
+        }
         if let away = Float.benchAway { spot.origin = away }
 
         let panel = Panel(
@@ -149,7 +191,7 @@ final class Float {
             keep(NSWindow.didEndLiveResizeNotification, panel),
             keep(NSApplication.willTerminateNotification, NSApp),
         ]
-        panel.minSize = NSSize(width: 260, height: 146)
+        panel.minSize = NSSize(width: 260, height: crop.map { 260 * $0.height / $0.width } ?? 146)
 
         // At the size the window opens at. Built at the default size and
         // then stretched to a remembered one, the page was laid out twice,
@@ -168,9 +210,20 @@ final class Float {
         (page as? WKWebView)?.allowsMagnification = false
 
         page.removeFromSuperview()
-        page.frame = ground.bounds
-        page.autoresizingMask = [.width, .height]
-        ground.addSubview(page)
+        if let crop {
+            // Scale a native ancestor, leaving WebKit's viewport and separately
+            // hosted video layer at their original sizes even while resizing.
+            let viewport = VideoViewport(frame: ground.bounds, videoSize: crop.size)
+            viewport.autoresizingMask = [.width, .height]
+            page.autoresizingMask = []
+            page.setFrameOrigin(NSPoint(x: -crop.minX, y: crop.maxY - page.frame.height))
+            viewport.addSubview(page)
+            ground.addSubview(viewport)
+        } else {
+            page.frame = ground.bounds
+            page.autoresizingMask = [.width, .height]
+            ground.addSubview(page)
+        }
 
         // WebKit takes a moment to lay a page out at a new size, a third of
         // a second for YouTube's, and shows the layout it had meanwhile. The
@@ -206,7 +259,8 @@ final class Float {
         // stops answering does not leave the window frozen.
         if let web = page as? WKWebView {
             let zoom = max(web.pageZoom, 0.1)
-            web.evaluateInSearch(Isolate.fits(width: spot.width / zoom, height: spot.height / zoom))
+            let viewport = crop == nil ? spot.size : sourceFrame.size
+            web.evaluateInSearch(Isolate.fits(width: viewport.width / zoom, height: viewport.height / zoom))
             settling.watch(web, within: 0.8) { [weak self] in self?.uncover() }
         } else {
             uncover()
@@ -221,7 +275,7 @@ final class Float {
                 // and rather than hunt every path that could, this makes it
                 // impossible for the empty black rectangle to outlive it by
                 // more than half a second.
-                if self.page?.superview !== ground {
+                if self.page?.isDescendant(of: ground) != true {
                     self.onClose?()
                     return
                 }
@@ -273,8 +327,13 @@ final class Float {
         keeping = []
         ticker?.invalidate()
         ticker = nil
-        (page as? WKWebView)?.allowsMagnification = true
+        (page as? WKWebView)?.allowsMagnification = sourceMagnification
         page?.removeFromSuperview()
+        // Fitting pages keep main's return order: Isolate.off is asked while
+        // they are still small, and the stage supplies the destination size.
+        if cropped { page?.frame = sourceFrame }
+        page?.autoresizingMask = sourceAutoresizing
+        cropped = false
         page = nil
         controls = nil
         panel.orderOut(nil)
@@ -293,6 +352,28 @@ final class Float {
         }, completionHandler: {
             cover.removeFromSuperview()
         })
+    }
+
+    /// A fixed crop in source-page points, composited at the panel's size.
+    /// Changing the window's frame never changes the web view's viewport.
+    private final class VideoViewport: NSView {
+        private let videoSize: NSSize
+
+        init(frame: NSRect, videoSize: NSSize) {
+            self.videoSize = videoSize
+            super.init(frame: frame)
+            wantsLayer = true
+            layer?.masksToBounds = true
+            setBoundsSize(videoSize)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            setBoundsSize(videoSize)
+        }
     }
 
     /// The video's picture, cut out of a picture of its whole page. `picture`
@@ -493,21 +574,19 @@ final class Float {
             }
             ignoringDrag = false
             stopGlide()
-            grab = NSEvent.mouseLocation
             origin = window.frame
             stretching = atCorner(convert(event.locationInWindow, from: nil))
+            if stretching {
+                grab = NSEvent.mouseLocation
+            } else {
+                window.performDrag(with: event)
+            }
         }
 
         override func mouseDragged(with event: NSEvent) {
-            guard let window, !ignoringDrag else { return }
+            guard window != nil, !ignoringDrag, stretching else { return }
             let now = NSEvent.mouseLocation
             let dx = now.x - grab.x
-            let dy = now.y - grab.y
-
-            guard stretching else {
-                window.setFrameOrigin(NSPoint(x: origin.minX + dx, y: origin.minY + dy))
-                return
-            }
             resize(to: origin.width + dx, from: origin)
         }
 
@@ -1048,7 +1127,8 @@ enum Isolate {
     /// hiding the body and turning it back on for the video alone leaves the
     /// player's own machinery running untouched — which is what keeps the
     /// stream alive where cutting the DOM about would kill it.
-    static let on = """
+    static func on(nativeCrop: Bool = false) -> String {
+        """
     (function () {
       var videos = document.querySelectorAll('video');
       var best = null, area = 0;
@@ -1069,6 +1149,33 @@ enum Isolate {
         var fit = Math.min(r.width / vw, r.height / vh);
         pic = [r.left + (r.width - vw * fit) / 2, r.top + (r.height - vh * fit) / 2, vw * fit, vh * fit];
       }
+      // Only a complete, already visible picture can be cropped without
+      // changing the page. Players needing our clipping/style repairs keep
+      // the viewport-fitting path below, including its contain-fit resets.
+      var native = \(nativeCrop) && pic.every(Number.isFinite) && pic[2] > 0 && pic[3] > 0
+        && pic[0] >= 0 && pic[1] >= 0 && pic[0] + pic[2] <= innerWidth && pic[1] + pic[3] <= innerHeight;
+      var style = getComputedStyle(best);
+      if (style.objectPosition !== '50% 50%' ||
+          (style.objectFit !== 'contain' && (!vw || !vh || Math.abs(r.width / r.height - vw / vh) > 0.01))) native = false;
+      for (var node = best; native && node; node = node.parentElement) {
+        var css = getComputedStyle(node), bounds = node.getBoundingClientRect();
+        if (css.visibility !== 'visible' || Number(css.opacity) !== 1 || css.contentVisibility !== 'visible'
+            || css.clipPath !== 'none' || css.webkitMaskImage !== 'none' || css.filter !== 'none'
+            || css.transform !== 'none' || css.rotate !== 'none' || css.scale !== 'none'
+            || css.contain.split(' ').some(function (kind) { return ['paint','strict','content'].includes(kind); })) native = false;
+        var left = bounds.left + parseFloat(css.borderLeftWidth), right = bounds.right - parseFloat(css.borderRightWidth);
+        var top = bounds.top + parseFloat(css.borderTopWidth), bottom = bounds.bottom - parseFloat(css.borderBottomWidth);
+        if ((css.overflowX !== 'visible' && (pic[0] < left || pic[0] + pic[2] > right))
+            || (css.overflowY !== 'visible' && (pic[1] < top || pic[1] + pic[3] > bottom))) native = false;
+        // Overflow clips to the padding box, including rounded corners,
+        // rather than to the border rectangle returned above.
+        if ((css.overflowX !== 'visible' || css.overflowY !== 'visible') &&
+            ['borderTopLeftRadius','borderTopRightRadius','borderBottomLeftRadius','borderBottomRightRadius']
+              .some(function (key) { return css[key].split(' ').some(function (part) { return parseFloat(part) !== 0; }); })) native = false;
+      }
+      if (['paddingLeft','paddingRight','paddingTop','paddingBottom','borderLeftWidth','borderRightWidth','borderTopWidth','borderBottomWidth']
+          .some(function (key) { return parseFloat(style[key]) !== 0; })) native = false;
+      if (best.checkVisibility && !best.checkVisibility({contentVisibilityAuto:true,opacityProperty:true,visibilityProperty:true})) native = false;
       // And where the video was in the page, at what size of page, for the
       // landing to wait for (see off). Not while the last float is still
       // landing: the page isn't as it was yet, and the place it is going
@@ -1105,7 +1212,13 @@ enum Isolate {
         sheet.id = 'office-float';
         (document.head || document.documentElement).appendChild(sheet);
       }
-      sheet.textContent = [
+      sheet.textContent = native ? [
+        'html.office-floating body > * {visibility:hidden !important}',
+        'html.office-floating [data-office-float] {visibility:visible !important}',
+        'html.office-floating [data-office-float] ~ .player-timedtext,',
+        'html.office-floating :has([data-office-float]) > .player-timedtext {visibility:visible !important}',
+        'html.office-floating [data-office-float]::-webkit-media-controls {display:none !important}'
+      ].join('') : [
         'html.office-floating, html.office-floating body {',
         'background:#000 !important; overflow:hidden !important; margin:0 !important}',
         'html.office-floating body > * { visibility:hidden !important }',
@@ -1171,6 +1284,7 @@ enum Isolate {
         'display:none !important}'
       ].join('');
       document.documentElement.classList.add('office-floating');
+      document.documentElement.classList.toggle('office-float-native', native);
 
       // The mark has to be defended.
       //
@@ -1199,9 +1313,10 @@ enum Isolate {
         if (again) again.setAttribute('data-office-float', '');
       }, 250);
 
-      return { floating: true, picture: pic, page: [innerWidth, innerHeight] };
+      return { floating: true, native: native, picture: pic, page: [innerWidth, innerHeight] };
     })();
     """
+    }
 
     /// Whether the page has settled where it now is: see `fits` and `off`,
     /// which set what this reads.
@@ -1286,6 +1401,7 @@ enum Isolate {
       } catch (e) {}
 
       var root = document.documentElement;
+      var native = root.classList.contains('office-float-native');
       var landing = window.__officeFloatLanding = {};
       var wait = window.__officeFloatWait = { settled: false, landing: true };
       function put() {
@@ -1294,7 +1410,7 @@ enum Isolate {
         window.__officeFloatLanding = null;
         clearInterval(window.__officeFloatWatch);
         window.__officeFloatWatch = null;
-        root.classList.remove('office-floating');
+        root.classList.remove('office-floating', 'office-float-native');
         var sheet = document.getElementById('office-float');
         if (sheet) sheet.textContent = '';
         var video = document.querySelector('[data-office-float]');
@@ -1309,7 +1425,7 @@ enum Isolate {
       function reopen() {
         var home = window.__officeFloatHome;
         if (!home || !home.chat || root.classList.contains('office-floating')) return;
-        if (innerWidth === wide && innerHeight === high) {
+        if (!native && innerWidth === wide && innerHeight === high) {
           // Put back by the clock, its tab not in front: once it is.
           addEventListener('resize', function again() {
             removeEventListener('resize', again);
@@ -1355,6 +1471,13 @@ enum Isolate {
       // resize to fit the video to it. A page not drawn, its tab no longer
       // the one in front, is put back by the clock.
       var wide = innerWidth, high = innerHeight, began = Date.now();
+      if (native) {
+        // The native crop never resized this page. Let the source stage take
+        // it back, then restore visibility without waiting for a resize.
+        requestAnimationFrame(function () { requestAnimationFrame(put); });
+        setTimeout(put, 1000);
+        return 'landing';
+      }
       (function frame() {
         if (window.__officeFloatLanding !== landing) return;
         if (innerWidth !== wide || innerHeight !== high || Date.now() - began > 400) return put();

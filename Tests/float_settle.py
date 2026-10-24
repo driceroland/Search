@@ -12,7 +12,9 @@ WebKit has handed over to be drawn and when the covers are up: the video's
 frame over the little window, the page as it was left over the tab. Each
 must come off only once the page has reached the size it stays at, drawn,
 with the video's own picture drawn at the size it is shown, and before its
-time limit; and going out, the page never leaves a window.
+time limit; and going out, the page never leaves a window. Both the native
+crop, which keeps the source viewport and player geometry, and the fitting
+fallback, which resizes the page, run through all three ways out and back.
 """
 import functools
 import json
@@ -26,6 +28,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
+
+sv.use("float-settle")
 
 # Two columns, the player in the wider one at a size its script sets 0.4 s
 # after the last resize, and never at once.
@@ -47,10 +51,18 @@ addEventListener('resize',function(){clearTimeout(later);later=setTimeout(fit,40
 </script>"""
 
 LIMIT_OUT, LIMIT_LAND = 800, 1500
+PROBE = """(function(){var r=document.querySelector('video').getBoundingClientRect();
+return JSON.stringify({page:[innerWidth,innerHeight],video:[r.width,r.height],
+rect:[r.left,r.top,r.width,r.height],
+native:document.documentElement.classList.contains('office-float-native')})})()"""
 
 
 def close(a, b, by=2):
-    return all(abs(x - y) <= by for x, y in zip(a, b))
+    return len(a) == len(b) and all(abs(x - y) <= by for x, y in zip(a, b))
+
+
+def probe(tab):
+    return json.loads(sv.cmd({"do": "eval", "id": tab, "js": PROBE}).get("value"))
 
 
 def film(action, path, seconds, via="key"):
@@ -72,14 +84,19 @@ def stretched(hosts, after):
             and not close(h["drawn"]["host"][:2], h["drawn"]["room"])]
 
 
-def round_trip(t, out, via):
+def round_trip(t, out, via, tab, native):
     """Out and back by one way, and what each cover did meanwhile."""
-    name = {"key": "⇧⌘P", "switch": "switching tabs", "app": "switching apps"}[via]
+    mode = "native" if native else "fallback"
+    name = mode + ", " + {"key": "⇧⌘P", "switch": "switching tabs", "app": "switching apps"}[via]
+    before = probe(tab)
 
     # Out: the video's frame over the little window until the page is laid
     # out at the window's size with the video alone in it, and WebKit has
     # handed that over to be drawn.
-    went = film("float", f"{out}/{via}-float", 1.5, via)
+    went = film("float", f"{out}/{mode}-{via}-float", 1.5, via)
+    floating = probe(tab)
+    t.ok(f"{name}, out: the expected isolation path is selected",
+         floating["native"] == native, floating)
     shift, view = went["shift"], went["view"]
     frames = [dict(f, t=f["t"] + shift) for f in went["frames"]]
     hosts = went["hosts"]
@@ -90,21 +107,36 @@ def round_trip(t, out, via):
     t.ok(f"{name}, out: the page is in a window all the way",
          not went["unwindowed"] and all(h["in"] != "none" for h in hosts), went["unwindowed"][:5])
     down = when(hosts, lambda h: up is not None and h["t"] > up and h["still"] == "none")
-    fits = when(frames, lambda f: f["isolated"] and close(f["page"], view) and close(f["video"], view))
-    drawn = when(hosts, lambda h: h["in"] == "float" and close(h["drawn"]["page"] or [0, 0], view))
-    t.ok(f"{name}, out: the frame comes off only once the page fills the window, drawn",
+    expected_page = before["page"] if native else view
+    expected_video = before["video"] if native else view
+    fits = when(frames, lambda f: f["isolated"] and close(f["page"], expected_page)
+                and close(f["video"], expected_video))
+    drawn = when(hosts, lambda h: h["in"] == "float"
+                 and close(h["drawn"]["page"] or [0, 0], expected_page))
+    t.ok(f"{name}, out: the frame comes off only once the destination geometry is drawn",
          None not in (down, fits, drawn) and fits < down and drawn <= down,
          {"fits": fits, "drawn": drawn, "down": down})
     t.ok(f"{name}, out: once it is off, the video's picture is drawn at the size it is shown",
          down is not None and not stretched(hosts, down), stretched(hosts, down)[:3])
     t.ok(f"{name}, out: and before its limit of {LIMIT_OUT} ms",
          None not in (up, down) and down - up < LIMIT_OUT - 20, {"up": up, "down": down})
+    if native:
+        t.ok(f"{name}, out: the source viewport and video rectangle never change",
+             bool(frames) and all(close(f["page"], before["page"])
+                                  and close(f["video"], before["video"]) for f in frames)
+             and close(floating["rect"], before["rect"])
+             and close(view, before["page"]),
+             {"before": before, "after": floating, "view": view})
+        t.ok(f"{name}, out: the web view is never resized to the little window",
+             all(close(size[1:], before["page"]) for size in went["sizes"]), went["sizes"])
 
     time.sleep(2)
 
     # Back: the page as it was left over the tab, until the player has been
     # sized again, late, at the tab's size.
-    came = film("land", f"{out}/{via}-land", 2.5, via)
+    came = film("land", f"{out}/{mode}-{via}-land", 2.5, via)
+    returned = probe(tab)
+    t.ok(f"{name}, back: native isolation is removed", not returned["native"], returned)
     shift, view = came["shift"], came["view"]
     frames = [dict(f, t=f["t"] + shift) for f in came["frames"]]
     hosts = came["hosts"]
@@ -114,8 +146,17 @@ def round_trip(t, out, via):
     t.ok(f"{name}, back: the tab is covered as the page comes home", up is not None and up < 100, up)
     stale = [f for f in frames if not f["isolated"] and close(f["page"], final["page"])
              and not close(f["video"], final["video"])]
-    t.ok(f"{name}, back: the page shows the video at the little window's size first (the late player)",
-         bool(stale), [f["video"] for f in frames[:5]])
+    if native:
+        t.ok(f"{name}, back: the source viewport and video rectangle never change",
+             all(close(f["page"], before["page"]) and close(f["video"], before["video"]) for f in frames)
+             and close(returned["page"], before["page"])
+             and close(returned["rect"], before["rect"]),
+             {"before": before, "after": returned, "stale": stale[:3]})
+        t.ok(f"{name}, back: the web view keeps its source size throughout landing",
+             all(close(size[1:], before["page"]) for size in came["sizes"]), came["sizes"])
+    else:
+        t.ok(f"{name}, back: the page shows the video at the little window's size first (the late player)",
+             bool(stale), [f["video"] for f in frames[:5]])
     settled = when(frames, lambda f: not f["isolated"] and f["page"] == final["page"]
                    and close(f["video"], final["video"]))
     drawn = when(hosts, lambda h: h["in"] == "tab" and close(h["drawn"]["video"] or [0, 0], final["video"]))
@@ -132,6 +173,9 @@ def round_trip(t, out, via):
 def main():
     pages = tempfile.mkdtemp(prefix="search-float-settle-")
     Path(pages, "late.html").write_text(PAGE)
+    # A non-none clip path requires the fitting path, while leaving the
+    # whole picture visible for the transition still and late-player checks.
+    Path(pages, "fallback.html").write_text(PAGE.replace("</style>", "video{clip-path:inset(0)}</style>"))
     Path(pages, "other.html").write_text("<!doctype html><meta charset=utf-8><title>other</title><p>another page")
 
     class Quiet(SimpleHTTPRequestHandler):
@@ -147,18 +191,24 @@ def main():
         base = f"http://127.0.0.1:{server.server_port}"
         # Somewhere to switch to, and the video, in front.
         sv.sp("open", url=f"{base}/other.html")
-        tab = sv.sp("open", url=f"{base}/late.html")["resultID"]
-        sv.cmd({"do": "select", "id": tab}); time.sleep(2)
         # The video is muted, as autoplay asks: one WebKit stops as soon as
         # nobody can see its page, which is what going to another tab did to
         # it before it had floated.
-        for via in ("key", "switch", "app"):
-            round_trip(t, out, via)
-            time.sleep(2)
+        for path, native in (("late.html", True), ("fallback.html", False)):
+            tab = sv.sp("open", url=f"{base}/{path}")["resultID"]
+            sv.cmd({"do": "select", "id": tab}); time.sleep(2)
+            for via in ("key", "switch", "app"):
+                round_trip(t, out, via, tab, native)
+                time.sleep(2)
+            sv.sp("close", id=tab)
     finally:
         t.done(); sv.finish()
         server.shutdown()
-        shutil.rmtree(pages, ignore_errors=True); shutil.rmtree(out, ignore_errors=True)
+        shutil.rmtree(pages, ignore_errors=True)
+        if t.failed:
+            print(f"Failed transition films: {out}")
+        else:
+            shutil.rmtree(out, ignore_errors=True)
     sys.exit(1 if t.failed else 0)
 
 

@@ -4359,8 +4359,9 @@ final class Browser: NSObject, ObservableObject {
         stage?.keep(tab.web)
         func both() {
             guard let shot, let found else { return }
-            lifted(tab, shot: shot, found: found, quietly: quietly, otherwise: otherwise)
-            stage?.letGo(tab.web)
+            lifted(tab, shot: shot, found: found, quietly: quietly, otherwise: otherwise) {
+                stage?.letGo(tab.web)
+            }
         }
         tab.web.takeSnapshot(with: picture) { image, _ in
             MainActor.assumeIsolated {
@@ -4368,7 +4369,7 @@ final class Browser: NSObject, ObservableObject {
                 both()
             }
         }
-        tab.web.evaluateInSearch(Isolate.on) { answer in
+        tab.web.evaluateInSearch(Isolate.on(nativeCrop: abs(tab.web.magnification - 1) < 0.001)) { answer in
             MainActor.assumeIsolated {
                 found = .some(answer)
                 both()
@@ -4378,12 +4379,38 @@ final class Browser: NSObject, ObservableObject {
 
     /// The page isolated, or not, and pictured as it was before: into the
     /// little window, or on to the other page of a pair.
-    private func lifted(_ tab: Tab, shot: NSImage?, found answer: Any?, quietly: Bool, otherwise: Tab?) {
+    private func lifted(_ tab: Tab, shot: NSImage?, found answer: Any?, quietly: Bool, otherwise: Tab?, done: @escaping () -> Void) {
         guard let found = answer as? [String: Any], found["floating"] as? Bool == true else {
+            defer { done() }
             if let otherwise { return lift(otherwise, quietly: quietly) }
             if !quietly { announce("Nothing is playing here") }
             return
         }
+        var crop: NSRect?
+        if found["native"] as? Bool == true {
+            crop = Float.cropRect(
+                picture: (found["picture"] as? [NSNumber] ?? []).map(\.doubleValue),
+                viewport: (found["page"] as? [NSNumber] ?? []).map(\.doubleValue),
+                for: tab.web
+            )
+            if crop == nil {
+                // The source changed while its snapshot/script was pending.
+                // Install the fitting stylesheet before resizing its web view.
+                tab.web.evaluateInSearch(Isolate.on()) { [weak self] answer in
+                    MainActor.assumeIsolated {
+                        guard let self else { return done() }
+                        if (answer as? [String: Any])?["floating"] as? Bool != true {
+                            // A video paused while retrying still owns the first
+                            // native stylesheet. Restore it before giving up.
+                            tab.web.evaluateInSearch(Isolate.off)
+                        }
+                        self.lifted(tab, shot: shot, found: answer, quietly: quietly, otherwise: otherwise, done: done)
+                    }
+                }
+                return
+            }
+        }
+        defer { done() }
         // Out again before it had settled in its tab: the page isn't as it
         // was left yet, and the picture from the first time still is.
         var left = shot
@@ -4402,7 +4429,7 @@ final class Browser: NSObject, ObservableObject {
                 page: (found["page"] as? [NSNumber] ?? []).map(\.doubleValue)
             )
         }
-        floater.lift(tab.web, still: still)
+        floater.lift(tab.web, still: still, videoRect: crop)
     }
 
     /// The page as it was when its video went out, for covering the tab with

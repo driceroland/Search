@@ -328,6 +328,10 @@ final class StageView: NSView {
     }
 
     private func settle() {
+        // A source-window layout may still name the page now owned by PiP,
+        // including one nested inside the native crop viewport.
+        if let wanted, Shared.floater.holds(wanted) { return }
+
         // A video filling the screen has its page lent to WebKit's own
         // window, with a placeholder left here in its place. The chrome
         // stepping aside lays this stage out again in that same moment, and

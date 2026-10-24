@@ -17,6 +17,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A fully visible floating video keeps its live page's layout while a native crop scales the picture, including when resizing the little window. Players needing clipping repairs keep the fitting path. Dragging the window uses macOS's native tracking. ([#547](https://github.com/driceroland/Search/pull/547))
 - Dragging a tab or a pin in the column moves it under the hand again. In 1.0.6, since a tab opens as the button goes down ([#625](https://github.com/driceroland/Search/pull/625)), it only jumped into place on letting go, and a pin held still a moment before letting go wasn't moved at all
 
 ### Held back
