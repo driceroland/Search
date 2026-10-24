@@ -540,12 +540,12 @@ struct Helm: View {
                 ) {
                     if tab.loading { tab.stop() } else { browser.reload() }
                 }
-                .disabled(tab.isBlank)
-                .opacity(tab.isBlank ? 0.3 : 1)
+                .disabled(!tab.isWeb)
+                .opacity(tab.isWeb ? 1 : 0.3)
                 // The menu's second item is the reason for it: ⌥⌘R has no
                 // button. Nothing to offer while the door is Stop.
                 .contextMenu {
-                    if !tab.loading && !tab.isBlank {
+                    if !tab.loading && tab.isWeb {
                         Button("Reload Page") { browser.reload() }
                             .shortcut("view.reload")
                         Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
@@ -586,6 +586,10 @@ private struct TabPill: View {
     /// A speaker to press at the end of the pill: the page plays sound, or
     /// was muted. The ring, while the page is still coming, goes first.
     private var speaker: Bool { !editing && !tab.loading && (tab.noisy || tab.muted) }
+    /// Where the page is, said on the tab you're on (Settings › Tabs › Show
+    /// the address on the tab you're on).
+    private var rest: AtRest? { live && !editing ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
+    private var atRest: Bool { rest != nil }
 
     /// A pinned tab is a square, an edited one is a field, everything else is
     /// its share of what is left.
@@ -738,11 +742,8 @@ private struct TabPill: View {
                 }
                 // A window the page asked for was refused (BlockedPopups).
                 PopupSign(browser: browser, tab: tab, colour: colour)
-                Text(tab.label)
-                    .font(.system(size: 12.5))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(colour)
+                TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
+                            size: 12.5, colour: colour, roomy: false)
             }
 
             Spacer(minLength: 2)
@@ -1159,10 +1160,10 @@ struct TabMenu: View {
         let rows = browser.prefs.showsPinRows
         if tab.pin == nil {
             Button("Pin") { browser.pin(tab) }
-                .disabled(tab.isBlank || tab.shy)
+                .disabled(!tab.isWeb || tab.shy)
             if rows {
                 Button("Pin as Row") { browser.pin(tab, listed: true) }
-                    .disabled(tab.isBlank || tab.shy)
+                    .disabled(!tab.isWeb || tab.shy)
             }
         } else {
             if rows {
@@ -1247,7 +1248,7 @@ struct TabMenu: View {
             browser.select(tab)
             browser.duplicate()
         }
-        .disabled(tab.isBlank)
+        .disabled(!tab.isWeb)
         // The card a click on the tab you are on shows under its address.
         Button("Site Information…") {
             if browser.activeID != tab.id { browser.select(tab) }
@@ -1258,20 +1259,20 @@ struct TabMenu: View {
             browser.select(tab)
             browser.copyAddress()
         }
-        .disabled(tab.isBlank)
+        .disabled(!tab.isWeb)
         Button("Copy as Markdown Link") {
             browser.select(tab)
             browser.copyMarkdownLink()
         }
-        .disabled(tab.isBlank)
+        .disabled(!tab.isWeb)
         Button("Copy Clean Link") {
             browser.select(tab)
             browser.copyCleanLink()
         }
-        .disabled(tab.isBlank)
+        .disabled(!tab.isWeb)
         if browser.prefs.sitesInPanel {
             Button("Open in Side Panel") { browser.openInSidePanel(tab) }
-                .disabled(tab.isBlank || tab.shy)
+                .disabled(!tab.isWeb || tab.shy)
         }
         Button(tab.muted ? "Unmute Tab" : "Mute Tab") { tab.toggleMute() }
         // Its page let go of now, as it would be after half an hour unseen:

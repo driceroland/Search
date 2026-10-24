@@ -160,20 +160,30 @@ final class Browser: NSObject, ObservableObject {
     /// one of them changes.
     let prefs = Shared.prefs
     let linkStatus = LinkStatus()
-    /// The settings panel.
-    @Published var tuning = false
+    /// Settings, in its own tab (see InternalPages.swift). True while the
+    /// window has one; set, it is shown or closed.
+    var tuning: Bool {
+        get { pageTab(.settings) != nil }
+        set { if newValue { show(InternalPage(.settings, settingsPage.rawValue)) } else { putAway(.settings) } }
+    }
     /// The first-launch walk-through, over everything. Also from the menu.
     @Published var welcoming = false
     /// What's new, once after an update (see WhatsNew.swift).
     @Published var newsShowing = false
-    /// Every version's notes: Settings › About › What's New…
-    @Published var notesShowing = false
+    /// Every version's notes: Settings › About › What's New…, in a tab.
+    var notesShowing: Bool {
+        get { pageTab(.notes) != nil }
+        set { if newValue { show(InternalPage(.notes)) } else { putAway(.notes) } }
+    }
 
     // MARK: - bookmarks
 
     let bookmarks = Shared.bookmarks
-    /// The full list, for taking things out.
-    @Published var bookmarking = false
+    /// The full list, for taking things out, in a tab.
+    var bookmarking: Bool {
+        get { pageTab(.bookmarks) != nil }
+        set { if newValue { show(InternalPage(.bookmarks)) } else { putAway(.bookmarks) } }
+    }
     /// The dropdown off the button.
     @Published var bookmarksOpen = false
     /// What hangs off the button instead of the list: the card for one
@@ -253,9 +263,14 @@ final class Browser: NSObject, ObservableObject {
         return (count, already, kept)
     }
 
-    /// The "Bring things over" sheet, open while set: the browser it
-    /// starts on by name, or "" for the first one found.
-    @Published var bringingIn: String?
+    /// Bring Things Over, in a tab, open while set: the browser it starts
+    /// on by name, or "" for the first one found.
+    var bringingIn: String? {
+        get { pageTab(.importing).map { $0.page?.detail ?? "" } }
+        set {
+            if let newValue { show(InternalPage(.importing, newValue)) } else { putAway(.importing) }
+        }
+    }
     struct FileImportJob: Identifiable {
         let id: UUID
         let filename: String
@@ -433,7 +448,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func openFind() {
-        guard active?.isBlank == false else { return }
+        guard active?.isWeb == true else { return }
         finding = true
         findFocus += 1
     }
@@ -559,7 +574,7 @@ final class Browser: NSObject, ObservableObject {
         if let web { clearFind(on: web) }
         guard retryOnActiveTab, finding,
               !needle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let tab = active, !tab.loading, !tab.isBlank else { return }
+              let tab = active, !tab.loading, tab.isWeb else { return }
         look(forward: true)
     }
 
@@ -587,7 +602,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘⇧H. Point at anything on the page and it goes, for good, on this site.
     func toggleHiding() {
-        guard let tab = active, !tab.isBlank else { return }
+        guard let tab = active, tab.isWeb else { return }
         if veiling {
             veiling = false
             tab.stopPicking()
@@ -842,7 +857,11 @@ final class Browser: NSObject, ObservableObject {
 
     // The list of what is kept.
 
-    @Published var managing = false { didSet { if managing { relist() } } }
+    /// Passwords, in a tab. The list is read again each time it is asked for.
+    var managing: Bool {
+        get { pageTab(.passwords) != nil }
+        set { if newValue { show(InternalPage(.passwords)) } else { putAway(.passwords) } }
+    }
     /// The list, without secrets: see `Kept` and `Vault.all()`.
     @Published private(set) var saved: [Kept] = []
     @Published var hunting = ""
@@ -1139,11 +1158,16 @@ final class Browser: NSObject, ObservableObject {
 
     // One state keeps closing History from leaving its clearing controls open.
     @Published var recallMode: RecallMode?
+    /// History, in a tab.
     var recalling: Bool {
-        get { recallMode != nil }
-        set { recallMode = newValue ? .history : nil }
+        get { pageTab(.history) != nil }
+        set { if newValue { show(InternalPage(.history)) } else { putAway(.history) } }
     }
-    @Published var hoarding = false
+    /// Downloads, in a tab.
+    var hoarding: Bool {
+        get { pageTab(.downloads) != nil }
+        set { if newValue { show(InternalPage(.downloads)) } else { putAway(.downloads) } }
+    }
     @Published var recallHunt = ""
 
     /// Cookies, caches, local storage — everything a site left on this Mac,
@@ -1259,7 +1283,7 @@ final class Browser: NSObject, ObservableObject {
         objectWillChange.send()
         // Pins are the space's, kept on disk and shown in every window: a
         // private tab can't be one, or its page would outlive it there.
-        guard !tab.shy else { return }
+        guard !tab.shy, tab.page == nil else { return }
         detachSplit(tab)
         if tab.pin == nil {
             let previousGroup = tab.groupID
@@ -1475,7 +1499,7 @@ final class Browser: NSObject, ObservableObject {
     private var tabOriginal = ""
 
     func beginTabEdit(_ tab: Tab) {
-        guard let url = tab.address else {
+        guard let url = tab.shownURL else {
             edit()
             return
         }
@@ -2141,7 +2165,7 @@ final class Browser: NSObject, ObservableObject {
         prefs.$autocorrect
             .dropFirst()
             .sink { [weak self] on in
-                guard let self, let web = active?.web else { return }
+                guard let self, let web = active?.built else { return }
                 let selector = NSSelectorFromString("toggleAutomaticSpellingCorrection:")
                 guard web.responds(to: selector) else { return }
                 // Toggling is all there is, so it is only sent when the two
@@ -2596,7 +2620,7 @@ final class Browser: NSObject, ObservableObject {
         var active = id == nil ? -1 : 0
         var indices: [Tab.ID: Int] = [:]
         for tab in tabs {
-            guard kept(tab), let url = tab.pending ?? tab.address else { continue }
+            guard kept(tab), let url = tab.pending ?? tab.address ?? tab.page?.url else { continue }
             if tab.id == id { active = entries.count }
             indices[tab.id] = entries.count
             entries.append(Session.Entry(
@@ -2639,7 +2663,8 @@ final class Browser: NSObject, ObservableObject {
     private func kept(_ tab: Tab) -> Bool {
         // A tab holding an extension's sign-in answer (Tab.hold) carries its
         // code in the address: that is never written down.
-        !tab.shy && !tab.bench && tab.held == nil && (tab.pending ?? tab.address)?.scheme?.hasPrefix("http") == true
+        !tab.shy && !tab.bench && tab.held == nil
+            && ((tab.pending ?? tab.address)?.scheme?.hasPrefix("http") == true || tab.page != nil)
     }
 
     /// Another space's row. Its groups are the ones in its own file, the
@@ -2649,6 +2674,9 @@ final class Browser: NSObject, ObservableObject {
         let groups = row.groups ?? readRow(space).groups
         writeRow(space, session(row.tabs, active: row.active, groups: groups, splits: row.splits), now: now)
     }
+
+    /// The session written a moment from now, for other files.
+    func writeSessionSoon() { rememberSession() }
 
     private func rememberSession() {
         guard !remembering else { return }
@@ -3044,10 +3072,9 @@ final class Browser: NSObject, ObservableObject {
         typed = tab.isBlank ? tab.draft : ""
     }
 
-    /// ⌘W closes what is in front: a peek, then a panel over the page
-    /// (Settings, History and the rest), then the tab. In Chrome these
-    /// panels are tabs, and ⌘W on one closes it; closing the page behind it
-    /// instead took the one thing you couldn't see. Escape puts things away
+    /// ⌘W closes what is in front: a peek, then a card over the page (What's
+    /// New), then the tab. Settings, History and the rest are tabs of their
+    /// own, as in Chrome, and ⌘W on one closes it. Escape puts things away
     /// in the same order, so the two keys agree on what is in front.
     func closeFront() {
         // The floating new tab is the thing in front: ⌘W takes it away and
@@ -3066,14 +3093,9 @@ final class Browser: NSObject, ObservableObject {
     /// The panel over the page put away, if one is up — for ⌘W and Escape
     /// both. Whether there was one.
     func closePanel() -> Bool {
-        if notesShowing { notesShowing = false }
-        else if newsShowing { newsShowing = false }
-        else if tuning { tuning = false }
-        else if bookmarking { bookmarking = false }
-        else if managing { managing = false }
-        else if bringingIn != nil { bringingIn = nil }
-        else if recalling { recalling = false }
-        else if hoarding { hoarding = false }
+        // Settings, History and the rest are tabs now (InternalPages.swift):
+        // ⌘W closes them as it closes any tab, and Escape leaves them be.
+        if newsShowing { newsShowing = false }
         else { return false }
         return true
     }
@@ -3980,6 +4002,9 @@ final class Browser: NSObject, ObservableObject {
     /// may be waiting on its page.
     @discardableResult
     func open(_ url: URL, foreground: Bool, atEnd: Bool = false, from source: Tab? = nil, mayWait: Bool = false) -> Tab {
+        // One of Search's own pages, from a link, a script or another app:
+        // its own tab, one of each (see InternalPages.swift).
+        if let own = InternalPage(url: url) { return show(own) }
         // An extension's own page is served only to a view built from that
         // extension's configuration.
         let url = Browser.page(url)
@@ -4114,7 +4139,7 @@ final class Browser: NSObject, ObservableObject {
     /// exception, since nothing is lost by using it. With ⌘ it opens behind.
     func openBookmark(_ url: URL) {
         let behind = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
-        if !behind, let active, active.isBlank, active.pin == nil, !active.floating {
+        if !behind, let active, active.isBlank || active.page?.kind == .bookmarks, active.pin == nil, !active.floating {
             active.go(to: url)
             editing = false
             typed = ""
@@ -4131,7 +4156,8 @@ final class Browser: NSObject, ObservableObject {
     func pickBookmark(_ url: URL, inNewTab: Bool = false) {
         let foreground = !inNewTab || NSApp.currentEvent?.modifierFlags.contains(.shift) == true
         if foreground {
-            bookmarking = false
+            // From the Bookmarks tab, the bookmark opens in it, as Chrome's
+            // manager does; Back comes back to the list.
             bookmarksOpen = false
         }
         if inNewTab {
@@ -4244,7 +4270,7 @@ final class Browser: NSObject, ObservableObject {
     /// layout and takes its whole current length. WebKit splits only a page
     /// taller than a PDF page can be (200 inches).
     func exportPDF() {
-        guard let tab = active, !tab.isBlank, let window = tab.web.window ?? self.window else { return }
+        guard let tab = active, tab.isWeb, let window = tab.web.window ?? self.window else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.canCreateDirectories = true
@@ -4263,7 +4289,7 @@ final class Browser: NSObject, ObservableObject {
     /// Keep the tab the save panel was opened for, even if another is active
     /// when it finishes. The bench passes the current tab without a panel.
     func exportPDF(_ tab: Tab, to file: URL, finished: ((Bool) -> Void)? = nil) {
-        guard !tab.isBlank else {
+        guard tab.isWeb else {
             finished?(false)
             return
         }
@@ -4282,7 +4308,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘P. The system's print sheet, where a paginated PDF can also be saved.
     func printPage() {
-        guard let tab = active, !tab.isBlank, let window = NSApp.keyWindow else { return }
+        guard let tab = active, tab.isWeb, let window = NSApp.keyWindow else { return }
         Browser.printing(tab.web).runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
     }
 
@@ -4521,7 +4547,7 @@ final class Browser: NSObject, ObservableObject {
         if prefs.floatStyle == .system { return picture(tab, quietly: quietly, otherwise: otherwise) }
         // A tab just put down with ⌘W has no page to lift a video out of, and
         // asking it would only build an empty view to ask.
-        guard let tab, !tab.isBlank, !tab.asleep, !floater.showing else {
+        guard let tab, tab.isWeb, !tab.asleep, !floater.showing else {
             if let otherwise { lift(otherwise, quietly: quietly) }
             return
         }
@@ -5057,7 +5083,7 @@ final class Browser: NSObject, ObservableObject {
         launching = false
         // Never a name and password written into the address: they would be
         // on screen, and in whatever you copy from here.
-        typed = active?.address.map { url -> String in
+        typed = active?.shownURL.map { url -> String in
             guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false), parts.user != nil || parts.password != nil
             else { return url.absoluteString }
             parts.user = nil
@@ -5157,6 +5183,12 @@ final class Browser: NSObject, ObservableObject {
 
         guard let url = target else {
             refusals += 1
+            return
+        }
+        // search://settings and the rest: the page's own tab, one of each.
+        if let page = InternalPage(url: url) {
+            show(page)
+            picked = nil
             return
         }
         if launching, !aside {
@@ -6377,5 +6409,86 @@ final class PrintSheet: NSObject {
             PrintSheet.cancelled[tab] = seen
         }
         done()
+    }
+}
+
+// MARK: - Search's own pages, in tabs (see InternalPages.swift)
+
+extension Browser {
+    /// The tab in this window's row showing that kind of page, if any.
+    func pageTab(_ kind: InternalPage.Kind) -> Tab? {
+        tabs.first { $0.page?.kind == kind }
+    }
+
+    /// ⌘, ⌘Y ⇧⌘J and the menus: the page's tab, brought forward if it is
+    /// open, made otherwise. An empty tab in front becomes the page rather
+    /// than being left behind it; a private one doesn't — these pages are
+    /// never private, as Chrome's settings never open in an incognito
+    /// window — and the page opens beside it.
+    @discardableResult
+    func show(_ page: InternalPage) -> Tab {
+        if page.kind == .settings, let detail = page.detail, let section = SettingsPanel.Page(rawValue: detail) {
+            settingsPage = section
+        }
+        if page.kind == .passwords { relist() }
+        if page.kind == .history, pageTab(.history) == nil { recallMode = .history }
+        let tab: Tab
+        if let open = pageTab(page.kind) {
+            tab = open
+            // Asked for another section, or another browser to bring
+            // things from: the open tab moves there, without a step back.
+            if page.detail != nil, open.page != page {
+                open.show(page, stepping: false)
+                objectWillChange.send()
+            }
+        } else {
+            if let blank = active, blank.isBlank, !blank.shy, !blank.bench, blank.pin == nil,
+               blank.draft.isEmpty, typed.isEmpty {
+                tab = blank
+            } else {
+                tab = Tab(configuration: Web.configuration(space: spaceID))
+                prepare(tab)
+                tabs.insert(tab, at: placeForNew())
+            }
+            tab.show(page)
+        }
+        if launching { dismiss() }
+        summoning = false
+        editing = false
+        typed = ""
+        if activeID != tab.id { select(tab) }
+        writeSessionSoon()
+        return tab
+    }
+
+    /// From one of these pages to another — Settings' "Passwords…", Bring
+    /// Things Over's "Show bookmarks": the same tab goes there, and Back
+    /// comes back, as a link would. Unless that page is already open in a
+    /// tab of its own, which is then the one shown.
+    func lead(to page: InternalPage) {
+        guard let here = active, here.page != nil, pageTab(page.kind) == nil else {
+            show(page)
+            return
+        }
+        if page.kind == .settings, let detail = page.detail, let section = SettingsPanel.Page(rawValue: detail) {
+            settingsPage = section
+        }
+        here.show(page)
+        writeSessionSoon()
+    }
+
+    /// The page's tab closed, as ⌘W would close it. For the bench, and the
+    /// last few callers that put a panel away.
+    func putAway(_ kind: InternalPage.Kind) {
+        guard let tab = pageTab(kind) else { return }
+        close(tab)
+    }
+
+    /// Settings moved to another of its sections: the tab's address says
+    /// so, and comes back there after a relaunch.
+    func settingsMoved(to section: SettingsPanel.Page) {
+        guard let tab = pageTab(.settings), tab.page?.detail != section.rawValue else { return }
+        tab.show(InternalPage(.settings, section.rawValue), stepping: false)
+        writeSessionSoon()
     }
 }

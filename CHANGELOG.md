@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Added
 
 - Animations can go easy on a Mac that's saving power: in Low Power Mode, or while the Mac is running hot, the sidebar, tabs and panels move in a short 0.16 s ease-out instead of a spring that takes about half a second to settle. Off unless you turn it on in Settings › General › Reduce animations in Low Power Mode. Pages are left as they are: WebKit already draws them at 30 frames a second in Low Power Mode, as in Safari
+- The tab you're on can show where its page is, without a click: its site in place of its title, the subdomain dim before it, the title back under the pointer. Look-alike names in other alphabets show as the punycode they are (xn--80ak6aa92e.com, not a Cyrillic "apple.com"), plain http says Not secure, and a file on this Mac is named by its file name. In the column, across the top and on the half you're on in Split View. Every page says it once you turn on Settings › Tabs › Show the address on the tab you're on; with it off, only a page over plain http and a look-alike name are said, as warnings
 - ⌃Tab's recent-tabs switcher can be on a key of your own, as in Arc: Settings › Shortcuts › Tabs › Switch to Recent Tab. Hold the key's ⌃, ⌥ or ⌘ to keep the switcher up and let go to take the tab; with ⇧ it goes back. ⌃Tab can then be given to another command, such as Next Tab, or left to the page.
 - Move Group to Space, in a tab group's menu: every tab of the group goes to the other space, in its order, and is the same group there, folded or open as it was. A space with its own sign-ins asks first only when a page in the group has something typed and not sent, once for the group.
 - Websites in the side panel: Claude, ChatGPT, Gemini, Perplexity or the page you're on, beside the page without an extension, from View › Side Panel or a tab's Open in Side Panel. It's a page of the space you're in, signed in where that space's tabs are and never a private tab's; its address is on the panel's own line, a link it opens in a new window goes to a tab, and Open in a Tab takes it into one. Off unless you turn it on in Settings › General › Websites in the side panel
@@ -27,11 +28,13 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- Settings, History, Downloads, Bookmarks, Passwords, Bring Things Over and What's New open as pages in a tab of their own, as in Chrome, instead of a card over the page. ⌘, ⌘Y ⇧⌘J and the menus bring the open one forward rather than opening a second; an empty tab in front becomes the page. Each has its own address (search://settings, search://history…), goes with ⌃Tab, sits beside a page in Split View, closes with ⌘W and comes back after a relaunch. Back and Forward go between them, and from a page you opened out of History or Bookmarks back to the list. From a private tab they open beside it, as ordinary tabs
 - With the tabs in the sidebar, back, forward and reload sit a little further from the window's red, yellow and green buttons, as a toolbar's first button does in Safari; a narrow column keeps them where they were
 
 ### Fixed
 
 - New small windows open a step down and to the right of the newest one on screen instead of exactly on top of it. Five links from Mail were five windows that looked like one, the others hidden under it. Thanks [@oddharsh](https://github.com/oddharsh) ([#493](https://github.com/driceroland/Search/pull/493))
+- A video call goes on when you go to another tab. On a Google Meet call, the others saw your camera frozen until you came back to its tab, since a tab behind was taken out of the window and its page slowed as one nobody can see; a tab using the camera, the microphone or the screen now stays in the window, unseen, for as long as the call lasts, as Safari and Chrome keep it going. Any other tab behind is slowed and put to sleep as before
 - Dragging a tab or a pin in the column moves it under the hand again. In 1.0.6, since a tab opens as the button goes down ([#625](https://github.com/driceroland/Search/pull/625)), it only jumped into place on letting go, and a pin held still a moment before letting go wasn't moved at all
 
 ### Held back

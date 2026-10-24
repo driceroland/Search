@@ -16,6 +16,9 @@ struct Page: View {
     var holdsPage = true
     /// The page's corners, as a card on the window's frame (see CardEdge).
     var corner: CGFloat = 0
+    /// The window, for a tab showing one of Search's own pages, which are
+    /// drawn here in the web page's place (see InternalPages.swift).
+    var browser: Browser?
 
     var body: some View {
         ZStack {
@@ -27,7 +30,11 @@ struct Page: View {
             // the stage was never told to take it back when it landed, and
             // the tab stayed empty. Nothing, then the page, is a change.
             if holdsPage {
-                WebStage(page: tab.isBlank || tab.asleep || tab.floating ? nil : tab.web, corner: corner)
+                WebStage(page: !tab.isWeb || tab.asleep || tab.floating ? nil : tab.web, corner: corner)
+            }
+
+            if let page = tab.page, let browser {
+                InternalPageView(browser: browser, tab: tab, page: page, corner: corner)
             }
 
             if let cover = tab.cover {
@@ -67,6 +74,7 @@ struct Page: View {
 
             Swiping(pull: tab.pull)
         }
+        .animation(Motion.quick, value: tab.page?.kind)
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
         .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
@@ -262,6 +270,34 @@ final class StageView: NSView {
     /// it goes out the way ⇧⌘P sends it.
     private weak var parting: NSView?
 
+    /// Pages on a call — camera, microphone or screen in use — kept here
+    /// unseen under the one on show when you go to another tab, as long as
+    /// the call lasts. Taken out of the window, a page is one WebKit counts
+    /// as out of sight: its timers held to once a second, its animation
+    /// frames stopped. A call site that hands the camera on from a loop of
+    /// its own (Google Meet takes about 45 pictures a second from it, by
+    /// ImageCapture) stalls with it, and on a Meet call the others saw your
+    /// picture frozen until you came back to the tab, where Safari and
+    /// Chrome keep sending. Kept in the window, the page carries on as it
+    /// did in front. Only pages on a call: any other tab still leaves the
+    /// window, and is slowed and put to sleep as before.
+    private var calls: [ObjectIdentifier: CallWatch] = [:]
+
+    /// Whether this page is using the camera, the microphone or the screen.
+    /// Muted counts: a camera turned off from the call's own button is a
+    /// call still going.
+    static func onCall(_ view: NSView) -> Bool {
+        guard let web = view as? WKWebView else { return false }
+        if web.cameraCaptureState != .none || web.microphoneCaptureState != .none { return true }
+        if #available(macOS 15.4, *) { return ExtensionCapture.screen(web) }
+        return false
+    }
+
+    /// Whether this page is one kept here unseen for its call.
+    func holdsCall(_ view: NSView) -> Bool {
+        calls[ObjectIdentifier(view)]?.web === view
+    }
+
     func keep(_ page: NSView) {
         guard page.superview === self else { return }
         parting = page
@@ -356,10 +392,36 @@ final class StageView: NSView {
                 view.alphaValue = 0
                 continue
             }
+            if Self.onCall(view) {
+                hold(view)
+                continue
+            }
             view.removeFromSuperview()
+        }
+        // Calls that ended, or pages that went elsewhere, are watched no more.
+        for (key, watch) in calls {
+            guard let web = watch.web, web.superview === self, web !== wanted, Self.onCall(web) else {
+                watch.stop()
+                calls[key] = nil
+                continue
+            }
         }
 
         guard let wanted, window != nil else { return }
+        if wanted.superview === self, wanted.alphaValue == 0, wanted !== parting,
+           (wanted as? PageView)?.unpainted != true {
+            // Back from being kept for its call: seen again, and over the
+            // others — the order of a view's subviews, changed without
+            // taking anything out of the window.
+            wanted.alphaValue = 1
+            sortSubviews({ a, b, context in
+                guard let context else { return .orderedSame }
+                let front = Unmanaged<NSView>.fromOpaque(context).takeUnretainedValue()
+                if a === front { return .orderedDescending }
+                if b === front { return .orderedAscending }
+                return .orderedSame
+            }, context: Unmanaged.passUnretained(wanted).toOpaque())
+        }
         if wanted.superview !== self {
             // A web view can have only one superview, so taking it back is how
             // it is taken back.
@@ -389,10 +451,33 @@ final class StageView: NSView {
         }
     }
 
-    /// Nothing reaches a page kept unseen.
+    /// A page on a call, kept: unseen, at the stage's size, and never the
+    /// one the keys go to. Out of the window, a page loses the keys by
+    /// itself; kept in it, a page that had them would go on taking what
+    /// you type in the tab in front.
+    private func hold(_ view: NSView) {
+        view.alphaValue = 0
+        if !(inspecting && subviews.contains(where: Self.isInspector)) { view.frame = bounds }
+        if let window, let responder = window.firstResponder as? NSView,
+           responder === view || responder.isDescendant(of: view) {
+            window.makeFirstResponder(nil)
+        }
+        let key = ObjectIdentifier(view)
+        guard calls[key]?.web !== view, let web = view as? WKWebView else { return }
+        calls[key]?.stop()
+        calls[key] = CallWatch(web) { [weak self] in self?.settle() }
+    }
+
+    /// Nothing reaches a page kept unseen: a click, a scroll or a drop
+    /// there goes to the page on show.
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         if let parting, let hit, hit === parting || hit.isDescendant(of: parting) { return nil }
+        if let hit, let held = subviews.first(where: { holdsCall($0) && (hit === $0 || hit.isDescendant(of: $0)) }),
+           held !== wanted {
+            guard let wanted, wanted.superview === self else { return nil }
+            return wanted.hitTest(convert(point, from: superview))
+        }
         return hit
     }
 
@@ -416,6 +501,39 @@ final class StageView: NSView {
 
     private static func isInspector(_ view: NSView) -> Bool {
         String(describing: type(of: view)).hasPrefix("WKInspector")
+    }
+}
+
+/// Tells a stage when a page it keeps for its call stops capturing, so the
+/// page leaves the window as any tab behind does. WebKit's camera and
+/// microphone states are public and observable; its screen's is asked for
+/// by name, only where it answers to it.
+final class CallWatch: NSObject {
+    private static let keys = ["cameraCaptureState", "microphoneCaptureState", "_displayCaptureState"]
+    private(set) weak var web: WKWebView?
+    private var watching: [String] = []
+    private let changed: () -> Void
+
+    init(_ web: WKWebView, changed: @escaping () -> Void) {
+        self.web = web
+        self.changed = changed
+        super.init()
+        for key in Self.keys where key.hasPrefix("_") == false || web.responds(to: NSSelectorFromString(key)) {
+            web.addObserver(self, forKeyPath: key, options: [], context: nil)
+            watching.append(key)
+        }
+    }
+
+    func stop() {
+        if let web { for key in watching { web.removeObserver(self, forKeyPath: key) } }
+        watching = []
+    }
+
+    deinit { stop() }
+
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?,
+                               change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+        DispatchQueue.main.async { [weak self] in self?.changed() }
     }
 }
 

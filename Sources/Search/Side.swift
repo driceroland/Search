@@ -898,6 +898,10 @@ private struct SideRow: View {
     /// A pinned row with a peek opened from it: the peek's icon at its end,
     /// as on a square's corner.
     private var peeking: Bool { !editing && tab.pin != nil && browser.peekFrom == tab.id && browser.peekTab != nil }
+    /// Where the page is, said on the row you're on (Settings › Tabs › Show
+    /// the address on the tab you're on).
+    private var rest: AtRest? { live && !editing ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
+    private var atRest: Bool { rest != nil }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -929,11 +933,8 @@ private struct SideRow: View {
                     }
                     // A window the page asked for was refused (BlockedPopups).
                     PopupSign(browser: browser, tab: tab, colour: colour)
-                    Text(tab.label)
-                        .font(.system(size: prefs.sideTitle))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .foregroundStyle(colour)
+                    TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
+                                size: prefs.sideTitle, colour: colour, roomy: true)
                 }
                 Spacer(minLength: 0)
             }

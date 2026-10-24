@@ -29,7 +29,39 @@ struct Plate<Content: View, Foot: View>: View {
         self.foot = foot
     }
 
+    @Environment(\.asTab) private var asTab
+
     var body: some View {
+        if asTab { page } else { card }
+    }
+
+    /// In a tab of its own (see InternalPages.swift): the same title and
+    /// content, as wide as the card was, down the middle of the page. No
+    /// card, no shadow, no cross — the tab is what closes.
+    private var page: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(Palette.ink)
+                .padding(.top, 44)
+                .padding(.bottom, 20)
+
+            content()
+
+            if Foot.self != EmptyView.self {
+                Rectangle().fill(Palette.hairline).frame(height: 1)
+                    .padding(.top, 18)
+                foot()
+                    .padding(.vertical, 14)
+            }
+            Color.clear.frame(height: 12)
+        }
+        .padding(.horizontal, 22)
+        .frame(maxWidth: width, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Text(title)

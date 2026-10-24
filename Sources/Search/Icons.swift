@@ -329,7 +329,17 @@ struct Mark: View {
 
     var body: some View {
         Group {
-            if let icon {
+            if let icon, icon.isTemplate {
+                // One of Search's own pages (InternalPages.swift): its symbol,
+                // in the row's ink, light or dark.
+                Image(nsImage: icon)
+                    .renderingMode(.template)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .foregroundStyle(Palette.ink.opacity(0.75))
+                    .padding(size * 0.06)
+                    .frame(width: size, height: size)
+            } else if let icon {
                 Image(nsImage: icon)
                     .resizable()
                     .interpolation(.high)

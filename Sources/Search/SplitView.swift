@@ -54,7 +54,7 @@ struct SplitStage: View {
                 ForEach(shown) { tab in
                     if let frame = frames[tab.id] {
                         PaneLayers(browser: browser, tab: tab, paired: shown.count > 1, width: frame.width,
-                                   hovered: hovered == tab.id)
+                                   hovered: hovered == tab.id, corner: corner)
                             .frame(width: frame.width, height: frame.height)
                             .offset(x: frame.minX, y: frame.minY)
                     }
@@ -80,6 +80,8 @@ private struct PaneLayers: View {
     let paired: Bool
     let width: CGFloat
     var hovered = false
+    /// The page's corners, for Search's own pages drawn here (see InternalPages.swift).
+    var corner: CGFloat = 0
 
     private var focused: Bool { browser.activeID == tab.id }
 
@@ -108,7 +110,7 @@ private struct PaneLayers: View {
             // The page's own layers — its cover, the floating video's line,
             // its trouble, the history disc — without the page, which is
             // the stage's.
-            Page(tab: tab, holdsPage: false)
+            Page(tab: tab, holdsPage: false, corner: corner, browser: browser)
 
             if browser.fieldShowing && focused {
                 Omnibox(browser: browser, over: !tab.isBlank, fitted: true)

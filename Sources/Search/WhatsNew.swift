@@ -410,7 +410,7 @@ struct ReleaseNotesPanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
             }
-            .frame(maxHeight: 480)
+            .listHeight(480)
         }
     }
 

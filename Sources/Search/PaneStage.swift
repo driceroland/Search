@@ -237,10 +237,11 @@ final class PaneStage: NSView {
         }
     }
 
-    /// The page a tab puts on the stage: none while it is blank, asleep or
-    /// floating, as Page decides it (see Stage.swift).
+    /// The page a tab puts on the stage: none while it is blank, one of
+    /// Search's own pages, asleep or floating, as Page decides it (see
+    /// Stage.swift).
     private func page(_ tab: Tab) -> NSView? {
-        tab.isBlank || tab.asleep || tab.floating ? nil : tab.web
+        !tab.isWeb || tab.asleep || tab.floating ? nil : tab.web
     }
 
     private func refill() {

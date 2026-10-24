@@ -46,7 +46,7 @@ struct PasswordsPanel: View {
                         }
                         .padding(.bottom, 2)
                     }
-                    .frame(maxHeight: 400)
+                    .listHeight(400)
                 }
             }
         } foot: {
@@ -56,10 +56,7 @@ struct PasswordsPanel: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)
                     // Which browser, which profile and what of it: the sheet.
-                    Pill("Bring in…") {
-                        browser.managing = false
-                        browser.bringingIn = ""
-                    }
+                    Pill("Bring in…") { browser.lead(to: InternalPage(.importing)) }
                     Pill("File…") { browser.importFile() }
                     Spacer(minLength: 0)
                     // What the list shows, all of it or what the search
