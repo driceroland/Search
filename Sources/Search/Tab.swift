@@ -381,6 +381,10 @@ final class Tab: ObservableObject, Identifiable {
     /// True while the page has been stripped back to its article.
     @Published private(set) var reader = false
 
+    /// Asking the site for its markdown, which can take a moment; a second
+    /// ⇧⌘R meanwhile is the same request, not another.
+    private var seekingTwin = false
+
     /// Leaving reading mode reloads rather than putting the old markup back:
     /// restoring the HTML gives you a page that looks right and does nothing,
     /// because every listener the page had was thrown away with it.
@@ -395,8 +399,49 @@ final class Tab: ObservableObject, Identifiable {
             done(true)
             return
         }
-        web.evaluateJavaScript(Reader.script) { [weak self] answer, _ in
-            let worked = (answer as? String) == "read"
+        guard !seekingTwin else { return }
+        guard Shared.prefs.readsTwins else {
+            guess(done)
+            return
+        }
+        seekingTwin = true
+        let page = web.url
+        web.callAsyncJavaScript(Reader.twin, arguments: [:], in: nil, in: Web.world) { [weak self] result in
+            guard let self else { return }
+            self.seekingTwin = false
+            // Gone somewhere else while the twin was on its way: it belongs
+            // to a page that isn't there any more, and so does the guess.
+            guard self.web.url == page else { return }
+            guard let found = try? result.get() as? [String: Any],
+                  let text = found["text"] as? String,
+                  let address = (found["url"] as? String).flatMap(URL.init(string:)) else {
+                self.guess(done)
+                return
+            }
+            let twin = Markdown.page(text, base: address)
+            guard !twin.html.isEmpty else {
+                self.guess(done)
+                return
+            }
+            let from = (found["from"] as? String).map { $0.isEmpty ? "markdown" : "\($0) · markdown" } ?? "markdown"
+            let arguments: [String: Any] = [
+                "html": twin.html,
+                "title": twin.title ?? found["title"] as? String ?? "",
+                "from": from,
+                "sheet": Reader.sheet,
+            ]
+            self.web.callAsyncJavaScript(Reader.show, arguments: arguments, in: nil, in: Web.world) { [weak self] result in
+                let worked = (try? result.get()) as? String == "read"
+                if worked { self?.reader = true }
+                done(worked)
+            }
+        }
+    }
+
+    /// The page's own article, worked out from the page (see Reader.script).
+    private func guess(_ done: @escaping (Bool) -> Void) {
+        web.callAsyncJavaScript(Reader.script, arguments: ["sheet": Reader.sheet], in: nil, in: .page) { [weak self] result in
+            let worked = (try? result.get()) as? String == "read"
             if worked { self?.reader = true }
             done(worked)
         }
