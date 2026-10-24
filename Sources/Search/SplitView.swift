@@ -46,6 +46,7 @@ struct SplitStage: View {
             hover: { hovered = $0 },
             find: browser.finding ? browser : nil,
             accounts: browser.suggesting.map { (browser, $0) },
+            pairing: browser.applePairing.map { (browser, $0) },
             corner: corner,
             immersed: immersed
         )
@@ -54,7 +55,7 @@ struct SplitStage: View {
                 ForEach(shown) { tab in
                     if let frame = frames[tab.id] {
                         PaneLayers(browser: browser, tab: tab, paired: shown.count > 1, width: frame.width,
-                                   hovered: hovered == tab.id)
+                                   hovered: hovered == tab.id, corner: corner)
                             .frame(width: frame.width, height: frame.height)
                             .offset(x: frame.minX, y: frame.minY)
                     }
@@ -80,6 +81,8 @@ private struct PaneLayers: View {
     let paired: Bool
     let width: CGFloat
     var hovered = false
+    /// The page's corners, for Search's own pages drawn here (see InternalPages.swift).
+    var corner: CGFloat = 0
 
     private var focused: Bool { browser.activeID == tab.id }
 
@@ -108,7 +111,7 @@ private struct PaneLayers: View {
             // The page's own layers — its cover, the floating video's line,
             // its trouble, the history disc — without the page, which is
             // the stage's.
-            Page(tab: tab, holdsPage: false)
+            Page(tab: tab, holdsPage: false, corner: corner, browser: browser)
 
             if browser.fieldShowing && focused {
                 Omnibox(browser: browser, over: !tab.isBlank, fitted: true)
@@ -141,7 +144,8 @@ private struct PaneLayers: View {
             }
         }
         // The accounts under a sign-in box are the stage's (PaneStage.showAccounts):
-        // drawn here, they were under the page.
+        // drawn here, they were under the page. So is Apple Passwords' code card
+        // (PaneStage.showPairing).
         .overlay(alignment: .topTrailing) { whose }
         .animation(Motion.quick, value: hovered)
         .background { SplitDropZone(browser: browser, tab: tab, kind: .stage) }

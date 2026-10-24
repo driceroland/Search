@@ -37,6 +37,42 @@ final class ShortcutTests: XCTestCase {
         XCTAssertFalse(store.anyChanged)
     }
 
+    /// ⌃Tab's switcher on a key of its own, as Arc allows: ⇧ walks back,
+    /// its modifiers hold it up, and ⌃Tab can go to another command.
+    func testRecentTabsSwitcherCanBeRebound() {
+        let store = ShortcutStore()
+        let controlTab = KeyCombo("tab", command: false, control: true)
+        let back = KeyCombo("tab", command: false, shift: true, control: true)
+        XCTAssertEqual(store.key(for: Command.recentTabs), controlTab)
+        XCTAssertEqual(KeyCombo.recentSwitch(controlTab, key: controlTab), false)
+        XCTAssertEqual(KeyCombo.recentSwitch(back, key: controlTab), true)
+        XCTAssertEqual(store.recentHold, .control)
+
+        // Tab with ⌃ or ⌥ is a key to give; alone, with ⇧ or with ⌘ it isn't.
+        XCTAssertFalse(KeyCombo.isReserved(controlTab))
+        XCTAssertFalse(KeyCombo.isReserved(KeyCombo("tab", command: false, option: true)))
+        XCTAssertTrue(KeyCombo.isReserved(KeyCombo("tab", command: false)))
+        XCTAssertTrue(KeyCombo.isReserved(KeyCombo("tab", command: false, shift: true)))
+        XCTAssertTrue(KeyCombo.isReserved(KeyCombo("tab")))
+
+        let optionE = KeyCombo("e", command: false, option: true)
+        store.assign(optionE, to: Command.recentTabs)
+        XCTAssertEqual(ShortcutStore().key(for: Command.recentTabs), optionE)
+        XCTAssertEqual(KeyCombo.recentSwitch(optionE, key: optionE), false)
+        XCTAssertEqual(KeyCombo.recentSwitch(KeyCombo("e", command: false, shift: true, option: true), key: optionE), true)
+        XCTAssertNil(KeyCombo.recentSwitch(controlTab, key: optionE))
+        XCTAssertEqual(store.recentHold, .option)
+        XCTAssertTrue(store.recentHeld([.option, .shift]))
+        XCTAssertFalse(store.recentHeld([.control]))
+        // ⌃Tab, freed, goes to the page — or to the command it is given.
+        XCTAssertTrue(store.isFreed(controlTab))
+        store.assign(controlTab, to: "tabs.next")
+        XCTAssertEqual(store.customCommand(on: controlTab)?.id, "tabs.next")
+        XCTAssertEqual(store.key(for: Command.recentTabs), optionE)
+        store.resetAll()
+        XCTAssertEqual(store.key(for: Command.recentTabs), controlTab)
+    }
+
     func testConflictsWithSpaceKeysUseExistingReassignmentAndReset() {
         let store = ShortcutStore()
         let original = KeyCombo("2", command: false, control: true)

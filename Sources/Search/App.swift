@@ -73,19 +73,22 @@ struct SearchApp: App {
             CommandGroup(replacing: .printItem) {
                 Button("Share…") { browser.share() }
                     .shortcut("file.share")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(!(browser.active?.isWeb ?? false))
                 Button("Export as PDF…") { browser.exportPDF() }
                     .shortcut("file.exportPDF")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(!(browser.active?.isWeb ?? false))
                 Button("Print…") { browser.printPage() }
                     .shortcut("file.print")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(!(browser.active?.isWeb ?? false))
             }
             CommandGroup(after: .pasteboard) {
+                Button("Copy Clean Link") { browser.copyCleanLink() }
+                    .shortcut("edit.copyCleanLink")
+                    .disabled(browser.active?.isBlank ?? true)
                 Divider()
                 Button("Find on Page…") { browser.openFind() }
                     .shortcut("edit.find")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(!(browser.active?.isWeb ?? false))
                 Button("Find Next") { browser.look(forward: true) }
                     .shortcut("edit.findNext")
                     .disabled(!browser.finding)
@@ -135,6 +138,21 @@ struct SearchApp: App {
                     .shortcut("view.reader")
                 Button("Float Video") { browser.toggleFloat() }
                     .shortcut("view.float")
+                // Websites in the side panel, only once they are on
+                // (Settings › General).
+                if browser.prefs.sitesInPanel {
+                    Menu("Side Panel") {
+                        Button(browser.sidePanelShown ? "Close Side Panel" : "Show Side Panel") { browser.toggleSitePanel() }
+                            .shortcut("view.sitePanel")
+                        Divider()
+                        ForEach(PanelSites.offered, id: \.name) { site in
+                            Button(site.name) { browser.showSiteInPanel(site.url) }
+                        }
+                        Divider()
+                        Button("This Page") { if let tab = browser.active { browser.openInSidePanel(tab) } }
+                            .disabled(!(browser.active?.isWeb ?? false) || (browser.active?.shy ?? true))
+                    }
+                }
                 // Dark pages, only once they are on (Settings › Appearance).
                 if browser.prefs.darkensPages {
                     Divider()
@@ -155,10 +173,10 @@ struct SearchApp: App {
                     Divider()
                     Button("Summarize Page") { browser.summarizePage() }
                         .shortcut("view.summarize")
-                        .disabled(browser.active?.isBlank ?? true)
+                        .disabled(!(browser.active?.isWeb ?? false))
                     Button("Ask About This Page…") { browser.askAboutPage() }
                         .shortcut("view.ask")
-                        .disabled(browser.active?.isBlank ?? true)
+                        .disabled(!(browser.active?.isWeb ?? false))
                 }
                 Divider()
                 Button("Hide Elements…") { browser.toggleHiding() }
@@ -222,10 +240,10 @@ struct SearchApp: App {
                     let rows = browser.prefs.showsPinRows
                     if tab.pin == nil {
                         Button("Pin Tab") { browser.pin(tab) }
-                            .disabled(tab.isBlank || tab.shy)
+                            .disabled(!tab.isWeb || tab.shy)
                         if rows {
                             Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
-                                .disabled(tab.isBlank || tab.shy)
+                                .disabled(!tab.isWeb || tab.shy)
                         }
                     } else {
                         if rows {
@@ -242,13 +260,13 @@ struct SearchApp: App {
                     .disabled(browser.active == nil)
                 Button("Duplicate Tab") { browser.duplicate() }
                     .shortcut("tabs.duplicate")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(!(browser.active?.isWeb ?? false))
                 Button("Copy Address") { browser.copyAddress() }
                     .shortcut("tabs.copyAddress")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(!(browser.active?.isWeb ?? false))
                 Button("Copy as Markdown Link") { browser.copyMarkdownLink() }
                     .shortcut("tabs.copyMarkdown")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(!(browser.active?.isWeb ?? false))
                 Button("Paste and Go") { browser.pasteAndGo() }
                     .shortcut("tabs.pasteAndGo")
                 Divider()
@@ -261,7 +279,7 @@ struct SearchApp: App {
             CommandMenu("Bookmarks") {
                 Button(browser.pageKept ? "Edit Bookmark\u{2026}" : "Add This Page") { browser.bookmarkCurrent() }
                     .shortcut("bookmarks.add")
-                    .disabled(browser.active?.isBlank ?? true)
+                    .disabled(!(browser.active?.isWeb ?? false))
                 Button("Show Bookmarks…") { browser.bookmarking = true }
                     .shortcut("bookmarks.show")
                 Toggle("Show Bookmarks Bar", isOn: Binding(
@@ -314,9 +332,23 @@ struct SearchApp: App {
                 Button("Passwords…") { browser.managing = true }
                     .shortcut("app.passwords")
             }
-            CommandGroup(replacing: .help) {
-                Button("Send Feedback…") { Links.writeFeedback() }
+            QuitAndHelp()
+        }
+    }
+}
+
+/// Quit Search, which can ask first (Settings › General), and Help. One
+/// value, because a scene's commands take at most ten.
+private struct QuitAndHelp: Commands {
+    var body: some Commands {
+        CommandGroup(replacing: .appTermination) {
+            Button("Quit Search") {
+                if Links.shouldQuit() { NSApp.terminate(nil) }
             }
+            .keyboardShortcut("q", modifiers: .command)
+        }
+        CommandGroup(replacing: .help) {
+            Button("Send Feedback…") { Links.writeFeedback() }
         }
     }
 }
@@ -480,7 +512,7 @@ struct ContentView: View {
         if browser.prefs.splitView {
             SplitStage(browser: browser, corner: cards ? Metrics.cardRadius : 0, immersed: fullscreenTab?.id)
         } else if let tab = browser.active {
-            Page(tab: tab, corner: cards ? Metrics.cardRadius : 0)
+            Page(tab: tab, corner: cards ? Metrics.cardRadius : 0, browser: browser)
                 .overlay {
                     if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
                 }
@@ -506,6 +538,13 @@ struct ContentView: View {
                     }
                 }
                 .animation(Motion.quick, value: browser.suggesting)
+                .overlay(alignment: .topLeading) {
+                    if let pairing = browser.applePairing, pairing.tab == tab.id {
+                        ApplePairingCard(browser: browser, apple: browser.applePasswords, pairing: pairing)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(Motion.quick, value: browser.applePairing)
         } else {
             Palette.ground
         }
@@ -654,46 +693,26 @@ struct ContentView: View {
         }
     }
 
-    /// The panels. All the same kind of thing, so they are built the same way.
+    /// What still comes over the page. Settings, History, Downloads,
+    /// Bookmarks, Passwords, Bring Things Over and the release notes are
+    /// tabs of their own now (see InternalPages.swift); what is left here
+    /// either comes before there are tabs (Welcome) or comes once by itself
+    /// and goes (What's New).
     @ViewBuilder
     private var panels: some View {
-        if browser.recalling {
-            sheet { HistoryPanel(browser: browser) } close: { browser.recalling = false }
-        }
-        if browser.hoarding {
-            sheet { DownloadsPanel(browser: browser, loot: browser.loot) }
-                close: { browser.hoarding = false }
-        }
-        if browser.tuning {
-            sheet { SettingsPanel(browser: browser, prefs: browser.prefs) }
-                close: { browser.tuning = false }
-        }
-        if browser.bookmarking {
-            sheet { BookmarksPanel(browser: browser, bookmarks: browser.bookmarks) }
-                close: { browser.bookmarking = false }
-        }
         if browser.welcoming {
             WelcomePanel(browser: browser, prefs: browser.prefs)
                 .ignoresSafeArea()
         }
-        if browser.managing {
-            sheet { PasswordsPanel(browser: browser) } close: { browser.managing = false }
-        }
-        if browser.bringingIn != nil {
-            sheet { ImportPanel(browser: browser) } close: { browser.bringingIn = nil }
-        }
-        // What's new, once after an update, and every version's notes
-        // (see WhatsNew.swift).
+        // What's new, once after an update (see WhatsNew.swift). Every
+        // version's notes are a tab.
         if browser.newsShowing, let release = WhatsNew.current {
             sheet {
                 WhatsNewCard(release: release, prefs: browser.prefs, close: { browser.newsShowing = false }) {
                     browser.newsShowing = false
-                    browser.notesShowing = true
+                    browser.show(InternalPage(.notes))
                 }
             } close: { browser.newsShowing = false }
-        }
-        if browser.notesShowing {
-            sheet { ReleaseNotesPanel { browser.notesShowing = false } } close: { browser.notesShowing = false }
         }
         if browser.reviewing {
             // No dimming for this one: the whole point is to keep looking at
@@ -756,6 +775,7 @@ struct ContentView: View {
             .overlay(alignment: .topTrailing) {
                 if let job = browser.fileImport { ImportProgress(browser: browser, job: job) }
             }
+            .environment(\.tabShortcutNumbers, browser.tabShortcutNumbers)
             // The field comes on its spring, and goes quickly: once Return
             // is pressed the page is on its way, and the field is not what
             // there is to watch.
@@ -779,6 +799,7 @@ struct ContentView: View {
             // go on in their place until the app comes back.
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
                 browser.tabSwitcher.cancel()
+                if browser.commandHeld { browser.commandHeld = false }
                 measureLights()
                 resting?.isHidden = false
                 // Only the window you were in, or every window's video would come.
@@ -788,7 +809,10 @@ struct ContentView: View {
                 if let window, (note.object as? NSWindow) === window { Browsers.becameKey(browser) }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { browser.tabSwitcher.cancel() }
+                if let window, (note.object as? NSWindow) === window {
+                    browser.tabSwitcher.cancel()
+                    if browser.commandHeld { browser.commandHeld = false }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { browser.fullScreen = true }
@@ -816,15 +840,8 @@ struct ContentView: View {
                 }
             }
             .onChange(of: browser.activeID) { _, _ in handBack() }
-            .animation(Motion.settle, value: browser.recalling)
-            .animation(Motion.settle, value: browser.hoarding)
-            .animation(Motion.settle, value: browser.tuning)
             .animation(Motion.settle, value: browser.welcoming)
-            .animation(Motion.settle, value: browser.bookmarking)
-            .animation(Motion.settle, value: browser.managing)
             .animation(Motion.settle, value: browser.newsShowing)
-            .animation(Motion.settle, value: browser.notesShowing)
-            .animation(Motion.settle, value: browser.bringingIn != nil)
             .animation(Motion.settle, value: browser.reviewing)
         .onAppear {
             watchKeys()
@@ -847,7 +864,8 @@ struct ContentView: View {
         guard !browser.fieldShowing, browser.editingTab == nil else { return }
         DispatchQueue.main.async {
             guard !browser.fieldShowing, browser.editingTab == nil else { return }
-            guard let web = browser.active?.web, let window = web.window else { return }
+            // Search's own pages have no web view to hand the keys to.
+            guard browser.active?.page == nil, let web = browser.active?.web, let window = web.window else { return }
             if let responder = window.firstResponder as? NSView,
                responder === web || responder.isDescendant(of: web) { return }
             window.makeFirstResponder(web)
@@ -1171,8 +1189,11 @@ struct ContentView: View {
             // window).
             guard mine(event) else { return event }
             guard event.type == .keyDown else {
-                // ⌃ let go of switches to the tab the switcher is on.
-                if browser.tabSwitcher.active, !event.modifierFlags.contains(.control) {
+                let held = browser.prefs.showsTabShortcuts && event.modifierFlags.contains(.command)
+                if browser.commandHeld != held { browser.commandHeld = held }
+                // ⌃ let go of switches to the tab the switcher is on — or
+                // whichever its key is held with (Settings › Shortcuts).
+                if browser.tabSwitcher.active, !ShortcutStore.shared.recentHeld(event.modifierFlags) {
                     browser.commitTabSwitch()
                 }
                 // ⌘ let go of ends a ⌘K walk, wherever it stopped.
@@ -1262,8 +1283,9 @@ struct ContentView: View {
     /// in a corner, stays open, and looks again on the tab picked (#553).
     private func canSwitchTabs(_ event: NSEvent) -> Bool {
         guard let window, event.window === window else { return false }
-        return !browser.tuning && !browser.recalling && !browser.hoarding &&
-            !browser.bookmarking && !browser.welcoming && !browser.managing &&
+        // Settings, History and the rest are tabs, and ⌃Tab goes to and
+        // from them like any other.
+        return !browser.welcoming &&
             !browser.reviewing && !browser.bookmarksOpen &&
             !browser.veiling && !browser.summoning && !browser.makingSpace &&
             browser.peekTab == nil && browser.editingTab == nil &&
@@ -1279,7 +1301,7 @@ struct ContentView: View {
         // A question hanging from the window (Ask) answers its own keys. Esc
         // there is its Cancel: taken here, it closed the panel under it and
         // left the question up, with Return still on its first button.
-        if event.window?.sheetParent != nil { return false }
+        if event.window?.sheetParent != nil || NSApp.modalWindow != nil { return false }
         // A small window's keys are its own (see Little.swift).
         if let little = LittleWindow.owning(event.window) { return little.take(event) }
         // An extension's popup window: ⌘W closes it, not a tab of the
@@ -1294,14 +1316,15 @@ struct ContentView: View {
         guard !ShortcutStore.shared.recording else { return false }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.shortcutCharacters
-        let controlTab = event.keyCode == 48 && flags.contains(.control)
-            && flags.isDisjoint(with: [.command, .option])
+        // ⌃Tab, or the key Settings › Shortcuts gave the switcher instead,
+        // and whether ⇧ sends it back.
+        let recent = ShortcutStore.shared.recentSwitch(event)
 
         // While the tab switcher is up, ⌃ and the arrows move through it and
         // ⌃Tab goes on below; any other key puts it away, and Escape does
-        // nothing else.
-        if browser.tabSwitcher.active, !controlTab {
-            if flags.contains(.control), flags.isDisjoint(with: [.command, .option]) {
+        // nothing else. ⌃ is whatever the switcher's key is held with.
+        if browser.tabSwitcher.active, recent == nil {
+            if ShortcutStore.shared.recentOnly(flags) {
                 let direction: TabSwitcher.Direction? = switch event.keyCode {
                 case 123: .left
                 case 124: .right
@@ -1419,16 +1442,19 @@ struct ContentView: View {
         //
         // While an address is being typed, the list under the field is what
         // there is to move through, and Return takes whatever the walk landed on.
-        if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option) {
-            if flags.contains(.control) {
-                if canSwitchTabs(event) {
-                    // A Tab held down doesn't race through them.
-                    if !event.isARepeat { browser.switchTabs(backwards: flags.contains(.shift)) }
-                    return true
-                }
-                browser.step(flags.contains(.shift) ? -1 : 1)
+        //
+        // The switcher's key can be another (Settings › Shortcuts, as in
+        // Arc); ⌃Tab is then whatever command has it, or the page's.
+        if let backwards = recent {
+            if canSwitchTabs(event) {
+                // A key held down doesn't race through them.
+                if !event.isARepeat { browser.switchTabs(backwards: backwards) }
                 return true
             }
+            browser.step(backwards ? -1 : 1)
+            return true
+        }
+        if event.keyCode == 48, !flags.contains(.command), !flags.contains(.option), !flags.contains(.control) {
             if browser.editingTab != nil { return true }
             // "red" then Tab: Reddit, in the field (SiteSearch.swift).
             if browser.fieldShowing, !flags.contains(.shift), browser.lockSiteOffer() { return true }
@@ -1501,13 +1527,13 @@ struct ContentView: View {
         // types. On AZERTY and many other layouts the top row types &, é, "…
         // unless shift is held, so matching the character left these
         // shortcuts dead there; the shortcut belongs to the key, as it does
-        // in every other browser. The ninth is the last tab, however many.
-        // Only tabs on screen count: not those folded away in a group.
+        // in every other browser. The ninth is the last tab or folded group;
+        // a folded group counts once, under its heading.
         if !shifted, let number = ContentView.digits[event.keyCode] {
             if number == 0 {
                 browser.resetZoom()
             } else {
-                browser.select(index: number == 9 ? browser.shownTabs.count - 1 : number - 1)
+                browser.select(index: number == 9 ? browser.tabShortcutTargets.count - 1 : number - 1)
             }
             return true
         }
@@ -1537,10 +1563,12 @@ struct ContentView: View {
             browser.toggleDusk()
         case "n" where shifted:
             browser.newShyTab()
+        // Shown, or brought forward if open: never a second one, and never
+        // closed by the key that opened it — ⌘W does that, as for any tab.
         case "y" where !shifted:
-            browser.recalling.toggle()
+            browser.recalling = true
         case "j" where shifted:
-            browser.hoarding.toggle()
+            browser.hoarding = true
         case "v" where shifted:
             // In a text field this key is paste without formatting — a Google
             // Doc, a form, the address field. It only means Paste and Go when
@@ -1582,7 +1610,7 @@ struct ContentView: View {
         case "b" where shifted:
             browser.bookmarkCurrent()
         case "," where !shifted:
-            browser.tuning.toggle()
+            browser.tuning = true
         case "h" where shifted:
             browser.toggleHiding()
         case "u" where shifted:

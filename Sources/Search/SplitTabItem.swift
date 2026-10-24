@@ -100,6 +100,7 @@ struct SplitTabItem: View {
 
 private struct SplitTabHalf: View {
     @Environment(\.greys) private var greys
+    @Environment(\.tabShortcutNumbers) private var shortcutNumbers
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
@@ -117,6 +118,10 @@ private struct SplitTabHalf: View {
     private var title: String { tab.label.isEmpty ? "New Tab" : tab.label }
     private var playing: Bool { !tab.loading && (tab.noisy || tab.muted) }
     private var editing: Bool { browser.editingTab == tab.id }
+    /// Where the page is, said on the half you're on (Settings › Tabs › Show
+    /// the address on the tab you're on).
+    private var rest: AtRest? { focused && !editing && !narrow ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
+    private var atRest: Bool { rest != nil }
 
     private var laidOut: some View {
         row
@@ -207,6 +212,9 @@ private struct SplitTabHalf: View {
                     browser.focusPane(tab)
                 })
             if !editing {
+                if interactive, let number = shortcutNumbers[tab.id] {
+                    TabShortcutNumber(number: number)
+                }
                 status
                 // In the column each line has its own cross at its own end,
                 // one under the other; across the top the item has one.
@@ -233,6 +241,7 @@ private struct SplitTabHalf: View {
                 }
                 if !narrow {
                     PopupSign(browser: browser, tab: tab)
+                    TranslateSign(tab: tab)
                 }
                 // The page is asking something, over its half of the stage.
                 if browser.paneQuestions.contains(where: { $0.tab == tab.id }) {
@@ -242,11 +251,10 @@ private struct SplitTabHalf: View {
                         .accessibilityLabel("Asking a question")
                 }
                 if !narrow {
-                    Text(title)
-                        .font(.system(size: stacked ? prefs.sideTitle : 12))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .foregroundStyle(focused ? Palette.ink : hovering ? Palette.ink.opacity(0.7) : Palette.muted)
+                    TitleAtRest(label: title, rest: rest, shown: atRest, hovering: hovering,
+                                size: stacked ? prefs.sideTitle : 12,
+                                colour: focused ? Palette.ink : hovering ? Palette.ink.opacity(0.7) : Palette.muted,
+                                roomy: stacked)
                 }
             }
         }

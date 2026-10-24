@@ -120,12 +120,18 @@ final class TabSwitcher: ObservableObject {
     private var generation = UUID()
     var active: Bool { home != nil }
 
+    /// The latest tab left that is still among `row`, other than `id`: where
+    /// a pin's number pressed again goes back to.
+    func lastLeft(among row: Set<Tab.ID>, other id: Tab.ID) -> Tab.ID? {
+        recentIDs.first { $0 != id && row.contains($0) }
+    }
+
     /// The tab just left goes to the front, with a picture of it as it was.
     /// Tabs that are gone fall out, and only the ten latest keep a picture.
     func left(_ tab: Tab, alive: Set<Tab.ID>) {
         recentIDs = [tab.id] + recentIDs.filter { $0 != tab.id && alive.contains($0) }
         prune { kept($0) }
-        if !tab.isBlank { requestPreview(of: tab, gesture: nil) }
+        if tab.isWeb { requestPreview(of: tab, gesture: nil) }
     }
 
     /// The first ⌃Tab of a gesture takes the space's tabs in that order, the

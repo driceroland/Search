@@ -185,7 +185,7 @@ extension Browser {
     func askAboutPage() { startAssistant(summary: false) }
 
     private func startAssistant(summary: Bool) {
-        guard AI.shipped || Store.testing, let tab = active, !tab.isBlank else { return }
+        guard AI.shipped || Store.testing, let tab = active, tab.isWeb else { return }
         guard prefs.ai, let provider = prefs.aiProvider else {
             settingsPage = .ai
             tuning = true
@@ -525,7 +525,6 @@ struct AISettings: View {
                     Pill("Save") { save(provider) }
                     if provider == .openRouter {
                         Pill("Sign In…") {
-                            browser.tuning = false
                             AISignIn.start(in: browser)
                         }
                     }

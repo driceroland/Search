@@ -385,7 +385,18 @@ final class Bench {
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             // "listed": pinned as a row, or an existing pin made a row
             // (true) or a square (false).
-            if request["off"] as? Bool == true { browser.unpin(tab) }
+            // "at": let go there, as the column's drag lets go (PinDrop):
+            // among the squares (or the rows, with "listed"), or with "off"
+            // among the tabs in no group — or into "group".
+            var taken: Bool?
+            if let at = request["at"] as? Int {
+                if request["off"] as? Bool == true {
+                    taken = browser.unpinDropped(tab, at: at, group: (request["group"] as? String).flatMap(UUID.init))
+                } else {
+                    taken = browser.pinDropped(tab, listed: request["listed"] as? Bool ?? false, at: at)
+                }
+            }
+            else if request["off"] as? Bool == true { browser.unpin(tab) }
             else if request["home"] as? Bool == true { browser.goHome(tab) }
             // "everywhere": Keep in Every Space (true) or Only in This Space
             // (false), as the pin's menu does.
@@ -395,7 +406,8 @@ final class Bench {
             else if let listed = request["listed"] as? Bool, tab.pin != nil { browser.setListed(tab, listed) }
             else { browser.pin(tab, listed: request["listed"] as? Bool ?? false) }
             answer(["pin": tab.pin ?? "", "listed": tab.listed, "everywhere": tab.everywhere, "pinned": browser.pinnedCount, "home": tab.home?.absoluteString ?? "",
-                    "address": tab.address?.absoluteString ?? "", "editingLetter": browser.editingPin == tab.id])
+                    "address": tab.address?.absoluteString ?? "", "editingLetter": browser.editingPin == tab.id,
+                    "taken": taken.map { $0 as Any } ?? NSNull()])
 
         case "select":
             // Picking a tab takes the window over, which the bench never does
@@ -766,6 +778,8 @@ final class Bench {
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
             out["peek"] = browser.peekTab?.address?.absoluteString ?? ""
             out["peekFrom"] = browser.peekFrom?.uuidString ?? ""
+            // The size the peek's page is drawn at (see Tab.applyRememberedZoom).
+            out["peekZoom"] = Double(browser.peekTab?.built?.pageZoom ?? 0)
             out["fetching"] = ["showing": browser.fetches.showing, "fraction": browser.fetches.fraction ?? -1, "done": browser.fetches.done]
             // Where the peek's page sits in the window, from its top-left corner, in points.
             if let web = browser.peekTab?.built, let window = web.window {
@@ -1645,6 +1659,59 @@ final class Bench {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { settled(tries + 1) }
             }
             settled(0)
+        case "translate":
+            // Translate Page on a tab, as its menu does, answered once the
+            // first pass is in (what it measured); original puts it back;
+            // state is the tab's sign, its frames, the last page menu and
+            // the languages always translated; always/never LANG are the
+            // sign's Always Translate. Changing anything: test runs only.
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            let action = request["action"] as? String ?? "start"
+            guard Store.testing || ["state", "start", "original"].contains(action) else {
+                answer(["error": "translate \(action) only works on a --test run"]); return
+            }
+            let state: () -> [String: Any] = {
+                var mark: [String: Any] = [:]
+                if let m = tab.translation {
+                    mark = ["from": m.from ?? "", "to": m.to]
+                    switch m.phase {
+                    case .working: mark["phase"] = "working"
+                    case .done: mark["phase"] = "done"
+                    case .failed(let message): mark["phase"] = "failed"; mark["message"] = message
+                    }
+                }
+                return [
+                    "enabled": PageTranslator.enabled, "available": PageTranslator.available,
+                    "mark": mark, "running": tab.translator != nil, "frames": tab.translateFrames.count,
+                    "report": tab.translator?.report ?? [:], "menu": tab.built?.translateItem()?.title ?? "",
+                    "always": browser.prefs.translateAlways.sorted(), "tabAlways": tab.translateLanguages.sorted(),
+                    "wake": tab.translateOnWake?.to ?? "", "shy": tab.shy,
+                ]
+            }
+            switch action {
+            case "original":
+                tab.translator?.end(restore: true)
+                answer(state())
+            case "state":
+                answer(state())
+            case "toggle":
+                // What choosing the page menu's item does.
+                guard let item = tab.built?.translateItem() else { answer(["error": "no Translate Page item"]); return }
+                tab.built?.perform(item.action, with: item)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { answer(state()) }
+            case "always", "never":
+                guard let code = request["lang"] as? String else { answer(["error": "translate always|never LANG"]); return }
+                tab.setAlwaysTranslates(code, action == "always")
+                answer(state())
+            default:
+                let target = (request["lang"] as? String).map(Locale.Language.init(identifier:)) ?? PageTranslator.reader
+                if PageTranslator.start(tab, to: target, done: { report in
+                    var reply = state()
+                    reply["report"] = report
+                    answer(reply)
+                }) == nil { return }
+            }
+
         case "visible":
             // Refused: it lent the tab to a window of its own, off every
             // screen, so that WebKit would count the page as seen. No bench
@@ -2008,6 +2075,17 @@ final class Bench {
         case "tospace":
             // Move to Space from a tab's menu, to the Nth space. Test runs only.
             guard Store.testing else { answer(["error": "tospace only works on a --test run"]); return }
+            // "group": a group by name, as its menu's Move Group to Space.
+            if let name = request["group"] as? String, let index = request["index"] as? Int,
+               browser.spaces.indices.contains(index - 1) {
+                guard let group = browser.tabGroups.first(where: { $0.name == name }) else {
+                    answer(["error": "no group “\(name)”"]); return
+                }
+                browser.move(group: group.id, toSpace: browser.spaces[index - 1].id)
+                answer(["space": browser.spaces[index - 1].name, "tabs": browser.tabs.map(Bench.short),
+                        "groups": browser.tabGroups.map(\.name)])
+                return
+            }
             guard let id = request["id"] as? String, let index = request["index"] as? Int,
                   let tab = browser.tabs.first(where: { Bench.short($0) == id }),
                   browser.spaces.indices.contains(index - 1)
@@ -2893,6 +2971,13 @@ final class Bench {
                 browser.bringingIn = ["off", "false", "0", "no"].contains(text) ? nil
                     : ["on", "true", "1", "yes", "extensions"].contains(text) ? "" : text
             }
+            // Search's own pages (InternalPages.swift): one shown by its
+            // address as a link would open it, one reached from the page in
+            // front as its own buttons do, and an address typed on the tab
+            // in front.
+            if let text = request["show"] as? String, let url = URL(string: text) { _ = browser.open(url, foreground: true) }
+            if let text = request["lead"] as? String, let kind = InternalPage.Kind(rawValue: text) { browser.lead(to: InternalPage(kind)) }
+            if let text = request["go"] as? String, let url = URL(string: text) { browser.active?.go(to: url) }
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
             if let side = request["side"] as? String {
@@ -2917,6 +3002,7 @@ final class Bench {
             if let on = request["sharedpins"] as? Bool { browser.prefs.sharesPins = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["cards"] as? Bool { browser.prefs.cards = on }
+            if let on = request["address"] as? Bool { browser.prefs.showsAddress = on }
             // Settings › Videos wait for a click, moved as its switch moves it.
             if let on = request["waits"] as? Bool, Store.testing { browser.prefs.waitsForPlay = on }
             // Settings › Privacy's two switches (see Privacy.swift).
@@ -2950,6 +3036,12 @@ final class Bench {
             var content: [String: Any] = ["kind": "none"]
             switch browser.sidePanel {
             case .page(let id, let url, let tab): content = ["kind": "page", "extension": id, "url": url.absoluteString, "tab": tab.map { $0.uuidString } ?? ""]
+            case .site(let url, let space): content = ["kind": "site", "url": url.absoluteString, "space": space.uuidString,
+                                                       "store": web.map { $0.configuration.websiteDataStore.isPersistent } ?? false,
+                                                       "sameStore": web.map { $0.configuration.websiteDataStore === Spaces.store(for: browser.spaceID) } ?? false,
+                                                       "inspectable": web.map { if #available(macOS 13.3, *) { return $0.isInspectable } else { return false } } ?? false,
+                                                       "developerExtras": web.flatMap { $0.configuration.preferences.value(forKey: "developerExtrasEnabled") as? Bool } ?? false]
+                .merging(SidePanelPages.shared.siteReport(in: browser)) { a, _ in a }
             case nil: break
             }
             // Where the panel's page and every page sit in the window, from
@@ -2990,6 +3082,26 @@ final class Bench {
                 guard Store.testing else { answer(["error": "sidepanel close only works on a --test run"]); return }
                 browser.closeSidePanel()
                 answer(["shown": browser.sidePanelShown])
+            case "site":
+                // A website into the panel, as View › Side Panel puts one
+                // there (or the tab's menu, with "tab"). Test runs only.
+                guard Store.testing else { answer(["error": "sidepanel site only works on a --test run"]); return }
+                if let id = request["tab"] as? String, let tab = browser.tabs.first(where: { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) }) {
+                    browser.openInSidePanel(tab)
+                } else if let url = (request["url"] as? String).flatMap(URL.init(string:)) {
+                    browser.showSiteInPanel(url)
+                }
+                answer(["shown": browser.sidePanelShown])
+            case "crash":
+                // The panel's website told its process is gone, as WebKit
+                // tells a crash. Test runs only.
+                guard Store.testing else { answer(["error": "sidepanel crash only works on a --test run"]); return }
+                SidePanelPages.shared.siteCrashed(in: browser)
+                answer(SidePanelPages.shared.siteReport(in: browser))
+            case "totab":
+                guard Store.testing else { answer(["error": "sidepanel totab only works on a --test run"]); return }
+                browser.sitePanelToTab()
+                answer(["shown": browser.sidePanelShown, "tabs": browser.tabs.count])
             default:
                 answer(state)
             }
@@ -3050,7 +3162,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate",
             ]])
         }
     }
@@ -3376,6 +3488,22 @@ final class Bench {
             guard let page = tab() else { answer(["error": "split openIn needs id"]); return }
             browser.openInSplit(page)
             reply()
+        case "pick":
+            // ⌘-clicks in the column on exactly these tabs, from no selection.
+            guard let ids = request["ids"] as? [String] else { answer(["error": "split pick needs ids"]); return }
+            let picked = ids.compactMap { find(["id": $0], in: browser) }
+            browser.clearTabSelection()
+            for page in picked { browser.extendTabSelection(to: page, modifiers: .command) }
+            // The first ⌘-click picks the page in front too, as in the column.
+            if let front = browser.active, !picked.contains(where: { $0 === front }),
+               browser.selectedTabIDs.contains(front.id) {
+                browser.extendTabSelection(to: front, modifiers: .command)
+            }
+            reply()
+        case "pairPicked":
+            // The tab menu's Open 2 Tabs in Split View, right-clicked on id.
+            browser.pairPickedTabs(focus: tab())
+            reply()
         case "fill":
             guard let blank = tab(), let page = tab("with") else { answer(["error": "split fill needs id and with"]); return }
             browser.fill(blank, with: page)
@@ -3398,6 +3526,11 @@ final class Bench {
                     "title": tab.title,
                     "url": tab.address?.absoluteString ?? "",
                     "blank": tab.isBlank,
+                    // One of Search's own pages (InternalPages.swift), by its address.
+                    "internal": tab.page?.url.absoluteString ?? "",
+                    "canBack": tab.canGoBack,
+                    "canForward": tab.canGoForward,
+                    "built": tab.built != nil,
                     "shy": tab.shy,
                     "bench": tab.bench,
                     "asleep": tab.asleep,
@@ -3407,6 +3540,18 @@ final class Bench {
                     // you last looked, for ⌃Tab: letting go moves only the first.
                     "idle": Date().timeIntervalSince(tab.leftSince),
                     "looked": Date().timeIntervalSince(tab.touched),
+                    // Which web view holds its page, while it has one: the
+                    // same after a pin or an unpin, as nothing was loaded again.
+                    "web": tab.built.map { String(UInt(bitPattern: ObjectIdentifier($0).hashValue), radix: 16) } ?? "",
+                    // Whether its page is in a window, and kept there unseen
+                    // for a call (StageView.calls); whether it is on one; and
+                    // whether the keys would go to it.
+                    "inWindow": tab.built?.window != nil,
+                    "heldForCall": tab.built.map { web in (web.superview as? StageView)?.holdsCall(web) == true } ?? false,
+                    "onCall": tab.built.map { StageView.onCall($0) } ?? false,
+                    "hasKeys": tab.built.map { web in
+                        (web.window?.firstResponder as? NSView).map { $0 === web || $0.isDescendant(of: web) } ?? false
+                    } ?? false,
                 ] as [String: Any]
             },
             "splits": browser.splits.map { pair in
@@ -3459,6 +3604,11 @@ final class Bench {
             },
             "spaceID": browser.spaceID.uuidString,
             "spaceIDs": browser.spaces.map { $0.id.uuidString },
+            // Tabs picked in the column (⌘- or ⇧-click), and what Open 2 Tabs
+            // in Split View would pair: off while the menu's item is off.
+            "selected": browser.tabs.filter { browser.selectedTabIDs.contains($0.id) }.map { Bench.short($0) },
+            "pickedPair": browser.pickedPair.map { [Bench.short($0.left), Bench.short($0.right)] } ?? [],
+            "pickedPaired": browser.pickedTabsArePaired,
         ]
     }
 
@@ -3603,6 +3753,7 @@ final class Bench {
             "id": Bench.short(tab),
             "url": tab.address?.absoluteString ?? "",
             "page": tab.pageAddress?.absoluteString ?? "",
+            "internal": tab.page?.url.absoluteString ?? "",
             "title": tab.title,
             "name": tab.name ?? "",
             // The group it is in, by name, whether or not groups are on.
@@ -3612,6 +3763,11 @@ final class Bench {
             "view": tab.built?.url?.absoluteString ?? "",
             "bench": tab.bench,
             "active": tab.id == browser?.activeID,
+            // Where the page is, as its tab would say it at rest, and whether
+            // it says it now: the setting on, the tab you're on, not edited
+            // (see AtRest.swift).
+            "atRest": AtRest.of(tab.restAddress)?.text ?? "",
+            "atRestShown": browser.map { tab.id == $0.activeID && $0.editingTab != tab.id && AtRest.said(tab.restAddress, always: $0.prefs.showsAddress) != nil } ?? false,
             "asleep": tab.asleep,
             "shy": tab.shy,
             "noisy": tab.noisy,

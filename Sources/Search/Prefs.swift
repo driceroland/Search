@@ -221,6 +221,11 @@ final class Preferences: ObservableObject {
         didSet { store.set(startsFresh, forKey: Preferences.freshKey) }
     }
     nonisolated static let freshKey = "start.fresh"
+    /// Ask before the Quit menu or ⌘Q closes the app. Off unless asked for.
+    @Published var confirmsQuit: Bool {
+        didSet { store.set(confirmsQuit, forKey: Preferences.confirmQuitKey) }
+    }
+    nonisolated static let confirmQuitKey = "quit.confirm"
     /// Search a site from the address field: the start of its name, then
     /// Tab (see SiteSearch.swift). Off unless asked for.
     @Published var searchesSites: Bool {
@@ -232,8 +237,18 @@ final class Preferences: ObservableObject {
     @Published var engineSuggests: Bool {
         didSet { store.set(engineSuggests, forKey: "search.suggest") }
     }
+    /// Numbers beside tabs while Command is held. Off unless asked for.
+    @Published var showsTabShortcuts: Bool {
+        didSet { store.set(showsTabShortcuts, forKey: "tabs.shortcuts") }
+    }
     @Published var showsReading: Bool {
         didSet { store.set(showsReading, forKey: "tabs.reading") }
+    }
+    /// The tab you're on says where its page is, at rest, without a click:
+    /// its site, from the address on screen (see AtRest.swift). Off unless
+    /// asked for.
+    @Published var showsAddress: Bool {
+        didSet { store.set(showsAddress, forKey: "tabs.address") }
     }
     /// The ad blocker. On unless turned off; there is nothing else to it.
     @Published var shielded: Bool {
@@ -297,6 +312,12 @@ final class Preferences: ObservableObject {
     /// Put a kept name and password into a sign-in as soon as one appears.
     @Published var fillsPasswords: Bool {
         didSet { store.set(fillsPasswords, forKey: "passwords.fill") }
+    }
+    /// Accounts from the Mac's Passwords app under the sign-in box too, by
+    /// Apple's helper for its Chrome extension (ApplePasswords.swift). Off
+    /// unless turned on: unofficial, and it pairs with a code.
+    @Published var applePasswords: Bool {
+        didSet { store.set(applePasswords, forKey: "passwords.apple") }
     }
     /// The first launch has been walked through. Until then the welcome
     /// stands over the window.
@@ -410,11 +431,43 @@ final class Preferences: ObservableObject {
         didSet { store.set(waitsForPlay, forKey: Preferences.waitsKey) }
     }
     nonisolated static let waitsKey = "media.click"
+    /// Translate Page in the page's right-click menu, on this Mac only
+    /// (Translate.swift). Off unless asked for.
+    @Published var translatesPages: Bool {
+        didSet { store.set(translatesPages, forKey: PageTranslator.key) }
+    }
+    /// The languages whose pages are translated as they open, chosen from
+    /// the translated sign's menu (never from a private tab). None at first.
+    @Published var translateAlways: Set<String> {
+        didSet { store.set(Array(translateAlways).sorted(), forKey: PageTranslator.alwaysKey) }
+    }
     /// A video playing on a video site comes out into the floating window
     /// when you go to another tab (Browser.leaving). On, as it always was;
     /// the switch is for turning it off.
     @Published var floatsOnLeave: Bool {
         didSet { store.set(floatsOnLeave, forKey: "float.leave") }
+    }
+    /// Websites in the side panel (SidePanel.swift). Off unless asked for:
+    /// without it, only an extension's panel goes there.
+    @Published var sitesInPanel: Bool {
+        didSet {
+            store.set(sitesInPanel, forKey: "panel.sites")
+            if !sitesInPanel {
+                for browser in Browsers.all { if case .site = browser.sidePanel { browser.closeSidePanel() } }
+            }
+        }
+    }
+    /// The website last put in the side panel, for View › Side Panel.
+    @Published var panelSite: String {
+        didSet { store.set(panelSite, forKey: "panel.site") }
+    }
+    /// Which window a floating video goes into: Search's own, as it always
+    /// was, or macOS's picture in picture (see NativePiP.swift).
+    @Published var floatStyle: FloatStyle {
+        didSet {
+            store.set(floatStyle.rawValue, forKey: "float.style")
+            NativePiP.allowEverywhere()
+        }
     }
     /// A newer build is fetched, checked and put in place on its own, as it
     /// always was. Off, Search still looks every hour and says so, and waits
@@ -446,6 +499,11 @@ final class Preferences: ObservableObject {
     /// wherever it was taken since. Off unless asked for.
     @Published var pinsGoHome: Bool {
         didSet { store.set(pinsGoHome, forKey: "pins.home") }
+    }
+    /// A pin's ⌘ number pressed again, on that pin, goes back to the tab
+    /// you were on before it. Off unless asked for.
+    @Published var pinNumberGoesBack: Bool {
+        didSet { store.set(pinNumberGoesBack, forKey: "pins.numberBack") }
     }
     /// Whether the pinned rows are drawn as rows: asked for, and with the
     /// tabs down the side. Across the top every pin is a square.
@@ -561,10 +619,13 @@ final class Preferences: ObservableObject {
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
+        confirmsQuit = store.bool(forKey: Preferences.confirmQuitKey)
         searchesSites = store.bool(forKey: "search.sites")
         engineSuggests = store.bool(forKey: "search.suggest")
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
+        showsTabShortcuts = store.bool(forKey: "tabs.shortcuts")
         showsReading = store.object(forKey: "tabs.reading") as? Bool ?? true
+        showsAddress = store.bool(forKey: "tabs.address")
         shielded = store.object(forKey: "shield") as? Bool ?? true
         let keeps = store.bool(forKey: "sites.keep")
         keepsSignIns = keeps
@@ -611,6 +672,7 @@ final class Preferences: ObservableObject {
         asksWhereToSave = store.bool(forKey: "downloads.ask")
         savesPasswords = store.object(forKey: "passwords.save") as? Bool ?? true
         fillsPasswords = store.object(forKey: "passwords.fill") as? Bool ?? true
+        applePasswords = store.bool(forKey: "passwords.apple")
         // Anyone who already has a session was here before the welcome
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
@@ -618,6 +680,7 @@ final class Preferences: ObservableObject {
         usesTabGroups = store.bool(forKey: "tabs.groups")
         listsPins = store.bool(forKey: "pins.list")
         pinsGoHome = store.bool(forKey: "pins.home")
+        pinNumberGoesBack = store.bool(forKey: "pins.numberBack")
         sharesPins = store.bool(forKey: "pins.shared")
         splitView = store.bool(forKey: "splitView")
         switcherKeys = store.bool(forKey: "switcher.keys")
@@ -636,7 +699,12 @@ final class Preferences: ObservableObject {
         Float.flicks = flicks
         floatsAway = store.bool(forKey: "float.away")
         floatsOnLeave = store.object(forKey: "float.leave") as? Bool ?? true
+        sitesInPanel = store.bool(forKey: "panel.sites")
+        panelSite = store.string(forKey: "panel.site") ?? ""
+        floatStyle = store.string(forKey: "float.style").flatMap(FloatStyle.init(rawValue:)) ?? .search
         waitsForPlay = store.bool(forKey: Preferences.waitsKey)
+        translatesPages = store.bool(forKey: PageTranslator.key)
+        translateAlways = Set(store.stringArray(forKey: PageTranslator.alwaysKey) ?? [])
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
