@@ -4499,6 +4499,15 @@ final class Browser: NSObject, ObservableObject {
         fresh.popup = tab.popup
         fresh.pin = tab.pin
         fresh.listed = tab.listed
+        // And it stays the same pin. With no id of its own it would be given
+        // a new one, and every other window would close its tab for the old
+        // pin and make a sleeping one for the new, losing the page it had
+        // there; with no home, the page it was pinned at would become
+        // wherever this swap went; and a pin every space shows would be
+        // written back as this space's own (see writeSession).
+        fresh.pinID = tab.pinID
+        fresh.home = tab.home
+        fresh.everywhere = tab.everywhere
         fresh.name = tab.name
         prepare(fresh)
         fresh.groupID = tab.groupID
