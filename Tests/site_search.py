@@ -26,12 +26,12 @@ def site(action="state", **fields):
 def main():
     t = sv.T()
     try:
-        sv.setup(); sv.launch()
+        # Always there since 24 Oct 2026, an old "off" on disk included.
+        sv.setup(**{"search.sites": False}); sv.launch()
         field("red"); time.sleep(0.3)
-        t.ok("off: nothing offered", site()["offer"] == "")
-        site("esc"); sv.cmd({"do": "ui", "peeklink": "close"}) if False else None
+        t.ok("always on: red offers Reddit, an old off notwithstanding", site()["offer"] == "Reddit", site()["offer"])
+        site("esc")
         sv.quit()
-        subprocess.run(["defaults", "write", sv.SUITE, "search.sites", "-bool", "true"])
         sv.launch()
         sv.page("start")
         for typed, want in [("red", "Reddit"), ("yout", "YouTube"), ("yt", "YouTube"), ("wiki", "Wikipedia"),
@@ -47,7 +47,10 @@ def main():
         s = site()
         t.ok("words after the chip: Reddit's search", s["offers"] and s["offers"][0][1] == "https://www.reddit.com/search/?q=coffee%20beans", s["offers"])
         s = site("go")
-        t.ok("Return searches Reddit, the chip goes", "reddit.com/search/?q=coffee%20beans" in (s["address"] + s["pending"]) and s["chip"] == "", s)
+        # Reddit may answer with a challenge that rewrites the address
+        # around the words: its search, with them in it, is what counts.
+        went = s["address"] + s["pending"]
+        t.ok("Return searches Reddit, the chip goes", "reddit.com/search/" in went and ("q=coffee%20beans" in went or "q=coffee+beans" in went) and s["chip"] == "", s)
         field("yout"); time.sleep(0.2); site("tab")
         s = site("delete")
         t.ok("⌫ in the empty field takes the site out", s["chip"] == "" and s["editing"], s)

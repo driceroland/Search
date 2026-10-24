@@ -11,11 +11,15 @@ final class PinNumberBackTests: XCTestCase {
         super.setUp()
     }
 
-    func testOffByDefault() {
+    /// Always on since the Settings rework, an old "off" on disk included:
+    /// it only gives a key that did nothing something to do.
+    func testAlwaysOn() {
         let saved = Store.settings.object(forKey: "pins.numberBack")
         defer { Store.settings.set(saved, forKey: "pins.numberBack") }
         Store.settings.removeObject(forKey: "pins.numberBack")
-        XCTAssertFalse(Preferences().pinNumberGoesBack)
+        XCTAssertTrue(Preferences().pinNumberGoesBack)
+        Store.settings.set(false, forKey: "pins.numberBack")
+        XCTAssertTrue(Preferences().pinNumberGoesBack)
     }
 
     func testSecondPressGoesBackOnlyWhenOn() {

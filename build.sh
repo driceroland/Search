@@ -282,6 +282,13 @@ IDENTITY="${SEARCH_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/
 # this script, both go in; without it, the app is signed as before, because
 # a restricted entitlement with no profile behind it is an app that won't open.
 ENTITLEMENTS="Search.entitlements"
+# A release that ships without it loses passkeys and the keychain items the
+# entitled builds saved (1.0.6, build 202610241534, went out that way from a
+# worktree the git-ignored profile hadn't been copied into): ship refuses.
+if [ "$STEP" = "ship" ] && [ ! -f "Search.provisionprofile" ] && [ -z "${SEARCH_ALLOW_NO_PASSKEYS:-}" ]; then
+  echo "ship: Search.provisionprofile is missing here (it's git-ignored: copy it from the main checkout)" >&2
+  exit 1
+fi
 if [ -f "Search.provisionprofile" ]; then
   cp "Search.provisionprofile" "$APP/Contents/embedded.provisionprofile"
   ENTITLEMENTS="Search.passkeys.entitlements"
