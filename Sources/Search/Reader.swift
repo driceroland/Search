@@ -91,7 +91,13 @@ enum Reader {
         '#office-reader pre,#office-reader code{font-family:ui-monospace,monospace;font-size:14px}',
         '#office-reader pre{background:#f5f5f5;padding:14px;border-radius:8px;overflow:auto}',
         '#office-reader blockquote{margin:1.6em 0;padding-left:1.2em;',
-        'border-left:2px solid #e8e8e8;color:#555}'
+        'border-left:2px solid #e8e8e8;color:#555}',
+        // Said outright: a site's own reset (Tailwind's, most often) takes
+        // the numbers off every list on the page, this one included.
+        '#office-reader ul,#office-reader ol{margin:0 0 1.35em;padding-left:1.4em}',
+        '#office-reader ul{list-style:disc outside}',
+        '#office-reader ol{list-style:decimal outside}',
+        '#office-reader li>ul{list-style-type:circle}'
       ].join('');
 
       var wrap = document.createElement('div');

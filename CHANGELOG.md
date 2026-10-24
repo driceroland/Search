@@ -30,6 +30,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Reading mode keeps a list's numbers and bullets on sites whose styles take them off, as Tailwind's reset does for every list on the page.
 - New small windows open a step down and to the right of the newest one on screen instead of exactly on top of it. Five links from Mail were five windows that looked like one, the others hidden under it. Thanks [@oddharsh](https://github.com/oddharsh) ([#493](https://github.com/driceroland/Search/pull/493))
 - Dragging a tab or a pin in the column moves it under the hand again. In 1.0.6, since a tab opens as the button goes down ([#625](https://github.com/driceroland/Search/pull/625)), it only jumped into place on letting go, and a pin held still a moment before letting go wasn't moved at all
 
