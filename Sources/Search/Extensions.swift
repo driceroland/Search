@@ -514,6 +514,15 @@ final class Extensions: NSObject, ObservableObject {
                 context.setPermissionStatus(.grantedExplicitly, for: permission)
             }
             context.setPermissionStatus(.grantedExplicitly, for: .nativeMessaging)
+            // Chrome lets "declarativeNetRequest" redirect or change headers
+            // on the sites the extension has access to. WebKit does that only
+            // with "declarativeNetRequestWithHostAccess", and otherwise drops
+            // those rules without a word: Norma's redirect of a blocked site
+            // to its own page never happened, and the site loaded (or failed)
+            // instead. WebKit still holds the rules to the sites granted.
+            if found.requestedPermissions.contains(.declarativeNetRequest) {
+                context.setPermissionStatus(.grantedExplicitly, for: .declarativeNetRequestWithHostAccess)
+            }
             Extensions.grantSites(context)
             // Its own sign-in address, https://<id>.chromiumapp.org, which
             // is never loaded (see ExtensionAuth.handOver). WebKit shows an

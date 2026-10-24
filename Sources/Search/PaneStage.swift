@@ -27,6 +27,8 @@ struct PaneStageView: NSViewRepresentable {
     var find: Browser? = nil
     /// The accounts hanging from the sign-in box the caret is in, if any.
     var accounts: (browser: Browser, asked: Browser.Suggesting)? = nil
+    /// Apple Passwords' code card, hanging from the same box, if it is up.
+    var pairing: (browser: Browser, pairing: Browser.ApplePairing)? = nil
     /// Each page's corners, as a card (see CardEdge).
     var corner: CGFloat = 0
     /// The page filling the screen, if one is (see SplitStage.immersed).
@@ -45,6 +47,7 @@ struct PaneStageView: NSViewRepresentable {
         stage.show(tabs, split: split, focused: focused)
         stage.showFind(find)
         stage.showAccounts(accounts)
+        stage.showPairing(pairing)
     }
 }
 
@@ -114,6 +117,31 @@ final class PaneStage: NSView {
 
     private var accountList: AccountHost?
     private var accountsFor: Tab.ID?
+    private var pairingCard: PairingHost?
+    private var pairingFor: Tab.ID?
+
+    /// Apple Passwords' code card under a sign-in box (ApplePairingCard),
+    /// above the pages for the reason the accounts are.
+    func showPairing(_ pairing: (browser: Browser, pairing: Browser.ApplePairing)?) {
+        guard let pairing else {
+            pairingCard?.removeFromSuperview()
+            pairingCard = nil
+            pairingFor = nil
+            return
+        }
+        let view = ApplePairingCard(browser: pairing.browser, apple: pairing.browser.applePasswords, pairing: pairing.pairing)
+        if pairingCard == nil {
+            let host = PairingHost(rootView: view)
+            host.sizingOptions = []
+            pairingCard = host
+            addSubview(host, positioned: .above, relativeTo: nil)
+        }
+        guard let host = pairingCard else { return }
+        host.rootView = view
+        host.spot = pairing.pairing.spot
+        pairingFor = pairing.pairing.tab
+        needsLayout = true
+    }
 
     /// The accounts under a sign-in box, for the same reason: drawn by
     /// SwiftUI over the stage, they were under WebKit's pages and never
@@ -395,6 +423,13 @@ final class PaneStage: NSView {
                 bar.frame = CGRect(x: page.maxX - width, y: page.minY,
                                    width: width, height: min(60, page.height))
             }
+        }
+        if let host = pairingCard {
+            // As the accounts below: over the page the box is on.
+            let page = pairingFor.flatMap { id in tabs.firstIndex { $0.id == id } }
+                .flatMap { frames.indices.contains($0) ? frames[$0] : nil }
+            host.isHidden = page == nil || page?.width == 0
+            if let page, host.frame != page { host.frame = page }
         }
         if let host = accountList {
             // Over the page the box is on, as large as it: the list places
@@ -902,6 +937,21 @@ private final class FindHost: NSHostingView<FindBar> {
 /// the list itself is a small card under the sign-in box. A press on the
 /// card picks an account; anywhere else it is the page's, as if the box
 /// weren't there — the sign-in box itself above all.
+/// The code card's host: as large as the page, but only the card takes a
+/// click; the rest of the page is the page's.
+private final class PairingHost: NSHostingView<ApplePairingCard> {
+    /// The sign-in box, from the page's top-left (Browser.ApplePairing.spot).
+    var spot = CGRect.zero
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let inside = convert(point, from: superview)
+        // Where ApplePairingCard puts itself: under the box, as wide as it
+        // within 240–360, about as tall as its two lines and its field.
+        let card = CGRect(x: spot.minX, y: spot.maxY + 6, width: max(240, min(360, spot.width)), height: 110)
+        return card.contains(inside) ? super.hitTest(point) : nil
+    }
+}
+
 private final class AccountHost: NSHostingView<AccountList> {
     /// The sign-in box, from the page's top-left (Browser.Suggesting.spot).
     var spot = CGRect.zero
