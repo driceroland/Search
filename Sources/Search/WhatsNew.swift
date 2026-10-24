@@ -35,6 +35,21 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Suggestions from your search engine", detail: "Searches suggested as you type. What you type is sent to your engine; never from a private tab.",
+               since: "1.0.6", get: { $0.engineSuggests }, set: { $0.engineSuggests = $1 }),
+        Toggle(title: "Pins go back home", detail: "A pin keeps its site: links elsewhere open in a peek, and ⌘W takes it back to its page, as in Arc.",
+               since: "1.0.6", get: { $0.pinsGoHome }, set: { $0.pinsGoHome = $1 }),
+        Toggle(title: "Pins in every space", detail: "Right-click a pin and keep it above every space's own, as Arc's favourites.",
+               since: "1.0.6", get: { $0.sharesPins }, set: { $0.sharesPins = $1 }),
+        Toggle(title: "Darken light pages", detail: "While Search is dark, pages with no dark look of their own are darkened.",
+               since: "1.0.6", get: { $0.darkensPages }, set: { $0.darkensPages = $1 }),
+        Toggle(title: "Keep selected sites awake", detail: "The site card gets Keep This Site Awake, for chats and players that must never sleep.",
+               since: "1.0.6", get: { $0.keepsSitesAwake }, set: { $0.keepsSitesAwake = $1 }),
+        Toggle(title: "Roomier tabs", detail: "Taller rows and larger titles in the sidebar.",
+               since: "1.0.6", get: { $0.roomyTabs }, set: { $0.roomyTabs = $1 }),
+        Toggle(title: "New tab in a floating field", detail: "⌘T raises the address field over the page you are on, as in Arc.",
+               since: "1.0.6", get: { $0.floatingNewTab }, set: { $0.floatingNewTab = $1 }),
+
         Toggle(title: "Split View", detail: "Two tabs side by side: drag a tab to the edge of a page, or press ⌥⌘N.",
                since: "1.0.5", get: { $0.splitView }, set: { $0.splitView = $1 }),
         Toggle(title: "Search a site from the address field", detail: "The start of a site's name, then Tab: red, Tab, and your words search Reddit.",
@@ -76,6 +91,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.6"),
         Release(version: "1.0.5"),
         Release(version: "1.0.4"),
     ]
@@ -126,6 +142,40 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.6", date: "24 October 2026",
+            headline: "A side panel, blocked pop-ups you can open, and a month of your fixes. What's new is off until you turn it on, and the card after the update offers it.",
+            new: [
+                "An extension's side panel, as in Chrome: Claude's, ChatGPT's or Sider's panel opens beside the page instead of in a tab.",
+                "A pop-up refused because no click asked for it says so beside the tab's title, with Open and Always Allow, as in Safari.",
+                "Suggestions from your search engine as you type, never from a private tab.",
+                "Extensions in private tabs, each with its own switch in Settings › Extensions.",
+                "Pins go back home and keep their site, with links elsewhere in a peek; pins can sit above every space.",
+                "Tabs can close themselves after a while, and chosen sites can stay awake.",
+                "⇧⌘W closes the window, the mouse's side buttons change space, and media keys reach the page.",
+                "New tabs at the top or the bottom, a floating ⌘T, roomier tabs, and light pages darkened in dark mode.",
+                "Select several tabs with ⌘- or ⇧-click, export a page as a PDF, and Open With from the Finder.",
+            ],
+            better: [
+                "The page as a card can be turned off, and full screen goes edge to edge.",
+                "Leaving a video's full screen happens in one move.",
+                "Pins in spaces you aren't in sleep and give their memory back.",
+                "A bookmark opens in a tab of its own, never in a pin's place.",
+                "Claude in Chrome signs in, and signs in again quietly each time Search starts.",
+                "Stylus and Vimium C work.",
+            ],
+            fixed: [
+                "A pop-up rewritten by the page that opened it is no longer offered that site's saved passwords.",
+                "Sites you allow to know your location get it.",
+                "Start with a fresh window keeps your tab groups and named tabs.",
+                "A Gmail link opens one tab, not two.",
+                "A video file opened as a page plays.",
+                "Links between files on your Mac open, and links in AI chats' answers too.",
+                "Saved accounts show with Split View on.",
+                "Dragging a tab across the top moves the tab, not the window.",
+                "And many more, most from your messages and pull requests.",
+            ]
+        ),
         Notes(
             version: "1.0.5", date: "14 October 2026",
             headline: "Split View, pinned rows, notifications and screen recorders. What's new is off until you turn it on, and the card after the update offers it.",

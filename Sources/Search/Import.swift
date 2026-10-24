@@ -105,10 +105,15 @@ enum Chromium {
             return profiles.filter { $0.lastPathComponent == only }
         }
 
-        /// Every profile's passwords file, or the one profile's.
+        /// Every profile's passwords files, or the one profile's. Chrome
+        /// signed in to a Google account without sync keeps the passwords
+        /// it saves for that account in a second file beside the first,
+        /// same shape and same key; read alone, the first can be nearly empty.
         func files(only: String? = nil) -> [URL] {
-            (importsPasswords ? profiles(only: only) : []).compactMap { file("Login Data", in: $0) }
-                .filter { FileManager.default.fileExists(atPath: $0.path) }
+            (importsPasswords ? profiles(only: only) : []).flatMap { profile in
+                ["Login Data", "Login Data For Account"].compactMap { file($0, in: profile) }
+            }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
         }
 
         /// What the browser says of its profiles in "Local State", beside
@@ -245,6 +250,10 @@ enum Chromium {
         var never: [String]
         /// Passwords left behind for having no site to go with.
         var skipped = 0
+        /// Passwords that were there but didn't decrypt with the key the
+        /// keychain handed over: said, not passed over in silence, so an
+        /// import that brought nothing says why.
+        var undecrypted = 0
     }
 
     /// The passwords of one profile, or of all of them when `profile` is
@@ -257,6 +266,7 @@ enum Chromium {
         var logins: [Login] = []
         var never: [String] = []
         var skipped = 0
+        var undecrypted = 0
         var seen = Set<String>()
         var readAny = false
 
@@ -273,7 +283,11 @@ enum Chromium {
                     never.append(host)
                     continue
                 }
-                guard let password = unwrap(row.blob, key: key), !password.isEmpty else { continue }
+                guard let password = unwrap(row.blob, key: key) else {
+                    if !row.blob.isEmpty { undecrypted += 1 }
+                    continue
+                }
+                guard !password.isEmpty else { continue }
                 let clear = row.origin.lowercased().hasPrefix("http://")
                 let login = Login(host: host, user: row.user, password: password, used: row.used, clear: clear)
                 guard seen.insert(login.id).inserted else { continue }
@@ -281,7 +295,7 @@ enum Chromium {
             }
         }
         guard readAny else { throw Trouble.unreadable }
-        return Found(logins: logins, never: never, skipped: skipped)
+        return Found(logins: logins, never: never, skipped: skipped, undecrypted: undecrypted)
     }
 
     // MARK: - what they kept
@@ -1011,6 +1025,7 @@ enum Mozilla {
         var seen = Set<String>()
         var readAny = false
         var locked = false
+        var undecrypted = 0
 
         for file in source.files(only: profile) {
             let profile = file.deletingLastPathComponent()
@@ -1039,10 +1054,15 @@ enum Mozilla {
                     continue
                 }
                 guard let userB64 = entry["encryptedUsername"] as? String,
-                      let passB64 = entry["encryptedPassword"] as? String,
-                      let user = decryptLogin(userB64, master: key),
-                      let password = decryptLogin(passB64, master: key), !password.isEmpty
+                      let passB64 = entry["encryptedPassword"] as? String
                 else { continue }
+                guard let user = decryptLogin(userB64, master: key),
+                      let password = decryptLogin(passB64, master: key)
+                else {
+                    undecrypted += 1
+                    continue
+                }
+                guard !password.isEmpty else { continue }
                 let clear = origin.lowercased().hasPrefix("http://")
                 let login = Login(host: host, user: user, password: password, used: nil, clear: clear)
                 guard seen.insert(login.id).inserted else { continue }
@@ -1053,7 +1073,7 @@ enum Mozilla {
         // nothing else to bring: a second, open profile still gives its own.
         if !readAny && locked { throw Trouble.primaryPassword }
         guard readAny else { throw Trouble.unreadable }
-        return Chromium.Found(logins: logins, never: never, skipped: skipped)
+        return Chromium.Found(logins: logins, never: never, skipped: skipped, undecrypted: undecrypted)
     }
 
     /// How much there is to bring, from the files alone, as Chromium's

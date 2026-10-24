@@ -471,7 +471,12 @@ struct ImportPanel: View {
                         let kept = browser.keep(found)
                         ImportRecords.note(source.name, passwords: kept)
                         let skipped = found.skipped > 0 ? " (\(found.skipped.formatted()) skipped: no address)" : ""
-                        said[0] = Said(ok: true, text: (kept == 1 ? "1 password" : "\(kept.formatted()) passwords") + skipped)
+                        // Ones that didn't decrypt: said, so an import that
+                        // brought nothing says why rather than "0 passwords".
+                        let locked = found.undecrypted > 0
+                            ? " — \(found.undecrypted.formatted()) couldn't be decrypted with \(source.name)'s key" : ""
+                        said[0] = Said(ok: kept > 0 || found.undecrypted == 0,
+                                       text: (kept == 1 ? "1 password" : "\(kept.formatted()) passwords") + skipped + locked)
                     case .failure(Chromium.Trouble.noPassphrase):
                         said[0] = Said(ok: false, text: "macOS didn't hand over \(source.name)'s key — allow it and try again")
                     case .failure(Mozilla.Trouble.primaryPassword):

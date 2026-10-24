@@ -45,6 +45,7 @@ struct SplitStage: View {
             },
             hover: { hovered = $0 },
             find: browser.finding ? browser : nil,
+            accounts: browser.suggesting.map { (browser, $0) },
             corner: corner,
             immersed: immersed
         )
@@ -139,12 +140,8 @@ private struct PaneLayers: View {
                 LinkBubble(status: browser.linkStatus, page: paired ? tab.built : nil)
             }
         }
-        .overlay(alignment: .topLeading) {
-            if let asked = browser.suggesting, asked.tab == tab.id {
-                AccountList(browser: browser, asked: asked)
-                    .transition(.opacity)
-            }
-        }
+        // The accounts under a sign-in box are the stage's (PaneStage.showAccounts):
+        // drawn here, they were under the page.
         .overlay(alignment: .topTrailing) { whose }
         .animation(Motion.quick, value: hovered)
         .background { SplitDropZone(browser: browser, tab: tab, kind: .stage) }
@@ -155,7 +152,6 @@ private struct PaneLayers: View {
             if paired { browser.focusPane(tab) }
         }
         .clipped()
-        .animation(Motion.quick, value: browser.suggesting)
     }
 }
 

@@ -167,6 +167,40 @@ struct Parked {
     /// or coming back to the space, doesn't read and decode the file again
     /// on the main thread. Nil when unknown, for the file to say.
     var groups: [TabGroup]? = nil
+
+    /// The row as it is drawn while it passes during a swipe between spaces,
+    /// the same way it is drawn on screen: each group under its heading,
+    /// folded or not as it was left — a folded one shows only the tab in
+    /// front, if that is in it — then the loose tabs. Drawn flat, every tab
+    /// in a folded group came out for the length of the swipe and went back
+    /// in as the space landed. A pair's other half isn't a row of its own.
+    @MainActor func drawn(groupsOn: Bool, splitView: Bool) -> (groups: [DrawnGroup], loose: [Tab]) {
+        let stands: (Tab) -> Bool = { tab in
+            !splitView || !splits.contains { $0.tabs.contains(tab.id) && $0.left != tab.id }
+        }
+        let front = splits.first { pair in active.map(pair.tabs.contains) ?? false }?.left ?? active
+        let kept = groupsOn ? (groups ?? []) : []
+        var shown: [DrawnGroup] = []
+        var inGroups = Set<UUID>()
+        for group in kept {
+            let members = tabs.filter { $0.pin == nil && $0.groupID == group.id && stands($0) }
+            // A group lasts as long as its tabs (see removeEmptyGroup).
+            guard !members.isEmpty else { continue }
+            inGroups.insert(group.id)
+            shown.append(DrawnGroup(group: group, tabs: group.collapsed ? members.filter { $0.id == front } : members))
+        }
+        let loose = tabs.filter { tab in
+            tab.pin == nil && stands(tab) && !(tab.groupID.map(inGroups.contains) ?? false)
+        }
+        return (shown, loose)
+    }
+
+    /// One group of a row drawn off screen, and the tabs it shows.
+    struct DrawnGroup: Identifiable {
+        let group: TabGroup
+        let tabs: [Tab]
+        var id: UUID { group.id }
+    }
 }
 
 extension Browser {
