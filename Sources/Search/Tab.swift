@@ -72,7 +72,13 @@ enum Web {
     /// starting, the window stuck meanwhile. Sharing one lets WebKit have
     /// the next process ready: 9 to 10 ms, for the same memory and the same
     /// number of processes (measured with ./bench bookmark URL new, 24 Sep 2026).
-    static let pool = WKProcessPool()
+    /// It also carries Search's geolocation provider (see SiteLocation),
+    /// which asks macOS nothing until a page you allowed wants a position.
+    static let pool: WKProcessPool = {
+        let pool = WKProcessPool()
+        SiteLocation.provide(pool)
+        return pool
+    }()
 
     /// `space`: the space the tab belongs to, when it is not the one on
     /// screen — a parked row made ahead of time (see Spaces.swift).

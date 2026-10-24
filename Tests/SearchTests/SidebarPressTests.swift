@@ -226,6 +226,38 @@ final class SidebarPressTests: XCTestCase {
         XCTAssertNil(browser.editingPin)
     }
 
+    /// The press that selects (TabPress) held the drag back until the
+    /// release: nothing moved under the hand, the row jumped on letting go,
+    /// and a pin held still a moment before letting go wasn't moved at all.
+    func testRowsAndPinsMoveWhileTheButtonIsDown() async throws {
+        for kind in ["row", "pin"] {
+            let browser = makeBrowser()
+            let tabs = browser.tabs
+            if kind == "pin" { browser.pin(tabs[0]); browser.pin(tabs[1]) }
+            let window = makeWindow(browser)
+            try await settle()
+            let before = browser.tabs.map(\.id)
+            let start = kind == "pin" ? NSPoint(x: 40, y: window.frame.height - Metrics.strip - 17) : rowPoint(0, in: window)
+            try await send(.leftMouseDown, at: start, in: window)
+            var last = start
+            for distance in [8.0, 20, 40, 60, 80] {
+                last = kind == "pin" ? NSPoint(x: start.x + distance, y: start.y) : NSPoint(x: start.x, y: start.y - distance * 0.8)
+                try await send(.leftMouseDragged, at: last, in: window)
+            }
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertNotEqual(browser.tabs.map(\.id), before, "\(kind): moved while the button is still down")
+            // Held still a little, then let go (not long: a window off the
+            // screen gets no real button, and a pin's tooltip ends the drag).
+            try await Task.sleep(for: .milliseconds(150))
+            try await send(.leftMouseUp, at: last, in: window)
+            try await settle()
+            XCTAssertNotEqual(browser.tabs.map(\.id), before, "\(kind): still moved once let go")
+            XCTAssertNil(browser.editingTab)
+            XCTAssertNil(browser.editingPin)
+            for tab in browser.tabs where tab.pin != nil { browser.unpin(tab) }
+        }
+    }
+
     private func makeBrowser() -> Browser {
         _ = NSApplication.shared
         activationPolicy = NSApp.activationPolicy()
