@@ -314,7 +314,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         let switcher = LittleWindow.switcher
         if switcher.home == tab.id { switcher.cancel() }
         guard !kept else { return }
-        switcher.left(tab, alive: Set(LittleWindow.open.map(\.tab.id)))
+        switcher.left(tab, current: nil, alive: Set(LittleWindow.open.map(\.tab.id)))
     }
 
     func windowWillClose(_ notification: Notification) {

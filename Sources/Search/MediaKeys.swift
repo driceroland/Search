@@ -88,6 +88,32 @@ final class MediaKeys: NSObject, WKScriptMessageHandler {
         }
       }, true);
       document.addEventListener('volumechange', changed, true);
+      // The page's own document says whether a video of its own is playing,
+      // each time that changes: leaving the tab then reaches for the
+      // floating window only when there is something to float (see
+      // Browser.lift). A muted video plays without a sound, so the tab's
+      // speaker can't tell. The same videos Isolate.on looks through.
+      if (window.top !== window) return;
+      var playing = false;
+      function playback() {
+        var now = false, videos = document.getElementsByTagName('video');
+        for (var i = 0; i < videos.length; i++) {
+          if (!videos[i].paused && !videos[i].ended) { now = true; break; }
+        }
+        if (now === playing) return;
+        playing = now;
+        var relay = window.webkit && webkit.messageHandlers && webkit.messageHandlers.officeMedia;
+        if (relay) relay.postMessage(now ? 'playing' : 'still');
+      }
+      ['play', 'playing', 'pause', 'ended', 'emptied'].forEach(function (name) {
+        document.addEventListener(name, playback, true);
+      });
+      // Back from the back-forward cache, the browser has forgotten: said again.
+      window.addEventListener('pageshow', function (e) {
+        if (!e.persisted) return;
+        playing = null;
+        playback();
+      });
     })();
     """
 
@@ -98,7 +124,14 @@ final class MediaKeys: NSObject, WKScriptMessageHandler {
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         let frame = message.frameInfo
-        guard !frame.isMainFrame else { return }
+        guard !frame.isMainFrame else {
+            let playing = message.body as? String == "playing"
+            MainActor.assumeIsolated {
+                guard let tab, let web = tab.built, web === message.webView else { return }
+                tab.playingVideo = playing
+            }
+            return
+        }
         MainActor.assumeIsolated {
             // This tab's page only: a controller can be shared.
             guard let web = tab?.built, web === message.webView else { return }
