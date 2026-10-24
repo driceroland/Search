@@ -18,7 +18,9 @@ import CryptoKit
 // are defined there, and every call becomes a native message to this app,
 // which answers from its own bookmarks, history and downloads. To the
 // extension it looks like Chrome. The files are changed after the store's
-// signature has been checked, and only by adding.
+// signature has been checked, and only by adding — except request rules
+// WebKit would read other than Chrome does, which are put the way it reads
+// them (see mendRules).
 
 @available(macOS 15.4, *)
 @MainActor
@@ -41,7 +43,7 @@ enum ExtensionShims {
     nonisolated static let stamp = ".search-shim"
     /// Raised when `prepare` changes what it does to a package, so that
     /// extensions prepared before are prepared again.
-    nonisolated private static let preparation = "4"
+    nonisolated private static let preparation = "5"
     nonisolated static let version: String = {
         SHA256.hash(data: Data((script + PasskeyRelay.page + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
@@ -140,6 +142,10 @@ enum ExtensionShims {
         let data = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .withoutEscapingSlashes])
         try data.write(to: manifestURL, options: .atomic)
 
+        if asked.contains("declarativeNetRequest") || asked.contains("declarativeNetRequestWithHostAccess") {
+            mendRulesets(manifest, in: folder)
+        }
+
         // Every page it ships — popup, options, background page, side panel —
         // and scripts a content script may insert into a website. WebKit
         // decodes those in the site's encoding unless the resource says
@@ -181,6 +187,95 @@ enum ExtensionShims {
             }
             try? html.write(to: url, atomically: true, encoding: .utf8)
         }
+    }
+
+    // MARK: - request rules
+
+    /// The rulesets a manifest declares, put the way WebKit reads rules:
+    /// the same mending the shim gives the rules an extension adds while it
+    /// runs (`mendRule` and `spread` in the script). A ruleset nothing
+    /// changes in is left as it is.
+    nonisolated static func mendRulesets(_ manifest: [String: Any], in folder: URL) {
+        guard let dnr = manifest["declarative_net_request"] as? [String: Any],
+              let resources = dnr["rule_resources"] as? [[String: Any]] else { return }
+        for resource in resources {
+            guard let name = resource["path"] as? String, let url = inside(name, of: folder),
+                  let rules = (try? JSONSerialization.jsonObject(with: Data(contentsOf: url))) as? [[String: Any]],
+                  let mended = mendRules(rules),
+                  let data = try? JSONSerialization.data(withJSONObject: mended, options: [.withoutEscapingSlashes])
+            else { continue }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    /// Two ways WebKit reads a rule other than Chrome does, mended; nil when
+    /// neither is in these rules.
+    ///
+    /// A pattern beside a list of sites (`regexFilter` with
+    /// `requestDomains`) loses the list in WebKit, and is taken for every
+    /// site: uBlock Origin Lite's strict blocking, for over 100,000 sites,
+    /// sent every page to its warning, and the tab came up blank. For pages
+    /// themselves, the list goes to `initiatorDomains`, which WebKit keeps.
+    /// On macOS 27.2 such a rule then matched no page at all, typed in or
+    /// opened from a listed site, so strict blocking is off, as uBlock's own
+    /// Safari build leaves it. Anything else that would redirect or change
+    /// headers everywhere is left out; a block or an allow is left as WebKit
+    /// had it.
+    ///
+    /// A separator at the end, `||amazon-adsystem.com/*apstag.js^`, matches
+    /// the end of an address in Chrome and never does in WebKit, so a rule
+    /// that ends in one gets a twin ending in `|` (uBlock's issue 434).
+    nonisolated static func mendRules(_ rules: [[String: Any]]) -> [[String: Any]]? {
+        let canonical = { (rule: [String: Any]) -> String? in
+            var rule = rule
+            rule["id"] = nil
+            return (try? JSONSerialization.data(withJSONObject: rule, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) }
+        }
+        // Twins already here, from a Search that prepared this before.
+        var present = Set(rules.filter { (($0["condition"] as? [String: Any])?["urlFilter"] as? String)?.hasSuffix("|") == true }.compactMap(canonical))
+        var next = (rules.compactMap { $0["id"] as? Int }.max() ?? 0) + 1
+        var changed = false
+        var out: [[String: Any]] = []
+        out.reserveCapacity(rules.count)
+        for var rule in rules {
+            guard var condition = rule["condition"] as? [String: Any] else { out.append(rule); continue }
+            if condition["regexFilter"] != nil, condition["requestDomains"] != nil {
+                let type = (rule["action"] as? [String: Any])?["type"] as? String
+                if (condition["resourceTypes"] as? [String]) == ["main_frame"],
+                   condition["initiatorDomains"] == nil, condition["excludedInitiatorDomains"] == nil {
+                    condition["initiatorDomains"] = condition.removeValue(forKey: "requestDomains")
+                    rule["condition"] = condition
+                    changed = true
+                } else if type == "redirect" || type == "modifyHeaders" {
+                    changed = true
+                    continue
+                }
+            }
+            out.append(rule)
+            if let filter = condition["urlFilter"] as? String, endsAtSeparator(filter) {
+                var twin = rule
+                condition["urlFilter"] = String(filter.dropLast()) + "|"
+                twin["condition"] = condition
+                if let key = canonical(twin), present.insert(key).inserted {
+                    twin["id"] = next
+                    next += 1
+                    out.append(twin)
+                    changed = true
+                }
+            }
+        }
+        return changed ? out : nil
+    }
+
+    /// A filter whose closing `^` could fall at the end of an address: one
+    /// with a path in it. A bare host, `||example.com^`, is always followed
+    /// by a `/` or a `:`.
+    nonisolated static func endsAtSeparator(_ filter: String) -> Bool {
+        guard filter.hasSuffix("^") else { return false }
+        var pattern = Substring(filter.dropLast())
+        if pattern.hasPrefix("||") { pattern = pattern.dropFirst(2) }
+        else if let scheme = pattern.range(of: "//") { pattern = pattern[scheme.upperBound...] }
+        return pattern.contains { !($0.isASCII && ($0.isLetter || $0.isNumber)) && !"_.%*-".contains($0) }
     }
 
     /// A page's module scripts, two or more of them with one that awaits,
@@ -2312,8 +2407,26 @@ enum ExtensionShims {
           if (!c.resourceTypes.length) return null;
         }
         if (c && Array.isArray(c.excludedResourceTypes)) c.excludedResourceTypes = c.excludedResourceTypes.filter((t) => !unknownTypes.has(t));
+        // A pattern beside a list of sites loses the list in WebKit (see
+        // mendRules in ExtensionShims.swift): for pages themselves the
+        // list goes to initiatorDomains, which WebKit keeps; a redirect or a
+        // change of headers that would otherwise reach every site is left out.
+        if (c && typeof c.regexFilter === "string" && Array.isArray(c.requestDomains)) {
+          if (Array.isArray(c.resourceTypes) && c.resourceTypes.length === 1 && c.resourceTypes[0] === "main_frame"
+              && !c.initiatorDomains && !c.excludedInitiatorDomains) {
+            c.initiatorDomains = c.requestDomains;
+            delete c.requestDomains;
+          } else if (r.action && (r.action.type === "redirect" || r.action.type === "modifyHeaders")) {
+            try { native("debug.error", ["declarativeNetRequest: " + r.action.type + " rule " + r.id + " left out — WebKit would take its pattern for every site, not the ones it names"]).catch(() => {}); } catch (x) {}
+            return null;
+          }
+        }
         return r;
       };
+      // A closing separator, `^`, never matches the end of an address in
+      // WebKit, where it does in Chrome (see mendRules).
+      const endsAtSeparator = (filter) => typeof filter === "string" && filter.endsWith("^")
+        && /[^\w.%*-]/.test(filter.slice(0, -1).replace(/^(\|\||.*?\/\/)/, ""));
       if (dnr && typeof dnr.isRegexSupported === "function") {
         const original = dnr.isRegexSupported.bind(dnr);
         put(dnr, "isRegexSupported", (options, callback) => {
@@ -2414,6 +2527,12 @@ enum ExtensionShims {
       };
       const spread = (name, rule, taken) => {
         const c = rule && rule.condition;
+        // One that ends in a separator, and its twin that ends the address.
+        if (c && endsAtSeparator(c.urlFilter)) {
+          const [id] = madeIds(rule.id);
+          if (id === undefined || taken.has(id)) return [rule];
+          return [rule, { ...rule, id, condition: { ...c, urlFilter: c.urlFilter.slice(0, -1) + "|" } }];
+        }
         const pattern = c && c.regexFilter;
         if (typeof pattern !== "string" || !/\||\(\?:|\{\d/.test(pattern)) return [rule];
         const substitution = rule.action && rule.action.redirect && rule.action.redirect.regexSubstitution;
