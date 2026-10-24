@@ -560,8 +560,11 @@ struct Helm: View {
     }
 }
 
-private struct TabPill: View {
-    @ObservedObject var browser: Browser
+/// One tab across the top. Like a row in the column (see SideRow), it reads
+/// what it shows of the Browser as the strip makes it, and doesn't watch the
+/// rest: a change anywhere in the window used to draw every pill again.
+private struct TabPill: View, Equatable {
+    let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
     let live: Bool
@@ -570,11 +573,40 @@ private struct TabPill: View {
     let room: CGFloat
     let pill: Namespace.ID
     let close: () -> Void
+    /// Its address being typed in the pill.
+    private let editing: Bool
+    /// Its letter being changed, pinned.
+    private let lettering: Bool
+    private let selected: Bool
+    /// Bumped when what was typed in a tab can't be gone to (see Shake).
+    private let refusals: Int
+
+    init(browser: Browser, prefs: Preferences, tab: Tab, live: Bool, width: CGFloat, room: CGFloat,
+         pill: Namespace.ID, close: @escaping () -> Void) {
+        self.browser = browser
+        self.prefs = prefs
+        self.tab = tab
+        self.live = live
+        self.width = width
+        self.room = room
+        self.pill = pill
+        self.close = close
+        editing = browser.editingTab == tab.id
+        lettering = browser.editingPin == tab.id
+        selected = browser.selectedTabIDs.contains(tab.id)
+        refusals = browser.refusals
+    }
+
+    /// The close action is left out: it closes the same tab every time.
+    static func == (a: TabPill, b: TabPill) -> Bool {
+        a.browser === b.browser && a.prefs === b.prefs && a.tab === b.tab && a.live == b.live
+            && a.width == b.width && a.room == b.room && a.pill == b.pill && a.editing == b.editing
+            && a.lettering == b.lettering && a.selected == b.selected && a.refusals == b.refusals
+    }
 
     @State private var hovering = false
     @State private var shake: CGFloat = 0
 
-    private var editing: Bool { browser.editingTab == tab.id }
     private var pinned: Bool { tab.pin != nil && !editing }
     /// Too narrow for a title: the site's mark alone, the title in the
     /// tooltip. A cross on something this small would be what a click to
@@ -597,7 +629,7 @@ private struct TabPill: View {
         Group {
             if pinned {
                 Group {
-                    if browser.editingPin == tab.id {
+                    if lettering {
                         PinField(browser: browser, tab: tab)
                     } else if tab.loading {
                         // Its page on the way, as a tab's ring says; the
@@ -623,7 +655,7 @@ private struct TabPill: View {
         }
         .background { ground }
         .overlay {
-            if browser.selectedTabIDs.contains(tab.id) {
+            if selected {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
                     .allowsHitTesting(false)
@@ -662,7 +694,7 @@ private struct TabPill: View {
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)
         .animation(Motion.glide, value: tab.pin)
-        .onChange(of: browser.refusals) { _, _ in
+        .onChange(of: refusals) { _, _ in
             guard editing else { return }
             shake = 0
             withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
@@ -814,7 +846,7 @@ private struct TabPill: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .matchedGeometryEffect(id: "live", in: pill)
-        } else if browser.selectedTabIDs.contains(tab.id) {
+        } else if selected {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.wash)
         } else if hovering {
@@ -956,7 +988,7 @@ struct TabAddressField: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+        let field = Arriving()
         field.delegate = context.coordinator
         field.isBordered = false
         field.drawsBackground = false
@@ -1001,14 +1033,39 @@ struct TabAddressField: NSViewRepresentable {
         }
         guard !coordinator.claimed else { return }
         coordinator.claimed = true
-        DispatchQueue.main.async {
-            field.window?.makeFirstResponder(field)
-            guard let editor = field.currentEditor() as? NSTextView else { return }
-            editor.selectedTextAttributes = [
-                .backgroundColor: NSColor(Palette.ink.opacity(0.11)),
-                .foregroundColor: Palette.NS.ink,
-            ]
-            editor.selectAll(nil)
+        DispatchQueue.main.async { Self.claim(field) }
+    }
+
+    /// The keys, with what is there selected: now if the field is in its
+    /// window, or the moment it is. Asked before then, the request went
+    /// nowhere and nothing asked again, and the row no longer draws itself
+    /// again for every change in the window to give it a second chance.
+    @MainActor private static func claim(_ field: NSTextField) {
+        guard let window = field.window else {
+            (field as? Arriving)?.arrived = { [weak field] in
+                DispatchQueue.main.async { if let field { claim(field) } }
+            }
+            return
+        }
+        window.makeFirstResponder(field)
+        guard let editor = field.currentEditor() as? NSTextView else { return }
+        editor.selectedTextAttributes = [
+            .backgroundColor: NSColor(Palette.ink.opacity(0.11)),
+            .foregroundColor: Palette.NS.ink,
+        ]
+        editor.selectAll(nil)
+    }
+
+    /// The field, told when it lands in a window, as ⌘L's is
+    /// (AddressField.Field).
+    final class Arriving: NSTextField {
+        var arrived: (() -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard window != nil, let arrived else { return }
+            self.arrived = nil
+            arrived()
         }
     }
 
