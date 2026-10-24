@@ -17,7 +17,7 @@ struct TabBar: View {
 
     /// Which tab is under the hand, where it started, and how far it has come.
     @State private var landing = false
-    @State private var groupFrames: [UUID: CGRect] = [:]
+    @State private var groupFrames: [UUID: GroupDropFrame] = [:]
     /// The plus only comes out when the pointer is in the row.
     @State private var nearby = false
     @State private var plussed = false
@@ -289,6 +289,7 @@ struct TabBar: View {
             }
             .modifier(Carried(index: index, count: count, step: step, vertical: false,
                               space: "strip", onDropTab: { source, point in drop(source, at: point) },
+                              groupDestination: { source, point in destination(source, at: point) },
                               outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
                 if browser.prefs.usesTabGroups && tab.pin == nil {
                     browser.move(tab, within: group, to: $0)
@@ -328,11 +329,14 @@ struct TabBar: View {
         }
     }
 
+    private func destination(_ tab: Tab, at point: CGPoint) -> GroupDropTarget? {
+        guard browser.prefs.usesTabGroups, tab.pin == nil else { return nil }
+        return GroupDropFrames.resolve(point, frames: groupFrames, groups: browser.tabGroups,
+                                       excluding: tab.id, vertical: false)
+    }
+
     private func drop(_ tab: Tab, at point: CGPoint) {
-        guard browser.prefs.usesTabGroups, tab.pin == nil else { return }
-        if let id = groupFrames.first(where: { $0.value.contains(point) })?.key {
-            browser.move(tab, toGroup: id)
-        }
+        if let target = destination(tab, at: point) { browser.move(tab, toGroup: target) }
     }
 
     /// How wide the run of tabs is: as wide as the tabs while they fit, as
@@ -839,6 +843,7 @@ struct Carried: ViewModifier {
     var onDrop: ((CGPoint) -> Void)? = nil
     /// A paired item can be picked up from either half; report that source.
     var onDropTab: ((Tab, CGPoint) -> Void)? = nil
+    var groupDestination: ((Tab, CGPoint) -> GroupDropTarget?)? = nil
     /// Let go outside the window: true when the tab was taken elsewhere —
     /// another window, or a new one (see Browser.dragOut).
     var outside: (() -> Bool)? = nil
@@ -849,6 +854,7 @@ struct Carried: ViewModifier {
     @State private var held = false
     @State private var from = 0
     @State private var travel: CGFloat = 0
+    @State private var reordered = false
 
     func body(content: Content) -> some View {
         // What it has travelled, less the ground its new place has already
@@ -856,6 +862,15 @@ struct Carried: ViewModifier {
         let shift = held ? travel - CGFloat(index - from) * step : 0
         return content
             .offset(x: vertical ? 0 : shift, y: vertical ? shift : 0)
+            .background {
+                if let browser, let tab, browser.prefs.usesTabGroups, let group = browser.group(of: tab) {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: GroupDropFrames.self,
+                            value: [tab.id: GroupDropFrame(group: group, tab: tab.id,
+                                                         rect: geometry.frame(in: .named(space)))])
+                    }
+                }
+            }
             // Under the hand exactly. Its place in the row springs when it
             // passes another tab, and the offset springs back the same way —
             // until the next move of the hand cuts the offset's spring short
@@ -875,8 +890,11 @@ struct Carried: ViewModifier {
                         if let browser, let tab, browser.prefs.splitView,
                            TabDrag.shared.update(browser: browser, tab: tab,
                                                  translation: value.translation) { return }
+                        if let browser, let tab, browser.prefs.usesTabGroups, tab.pin == nil,
+                           browser.group(of: tab) != nil || groupDestination?(tab, value.location) != nil { return }
                         let target = min(max(0, from + Int((travel / step).rounded())), count - 1)
                         if target != index {
+                            reordered = true
                             withAnimation(Motion.settle) { move(target) }
                         }
                     }
@@ -888,16 +906,19 @@ struct Carried: ViewModifier {
                             case .stage(let target, let onLeft):
                                 browser.pair(source, with: target, onLeft: onLeft)
                             case .strip(let target):
-                                browser.dropTabIntoStrip(source, before: target)
-                                if let onDropTab { onDropTab(source, value.location) }
-                                else if source.id == tab.id { onDrop?(value.location) }
+                                if let destination = groupDestination?(source, value.location) {
+                                    // Resolve before detaching: the old pair still owns its frame.
+                                    browser.move(source, toGroup: destination, detaching: true)
+                                } else {
+                                    browser.dropTabIntoStrip(source, before: target)
+                                }
                             case .outside:
                                 if !browser.dragOut(source, at: finished.point) {
                                     if let onDropTab { onDropTab(source, value.location) }
                                     else if source.id == tab.id { onDrop?(value.location) }
                                 }
                             case .cancelled:
-                                move(from)
+                                if reordered { move(from) }
                             }
                         } else if outside?() != true {
                             if let onDropTab, let tab { onDropTab(tab, value.location) }
@@ -906,14 +927,16 @@ struct Carried: ViewModifier {
                         withAnimation(Motion.settle) {
                             held = false
                             travel = 0
+                            reordered = false
                         }
                     }
             )
             .onReceive(TabDrag.shared.$cancelledID) { id in
                 guard id == tab?.id, held else { return }
-                move(from)
+                if reordered { move(from) }
                 held = false
                 travel = 0
+                reordered = false
             }
     }
 }

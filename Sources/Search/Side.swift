@@ -29,7 +29,7 @@ struct SideBar: View {
     @Namespace private var before
     @Namespace private var after
 
-    @State private var groupFrames: [UUID: CGRect] = [:]
+    @State private var groupFrames: [UUID: GroupDropFrame] = [:]
 
     /// A tab's line: taller with roomier tabs turned on.
     private var rowHeight: CGFloat { prefs.sideRow }
@@ -474,6 +474,7 @@ struct SideBar: View {
                 // sits in front of them in the real list.
                 .modifier(Carried(index: index, count: loose.count, step: step, vertical: true,
                                   space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                                  groupDestination: { source, point in destination(source, at: point) },
                                   outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
                     if prefs.usesTabGroups {
                         browser.move(tab, within: nil, to: $0)
@@ -487,11 +488,14 @@ struct SideBar: View {
         .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
     }
 
+    private func destination(_ tab: Tab, at point: CGPoint) -> GroupDropTarget? {
+        guard prefs.usesTabGroups, tab.pin == nil else { return nil }
+        return GroupDropFrames.resolve(point, frames: groupFrames, groups: browser.tabGroups,
+                                       excluding: tab.id, vertical: true)
+    }
+
     private func drop(_ tab: Tab, at point: CGPoint) {
-        guard prefs.usesTabGroups, tab.pin == nil else { return }
-        if let id = groupFrames.first(where: { $0.value.contains(point) })?.key {
-            browser.move(tab, toGroup: id)
-        }
+        if let target = destination(tab, at: point) { browser.move(tab, toGroup: target) }
     }
 
     private func groupRows(_ group: TabGroup) -> some View {
@@ -505,6 +509,7 @@ struct SideBar: View {
                     .modifier(Carried(index: index, count: members.count,
                                       step: rowHeight + SideBar.gap, vertical: true,
                                       space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                                      groupDestination: { source, point in destination(source, at: point) },
                                       outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
                         browser.move(tab, within: group.id, to: $0)
                     })

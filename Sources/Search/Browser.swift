@@ -3538,6 +3538,45 @@ final class Browser: NSObject, ObservableObject {
         writeSession(now: true)
     }
 
+    /// Insert relative to a visible member, after removing the carried item.
+    /// Assign the completed row once: tabs' normalization must not see a half move.
+    func move(_ tab: Tab, toGroup target: GroupDropTarget, detaching: Bool = false) {
+        guard tabs.contains(where: { $0 === tab }),
+              let groupIndex = tabGroups.firstIndex(where: { $0.id == target.group }) else { return }
+        let moving = (detaching ? nil : split(for: tab)).map { pair in
+            pair.tabs.compactMap { id in tabs.first { $0.id == id } }
+        } ?? [tab]
+        guard moving.allSatisfy({ $0.pin == nil && !$0.shy && !$0.bench }) else { return }
+        let ids = Set(moving.map(\.id))
+        var anchor: Tab?
+        if let member = target.member {
+            guard let found = tabs.first(where: { $0.id == member }),
+                  found.groupID == target.group, found.pin == nil, !found.shy, !found.bench else { return }
+            if ids.contains(member) { return }
+            let pair = split(for: found).flatMap { pair in
+                detaching && pair.contains(tab.id) ? nil : pair
+            }
+            let anchorID = target.after ? pair?.right : pair?.left
+            anchor = anchorID.flatMap { id in tabs.first { $0.id == id } } ?? found
+        }
+        var row = tabs.filter { !ids.contains($0.id) }
+        let insertion: Int
+        if let anchor, let index = row.firstIndex(where: { $0 === anchor }) {
+            insertion = index + (target.after ? 1 : 0)
+        } else {
+            insertion = row.lastIndex(where: { $0.groupID == target.group }).map { $0 + 1 }
+                ?? row.firstIndex(where: { $0.pin == nil }) ?? row.count
+        }
+        let previous = Set(moving.compactMap(\.groupID))
+        if detaching { detachSplit(tab) }
+        for member in moving { member.groupID = target.group }
+        row.insert(contentsOf: moving, at: insertion)
+        tabGroups[groupIndex].collapsed = false
+        tabs = row
+        for id in previous where id != target.group { removeEmptyGroup(id) }
+        writeSession(now: true)
+    }
+
     /// Reorder only among peers in the displayed section. The underlying
     /// tab row remains flat for keyboard shortcuts and the top strip.
     func move(_ tab: Tab, within group: UUID?, to index: Int) {
