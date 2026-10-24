@@ -3678,7 +3678,10 @@ enum ExtensionShims {
     /// with groups off in Settings, where they are kept without a heading
     /// in the column (see the tab groups cases in `run`).
     private static func listedGroups(_ browser: Browser) -> [TabGroup] {
-        browser.tabGroups.filter { !browser.tabs(in: $0.id).isEmpty }
+        // The row read once for them all, not once for each group: asked
+        // every few seconds while a worker listens for their events.
+        let held = Set(browser.tabs.compactMap { browser.group(of: $0) })
+        return browser.tabGroups.filter { held.contains($0.id) }
     }
 
     private static func listedGroup(_ number: Any?, in browser: Browser) throws -> TabGroup {
@@ -4407,10 +4410,14 @@ enum ExtensionShims {
         // MARK: idle
         case "idle.queryState":
             let threshold = (first as? Double) ?? 60
-            if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
-               session["CGSSessionScreenIsLocked"] as? Bool == true { return "locked" }
-            let quiet = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-            return quiet >= threshold ? "idle" : "active"
+            // Asked off the main thread: both answers come from the window
+            // server, every fifteen seconds while a worker listens.
+            return await Task.detached(priority: .utility) { () -> String in
+                if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
+                   session["CGSSessionScreenIsLocked"] as? Bool == true { return "locked" }
+                let quiet = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+                return quiet >= threshold ? "idle" : "active"
+            }.value
         case "idle.getAutoLockDelay":
             return 0
 
