@@ -2931,7 +2931,7 @@ final class Browser: NSObject, ObservableObject {
         if prefs.usesTabGroups, let id = tab.groupID,
            let index = tabGroups.firstIndex(where: { $0.id == id }), tabGroups[index].collapsed {
             tabGroups[index].collapsed = false
-            writeSession(now: true)
+            writeSession()
         }
         // A peek is over the tab it was opened from; another tab puts it away.
         if peekTab != nil, tab.id != activeID { closePeek() }
