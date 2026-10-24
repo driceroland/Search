@@ -292,6 +292,14 @@ struct SettingsPanel: View {
                 .padding(.bottom, 6)
             }
             Rule()
+            Line("Websites in the side panel", "Keep a site such as Claude or ChatGPT beside the page: View › Side Panel, or right-click a tab › Open in Side Panel. Signed in as the space's tabs are") {
+                Switch(on: $prefs.sitesInPanel)
+            }
+            Rule()
+            Line("Confirm before quitting", "Ask before ⌘Q or Quit Search closes the browser") {
+                Switch(on: $prefs.confirmsQuit)
+            }
+            Rule()
             Line("Appearance", "Light, dark, or whatever the Mac is doing — pages follow it too") {
                 Segmented(options: Look.allCases.map { ($0, $0.title) }, selection: $prefs.look)
             }
@@ -346,6 +354,10 @@ struct SettingsPanel: View {
             Rule()
             Line("Hold a swipe to pick from history", "Swipe back or forward and keep your fingers down: the pages that way appear, and moving up or down picks one to go to") {
                 Switch(on: $prefs.holdsHistory)
+            }
+            Rule()
+            Line("The floating video", "Search's own window floats a video without a click and keeps its page alive in it. Picture in picture is macOS's, the one Safari uses, with the system's controls") {
+                Segmented(options: FloatStyle.allCases.map { ($0, $0.title) }, selection: $prefs.floatStyle)
             }
             Rule()
             Line("Flick the floating video to a corner", "Two fingers on it send it to the corner or edge they point at, instead of pushing it along; a strong swipe at the side of the screen it is against tucks it in there, a sliver left to bring it back by. Dragging still puts it anywhere") {
@@ -467,6 +479,10 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.bookmarksBar)
             }
             Rule()
+            Line("Show tab shortcut numbers", "Hold ⌘ to see which tab each ⌘1–9 shortcut selects") {
+                Switch(on: $prefs.showsTabShortcuts)
+            }
+            Rule()
             Line("Show how far you've read", "The tab you're on fills with grey as you scroll down the page") {
                 Switch(on: $prefs.showsReading)
             }
@@ -548,6 +564,10 @@ struct SettingsPanel: View {
             Rule()
             Line("Pins go back home", "As in Arc: a pinned tab closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at rather than wherever you went from there.") {
                 Switch(on: $prefs.pinsGoHome)
+            }
+            Rule()
+            Line("A pin's number again goes back", "Press a pin's ⌘ number while you're on that pin and you're back on the tab you were on before it, as a second press does in Arc.") {
+                Switch(on: $prefs.pinNumberGoesBack)
             }
             Rule()
             Line("Pins stay on their site", "As in Arc: a link from a pinned tab to another site opens in a panel over it, and the pin stays on its page. Links within the site go as usual, and ⌘W takes the pin back to the page it was pinned at.") {
@@ -743,7 +763,7 @@ struct SettingsPanel: View {
                 Rule()
                 Shortcut("⇧⌘V", "Paste and go")
                 Rule()
-                Shortcut("⇧⌘C", "Copy address")
+                Shortcut("⇧⌘C  ⌥⇧⌘C", "Copy address, a clean link")
                 Rule()
                 Shortcut("⌃⇥  ⌘1–9", "Next tab, a tab by its place")
                 Rule()

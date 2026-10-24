@@ -2020,6 +2020,17 @@ final class Bench {
         case "tospace":
             // Move to Space from a tab's menu, to the Nth space. Test runs only.
             guard Store.testing else { answer(["error": "tospace only works on a --test run"]); return }
+            // "group": a group by name, as its menu's Move Group to Space.
+            if let name = request["group"] as? String, let index = request["index"] as? Int,
+               browser.spaces.indices.contains(index - 1) {
+                guard let group = browser.tabGroups.first(where: { $0.name == name }) else {
+                    answer(["error": "no group “\(name)”"]); return
+                }
+                browser.move(group: group.id, toSpace: browser.spaces[index - 1].id)
+                answer(["space": browser.spaces[index - 1].name, "tabs": browser.tabs.map(Bench.short),
+                        "groups": browser.tabGroups.map(\.name)])
+                return
+            }
             guard let id = request["id"] as? String, let index = request["index"] as? Int,
                   let tab = browser.tabs.first(where: { Bench.short($0) == id }),
                   browser.spaces.indices.contains(index - 1)
@@ -2959,6 +2970,12 @@ final class Bench {
             var content: [String: Any] = ["kind": "none"]
             switch browser.sidePanel {
             case .page(let id, let url, let tab): content = ["kind": "page", "extension": id, "url": url.absoluteString, "tab": tab.map { $0.uuidString } ?? ""]
+            case .site(let url, let space): content = ["kind": "site", "url": url.absoluteString, "space": space.uuidString,
+                                                       "store": web.map { $0.configuration.websiteDataStore.isPersistent } ?? false,
+                                                       "sameStore": web.map { $0.configuration.websiteDataStore === Spaces.store(for: browser.spaceID) } ?? false,
+                                                       "inspectable": web.map { if #available(macOS 13.3, *) { return $0.isInspectable } else { return false } } ?? false,
+                                                       "developerExtras": web.flatMap { $0.configuration.preferences.value(forKey: "developerExtrasEnabled") as? Bool } ?? false]
+                .merging(SidePanelPages.shared.siteReport(in: browser)) { a, _ in a }
             case nil: break
             }
             // Where the panel's page and every page sit in the window, from
@@ -2999,6 +3016,26 @@ final class Bench {
                 guard Store.testing else { answer(["error": "sidepanel close only works on a --test run"]); return }
                 browser.closeSidePanel()
                 answer(["shown": browser.sidePanelShown])
+            case "site":
+                // A website into the panel, as View › Side Panel puts one
+                // there (or the tab's menu, with "tab"). Test runs only.
+                guard Store.testing else { answer(["error": "sidepanel site only works on a --test run"]); return }
+                if let id = request["tab"] as? String, let tab = browser.tabs.first(where: { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) }) {
+                    browser.openInSidePanel(tab)
+                } else if let url = (request["url"] as? String).flatMap(URL.init(string:)) {
+                    browser.showSiteInPanel(url)
+                }
+                answer(["shown": browser.sidePanelShown])
+            case "crash":
+                // The panel's website told its process is gone, as WebKit
+                // tells a crash. Test runs only.
+                guard Store.testing else { answer(["error": "sidepanel crash only works on a --test run"]); return }
+                SidePanelPages.shared.siteCrashed(in: browser)
+                answer(SidePanelPages.shared.siteReport(in: browser))
+            case "totab":
+                guard Store.testing else { answer(["error": "sidepanel totab only works on a --test run"]); return }
+                browser.sitePanelToTab()
+                answer(["shown": browser.sidePanelShown, "tabs": browser.tabs.count])
             default:
                 answer(state)
             }
