@@ -1060,6 +1060,13 @@ struct Carried: ViewModifier {
 
 struct TabAddressField: NSViewRepresentable {
     @ObservedObject var browser: Browser
+    /// What is typed in it, which the Browser doesn't announce.
+    @ObservedObject private var typing: Typing
+
+    init(browser: Browser) {
+        self.browser = browser
+        typing = browser.typing
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 
