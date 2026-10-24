@@ -351,6 +351,9 @@ struct LittleView: View {
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(Palette.muted)
                     .lineLimit(1)
+                    // The end of a long name is the part that counts: the
+                    // registrable domain, which a cut tail would lose.
+                    .truncationMode(.head)
                 Spacer(minLength: 0)
                 if let keep {
                     Pill("Open in Search", action: keep)
@@ -380,15 +383,27 @@ struct LittleView: View {
 
     /// The page on screen — not one still on its way, which a page can
     /// start and never finish — named as the site, or as what it is when
-    /// it isn't a website, and marked when it came over plain http.
+    /// it isn't a website, and marked when it came over plain http. Only
+    /// what has arrived (`committed`): the address a pop-up was asked to
+    /// open is not on screen until its page is. A page with nothing of its
+    /// own yet, about:blank or blob:, is its opener's, and named as that.
     private var site: String {
-        guard let url = tab.pageAddress else { return "" }
+        let arrived = tab.committed.flatMap { url -> URL? in
+            ["about", "blob"].contains(url.scheme?.lowercased() ?? "") ? nil : url
+        }
+        guard let url = arrived ?? opened else { return "" }
         switch url.scheme?.lowercased() {
         case "https": return SiteCard.site(url)
         case "http": return "Not secure — " + SiteCard.site(url)
         case "chrome-extension", "webkit-extension": return "Extension page"
         default: return url.absoluteString == "about:blank" ? "" : "Not a website"
         }
+    }
+
+    /// What the tab that opened this one has on screen.
+    private var opened: URL? {
+        guard let id = tab.opener else { return nil }
+        return Browsers.all.lazy.flatMap { $0.tabs }.first { $0.id == id }?.committed
     }
 }
 
@@ -431,15 +446,30 @@ private struct LittleToast: View {
     }
 }
 
-/// An extension's popup window (windows.create with type "popup"): the
+/// A website's sized pop-up or an extension's popup window: the
 /// browser's tab on screen as the small window shows a page, the site over
 /// it. Its tabs, checks and passwords are the browser's, as in any window.
-struct ExtensionPopupView: View {
+struct PopupWindowView: View {
     @ObservedObject var browser: Browser
 
     var body: some View {
         if let tab = browser.active {
             LittleView(tab: tab, keep: nil).id(tab.id)
+                .overlay(alignment: .topLeading) {
+                    if let asked = browser.suggesting, asked.tab == tab.id {
+                        AccountList(browser: browser, asked: asked).offset(y: 34)
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    VStack(spacing: 8) {
+                        if let ask = browser.asking {
+                            if ask.screen { ScreenQuestion(browser: browser, ask: ask) }
+                            else { CaptureQuestion(browser: browser, ask: ask) }
+                        }
+                        if let offer = browser.offering { PasswordOffer(browser: browser, offer: offer) }
+                    }
+                    .padding(12)
+                }
         } else {
             Palette.ground
         }

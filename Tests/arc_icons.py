@@ -71,8 +71,12 @@ def arc():
 
 
 def kept():
-    folder = Path(f"{sv.SUPPORT}/icons")
-    return sorted(p.name for p in folder.glob("*.png")) if folder.is_dir() else []
+    """The sites with an icon kept for their front door."""
+    try:
+        pages = json.loads(Path(f"{sv.SUPPORT}/icons/pages.json").read_text())
+    except (OSError, ValueError):
+        return []
+    return sorted(site for site, kept in pages.items() if kept.get("/", {}).get("light"))
 
 
 def main():
@@ -93,7 +97,7 @@ def main():
             if len(kept()) >= 2: break
             time.sleep(0.2)
         t.ok("both wear Arc's icon, with no page opened",
-             kept() == ["example.com.png", "www.iana.org.png"], kept())
+             kept() == ["example.com", "www.iana.org"], kept())
         t.ok("nothing was fetched: no tab holds a page",
              all(tab.get("asleep") or tab.get("hollow") for tab in sv.cmd({"do": "tabs"}).get("tabs", [])
                  if tab.get("url", "").startswith("http")),

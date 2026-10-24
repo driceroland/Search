@@ -169,8 +169,17 @@ final class Preferences: ObservableObject {
     @Published var keepsSitesAwake: Bool {
         didSet { store.set(keepsSitesAwake, forKey: "tabs.keepAwake") }
     }
+    /// A tab gives a little under the pointer while it is pressed, as Arc's
+    /// do (see Give). Off unless turned on.
+    @Published var tabsGive: Bool {
+        didSet { store.set(tabsGive, forKey: "tabs.give") }
+    }
     @Published var awakeSites: Set<String> {
         didSet { store.set(Array(awakeSites).sorted(), forKey: "tabs.awakeSites") }
+    }
+    /// Sized website pop-ups may use small windows instead of tabs (#552).
+    @Published var popupWindows: Bool {
+        didSet { store.set(popupWindows, forKey: "tabs.popupWindows") }
     }
     /// Sites whose pages may open windows without a click just before
     /// (BlockedPopups.swift), each a registrable domain. Empty until you
@@ -367,6 +376,12 @@ final class Preferences: ObservableObject {
             FrameRate.mode = fastPages
         }
     }
+    /// Springs become a short ease-out in Low Power Mode (see Motion.light).
+    /// Off unless turned on, and even then nothing changes until the Mac is
+    /// asked to save power.
+    @Published var lightMotion: Bool {
+        didSet { store.set(lightMotion, forKey: Motion.lightKey) }
+    }
     /// The modifier chosen in Settings › Shortcuts; Shift-click by default.
     @Published var peekClick: PeekClick {
         didSet { store.set(peekClick.rawValue, forKey: "links.peekClick") }
@@ -380,6 +395,18 @@ final class Preferences: ObservableObject {
     /// back to the page it was pinned at. Off unless asked for.
     @Published var pinsPeek: Bool {
         didSet { store.set(pinsPeek, forKey: "pins.peek") }
+    }
+    /// Reading mode shows a site's own markdown copy of the page when it
+    /// publishes one, and works the article out only when it doesn't (see
+    /// Reader.twin). Off unless asked for.
+    @Published var readsTwins: Bool {
+        didSet { store.set(readsTwins, forKey: "reader.twins") }
+    }
+    /// Reading mode goes dark with the window, with a light/dark/window
+    /// switch in its corner (see ReaderLook). Off unless asked for: the
+    /// article is white, as it always was.
+    @Published var readerFollowsLook: Bool {
+        didSet { store.set(readerFollowsLook, forKey: "reader.follows") }
     }
     /// A link from another app opens in a small window of its own (see
     /// Little.swift). Off unless asked for.
@@ -468,6 +495,13 @@ final class Preferences: ObservableObject {
             store.set(floatStyle.rawValue, forKey: "float.style")
             NativePiP.allowEverywhere()
         }
+    }
+    /// Escape on a page filling the screen leaves only when pressed twice
+    /// within two seconds, as in Arc; the first puts up a reminder (see
+    /// FullScreenEscape). Off unless asked for: one press leaves, as in
+    /// Safari.
+    @Published var escapeTwice: Bool {
+        didSet { store.set(escapeTwice, forKey: "fullscreen.escapeTwice") }
     }
     /// A newer build is fetched, checked and put in place on its own, as it
     /// always was. Off, Search still looks every hour and says so, and waits
@@ -610,7 +644,9 @@ final class Preferences: ObservableObject {
         keywords = store.data(forKey: "search.keywords")
             .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
         keepsSitesAwake = store.bool(forKey: "tabs.keepAwake")
+        tabsGive = store.bool(forKey: "tabs.give")
         awakeSites = Set(store.stringArray(forKey: "tabs.awakeSites") ?? [])
+        popupWindows = store.bool(forKey: "tabs.popupWindows")
         popupSites = Set(store.stringArray(forKey: "privacy.popupSites") ?? [])
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
@@ -702,6 +738,7 @@ final class Preferences: ObservableObject {
         sitesInPanel = store.bool(forKey: "panel.sites")
         panelSite = store.string(forKey: "panel.site") ?? ""
         floatStyle = store.string(forKey: "float.style").flatMap(FloatStyle.init(rawValue:)) ?? .search
+        escapeTwice = store.bool(forKey: "fullscreen.escapeTwice")
         waitsForPlay = store.bool(forKey: Preferences.waitsKey)
         translatesPages = store.bool(forKey: PageTranslator.key)
         translateAlways = Set(store.stringArray(forKey: PageTranslator.alwaysKey) ?? [])
@@ -709,6 +746,8 @@ final class Preferences: ObservableObject {
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         pinsPeek = store.bool(forKey: "pins.peek")
+        readsTwins = store.bool(forKey: "reader.twins")
+        readerFollowsLook = store.bool(forKey: "reader.follows")
         littleLinks = store.bool(forKey: "links.little")
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
@@ -726,6 +765,7 @@ final class Preferences: ObservableObject {
             ?? (store.bool(forKey: "pages.120") ? .always : .never)
         fastPages = fast
         FrameRate.mode = fast
+        lightMotion = store.bool(forKey: Motion.lightKey)
         // Left behind by the Web Inspector's switch, from before it was
         // always there.
         store.removeObject(forKey: "inspector")

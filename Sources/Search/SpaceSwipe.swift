@@ -74,7 +74,7 @@ final class SpaceSwipe {
         case .swipe where event.deltaX != 0: step = event.deltaX > 0 ? -1 : 1
         default: return false
         }
-        guard let browser = Browsers.browser(for: event.window), browser.extensionPopup == nil, browser.prefs.usesSpaces,
+        guard let browser = Browsers.browser(for: event.window), !browser.isPopup, browser.prefs.usesSpaces,
               !browser.folded || browser.peeking, overTabs(event, in: browser) else { return false }
         self.browser = browser
         let here = browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)

@@ -56,6 +56,15 @@ struct Page: View {
                     .transition(.asymmetric(insertion: .identity, removal: .opacity))
             }
 
+            if tab.reader, Shared.prefs.readerFollowsLook {
+                // One for each tab: the look it shows is the one the tab's
+                // article wears.
+                ReaderLook(tab: tab)
+                    .id(tab.id)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .transition(.opacity)
+            }
+
             if tab.floating {
                 // The tab is not empty, its page is simply elsewhere. Saying so
                 // is kinder than a white rectangle.
@@ -77,6 +86,7 @@ struct Page: View {
         .animation(Motion.quick, value: tab.page?.kind)
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
+        .animation(Motion.quick, value: tab.reader)
         .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
         .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
     }
@@ -214,7 +224,7 @@ private struct HistoryList: View {
 
     @ViewBuilder
     private func icon(_ url: URL) -> some View {
-        if let site = Favicons.site(url), let image = Favicons.shared.cached(site) {
+        if let image = Favicons.shared.cached(for: url) {
             Image(nsImage: image).resizable().interpolation(.high)
         } else {
             Image(systemName: "globe")

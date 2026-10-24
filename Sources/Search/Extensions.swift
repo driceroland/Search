@@ -208,6 +208,8 @@ final class Extensions: NSObject, ObservableObject {
                     }
                 }
                 markStarted()
+                // Their rules, built as they loaded (Trim.swift).
+                Trim.rulesBuilt()
                 checkForUpdates()
             }
         }
@@ -1168,7 +1170,15 @@ final class Extensions: NSObject, ObservableObject {
     /// extension pages, another's or all of them, nor for files on this Mac
     /// (see `fence`, which is set after).
     static func grantSites(_ context: WKWebExtensionContext) {
-        for pattern in context.webExtension.allRequestedMatchPatterns where !withheld(pattern) {
+        let patterns = context.webExtension.allRequestedMatchPatterns.filter { !withheld($0) }
+        for pattern in patterns {
+            // WebKit copies injected scripts per granted pattern. A wildcard
+            // already covers its named hosts; keep schemes and paths unchanged.
+            let covered = patterns.contains { other in
+                other.string != pattern.string && other.scheme == pattern.scheme && other.path == pattern.path
+                    && other.matches(pattern) && (!pattern.matches(other) || other.string < pattern.string)
+            }
+            guard !covered else { continue }
             context.setPermissionStatus(.grantedExplicitly, for: pattern)
         }
     }
@@ -1180,6 +1190,17 @@ final class Extensions: NSObject, ObservableObject {
     /// looks at those first — which is why none is ever made (see
     /// `reachesExtensions`). Set again after anything is granted.
     static func fence(_ context: WKWebExtensionContext) {
+        // WebKit takes back any grant that covers what is refused here, so a
+        // refusal of extension pages wipes a grant of <all_urls> the moment
+        // it is made — permissions.request said yes, contains() says no, and
+        // the extension (Figma's) waits forever. What <all_urls> means for
+        // websites is kept as *://*/*, which the refusals don't touch.
+        let everything = context.grantedPermissionMatchPatterns.keys.contains { $0.matchesAllURLs }
+        defer {
+            if everything, let web = try? WKWebExtension.MatchPattern(string: "*://*/*") {
+                context.setPermissionStatus(.grantedExplicitly, for: web)
+            }
+        }
         for scheme in Set([Extensions.scheme, Extensions.formerScheme, "webkit-extension"]) {
             if let pages = try? WKWebExtension.MatchPattern(string: "\(scheme)://*/*") {
                 context.setPermissionStatus(.deniedExplicitly, for: pages)
@@ -1222,6 +1243,9 @@ final class Extensions: NSObject, ObservableObject {
                 context.didCloseTab(adapter, windowIsClosing: false)
             }
         }
+        // Its side panel goes the same way where a private tab is in front:
+        // through once it is let in, held back when it is shut out.
+        for browser in Browsers.all { browser.sidePanelPrivacyChanged() }
         actionsChanged += 1
     }
 
@@ -1845,12 +1869,15 @@ final class ExtensionWindow: NSObject, WKWebExtensionWindow {
         browser.flatMap { owner.activeAdapter(of: $0, for: context) }
     }
     func windowType(for context: WKWebExtensionContext) -> WKWebExtension.WindowType {
-        browser?.extensionPopup != nil ? .popup : .normal
+        browser?.isPopup == true ? .popup : .normal
     }
     /// A window here holds private tabs and others, and WebKit would take
     /// this answer for all of them. The shim marks the private ones instead
-    /// (`privacy` in ExtensionShims), until WebKit can be told per tab.
-    func isPrivate(for context: WKWebExtensionContext) -> Bool { false }
+    /// (`privacy` in ExtensionShims), until WebKit can be told per tab. A
+    /// website's pop-up window holds its one page, so it can say.
+    func isPrivate(for context: WKWebExtensionContext) -> Bool {
+        browser?.websitePopup == true && browser?.active?.shy == true
+    }
 
     func windowState(for context: WKWebExtensionContext) -> WKWebExtension.WindowState {
         guard let window = nsWindow else { return .normal }
