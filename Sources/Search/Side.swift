@@ -30,6 +30,15 @@ struct SideBar: View {
     @Namespace private var after
 
     @State private var groupFrames: [UUID: CGRect] = [:]
+    /// Whether this space's rows fit under the pins without scrolling: set
+    /// only when the answer changes, from the room under the pins and what
+    /// the rows add up to, which are kept where changing them draws nothing.
+    @State private var fits = true
+    @State private var room = Room()
+    private final class Room {
+        var height: CGFloat = .infinity
+        var needed: CGFloat = 0
+    }
 
     /// A tab's line: taller with roomier tabs turned on.
     private var rowHeight: CGFloat { prefs.sideRow }
@@ -208,40 +217,63 @@ struct SideBar: View {
                     // plain stack, and the space under it is still the
                     // window's to be dragged by. Inside the page: the swipe
                     // between spaces moves the page, scroll and all.
-                    ViewThatFits(in: .vertical) {
-                        rows
-                        ScrollViewReader { proxy in
-                            // The scroll view reaches into the margin on
-                            // the right and the rows keep it inside, so the
-                            // system's bar lands in the margin beside them
-                            // rather than over the cross on the tab under the
-                            // pointer. The column's edge lies over that margin
-                            // and answers first, so the bar never fights the
-                            // resize; the wheel and the trackpad still scroll.
-                            ScrollView(.vertical) {
-                                rows.padding(.trailing, 10)
-                            }
-                            .padding(.trailing, -10)
-                            // The tab you go to is the tab you see — ⌘1–⌘9,
-                            // ⇧⌘], a link opening beside the one on screen.
-                            .onChange(of: browser.activeID) { _, id in
-                                guard let id else { return }
-                                let representative = browser.activeSplit?.left ?? id
-                                withAnimation(Motion.glide) { proxy.scrollTo(representative) }
-                            }
-                            // A turn of the run loop later, as the row across
-                            // the top does it (TabBar.reveal): the folded
-                            // column comes out mid-animation, and asked at
-                            // once, before the rows had their height, the
-                            // scroll could be dropped and the tab you were on
-                            // left out of sight.
-                            .onAppear {
-                                guard let id = browser.activeID else { return }
-                                DispatchQueue.main.async {
-                                    proxy.scrollTo(browser.activeSplit?.left ?? id, anchor: .center)
+                    //
+                    // One or the other, from the room measured beside what
+                    // the rows add up to, rather than both kept for
+                    // ViewThatFits to choose between: the one it didn't show
+                    // was built again on every change of layout in the one it
+                    // did, every row of it each time the pointer crossed a
+                    // row (Bench "hoversweep": 22 rows a crossing, not 2).
+                    let needed = rowsHeight
+                    Group {
+                        if fits {
+                            rows
+                        } else {
+                            ScrollViewReader { proxy in
+                                // The scroll view reaches into the margin on
+                                // the right and the rows keep it inside, so the
+                                // system's bar lands in the margin beside them
+                                // rather than over the cross on the tab under the
+                                // pointer. The column's edge lies over that margin
+                                // and answers first, so the bar never fights the
+                                // resize; the wheel and the trackpad still scroll.
+                                ScrollView(.vertical) {
+                                    rows.padding(.trailing, 10)
+                                }
+                                .padding(.trailing, -10)
+                                // The tab you go to is the tab you see — ⌘1–⌘9,
+                                // ⇧⌘], a link opening beside the one on screen.
+                                .onChange(of: browser.activeID) { _, id in
+                                    guard let id else { return }
+                                    let representative = browser.activeSplit?.left ?? id
+                                    withAnimation(Motion.glide) { proxy.scrollTo(representative) }
+                                }
+                                // A turn of the run loop later, as the row across
+                                // the top does it (TabBar.reveal): the folded
+                                // column comes out mid-animation, and asked at
+                                // once, before the rows had their height, the
+                                // scroll could be dropped and the tab you were on
+                                // left out of sight.
+                                .onAppear {
+                                    guard let id = browser.activeID else { return }
+                                    DispatchQueue.main.async {
+                                        proxy.scrollTo(browser.activeSplit?.left ?? id, anchor: .center)
+                                    }
                                 }
                             }
                         }
+                    }
+                    // The whole room under the pins, to be measured. A
+                    // window changing size, or a tab opened or closed,
+                    // builds nothing until the rows stop fitting or start.
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                        room.height = $0
+                        refit()
+                    }
+                    .onChange(of: needed, initial: true) { _, needed in
+                        room.needed = needed
+                        refit()
                     }
                 }
             } else {
@@ -250,6 +282,11 @@ struct SideBar: View {
         }
         .padding(.horizontal, 10)
         .frame(width: prefs.sideWidth, alignment: .topLeading)
+    }
+
+    private func refit() {
+        let now = room.needed <= room.height
+        if fits != now { fits = now }
     }
 
     /// Another space's rows, drawn with the same pieces as this one's so the
@@ -297,9 +334,16 @@ struct SideBar: View {
     /// from what was drawn rather than measured: a measurement would arrive a
     /// frame late, and for one frame the whole column would drag the window.
     private var rowsEnd: CGFloat {
-        let displayed = browser.displayedTabs
         let pins = browser.squarePins.count
         let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + 10
+        return Metrics.strip + pinBlock + rowsHeight
+    }
+
+    /// The pinned rows, the loose tabs and the row that makes another, added
+    /// up the same way, with a few points to spare: what decides whether
+    /// they scroll.
+    private var rowsHeight: CGFloat {
+        let displayed = browser.displayedTabs
         let listed = browser.listedPins.count
         let ungrouped = displayed.filter { $0.pin == nil && (!prefs.usesTabGroups || browser.group(of: $0) == nil) }.count
         let listBlock = CGFloat(listed) * (rowHeight + SideBar.gap) + (listed > 0 ? SideBar.gap : 0)
@@ -312,7 +356,7 @@ struct SideBar: View {
         let pairs = rows.filter { browser.split(for: $0) != nil }.count
         let headings = prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) * (GroupHeading.height + SideBar.gap) : 0
         let loose = CGFloat(rows.count) * (rowHeight + SideBar.gap) + CGFloat(pairs) * rowHeight + headings
-        return Metrics.strip + pinBlock + listBlock + loose + rowHeight + 8
+        return listBlock + loose + rowHeight + 8
     }
 
     @ViewBuilder
