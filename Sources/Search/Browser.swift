@@ -2049,7 +2049,13 @@ final class Browser: NSObject, ObservableObject {
     var parked: [UUID: Parked] = [:]
     /// How far the column's rows have followed two fingers sideways, and
     /// whether the card for a new space stands in for them (see SpaceSwipe).
-    @Published var spaceSwipe: CGFloat = 0
+    /// The distance is kept apart, for the pages that move with it alone
+    /// (SpacePages) to watch.
+    let spaceTravel = SpaceTravel()
+    var spaceSwipe: CGFloat {
+        get { spaceTravel.offset }
+        set { spaceTravel.offset = newValue }
+    }
     @Published var makingSpace = false
     /// A tab being sent into the Space being made from its context menu.
     var afterSpaceCreated: ((Space) -> Void)?
