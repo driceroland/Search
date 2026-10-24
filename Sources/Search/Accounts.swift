@@ -10,9 +10,9 @@ import SwiftUI
 struct AccountList: View {
     @ObservedObject var browser: Browser
     let asked: Browser.Suggesting
-    /// How big the list came out, for a host that has to know where it is
-    /// to keep a click on it (see PaneStage's AccountHost).
-    var onSize: ((CGSize) -> Void)? = nil
+    /// Where the card came out in its host, for a host that has to know
+    /// where it is to keep a click on it (see PaneStage's AccountHost).
+    var onFrame: ((CGRect) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -54,7 +54,8 @@ struct AccountList: View {
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.14), radius: 22, y: 8)
-        .onGeometryChange(for: CGSize.self, of: \.size) { onSize?($0) }
+        // Measured inside the offset, so where it is drawn, not laid out.
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(FromTopLeft<AccountList>.space)) }) { onFrame?($0) }
         // Just under the box, left edges lined up. The offset is from the
         // stage's top-left, which is also the web view's.
         .offset(x: asked.spot.minX, y: asked.spot.maxY + 6)

@@ -7093,6 +7093,8 @@ extension Browser {
         if page.kind == .settings, let detail = page.detail, let section = SettingsPanel.Page.named( detail) {
             settingsPage = section
         }
+        // As show(_:) does: the list read before the page is drawn.
+        if page.kind == .passwords { relist() }
         here.show(page)
         writeSessionSoon()
     }

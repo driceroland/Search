@@ -131,13 +131,13 @@ final class PaneStage: NSView {
         }
         let view = ApplePairingCard(browser: pairing.browser, apple: pairing.browser.applePasswords, pairing: pairing.pairing)
         if pairingCard == nil {
-            let host = PairingHost(rootView: view)
+            let host = PairingHost(rootView: FromTopLeft(content: view))
             host.sizingOptions = []
             pairingCard = host
             addSubview(host, positioned: .above, relativeTo: nil)
         }
         guard let host = pairingCard else { return }
-        host.rootView = view
+        host.rootView = FromTopLeft(content: view)
         host.spot = pairing.pairing.spot
         pairingFor = pairing.pairing.tab
         needsLayout = true
@@ -155,7 +155,7 @@ final class PaneStage: NSView {
         }
         let made = accountList == nil
         if made {
-            let host = AccountHost(rootView: AccountList(browser: accounts.browser, asked: accounts.asked))
+            let host = AccountHost(rootView: FromTopLeft(content: AccountList(browser: accounts.browser, asked: accounts.asked)))
             host.sizingOptions = []
             accountList = host
             addSubview(host, positioned: .above, relativeTo: nil)
@@ -166,10 +166,11 @@ final class PaneStage: NSView {
         // stage once more on every change to the window, and a list given
         // anew each time was a new tree for it to compare, keystroke by
         // keystroke in the box.
-        if made || host.rootView.asked != accounts.asked || host.rootView.browser !== accounts.browser {
+        let shown = host.rootView.content
+        if made || shown.asked != accounts.asked || shown.browser !== accounts.browser {
             var view = AccountList(browser: accounts.browser, asked: accounts.asked)
-            view.onSize = { [weak host] in host?.listSize = $0 }
-            host.rootView = view
+            view.onFrame = { [weak host] in host?.card = $0 }
+            host.rootView = FromTopLeft(content: view)
         }
         if made || accountsFor != accounts.asked.tab {
             accountsFor = accounts.asked.tab
@@ -968,13 +969,29 @@ private final class FindHost: NSHostingView<FindBar> {
     }
 }
 
+/// A card that places itself by its offset from the page's top-left, in a
+/// host as large as the page. A hosting view centres what it holds: the
+/// card alone, offset from the centre, came out down and to the right of
+/// its box — off the page for a box half way down — and the click meant for
+/// it went to the page. Pinned to the top-left, the offset is from there.
+struct FromTopLeft<Content: View>: View {
+    static var space: String { "PaneStage.card" }
+    let content: Content
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .coordinateSpace(.named(Self.space))
+    }
+}
+
 /// The accounts' box is the whole page, so the list can hang anywhere on it;
 /// the list itself is a small card under the sign-in box. A press on the
 /// card picks an account; anywhere else it is the page's, as if the box
 /// weren't there — the sign-in box itself above all.
 /// The code card's host: as large as the page, but only the card takes a
 /// click; the rest of the page is the page's.
-private final class PairingHost: NSHostingView<ApplePairingCard> {
+private final class PairingHost: NSHostingView<FromTopLeft<ApplePairingCard>> {
     /// The sign-in box, from the page's top-left (Browser.ApplePairing.spot).
     var spot = CGRect.zero
 
@@ -987,17 +1004,43 @@ private final class PairingHost: NSHostingView<ApplePairingCard> {
     }
 }
 
-private final class AccountHost: NSHostingView<AccountList> {
+private final class AccountHost: NSHostingView<FromTopLeft<AccountList>> {
     /// The sign-in box, from the page's top-left (Browser.Suggesting.spot).
     var spot = CGRect.zero
-    /// How big the card came out (AccountList.onSize).
-    var listSize = CGSize.zero
+    /// Where the card is drawn, from the host's top-left (AccountList.onFrame).
+    var card = CGRect.zero
+    /// The list up now, for the bench.
+    static weak var shown: AccountHost?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { Self.shown = self }
+    }
+
+    // Never the keys' view: a press on a row leaves the caret in the page's
+    // box, as Safari's list does, so no blur of the box can take the list
+    // down under the hand before the row's click is through.
+    override var acceptsFirstResponder: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let inside = convert(point, from: superview)
-        // Where AccountList puts the card: under the box, left edges lined up.
-        let card = CGRect(origin: CGPoint(x: spot.minX, y: spot.maxY + 6), size: listSize)
+        // Only the card, where it really is.
         return RoundedRectangle(cornerRadius: 10, style: .continuous).path(in: card).contains(inside)
             ? super.hitTest(point) : nil
+    }
+}
+
+extension PaneStage {
+    /// The account list's card and its host, in the window, from its
+    /// top-left: for the bench, which asks whether the card hangs under the
+    /// box it was drawn for.
+    static func accountCard() -> (card: CGRect, host: CGRect)? {
+        guard let host = AccountHost.shown, let window = host.window, !host.isHidden else { return nil }
+        func top(_ r: CGRect) -> CGRect {
+            let w = host.convert(r, to: nil)
+            return CGRect(x: w.minX, y: window.frame.height - w.maxY, width: w.width, height: w.height)
+        }
+        return (top(host.card), top(host.bounds))
     }
 }

@@ -1510,7 +1510,9 @@ final class Bench {
             // passwords out of the keychain (the test world's own, by label).
             guard Store.testing else { answer(["error": "passwords only works on a --test run"]); return }
             if let filter = request["filter"] as? String { browser.hunting = filter }
-            browser.relist()
+            // "shown": the list as the page holds it now, not read again,
+            // so a route to the page that never read it shows as empty.
+            if request["shown"] as? Bool != true { browser.relist() }
             if request["remove"] as? Bool == true { browser.forgetShown() }
             // Answered once the removals, off the main thread, are done.
             func settled() {
@@ -2006,12 +2008,42 @@ final class Bench {
             let users = Vault.all().map(\.user)
             guard let list = browser.suggesting else { answer(["shown": false, "offer": offer, "kept": users.count, "users": users]); return }
             let rows = list.passkeys.map { ["passkey": $0.name] } + list.logins.map { ["login": $0.user] }
+            if let press = request["press"] as? [Double], press.count == 2 {
+                // A press and a release at a point of the window, from its
+                // top-left, handed to whatever the window says is there — the
+                // way a click on a row reaches the list, without the pointer.
+                guard let window = browser.window, let frame = window.contentView?.superview else {
+                    answer(["error": "no window"]); return
+                }
+                let point = NSPoint(x: press[0], y: Double(window.frame.height) - press[1])
+                guard let target = frame.hitTest(frame.convert(point, from: nil)) else { answer(["error": "nothing there"]); return }
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    guard let event = NSEvent.mouseEvent(
+                        with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+                    else { continue }
+                    if type == .leftMouseDown { target.mouseDown(with: event) } else { target.mouseUp(with: event) }
+                }
+                // What it reached and who has the keys after: a hidden
+                // probe's SwiftUI button never fires, so the pick itself is
+                // `pick`'s to check.
+                answer(["pressed": "\(type(of: target))", "responder": window.firstResponder.map { "\(type(of: $0))" } ?? ""])
+                return
+            }
             if let pick = request["pick"] as? Int {
                 guard rows.indices.contains(pick) else { answer(["error": "no row \(pick)"]); return }
                 if pick < list.passkeys.count { browser.choose(list.passkeys[pick]) } else { browser.choose(list.logins[pick - list.passkeys.count]) }
             }
-            answer(["shown": true, "rows": rows, "nameOnly": list.nameOnly, "offer": offer, "kept": users.count, "users": users,
-                    "spot": [list.spot.minX, list.spot.minY, list.spot.width, list.spot.height]])
+            var out: [String: Any] = ["shown": true, "rows": rows, "nameOnly": list.nameOnly, "offer": offer, "kept": users.count,
+                                      "users": users, "spot": [list.spot.minX, list.spot.minY, list.spot.width, list.spot.height]]
+            // With Split View's stage, the card as drawn, in the window from
+            // its top-left, and the page-sized box it hangs in.
+            if let drawn = PaneStage.accountCard() {
+                func box(_ r: CGRect) -> [Double] { [r.minX, r.minY, r.width, r.height].map { Double($0) } }
+                out["card"] = box(drawn.card)
+                out["host"] = box(drawn.host)
+            }
+            answer(out)
 
         case "fill":
             // What the window spends on the page scrolling: the page's report
@@ -2099,6 +2131,8 @@ final class Bench {
             // with no scale given. Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "magnify only works on a --test run"]); return }
             guard let tab = find(request, in: browser), let web = tab.built else { answer(missing(request)); return }
+            // ⌘+ and ⌘−'s kind: the page's own zoom, as View › Zoom In sets it.
+            if let zoom = request["zoom"] as? Double { tab.magnify(to: CGFloat(zoom)) }
             if let scale = request["scale"] as? Double {
                 let x = request["x"] as? Double ?? Double(web.bounds.midX)
                 let y = request["y"] as? Double ?? Double(web.bounds.midY)
