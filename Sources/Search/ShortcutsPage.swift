@@ -188,6 +188,10 @@ private struct KeyBox: View {
         guard let combo = KeyCombo(event: event) else { return }
         guard combo.isUsable else { return say("Add ⌘, ⌥ or ⌃") }
         guard !KeyCombo.isReserved(combo) else { return say("Can’t be changed") }
+        // The switcher stays up while its key's ⌃, ⌥ or ⌘ is held, and
+        // takes the tab picked when it is let go of: a key needs one.
+        guard id != Command.recentTabs || combo.control || combo.option || combo.command
+        else { return say("Hold ⌃, ⌥ or ⌘ with it") }
         // An extension's command takes a key as its manifest would: one
         // that types a character, not an arrow or a function key.
         guard !id.hasPrefix("ext:") || combo.key.count == 1 else { return say("Not for an extension") }

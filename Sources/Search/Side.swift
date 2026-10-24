@@ -48,7 +48,9 @@ struct SideBar: View {
 
     /// The window's buttons' corner: gone in full screen, where macOS takes
     /// them away, and back, forward and reload move up to the edge (idea 184).
-    private var lights: CGFloat { browser.fullScreen ? 0 : Metrics.sideLights }
+    private var lights: CGFloat {
+        browser.fullScreen ? 0 : max(0, min(Metrics.sideLights, prefs.sideWidth - 20 - Metrics.helmDoors))
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -779,6 +781,7 @@ private struct PinGrid: Layout {
 /// room to spare turns into a wide, short button rather than a bigger icon.
 private struct PinSquare: View {
     @Environment(\.greys) private var greys
+    @Environment(\.tabShortcutNumbers) private var shortcutNumbers
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
@@ -799,6 +802,8 @@ private struct PinSquare: View {
         Group {
             if browser.editingPin == tab.id {
                 PinField(browser: browser, tab: tab)
+            } else if let number = shortcutNumbers[tab.id] {
+                TabShortcutNumber(number: number)
             } else if tab.loading {
                 // Its page on the way, as a row's ring says.
                 Ring(size: scale * 11 / 34)
@@ -868,6 +873,7 @@ private struct PinSquare: View {
 /// One tab, as a line in the column.
 private struct SideRow: View {
     @Environment(\.greys) private var greys
+    @Environment(\.tabShortcutNumbers) private var shortcutNumbers
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
@@ -946,6 +952,12 @@ private struct SideRow: View {
                 PeekBadge(page: page, size: 16)
                     .opacity(hovering && !status ? 0 : 1)
             }
+
+            if interactive, !editing, let number = shortcutNumbers[tab.id] {
+                TabShortcutNumber(number: number)
+                    .padding(.trailing, status ? 0 : 28)
+            }
+
             if status {
                 ZStack {
                     if tab.loading {
