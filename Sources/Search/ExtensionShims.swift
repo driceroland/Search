@@ -41,7 +41,7 @@ enum ExtensionShims {
     nonisolated static let stamp = ".search-shim"
     /// Raised when `prepare` changes what it does to a package, so that
     /// extensions prepared before are prepared again.
-    nonisolated private static let preparation = "2"
+    nonisolated private static let preparation = "3"
     nonisolated static let version: String = {
         SHA256.hash(data: Data((script + PasskeyRelay.page + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
@@ -145,9 +145,13 @@ enum ExtensionShims {
         while let url = walker?.nextObject() as? URL {
             guard (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
                   ["html", "htm"].contains(url.pathExtension.lowercased()),
-                  var html = try? String(contentsOf: url, encoding: .utf8),
-                  !html.contains(file)
+                  var html = try? String(contentsOf: url, encoding: .utf8)
             else { continue }
+            if let chained = chainModules(html, page: url, folder: folder) {
+                html = chained
+                try? html.write(to: url, atomically: true, encoding: .utf8)
+            }
+            guard !html.contains(file) else { continue }
             let tag = "<script src=\"/\(file)\"></script>"
             if let head = html.range(of: "<head[^>]*>", options: [.regularExpression, .caseInsensitive]) {
                 html.insert(contentsOf: tag, at: head.upperBound)
@@ -156,6 +160,74 @@ enum ExtensionShims {
             }
             try? html.write(to: url, atomically: true, encoding: .utf8)
         }
+    }
+
+    /// A page's module scripts, two or more of them with one that awaits,
+    /// made one module that imports them in their order: nil when there is
+    /// nothing to do. Chrome waits for a module still at a top-level await
+    /// before running a later tag's module that imports it; WebKit runs the
+    /// later one at once, which then reads the first one's exports before
+    /// they exist ("Cannot access 'd' before initialization"). Vimium C's
+    /// options page lists five, the second awaiting its translations, and
+    /// stayed blank. Inside one module's imports WebKit does wait, so the
+    /// tags become one, in a file of Search's beside the page (named with
+    /// `search-` like the shim). The modules themselves are not touched. Only
+    /// plain tags: one marked async, or a src that isn't the package's own
+    /// file, leaves the page as it is.
+    nonisolated static func chainModules(_ html: String, page: URL, folder: URL) -> String? {
+        let tags = try! NSRegularExpression(pattern: #"<script\b([^>]*)>\s*</script>"#, options: [.caseInsensitive])
+        let module = try! NSRegularExpression(pattern: #"\btype\s*=\s*["']?module\b"#, options: [.caseInsensitive])
+        let source = try! NSRegularExpression(pattern: #"\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#, options: [.caseInsensitive])
+        let async = try! NSRegularExpression(pattern: #"(^|\s)async(\s|=|$)"#, options: [.caseInsensitive])
+        let whole = NSRange(html.startIndex..., in: html)
+        var found: [(range: Range<String.Index>, attributes: String, src: String)] = []
+        for match in tags.matches(in: html, range: whole) {
+            guard let range = Range(match.range, in: html), let inner = Range(match.range(at: 1), in: html) else { continue }
+            let attributes = String(html[inner])
+            let span = NSRange(attributes.startIndex..., in: attributes)
+            guard module.firstMatch(in: attributes, range: span) != nil else { continue }
+            guard async.firstMatch(in: attributes, range: span) == nil,
+                  let named = source.firstMatch(in: attributes, range: span),
+                  let src = (1...3).lazy.compactMap({ Range(named.range(at: $0), in: attributes) }).first.map({ String(attributes[$0]) }),
+                  !src.isEmpty, !src.contains(":"), !src.hasPrefix("//"), !src.contains(where: \.isNewline)
+            else { return nil }
+            found.append((range, attributes, src))
+        }
+        guard found.count >= 2 else { return nil }
+        // The package's own files, and one of them awaiting at all: without
+        // an await, every module has run by the time the next tag's does.
+        let directory = page.deletingLastPathComponent()
+        let root = folder.standardizedFileURL.path + "/"
+        var awaits = false
+        for entry in found {
+            let path = entry.src.split(separator: "?").first.map(String.init) ?? entry.src
+            let file = (path.hasPrefix("/") ? folder.appendingPathComponent(String(path.dropFirst())) : directory.appendingPathComponent(path)).standardizedFileURL
+            guard file.path.hasPrefix(root), let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+            if text.range(of: #"\bawait\b"#, options: .regularExpression) != nil { awaits = true }
+        }
+        guard awaits else { return nil }
+        let name = "search-modules-" + page.deletingPathExtension().lastPathComponent + ".js"
+        let imports = found.map { entry -> String in
+            let spec = entry.src.hasPrefix("/") || entry.src.hasPrefix("./") || entry.src.hasPrefix("../") ? entry.src : "./" + entry.src
+            return "import \"\(spec.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\";"
+        }
+        do {
+            try ("// Search: this page's module scripts, in their order (ExtensionShims.chainModules).\n" + imports.joined(separator: "\n") + "\n")
+                .write(to: directory.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        } catch { return nil }
+        // The first tag, its other attributes kept (blocking="render"), now
+        // naming the one module; the others gone.
+        var html = html
+        for (index, entry) in found.enumerated().reversed() {
+            if index == 0 {
+                let span = NSRange(entry.attributes.startIndex..., in: entry.attributes)
+                let attributes = source.stringByReplacingMatches(in: entry.attributes, range: span, withTemplate: NSRegularExpression.escapedTemplate(for: "src=\"\(name)\""))
+                html.replaceSubrange(entry.range, with: "<script\(attributes)></script>")
+            } else {
+                html.removeSubrange(entry.range)
+            }
+        }
+        return html
     }
 
     /// A worker that is a link to another file of its own package
@@ -1084,6 +1156,24 @@ enum ExtensionShims {
           let f; try { f = runtime[name]; } catch (e) { continue; }
           if (typeof f === "function") put(runtime, name, f.bind(runtime));
         }
+        // All but one: WebKit hands out runtime.getPlatformInfo afresh at each
+        // read, past anything put in its place, and a copy called with any
+        // other `this` never calls back. Vimium C's worker asks for it as
+        // getPlatformInfo.apply(0, [callback]) and waits for the answer before
+        // it takes a single connection: its options page stayed blank and its
+        // keys did nothing. A copy applied to no object (0, null, undefined)
+        // is applied to runtime. Only through apply, which is how such code
+        // calls it.
+        const apply = Function.prototype.apply;
+        try {
+          Object.defineProperty(Function.prototype, "apply", {
+            value: ({ apply(that, args) {
+              if ((that === null || (typeof that !== "object" && typeof that !== "function"))
+                  && typeof this === "function" && this.name === "getPlatformInfo") that = runtime;
+              return Reflect.apply(apply, this, [that, args]);
+            } }).apply, configurable: true, writable: true, enumerable: false,
+          });
+        } catch (e) {}
       }
       // Installed before the content-script return. Each passive subscription
       // is bound natively to the background that this port connected to. A
@@ -2922,7 +3012,11 @@ enum ExtensionShims {
               heard.set(tag[0], tag[1]);
               message = message.message;
             }
-            for (const f of [...listeners]) { try { f(message, ...rest); } catch (e) { setTimeout(() => { throw e; }); } }
+            // The port this was numbered on, not the one WebKit hands the
+            // listener, which may be another object for the same port: Vimium
+            // C keeps what it knows of a port on the port it was given in
+            // onConnect, and read it back off this one ('l.s.Jl').
+            for (const f of [...listeners]) { try { f(message, port, ...rest.slice(1)); } catch (e) { setTimeout(() => { throw e; }); } }
           });
           // WebKit makes a port's onMessage afresh once nothing holds it, and
           // a fresh one has none of what is set below: a listener added to it

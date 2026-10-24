@@ -31,6 +31,12 @@ struct SideBar: View {
 
     @State private var groupFrames: [UUID: CGRect] = [:]
 
+    /// A tab carried over the pins, or a pin over the tabs, and where it
+    /// would land (see PinDrop).
+    @State private var crossing: PinDrop.Crossing?
+    /// Where the blocks are, for working that out.
+    @State private var frames = ColumnFrames()
+
     /// A tab's line: taller with roomier tabs turned on.
     private var rowHeight: CGFloat { prefs.sideRow }
     private static let gap: CGFloat = 2
@@ -198,9 +204,12 @@ struct SideBar: View {
                 .frame(maxHeight: .infinity)
             } else if browser.spaces[index].id == browser.spaceID {
                 VStack(alignment: .leading, spacing: 0) {
-                    if browser.pinnedCount > 0 {
+                    if !browser.squarePins.isEmpty || ghostSquare != nil {
                         pinned
                             .padding(.bottom, 10)
+                            // A square carried down over the rows passes
+                            // over them, not under.
+                            .zIndex(carriedPin ? 1 : 0)
                     }
                     // A row too long for the window scrolls between the pins
                     // and the foot, rather than running under the lights at one
@@ -244,6 +253,10 @@ struct SideBar: View {
                         }
                     }
                 }
+                // Every block measured in one space, for a tab carried
+                // from one to another (see PinDrop).
+                .coordinateSpace(name: "column")
+                .animation(Motion.settle, value: crossing)
             } else {
                 preview(browser.parked[browser.spaces[index].id] ?? Parked(tabs: [], active: nil), pill: pill)
             }
@@ -258,9 +271,7 @@ struct SideBar: View {
     private func preview(_ row: Parked, pill: Namespace.ID) -> some View {
         let pins = row.tabs.filter { $0.pin != nil && !($0.listed && prefs.showsPinRows) }
         let listed = prefs.showsPinRows ? row.tabs.filter { $0.pin != nil && $0.listed } : []
-        let rest = row.tabs.filter { tab in
-            tab.pin == nil && (!prefs.splitView || !row.splits.contains(where: { $0.right == tab.id }))
-        }
+        let (groups, rest) = row.drawn(groupsOn: prefs.usesTabGroups, splitView: prefs.splitView)
         let cells = pinCells(pins.count)
         return VStack(alignment: .leading, spacing: 0) {
             if !pins.isEmpty {
@@ -279,7 +290,15 @@ struct SideBar: View {
                     SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
                             pill: pill, close: {}, interactive: false)
                 }
-                // Groups aren't drawn here, so the line goes over all the rest.
+                // Its groups, folded as they were left (see Parked.drawn).
+                ForEach(groups) { drawn in
+                    GroupHeading(browser: browser, group: drawn.group)
+                    ForEach(drawn.tabs) { tab in
+                        rowItem(tab, tabs: row.tabs, splits: row.splits, activeID: row.active,
+                                interactive: false, pill: pill, close: {})
+                    }
+                }
+                // Under the groups, as on screen.
                 if showsLine(listed: listed.count, loose: rest.count) {
                     KeepLine(clears: false) {}
                 }
@@ -399,12 +418,17 @@ struct SideBar: View {
     /// row holds its ground rather than stretching to fill it.
     private var pinned: some View {
         let tabs = pinnedTabs
-        let cells = pinCells(tabs.count)
+        // A tab carried over the grid: one cell more, and the one it
+        // would take left open for it.
+        let ghost = ghostSquare
+        let all = pinCells(tabs.count + (ghost == nil ? 0 : 1))
+        let cells = ghost.map { open in all.indices.filter { $0 != open }.map { all[$0] } } ?? all
+        let placed = cells + (ghost.map { [all[$0]] } ?? [])
         // Measured in the grid's own space, not the square's: a square that
         // has just been moved to a new cell would otherwise report the drag
         // from where it now is, the target would jump back, and the square
         // would shuttle between two cells for as long as the finger stayed.
-        return VStack(spacing: 0) { PinGrid(cells: cells) {
+        return VStack(spacing: 0) { PinGrid(cells: placed) {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
                 PinSquare(
                     browser: browser,
@@ -418,10 +442,16 @@ struct SideBar: View {
                 // The hand's travel is the square's own, as a row's is
                 // (Carried): a move redraws the one square being carried,
                 // not the column (idea 31).
-                .modifier(PinCarried(index: index, cells: cells) { browser.move(tab, to: $0) })
+                .modifier(PinCarried(index: index, cells: cells,
+                                     cross: { cross(tab, $0, from: .pins) },
+                                     land: { land(tab, $0) }) { browser.move(tab, to: $0) })
+            }
+            if let ghost, let tab = crossingTab {
+                PinGhost(tab: tab, width: all[ghost].width, height: all[ghost].height)
             }
         } }
         .coordinateSpace(name: "pins")
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.grid = $0 }
     }
 
     // MARK: - the rows
@@ -431,20 +461,30 @@ struct SideBar: View {
     private var listed: some View {
         let pins = browser.listedPins
         let squares = browser.squarePins.count
+        let ghost: Int? = if case .listed(let at)? = crossing?.target { at } else { nil }
         return VStack(spacing: SideBar.gap) {
             ForEach(Array(pins.enumerated()), id: \.element.id) { index, tab in
+                if ghost == index, let carried = crossingTab {
+                    RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
+                }
                 SideRow(browser: browser, prefs: prefs, tab: tab,
                         live: tab.id == browser.activeID, pill: pill,
                         close: { browser.close(tab) })
                     .modifier(Carried(index: index, count: pins.count,
                                       step: rowHeight + SideBar.gap, vertical: true,
-                                      space: "listed") {
+                                      space: "listed",
+                                      cross: { cross(tab, $0, from: .listed) },
+                                      land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
                         browser.moveDisplayedTab(tab, to: $0 + squares)
                     })
             }
+            if let ghost, ghost >= pins.count, let carried = crossingTab {
+                RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
+            }
         }
         .coordinateSpace(name: "listed")
-        .padding(.bottom, pins.isEmpty ? 0 : SideBar.gap)
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.listed = $0 }
+        .padding(.bottom, pins.isEmpty && ghost == nil ? 0 : SideBar.gap)
     }
 
     private var loose: some View {
@@ -465,25 +505,42 @@ struct SideBar: View {
             if showsLine(listed: browser.listedPins.count, loose: loose.count) {
                 KeepLine(clears: !loose.isEmpty) { browser.clearTabs() }
             }
-            ForEach(Array(loose.enumerated()), id: \.element.id) { index, tab in
-                let step = rowHeight + SideBar.gap
-                rowItem(tab, tabs: browser.tabs, splits: browser.splits,
-                        activeID: browser.activeID, interactive: true, pill: pill,
-                        close: { browser.close(tab) })
-                // Positions here are among the loose rows; the pinned block
-                // sits in front of them in the real list.
-                .modifier(Carried(index: index, count: loose.count, step: step, vertical: true,
-                                  space: "rows", onDropTab: { source, point in drop(source, at: point) },
-                                  outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
-                    if prefs.usesTabGroups {
-                        browser.move(tab, within: nil, to: $0)
-                    } else {
-                        browser.moveDisplayedTab(tab, to: $0 + browser.pinnedCount)
+            let ghost: Int? = if case .loose(let at)? = crossing?.target { at } else { nil }
+            // In a stack of their own, measured, for where a pin carried
+            // among them would land.
+            if !loose.isEmpty || ghost != nil {
+                VStack(spacing: SideBar.gap) {
+                    ForEach(Array(loose.enumerated()), id: \.element.id) { index, tab in
+                        let step = rowHeight + SideBar.gap
+                        if ghost == index, let carried = crossingTab {
+                            RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
+                        }
+                        rowItem(tab, tabs: browser.tabs, splits: browser.splits,
+                                activeID: browser.activeID, interactive: true, pill: pill,
+                                close: { browser.close(tab) })
+                        // Positions here are among the loose rows; the pinned block
+                        // sits in front of them in the real list.
+                        .modifier(Carried(index: index, count: loose.count, step: step, vertical: true,
+                                          space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                                          outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
+                                          cross: { cross(tab, $0, from: .rows) },
+                                          land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
+                            if prefs.usesTabGroups {
+                                browser.move(tab, within: nil, to: $0)
+                            } else {
+                                browser.moveDisplayedTab(tab, to: $0 + browser.pinnedCount)
+                            }
+                        })
                     }
-                })
+                    if let ghost, ghost >= loose.count, let carried = crossingTab {
+                        RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
+                    }
+                }
+                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.loose = $0 }
             }
         }
         .coordinateSpace(name: "rows")
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.rows = $0 }
         .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
     }
 
@@ -505,11 +562,132 @@ struct SideBar: View {
                     .modifier(Carried(index: index, count: members.count,
                                       step: rowHeight + SideBar.gap, vertical: true,
                                       space: "rows", onDropTab: { source, point in drop(source, at: point) },
-                                      outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
+                                      outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
+                                      cross: { cross(tab, $0, from: .rows) },
+                                      land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
                         browser.move(tab, within: group.id, to: $0)
                     })
             }
+            // A pin carried over its heading goes in at the end.
+            if crossing?.target == .group(group.id), let carried = crossingTab {
+                RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
+                    .padding(.leading, 14)
+            }
         }
+    }
+
+    // MARK: - carried between the pins and the tabs
+
+    /// The block a carried tab's point is measured in.
+    private enum From { case pins, listed, rows }
+
+    /// The place open in the grid, while a tab is carried over it.
+    private var ghostSquare: Int? {
+        if case .squares(let at)? = crossing?.target { return at }
+        return nil
+    }
+
+    /// The tab being carried across, while it is.
+    private var crossingTab: Tab? {
+        crossing.flatMap { crossing in browser.tabs.first { $0.id == crossing.tab } }
+    }
+
+    /// A square being carried out over the rows.
+    private var carriedPin: Bool {
+        guard let crossing, ghostSquare == nil else { return false }
+        return browser.tabs.first { $0.id == crossing.tab }.map { $0.pin != nil && !($0.listed && prefs.showsPinRows) } ?? false
+    }
+
+    private func columnPoint(_ point: CGPoint, from: From) -> CGPoint {
+        let origin: CGPoint
+        switch from {
+        case .pins: origin = frames.grid?.origin ?? .zero
+        case .listed: origin = frames.listed?.origin ?? .zero
+        case .rows: origin = frames.rows.origin
+        }
+        return CGPoint(x: point.x + origin.x, y: point.y + origin.y)
+    }
+
+    /// Where `tab` would land with the hand at `point` (the column's
+    /// space): nil over its own block, where it moves as it always did, or
+    /// over one that won't take it — a pair, a private tab.
+    private func target(for tab: Tab, at point: CGPoint) -> PinDrop.Target? {
+        let squares = browser.squarePins.filter { $0.id != tab.id }
+        let gridShown = !squares.isEmpty || ghostSquare != nil
+        let rowsOn = prefs.showsPinRows
+        let listedShown = rowsOn && (!browser.listedPins.isEmpty || isListedGhost)
+        let zone = PinDrop.zone(point, width: prefs.sideWidth - 20,
+                                gridBottom: gridShown ? frames.grid?.maxY : nil,
+                                listed: listedShown ? frames.listed : nil)
+        switch zone {
+        case .none:
+            return nil
+        case .squares:
+            let takes = tab.pin == nil ? browser.pinsByDrag(tab) : (rowsOn && tab.listed)
+            guard takes else { return nil }
+            let origin = gridShown ? frames.grid?.origin ?? .zero : .zero
+            let slot = PinDrop.gridSlot(CGPoint(x: point.x - origin.x, y: point.y - origin.y),
+                                        cells: pinCells(squares.count + 1))
+            return .squares(browser.pinSlot(tab, listed: false, proposed: slot))
+        case .listed:
+            let takes = tab.pin == nil ? browser.pinsByDrag(tab) : !tab.listed
+            guard takes, let listed = frames.listed else { return nil }
+            let rows = browser.listedPins.filter { $0.id != tab.id }
+            let ghost: (Int, CGFloat)? = if case .listed(let at)? = crossing?.target { (at, rowHeight) } else { nil }
+            let slot = PinDrop.rowSlot(y: point.y - listed.minY, heights: rows.map { _ in rowHeight },
+                                       gap: SideBar.gap, ghost: ghost)
+            return .listed(browser.pinSlot(tab, listed: true, proposed: slot))
+        case .loose:
+            guard tab.pin != nil else { return nil }
+            let inRows = CGPoint(x: point.x - frames.rows.minX, y: point.y - frames.rows.minY)
+            if prefs.usesTabGroups, let id = groupFrames.first(where: { $0.value.contains(inRows) })?.key {
+                return .group(id)
+            }
+            let loose = looseTabs
+            guard !loose.isEmpty, let top = frames.loose?.minY else { return .loose(0) }
+            let ghost: (Int, CGFloat)? = if case .loose(let at)? = crossing?.target { (at, rowHeight) } else { nil }
+            let heights = loose.map { browser.split(for: $0) != nil ? rowHeight * 2 : rowHeight }
+            return .loose(PinDrop.rowSlot(y: point.y - top, heights: heights, gap: SideBar.gap, ghost: ghost))
+        }
+    }
+
+    private var isListedGhost: Bool {
+        if case .listed? = crossing?.target { return true }
+        return false
+    }
+
+    /// The hand moved: the block it is over shows where the tab would
+    /// land, and says so once, by touch, as it starts to. True while it does.
+    private func cross(_ tab: Tab, _ point: CGPoint, from: From) -> Bool {
+        let now = target(for: tab, at: columnPoint(point, from: from))
+            .map { PinDrop.Crossing(tab: tab.id, target: $0) }
+        if now != crossing {
+            if crossing == nil, now != nil {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            }
+            withAnimation(Motion.settle) { crossing = now }
+        }
+        return now != nil
+    }
+
+    /// Let go (nil: called off). Where it was shown it would land is where
+    /// it lands; true when that was across the line.
+    private func land(_ tab: Tab, _ point: CGPoint?) -> Bool {
+        let shown = crossing?.tab == tab.id ? crossing?.target : nil
+        guard point != nil, let shown else {
+            if crossing != nil { withAnimation(Motion.settle) { crossing = nil } }
+            return false
+        }
+        withAnimation(Motion.settle) {
+            crossing = nil
+            switch shown {
+            case .squares(let at): browser.pinDropped(tab, listed: false, at: at)
+            case .listed(let at): browser.pinDropped(tab, listed: true, at: at)
+            case .loose(let at): browser.unpinDropped(tab, at: at)
+            case .group(let id): browser.unpinDropped(tab, at: 0, group: id)
+            }
+        }
+        return true
     }
 
     /// The pinned rows, the loose tabs and the row that makes another,
@@ -1030,6 +1208,11 @@ struct Door: View {
 struct PinCarried: ViewModifier {
     let index: Int
     let cells: [CGRect]
+    /// Carried out over the tabs (see Carried.cross): true while they show
+    /// where it would land, and the square then stays out of the grid's way.
+    var cross: ((CGPoint) -> Bool)? = nil
+    /// Let go: true when the tabs took it.
+    var land: ((CGPoint?) -> Bool)? = nil
     let move: (Int) -> Void
 
     @State private var held = false
@@ -1054,12 +1237,14 @@ struct PinCarried: ViewModifier {
                             from = index
                         }
                         travel = value.translation
+                        if cross?(value.location) == true { return }
                         let target = PinCarried.target(travel: travel, from: from, cells: cells)
                         if target != index {
                             withAnimation(Motion.settle) { move(target) }
                         }
                     }
-                    .onEnded { _ in
+                    .onEnded { value in
+                        _ = land?(value.location)
                         withAnimation(Motion.settle) {
                             held = false
                             travel = .zero

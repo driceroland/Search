@@ -518,7 +518,7 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.searchesSites)
             }
             Rule()
-            Line("Start with a fresh window", "Each time Search opens, your pinned tabs are there and last time's other tabs aren't.") {
+            Line("Start with a fresh window", "Each time Search opens, your pinned tabs, tab groups and named tabs are there and last time's other tabs aren't.") {
                 Switch(on: $prefs.startsFresh)
             }
             Rule()

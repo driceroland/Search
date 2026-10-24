@@ -818,7 +818,7 @@ final class Browser: NSObject, ObservableObject {
             announce("The keychain refused it")
             return
         }
-        tab.fill(user: login.user, password: login.password) { [weak self] worked in
+        tab.fill(user: login.user, password: login.password, onlyOn: tab.pageAddress) { [weak self] worked in
             if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
         }
         Vault.touch(login)
@@ -971,7 +971,8 @@ final class Browser: NSObject, ObservableObject {
         case .success(let found):
             let kept = keep(found)
             ImportRecords.note(name, passwords: kept)
-            announce(kept == 0 ? "Nothing new in \(name)" : "\(kept) passwords from \(name)")
+            let locked = found.undecrypted > 0 ? " (\(found.undecrypted) couldn't be decrypted)" : ""
+            announce((kept == 0 ? "Nothing new in \(name)" : "\(kept) passwords from \(name)") + locked)
         case .failure(Chromium.Trouble.noPassphrase):
             announce("\(name) didn't give up its keychain key")
         case .failure(Mozilla.Trouble.primaryPassword):
@@ -1386,6 +1387,75 @@ final class Browser: NSObject, ObservableObject {
             }
         }
         rememberSession()
+    }
+
+    // MARK: - carried onto the pins, and off them
+
+    /// Whether a tab carried onto the pins may become one there. Not a
+    /// private tab (see pin), and not a pair: pinning one half would undo
+    /// the pair under the hand. Pin Tab in the menu still pins the half
+    /// it was asked for.
+    func pinsByDrag(_ tab: Tab) -> Bool {
+        tab.pin == nil && !tab.shy && split(for: tab) == nil && tabs.contains { $0.id == tab.id }
+    }
+
+    /// The place a tab let go at `proposed` among the squares (or, with
+    /// `listed`, the pinned rows) would really take: past the pins every
+    /// space shows, which keep the head of the block (see keepBlocks) — and
+    /// a shared pin among them — and never past the end.
+    func pinSlot(_ tab: Tab, listed: Bool, proposed: Int) -> Int {
+        let tier = tabs.filter { $0.pin != nil && $0.listed == listed && $0.id != tab.id }
+        let shared = prefs.showsSharedPins ? tier.prefix(while: \.everywhere).count : 0
+        let low = tab.everywhere ? 0 : shared
+        let high = tab.everywhere ? shared : tier.count
+        return min(max(proposed, low), high)
+    }
+
+    /// A tab carried onto the pins and let go there (Arc's drag): pinned as
+    /// Pin Tab pins it — its page, its web view and its place in history
+    /// kept — then put at `slot` among the squares, or with `listed` among
+    /// the pinned rows. A pin of the other kind carried there changes kind,
+    /// as Show as Row does. The pin is this space's own, as Pin Tab makes
+    /// it; with pins in every space on, it lands after the shared ones.
+    @discardableResult
+    func pinDropped(_ tab: Tab, listed: Bool, at slot: Int) -> Bool {
+        if tab.pin == nil {
+            guard pinsByDrag(tab) else { return false }
+            pin(tab, listed: listed)
+            guard tab.pin != nil else { return false }
+        } else if tab.listed != listed {
+            setListed(tab, listed)
+        }
+        let at = pinSlot(tab, listed: listed, proposed: slot)
+        let pins = tabs.filter { $0.pin != nil }
+        var tier = pins.filter { $0.listed == listed && $0.id != tab.id }
+        tier.insert(tab, at: min(at, tier.count))
+        let squares = listed ? pins.filter { !$0.listed } : tier
+        let rows = listed ? tier : pins.filter(\.listed)
+        let row = squares + rows + tabs.filter { $0.pin == nil }
+        if !row.elementsEqual(tabs, by: { $0.id == $1.id }) { tabs = row }
+        writeSession(now: true)
+        return true
+    }
+
+    /// A pin carried out among the tabs and let go there: unpinned as Unpin
+    /// unpins it — a pin every space shows leaves them all, as it does from
+    /// the menu — and put at `slot` among the tabs in no group, or into
+    /// `group`. The page stays as it is.
+    @discardableResult
+    func unpinDropped(_ tab: Tab, at slot: Int, group: UUID? = nil) -> Bool {
+        guard tab.pin != nil, tabs.contains(where: { $0.id == tab.id }) else { return false }
+        unpin(tab)
+        if let group, prefs.usesTabGroups, tabGroups.contains(where: { $0.id == group }) {
+            move(tab, toGroup: group)
+        } else if prefs.usesTabGroups {
+            let peers = tabs(in: nil).filter(standsInRow)
+            move(tab, within: nil, to: min(max(0, slot), peers.count - 1))
+        } else {
+            moveDisplayedTab(tab, to: min(pinnedCount + max(0, slot), displayedTabs.count - 1))
+        }
+        writeSession(now: true)
+        return true
     }
 
     // MARK: - the address, in the tab itself
@@ -1859,18 +1929,7 @@ final class Browser: NSObject, ObservableObject {
         let front = saved.tabs.isEmpty || saved.active < 0 ? nil
             : restored.active.flatMap { id in tabs.first { $0.id == id } } ?? tabs.first { $0.pin == nil } ?? tabs.first
         guard let first = front else {
-            // A blank tab costs nothing until it is asked for its page. Its
-            // web view — and with it WebKit's helper processes — is built a
-            // moment after the window is up, so that the first address typed
-            // finds everything already running, and the first frame never
-            // had to share the CPU with it.
-            let tab = Tab(configuration: Web.configuration(space: spaceID))
-            adopt(tab)
-            activeID = tab.id
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak tab] in
-                guard let tab, tab.isBlank else { return }
-                _ = tab.web
-            }
+            frontBlank()
             return
         }
         activeID = first.id
@@ -1885,6 +1944,24 @@ final class Browser: NSObject, ObservableObject {
             }
         } else {
             for tab in tabs where visibleTabIDs.contains(tab.id) { _ = tab.wake() }
+        }
+    }
+
+    /// An empty tab at the end of the row, in front: a row with nothing in
+    /// front (a fresh start, see Session.startFresh) opens on one, beside its
+    /// pins, rather than on the first of them.
+    func frontBlank() {
+        // A blank tab costs nothing until it is asked for its page. Its
+        // web view — and with it WebKit's helper processes — is built a
+        // moment after the window is up, so that the first address typed
+        // finds everything already running, and the first frame never
+        // had to share the CPU with it.
+        let tab = Tab(configuration: Web.configuration(space: spaceID))
+        adopt(tab)
+        activeID = tab.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak tab] in
+            guard let tab, tab.isBlank else { return }
+            _ = tab.web
         }
     }
 
@@ -2182,7 +2259,9 @@ final class Browser: NSObject, ObservableObject {
             row.splits.removeAll { pair in
                 !pair.tabs.allSatisfy { id in row.tabs.contains { $0.id == id } }
             }
-            if !row.tabs.contains(where: { $0.id == row.active }) { row.active = row.tabs.first?.id }
+            if let active = row.active, !row.tabs.contains(where: { $0.id == active }) {
+                row.active = row.tabs.first { $0.pin == nil }?.id ?? row.tabs.first?.id
+            }
             parked[space] = row
         }
     }
@@ -2504,7 +2583,10 @@ final class Browser: NSObject, ObservableObject {
 
     private func session(_ tabs: [Tab], active id: Tab.ID?, groups: [TabGroup]? = nil, splits: [TabSplit] = []) -> Session.Shape {
         var entries: [Session.Entry] = []
-        var active = 0
+        // A row with nothing in front — a space not yet gone to since a fresh
+        // start — stays that way in its file, rather than its first tab (a
+        // pin) coming to the front next time.
+        var active = id == nil ? -1 : 0
         var indices: [Tab.ID: Int] = [:]
         for tab in tabs {
             guard kept(tab), let url = tab.pending ?? tab.address else { continue }
@@ -2521,10 +2603,13 @@ final class Browser: NSObject, ObservableObject {
                 listed: tab.pin != nil && tab.listed ? true : nil
             ))
         }
-        // The tab you were on isn't kept — a private or blank one: the one
-        // kept just before it comes back in front, not the first of the row.
+        // The tab you were on isn't kept — a private one: the one kept just
+        // before it comes back in front, not the first of the row. An empty
+        // one stays an empty one, beside the pins (see frontBlank): the tab
+        // just before it is the last of the row, often the last page of a
+        // folded group, which then came out of its folder in front.
         if let id, let at = tabs.firstIndex(where: { $0.id == id }), indices[id] == nil {
-            active = max(0, tabs[..<at].filter(kept).count - 1)
+            active = tabs[at].isBlank && !tabs[at].shy ? -1 : max(0, tabs[..<at].filter(kept).count - 1)
         }
         let keptGroups = groups?.filter { group in
             entries.contains { $0.groupID == group.id }
@@ -4063,7 +4148,14 @@ final class Browser: NSObject, ObservableObject {
     func loadRow(_ space: UUID) -> Parked {
         let saved = readRow(space)
         var restored = restoreRow(saved, space: space, groups: saved.groups ?? [])
-        if restored.active == nil { restored.active = restored.tabs.first?.id }
+        // As restoreSession has it: nothing in front after a fresh start, so
+        // the space opens on an empty tab beside its pins (see enter); and a
+        // tab whose place no longer reads falls to the first that isn't a pin.
+        if saved.active < 0 {
+            restored.active = nil
+        } else if restored.active == nil {
+            restored.active = restored.tabs.first { $0.pin == nil }?.id ?? restored.tabs.first?.id
+        }
         restored.groups = saved.groups
         return restored
     }
@@ -4116,9 +4208,12 @@ final class Browser: NSObject, ObservableObject {
 
     /// Another space's row put on screen in place of this one (see
     /// Spaces.swift) — empty, for one that restores its own.
-    func showRow(_ row: [Tab], active: Tab.ID?, splits restored: [TabSplit] = []) {
+    /// `blank`: with nothing in front, an empty tab is, rather than the
+    /// first of the row (see frontBlank).
+    func showRow(_ row: [Tab], active: Tab.ID?, splits restored: [TabSplit] = [], blank: Bool = false) {
         splits = restored
         tabs = row
+        if active == nil, blank { return frontBlank() }
         activeID = active ?? row.first?.id
     }
 

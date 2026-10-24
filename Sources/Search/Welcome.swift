@@ -258,7 +258,7 @@ struct WelcomePanel: View {
                     case .success(let found):
                         let kept = browser.keep(found)
                         ImportRecords.note(source.name, passwords: kept)
-                        lines.append("\(kept) passwords")
+                        lines.append("\(kept) passwords" + (found.undecrypted > 0 ? " (\(found.undecrypted) couldn't be decrypted)" : ""))
                     case .failure(Chromium.Trouble.noPassphrase):
                         lines.append("passwords: macOS didn't hand over the key — allow it and try again")
                     case .failure(Mozilla.Trouble.primaryPassword):

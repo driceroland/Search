@@ -72,7 +72,13 @@ enum Web {
     /// starting, the window stuck meanwhile. Sharing one lets WebKit have
     /// the next process ready: 9 to 10 ms, for the same memory and the same
     /// number of processes (measured with ./bench bookmark URL new, 24 Sep 2026).
-    static let pool = WKProcessPool()
+    /// It also carries Search's geolocation provider (see SiteLocation),
+    /// which asks macOS nothing until a page you allowed wants a position.
+    static let pool: WKProcessPool = {
+        let pool = WKProcessPool()
+        SiteLocation.provide(pool)
+        return pool
+    }()
 
     /// `space`: the space the tab belongs to, when it is not the one on
     /// screen — a parked row made ahead of time (see Spaces.swift).
@@ -316,7 +322,10 @@ final class Tab: ObservableObject, Identifiable {
         // A new document: whatever the old one waited for under its field
         // went with it.
         if let built { Passkeys.shared.forget(built) }
-        if let url = built?.url, url.absoluteString != "about:blank" { committed = url }
+        // about:blank too: a document another page wrote into (an opener
+        // sending its window there, then writing) is that page's, not the
+        // one before it, and is offered nothing that belonged to it.
+        if let url = built?.url { committed = url }
         // A page arrived after all: the address is its own again.
         if held != nil, let url = built?.url, url.absoluteString != "about:blank" {
             held = nil
@@ -1075,9 +1084,17 @@ final class Tab: ObservableObject, Identifiable {
     /// `done`, when given, hears back `false` for the one case worth saying
     /// something about: the sign-in fields that were there a moment ago,
     /// when this was offered, are gone by the time it actually runs.
-    func fill(user: String, password: String, done: ((Bool) -> Void)? = nil) {
+    /// With `onlyOn`, the page checks for itself, when the script runs, that
+    /// it is still that scheme and host: a document that changed after the
+    /// last check on this side gets nothing.
+    func fill(user: String, password: String, onlyOn page: URL? = nil, done: ((Bool) -> Void)? = nil) {
+        var still = ""
+        if let page {
+            guard let scheme = page.scheme?.lowercased(), let host = page.host()?.lowercased() else { done?(false); return }
+            still = "location.protocol === `\(escape(scheme)):` && location.hostname.toLowerCase() === `\(escape(host))` && "
+        }
         web.evaluateInSearch(
-            "window.__officeForms && window.__officeForms.fill(`\(escape(user))`, `\(escape(password))`)"
+            "\(still)window.__officeForms && window.__officeForms.fill(`\(escape(user))`, `\(escape(password))`)"
         ) { result in
             done?((result as? Bool) ?? false)
         }
