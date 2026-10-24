@@ -45,13 +45,22 @@ struct SideBar: View {
     @Namespace private var before
     @Namespace private var after
 
-    @State private var groupFrames: [UUID: CGRect] = [:]
+    @State private var groupFrames: [UUID: GroupDropFrame] = [:]
 
     /// A tab carried over the pins, or a pin over the tabs, and where it
     /// would land (see PinDrop).
     @State private var crossing: PinDrop.Crossing?
     /// Where the blocks are, for working that out.
     @State private var frames = ColumnFrames()
+    /// Whether this space's rows fit under the pins without scrolling: set
+    /// only when the answer changes, from the room under the pins and what
+    /// the rows add up to, which are kept where changing them draws nothing.
+    @State private var fits = true
+    @State private var room = Room()
+    private final class Room {
+        var height: CGFloat = .infinity
+        var needed: CGFloat = 0
+    }
 
     /// A tab's line: taller with roomier tabs turned on.
     private var rowHeight: CGFloat { prefs.sideRow }
@@ -235,40 +244,63 @@ struct SideBar: View {
                     // plain stack, and the space under it is still the
                     // window's to be dragged by. Inside the page: the swipe
                     // between spaces moves the page, scroll and all.
-                    ViewThatFits(in: .vertical) {
-                        rows
-                        ScrollViewReader { proxy in
-                            // The scroll view reaches into the margin on
-                            // the right and the rows keep it inside, so the
-                            // system's bar lands in the margin beside them
-                            // rather than over the cross on the tab under the
-                            // pointer. The column's edge lies over that margin
-                            // and answers first, so the bar never fights the
-                            // resize; the wheel and the trackpad still scroll.
-                            ScrollView(.vertical) {
-                                rows.padding(.trailing, 10)
-                            }
-                            .padding(.trailing, -10)
-                            // The tab you go to is the tab you see — ⌘1–⌘9,
-                            // ⇧⌘], a link opening beside the one on screen.
-                            .onChange(of: browser.activeID) { _, id in
-                                guard let id else { return }
-                                let representative = browser.activeSplit?.left ?? id
-                                withAnimation(Motion.glide) { proxy.scrollTo(representative) }
-                            }
-                            // A turn of the run loop later, as the row across
-                            // the top does it (TabBar.reveal): the folded
-                            // column comes out mid-animation, and asked at
-                            // once, before the rows had their height, the
-                            // scroll could be dropped and the tab you were on
-                            // left out of sight.
-                            .onAppear {
-                                guard let id = browser.activeID else { return }
-                                DispatchQueue.main.async {
-                                    proxy.scrollTo(browser.activeSplit?.left ?? id, anchor: .center)
+                    //
+                    // One or the other, from the room measured beside what
+                    // the rows add up to, rather than both kept for
+                    // ViewThatFits to choose between: the one it didn't show
+                    // was built again on every change of layout in the one it
+                    // did, every row of it each time the pointer crossed a
+                    // row (Bench "hoversweep": 22 rows a crossing, not 2).
+                    let needed = rowsHeight
+                    Group {
+                        if fits {
+                            rows
+                        } else {
+                            ScrollViewReader { proxy in
+                                // The scroll view reaches into the margin on
+                                // the right and the rows keep it inside, so the
+                                // system's bar lands in the margin beside them
+                                // rather than over the cross on the tab under the
+                                // pointer. The column's edge lies over that margin
+                                // and answers first, so the bar never fights the
+                                // resize; the wheel and the trackpad still scroll.
+                                ScrollView(.vertical) {
+                                    rows.padding(.trailing, 10)
+                                }
+                                .padding(.trailing, -10)
+                                // The tab you go to is the tab you see — ⌘1–⌘9,
+                                // ⇧⌘], a link opening beside the one on screen.
+                                .onChange(of: browser.activeID) { _, id in
+                                    guard let id else { return }
+                                    let representative = browser.activeSplit?.left ?? id
+                                    withAnimation(Motion.glide) { proxy.scrollTo(representative) }
+                                }
+                                // A turn of the run loop later, as the row across
+                                // the top does it (TabBar.reveal): the folded
+                                // column comes out mid-animation, and asked at
+                                // once, before the rows had their height, the
+                                // scroll could be dropped and the tab you were on
+                                // left out of sight.
+                                .onAppear {
+                                    guard let id = browser.activeID else { return }
+                                    DispatchQueue.main.async {
+                                        proxy.scrollTo(browser.activeSplit?.left ?? id, anchor: .center)
+                                    }
                                 }
                             }
                         }
+                    }
+                    // The whole room under the pins, to be measured. A
+                    // window changing size, or a tab opened or closed,
+                    // builds nothing until the rows stop fitting or start.
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                        room.height = $0
+                        refit()
+                    }
+                    .onChange(of: needed, initial: true) { _, needed in
+                        room.needed = needed
+                        refit()
                     }
                 }
                 // Every block measured in one space, for a tab carried
@@ -281,6 +313,11 @@ struct SideBar: View {
         }
         .padding(.horizontal, 10)
         .frame(width: width, alignment: .topLeading)
+    }
+
+    private func refit() {
+        let now = room.needed <= room.height
+        if fits != now { fits = now }
     }
 
     /// Another space's rows, drawn with the same pieces as this one's so the
@@ -334,9 +371,16 @@ struct SideBar: View {
     /// from what was drawn rather than measured: a measurement would arrive a
     /// frame late, and for one frame the whole column would drag the window.
     private var rowsEnd: CGFloat {
-        let displayed = browser.displayedTabs
         let pins = browser.squarePins.count
         let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + 10
+        return Metrics.strip + pinBlock + rowsHeight
+    }
+
+    /// The pinned rows, the loose tabs and the row that makes another, added
+    /// up the same way, with a few points to spare: what decides whether
+    /// they scroll.
+    private var rowsHeight: CGFloat {
+        let displayed = browser.displayedTabs
         let listed = browser.listedPins.count
         let ungrouped = displayed.filter { $0.pin == nil && (!prefs.usesTabGroups || browser.group(of: $0) == nil) }.count
         let listBlock = CGFloat(listed) * (rowHeight + SideBar.gap) + (listed > 0 ? SideBar.gap : 0)
@@ -349,7 +393,7 @@ struct SideBar: View {
         let pairs = rows.filter { browser.split(for: $0) != nil }.count
         let headings = prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) * (GroupHeading.height + SideBar.gap) : 0
         let loose = CGFloat(rows.count) * (rowHeight + SideBar.gap) + CGFloat(pairs) * rowHeight + headings
-        return Metrics.strip + pinBlock + listBlock + loose + rowHeight + 8
+        return listBlock + loose + rowHeight + 8
     }
 
     @ViewBuilder
@@ -540,6 +584,7 @@ struct SideBar: View {
                         // sits in front of them in the real list.
                         .modifier(Carried(index: index, count: loose.count, step: step, vertical: true,
                                           space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                                          groupDestination: { source, point in destination(source, at: point) },
                                           outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
                                           cross: { cross(tab, $0, from: .rows) },
                                           land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
@@ -562,11 +607,14 @@ struct SideBar: View {
         .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
     }
 
+    private func destination(_ tab: Tab, at point: CGPoint) -> GroupDropTarget? {
+        guard prefs.usesTabGroups, tab.pin == nil else { return nil }
+        return GroupDropFrames.resolve(point, frames: groupFrames, groups: browser.tabGroups,
+                                       excluding: tab.id, vertical: true)
+    }
+
     private func drop(_ tab: Tab, at point: CGPoint) {
-        guard prefs.usesTabGroups, tab.pin == nil else { return }
-        if let id = groupFrames.first(where: { $0.value.contains(point) })?.key {
-            browser.move(tab, toGroup: id)
-        }
+        if let target = destination(tab, at: point) { browser.move(tab, toGroup: target) }
     }
 
     private func groupRows(_ group: TabGroup) -> some View {
@@ -580,6 +628,7 @@ struct SideBar: View {
                     .modifier(Carried(index: index, count: members.count,
                                       step: rowHeight + SideBar.gap, vertical: true,
                                       space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                                      groupDestination: { source, point in destination(source, at: point) },
                                       outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
                                       cross: { cross(tab, $0, from: .rows) },
                                       land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
@@ -658,7 +707,7 @@ struct SideBar: View {
         case .loose:
             guard tab.pin != nil else { return nil }
             let inRows = CGPoint(x: point.x - frames.rows.minX, y: point.y - frames.rows.minY)
-            if prefs.usesTabGroups, let id = groupFrames.first(where: { $0.value.contains(inRows) })?.key {
+            if prefs.usesTabGroups, let id = groupFrames.values.first(where: { $0.rect.contains(inRows) })?.group {
                 return .group(id)
             }
             let loose = looseTabs
@@ -968,6 +1017,7 @@ private struct SideRow: View, Equatable {
     @State private var hovering = false
     @State private var selectedOnPress = false
     @State private var shake: CGFloat = 0
+    @State private var pressed = false
 
     /// The ring or the speaker, which stay for as long as the page loads or
     /// plays (or is muted) and so keep a place of their own at the end of the
@@ -985,6 +1035,7 @@ private struct SideRow: View, Equatable {
     private var atRest: Bool { rest != nil }
 
     var body: some View {
+        let _ = Bench.count("row")
         HStack(spacing: 8) {
             HStack(spacing: 8) {
                 if editing {
@@ -1025,7 +1076,7 @@ private struct SideRow: View, Equatable {
             .padding(.trailing, status || peeking ? 0 : 10)
             .frame(height: prefs.sideRow)
             .contentShape(Rectangle())
-            .modifier(TabPress(enabled: interactive && !editing, active: live, selected: $selectedOnPress) {
+            .modifier(TabPress(enabled: interactive && !editing, active: live, selected: $selectedOnPress, pressing: $pressed) {
                 browser.clearTabSelection()
                 browser.select(tab)
             })
@@ -1112,6 +1163,7 @@ private struct SideRow: View, Equatable {
             }
         }
         .modifier(Shake(travel: shake))
+        .modifier(Give(pressed: pressed && prefs.tabsGive))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
             guard interactive, !selectedOnPress, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
@@ -1120,7 +1172,9 @@ private struct SideRow: View, Equatable {
         })
         .modifier(ModifiedTabClick { if interactive && !editing { browser.extendTabSelection(to: tab, modifiers: $0) } })
         .overlay { if interactive { MiddleClick(act: close) } }
-        .onHover { hovering = $0 }
+        .onHover(perform: hover)
+        .onAppear { if interactive { Bench.rowAppeared(tab.id, hover: hover) } }
+        .onDisappear { if interactive { Bench.rowDisappeared(tab.id) } }
         .contextMenu { if interactive { TabMenu(browser: browser, tab: tab, close: close) } }
         .background {
             if interactive && prefs.splitView {
@@ -1136,6 +1190,8 @@ private struct SideRow: View, Equatable {
         }
         .transition(.scale(scale: 0.94, anchor: .leading).combined(with: .opacity))
     }
+
+    private func hover(_ over: Bool) { hovering = over }
 
     @ViewBuilder
     private var ground: some View {
@@ -1273,12 +1329,20 @@ struct Door: View {
     let icon: String
     var on = false
     var help = ""
+    /// What holding the button down opens, as Back and Forward list the
+    /// pages that way. Nil, or a nil menu, and a hold is just a slow click.
+    var held: (() -> NSMenu?)? = nil
     let act: () -> Void
 
     @State private var hovering = false
+    /// The hold opened its menu: the click that ends the press is the
+    /// menu's, not the button's.
+    @State private var opened = false
 
     var body: some View {
-        Button(action: act) {
+        Button {
+            if opened { opened = false } else { act() }
+        } label: {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(on ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
@@ -1290,10 +1354,52 @@ struct Door: View {
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                guard let menu = held?() else { return }
+                opened = true
+                // Opened under the pointer while the button is still down,
+                // so dragging onto a row and letting go picks it, as in
+                // Safari. popUp returns once the menu has closed.
+                menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+                // The press ended inside the menu, so no click may reach the
+                // button after all; don't let this one swallow the next.
+                DispatchQueue.main.async { opened = false }
+            },
+            isEnabled: held != nil
+        )
+        // A right-click opens the same menu at once, as in Chrome.
+        .overlay { if let held { RightClick(menu: held) } }
         .onHover { hovering = $0 }
         .help(help)
         .animation(Motion.quick, value: hovering)
         .animation(Motion.quick, value: on)
+    }
+}
+
+/// A right-click over a door, and only that. SwiftUI has no right-click of
+/// its own short of a context menu built when the view is drawn, which would
+/// list the pages as they were then. This view answers the hit test only for
+/// a right-click, so every other click and the hover fall through to the
+/// button beneath.
+private struct RightClick: NSViewRepresentable {
+    let menu: () -> NSMenu?
+
+    func makeNSView(context: Context) -> Catcher { Catcher() }
+    func updateNSView(_ view: Catcher, context: Context) { view.pages = menu }
+
+    final class Catcher: NSView {
+        var pages: (() -> NSMenu?)?
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent, event.type == .rightMouseDown else { return nil }
+            return super.hitTest(point)
+        }
+
+        override func rightMouseDown(with event: NSEvent) {
+            guard let menu = pages?() else { return }
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        }
     }
 }
 

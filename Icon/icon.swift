@@ -7,6 +7,12 @@
 import AppKit
 
 let out = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? "AppIcon.iconset")
+
+/// A dev build (build.sh) puts the mark on a yellow plate rather than a white
+/// one, as Chrome Canary does, so the build from a worktree and the installed
+/// app are told apart at a glance: in the Dock, in ⌘Tab, at 16 points.
+let dev = ProcessInfo.processInfo.environment["SEARCH_DEV"] == "1"
+let plateColor = dev ? NSColor(srgbRed: 1.0, green: 0.8, blue: 0.2, alpha: 1) : NSColor.white
 try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
 /// Drice's Subtract.svg (22 September 2026): a pill with an S cut out of it,
@@ -98,7 +104,7 @@ func draw(_ size: CGFloat) -> NSImage {
     shadow.shadowBlurRadius = 24 * s
     shadow.shadowOffset = NSSize(width: 0, height: -10 * s)
     shadow.set()
-    NSColor.white.setFill()
+    plateColor.setFill()
     shape.fill()
     NSGraphicsContext.restoreGraphicsState()
 
@@ -167,12 +173,16 @@ if CommandLine.arguments.count > 2 {
     try svg.write(to: assets.appendingPathComponent("mark.svg"), atomically: true, encoding: .utf8)
 
     let white = #"{ "solid" : "srgb:1.00000,1.00000,1.00000,1.00000" }"#
+    let yellow = #"{ "solid" : "srgb:1.00000,0.80000,0.20000,1.00000" }"#
     let ink = #"{ "solid" : "srgb:0.09000,0.09000,0.09000,1.00000" }"#
+    // A dev build keeps its yellow in Dark too: the plate yellow in light,
+    // the mark yellow on ink in dark.
+    let plate = dev ? yellow : white
     let json = """
     {
-      "fill" : \(white),
+      "fill" : \(plate),
       "fill-specializations" : [
-        { "value" : \(white) },
+        { "value" : \(plate) },
         { "appearance" : "dark", "value" : \(ink) }
       ],
       "groups" : [
@@ -184,7 +194,7 @@ if CommandLine.arguments.count > 2 {
               "glass" : false,
               "fill-specializations" : [
                 { "value" : \(ink) },
-                { "appearance" : "dark", "value" : \(white) },
+                { "appearance" : "dark", "value" : \(plate) },
                 { "appearance" : "tinted", "value" : \(white) }
               ]
             }

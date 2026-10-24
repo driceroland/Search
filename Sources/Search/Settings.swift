@@ -358,6 +358,14 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.peeksLinks)
             }
             Rule()
+            Line("Read the site's own Markdown", "When a page has a Markdown copy, Reading mode (⇧⌘R) shows that instead of working the article out. Most docs sites publish one") {
+                Switch(on: $prefs.readsTwins)
+            }
+            Rule()
+            Line("Reading mode follows light and dark", "In a dark window the article is light on dark. A small switch in its corner makes an article light, dark or as the window is, and is kept for the next one") {
+                Switch(on: $prefs.readerFollowsLook)
+            }
+            Rule()
             Line("Open links from other apps in a small window", "To read and close, or keep with Open in Search (⌘O)") {
                 Switch(on: $prefs.littleLinks)
             }
@@ -380,6 +388,10 @@ struct SettingsPanel: View {
             Rule()
             Line("Pages at 120 Hz", "Animations and scrolling in pages at up to 120 frames a second on a screen that can, instead of 60 as in Safari. Uses more battery, so On power keeps it to when the Mac is plugged in") {
                 Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
+            }
+            Rule()
+            Line("Reduce animations in Low Power Mode", "Quicker, simpler motion while the Mac is saving power or running hot") {
+                Switch(on: $prefs.lightMotion)
             }
             Rule()
             Line("Hold a swipe to pick from history", "Swipe back or forward and keep your fingers down: the pages that way appear, and moving up or down picks one to go to") {
@@ -411,6 +423,10 @@ struct SettingsPanel: View {
             Rule()
             Line("Float the video when you switch apps", "A video playing on the site you're on comes out into its floating window as another app comes to the front, and goes back into its tab when you return") {
                 Switch(on: $prefs.floatsAway)
+            }
+            Rule()
+            Line("Press Esc twice to leave full screen", "As in Arc: the first press shows a reminder and leaves the video as it is; a second within two seconds leaves its full screen. Holding Escape down counts as one press") {
+                Switch(on: $prefs.escapeTwice)
             }
             Rule()
             Line("Let a script drive Search", "A local socket for testing. Its tabs open beside yours with a flask on them and never take over — see ./bench") {
@@ -510,6 +526,14 @@ struct SettingsPanel: View {
             Rule()
             Line("Tabs show", "Beside the title, and on a pinned square") {
                 Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
+            }
+            Rule()
+            Line("Tabs give when pressed", "A tab sinks a little under the pointer while you press it and springs back when you let go, as in Arc") {
+                Switch(on: $prefs.tabsGive)
+            }
+            Rule()
+            Line("Open sized pop-ups in small windows", "A website asking for a window at its own size gets one, instead of a tab. Pop-up blocking still applies") {
+                Switch(on: $prefs.popupWindows)
             }
             Rule()
             Line("Show the bookmarks bar", "Your bookmarks in a row above the page, folders opening as menus. It folds away with the tabs") {

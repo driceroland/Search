@@ -56,31 +56,48 @@ extension Preferences {
     static let sidePanelStart: CGFloat = 380
 }
 
+/// What came of asking for the panel. `taken`: the panel dealt with it, up
+/// or put away again. `noPanel`: none can be made in this window (a popup
+/// window, a page that didn't load), and the caller opens the extension's
+/// page as a tab instead, as it did before there was a panel. `notHere`:
+/// the tab in front is private and the extension hasn't been let into
+/// private tabs, so nothing opens at all, a tab least of all.
+enum SidePanelAnswer: Equatable {
+    case taken
+    case noPanel
+    case notHere
+}
+
 // MARK: - opening and closing
 
 extension Browser {
     /// An extension's panel page in this window's side panel.
-    /// False when there is no panel to be had (a popup window, no page
-    /// made): the caller opens the page as a tab instead.
     @available(macOS 15.4, *)
     @discardableResult
-    func showSidePanel(_ context: WKWebExtensionContext, url: URL, for tab: Tab.ID? = nil) -> Bool {
-        guard extensionPopup == nil else { return false }
+    func showSidePanel(_ context: WKWebExtensionContext, url: URL, for tab: Tab.ID? = nil) -> SidePanelAnswer {
+        guard !isPopup else { return .noPanel }
+        // An extension not let into private tabs is given nothing of one
+        // (Extensions' `hidden`): no address, no title, no view to run a
+        // script in. A panel of its own beside that page would be a panel
+        // about a page it cannot see, so it doesn't open there.
+        guard !Browser.holdsPanel(shy: panelPanes(tab).contains { $0.shy },
+                                  letIn: Extensions.mayGoPrivate(context))
+        else { return .notHere }
         let content = SidePanelContent.page(extensionID: context.uniqueIdentifier, url: url, tab: tab)
-        guard SidePanelPages.shared.load(url, from: context, in: self) else { return false }
+        guard SidePanelPages.shared.load(url, from: context, in: self) else { return .noPanel }
         if let tab { SidePanelPages.shared.bind(content, to: tab, in: self) }
         sidePanel = content
         sidePanelShown = true
-        return true
+        return .taken
     }
 
     /// The extension's button again, with its panel up: it goes, as a
     /// second press on a popup's button does.
     @available(macOS 15.4, *)
-    func toggleSidePanel(_ context: WKWebExtensionContext, url: URL, for tab: Tab.ID? = nil) -> Bool {
+    func toggleSidePanel(_ context: WKWebExtensionContext, url: URL, for tab: Tab.ID? = nil) -> SidePanelAnswer {
         if sidePanelShown, case .page(let id, _, _) = sidePanel, id == context.uniqueIdentifier {
             closeSidePanel()
-            return true
+            return .taken
         }
         return showSidePanel(context, url: url, for: tab)
     }
@@ -99,7 +116,7 @@ extension Browser {
     /// again closes it, as a second press on an extension's button does.
     @discardableResult
     func showSiteInPanel(_ url: URL) -> Bool {
-        guard prefs.sitesInPanel, PanelSites.allowed(url), extensionPopup == nil else { return false }
+        guard prefs.sitesInPanel, PanelSites.allowed(url), !isPopup else { return false }
         if sidePanelShown, case .site = sidePanel, SidePanelPages.shared.siteArrived(in: self)?.host() == url.host() {
             closeSidePanel()
             return true
@@ -161,18 +178,71 @@ extension Browser {
     }
 
     /// Another tab in front: a panel opened for the tab just left goes
-    /// with it, and one opened for this tab comes back.
+    /// with it, and one opened for this tab comes back. A panel whose
+    /// extension may not see the tab arriving is neither of those: it is
+    /// held back where it stands, which the window works out as it draws
+    /// (`sidePanelHeld`).
     func sidePanelFollows(_ tab: Tab) {
         if case .page(_, _, let bound?) = sidePanel, bound != tab.id {
             SidePanelPages.shared.drop(in: self)
             sidePanelShown = false
             sidePanel = nil
         }
-        if #available(macOS 15.4, *), sidePanel == nil,
-           case .page(let id, let url, _)? = SidePanelPages.shared.bound(to: tab.id, in: self),
-           let context = Extensions.shared.contexts[id] {
-            showSidePanel(context, url: url, for: tab.id)
-        }
+        sidePanelReturns(to: tab)
+    }
+
+    /// The switch in Settings > Extensions has moved for an extension: a
+    /// panel bound to the tab in front comes back if it may be seen there
+    /// now, and the window draws again for one let through or held back.
+    /// `sidePanelHeld` is worked out, not kept, so every other way a tab
+    /// comes to the front is right without knowing about the panel.
+    func sidePanelPrivacyChanged() {
+        if let active { sidePanelReturns(to: active) }
+        objectWillChange.send()
+    }
+
+    /// A panel bound to this tab and not up: back, if this tab is one its
+    /// extension may see.
+    private func sidePanelReturns(to tab: Tab) {
+        guard #available(macOS 15.4, *), sidePanel == nil,
+              case .page(let id, let url, _)? = SidePanelPages.shared.bound(to: tab.id, in: self),
+              let context = Extensions.shared.contexts[id]
+        else { return }
+        showSidePanel(context, url: url, for: tab.id)
+    }
+
+    /// The panel is up and held back beside a private page: one of the
+    /// pages on screen is a private tab, and its extension hasn't been let
+    /// into private tabs. The window gives the panel's room to the page
+    /// meanwhile, and the page in the panel is kept, so it comes back as
+    /// you left it on a page the extension may see. An extension gone while
+    /// its panel is up is held back too, having nothing left to say it may
+    /// be there.
+    var sidePanelHeld: Bool {
+        guard case .page(let id, _, _) = sidePanel, panelPanes().contains(where: { $0.shy })
+        else { return false }
+        guard #available(macOS 15.4, *), let context = Extensions.shared.contexts[id] else { return true }
+        return Browser.holdsPanel(shy: true, letIn: Extensions.mayGoPrivate(context))
+    }
+
+    /// The decision itself, away from a window: a private page on screen and
+    /// an extension not let into private tabs hold its panel back.
+    static func holdsPanel(shy: Bool, letIn: Bool) -> Bool { shy && !letIn }
+
+    /// The pages a panel sits beside: the tab it was opened for, else the
+    /// one in front, and in Split View the other half of its pair, since
+    /// the panel stands beside both at once. A pair holds two tabs of the
+    /// same kind today (`canSplit` asks for `first.shy == second.shy`), so
+    /// the pair's half says nothing the tab in front hasn't already said;
+    /// it is written on what is on screen rather than on that rule holding.
+    /// `split(for:)` answers nothing while Split View is off, where a kept
+    /// pair shows one page as any other tab does.
+    private func panelPanes(_ tab: Tab.ID? = nil) -> [Tab] {
+        guard let here = tabs.first(where: { $0.id == (tab ?? activeID) }) else { return [] }
+        guard let pair = split(for: here), let other = pair.partner(of: here.id),
+              let beside = tabs.first(where: { $0.id == other })
+        else { return [here] }
+        return [here, beside]
     }
 }
 

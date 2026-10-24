@@ -112,7 +112,8 @@ extension Browser {
     /// in Safari and Chrome: over the tab in front, a prompt() asking for a
     /// password would pass for that page's. A tab closed first gets the
     /// answer a dismissed dialog gives.
-    func ask(from webView: WKWebView, show: @escaping () -> Void, drop: @escaping () -> Void) {
+    @discardableResult
+    func ask(from webView: WKWebView, show: @escaping () -> Void, drop: @escaping () -> Void) -> HeldQuestion? {
         let known = tabs + parkedTabs
         // Questions from tabs that have gone some other way than close(_:).
         for id in heldDialogs.keys where !known.contains(where: { $0.id == id }) {
@@ -120,9 +121,11 @@ extension Browser {
         }
         guard let tab = known.first(where: { $0.built === webView }), tab.id != activeID else {
             show()
-            return
+            return nil
         }
-        heldDialogs[tab.id, default: []].append(HeldQuestion(show: show, drop: drop))
+        let question = HeldQuestion(show: show, drop: drop)
+        heldDialogs[tab.id, default: []].append(question)
+        return question
     }
 
     func webView(
@@ -359,6 +362,7 @@ extension Browser {
     /// tab shows white until somebody thinks to reload. Saying so, with the
     /// one thing worth offering, is what the failure view is for.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        cancelDisplay(for: webView)
         guard let tab = tab(for: webView) else { return }
         dropQuestions(for: tab.id)
         // In front of you: straight back, a reload beats a white page with a

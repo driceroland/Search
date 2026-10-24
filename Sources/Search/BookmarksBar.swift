@@ -131,7 +131,7 @@ struct BookmarksBar: View {
                         .font(.system(size: 10.5))
                         .foregroundStyle(Palette.muted)
                 } else {
-                    Mark(icon: Favicons.shared.cached(node.site ?? ""), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 13)
+                    Mark(icon: Favicons.shared.cached(for: node.address), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 13)
                 }
                 if !node.unnamed {
                     Text(node.title)

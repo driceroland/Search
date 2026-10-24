@@ -142,7 +142,7 @@ final class Profiles: ObservableObject {
         // Never left without a window: one of Personal's first, if no other
         // profile has one open.
         if Browsers.all.contains(where: { $0.profileID == id && $0.isOpen }),
-           !Browsers.all.contains(where: { $0.profileID != id && $0.isOpen && $0.extensionPopup == nil }) {
+           !Browsers.all.contains(where: { $0.profileID != id && $0.isOpen && !$0.isPopup }) {
             Browsers.open(profile: Profile.personalID)
         }
         for browser in Browsers.all where browser.profileID == id { Browsers.discard(browser) }
@@ -178,7 +178,7 @@ extension Browsers {
     /// profile's own files when no window of it is open.
     @discardableResult
     static func open(profile id: UUID) -> Browser {
-        if let open = all.last(where: { $0.profileID == id && $0.isOpen && $0.extensionPopup == nil }) {
+        if let open = all.last(where: { $0.profileID == id && $0.isOpen && !$0.isPopup }) {
             show(open)
             return open
         }
