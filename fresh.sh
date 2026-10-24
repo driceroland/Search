@@ -1,7 +1,7 @@
 #!/bin/bash
 # A first launch, without touching the browser you actually use.
 #
-#   ./fresh.sh          wipe the test world and open Search as a newcomer
+#   ./fresh.sh          wipe this checkout's test world and open Search as a newcomer
 #   ./fresh.sh again    open the test copy as it was left, no wipe
 #
 #   SEARCH_PROBE=NAME ./fresh.sh   the same for a named world, "Search (NAME)"
@@ -14,18 +14,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# The world, named the way Store.world names it.
+# The world, named the way Store.world names it: the test world is this
+# checkout's own, test and the first eight hex digits of a SHA-1 of its
+# real path, so two checkouts testing at once never share one.
 WORLD=$(printf '%s' "${SEARCH_PROBE:-test}" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9-')
-case "$WORLD" in ""|1) WORLD=test ;; esac
-if [ "$WORLD" = test ]; then
-  SUITE=com.officecommun.search.test; HASH=0
-else
-  # Store.probeStore: FNV-1a of the name in the store's identifier.
-  SUITE="com.officecommun.search.test.$WORLD"; HASH=2166136261
-  for ((i = 0; i < ${#WORLD}; i++)); do
-    HASH=$(( ((HASH ^ $(printf '%d' "'${WORLD:i:1}")) * 16777619) & 0xFFFFFFFF ))
-  done
-fi
+case "$WORLD" in ""|1|test) WORLD="test-$(printf '%s' "$(pwd -P)" | shasum | cut -c1-8)" ;; esac
+# Store.probeStore: FNV-1a of the name in the store's identifier.
+SUITE="com.officecommun.search.test.$WORLD"; HASH=2166136261
+for ((i = 0; i < ${#WORLD}; i++)); do
+  HASH=$(( ((HASH ^ $(printf '%d' "'${WORLD:i:1}")) * 16777619) & 0xFFFFFFFF ))
+done
 STORE=$(printf '5E4C%04X-%04X-4000-8000-000000000001' $((HASH >> 16)) $((HASH & 0xFFFF)))
 
 if [ "${1:-}" != "again" ]; then
