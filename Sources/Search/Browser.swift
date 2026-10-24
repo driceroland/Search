@@ -4990,7 +4990,9 @@ final class Browser: NSObject, ObservableObject {
         tab.$title
             .dropFirst()
             .sink { [weak self, weak tab] title in
-                guard let tab, !tab.shy, let url = tab.address else { return }
+                // A translated title is the page's in your words, not its own:
+                // history keeps the page's (Translate.swift).
+                guard let tab, !tab.shy, tab.translator == nil, let url = tab.address else { return }
                 self?.history.retitle(url, title)
             }
             .store(in: &bag)
@@ -6354,6 +6356,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         tellStore(tab)
         // A page that arrived after a password went out: did the sign-in take?
         tab.settleSignIn()
+        // A page in a language you always translate, or one that slept
+        // translated (Translate.swift). Nothing at all while it's off.
+        tab.translateIfWanted()
         // The icon is asked for whether or not the tab is showing one: it may
         // be turned on a moment later, and a tab that then has to wait for a
         // fetch looks broken.
