@@ -205,10 +205,18 @@ enum Disk {
         newest[file] = turn
         lock.unlock()
         let put: @Sendable () -> Void = {
+            // Overtaken before it began: no use encoding what won't be
+            // written. A session saved twice in quick succession was encoded
+            // twice, the first time for nothing.
+            lock.lock()
+            let overtaken = newest[file] != turn
+            lock.unlock()
+            if overtaken { return }
             guard let data = encode() else { return }
             lock.lock()
             defer { lock.unlock() }
-            // Overtaken: something newer of this file was asked for since.
+            // Overtaken while it was encoded: something newer of this file
+            // was asked for since.
             guard newest[file] == turn else { return }
             try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: file, options: .atomic)

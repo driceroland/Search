@@ -151,11 +151,19 @@ struct PeekPanel: View {
                             }
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        // The shadow falls from a shape behind the page, as
+                        // the card's does (see CardEdge). Cast by the page
+                        // itself, it was found again from WebKit's drawing
+                        // on every frame the page drew, thirty points round.
+                        .background {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Palette.ground)
+                                .shadow(color: .black.opacity(0.25), radius: 30, y: 10)
+                        }
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .strokeBorder(Palette.hairline, lineWidth: 1)
                         )
-                        .shadow(color: .black.opacity(0.25), radius: 30, y: 10)
                     VStack(spacing: 8) {
                         Knob("xmark", help: "Close (esc)") { browser.closePeek() }
                         // ⌥ on it keeps the page beside this one, with Split
