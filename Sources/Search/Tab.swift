@@ -373,7 +373,6 @@ final class Tab: ObservableObject, Identifiable {
         address = url
         failure = nil
     }
-    @Published private(set) var progress: Double = 0
     @Published private(set) var loading = false
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
@@ -961,9 +960,6 @@ final class Tab: ObservableObject, Identifiable {
                     // own is watched again for a while (see Dusk.swift).
                     if self.dusked, !moved { self.built?.evaluateInSearch("window.__officeDusk && window.__officeDusk.again()") }
                 }
-            },
-            web.observe(\.estimatedProgress, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.progress = self?.built?.estimatedProgress ?? 0 }
             },
             web.observe(\.isLoading, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.loading = self?.built?.isLoading ?? false }
