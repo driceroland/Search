@@ -23,6 +23,10 @@ final class Favicons {
     private var missing: Set<String> = []
     /// Keys with no file on disk, as far as `known` has looked.
     private var absent: Set<String> = []
+    /// When each icon on disk was kept, looked up once a session and then
+    /// remembered, rather than asked of the disk on every page loaded;
+    /// `distantPast` for none there.
+    private var kept: [String: Date] = [:]
 
     private static var folder: URL { Store.folder.appendingPathComponent("icons", isDirectory: true) }
 
@@ -32,6 +36,7 @@ final class Favicons {
         try? FileManager.default.removeItem(at: Favicons.folder)
         missing.removeAll()
         absent.removeAll()
+        kept.removeAll()
         if #available(macOS 15.4, *) { ExtensionShims.forgetIcons() }
     }
     private static func file(_ key: String) -> URL { folder.appendingPathComponent(key + ".png") }
@@ -92,9 +97,13 @@ final class Favicons {
         return image
     }
 
-    private static func fresh(_ key: String) -> Bool {
-        guard let stamp = try? file(key).resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        else { return false }
+    private func fresh(_ key: String) -> Bool {
+        let stamp = kept[key] ?? {
+            let found = (try? Favicons.file(key).resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            kept[key] = found
+            return found
+        }()
         return Date().timeIntervalSince(stamp) < 7 * 86_400
     }
 
@@ -115,6 +124,7 @@ final class Favicons {
         guard cached(host) == nil, let image = await Favicons.square(data) else { return }
         memory[host] = image
         Favicons.keep(image, for: host)
+        kept[host] = Date()
         arrived?(host, image)
     }
 
@@ -134,7 +144,7 @@ final class Favicons {
         let dark = Favicons.dark
         let key = Favicons.key(host, dark: dark)
         // Fresh and right for this look: nothing to do.
-        if !changed, Favicons.fresh(key), let known = known(key) {
+        if !changed, fresh(key), let known = known(key) {
             if tab.address.flatMap(Favicons.site) == host { tab.icon = known }
             return
         }
@@ -164,13 +174,27 @@ final class Favicons {
         return .any
     }
 
+    /// One session for every icon fetched, and one more for private tabs',
+    /// so nothing of a private tab's fetch rides on an ordinary one's
+    /// connection. Neither carries a cookie, a credential or a cached answer
+    /// from one fetch to the next, as no session made afresh for each did.
+    /// Made for each, those were never let go, and every fetch's connection
+    /// started from nothing.
+    private static let sessions: (open: URLSession, shy: URLSession) = (session(), session())
+
+    private static func session() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 8
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.urlCredentialStorage = nil
+        config.urlCache = nil
+        return URLSession(configuration: config)
+    }
+
     private func download(_ candidates: [URL], host: String, key: String, shy: Bool) async {
         defer { busy.remove(host) }
-        let session = URLSession(configuration: {
-            let config = URLSessionConfiguration.ephemeral
-            config.timeoutIntervalForRequest = 8
-            return config
-        }())
+        let session = shy ? Favicons.sessions.shy : Favicons.sessions.open
         for candidate in candidates {
             guard let (data, response) = try? await session.data(from: candidate),
                   (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
@@ -179,7 +203,10 @@ final class Favicons {
             guard let image = await Favicons.square(data) else { continue }
             memory[key] = image
             absent.remove(key)
-            if !shy { Favicons.keep(image, for: key) }
+            if !shy {
+                Favicons.keep(image, for: key)
+                kept[key] = Date()
+            }
             arrived?(host, image)
             return
         }
