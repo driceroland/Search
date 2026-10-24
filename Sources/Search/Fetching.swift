@@ -66,6 +66,11 @@ final class FetchEntry: ObservableObject, Identifiable {
     var operationID = UUID()
     private var destinationWasAbsent: Bool?
     private var partialFileVersion: PartialFileVersion?
+    /// When the partial file was last looked at (see trackPartialFile).
+    private var trackedAt: TimeInterval = 0
+    /// The partial file is known to be this download's own, or was there
+    /// before it and is never to be claimed.
+    var claimed: Bool { partialFileVersion != nil || destinationWasAbsent == false }
 
     init(name: String, request: URLRequest?, webView: WKWebView?) {
         self.name = name
@@ -223,8 +228,15 @@ final class FetchEntry: ObservableObject, Identifiable {
     }
 
     private func trackPartialFile() {
-        guard completedBytes > 0, destinationWasAbsent == true, let destination,
-              let current = Self.partialFileVersion(at: destination) else { return }
+        guard completedBytes > 0, destinationWasAbsent == true, let destination else { return }
+        // Claimed at once, then looked at again a second apart at most:
+        // looked at on every change of progress, it was a stat of the file
+        // some 260 times a second. What a pause or a cancel compares the file
+        // against is brought up to date when it stops (see recordTerminal).
+        let now = ProcessInfo.processInfo.systemUptime
+        if partialFileVersion != nil, now - trackedAt < 1 { return }
+        guard let current = Self.partialFileVersion(at: destination) else { return }
+        trackedAt = now
         if let previous = partialFileVersion,
            (previous.volume != current.volume || previous.inode != current.inode) {
             return
@@ -306,6 +318,11 @@ final class Fetches: ObservableObject {
 
     private var running: [ObjectIdentifier: Running] = [:]
     private var leaving: DispatchWorkItem?
+    /// A measure waiting for its turn, and when the last one was.
+    private var measuring: DispatchWorkItem?
+    private var measuredAt: TimeInterval = 0
+    /// How often progress is measured while bytes arrive.
+    static let pace: TimeInterval = 0.1
 
     /// A download has begun. Private downloads are tracked for cleanup and
     /// aggregate progress, but never become entries in the shared panel.
@@ -342,8 +359,15 @@ final class Fetches: ObservableObject {
         leaving = nil
         done = false
         showing = true
-        item.watch = download.progress.observe(\.fractionCompleted) { [weak self] _, _ in
-            DispatchQueue.main.async { self?.measure() }
+        item.watch = download.progress.observe(\.fractionCompleted) { [weak self, weak item] _, _ in
+            DispatchQueue.main.async {
+                // Until its file is claimed, a download's own row is brought
+                // up to date with every change, as it always was: one that
+                // fails within the first tenth of a second would otherwise
+                // never have claimed the file it left, and could not resume.
+                if let item, let entry = item.entry, !entry.claimed { entry.record(item.download.progress) }
+                self?.soon()
+            }
         }
         measure()
         return true
@@ -576,9 +600,27 @@ final class Fetches: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + Fetches.linger, execute: work)
     }
 
+    /// A measure, now if the last was long enough ago, or once the pace
+    /// allows. WebKit reports progress with every few kilobytes, hundreds of
+    /// times a second on a fast line, and each measure went over every
+    /// running download; nobody reads a percentage that often. Where a
+    /// download ends, it is measured exactly, then and there.
+    private func soon() {
+        guard measuring == nil else { return }
+        let wait = measuredAt + Fetches.pace - ProcessInfo.processInfo.systemUptime
+        guard wait > 0 else { return measure() }
+        let work = DispatchWorkItem { [weak self] in
+            self?.measuring = nil
+            self?.measure()
+        }
+        measuring = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: work)
+    }
+
     /// The running downloads, together, in whole percents; each file's own
     /// progress and row are brought up to date on the way.
     private func measure() {
+        measuredAt = ProcessInfo.processInfo.systemUptime
         var total: Int64 = 0
         var completed: Int64 = 0
         var sized = true
