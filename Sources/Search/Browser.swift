@@ -5762,6 +5762,12 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         guard let tab = tab(for: webView) else {
             // A small window's page came: what failed before it is over.
             littleTab(for: webView)?.failure = nil
+            // A peek or a small window opens at the size the site has, or
+            // the one in Settings, as a tab does: neither is in the row,
+            // and both opened at 100% (#691).
+            if let page = peekTab?.built === webView ? peekTab : littleTab(for: webView) {
+                page.applyRememberedZoom()
+            }
             return
         }
         tab.didCommit()
