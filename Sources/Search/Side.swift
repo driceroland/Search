@@ -185,22 +185,14 @@ struct SideBar: View {
     }
 
     private var pages: some View {
-        let width = self.width
-        let swipe = browser.spaceSwipe
         let at = spaceAt
-        return ZStack(alignment: .topLeading) {
-            page(at, pill: pill)
-                .offset(x: swipe)
-            // Only while the fingers are bringing one in: the one they are
-            // bringing, a page's width away.
-            if swipe > 0, at > 0 {
-                page(at - 1, pill: before)
-                    .offset(x: swipe - width)
-            }
-            if swipe < 0, at < browser.spaces.count {
-                page(at + 1, pill: after)
-                    .offset(x: swipe + width)
-            }
+        // Only while the fingers are bringing one in: the one they are
+        // bringing, a page's width away.
+        return SpacePages(
+            travel: browser.spaceTravel, axis: .horizontal, span: width, alignment: .topLeading,
+            before: at > 0, after: at < browser.spaces.count, here: page(at, pill: pill)
+        ) { step in
+            page(at + step, pill: step < 0 ? before : after)
         }
         // The pages are the column's whole width, each with its own margin.
         .padding(.horizontal, -10)
@@ -631,15 +623,42 @@ private struct PinGrid: Layout {
 /// A pinned tab as a cell in the block at the top of the column — as wide as
 /// its row asks for, but never taller than the classic square, so a row with
 /// room to spare turns into a wide, short button rather than a bigger icon.
-private struct PinSquare: View {
+private struct PinSquare: View, Equatable {
     @Environment(\.greys) private var greys
-    @ObservedObject var browser: Browser
+    /// Kept for what a click does, not watched: what the square shows of the
+    /// Browser is read as the column makes it, as a row's is (see SideRow).
+    let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
     let live: Bool
     let pill: Namespace.ID
     var width: CGFloat = 34
     var height: CGFloat = 34
+    /// Its letter being changed.
+    private let lettering: Bool
+    private let selected: Bool
+    /// The peek opened from it, while it is up.
+    private let peek: Tab?
+
+    init(browser: Browser, prefs: Preferences, tab: Tab, live: Bool, pill: Namespace.ID,
+         width: CGFloat = 34, height: CGFloat = 34) {
+        self.browser = browser
+        self.prefs = prefs
+        self.tab = tab
+        self.live = live
+        self.pill = pill
+        self.width = width
+        self.height = height
+        lettering = browser.editingPin == tab.id
+        selected = browser.selectedTabIDs.contains(tab.id)
+        peek = browser.peekFrom == tab.id ? browser.peekTab : nil
+    }
+
+    static func == (a: PinSquare, b: PinSquare) -> Bool {
+        a.browser === b.browser && a.prefs === b.prefs && a.tab === b.tab && a.live == b.live
+            && a.pill == b.pill && a.width == b.width && a.height == b.height
+            && a.lettering == b.lettering && a.selected == b.selected && a.peek === b.peek
+    }
 
     @State private var hovering = false
     @State private var selectedOnPress = false
@@ -651,7 +670,7 @@ private struct PinSquare: View {
 
     var body: some View {
         Group {
-            if browser.editingPin == tab.id {
+            if lettering {
                 PinField(browser: browser, tab: tab)
             } else if tab.loading {
                 // Its page on the way, as a row's ring says.
@@ -677,14 +696,14 @@ private struct PinSquare: View {
                         .matchedGeometryEffect(id: "live", in: pill)
                 } else {
                     RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
-                        .fill(browser.selectedTabIDs.contains(tab.id) ? greys.wash :
+                        .fill(selected ? greys.wash :
                               hovering ? greys.hover : greys.tile)
                 }
             }
             .animation(Motion.quick, value: live)
         }
         .overlay {
-            if browser.selectedTabIDs.contains(tab.id) {
+            if selected {
                 RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
                     .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
                     .allowsHitTesting(false)
@@ -692,14 +711,14 @@ private struct PinSquare: View {
         }
         .overlay(alignment: .topTrailing) {
             // The peek opened from it, while it is up.
-            if browser.peekFrom == tab.id, let page = browser.peekTab {
+            if let page = peek {
                 PeekBadge(page: page, size: scale * 16 / 34)
                     .offset(x: scale * 4 / 34, y: -scale * 4 / 34)
             }
         }
-        .animation(Motion.quick, value: browser.peekFrom)
+        .animation(Motion.quick, value: peek?.id)
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
-        .modifier(TabPress(enabled: browser.editingPin != tab.id, active: live, selected: $selectedOnPress) {
+        .modifier(TabPress(enabled: !lettering, active: live, selected: $selectedOnPress) {
             browser.clearTabSelection()
             browser.select(tab)
         })
@@ -720,21 +739,55 @@ private struct PinSquare: View {
 }
 
 /// One tab, as a line in the column.
-private struct SideRow: View {
+///
+/// It doesn't watch the Browser. The little of it a row shows is read as the
+/// column makes the row, and a row is drawn again only when that, its tab or
+/// the settings change (==): watching the whole Browser, every row was drawn
+/// again for anything that changed in the window. The Browser is kept for
+/// what a click on the row does.
+private struct SideRow: View, Equatable {
     @Environment(\.greys) private var greys
-    @ObservedObject var browser: Browser
+    let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
     let live: Bool
     let pill: Namespace.ID
     let close: () -> Void
     var interactive = true
+    /// Its address being typed in the row.
+    private let editing: Bool
+    /// Picked with ⌘ or ⇧ along with others.
+    private let selected: Bool
+    /// The peek opened from it, while it is up.
+    private let peek: Tab?
+    /// Bumped when what was typed in a tab can't be gone to (see Shake).
+    private let refusals: Int
+
+    init(browser: Browser, prefs: Preferences, tab: Tab, live: Bool, pill: Namespace.ID,
+         close: @escaping () -> Void, interactive: Bool = true) {
+        self.browser = browser
+        self.prefs = prefs
+        self.tab = tab
+        self.live = live
+        self.pill = pill
+        self.close = close
+        self.interactive = interactive
+        editing = browser.editingTab == tab.id
+        selected = browser.selectedTabIDs.contains(tab.id)
+        peek = browser.peekFrom == tab.id ? browser.peekTab : nil
+        refusals = browser.refusals
+    }
+
+    /// The close action is left out: it closes the same tab every time.
+    static func == (a: SideRow, b: SideRow) -> Bool {
+        a.browser === b.browser && a.prefs === b.prefs && a.tab === b.tab && a.live == b.live
+            && a.pill == b.pill && a.interactive == b.interactive && a.editing == b.editing
+            && a.selected == b.selected && a.peek === b.peek && a.refusals == b.refusals
+    }
 
     @State private var hovering = false
     @State private var selectedOnPress = false
     @State private var shake: CGFloat = 0
-
-    private var editing: Bool { browser.editingTab == tab.id }
 
     /// The ring or the speaker, which stay for as long as the page loads or
     /// plays (or is muted) and so keep a place of their own at the end of the
@@ -745,7 +798,7 @@ private struct SideRow: View {
     private var speaker: Bool { !tab.loading && (tab.noisy || tab.muted) }
     /// A pinned row with a peek opened from it: the peek's icon at its end,
     /// as on a square's corner.
-    private var peeking: Bool { !editing && tab.pin != nil && browser.peekFrom == tab.id && browser.peekTab != nil }
+    private var peeking: Bool { !editing && tab.pin != nil && peek != nil }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -794,7 +847,7 @@ private struct SideRow: View {
                 browser.select(tab)
             })
 
-            if peeking, let page = browser.peekTab {
+            if peeking, let page = peek {
                 // Under the pointer the cross takes its place, unless the
                 // ring or the speaker already holds the end of the row.
                 PeekBadge(page: page, size: 16)
@@ -862,7 +915,7 @@ private struct SideRow: View {
         .animation(Motion.quick, value: peeking)
         .background { ground.animation(Motion.quick, value: live) }
         .overlay {
-            if browser.selectedTabIDs.contains(tab.id) {
+            if selected {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
                     .allowsHitTesting(false)
@@ -886,7 +939,7 @@ private struct SideRow: View {
         }
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)
-        .onChange(of: browser.refusals) { _, _ in
+        .onChange(of: refusals) { _, _ in
             guard editing else { return }
             shake = 0
             withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
@@ -907,7 +960,7 @@ private struct SideRow: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .matchedGeometryEffect(id: "live", in: pill)
-        } else if browser.selectedTabIDs.contains(tab.id) {
+        } else if selected {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(greys.wash)
         } else if hovering {
