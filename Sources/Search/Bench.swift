@@ -3456,6 +3456,15 @@ final class Bench {
                     // Which web view holds its page, while it has one: the
                     // same after a pin or an unpin, as nothing was loaded again.
                     "web": tab.built.map { String(UInt(bitPattern: ObjectIdentifier($0).hashValue), radix: 16) } ?? "",
+                    // Whether its page is in a window, and kept there unseen
+                    // for a call (StageView.calls); whether it is on one; and
+                    // whether the keys would go to it.
+                    "inWindow": tab.built?.window != nil,
+                    "heldForCall": tab.built.map { web in (web.superview as? StageView)?.holdsCall(web) == true } ?? false,
+                    "onCall": tab.built.map { StageView.onCall($0) } ?? false,
+                    "hasKeys": tab.built.map { web in
+                        (web.window?.firstResponder as? NSView).map { $0 === web || $0.isDescendant(of: web) } ?? false
+                    } ?? false,
                 ] as [String: Any]
             },
             "splits": browser.splits.map { pair in
