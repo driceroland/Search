@@ -446,8 +446,8 @@ struct TabSwitcherOverlay: View {
             }
         }
         .padding(12)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.hairline))
+        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline))
         .background(GeometryReader { box in
             Color.clear.preference(key: PanelFrame.self, value: box.frame(in: .global))
         })
@@ -492,8 +492,8 @@ struct TabSwitcherOverlay: View {
             }
         }
         .padding(8)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.hairline))
+        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.hairline))
         .background(GeometryReader { box in
             Color.clear.preference(key: MoonsFrame.self, value: box.frame(in: .global))
         })
@@ -565,7 +565,7 @@ struct TabSwitcherOverlay: View {
                     }
                 }
                 .frame(width: width - 16, height: previewHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
 
                 HStack(spacing: 6) {
                     if prefs.glyph == .icons, !tab.isBlank {
@@ -581,7 +581,7 @@ struct TabSwitcherOverlay: View {
             }
             .padding(8)
             .frame(width: width, height: height, alignment: .topLeading)
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .background(GeometryReader { box in
@@ -603,8 +603,8 @@ struct TabSwitcherOverlay: View {
                     picture(tab, width: width - 12, height: previewHeight - 5, mark: 18)
                 }
                 .frame(width: width - 12, height: previewHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Palette.hairline))
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Palette.hairline))
 
                 HStack(spacing: 4) {
                     Text(tab.label)
@@ -619,7 +619,7 @@ struct TabSwitcherOverlay: View {
             .frame(width: width, alignment: .topLeading)
             .background(selected ? Palette.faint : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .animation(Motion.glide, value: selected)
-            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)
         .background(GeometryReader { box in

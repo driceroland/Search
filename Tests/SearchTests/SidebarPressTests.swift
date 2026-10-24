@@ -226,6 +226,35 @@ final class SidebarPressTests: XCTestCase {
         XCTAssertNil(browser.editingPin)
     }
 
+    func testStripPillStillSelectsOnClick() async throws {
+        let browser = makeBrowser()
+        browser.prefs.sidebar = false
+        let second = browser.tabs[1]
+        let window = makeStripWindow(browser)
+        try await settle()
+        try await send(.leftMouseDown, at: pillPoint(1), in: window)
+        try await send(.leftMouseUp, at: pillPoint(1), in: window)
+        XCTAssertEqual(browser.activeID, second.id, "Watching the press for the pill to give must leave its click alone")
+    }
+
+    func testStripPillPressThenDragStillReorders() async throws {
+        let browser = makeBrowser()
+        browser.prefs.sidebar = false
+        let first = browser.tabs[0]
+        let window = makeStripWindow(browser)
+        try await settle()
+        let start = pillPoint(0)
+        try await send(.leftMouseDown, at: start, in: window)
+        for distance in [8.0, 40, 120, 200] {
+            try await send(.leftMouseDragged, at: NSPoint(x: start.x + distance, y: start.y), in: window)
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertNotEqual(browser.tabs.first?.id, first.id, "A pill moves while the button is still down")
+        try await send(.leftMouseUp, at: NSPoint(x: start.x + 200, y: start.y), in: window)
+        try await settle()
+        XCTAssertNotEqual(browser.tabs.first?.id, first.id, "A pill carried past the next one still moves")
+    }
+
     /// The press that selects (TabPress) held the drag back until the
     /// release: nothing moved under the hand, the row jumped on letting go,
     /// and a pin held still a moment before letting go wasn't moved at all.
@@ -293,6 +322,16 @@ final class SidebarPressTests: XCTestCase {
         window.orderFrontRegardless()
         windows.append(window)
         return window
+    }
+
+    private func makeStripWindow(_ browser: Browser) -> NSWindow {
+        makeWindow(root: TabBar(browser: browser), width: 900, height: Metrics.strip)
+    }
+
+    /// The middle of a pill in the 900-point strip of three tabs: each is
+    /// about 180 points wide, the first starting after the window's lights.
+    private func pillPoint(_ index: Int) -> NSPoint {
+        NSPoint(x: 195 + CGFloat(index) * 185, y: Metrics.strip / 2)
     }
 
     private func rowPoint(_ index: Int, in window: NSWindow) -> NSPoint {

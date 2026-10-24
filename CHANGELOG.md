@@ -80,6 +80,8 @@ Not in this version, kept on main for a later one:
 - A bookmark opens in a tab of its own, from the bookmarks bar, the Bookmarks menu or the list: opened from a pinned tab it used to take the pin's place. An empty new tab is used as it is, and ⌘ opens the bookmark behind the tab you are on.
 - Pins in a space you aren't in go to sleep after the usual wait, as the tabs beside them do, and give their memory back: five spaces of five pins used to be twenty-five pages that never slept. Pins in the space on screen stay awake as before, and so does a pin whose site may send you notifications. Thanks [@karadoganyi](https://github.com/karadoganyi) for measuring where the memory went, and [@Browny01](https://github.com/Browny01) and [@Quan018](https://github.com/Quan018) for asking ([#569](https://github.com/driceroland/Search/issues/569))
 - A tab in the column opens as the button goes down, not when it comes back up. Dragging a tab or a pin, right-clicking one, ⌘- and ⇧-click, the cross, renaming and a click on the tab you are on to edit its address work as before. Thanks [@BryanZaneee](https://github.com/BryanZaneee) for building it and [@wouter-deen](https://github.com/wouter-deen) for asking ([#625](https://github.com/driceroland/Search/pull/625), [#598](https://github.com/driceroland/Search/issues/598))
+- A tab gives a little under the pointer while it is pressed, in the column and across the top, and springs back when you let go, as Arc's do. Nothing moves with Reduce Motion on.
+- The ⌃Tab switcher's cards and thumbnails have the same smooth corners as the rest of Search, instead of plain round ones.
 
 ### Fixed
 

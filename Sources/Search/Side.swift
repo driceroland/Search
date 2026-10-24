@@ -885,6 +885,7 @@ private struct SideRow: View {
     @State private var hovering = false
     @State private var selectedOnPress = false
     @State private var shake: CGFloat = 0
+    @State private var pressed = false
 
     private var editing: Bool { browser.editingTab == tab.id }
 
@@ -941,7 +942,7 @@ private struct SideRow: View {
             .padding(.trailing, status || peeking ? 0 : 10)
             .frame(height: prefs.sideRow)
             .contentShape(Rectangle())
-            .modifier(TabPress(enabled: interactive && !editing, active: live, selected: $selectedOnPress) {
+            .modifier(TabPress(enabled: interactive && !editing, active: live, selected: $selectedOnPress, pressing: $pressed) {
                 browser.clearTabSelection()
                 browser.select(tab)
             })
@@ -1027,6 +1028,7 @@ private struct SideRow: View {
             }
         }
         .modifier(Shake(travel: shake))
+        .modifier(Give(pressed: pressed))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
             guard interactive, !selectedOnPress, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }

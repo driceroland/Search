@@ -223,6 +223,10 @@ enum Motion {
         reduced ? nil : .easeOut(duration: 0.14)
     }
 
+    /// How far a tab gives while it is pressed (see Give): enough to feel
+    /// under the pointer, about 3 points on a pill and 7 on a column row.
+    static let give: CGFloat = 0.97
+
     /// The folded column or strip coming out over the page, and going back.
     /// On glide it was slow both ways, next to Arc and Dia timed frame by
     /// frame on the same Mac: each slides its sidebar 90% of the way out in
