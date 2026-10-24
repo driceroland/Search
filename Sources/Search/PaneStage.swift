@@ -279,7 +279,7 @@ final class PaneStage: NSView {
             addSubview(slot, positioned: .below, relativeTo: divider)
             slots.append(slot)
             let shadow = CALayer()
-            shadow.actions = ["bounds": NSNull(), "position": NSNull(), "hidden": NSNull()]
+            shadow.actions = ["bounds": NSNull(), "position": NSNull(), "hidden": NSNull(), "shadowPath": NSNull()]
             layer?.insertSublayer(shadow, at: 0)
             shadows.append(shadow)
             let cue = FocusCue()
@@ -395,6 +395,14 @@ final class PaneStage: NSView {
                 let shadow = shadows[index]
                 shadow.frame = frame
                 shadow.isHidden = corner == 0 || !visible
+                // The card's outline, given: without it Core Animation finds
+                // the shadow's shape from the layer's own pixels, in a pass
+                // off screen, each time the card is drawn, every step of the
+                // divider included.
+                if !shadow.isHidden {
+                    shadow.shadowPath = Path(roundedRect: CGRect(origin: .zero, size: frame.size),
+                                             cornerRadius: corner, style: .continuous).cgPath
+                }
             }
             // Only with two pages on screen does it matter which one keys go to.
             let cue = cues[index]
