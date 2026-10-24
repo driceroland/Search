@@ -544,6 +544,10 @@ final class Extensions: NSObject, ObservableObject {
             watch(context)
             if contexts[item.id] == nil, loadsThisRun.contains(item.id) { loadedBefore.insert(item.id) }
             loadsThisRun.insert(item.id)
+            sessionRulesGiven.remove(item.id)
+            sessionRulesSpilled.remove(item.id)
+            loadedAt[item.id] = Date()
+            sweepKeptSessionRules(item.id)
             contexts[item.id] = context
             // Keys you gave its commands in Settings › Shortcuts (#189).
             ShortcutStore.shared.adopt(context, id: item.id)
@@ -583,6 +587,9 @@ final class Extensions: NSObject, ObservableObject {
         ExtensionShims.panelTabs[id] = nil
         ExtensionShims.panelOff.remove(id)
         if let held = ExtensionShims.awake.removeValue(forKey: id) { IOPMAssertionRelease(held) }
+        sessionRulesGiven.remove(id)
+        sessionRulesSpilled.remove(id)
+        loadedAt[id] = nil
         // Its ports read as gone only once WebKit has had a turn.
         DispatchQueue.main.async { ExtensionNative.stopOrphans() }
         contexts[id] = nil
@@ -768,6 +775,38 @@ final class Extensions: NSObject, ObservableObject {
     private var loadsThisRun: Set<String> = []
     private(set) var loadedBefore: Set<String> = []
 
+    /// Session rules the shim keeps as dynamic ones (see "Session rules,
+    /// kept" in the shim): the extensions that have given this load's set,
+    /// those whose kept rules went back to being session rules to make room
+    /// for dynamic ones, and when each loaded. None outlives the load, as
+    /// session rules don't.
+    var sessionRulesGiven: Set<String> = []
+    var sessionRulesSpilled: Set<String> = []
+    private(set) var loadedAt: [String: Date] = [:]
+
+    /// Whether any of its session rules are kept, from one launch to the next.
+    func keepsSessionRules(_ id: String, _ any: Bool) {
+        if any { Store.settings.set(true, forKey: "extensions.kept.\(id)") }
+        else { Store.settings.removeObject(forKey: "extensions.kept.\(id)") }
+    }
+
+    /// The shim's background takes away kept session rules not given again
+    /// 30 s after loading, on a timer that never runs if the background
+    /// isn't running then: WebKit hadn't started it, or put it to sleep
+    /// first. A few seconds after that, it is started, and takes them away
+    /// as it starts. Without this, rules from the last launch could hold
+    /// until the extension next sets any.
+    private func sweepKeptSessionRules(_ id: String) {
+        guard Store.settings.bool(forKey: "extensions.kept.\(id)") else { return }
+        let loaded = loadedAt[id]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 35) { [weak self] in
+            guard let self, self.loadedAt[id] == loaded, !self.sessionRulesGiven.contains(id),
+                  Store.settings.bool(forKey: "extensions.kept.\(id)"),
+                  let context = self.contexts[id], context.webExtension.hasBackgroundContent else { return }
+            context.loadBackgroundContent { _ in }
+        }
+    }
+
     @discardableResult
     func revive(_ id: String, because reason: String) -> Bool {
         guard let item = installed.first(where: { $0.id == id }), item.enabled,
@@ -872,6 +911,7 @@ final class Extensions: NSObject, ObservableObject {
         loadedBefore.remove(id)
         Store.settings.removeObject(forKey: "extensions.newtab.\(id)")
         Store.settings.removeObject(forKey: "extensions.private.\(id)")
+        Store.settings.removeObject(forKey: "extensions.kept.\(id)")
         installed.removeAll { $0.id == id }
         save()
         try? FileManager.default.removeItem(at: Extensions.folder(for: id))

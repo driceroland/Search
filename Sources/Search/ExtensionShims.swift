@@ -2407,8 +2407,11 @@ enum ExtensionShims {
       const madeBase = 1000000000, madeStride = 32;
       const madeIds = (id) => Number.isInteger(id) && id >= 1 && id < 30000000
         ? Array.from({ length: madeStride - 1 }, (_, k) => madeBase + id * madeStride + k + 1) : [];
+      // Session rules kept as dynamic ones have a range of their own, above
+      // every rule made from another (see "Session rules, kept" below).
+      const keptBase = 2000000000, keptSpan = 100000000;
       const madeFrom = (id, present) => {
-        if (!Number.isInteger(id) || id <= madeBase) return null;
+        if (!Number.isInteger(id) || id <= madeBase || id >= keptBase) return null;
         const offset = id - madeBase, k = offset % madeStride, from = (offset - k) / madeStride;
         return k && present.has(from) ? from : null;
       };
@@ -2507,6 +2510,173 @@ enum ExtensionShims {
           if (__SEARCH_VERBOSE__) p.catch((e) => { try { native("debug.error", ["declarativeNetRequest: " + name + " failed — " + (e && e.message)]).catch(() => {}); } catch (x) {} });
           if (typeof callback !== "function") return p;
           p.then(() => callback(), (e) => withLastError(e, callback));
+        });
+      }
+
+      // Session rules, kept. WebKit compiles every rule an extension has,
+      // its lists, its dynamic rules and its session rules, into one content
+      // blocker, and compiles all of it again whenever any of them changes;
+      // while it does, a page opened in a new tab has no rules at all. Session
+      // rules are gone at each launch, so an extension that sets its own again
+      // at startup (uBOL's strict blocking, 900-odd of them) had WebKit compile
+      // everything again on every launch: 4 to 5 s in which new tabs weren't
+      // blocked. So they are kept as dynamic rules, which WebKit's compiled
+      // copy carries from one launch to the next, in ids of their own, hidden
+      // from getDynamicRules: session rule `id` becomes keptBase + id * 32 + k,
+      // k counting the rules a regex is split into (see expandRegex), 0 for
+      // one that isn't. At launch they read as gone, as Chrome's do; the set
+      // given again is compared with what is kept, and only a difference
+      // reaches WebKit, so the same set costs nothing. Kept ones not given
+      // again within `keptGrace` seconds of loading are taken away, by the
+      // background's timer, or by the background Search starts for it a few
+      // seconds later if that timer never ran. Whether this launch's set has
+      // been given is Search's to remember for as long as it runs, and
+      // whether any are kept from one launch to the next (dnr.session). Only
+      // an extension with a background keeps any, since only one can take
+      // them away. WebKit holds 29,999 dynamic rules and 29,999 session ones,
+      // each apart, whatever MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES says, so
+      // kept rules take room the extension's own dynamic rules may want; they
+      // give way (see updateDynamicRules below). A rule with an id too large
+      // for the range, or a set WebKit won't take as dynamic rules, goes the
+      // plain way.
+      const keptGrace = 30, keptStride = 32;
+      const plainUpdateSession = dnr && dnr.updateSessionRules, plainGetSession = dnr && dnr.getSessionRules;
+      const plainUpdateDynamic = dnr && dnr.updateDynamicRules, plainGetDynamic = dnr && dnr.getDynamicRules;
+      if (hasWorker && [plainUpdateSession, plainGetSession, plainUpdateDynamic, plainGetDynamic].every((f) => typeof f === "function") && rawGet.updateDynamicRules) {
+        const isKept = (id) => Number.isInteger(id) && id >= keptBase && id < keptBase + keptSpan;
+        const sessionIdOf = (id) => Math.floor((id - keptBase) / keptStride);
+        const keepable = (rule) => !!rule && Number.isInteger(rule.id) && rule.id >= 1 && rule.id < keptSpan / keptStride;
+        // A session rule as it is kept: mended, and split where its regex
+        // has what WebKit refuses. [] for one that can't be split, which
+        // WebKit would refuse whole; it is left out, as the plain way does.
+        const asKept = (rule) => {
+          const r = mendRule(rule);
+          if (!r) return [];
+          const c = r.condition, pattern = c && c.regexFilter;
+          // A redirect's \1 counts groups a split takes away: such a rule is
+          // kept whole, as spread leaves it, for WebKit to take or refuse.
+          const substitution = r.action && r.action.redirect && r.action.redirect.regexSubstitution;
+          const whole = typeof substitution === "string" && /\\[1-9]/.test(substitution);
+          const patterns = typeof pattern === "string" && !whole && /\||\(\?:|\{\d/.test(pattern) ? expandRegex(pattern) : [pattern];
+          if (!patterns || !patterns.length || patterns.length > keptStride) {
+            try { native("debug.error", ["declarativeNetRequest: session rule " + r.id + " left out — its regex can't be split into ones WebKit takes"]).catch(() => {}); } catch (x) {}
+            return [];
+          }
+          return patterns.map((regexFilter, k) => ({ ...r, id: keptBase + r.id * keptStride + k,
+            ...(regexFilter === undefined ? {} : { condition: { ...c, regexFilter } }) }));
+        };
+        const canonical = (v) => Array.isArray(v) ? v.map(canonical) : v && typeof v === "object"
+          ? Object.fromEntries(Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => [k, canonical(v[k])])) : v;
+        const alike = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+        // What is kept, by kept id, as WebKit hands it back (unchanged: it
+        // gives rules back exactly as they were given).
+        const keptNow = () => rawGet.updateDynamicRules().then((all) => new Map(all.filter((r) => isKept(r.id)).map((r) => [r.id, r])));
+        // Each session rule as the extension sees it: the first of its pieces.
+        const asSession = (have) => [...have.values()].filter((r) => (r.id - keptBase) % keptStride === 0).map((r) => ({ ...r, id: sessionIdOf(r.id) }));
+        // Search unreachable: taken as given, so nothing kept is held back.
+        const session = () => native("dnr.session", ["state"]).catch(() => ({ given: true, age: 0, spilled: false }));
+        // Whether any are kept is said too: Search takes away at its next
+        // launch what isn't given again, should this worker not be running.
+        const given = (kept) => native("dnr.session", ["given", kept]).catch(() => {});
+        const kept = (any) => native("dnr.session", ["kept", any]).catch(() => {});
+        let queue = Promise.resolve();
+        const inTurn = (f) => { const p = queue.then(f); queue = p.catch(() => {}); return p; };
+        // The rules the extension means to have kept, by kept id; WebKit is
+        // told only where they differ from what is kept already.
+        const settle = async (want, have) => {
+          const remove = [...have.keys()].filter((id) => !want.has(id) || !alike(have.get(id), want.get(id)));
+          const add = [...want.values()].filter((r) => !have.has(r.id) || !alike(have.get(r.id), r));
+          if (remove.length || add.length) await plainUpdateDynamic({ removeRuleIds: remove, addRules: add });
+          await given(want.size > 0);
+        };
+        const dropKept = async (ids) => {
+          const have = await keptNow(), drop = [...have.keys()].filter((id) => ids.has(sessionIdOf(id)));
+          if (drop.length) await plainUpdateDynamic({ removeRuleIds: drop });
+          await kept(have.size > drop.length);
+        };
+        const dropPlain = async (ids) => {
+          const drop = (await plainGetSession()).filter((r) => ids.has(r.id)).map((r) => r.id);
+          if (drop.length) await plainUpdateSession({ removeRuleIds: drop });
+        };
+        put(dnr, "getSessionRules", (filter, callback) => {
+          if (typeof filter === "function") { callback = filter; filter = undefined; }
+          const p = inTurn(async () => {
+            const plain = await plainGetSession(filter);
+            if (!(await session()).given) return plain;
+            const ids = filter && Array.isArray(filter.ruleIds) ? new Set(filter.ruleIds) : null;
+            return asSession(await keptNow()).filter((r) => !ids || ids.has(r.id)).concat(plain);
+          });
+          if (typeof callback !== "function") return p;
+          p.then((r) => callback(r), (e) => withLastError(e, callback));
+        });
+        put(dnr, "updateSessionRules", (options = {}, callback) => {
+          const p = inTurn(async () => {
+            const adds = Array.isArray(options && options.addRules) ? options.addRules : [];
+            const removes = Array.isArray(options && options.removeRuleIds) ? options.removeRuleIds : [];
+            const { given: settled, spilled } = await session();
+            if (spilled) return plainUpdateSession(options);
+            const keeping = adds.filter(keepable), plainAdds = adds.filter((r) => !keepable(r));
+            const have = await keptNow();
+            // Before this launch's set is given, what is kept is last launch's:
+            // the extension believes its session empty, and so it starts.
+            const want = new Map(settled ? have : []);
+            const gone = new Set([...removes, ...adds.map((r) => r && r.id)]);
+            for (const id of [...want.keys()]) if (gone.has(sessionIdOf(id))) want.delete(id);
+            for (const rule of keeping) for (const piece of asKept(rule)) want.set(piece.id, piece);
+            try { await settle(want, have); }
+            catch (e) {
+              if (settled) await dropKept(gone);
+              return plainUpdateSession(options);
+            }
+            const plainGone = new Set([...removes, ...keeping.map((r) => r.id)]);
+            await dropPlain(plainGone);
+            if (plainAdds.length) await plainUpdateSession({ addRules: plainAdds });
+          });
+          if (typeof callback !== "function") return p;
+          p.then(() => callback(), (e) => withLastError(e, callback));
+        });
+        put(dnr, "getDynamicRules", (filter, callback) => {
+          if (typeof filter === "function") { callback = filter; filter = undefined; }
+          const p = Promise.resolve(plainGetDynamic(filter)).then((all) => (all || []).filter((r) => !isKept(r.id)));
+          if (typeof callback !== "function") return p;
+          p.then((r) => callback(r), (e) => withLastError(e, callback));
+        });
+        // Kept rules give way to the extension's own dynamic ones: an update
+        // WebKit refuses while any are kept, as one past its limit, is tried
+        // again without them. Last launch's are dropped. This launch's go
+        // back to being session rules, made ones under the ids spread would
+        // have given them, and none are kept again until the extension next
+        // loads.
+        const spill = async (have) => {
+          const back = [...have.values()].map((r) => {
+            const k = (r.id - keptBase) % keptStride, id = sessionIdOf(r.id);
+            return { ...r, id: k ? madeBase + id * madeStride + k : id };
+          });
+          await plainUpdateSession({ addRules: back });
+          await plainUpdateDynamic({ removeRuleIds: [...have.keys()] });
+          await native("dnr.session", ["spilled"]).catch(() => {});
+          await kept(false);
+        };
+        put(dnr, "updateDynamicRules", (options = {}, callback) => {
+          const p = inTurn(async () => {
+            try { return await plainUpdateDynamic(options); }
+            catch (e) {
+              const have = await keptNow();
+              if (!have.size) throw e;
+              if ((await session()).given) await spill(have);
+              else await settle(new Map(), have);
+              return plainUpdateDynamic(options);
+            }
+          });
+          if (typeof callback !== "function") return p;
+          p.then(() => callback(), (e) => withLastError(e, callback));
+        });
+        // Not given again in time: what was kept from the last launch goes.
+        if (background) session().then((s) => {
+          if (s.given) return;
+          setTimeout(() => inTurn(async () => {
+            if (!(await session()).given) await settle(new Map(), await keptNow());
+          }).catch(() => {}), Math.max(0, keptGrace - (s.age || 0)) * 1000);
         });
       }
 
@@ -4197,6 +4367,25 @@ enum ExtensionShims {
         // the shim's ping).
         case "background.revive":
             return owner.revive(id, because: "its worker stopped answering")
+
+        // MARK: session rules kept as dynamic ones (see the shim)
+        // "given": this load's set has been given. "kept": whether any are
+        // kept now, given with it or apart. "spilled": none are kept again
+        // this load. "state": whether this load's set has been given, how
+        // many seconds ago the extension loaded, and whether it spilled.
+        case "dnr.session":
+            if first as? String == "spilled" {
+                owner.sessionRulesSpilled.insert(id)
+                return nil
+            }
+            if first as? String == "given" { owner.sessionRulesGiven.insert(id) }
+            if first as? String == "given" || first as? String == "kept" {
+                owner.keepsSessionRules(id, args.dropFirst().first as? Bool ?? false)
+                return nil
+            }
+            return ["given": owner.sessionRulesGiven.contains(id),
+                    "age": owner.loadedAt[id].map { Date().timeIntervalSince($0) } ?? 0,
+                    "spilled": owner.sessionRulesSpilled.contains(id)]
 
         // MARK: what went wrong inside
         case "debug.error":
