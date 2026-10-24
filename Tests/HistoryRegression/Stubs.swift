@@ -56,3 +56,6 @@ enum Disk {
         try? data.write(to: file, options: .atomic)
     }
 }
+
+/// Address.swift names Search's own pages' scheme (see InternalPages.swift).
+enum InternalPage { static let scheme = "search" }

@@ -32,7 +32,6 @@ struct ExtensionsPage: View {
                                 .foregroundStyle(Palette.ink)
                             Spacer(minLength: 8)
                             Pill("Open the Store") {
-                                browser.tuning = false
                                 browser.open(Browser.webStore, foreground: true)
                             }
                         }
@@ -69,9 +68,8 @@ struct ExtensionsPage: View {
                 Card {
                     Line("From another browser", "What Chrome, Arc, Brave and the others added from the Chrome Web Store — installed fresh from the store, you say yes to each one") {
                         Pill("Bring them over…") {
-                            browser.tuning = false
                             browser.bringingExtensions = true
-                            browser.bringingIn = ""
+                            browser.lead(to: InternalPage(.importing))
                         }
                     }
                 }

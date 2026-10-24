@@ -120,6 +120,12 @@ final class TabSwitcher: ObservableObject {
     private var generation = UUID()
     var active: Bool { home != nil }
 
+    /// The latest tab left that is still among `row`, other than `id`: where
+    /// a pin's number pressed again goes back to.
+    func lastLeft(among row: Set<Tab.ID>, other id: Tab.ID) -> Tab.ID? {
+        recentIDs.first { $0 != id && row.contains($0) }
+    }
+
     /// Tabs left and not pictured yet. Every switch used to picture the tab
     /// it left at once: a page painted again for each ⌘1 and ⌘2 on the way
     /// somewhere else, and none of those pictures looked at. Now the tab
@@ -141,7 +147,7 @@ final class TabSwitcher: ObservableObject {
         recentIDs = [tab.id] + recentIDs.filter { $0 != tab.id && alive.contains($0) }
         prune { kept($0) }
         unpictured = unpictured.filter { $0.key != current && kept($0.key) && $0.value.tab != nil }
-        unpictured[tab.id] = tab.isBlank ? nil : Unpictured(tab: tab)
+        unpictured[tab.id] = tab.isWeb ? Unpictured(tab: tab) : nil
         picturing?.cancel()
         let id = tab.id
         let work = DispatchWorkItem { [weak self] in
@@ -164,7 +170,7 @@ final class TabSwitcher: ObservableObject {
     }
 
     private func picture(_ waiting: Unpictured) {
-        guard let tab = waiting.tab, !tab.isBlank else { return }
+        guard let tab = waiting.tab, tab.isWeb else { return }
         requestPreview(of: tab, gesture: nil)
     }
 

@@ -200,6 +200,15 @@ struct WelcomePanel: View {
                 Key("⌥⌘N", "Split a page in two; ⌃⌘← and ⌃⌘→ go from one page to the other. Turn Split View on in Settings › Tabs.")
                 Key("⌘O", "Links from other apps can open in a small window. Settings › General.")
                 Key("⌘L", "Suggestions from your search engine as you type — off until you turn them on in Settings › General.")
+                Key("⌘", "Held, it can show each tab's number for ⌘1–9. Settings › Tabs.")
+                Key("⌘1", "Pressed again on its pin, back to where you were. Settings › Tabs.")
+                Key("⇧⌘P", "Float a video in Search's window, or in macOS's picture in picture. Settings › General.")
+                Key("⌘,", "Claude or ChatGPT in a side panel beside the page — turn on Websites in the side panel in Settings › General.")
+                Key("⌘Q", "Search can ask before it quits. Settings › General.")
+                Key("⌘,", "Passwords from Apple's Passwords app under the sign-in box — off until you turn it on in Settings › Passwords.")
+                if PageTranslator.available {
+                    Key("⌃-click", "Translate a page into your language, on this Mac — nothing is sent anywhere. Off until you turn it on in Settings › General.")
+                }
                 if AI.shipped {
                     Key("⌘,", "AI summaries and questions about a page — off until you turn it on in Settings › AI.")
                 }

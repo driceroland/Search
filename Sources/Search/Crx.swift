@@ -32,10 +32,14 @@ enum Crx {
         }
     }
 
-    /// The version of Chrome the store is told it is talking to. Some
-    /// extensions set a minimum; the store refuses to hand those to a
-    /// browser that says it is older.
-    static let chromeVersion = "140.0.0.0"
+    /// The version of Chrome the store is told it is talking to, and the one
+    /// extensions see in navigator.userAgent (ExtensionShims). Some set a
+    /// minimum; the store refuses to hand those to a browser that says it
+    /// is older, and some turn a feature off below a version: 1Password
+    /// opens its popup to unlock only from Chrome 149, so at 140 its button
+    /// in a field did nothing while it was locked (#685). Kept at Chrome's
+    /// stable version (156 on 24 Oct 2026); look again every few releases.
+    static let chromeVersion = "156.0.0.0"
 
     /// The id Chrome gives a folder loaded unpacked, from its real path:
     /// native messaging hosts shipped for such a folder list this id. The

@@ -23,6 +23,31 @@ final class Links: NSObject, NSApplicationDelegate {
     /// AppKit calls us again when that cleanup has finished.
     private var terminationPending = false
 
+    @MainActor private static var askingToQuit = false
+
+    /// Only the user's Quit command asks; updater and system termination
+    /// still go straight through the existing cleanup below.
+    @MainActor static func shouldQuit() -> Bool {
+        guard !askingToQuit else { return false }
+        guard Store.settings.bool(forKey: Preferences.confirmQuitKey) else { return true }
+        askingToQuit = true
+        defer { askingToQuit = false }
+        let alert = NSAlert()
+        alert.messageText = "Quit Search?"
+        alert.informativeText = "Your windows and tabs will close."
+        alert.addButton(withTitle: "Quit").keyEquivalent = ""
+        let cancel = alert.addButton(withTitle: "Cancel")
+        alert.window.defaultButtonCell = cancel.cell as? NSButtonCell
+        // Making Cancel the Return default replaces its Escape equivalent.
+        let escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.window === alert.window, event.keyCode == 53 else { return event }
+            cancel.performClick(nil)
+            return nil
+        }
+        defer { if let escape { NSEvent.removeMonitor(escape) } }
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     /// Quitting closes every window on the way out; that isn't a window
     /// closed for good, whose tabs would go (see Browsers.closing).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

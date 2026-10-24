@@ -8,7 +8,21 @@ final class ExtensionReturnNavigation {
     private var navigation: WKNavigation?
     private var serverOrigin: URL?
     private var candidate: URL?
+    /// The http(s) site the page was last sent to, for a rule's redirect.
+    private var requested: URL?
     private(set) var revision = 0
+
+    /// An extension's declarativeNetRequest rule sent the page from a site
+    /// to one of its files: WebKit drops the site's navigation and starts
+    /// one to the file, with no page behind it to name the site. The site
+    /// is the one this tab was just asked to go to, read before anything
+    /// else is decided — once, and only for WebKit's own rule redirect
+    /// (see Browser.routeRuleRedirect).
+    func ruleSource(for action: WKNavigationAction) -> URL? {
+        defer { requested = nil }
+        guard action.targetFrame?.isMainFrame == true else { return nil }
+        return requested
+    }
 
     /// Returns the document's native HTTPS origin for ordinary navigations.
     /// An opaque blank document needs a subsequent server-redirect callback.
@@ -16,6 +30,7 @@ final class ExtensionReturnNavigation {
         guard action.targetFrame?.isMainFrame == true else { return nil }
         revision &+= 1
         candidate = nil
+        requested = Self.webOrigin(action.request.url)
         guard action.sourceFrame.isMainFrame,
               (action.request.httpMethod ?? "GET") == "GET",
               action.request.httpBody == nil, action.request.httpBodyStream == nil
@@ -64,6 +79,18 @@ final class ExtensionReturnNavigation {
         self.navigation = nil
         serverOrigin = nil
         candidate = nil
+    }
+
+    /// An http or https site's origin, for ruleSource only.
+    private static func webOrigin(_ url: URL?) -> URL? {
+        guard let url, let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else { return nil }
+        var origin = URLComponents()
+        origin.scheme = scheme
+        origin.host = host
+        origin.port = url.port
+        origin.path = "/"
+        return origin.url
     }
 
     private static func httpsOrigin(_ url: URL?) -> URL? {

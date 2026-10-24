@@ -29,7 +29,8 @@ enum Web {
     /// included, and registering a name twice is a hard crash.
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name, MediaKeys.name,
-                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name, DuskRelay.name] {
+                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name, DuskRelay.name,
+                     TranslateRelay.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
@@ -127,6 +128,7 @@ enum Web {
         config.mediaTypesRequiringUserActionForPlayback = Web.playback
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
         inspector(config.preferences)
+        NativePiP.allow(config.preferences)
         return config
     }
 
@@ -143,6 +145,14 @@ enum Web {
     /// menu, and the Web Inspector the View menu opens (see Inspector.swift).
     /// isInspectable alone only lets Safari's Develop menu reach the page.
     /// The name is outside the public framework, so it is asked first.
+    /// A page the Web Inspector reaches, as every tab's is: Safari's Develop
+    /// menu and Inspect Element both. The side panel's website follows the
+    /// same rule through this.
+    @MainActor static func inspectable(_ web: WKWebView) {
+        if #available(macOS 13.3, *) { web.isInspectable = true }
+        inspector(web.configuration.preferences)
+    }
+
     static func inspector(_ preferences: WKPreferences, on: Bool = true) {
         let set = NSSelectorFromString("_setDeveloperExtrasEnabled:")
         guard preferences.responds(to: set) else { return }
@@ -323,11 +333,19 @@ final class Tab: ObservableObject, Identifiable {
     /// doesn't say when.
     @Published private(set) var painted = false
     var pageAddress: URL? { committed ?? address }
+    /// What the tab says at rest about where its page is (AtRest.swift):
+    /// the document that arrived, never one only on its way. A page that
+    /// opened this tab can write into it while the address it asked for is
+    /// still loading, and that address must not vouch for what it wrote.
+    /// A tab with no view (asleep, restored) has only its address to say.
+    var restAddress: URL? { built == nil ? address : committed }
 
     func didCommit() {
         popupGesture.clear()
         // What the old page was refused went with it.
         if !blockedPopups.isEmpty { blockedPopups = [] }
+        // A translated page is gone; its frames with it.
+        if translator != nil || translation != nil || !translateFrames.isEmpty { translationGone(sleeping: false) }
         // A new document: whatever the old one waited for under its field
         // went with it.
         if let built { Passkeys.shared.forget(built) }
@@ -386,7 +404,7 @@ final class Tab: ObservableObject, Identifiable {
     /// restoring the HTML gives you a page that looks right and does nothing,
     /// because every listener the page had was thrown away with it.
     func toggleReader(_ done: @escaping (Bool) -> Void) {
-        guard !isBlank else {
+        guard isWeb else {
             done(false)
             return
         }
@@ -410,6 +428,7 @@ final class Tab: ObservableObject, Identifiable {
     /// The letter a pinned tab is reduced to, and what a tab shows in place of
     /// an icon it doesn't have yet.
     var monogram: String {
+        if let page { return String(page.title.prefix(1)) }
         // A file on this Mac has no host: its name's first letter.
         if let address, address.isFileURL {
             let name = address.lastPathComponent.trimmingCharacters(in: CharacterSet(charactersIn: "/."))
@@ -420,6 +439,10 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     func adoptIcon() {
+        if let page {
+            icon = page.glyph
+            return
+        }
         guard let site = address.flatMap(Favicons.site) else {
             icon = nil
             return
@@ -587,6 +610,16 @@ final class Tab: ObservableObject, Identifiable {
     /// A private tab's own Always Allow: only for as long as the tab, never
     /// written anywhere, as its Keep This Site Awake.
     var popupSites: Set<String> = []
+    /// Translate Page (Translate.swift): what the sign beside the title
+    /// shows, the run while there is one, the frames that said they're
+    /// there, a private tab's own Always Translate, and the page a tab put
+    /// to sleep translated was on. All in memory, gone with the tab.
+    @Published var translation: TranslationMark?
+    var translator: PageTranslator?
+    var translateFrames: [WKFrameInfo] = []
+    var translateLanguages: Set<String> = []
+    var translateOnWake: (url: URL, to: String)?
+    private let translateRelay = TranslateRelay()
     private let passkeyRelay = PasskeyRelay()
     private let hovered = HoveredLink()
     private let ears = AudioWatch()
@@ -602,6 +635,11 @@ final class Tab: ObservableObject, Identifiable {
     /// A tab that keeps nothing: its own cookies, no history, no place in the
     /// session. Signed in as nobody, and forgotten when it goes.
     let shy: Bool
+
+    /// The account last filled here from Apple's Passwords app, so sending
+    /// it isn't offered a second place in Search's keychain. A keyed hash of
+    /// the password, never the password.
+    var appleFill: AppleFill?
 
     /// A tab a script opened through the bench, beside yours. Signed in as
     /// you, so it sees what you see — but never selected for you, never in
@@ -698,13 +736,73 @@ final class Tab: ObservableObject, Identifiable {
 
     /// A tab that has never been anywhere shows the address field instead of a
     /// page. It still owns a web view — built now, warm by the time it's needed.
-    var isBlank: Bool { address == nil }
+    var isBlank: Bool { address == nil && page == nil }
+    /// A tab with a web page — loaded, on its way or asleep — as opposed to
+    /// an empty one or one of Search's own pages.
+    var isWeb: Bool { address != nil }
+
+    // MARK: - Search's own pages (see InternalPages.swift)
+
+    /// Settings, History and the rest, shown in this tab in place of a web
+    /// page. Never with a web view behind it.
+    @Published private(set) var page: InternalPage?
+    /// The pages Back and Forward go to, between Search's own pages.
+    private var trail: [InternalPage] = []
+    private var ahead: [InternalPage] = []
+    /// The page this tab left for the web: Back from the first web page
+    /// comes back to it, as Back from a link in chrome://history does.
+    private var behind: InternalPage?
+
+    /// What the field shows for this tab, and what is copied.
+    var shownURL: URL? { page?.url ?? address }
+
+    /// Go to one of Search's own pages. `stepping`: whether the page it
+    /// leaves is one Back comes back to — not for another section of the
+    /// same page, which only moves the address.
+    func show(_ next: InternalPage, stepping: Bool = true) {
+        if let page, page != next, stepping, page.kind != next.kind {
+            trail.append(page)
+            ahead = []
+        }
+        // A web page in this tab is let go of: these pages have no web view
+        // behind them, and a tab with both would have two things to go back to.
+        if address != nil || built != nil {
+            discard()
+            address = nil
+            committed = nil
+            held = nil
+            pending = nil
+            memory = nil
+            picture = nil
+            cover = nil
+            failure = nil
+            loading = false
+            reader = false
+            behind = nil
+            trail = []
+            ahead = []
+        }
+        draft = ""
+        page = next
+        title = next.title
+        adoptIcon()
+        steps()
+    }
+
+    /// Back and Forward as this tab has them now.
+    private func steps() {
+        let back = page != nil ? !trail.isEmpty : (built?.canGoBack ?? false) || behind != nil
+        let forward = page != nil ? !ahead.isEmpty : built?.canGoForward ?? false
+        if canGoBack != back { canGoBack = back }
+        if canGoForward != forward { canGoForward = forward }
+    }
 
     /// The title if the page has offered one, the address until it does. A tab
     /// that says nothing at all for the first second of every load is a tab you
     /// can't find your way back to.
     var label: String {
         if let name, !name.isEmpty { return name }
+        if let page { return page.title }
         if popup, let host = address?.host(), !host.isEmpty {
             return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         }
@@ -741,6 +839,8 @@ final class Tab: ObservableObject, Identifiable {
         web.onMenuClosed = { [weak self] in self?.popupGesture.menuClosed() }
         web.onKeys = { [weak self] in if let self { self.onKeys?(self) } }
         web.searchName = { [weak self] in self?.searchName?() }
+        web.translating = { [weak self] in self.map { $0.translator != nil && $0.translation?.failed != true } ?? false }
+        web.onTranslate = { [weak self] in self?.toggleTranslation() }
         web.onSearch = { [weak self] text in
             guard let self else { return }
             self.onSearch?(self, text)
@@ -753,9 +853,9 @@ final class Tab: ObservableObject, Identifiable {
         // prefers-color-scheme goes dark with the frame, and not otherwise.
         // Safari's Develop menu can reach it, and so can the page's own
         // Inspect Element — a configuration handed over by an opener included.
-        if #available(macOS 13.3, *) { web.isInspectable = true }
+        Web.inspectable(web)
         Web.pages.add(web)
-        Web.inspector(web.configuration.preferences)
+        NativePiP.allow(web.configuration.preferences)
         web.navigationDelegate = delegate
         web.uiDelegate = uiDelegate(delegate)
         if #available(macOS 15.4, *) { ExtensionCapture.shared.watchScreen(web) }
@@ -779,6 +879,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
         controller.add(dusk, contentWorld: Web.world, name: DuskRelay.name)
+        controller.add(translateRelay, contentWorld: Web.world, name: TranslateRelay.name)
         PopupGestureRelay.install(on: controller)
         Shield.shared.protect(controller)
         built = web
@@ -822,10 +923,10 @@ final class Tab: ObservableObject, Identifiable {
                 MainActor.assumeIsolated { self?.loading = self?.built?.isLoading ?? false }
             },
             web.observe(\.canGoBack, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.canGoBack = self?.built?.canGoBack ?? false }
+                MainActor.assumeIsolated { self?.steps() }
             },
             web.observe(\.canGoForward, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.canGoForward = self?.built?.canGoForward ?? false }
+                MainActor.assumeIsolated { self?.steps() }
             },
             // A page's full screen, as WebKit has it. In once its own window
             // has the page (a placeholder is left in ours, so the chrome going
@@ -853,6 +954,7 @@ final class Tab: ObservableObject, Identifiable {
         iconChanges.tab = self
         middles.tab = self
         dusk.tab = self
+        translateRelay.tab = self
         ears.watch(web) { [weak self] on in self?.heard(on) }
         return web
     }
@@ -971,6 +1073,13 @@ final class Tab: ObservableObject, Identifiable {
         scripts.append(
             Armed.Piece(source: PasskeyRelay.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
         )
+        // Every frame but the top, only while Translate Page is switched on:
+        // a frame of another site says it's there, to be translated too.
+        if PageTranslator.enabled {
+            controller.addUserScript(
+                WKUserScript(source: PageTranslator.announce, injectionTime: .atDocumentEnd, forMainFrameOnly: false, in: Web.world)
+            )
+        }
         // Only while it is on and not paused: otherwise pages get nothing
         // (see Dusk.swift). Before the document, so a site known to be light
         // is never seen white. Every frame: a frame darkens its own document,
@@ -1205,6 +1314,18 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     func go(to url: URL) {
+        if let own = InternalPage(url: url) {
+            show(own)
+            return
+        }
+        // Out of one of Search's own pages, onto the web: Back comes back.
+        if let page {
+            behind = page
+            self.page = nil
+            trail = []
+            ahead = []
+            icon = nil
+        }
         // Judged by the page it shows, not by how it was made: a tab an
         // extension's page opened with window.open is built from that
         // extension's configuration too. A tab with no page yet was just
@@ -1234,11 +1355,18 @@ final class Tab: ObservableObject, Identifiable {
         cover = nil
         adoptIcon()
         web.open(url)
+        // Back, from a page that came out of one of Search's own, goes there.
+        steps()
     }
 
     /// Brought back from the last session: everything the row needs to draw it,
     /// and nothing fetched.
     func restore(url: URL, title: String, name: String? = nil) {
+        if let own = InternalPage(url: url) {
+            self.name = name
+            show(own)
+            return
+        }
         address = url
         self.title = title
         self.name = name
@@ -1495,7 +1623,7 @@ final class Tab: ObservableObject, Identifiable {
             recoverFromCrash()
             return
         }
-        guard !isBlank, pending == nil, !loading, failure == nil else { return }
+        guard isWeb, pending == nil, !loading, failure == nil else { return }
         // A view with no document behind an address: whatever emptied it, the
         // address is what to show, and reload alone would have nothing to do.
         if hollow, let address {
@@ -1569,6 +1697,8 @@ final class Tab: ObservableObject, Identifiable {
     /// A view that has lost its document is given the address back instead:
     /// there is nothing else for it to reload.
     func reload(fromOrigin: Bool = false) {
+        // Search's own pages are drawn from what is there now, always.
+        guard page == nil else { return }
         // A pin put down with ⌘W has no view left to reload; waking it is
         // the reload.
         guard !wake() else { return }
@@ -1585,8 +1715,35 @@ final class Tab: ObservableObject, Identifiable {
     func stop() { web.stopLoading() }
     /// Straight through, every time. A page that has to be fetched again is
     /// fetched again — nothing is kept behind to make that look otherwise.
-    func back() { web.goBack() }
-    func forward() { web.goForward() }
+    func back() {
+        if let page {
+            guard let last = trail.popLast() else { return }
+            ahead.append(page)
+            self.page = last
+            title = last.title
+            adoptIcon()
+            steps()
+            return
+        }
+        // At the first web page after one of Search's own: back to it.
+        if let behind, built?.canGoBack != true {
+            show(behind, stepping: false)
+            return
+        }
+        web.goBack()
+    }
+    func forward() {
+        if let page {
+            guard let next = ahead.popLast() else { return }
+            trail.append(page)
+            self.page = next
+            title = next.title
+            adoptIcon()
+            steps()
+            return
+        }
+        web.goForward()
+    }
 
     /// Called when the tab is thrown away. Without it the view keeps running
     /// whatever the page left behind — timers, video, sockets.
@@ -1639,6 +1796,7 @@ final class Tab: ObservableObject, Identifiable {
     private func discard() {
         popupGesture.clear()
         if !blockedPopups.isEmpty { blockedPopups = [] }
+        translationGone(sleeping: true)
         watch = []
         ears.stop()
         quiet?.invalidate()
@@ -1663,6 +1821,8 @@ final class Tab: ObservableObject, Identifiable {
         web.onTouch = nil
         web.onKeys = nil
         web.searchName = nil
+        web.translating = nil
+        web.onTranslate = nil
         web.onSearch = nil
         web.stopLoading()
         // Detaching a view doesn't end capture while something still holds it.
@@ -1872,6 +2032,27 @@ final class PageView: WKWebView {
             item.target = self
             item.action = #selector(openLinkBehind(_:))
         }
+        // Copy Clean Link (#594): under WebKit's Copy Link, the same link
+        // without its tracking parameters. On the page itself, under Reload,
+        // only when the page's own address has some, as Safari does.
+        if let index = menu.items.firstIndex(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierCopyLink" }) {
+            let item = menu.items[index]
+            if let clean = item.copy() as? NSMenuItem {
+                copyLink = (item.target, item.action)
+                clean.title = "Copy Clean Link"
+                clean.identifier = NSUserInterfaceItemIdentifier("SearchCopyCleanLink")
+                clean.target = self
+                clean.action = #selector(copyCleanLink(_:))
+                menu.insertItem(clean, at: index + 1)
+            }
+        } else if let url, CleanLink.clean(url) != url,
+                  let index = menu.items.firstIndex(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierReload" }) {
+            let clean = NSMenuItem(title: "Copy Clean Link", action: #selector(copyCleanPage(_:)), keyEquivalent: "")
+            clean.identifier = NSUserInterfaceItemIdentifier("SearchCopyCleanLink")
+            clean.target = self
+            clean.representedObject = url
+            menu.insertItem(clean, at: index + 1)
+        }
         // The bench's linkmenu: the item it names is chosen as the menu
         // comes up, the way a hand would choose it, and the menu goes.
         if Store.testing, let title = PageView.picking {
@@ -1880,6 +2061,11 @@ final class PageView: WKWebView {
                 if let index = menu.items.firstIndex(where: { $0.title == title }) { menu.performActionForItem(at: index) }
                 menu.cancelTracking()
             }
+        }
+        // Translate Page, off unless switched on in Settings (Translate.swift).
+        if let item = translateItem() {
+            menu.addItem(.separator())
+            menu.addItem(item)
         }
         if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierSearchWeb" }),
            let name = searchName?() {
@@ -1893,6 +2079,21 @@ final class PageView: WKWebView {
             item.action = #selector(searchSelection(_:))
         }
     }
+
+    /// Translate Page to <your language>, or Show Original once it is:
+    /// nothing while the switch is off.
+    func translateItem() -> NSMenuItem? {
+        guard PageTranslator.enabled, let on = translating?() else { return nil }
+        let language = PageTranslator.name(PageTranslator.code(PageTranslator.reader))
+        let item = NSMenuItem(title: on ? "Show Original" : "Translate Page to \(language)", action: #selector(translatePage(_:)), keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    @objc private func translatePage(_ item: NSMenuItem) { onTranslate?() }
+    /// Whether the page is translated, and Translate Page / Show Original.
+    var translating: (() -> Bool)?
+    var onTranslate: (() -> Void)?
 
     /// The item the bench's linkmenu will choose in the next menu.
     static var picking: String?
@@ -1942,6 +2143,21 @@ final class PageView: WKWebView {
     func takeBehind() -> Bool {
         defer { behindSince = nil }
         return behindSince.map { Date().timeIntervalSince($0) < 1 } ?? false
+    }
+
+    /// WebKit's Copy Link, for Copy Clean Link to clean what it copies.
+    private var copyLink: (target: AnyObject?, action: Selector?) = (nil, nil)
+
+    @objc private func copyCleanLink(_ item: NSMenuItem) {
+        guard let action = copyLink.action else { return }
+        let count = NSPasteboard.general.changeCount
+        NSApp.sendAction(action, to: copyLink.target, from: item)
+        CleanLink.rewrite(since: count)
+    }
+
+    @objc private func copyCleanPage(_ item: NSMenuItem) {
+        guard let url = item.representedObject as? URL else { return }
+        CleanLink.copy(url)
     }
 
     @objc private func searchSelection(_ item: NSMenuItem) {

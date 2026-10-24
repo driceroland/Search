@@ -326,6 +326,10 @@ enum Browsers {
 
     private static func retire(_ browser: Browser, remembered: Bool = true) {
         let wasPrimary = browser === primary
+        // Its profile's session files: to another window of the profile, or
+        // kept as they are for the next one (see Profiles.swift).
+        let owned = browser.usesFiles && browser.extensionPopup == nil
+        if owned { browser.leaveFiles() }
         if remembered {
             closed.append((record(of: browser, rows: true), Date()))
             if closed.count > 10 { closed.removeFirst(closed.count - 10) }
@@ -339,8 +343,17 @@ enum Browsers {
             Front.shared.set(all.last { $0.isOpen && $0.extensionPopup == nil } ?? all.last { $0.extensionPopup == nil })
         }
         if browser.inScene { SceneSlot.shared.refresh() }
+        if owned, let heir = all.first(where: { $0.profileID == browser.profileID && $0.extensionPopup == nil }) { heir.takeFiles() }
         if wasPrimary, let next = primary { next.becomePrimary() }
         save(now: true)
+    }
+
+    /// A window gone with its profile (see Profiles.delete): closed, its
+    /// tabs not kept for ⇧⌘T.
+    static func discard(_ browser: Browser) {
+        let window = browser.window
+        retire(browser, remembered: false)
+        window?.close()
     }
 
     /// ⇧⌘T, when the last thing closed was a window rather than a tab: the
@@ -473,6 +486,8 @@ extension Browser {
     /// does, and the space when there are spaces.
     var windowName: String {
         let page = active.map { $0.isBlank ? "New Tab" : $0.label } ?? "Window"
-        return prefs.usesSpaces ? "\(page) — \(space.name)" : page
+        var name = prefs.usesSpaces ? "\(page) — \(space.name)" : page
+        if Profiles.shared.several { name += " (\(Profiles.shared.profile(profileID).name))" }
+        return name
     }
 }

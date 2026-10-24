@@ -81,7 +81,10 @@ enum SiteSearch {
     /// the start of its address only — never by the name it gives itself,
     /// which could be anyone's ("Google", a bank's). Among them the one whose
     /// name is the shortest.
-    static func match(_ typed: String) -> SearchSite? {
+    /// `learnedToo`: the sites learned from visits are Personal's (see
+    /// Profiles.swift); another profile's window is offered the built-in
+    /// ones only, so no profile's field says where another has been.
+    static func match(_ typed: String, learnedToo: Bool = true) -> SearchSite? {
         let word = typed.trimmingCharacters(in: .whitespaces).lowercased()
         guard word.count >= 2, !word.contains(" "), !word.contains("/") else { return nil }
         func names(_ site: SearchSite) -> [String] {
@@ -90,6 +93,7 @@ enum SiteSearch {
         }
         let found = builtIn.filter { site in names(site).contains { $0.hasPrefix(word) } }
         if let best = found.min(by: { $0.name.count < $1.name.count }) { return best }
+        guard learnedToo else { return nil }
         return learned.filter { $0.host.hasPrefix(word) }.min { $0.host.count < $1.host.count }
     }
 

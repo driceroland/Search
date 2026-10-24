@@ -79,6 +79,11 @@ def stores():
         ids += [space["id"] for space in json.load(open(f"{SUPPORT}/spaces.json")) if space.get("sharesSignIns") is not True]
     except (OSError, ValueError, TypeError, KeyError):
         pass
+    # Each profile but Personal has a store under its own id (Profiles.store).
+    try:
+        ids += [p["id"] for p in json.load(open(f"{SUPPORT}/profiles.json")) if p.get("id") != PERSONAL]
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
     erasing = subprocess.run(["defaults", "read", SUITE, "spaces.erasing"], capture_output=True, text=True).stdout
     ids += re.findall(r"[0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}", erasing)
     for id in ids:
@@ -91,14 +96,19 @@ def stores():
 # The real Search's folder, beside whose stores these are removed.
 REAL = f"{HOME}/Library/Application Support/Search"
 FIRST_SPACE = "00000000-0000-0000-0000-000000000001"
+PERSONAL = "00000000-0000-0000-0000-0000000000A1"
 def guarded():
     """Store ids no wipe removes, whatever stores() names: every space of the
     real Search's own list, and the first space's fixed id. A wrong hash, or
     a test world's list holding a real space's id, then never reaches a real
     space's sign-ins: rm -rf runs in the folder where those live."""
-    ids = {FIRST_SPACE}
+    ids = {FIRST_SPACE, PERSONAL.lower()}
     try:
         ids |= {str(uuid.UUID(space["id"])) for space in json.load(open(f"{REAL}/spaces.json"))}
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        pass
+    try:
+        ids |= {str(uuid.UUID(p["id"])) for p in json.load(open(f"{REAL}/profiles.json"))}
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         pass
     return ids

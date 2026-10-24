@@ -36,9 +36,16 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         browser.prepare(tab)
         tab.go(to: url)
         let little = LittleWindow(tab: tab, browser: browser)
+        // A step down and in from the newest one on screen, so that five
+        // links from Mail are five windows you can see are there, not one
+        // on top of four.
+        if let last = open.last(where: { $0.window.isVisible }) {
+            little.window.cascadeTopLeft(from: last.window.cascadeTopLeft(from: .zero))
+        } else {
+            little.window.center()
+        }
         open.append(little)
         watchKeys()
-        little.window.center()
         watch()
         // Never a test run's in front: a probe started hidden stays off every screen.
         guard front, !Store.testing else { return }
@@ -121,7 +128,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             guard switcher.active, let little = owning(event.window), switcher.home == little.tab.id
             else { return event }
             if event.type == .flagsChanged {
-                if !event.modifierFlags.contains(.control) { commit() }
+                if !ShortcutStore.shared.recentHeld(event.modifierFlags) { commit() }
                 return event
             }
             // As in a browser window (Browser.clickTabSwitcher): ⌃ is held,
@@ -207,7 +214,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.shortcutCharacters
         let switcher = LittleWindow.switcher
-        if event.keyCode == 48, flags.contains(.control), flags.isDisjoint(with: [.command, .option]) {
+        // ⌃Tab, or the key Settings › Shortcuts gave the switcher.
+        if let backwards = ShortcutStore.shared.recentSwitch(event) {
             // A Tab held down doesn't race through them.
             guard !event.isARepeat else { return true }
             if !switcher.active {
@@ -216,14 +224,14 @@ final class LittleWindow: NSObject, NSWindowDelegate {
                 switcher.partners = browser?.switcherPartners ?? [:]
             }
             switcher.step(fromMoon: tab.id, moons: LittleWindow.stacked,
-                          planet: LittleWindow.planet?.switcherPlanet ?? [], backwards: flags.contains(.shift))
+                          planet: LittleWindow.planet?.switcherPlanet ?? [], backwards: backwards)
             return true
         }
         // While the switcher is up, ⌃ and the arrows move through it; any
         // other key puts it away. Escape does nothing else: it would close
         // this window too, on the way out of the switcher.
         if switcher.active {
-            if flags.contains(.control), flags.isDisjoint(with: [.command, .option]) {
+            if ShortcutStore.shared.recentOnly(flags) {
                 let direction: TabSwitcher.Direction? = switch event.keyCode {
                 case 123: .left
                 case 124: .right

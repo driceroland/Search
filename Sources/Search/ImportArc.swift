@@ -50,6 +50,26 @@ enum Arc {
         Chromium.base.appendingPathComponent("Arc/StorableSidebar.json")
     }
 
+    /// The names Arc shows for its profiles, by folder ("Profile 1" →
+    /// "Raycast"), from Chromium's Local State: only the names, nothing
+    /// else read from it. Empty when it can't be read.
+    static func profileNames() -> [String: String] {
+        let state = Chromium.base.appendingPathComponent("Arc/User Data/Local State")
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: state.path))?[.size] as? NSNumber,
+              size.intValue <= 16 << 20,
+              let data = try? Data(contentsOf: state),
+              let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let cache = (top["profile"] as? [String: Any])?["info_cache"] as? [String: Any]
+        else { return [:] }
+        var names: [String: String] = [:]
+        for (folder, info) in cache {
+            guard let name = (info as? [String: Any])?["name"] as? String else { continue }
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { names[folder] = String(trimmed.prefix(60)) }
+        }
+        return names
+    }
+
     /// Arc's sidebar for one profile ("Default", "Profile 1"), or for every
     /// one when nil. Nil when there is no file or it doesn't read.
     static func sidebar(profile: String?) -> ArcSidebar? {
