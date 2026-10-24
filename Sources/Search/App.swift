@@ -464,6 +464,8 @@ struct ContentView: View {
     @State private var immersionRevision = 0
     /// The window's width, for a side panel that leaves the page some room.
     @State private var across: CGFloat = 0
+    /// The column's and the side panel's widths while their edges are held.
+    @StateObject private var edges = HeldEdges()
 
 
     /// The window: room at the top, one stage for the page, and the row when
@@ -508,7 +510,8 @@ struct ContentView: View {
             // height, so the traffic lights sit in its own corner rather than
             // over the page.
             if sidebar {
-                SideBar(browser: browser, prefs: browser.prefs, onFrame: cards)
+                SideBar(browser: browser, prefs: browser.prefs, onFrame: cards,
+                        onDrag: { [edges] in edges.side = $0 })
                     .frame(maxHeight: .infinity, alignment: .top)
                     .transition(.move(edge: sideOnRight ? .trailing : .leading))
             }
@@ -590,11 +593,14 @@ struct ContentView: View {
     private var chrome: CGSize {
         let bar = barShown ? BookmarksBar.height : 0
         if cards {
-            return CGSize(width: sidebar ? browser.prefs.columnWidth : Metrics.cardGap,
+            return CGSize(width: sidebar ? sideWidth : Metrics.cardGap,
                           height: barShown ? bar : Metrics.cardGap)
         }
-        return CGSize(width: sidebar ? browser.prefs.columnWidth : 0, height: band + bar)
+        return CGSize(width: sidebar ? sideWidth : 0, height: band + bar)
     }
+
+    /// The column's width: the setting, or where its edge is while held.
+    private var sideWidth: CGFloat { edges.side ?? browser.prefs.columnWidth }
 
     /// The page as a card on the window's ground: with the tabs down the
     /// side, the column out or folded away, the switch on, and neither the
@@ -615,7 +621,7 @@ struct ContentView: View {
     /// The side panel's width as drawn: as you left it, or narrower in a
     /// window too narrow to keep 320 points of page beside it.
     private var panelWidth: CGFloat {
-        let asked = browser.prefs.sidePanelWidth
+        let asked = edges.panel ?? browser.prefs.sidePanelWidth
         guard across > 0 else { return asked }
         let left = across - chrome.width - farGap * 2 - 320
         return max(240, min(asked, left))
@@ -629,7 +635,7 @@ struct ContentView: View {
 
     private var sidePanel: some View {
         SidePanelBeside(browser: browser, prefs: browser.prefs, onLeft: sideOnRight,
-                        card: cards, width: panelWidth)
+                        card: cards, width: panelWidth, onDrag: { [edges] in edges.panel = $0 })
             .padding(.top, chrome.height)
             .padding(.bottom, farGap)
             .padding(sideOnRight ? .leading : .trailing, farGap)
@@ -723,8 +729,9 @@ struct ContentView: View {
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
                 // with the page says otherwise.
-                .padding(.leading, sidebar && !sideOnRight ? browser.prefs.columnWidth : 0)
-                .padding(.trailing, sidebar && sideOnRight ? browser.prefs.columnWidth : 0)
+                .padding(.leading, sidebar && !sideOnRight ? sideWidth : 0)
+                .padding(.trailing, sidebar && sideOnRight ? sideWidth : 0)
+                .transition(.scale(scale: 0.97).combined(with: .opacity))
         }
     }
 
@@ -827,6 +834,12 @@ struct ContentView: View {
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             .onChange(of: browser.prefs.columnWidth) { _, _ in
+                DispatchQueue.main.async { Lights.refresh(window); measureLights() }
+            }
+            // On the right, the lights sit in the column's corner, which
+            // moves with its edge.
+            .onChange(of: edges.side) { _, _ in
+                guard sideOnRight else { return }
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             // Stepping away to another app: macOS draws its own resting
@@ -1091,9 +1104,10 @@ struct ContentView: View {
         // height, in both modes, without a toolbar's rounder corners — see
         // Lights.swift. The column's first row is the strip's height too, so
         // its three doors sit on the lights' line.
+        let edges = self.edges
         Lights.keep(window, centreX: { window in
             browser.prefs.sidebar && browser.prefs.sidePosition == .right
-                ? window.frame.width - browser.prefs.columnWidth + Lights.centre.x
+                ? window.frame.width - (edges.side ?? browser.prefs.columnWidth) + Lights.centre.x
                 : Lights.centre.x
         }, vertical: { _ in browser.prefs.iconColumn }) { measureLights() }
         DispatchQueue.main.async { measureLights() }

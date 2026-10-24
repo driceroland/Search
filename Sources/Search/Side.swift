@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// The column's and the side panel's widths while an edge of theirs is held,
+/// for the page beside them: it follows the pointer from here, and the
+/// settings are written once, when the edge is let go. Each window has its
+/// own, so only the window being pulled moves until then.
+final class HeldEdges: ObservableObject {
+    @Published var side: CGFloat?
+    @Published var panel: CGFloat?
+}
+
 /// The tabs, down either side instead of across the top.
 ///
 /// The same pieces as the strip — the grey that slides to the tab you picked,
@@ -20,6 +29,13 @@ struct SideBar: View {
     @State private var landing = false
     /// The width the column had when the edge was picked up.
     @State private var grabbed: CGFloat?
+    /// The width while the edge is held. The setting is written once, when
+    /// it is let go: written on every step, each one was a write to the
+    /// settings and a change heard by every window and all that is in it.
+    @State private var live: CGFloat?
+    /// The width while the edge is held, nil once it is let go, for the page
+    /// beside the column to follow (see HeldEdges).
+    var onDrag: (CGFloat?) -> Void = { _ in }
     @State private var onEdge = false
 
     /// A pin, picked up out of the grid — a separate state from the loose
@@ -48,6 +64,8 @@ struct SideBar: View {
 
     /// A tab's line: taller with roomier tabs turned on.
     private var rowHeight: CGFloat { prefs.sideRow }
+    /// The column's width: the setting, or where the edge is while it is held.
+    private var width: CGFloat { live ?? prefs.columnWidth }
     private static let gap: CGFloat = 2
     private static let square: CGFloat = 34
     private static let pinGap: CGFloat = 4
@@ -67,7 +85,7 @@ struct SideBar: View {
     /// The window's buttons' corner: gone in full screen, where macOS takes
     /// them away, and back, forward and reload move up to the edge (idea 184).
     private var lights: CGFloat {
-        browser.fullScreen ? 0 : max(0, min(Metrics.sideLights, prefs.sideWidth - 20 - Metrics.helmDoors))
+        browser.fullScreen ? 0 : max(0, min(Metrics.sideLights, prefs.columnWidth - 20 - Metrics.helmDoors))
     }
 
     var body: some View {
@@ -133,7 +151,7 @@ struct SideBar: View {
             }
         }
         .environment(\.greys, greys)
-        .frame(width: prefs.columnWidth)
+        .frame(width: width)
         .frame(maxHeight: .infinity)
         // Rows on their way to or from another space stay in the column.
         .clipped()
@@ -182,15 +200,21 @@ struct SideBar: View {
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
-                        if grabbed == nil { grabbed = prefs.sideWidth }
+                        if grabbed == nil { grabbed = prefs.columnWidth }
                         let delta = onRight ? -value.translation.width : value.translation.width
-                        let wanted = (grabbed ?? prefs.sideWidth) + delta
-                        prefs.sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, wanted))
+                        let wanted = (grabbed ?? prefs.columnWidth) + delta
+                        live = min(Metrics.sideMax, max(Metrics.sideMin, wanted))
+                        onDrag(live)
                     }
-                    .onEnded { _ in grabbed = nil }
+                    .onEnded { _ in
+                        if let live { prefs.columnWidth = live }
+                        live = nil
+                        grabbed = nil
+                        onDrag(nil)
+                    }
             )
             .modifier(OneClick(double: true) {
-                withAnimation(Motion.settle) { prefs.sideWidth = Metrics.side }
+                withAnimation(Motion.settle) { prefs.columnWidth = Metrics.side }
             })
             .animation(Motion.quick, value: onEdge)
     }
@@ -204,7 +228,7 @@ struct SideBar: View {
     }
 
     private var pages: some View {
-        let width = prefs.columnWidth
+        let width = self.width
         let swipe = browser.spaceSwipe
         let at = spaceAt
         return ZStack(alignment: .topLeading) {
@@ -322,7 +346,7 @@ struct SideBar: View {
             }
         }
         .padding(.horizontal, 10)
-        .frame(width: prefs.columnWidth, alignment: .topLeading)
+        .frame(width: width, alignment: .topLeading)
     }
 
     private func refit() {
@@ -483,6 +507,7 @@ struct SideBar: View {
     /// turns into a wide, short button rather than a bigger icon.
     private func pinCells(_ count: Int) -> [CGRect] {
         let room = prefs.columnWidth - 20
+        let room = width - 20
         let gap = SideBar.pinGap
         let fits = Int((room + gap) / (SideBar.square + gap))
         let rows = SideBar.pinRows(count, most: min(4, max(1, fits)))
@@ -825,7 +850,7 @@ struct SideBar: View {
 
     /// One small door at the bottom: the settings.
     private var foot: some View {
-        SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, vertical: icons)
+        SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, vertical: icons, width: width)
     }
 
 }
@@ -842,6 +867,8 @@ private struct SideFoot: View {
     /// The column of icons: one above the other, centred, no pinned
     /// extensions (their list is still the puzzle's).
     var vertical = false
+    /// The column's width, as it is drawn.
+    let width: CGFloat
 
     var body: some View {
         if vertical {
@@ -886,7 +913,7 @@ private struct SideFoot: View {
         if prefs.usesSpaces { kept += 1 }
         if Profiles.shared.several { kept += 1 }
         if FetchDoor.shows(fetches, prefs) { kept += 1 }
-        let free = prefs.sideWidth - 2 * 10 + 2 - CGFloat(kept) * door
+        let free = width - 2 * 10 + 2 - CGFloat(kept) * door
         return max(0, Int((free / door).rounded(.down)))
     }
 }
