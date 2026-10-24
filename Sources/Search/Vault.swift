@@ -73,13 +73,117 @@ enum Vault {
     /// on the page you saved it from — accounts.example.com asks, and the
     /// password was kept for example.com. So the site is matched as a site:
     /// the host first, then anything sharing its registrable domain.
+    ///
+    /// Read from `bySite`, not the keychain: this is asked each time the
+    /// caret goes into a sign-in box, on the main thread, and asking the
+    /// keychain twice there, once for every item kept, took 9 to 85 ms with
+    /// two hundred of them.
     static func kept(matching host: String) -> [Kept] {
-        let domain = registrable(host)
-        let exact = kept(for: host)
-        let wider = rows(where: [:])
-            .filter { ($0[kSecAttrServer as String] as? String).map { $0 != host && registrable($0) == domain } ?? false }
-            .compactMap(kept(from:))
-        return (exact + wider).sorted { ($0.used ?? .distantPast) > ($1.used ?? .distantPast) }
+        bySite.kept(on: registrable(host))
+            .sorted { ($0.used ?? .distantPast) > ($1.used ?? .distantPast) }
+    }
+
+    /// Read ahead, off the main thread, for the first box focused: a page
+    /// with a sign-in on it is about to ask.
+    static func warm() { bySite.warm() }
+
+    /// What is kept, by site, without a secret anywhere in it: the same
+    /// attributes a list reads. Built off the main thread from one listing
+    /// of the keychain, kept up to date by `save` and `forget` as they
+    /// write, and read again in the background when it is a minute old, for
+    /// an item changed outside Search (Keychain Access, another copy of it).
+    /// Only in memory.
+    private static let bySite = Sites()
+
+    private final class Sites: @unchecked Sendable {
+        private let lock = NSLock()
+        private let queue = DispatchQueue(label: "search.vault.sites", qos: .userInitiated)
+        private var sites: [String: [Kept]]?
+        private var read = Date.distantPast
+        private var reading = false
+        /// Counted up by every write, so a listing taken before one is
+        /// never put over it.
+        private var writes = 0
+
+        func kept(on site: String) -> [Kept] {
+            lock.lock()
+            if let sites {
+                let found = sites[site] ?? []
+                let old = Date().timeIntervalSince(read) > 60
+                lock.unlock()
+                if old { warm(again: true) }
+                return found
+            }
+            lock.unlock()
+            // Nothing read yet: read now, once, where it is asked.
+            fill()
+            lock.lock()
+            defer { lock.unlock() }
+            return sites?[site] ?? []
+        }
+
+        func warm(again: Bool = false) {
+            lock.lock()
+            guard !reading, again || sites == nil else { return lock.unlock() }
+            reading = true
+            lock.unlock()
+            queue.async { [self] in
+                fill()
+                lock.lock()
+                reading = false
+                lock.unlock()
+            }
+        }
+
+        /// The keychain listed, and put in place unless something was
+        /// written while it was being read; then listed again.
+        private func fill() {
+            for _ in 0..<3 {
+                lock.lock()
+                let before = writes
+                lock.unlock()
+                var listed: [String: [Kept]] = [:]
+                for row in Vault.rows(where: [:]) {
+                    guard let kept = Vault.kept(from: row) else { continue }
+                    listed[Vault.registrable(kept.host), default: []].append(kept)
+                }
+                lock.lock()
+                defer { lock.unlock() }
+                if writes == before {
+                    sites = listed
+                    read = Date()
+                    return
+                }
+            }
+        }
+
+        /// Saved: in, or its row brought up to date. A save that says
+        /// nothing of when it was used leaves that as it was, as the
+        /// keychain does.
+        func saved(_ kept: Kept) {
+            lock.lock()
+            defer { lock.unlock() }
+            writes += 1
+            guard sites != nil else { return }
+            let site = Vault.registrable(kept.host)
+            var row = sites?[site] ?? []
+            var kept = kept
+            if let at = row.firstIndex(where: { $0.host == kept.host && $0.user == kept.user }) {
+                if kept.used == nil { kept.used = row[at].used }
+                row[at] = kept
+            } else {
+                row.append(kept)
+            }
+            sites?[site] = row
+        }
+
+        func forgot(host: String, user: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            writes += 1
+            let site = Vault.registrable(host)
+            sites?[site]?.removeAll { $0.host == host && $0.user == user }
+        }
     }
 
     /// Everything this app holds, as the list needs it: no secrets. Each one
@@ -195,13 +299,19 @@ enum Vault {
         ]
         if let used { fields[kSecAttrComment as String] = String(used.timeIntervalSince1970) }
 
+        let kept = Kept(host: host, user: user, used: used, clear: clear)
         let status = SecItemUpdate(identity as CFDictionary, fields as CFDictionary)
-        if status == errSecSuccess { return true }
+        if status == errSecSuccess {
+            bySite.saved(kept)
+            return true
+        }
         guard status == errSecItemNotFound else { return false }
 
         var fresh = identity.merging(fields) { _, new in new }
         fresh[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
-        return SecItemAdd(fresh as CFDictionary, nil) == errSecSuccess
+        guard SecItemAdd(fresh as CFDictionary, nil) == errSecSuccess else { return false }
+        bySite.saved(kept)
+        return true
     }
 
     /// It was just used to sign in. Lists put it first from now on.
@@ -212,12 +322,14 @@ enum Vault {
     /// Whether the keychain let it go: Remove All… counts only those.
     @discardableResult
     static func forget(host: String, user: String) -> Bool {
-        SecItemDelete([
+        let gone = SecItemDelete([
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrServer as String: host,
             kSecAttrAccount as String: user,
             kSecAttrLabel as String: label,
         ] as CFDictionary) == errSecSuccess
+        if gone { bySite.forgot(host: host, user: user) }
+        return gone
     }
 
     // MARK: - sites that asked not to be asked
