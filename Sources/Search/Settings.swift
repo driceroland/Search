@@ -348,6 +348,10 @@ struct SettingsPanel: View {
                 Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
             }
             Rule()
+            Line("Reduce animations in Low Power Mode", "Quicker, simpler motion while the Mac is saving power or running hot") {
+                Switch(on: $prefs.lightMotion)
+            }
+            Rule()
             Line("Hold a swipe to pick from history", "Swipe back or forward and keep your fingers down: the pages that way appear, and moving up or down picks one to go to") {
                 Switch(on: $prefs.holdsHistory)
             }

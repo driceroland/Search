@@ -211,12 +211,29 @@ enum Motion {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
+    /// Whether the Mac is short of power: Low Power Mode is on, or it is hot
+    /// enough that macOS is holding its processors back. Then the two springs
+    /// below become a short ease-out. A spring keeps moving long after it
+    /// looks done: glide takes about 0.5 s to settle, 30 frames that SwiftUI
+    /// works out one by one on the main thread, which is the thread a busy or
+    /// slowed Mac takes time from first, and every frame it misses shows as a
+    /// stutter. 0.16 s is 10 frames, and is over before a missed one shows.
+    /// Read at the moment something moves, so it follows the switch at once.
+    /// Only once it is turned on in Settings › General (Preferences.lightMotion).
+    static var light: Bool {
+        guard Store.settings.bool(forKey: lightKey) else { return false }
+        let info = ProcessInfo.processInfo
+        return info.isLowPowerModeEnabled || info.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+    }
+
+    nonisolated static let lightKey = "motion.light"
+
     static var glide: Animation? {
-        reduced ? nil : .spring(response: 0.34, dampingFraction: 0.82)
+        reduced ? nil : light ? .easeOut(duration: 0.16) : .spring(response: 0.34, dampingFraction: 0.82)
     }
 
     static var settle: Animation? {
-        reduced ? nil : .spring(response: 0.30, dampingFraction: 0.86)
+        reduced ? nil : light ? .easeOut(duration: 0.16) : .spring(response: 0.30, dampingFraction: 0.86)
     }
 
     static var quick: Animation? {

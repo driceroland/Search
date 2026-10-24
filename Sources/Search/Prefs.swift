@@ -339,6 +339,12 @@ final class Preferences: ObservableObject {
             FrameRate.mode = fastPages
         }
     }
+    /// Springs become a short ease-out in Low Power Mode (see Motion.light).
+    /// Off unless turned on, and even then nothing changes until the Mac is
+    /// asked to save power.
+    @Published var lightMotion: Bool {
+        didSet { store.set(lightMotion, forKey: Motion.lightKey) }
+    }
     /// The modifier chosen in Settings › Shortcuts; Shift-click by default.
     @Published var peekClick: PeekClick {
         didSet { store.set(peekClick.rawValue, forKey: "links.peekClick") }
@@ -678,6 +684,7 @@ final class Preferences: ObservableObject {
             ?? (store.bool(forKey: "pages.120") ? .always : .never)
         fastPages = fast
         FrameRate.mode = fast
+        lightMotion = store.bool(forKey: Motion.lightKey)
         // Left behind by the Web Inspector's switch, from before it was
         // always there.
         store.removeObject(forKey: "inspector")

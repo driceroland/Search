@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Animations can go easy on a Mac that's saving power: in Low Power Mode, or while the Mac is running hot, the sidebar, tabs and panels move in a short 0.16 s ease-out instead of a spring that takes about half a second to settle. Off unless you turn it on in Settings › General › Reduce animations in Low Power Mode. Pages are left as they are: WebKit already draws them at 30 frames a second in Low Power Mode, as in Safari
 - ⌃Tab's recent-tabs switcher can be on a key of your own, as in Arc: Settings › Shortcuts › Tabs › Switch to Recent Tab. Hold the key's ⌃, ⌥ or ⌘ to keep the switcher up and let go to take the tab; with ⇧ it goes back. ⌃Tab can then be given to another command, such as Next Tab, or left to the page.
 - Move Group to Space, in a tab group's menu: every tab of the group goes to the other space, in its order, and is the same group there, folded or open as it was. A space with its own sign-ins asks first only when a page in the group has something typed and not sent, once for the group.
 - Websites in the side panel: Claude, ChatGPT, Gemini, Perplexity or the page you're on, beside the page without an extension, from View › Side Panel or a tab's Open in Side Panel. It's a page of the space you're in, signed in where that space's tabs are and never a private tab's; its address is on the panel's own line, a link it opens in a new window goes to a tab, and Open in a Tab takes it into one. Off unless you turn it on in Settings › General › Websites in the side panel
