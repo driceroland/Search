@@ -297,6 +297,12 @@ final class Preferences: ObservableObject {
     @Published var fillsPasswords: Bool {
         didSet { store.set(fillsPasswords, forKey: "passwords.fill") }
     }
+    /// Accounts from the Mac's Passwords app under the sign-in box too, by
+    /// Apple's helper for its Chrome extension (ApplePasswords.swift). Off
+    /// unless turned on: unofficial, and it pairs with a code.
+    @Published var applePasswords: Bool {
+        didSet { store.set(applePasswords, forKey: "passwords.apple") }
+    }
     /// The first launch has been walked through. Until then the welcome
     /// stands over the window.
     @Published var welcomed: Bool {
@@ -640,6 +646,7 @@ final class Preferences: ObservableObject {
         asksWhereToSave = store.bool(forKey: "downloads.ask")
         savesPasswords = store.object(forKey: "passwords.save") as? Bool ?? true
         fillsPasswords = store.object(forKey: "passwords.fill") as? Bool ?? true
+        applePasswords = store.bool(forKey: "passwords.apple")
         // Anyone who already has a session was here before the welcome
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil

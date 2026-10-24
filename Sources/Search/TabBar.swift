@@ -1208,6 +1208,13 @@ struct TabMenu: View {
             .help("Pages moved to a Space with different sign-ins reopen there.")
         }
         if browser.prefs.splitView {
+            // Right-clicked among tabs picked in the column: those two side
+            // by side. More than two can't be, so it is there but off.
+            let picked = browser.selectedTabIDs.contains(tab.id) ? browser.visibleSelectedTabCount : 1
+            if picked > 1 && !browser.pickedTabsArePaired {
+                Button("Open 2 Tabs in Split View") { browser.pairPickedTabs(focus: tab) }
+                    .disabled(browser.pickedPair == nil)
+            }
             if browser.split(for: tab) != nil {
                 Button("Swap Pages") {
                     browser.focusPane(tab)
@@ -1218,7 +1225,7 @@ struct TabMenu: View {
                     browser.focusPane(tab)
                     browser.closeSplit()
                 }
-            } else {
+            } else if picked == 1 {
                 // Beside the page on screen; on that page itself, an empty
                 // page beside it.
                 Button("Open in Split View") { browser.openInSplit(tab) }

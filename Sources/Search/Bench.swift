@@ -778,6 +778,8 @@ final class Bench {
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
             out["peek"] = browser.peekTab?.address?.absoluteString ?? ""
             out["peekFrom"] = browser.peekFrom?.uuidString ?? ""
+            // The size the peek's page is drawn at (see Tab.applyRememberedZoom).
+            out["peekZoom"] = Double(browser.peekTab?.built?.pageZoom ?? 0)
             out["fetching"] = ["showing": browser.fetches.showing, "fraction": browser.fetches.fraction ?? -1, "done": browser.fetches.done]
             // Where the peek's page sits in the window, from its top-left corner, in points.
             if let web = browser.peekTab?.built, let window = web.window {
@@ -3430,6 +3432,22 @@ final class Bench {
             guard let page = tab() else { answer(["error": "split openIn needs id"]); return }
             browser.openInSplit(page)
             reply()
+        case "pick":
+            // ⌘-clicks in the column on exactly these tabs, from no selection.
+            guard let ids = request["ids"] as? [String] else { answer(["error": "split pick needs ids"]); return }
+            let picked = ids.compactMap { find(["id": $0], in: browser) }
+            browser.clearTabSelection()
+            for page in picked { browser.extendTabSelection(to: page, modifiers: .command) }
+            // The first ⌘-click picks the page in front too, as in the column.
+            if let front = browser.active, !picked.contains(where: { $0 === front }),
+               browser.selectedTabIDs.contains(front.id) {
+                browser.extendTabSelection(to: front, modifiers: .command)
+            }
+            reply()
+        case "pairPicked":
+            // The tab menu's Open 2 Tabs in Split View, right-clicked on id.
+            browser.pairPickedTabs(focus: tab())
+            reply()
         case "fill":
             guard let blank = tab(), let page = tab("with") else { answer(["error": "split fill needs id and with"]); return }
             browser.fill(blank, with: page)
@@ -3530,6 +3548,11 @@ final class Bench {
             },
             "spaceID": browser.spaceID.uuidString,
             "spaceIDs": browser.spaces.map { $0.id.uuidString },
+            // Tabs picked in the column (⌘- or ⇧-click), and what Open 2 Tabs
+            // in Split View would pair: off while the menu's item is off.
+            "selected": browser.tabs.filter { browser.selectedTabIDs.contains($0.id) }.map { Bench.short($0) },
+            "pickedPair": browser.pickedPair.map { [Bench.short($0.left), Bench.short($0.right)] } ?? [],
+            "pickedPaired": browser.pickedTabsArePaired,
         ]
     }
 

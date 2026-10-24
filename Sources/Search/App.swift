@@ -538,6 +538,13 @@ struct ContentView: View {
                     }
                 }
                 .animation(Motion.quick, value: browser.suggesting)
+                .overlay(alignment: .topLeading) {
+                    if let pairing = browser.applePairing, pairing.tab == tab.id {
+                        ApplePairingCard(browser: browser, apple: browser.applePasswords, pairing: pairing)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(Motion.quick, value: browser.applePairing)
         } else {
             Palette.ground
         }

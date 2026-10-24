@@ -92,8 +92,9 @@ final class Passkeys: NSObject {
     struct Caller {
         let origin: WKSecurityOrigin
         let mainFrame: Bool
-        /// The host of the page the frame is in.
-        let pageHost: String?
+        /// The page the frame is in, as committed: never an address the tab
+        /// is only on its way to, while the old page's frames still run.
+        let page: URL?
         let window: NSWindow?
         /// The page's view, for a request that waits under its field.
         weak var web: WKWebView?
@@ -273,8 +274,16 @@ final class Passkeys: NSObject {
         guard underField || Store.testing || (NSApp.isActive && caller.window?.isKeyWindow == true) else {
             return refuse(answer, "NotAllowedError", "The document is not focused.")
         }
-        // A frame from another site can't ask on the page's behalf.
-        guard caller.mainFrame || caller.pageHost?.lowercased() == host else {
+        // A frame from another site can't ask on the page's behalf. One of
+        // the page's own site can, as in Safari: Apple's sign-in is a frame
+        // from idmsa.apple.com in account.apple.com (or appleid.apple.com,
+        // for Sign in with Apple), and it was refused here, so the page
+        // said the browser needed updating (#679).
+        let page = caller.page
+        let pageHost = page?.host()?.lowercased()
+        let suffix = Passkeys.publicSuffix.map { test in { (name: String) in test(name as CFString) } }
+        let sameSite = pageHost.map { Registrable.sameSite($0, host, isSuffix: suffix) } ?? false
+        guard caller.mainFrame || (sameSite && page?.scheme?.lowercased() == scheme) else {
             return refuse(answer, "NotAllowedError", "Passkeys can't be asked for from another site's frame.")
         }
         let named = kind == "create" ? (body["rp"] as? [String: Any])?["id"] as? String : body["rpId"] as? String
@@ -287,7 +296,17 @@ final class Passkeys: NSObject {
         }
         let port = caller.origin.port
         let origin = "\(scheme)://\(host.contains(":") ? "[\(host)]" : host)" + (port == 0 ? "" : ":\(port)")
-        let clientData = ASPublicKeyCredentialClientData(challenge: challenge, origin: origin)
+        var clientData = ASPublicKeyCredentialClientData(challenge: challenge, origin: origin)
+        // From a frame, the page it is in is named too, as the standard has
+        // it, so the site can tell (Safari's clientDataJSON does the same).
+        var top = ""
+        if !caller.mainFrame, let page, let pageScheme = page.scheme?.lowercased(), let pageHost {
+            top = "\(pageScheme)://\(pageHost.contains(":") ? "[\(pageHost)]" : pageHost)" + (page.port.map { ":\($0)" } ?? "")
+            if top != origin {
+                clientData.topOrigin = top
+                clientData.crossOrigin = .crossOrigin
+            }
+        }
 
         if underField, let web = caller.web {
             return wait(body, rp: rp, origin: origin, clientData: clientData, in: web, answer: answer)
@@ -316,7 +335,8 @@ final class Passkeys: NSObject {
         }
 
         Passkeys.asked += 1
-        Passkeys.last = ["kind": kind, "rp": rp, "origin": origin, "requests": requests.count]
+        Passkeys.last = ["kind": kind, "rp": rp, "origin": origin, "requests": requests.count,
+                         "topOrigin": clientData.topOrigin ?? "", "crossOrigin": clientData.crossOrigin == .crossOrigin]
         Passkeys.log.notice("\(kind, privacy: .public) for \(rp, privacy: .public) from \(origin, privacy: .public)")
         // A test run never shows the sheet: it would open on the screen of
         // whoever is working beside it. It gets a credential made up on the
@@ -573,6 +593,16 @@ final class Passkeys: NSObject {
         let address = host.contains(":") || host.allSatisfy { $0.isNumber || $0 == "." }
         guard !address, host.hasSuffix("." + rp), rp.contains("."), let suffix = publicSuffix else { return false }
         return !suffix(rp as CFString)
+    }
+
+    /// The address of the page a view shows, once it is that page's: a
+    /// tab's committed address. WKWebView.url moves as soon as a navigation
+    /// starts, while the page before and its frames can still ask; one that
+    /// belongs to no tab keeps its own url.
+    @MainActor static func committed(_ web: WKWebView?) -> URL? {
+        guard let web else { return nil }
+        if let tab = PopupGestureRelay.tab(for: web) { return tab.committed }
+        return web.url
     }
 
     /// WebKit's own test for a public suffix, from the list macOS keeps.
@@ -835,7 +865,7 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
             let caller = Passkeys.Caller(
                 origin: message.frameInfo.securityOrigin,
                 mainFrame: message.frameInfo.isMainFrame,
-                pageHost: message.webView?.url?.host(),
+                page: Passkeys.committed(message.webView),
                 window: message.webView?.window,
                 web: message.webView
             )
