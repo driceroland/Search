@@ -248,6 +248,8 @@ final class SidebarPressTests: XCTestCase {
         for distance in [8.0, 40, 120, 200] {
             try await send(.leftMouseDragged, at: NSPoint(x: start.x + distance, y: start.y), in: window)
         }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertNotEqual(browser.tabs.first?.id, first.id, "A pill moves while the button is still down")
         try await send(.leftMouseUp, at: NSPoint(x: start.x + 200, y: start.y), in: window)
         try await settle()
         XCTAssertNotEqual(browser.tabs.first?.id, first.id, "A pill carried past the next one still moves")

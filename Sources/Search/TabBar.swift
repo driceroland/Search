@@ -1331,13 +1331,14 @@ struct TabPress: ViewModifier {
     }
 }
 
-/// Only whether the button is down on the view, by TabPress's means, for a
-/// tab whose click answers on release: the strip's pills.
+/// Only whether the button is down on the view, by TabPress's means and
+/// within its travel, so a pill's drag still moves it under the hand: for a
+/// tab whose click answers on release, the strip's pills.
 struct Pressing: ViewModifier {
     @Binding var down: Bool
 
     func body(content: Content) -> some View {
-        content.onLongPressGesture(minimumDuration: .infinity, maximumDistance: .infinity,
+        content.onLongPressGesture(minimumDuration: .infinity, maximumDistance: TabPress.travel,
                                    pressing: { down = $0 }, perform: {})
     }
 }
