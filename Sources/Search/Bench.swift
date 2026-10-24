@@ -2916,6 +2916,13 @@ final class Bench {
                 browser.bringingIn = ["off", "false", "0", "no"].contains(text) ? nil
                     : ["on", "true", "1", "yes", "extensions"].contains(text) ? "" : text
             }
+            // Search's own pages (InternalPages.swift): one shown by its
+            // address as a link would open it, one reached from the page in
+            // front as its own buttons do, and an address typed on the tab
+            // in front.
+            if let text = request["show"] as? String, let url = URL(string: text) { _ = browser.open(url, foreground: true) }
+            if let text = request["lead"] as? String, let kind = InternalPage.Kind(rawValue: text) { browser.lead(to: InternalPage(kind)) }
+            if let text = request["go"] as? String, let url = URL(string: text) { browser.active?.go(to: url) }
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
             if let side = request["side"] as? String {
@@ -2940,6 +2947,7 @@ final class Bench {
             if let on = request["sharedpins"] as? Bool { browser.prefs.sharesPins = on }
             if let on = request["hides"] as? Bool { browser.prefs.sideHides = on }
             if let on = request["cards"] as? Bool { browser.prefs.cards = on }
+            if let on = request["address"] as? Bool { browser.prefs.showsAddress = on }
             // Settings › Videos wait for a click, moved as its switch moves it.
             if let on = request["waits"] as? Bool, Store.testing { browser.prefs.waitsForPlay = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
@@ -3444,6 +3452,11 @@ final class Bench {
                     "title": tab.title,
                     "url": tab.address?.absoluteString ?? "",
                     "blank": tab.isBlank,
+                    // One of Search's own pages (InternalPages.swift), by its address.
+                    "internal": tab.page?.url.absoluteString ?? "",
+                    "canBack": tab.canGoBack,
+                    "canForward": tab.canGoForward,
+                    "built": tab.built != nil,
                     "shy": tab.shy,
                     "bench": tab.bench,
                     "asleep": tab.asleep,
@@ -3456,6 +3469,15 @@ final class Bench {
                     // Which web view holds its page, while it has one: the
                     // same after a pin or an unpin, as nothing was loaded again.
                     "web": tab.built.map { String(UInt(bitPattern: ObjectIdentifier($0).hashValue), radix: 16) } ?? "",
+                    // Whether its page is in a window, and kept there unseen
+                    // for a call (StageView.calls); whether it is on one; and
+                    // whether the keys would go to it.
+                    "inWindow": tab.built?.window != nil,
+                    "heldForCall": tab.built.map { web in (web.superview as? StageView)?.holdsCall(web) == true } ?? false,
+                    "onCall": tab.built.map { StageView.onCall($0) } ?? false,
+                    "hasKeys": tab.built.map { web in
+                        (web.window?.firstResponder as? NSView).map { $0 === web || $0.isDescendant(of: web) } ?? false
+                    } ?? false,
                 ] as [String: Any]
             },
             "splits": browser.splits.map { pair in
@@ -3652,6 +3674,7 @@ final class Bench {
             "id": Bench.short(tab),
             "url": tab.address?.absoluteString ?? "",
             "page": tab.pageAddress?.absoluteString ?? "",
+            "internal": tab.page?.url.absoluteString ?? "",
             "title": tab.title,
             "name": tab.name ?? "",
             // The group it is in, by name, whether or not groups are on.
@@ -3661,6 +3684,11 @@ final class Bench {
             "view": tab.built?.url?.absoluteString ?? "",
             "bench": tab.bench,
             "active": tab.id == browser?.activeID,
+            // Where the page is, as its tab would say it at rest, and whether
+            // it says it now: the setting on, the tab you're on, not edited
+            // (see AtRest.swift).
+            "atRest": AtRest.of(tab.restAddress)?.text ?? "",
+            "atRestShown": browser.map { tab.id == $0.activeID && $0.editingTab != tab.id && AtRest.said(tab.restAddress, always: $0.prefs.showsAddress) != nil } ?? false,
             "asleep": tab.asleep,
             "shy": tab.shy,
             "noisy": tab.noisy,

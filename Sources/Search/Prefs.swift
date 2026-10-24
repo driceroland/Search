@@ -244,6 +244,12 @@ final class Preferences: ObservableObject {
     @Published var showsReading: Bool {
         didSet { store.set(showsReading, forKey: "tabs.reading") }
     }
+    /// The tab you're on says where its page is, at rest, without a click:
+    /// its site, from the address on screen (see AtRest.swift). Off unless
+    /// asked for.
+    @Published var showsAddress: Bool {
+        didSet { store.set(showsAddress, forKey: "tabs.address") }
+    }
     /// The ad blocker. On unless turned off; there is nothing else to it.
     @Published var shielded: Bool {
         didSet { store.set(shielded, forKey: "shield") }
@@ -593,6 +599,7 @@ final class Preferences: ObservableObject {
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
         showsTabShortcuts = store.bool(forKey: "tabs.shortcuts")
         showsReading = store.object(forKey: "tabs.reading") as? Bool ?? true
+        showsAddress = store.bool(forKey: "tabs.address")
         shielded = store.object(forKey: "shield") as? Bool ?? true
         let keeps = store.bool(forKey: "sites.keep")
         keepsSignIns = keeps

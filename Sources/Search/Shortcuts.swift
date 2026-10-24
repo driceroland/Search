@@ -155,7 +155,7 @@ struct Command: Identifiable {
 
     /// The same commands, keys and order as the menus (see App.swift).
     static let all: [Command] = [
-        Command("app.settings", "Settings…", .app, KeyCombo(",")) { $0.tuning.toggle() },
+        Command("app.settings", "Settings…", .app, KeyCombo(",")) { $0.tuning = true },
         Command("app.welcome", "Welcome…", .app, nil) { $0.welcoming = true },
         Command("app.passwords", "Passwords…", .app, KeyCombo("l", option: true)) { $0.managing = true },
 
@@ -254,8 +254,8 @@ struct Command: Identifiable {
             withAnimation(Motion.glide) { browser.prefs.bookmarksBar.toggle() }
         },
 
-        Command("history.show", "Show History…", .history, KeyCombo("y")) { $0.recalling.toggle() },
-        Command("history.downloads", "Downloads…", .history, KeyCombo("j", shift: true)) { $0.hoarding.toggle() },
+        Command("history.show", "Show History…", .history, KeyCombo("y")) { $0.recalling = true },
+        Command("history.downloads", "Downloads…", .history, KeyCombo("j", shift: true)) { $0.hoarding = true },
         Command("history.clearData", "Clear Browsing Data…", .history, KeyCombo("delete", shift: true)) { $0.recallMode = .clearing },
         Command("history.clear", "Clear History", .history, nil) { $0.clearHistory() },
     ] + (1...9).map { number in

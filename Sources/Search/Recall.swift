@@ -74,8 +74,9 @@ struct HistoryPanel: View {
                                         Row(
                                             trace: trace,
                                             go: {
-                                                browser.recalling = false
-                                                browser.active?.go(to: trace.url)
+                                                // In this tab, as Chrome's
+                                                // history does: Back returns here.
+                                                (browser.pageTab(.history) ?? browser.active)?.go(to: trace.url)
                                             },
                                             forget: {
                                                 browser.history.forget(trace.key)
@@ -101,7 +102,7 @@ struct HistoryPanel: View {
                         }
                         .padding(.bottom, 2)
                     }
-                    .frame(maxHeight: 420)
+                    .listHeight(420)
                 }
             }
         } foot: {
@@ -300,7 +301,7 @@ struct DownloadsPanel: View {
                     }
                     .padding(.bottom, 2)
                 }
-                .frame(maxHeight: 420)
+                .listHeight(420)
             }
         } foot: {
             HStack {
