@@ -323,6 +323,12 @@ final class Tab: ObservableObject, Identifiable {
     /// doesn't say when.
     @Published private(set) var painted = false
     var pageAddress: URL? { committed ?? address }
+    /// What the tab says at rest about where its page is (AtRest.swift):
+    /// the document that arrived, never one only on its way. A page that
+    /// opened this tab can write into it while the address it asked for is
+    /// still loading, and that address must not vouch for what it wrote.
+    /// A tab with no view (asleep, restored) has only its address to say.
+    var restAddress: URL? { built == nil ? address : committed }
 
     func didCommit() {
         popupGesture.clear()
@@ -389,7 +395,7 @@ final class Tab: ObservableObject, Identifiable {
     /// restoring the HTML gives you a page that looks right and does nothing,
     /// because every listener the page had was thrown away with it.
     func toggleReader(_ done: @escaping (Bool) -> Void) {
-        guard !isBlank else {
+        guard isWeb else {
             done(false)
             return
         }
@@ -454,6 +460,7 @@ final class Tab: ObservableObject, Identifiable {
     /// The letter a pinned tab is reduced to, and what a tab shows in place of
     /// an icon it doesn't have yet.
     var monogram: String {
+        if let page { return String(page.title.prefix(1)) }
         // A file on this Mac has no host: its name's first letter.
         if let address, address.isFileURL {
             let name = address.lastPathComponent.trimmingCharacters(in: CharacterSet(charactersIn: "/."))
@@ -464,6 +471,10 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     func adoptIcon() {
+        if let page {
+            icon = page.glyph
+            return
+        }
         guard let site = address.flatMap(Favicons.site) else {
             icon = nil
             return
@@ -734,13 +745,74 @@ final class Tab: ObservableObject, Identifiable {
 
     /// A tab that has never been anywhere shows the address field instead of a
     /// page. It still owns a web view — built now, warm by the time it's needed.
-    var isBlank: Bool { address == nil }
+    var isBlank: Bool { address == nil && page == nil }
+    /// A tab with a web page — loaded, on its way or asleep — as opposed to
+    /// an empty one or one of Search's own pages.
+    var isWeb: Bool { address != nil }
+
+    // MARK: - Search's own pages (see InternalPages.swift)
+
+    /// Settings, History and the rest, shown in this tab in place of a web
+    /// page. Never with a web view behind it.
+    @Published private(set) var page: InternalPage?
+    /// The pages Back and Forward go to, between Search's own pages.
+    private var trail: [InternalPage] = []
+    private var ahead: [InternalPage] = []
+    /// The page this tab left for the web: Back from the first web page
+    /// comes back to it, as Back from a link in chrome://history does.
+    private var behind: InternalPage?
+
+    /// What the field shows for this tab, and what is copied.
+    var shownURL: URL? { page?.url ?? address }
+
+    /// Go to one of Search's own pages. `stepping`: whether the page it
+    /// leaves is one Back comes back to — not for another section of the
+    /// same page, which only moves the address.
+    func show(_ next: InternalPage, stepping: Bool = true) {
+        if let page, page != next, stepping, page.kind != next.kind {
+            trail.append(page)
+            ahead = []
+        }
+        // A web page in this tab is let go of: these pages have no web view
+        // behind them, and a tab with both would have two things to go back to.
+        if address != nil || built != nil {
+            discard()
+            address = nil
+            committed = nil
+            held = nil
+            pending = nil
+            memory = nil
+            picture = nil
+            cover = nil
+            failure = nil
+            loading = false
+            progress = 0
+            reader = false
+            behind = nil
+            trail = []
+            ahead = []
+        }
+        draft = ""
+        page = next
+        title = next.title
+        adoptIcon()
+        steps()
+    }
+
+    /// Back and Forward as this tab has them now.
+    private func steps() {
+        let back = page != nil ? !trail.isEmpty : (built?.canGoBack ?? false) || behind != nil
+        let forward = page != nil ? !ahead.isEmpty : built?.canGoForward ?? false
+        if canGoBack != back { canGoBack = back }
+        if canGoForward != forward { canGoForward = forward }
+    }
 
     /// The title if the page has offered one, the address until it does. A tab
     /// that says nothing at all for the first second of every load is a tab you
     /// can't find your way back to.
     var label: String {
         if let name, !name.isEmpty { return name }
+        if let page { return page.title }
         if popup, let host = address?.host(), !host.isEmpty {
             return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         }
@@ -861,10 +933,10 @@ final class Tab: ObservableObject, Identifiable {
                 MainActor.assumeIsolated { self?.loading = self?.built?.isLoading ?? false }
             },
             web.observe(\.canGoBack, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.canGoBack = self?.built?.canGoBack ?? false }
+                MainActor.assumeIsolated { self?.steps() }
             },
             web.observe(\.canGoForward, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.canGoForward = self?.built?.canGoForward ?? false }
+                MainActor.assumeIsolated { self?.steps() }
             },
             // A page's full screen, as WebKit has it. In once its own window
             // has the page (a placeholder is left in ours, so the chrome going
@@ -1199,6 +1271,18 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     func go(to url: URL) {
+        if let own = InternalPage(url: url) {
+            show(own)
+            return
+        }
+        // Out of one of Search's own pages, onto the web: Back comes back.
+        if let page {
+            behind = page
+            self.page = nil
+            trail = []
+            ahead = []
+            icon = nil
+        }
         // Judged by the page it shows, not by how it was made: a tab an
         // extension's page opened with window.open is built from that
         // extension's configuration too. A tab with no page yet was just
@@ -1228,11 +1312,18 @@ final class Tab: ObservableObject, Identifiable {
         cover = nil
         adoptIcon()
         web.open(url)
+        // Back, from a page that came out of one of Search's own, goes there.
+        steps()
     }
 
     /// Brought back from the last session: everything the row needs to draw it,
     /// and nothing fetched.
     func restore(url: URL, title: String, name: String? = nil) {
+        if let own = InternalPage(url: url) {
+            self.name = name
+            show(own)
+            return
+        }
         address = url
         self.title = title
         self.name = name
@@ -1489,7 +1580,7 @@ final class Tab: ObservableObject, Identifiable {
             recoverFromCrash()
             return
         }
-        guard !isBlank, pending == nil, !loading, failure == nil else { return }
+        guard isWeb, pending == nil, !loading, failure == nil else { return }
         // A view with no document behind an address: whatever emptied it, the
         // address is what to show, and reload alone would have nothing to do.
         if hollow, let address {
@@ -1563,6 +1654,8 @@ final class Tab: ObservableObject, Identifiable {
     /// A view that has lost its document is given the address back instead:
     /// there is nothing else for it to reload.
     func reload(fromOrigin: Bool = false) {
+        // Search's own pages are drawn from what is there now, always.
+        guard page == nil else { return }
         // A pin put down with ⌘W has no view left to reload; waking it is
         // the reload.
         guard !wake() else { return }
@@ -1579,8 +1672,35 @@ final class Tab: ObservableObject, Identifiable {
     func stop() { web.stopLoading() }
     /// Straight through, every time. A page that has to be fetched again is
     /// fetched again — nothing is kept behind to make that look otherwise.
-    func back() { web.goBack() }
-    func forward() { web.goForward() }
+    func back() {
+        if let page {
+            guard let last = trail.popLast() else { return }
+            ahead.append(page)
+            self.page = last
+            title = last.title
+            adoptIcon()
+            steps()
+            return
+        }
+        // At the first web page after one of Search's own: back to it.
+        if let behind, built?.canGoBack != true {
+            show(behind, stepping: false)
+            return
+        }
+        web.goBack()
+    }
+    func forward() {
+        if let page {
+            guard let next = ahead.popLast() else { return }
+            trail.append(page)
+            self.page = next
+            title = next.title
+            adoptIcon()
+            steps()
+            return
+        }
+        web.goForward()
+    }
 
     /// Called when the tab is thrown away. Without it the view keeps running
     /// whatever the page left behind — timers, video, sockets.

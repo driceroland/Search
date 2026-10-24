@@ -131,7 +131,7 @@ final class TabSwitcher: ObservableObject {
     func left(_ tab: Tab, alive: Set<Tab.ID>) {
         recentIDs = [tab.id] + recentIDs.filter { $0 != tab.id && alive.contains($0) }
         prune { kept($0) }
-        if !tab.isBlank { requestPreview(of: tab, gesture: nil) }
+        if tab.isWeb { requestPreview(of: tab, gesture: nil) }
     }
 
     /// The first ⌃Tab of a gesture takes the space's tabs in that order, the

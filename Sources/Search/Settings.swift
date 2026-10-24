@@ -8,6 +8,10 @@ import SwiftUI
 struct SettingsPanel: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
+    /// The section the tab's address names (search://settings/privacy),
+    /// when Settings is a tab: asked for again, it moves there.
+    var asked: String? = nil
+    @Environment(\.asTab) private var asTab
 
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shield = Shield.shared
@@ -52,6 +56,36 @@ struct SettingsPanel: View {
     private static let height: CGFloat = 500
 
     var body: some View {
+        if asTab { tabbed } else { card }
+    }
+
+    /// In a tab of its own (see InternalPages.swift): the sections down the
+    /// left, the window's whole height, and the section down the middle of
+    /// the rest, as wide as on the card.
+    private var tabbed: some View {
+        HStack(spacing: 0) {
+            pages
+            Rectangle().fill(Palette.hairline).frame(width: 1)
+            content
+                .padding(.top, 26)
+                .frame(maxWidth: SettingsPanel.width - SettingsPanel.rail + 60)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { follow(asked) }
+        .onChange(of: asked) { _, asked in follow(asked) }
+        .onChange(of: page) { _, page in
+            Store.settings.set(page.rawValue, forKey: "settings.page")
+            browser.settingsMoved(to: page)
+        }
+    }
+
+    private func follow(_ asked: String?) {
+        guard let asked, let wanted = Page(rawValue: asked), wanted != .ai || AI.shipped, wanted != page else { return }
+        page = wanted
+    }
+
+    private var card: some View {
         HStack(spacing: 0) {
             pages
             Rectangle().fill(Palette.hairline).frame(width: 1)
@@ -130,7 +164,9 @@ struct SettingsPanel: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Palette.ink)
                 Spacer()
-                Door(icon: "xmark", help: "Done   esc") { browser.tuning = false }
+                if !asTab {
+                    Door(icon: "xmark", help: "Done   esc") { browser.tuning = false }
+                }
             }
             .padding(.bottom, 16)
 
@@ -188,10 +224,7 @@ struct SettingsPanel: View {
             // Coming from another browser, now or any time later: the same
             // sheet as File › Bring Things Over… and the Welcome's.
             Line("Bring things over", "Bookmarks, history, passwords and extensions from another browser on this Mac, or from a file it exported") {
-                Pill("Bring Things Over…") {
-                    browser.tuning = false
-                    browser.bringingIn = ""
-                }
+                Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
             }
             Rule()
             // What ⌘T opens to, and the way back after an extension took
@@ -487,6 +520,13 @@ struct SettingsPanel: View {
                 Switch(on: $prefs.showsReading)
             }
             Rule()
+            Line("Show the address on the tab you're on", "Its site in place of its title, so you can see where you are without a click; the title comes back under the pointer. Look-alike names in other alphabets show as they really are, and plain http says Not secure. Off, the tab you're on still says so for those two") {
+                Switch(on: Binding(
+                    get: { prefs.showsAddress },
+                    set: { on in withAnimation(Motion.glide) { prefs.showsAddress = on } }
+                ))
+            }
+            Rule()
             Line("Sleep tabs you aren't using", "A tab left alone lets its page go and comes back where you left it. Pinned tabs, sound, calls and anything typed stay awake.") {
                 Switch(on: $prefs.sleepsTabs)
             }
@@ -598,10 +638,7 @@ struct SettingsPanel: View {
         VStack(alignment: .leading, spacing: 18) {
             Card {
                 Line("Your passwords", "In the macOS keychain, shown with Touch ID") {
-                    Pill("Open…") {
-                        browser.tuning = false
-                        browser.managing = true
-                    }
+                    Pill("Open…") { browser.lead(to: InternalPage(.passwords)) }
                 }
                 Rule()
                 Line("Offer to save passwords", savingDetail) {
@@ -634,10 +671,7 @@ struct SettingsPanel: View {
             }
             Card {
                 Line("Bring yours in", "From another browser on this Mac — nothing leaves it") {
-                    Pill("Import…") {
-                        browser.tuning = false
-                        browser.bringingIn = ""
-                    }
+                    Pill("Import…") { browser.lead(to: InternalPage(.importing)) }
                 }
             }
         }
@@ -750,7 +784,7 @@ struct SettingsPanel: View {
                 }
                 Rule()
                 Line("What's new", "Every version's notes, newest first") {
-                    Pill("What's New…") { browser.notesShowing = true }
+                    Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
                 }
             }
 

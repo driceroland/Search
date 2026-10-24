@@ -118,24 +118,17 @@ struct ImportPanel: View {
                 }
                 HStack(spacing: 8) {
                     if brought != nil {
-                        Pill("Show bookmarks") {
-                            browser.bringingIn = nil
-                            browser.bookmarking = true
-                        }
+                        Pill("Show bookmarks") { browser.lead(to: InternalPage(.bookmarks)) }
                         // The bar is off until it is asked for, and nobody asks
                         // for a row that has nothing in it. Bookmarks having just
-                        // arrived is the one moment it is worth offering, and the
-                        // sheet goes so that the bar is seen where it appears.
+                        // arrived is the one moment it is worth offering; the
+                        // bar comes in above this page, where it is seen.
                         if marksLanded, !browser.prefs.bookmarksBar {
                             Pill("Show the bookmarks bar") {
                                 withAnimation(Motion.glide) { browser.prefs.bookmarksBar = true }
-                                browser.bringingIn = nil
                             }
                         }
-                        Pill("Show passwords") {
-                            browser.bringingIn = nil
-                            browser.managing = true
-                        }
+                        Pill("Show passwords") { browser.lead(to: InternalPage(.passwords)) }
                     } else if let source = pick {
                         Pill(bringing ? "Bringing…" : "Bring them in", filled: true) { bring(from: source) }
                             .disabled(bringing || !(wantsPasswords || wantsBookmarks || wantsHistory || (wantsExtensions && !fresh(source).isEmpty)
