@@ -667,6 +667,18 @@ struct SettingsPanel: View {
                 Line("Prevent cross-site tracking", "As in Safari. Off, sites you rarely open keep their sign-ins, and trackers inside other sites can follow you across them again, as in Chrome. Private tabs keep it on") {
                     Switch(on: Binding(get: { !prefs.keepsSignIns }, set: { prefs.keepsSignIns = !$0 }))
                 }
+                if ClickIDs.possible {
+                    Rule()
+                    Line("Remove click trackers from links", "The ad-click IDs added to a link, like gclid and fbclid, go before the page loads. Campaign tags stay, as in Safari. Private tabs always remove them") {
+                        Switch(on: $prefs.removesClickIDs)
+                    }
+                }
+                if PrivacySignal.possible {
+                    Rule()
+                    Line("Tell sites not to sell or share your data", "Global Privacy Control, sent with every request. Some laws make sites honour it. Private tabs always send it") {
+                        Switch(on: $prefs.sendsPrivacySignal)
+                    }
+                }
                 Rule()
                 Line("Camera, microphone, location and notifications", "What each site was allowed or refused, and the sites whose videos don't float") {
                     Pill("Forget choices") { browser.forgetCaptureChoices() }

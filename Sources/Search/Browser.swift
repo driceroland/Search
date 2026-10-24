@@ -5008,6 +5008,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
                 let shy = self?.tab(for: webView)?.shy == true || !webView.configuration.websiteDataStore.isPersistent
                 Autoplay.apply(to: preferences, for: url, shy: shy,
                                made: webView.configuration.mediaTypesRequiringUserActionForPlayback)
+                PrivacySignal.apply(to: preferences, shy: shy)
             }
             decisionHandler(policy, preferences)
         }
