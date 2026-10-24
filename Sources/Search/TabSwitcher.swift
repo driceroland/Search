@@ -142,8 +142,9 @@ final class TabSwitcher: ObservableObject {
     /// The tab just left goes to the front, to be pictured as it was (see
     /// `unpictured`). Tabs that are gone fall out, and only the ten latest
     /// keep a picture. `current`: the tab gone to, whose picture waits
-    /// until it is left in turn.
-    func left(_ tab: Tab, current: Tab.ID?, alive: Set<Tab.ID>) {
+    /// until it is left in turn; none when it isn't known yet, as when a
+    /// space is left before its row is swapped.
+    func left(_ tab: Tab, current: Tab.ID? = nil, alive: Set<Tab.ID>) {
         recentIDs = [tab.id] + recentIDs.filter { $0 != tab.id && alive.contains($0) }
         prune { kept($0) }
         unpictured = unpictured.filter { $0.key != current && kept($0.key) && $0.value.tab != nil }
