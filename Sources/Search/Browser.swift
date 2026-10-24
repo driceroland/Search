@@ -698,6 +698,13 @@ final class Browser: NSObject, ObservableObject {
         let clear: Bool
         /// Hung from a first step's name box: a pick puts in the name alone.
         var nameOnly = false
+        /// Accounts from the Mac's Passwords app (ApplePasswords.swift),
+        /// names only, and the page host they were asked for. Set when the
+        /// helper answers, after the list is up.
+        var apple: [AppleLogin] = []
+        var appleHost: String?
+        /// Apple Passwords is on but not paired: a row to connect.
+        var appleConnect = false
         /// When it came up. A page can put the caret in a sign-in box
         /// itself, an invisible one under the pointer included: a click that
         /// was already on its way is not a choice, so the list takes none for
@@ -718,6 +725,9 @@ final class Browser: NSObject, ObservableObject {
     /// The sign-in box the caret is in, for a list that changes while it is
     /// there: the page's passkeys arrive when they arrive.
     private var field: (tab: Tab.ID, spot: CGRect, passwords: Bool, name: Bool)?
+    /// Counts the boxes Apple Passwords was asked about: an answer for a box
+    /// the caret has left since is dropped.
+    private var appleAsk = 0
 
     func keepOffer() {
         guard let offer = offering else { return }
@@ -748,7 +758,7 @@ final class Browser: NSObject, ObservableObject {
     /// does it, and what a person expects.
     private func hang(from tab: Tab, _ spot: CGRect?, passwords: Bool, name: Bool = false) {
         guard let spot else {
-            if field?.tab == tab.id { field = nil }
+            if field?.tab == tab.id { field = nil; appleAsk += 1 }
             if looked?.tab == tab.id { looked = nil }
             if pickedInto == tab.id { pickedInto = nil }
             guard suggesting?.tab == tab.id else { return }
@@ -796,16 +806,164 @@ final class Browser: NSObject, ObservableObject {
         }
         let known = Array(kept.prefix(5))
         let passkeys = Passkeys.shared.offered(in: tab.built)
-        guard !known.isEmpty || !passkeys.isEmpty else {
+        // The Mac's Passwords app, when turned on: an https page of an
+        // ordinary tab only, asked about by its own host. Paired, its names
+        // join the list when the helper answers; not yet, a row offers to
+        // connect.
+        let appleHost = prefs.applePasswords && prefs.fillsPasswords && passwords
+            ? ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) : nil
+        let apple = applePasswords
+        let connect = appleHost != nil && apple.state == .idle && applePairing?.tab != tab.id
+        appleAsk += 1
+        // Asked only for the tab in front of you, in the window you are in.
+        if let appleHost, apple.state == .paired, tab.built?.window?.isKeyWindow == true {
+            lookUpApple(appleHost, in: tab, host: host, name: name)
+        }
+        guard !known.isEmpty || !passkeys.isEmpty || connect else {
             suggesting = nil
             return
         }
         // What is under the pointer changed: the half second starts again.
-        if let up = suggesting, up.tab == tab.id, up.logins == known, up.passkeys == passkeys, up.nameOnly == name {
+        if let up = suggesting, up.tab == tab.id, up.logins == known, up.passkeys == passkeys, up.nameOnly == name,
+           up.appleConnect == connect, up.apple.isEmpty {
             suggesting?.spot = spot
             return
         }
-        suggesting = Suggesting(tab: tab.id, spot: spot, logins: known, passkeys: passkeys, host: host, clear: inTheClear, nameOnly: name)
+        suggesting = Suggesting(tab: tab.id, spot: spot, logins: known, passkeys: passkeys, host: host, clear: inTheClear,
+                                nameOnly: name, appleHost: appleHost, appleConnect: connect)
+    }
+
+    /// Asks Apple's helper for the names it keeps for the page, and adds
+    /// them under the box if the caret is still in it, on the same page.
+    private func lookUpApple(_ appleHost: String, in tab: Tab, host: String, name: Bool) {
+        let ask = appleAsk
+        Task { [weak self] in
+            // A page that moves the caret from box to box queues no backlog:
+            // a question the caret has already left is never sent.
+            guard let keeper = self?.applePasswords else { return }
+            let found = await keeper.logins(for: appleHost, tab: tab.id) { [weak self] in
+                self?.appleAsk == ask
+            }
+            guard let self, ask == appleAsk, let field, field.tab == tab.id, tab.id == activeID,
+                  ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) == appleHost
+            else { return }
+            let mine = suggesting?.tab == tab.id ? suggesting?.logins ?? [] : []
+            let apple = Array(found
+                .filter { ApplePasswords.belongs($0.sites, to: appleHost) }
+                .filter { theirs in !mine.contains { $0.user.caseInsensitiveCompare(theirs.user) == .orderedSame } }
+                .prefix(5))
+            guard !apple.isEmpty else { return }
+            if var up = suggesting, up.tab == tab.id {
+                up.apple = apple
+                up.appleHost = appleHost
+                up.appleConnect = false
+                // New rows under the pointer: the half second starts again.
+                up.shown = Date()
+                suggesting = up
+            } else {
+                suggesting = Suggesting(tab: tab.id, spot: field.spot, logins: [], host: host, clear: false,
+                                        nameOnly: name, apple: apple, appleHost: appleHost)
+            }
+        }
+    }
+
+    /// One of the Passwords app's accounts, picked by name. Its password is
+    /// asked for now (macOS may want Touch ID), put into the page if it is
+    /// still the page it was asked for, and not kept.
+    func choose(_ apple: AppleLogin) {
+        lowering?.cancel()
+        guard let list = suggesting, let tab = tabs.first(where: { $0.id == list.tab }), let appleHost = list.appleHost else { return }
+        guard Date().timeIntervalSince(list.shown) > 0.5 else { return }
+        suggesting = nil
+        guard ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) == appleHost,
+              ApplePasswords.belongs(apple.sites, to: appleHost)
+        else { return }
+        pickedInto = tab.id
+        if list.nameOnly {
+            tab.fillName(apple.user) { [weak self] worked in
+                if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
+            }
+            return
+        }
+        Task { [weak self] in
+            guard let keeper = self?.applePasswords else { return }
+            let found = await keeper.password(for: apple.user, host: appleHost, tab: tab.id)
+            guard let self else { return }
+            guard let found else {
+                announce("Apple Passwords didn't hand that password over")
+                return
+            }
+            // Touch ID can take a while: the page must still be the one
+            // asked for, in front, and the account still this site's.
+            guard tabs.contains(where: { $0 === tab }), tab.id == activeID,
+                  ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) == appleHost,
+                  ApplePasswords.belongs(found.sites, to: appleHost)
+            else { return }
+            tab.appleFill = AppleFill(host: appleHost, user: apple.user, password: found.password)
+            // Over https only, on that host (Tab.fill checks both in the page).
+            tab.fill(user: apple.user, password: found.password, onlyOn: URL(string: "https://\(appleHost)/")) { [weak self] worked in
+                if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
+            }
+        }
+    }
+
+    /// The row that connects Apple Passwords: the pairing starts, and the
+    /// code is typed into a small card of Search's own where the list was,
+    /// not in Settings. Once paired, the caret goes back to the box and the
+    /// accounts come up under it.
+    func connectApplePasswords() {
+        lowering?.cancel()
+        // The same half second as any row: a click already on its way when
+        // a page put the caret in a box isn't a choice.
+        guard let list = suggesting, Date().timeIntervalSince(list.shown) > 0.5 else { return }
+        suggesting = nil
+        beginApplePairing(on: list.tab, at: list.spot)
+    }
+
+    /// Pairing with Apple Passwords from under a sign-in box: the card that
+    /// takes the code, over the page it was asked from. Native, never in the
+    /// page; the page learns nothing of it.
+    @Published private(set) var applePairing: ApplePairing?
+
+    struct ApplePairing: Equatable {
+        let tab: Tab.ID
+        let spot: CGRect
+    }
+
+    /// The Passwords app's connection. One for the whole app; a test gives
+    /// its own, with a made-up helper.
+    var applePasswords = ApplePasswords.shared
+    private var pairingWatch: AnyCancellable?
+
+    func beginApplePairing(on tab: Tab.ID, at spot: CGRect) {
+        let apple = applePasswords
+        applePairing = ApplePairing(tab: tab, spot: spot)
+        pairingWatch = apple.$state
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                MainActor.assumeIsolated {
+                    if state == .paired { self?.endApplePairing(paired: true) }
+                }
+            }
+        if apple.state == .idle { Task { await apple.connect() } }
+    }
+
+    /// The card goes. Paired: the caret back in the page's box, which says
+    /// so again (focusin), and its accounts are asked for. Cancelled: the
+    /// helper is stopped and its window with it.
+    func endApplePairing(paired: Bool) {
+        guard let pairing = applePairing else { return }
+        applePairing = nil
+        pairingWatch = nil
+        if !paired, applePasswords.state != .paired { applePasswords.disconnect() }
+        // Only the page it was asked from, still in front: never another.
+        guard pairing.tab == activeID, let tab = tabs.first(where: { $0.id == pairing.tab }),
+              let web = tab.built, let window = web.window
+        else { return }
+        looked = nil
+        pickedInto = nil
+        window.makeFirstResponder(web)
     }
 
     /// One of the accounts in the list, picked by name.
@@ -2743,6 +2901,8 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func startSplit() {
+        // Two tabs picked in the column: those two side by side.
+        if pickedPair != nil { return pairPickedTabs() }
         guard prefs.splitView, let shown = active, !shown.bench else { return }
         if let pair = activeSplit {
             if let right = tabs.first(where: { $0.id == pair.right }) { focusPane(right) }
@@ -2825,6 +2985,49 @@ final class Browser: NSObject, ObservableObject {
         guard split(for: tab)?.contains(current.id) != true else { return focusPane(tab) }
         guard canSplit(tab, with: current) else { return }
         pair(tab, with: current, onLeft: false)
+    }
+
+    /// The tabs picked in the column (⌘- or ⇧-click) that are shown, in the
+    /// column's order.
+    private var pickedTabs: [Tab] {
+        selectableTabs.filter { selectedTabIDs.contains($0.id) }
+    }
+
+    /// Exactly two tabs picked, and already the two pages of one pair.
+    var pickedTabsArePaired: Bool {
+        let picked = pickedTabs
+        return picked.count == 2 && split(for: picked[0])?.contains(picked[1].id) == true
+    }
+
+    /// Exactly two tabs picked that can go side by side: what Open 2 Tabs in
+    /// Split View and ⌥⌘N pair. More than two isn't a pair — Split View holds
+    /// two pages — so the menu's item is off then and ⌥⌘N does what it does
+    /// without a selection.
+    var pickedPair: (left: Tab, right: Tab)? {
+        let picked = pickedTabs
+        guard prefs.splitView, picked.count == 2, !pickedTabsArePaired,
+              canSplit(picked[0], with: picked[1]) else { return nil }
+        return (picked[0], picked[1])
+    }
+
+    /// The two picked tabs side by side, the first in the column on the
+    /// left. Both keep their pages (nothing loads again); either one in
+    /// another pair leaves it first, as a drag onto a page's edge does; a
+    /// pin stays a pin and its page goes in as a tab (see splittable). The
+    /// pair lands where the left one was — where the right one was when the
+    /// left is a pin — and the tab asked from has the keys. The selection
+    /// is done with.
+    func pairPickedTabs(focus asked: Tab? = nil) {
+        guard let (left, right) = pickedPair else { return }
+        clearTabSelection()
+        if left.pin != nil && right.pin == nil {
+            pair(left, with: right, onLeft: true)
+        } else {
+            pair(right, with: left, onLeft: false)
+        }
+        if let asked, let made = split(for: asked), activeSplit?.id == made.id {
+            focusPane(asked)
+        }
     }
 
     /// The divider's menu › Swap Pages.
@@ -4744,6 +4947,8 @@ final class Browser: NSObject, ObservableObject {
             // A password manager extension that asked Chrome's way to do the
             // saving itself.
             if #available(macOS 15.4, *), Extensions.shared.passwordSavingTakenBy != nil { return }
+            // Just filled from the Passwords app: it is kept there already.
+            if tab.appleFill?.matches(host: host, user: user, password: password) == true { return }
             let known = Vault.kept(for: host)
             // Nothing to ask about one that is already known. Only that
             // account's secret is read, not every one kept for the site.
@@ -5364,6 +5569,13 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             return
         }
 
+        // An extension's rule sending a site to one of its pages (Norma's
+        // block page): that page needs another view too.
+        if #available(macOS 15.4, *), routeRuleRedirect(action, from: webView) {
+            decisionHandler(.cancel)
+            return
+        }
+
         // A website returning to a public extension page needs another view.
         if #available(macOS 15.4, *), routeExtensionReturn(action, from: webView) {
             decisionHandler(.cancel)
@@ -5472,12 +5684,30 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         return handOverExtensionReturn(target, source: source, from: webView, tab: tab)
     }
 
+    /// WebKit marks the navigation it starts for a content rule's redirect
+    /// (`_isContentExtensionRedirect`); a page can't. What a page could reach
+    /// is still all it gets: the file must be one the extension exposes to
+    /// the site the tab was going to, as Chrome requires of a redirect to an
+    /// extension's file.
     @available(macOS 15.4, *)
-    private func handOverExtensionReturn(_ target: URL, source: URL, from webView: WKWebView, tab: Tab) -> Bool {
+    private func routeRuleRedirect(_ action: WKNavigationAction, from webView: WKWebView) -> Bool {
+        guard action.targetFrame?.isMainFrame == true,
+              action.responds(to: NSSelectorFromString("_isContentExtensionRedirect")),
+              (action.value(forKey: "_isContentExtensionRedirect") as? Bool) == true,
+              let tab = tab(for: webView), let requested = action.request.url
+        else { return false }
+        let source = tab.extensionReturn.ruleSource(for: action)
+        let target = Extensions.current(ExtensionRedirectPolicy.ruleTarget(requested))
+        guard target.scheme == Extensions.scheme, let source else { return false }
+        return handOverExtensionReturn(target, source: source, from: webView, tab: tab, fromRule: true)
+    }
+
+    @available(macOS 15.4, *)
+    private func handOverExtensionReturn(_ target: URL, source: URL, from webView: WKWebView, tab: Tab, fromRule: Bool = false) -> Bool {
         guard !tab.shy,
               let context = Extensions.shared.controller.extensionContext(for: target),
               context.isLoaded, context.webViewConfiguration != nil,
-              ExtensionRedirectPolicy.allows(target: target, sourceOrigin: source, manifest: context.webExtension.manifest)
+              ExtensionRedirectPolicy.allows(target: target, sourceOrigin: source, manifest: context.webExtension.manifest, fromRule: fromRule)
         else { return false }
         let revision = tab.extensionReturn.revision
         DispatchQueue.main.async { [weak self, weak tab, weak webView] in
@@ -6071,6 +6301,12 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         guard let tab = tab(for: webView) else {
             // A small window's page came: what failed before it is over.
             littleTab(for: webView)?.failure = nil
+            // A peek or a small window opens at the size the site has, or
+            // the one in Settings, as a tab does: neither is in the row,
+            // and both opened at 100% (#691).
+            if let page = peekTab?.built === webView ? peekTab : littleTab(for: webView) {
+                page.applyRememberedZoom()
+            }
             return
         }
         tab.didCommit()

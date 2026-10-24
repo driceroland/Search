@@ -332,11 +332,36 @@ private func testCompletionFinishesWWWSitesWithoutTheirWWW() {
     Checks.expect(history.completion(for: "plain-t", among: plain) == nil, "dropping the www must not turn an http page into https")
 }
 
+@MainActor
+private func testOneLetterCompletesOnlyTheTopVisitedSite() {
+    Store.use("one-letter")
+    let history = History()
+    for _ in 0..<5 { history.record(url("https://x.com/"), title: "X") }
+    history.record(url("https://x.com/home"), title: "Home")
+    let options = history.suggestions(for: "x", limit: 3)
+    Checks.expect(options.first?.key == "x.com", "x.com should be the top row for x, got \(options.map(\.key))")
+    Checks.expect(history.completion(for: "x", among: options) == ".com", "one letter should finish the top visited site (#696)")
+    Checks.expect(history.completion(for: "X", among: options) == ".com", "one letter should finish whatever its case")
+    let room = options.filter { $0.url.path() == "/home" }
+    Checks.expect(history.completion(for: "x", among: room) == nil, "one letter must not finish a page inside a site")
+    let known = history.suggestions(for: "q", limit: 3)
+    Checks.expect(history.completion(for: "q", among: known) == nil, "one letter must not finish a name the app merely knows")
+    history.record(url("https://netflix-test.example/"), title: "N")
+    let inside = history.suggestions(for: "e", limit: 3).filter { $0.key.hasPrefix("netflix") }
+    Checks.expect(history.completion(for: "e", among: inside) == nil, "a letter inside a name still finishes nothing")
+    if let top = options.first {
+        let lower = [Suggestion(key: "q-test.example", title: "", url: url("https://q-test.example/"), kind: .known), top]
+        Checks.expect(history.completion(for: "x", among: lower) == nil, "one letter finishes only the top row")
+    }
+    Checks.expect(history.completion(for: "x.", among: options) == "com", "two letters still complete as before")
+}
+
 @main
 private struct HistoryRegression {
     @MainActor
     static func main() {
         testRecordAndTakeKeepCanonicalIdentityComponents()
+        testOneLetterCompletesOnlyTheTopVisitedSite()
         testRetitleAndForgetUseIndependentIdentities()
         testLegacyLoadRebuildsIdentityFromStoredURL()
         testRootCreditsKeepOriginAndDirectRootCountsOnce()

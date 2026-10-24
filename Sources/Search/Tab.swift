@@ -605,6 +605,11 @@ final class Tab: ObservableObject, Identifiable {
     /// session. Signed in as nobody, and forgotten when it goes.
     let shy: Bool
 
+    /// The account last filled here from Apple's Passwords app, so sending
+    /// it isn't offered a second place in Search's keychain. A keyed hash of
+    /// the password, never the password.
+    var appleFill: AppleFill?
+
     /// A tab a script opened through the bench, beside yours. Signed in as
     /// you, so it sees what you see — but never selected for you, never in
     /// the session or the history, and gone when the script is done.

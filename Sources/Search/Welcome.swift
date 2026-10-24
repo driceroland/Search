@@ -205,6 +205,7 @@ struct WelcomePanel: View {
                 Key("⇧⌘P", "Float a video in Search's window, or in macOS's picture in picture. Settings › General.")
                 Key("⌘,", "Claude or ChatGPT in a side panel beside the page — turn on Websites in the side panel in Settings › General.")
                 Key("⌘Q", "Search can ask before it quits. Settings › General.")
+                Key("⌘,", "Passwords from Apple's Passwords app under the sign-in box — off until you turn it on in Settings › Passwords.")
                 if AI.shipped {
                     Key("⌘,", "AI summaries and questions about a page — off until you turn it on in Settings › AI.")
                 }

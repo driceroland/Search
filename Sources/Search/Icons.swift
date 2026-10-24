@@ -176,7 +176,14 @@ final class Favicons {
                   (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
                   data.count > 60, data.count < 2_000_000
             else { continue }
-            guard let image = await Favicons.square(data) else { continue }
+            var decoded = await Favicons.square(data)
+            // An SVG icon: drawn by WebKit, never by a decoder of this
+            // process's own, then read back as the PNG it drew (#680).
+            if decoded == nil, SVGIcons.looksLikeSVG(data, response: response),
+               let png = await SVGIcons.shared.png(from: data) {
+                decoded = await Favicons.square(png)
+            }
+            guard let image = decoded else { continue }
             memory[key] = image
             absent.remove(key)
             if !shy { Favicons.keep(image, for: key) }
@@ -262,9 +269,12 @@ final class Favicons {
     private static func rank(_ declared: [[String: String]], page: URL, dark: Bool) -> [URL] {
         var scored: [(URL, Int)] = []
         for entry in declared {
+            // An icon written into the page itself, as data: (an emoji in an
+            // SVG, often) is read the same way, up to a size.
             guard let href = entry["href"],
-                  let url = URL(string: href, relativeTo: page)?.absoluteURL,
-                  url.scheme?.hasPrefix("http") == true
+                  let url = href.lowercased().hasPrefix("data:") ? inline(href)
+                      : URL(string: href, relativeTo: page)?.absoluteURL,
+                  url.scheme?.hasPrefix("http") == true || url.scheme == "data"
             else { continue }
             let rel = entry["rel"] ?? ""
             let sizes = entry["sizes"] ?? ""
@@ -296,6 +306,25 @@ final class Favicons {
         // The same address twice is a wasted request.
         var seen = Set<String>()
         return list.filter { seen.insert($0.absoluteString).inserted }
+    }
+
+    /// A data: address as a page writes it, `<` and spaces left as they
+    /// are, made into one Foundation reads: its bytes in base64. Nil past
+    /// the size an SVG icon may be.
+    private static func inline(_ href: String) -> URL? {
+        guard href.utf8.count <= SVGIcons.limit * 3, let comma = href.firstIndex(of: ",") else { return nil }
+        let meta = href[href.index(href.startIndex, offsetBy: 5)..<comma]
+        let body = String(href[href.index(after: comma)...])
+        var parts = meta.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
+        let base64 = parts.last?.lowercased() == "base64"
+        if base64 { parts.removeLast() }
+        let bytes: Data? = base64
+            ? Data(base64Encoded: (body.removingPercentEncoding ?? body).filter { !$0.isWhitespace })
+            : (body.removingPercentEncoding ?? body).data(using: .utf8)
+        guard let bytes, bytes.count <= SVGIcons.limit else { return nil }
+        let type = parts.first.flatMap { $0.contains("/") && !$0.contains("=") ? $0 : nil } ?? "text/plain"
+        guard type.allSatisfy({ $0.isLetter || $0.isNumber || "+-./".contains($0) }) else { return nil }
+        return URL(string: "data:\(type);base64,\(bytes.base64EncodedString())")
     }
 
     private static let probe = """
@@ -402,4 +431,161 @@ final class IconRelay: NSObject, WKScriptMessageHandler {
       }).observe(document.head, { childList: true, subtree: true, attributes: true, attributeFilter: ['href', 'rel', 'media'] });
     })();
     """
+}
+
+/// SVG icons, drawn where WebKit draws every SVG a page shows: in a web
+/// process of its own, sandboxed, out of this one. A site's SVG is put in
+/// an <img> there (an SVG as an image runs no script and loads nothing),
+/// drawn on a canvas at a tab's size and handed back as a PNG, which only
+/// the PNG decoder here then reads. No SVG parser runs in Search's process.
+///
+/// One small view, not in any window, with a store that keeps nothing and
+/// page scripts off; it is let go after a few seconds without work, and
+/// with it its process. What it draws is kept as the PNGs every icon is.
+@MainActor
+final class SVGIcons: NSObject, WKNavigationDelegate {
+    static let shared = SVGIcons()
+
+    /// The largest SVG drawn, in bytes. Icons are a few kilobytes.
+    nonisolated static let limit = 256 * 1024
+    /// Pixels a side: a tab draws 16 points at 2x, the pins grid larger.
+    private static let side = 128
+    /// Longer than this, the drawing is given up on, and its process with it.
+    private static let patience: TimeInterval = 4
+
+    private var web: WKWebView?
+    private var loaded = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var idle: DispatchWorkItem?
+    private var running = 0
+
+    /// An SVG by what the server says it is, or by its first bytes.
+    nonisolated static func looksLikeSVG(_ data: Data, response: URLResponse?) -> Bool {
+        guard data.count <= limit else { return false }
+        if response?.mimeType?.lowercased() == "image/svg+xml" { return true }
+        let head = String(decoding: data.prefix(1024), as: UTF8.self).lowercased()
+        return head.contains("<svg")
+    }
+
+    /// The SVG drawn into a square PNG, or nil if it can't be.
+    func png(from data: Data) async -> Data? {
+        guard data.count <= SVGIcons.limit, let web = await view() else { return nil }
+        idle?.cancel()
+        running += 1
+        defer {
+            running -= 1
+            letGoLater()
+        }
+        let source = "data:image/svg+xml;base64," + data.base64EncodedString()
+        let prefix = "data:image/png;base64,"
+        return await withCheckedContinuation { (answer: CheckedContinuation<Data?, Never>) in
+            var done = false
+            func finish(_ png: Data?) {
+                guard !done else { return }
+                done = true
+                answer.resume(returning: png)
+            }
+            web.callAsyncJavaScript(SVGIcons.draw, arguments: ["src": source, "side": SVGIcons.side],
+                                    in: nil, in: .defaultClient) { result in
+                guard case .success(let value) = result, let text = value as? String, text.hasPrefix(prefix),
+                      text.utf8.count < 2_000_000
+                else { return finish(nil) }
+                finish(Data(base64Encoded: String(text.dropFirst(prefix.count))))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + SVGIcons.patience) { [weak self] in
+                guard !done else { return }
+                finish(nil)
+                self?.letGo()
+            }
+        }
+    }
+
+    /// The image is decoded and drawn in the web process; only the PNG it
+    /// makes comes back. Kept to its proportions, centred in the square.
+    private static let draw = """
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const w = img.naturalWidth || side, h = img.naturalHeight || side;
+    const scale = Math.min(side / w, side / h);
+    const canvas = document.createElement('canvas');
+    canvas.width = side; canvas.height = side;
+    canvas.getContext('2d').drawImage(img, (side - w * scale) / 2, (side - h * scale) / 2, w * scale, h * scale);
+    return canvas.toDataURL('image/png');
+    """
+
+    private func view() async -> WKWebView? {
+        if let web, loaded { return web }
+        if web == nil {
+            let config = WKWebViewConfiguration()
+            config.websiteDataStore = .nonPersistent()
+            config.defaultWebpagePreferences.allowsContentJavaScript = false
+            config.applicationNameForUserAgent = Web.userAgentName
+            config.mediaTypesRequiringUserActionForPlayback = .all
+            let made = WKWebView(frame: NSRect(x: 0, y: 0, width: 16, height: 16), configuration: config)
+            made.navigationDelegate = self
+            web = made
+            loaded = false
+            // Nothing can be loaded into it but data: images.
+            made.loadHTMLString(
+                "<!doctype html><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:\">",
+                baseURL: nil)
+        }
+        await withCheckedContinuation { waiting.append($0) }
+        return loaded ? web : nil
+    }
+
+    private func ready(_ ok: Bool) {
+        loaded = ok
+        let all = waiting
+        waiting.removeAll()
+        all.forEach { $0.resume() }
+    }
+
+    private func letGoLater() {
+        idle?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.running == 0 else { return }
+            self.letGo()
+        }
+        idle = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
+    }
+
+    private func letGo() {
+        idle?.cancel()
+        idle = nil
+        web?.navigationDelegate = nil
+        web?.stopLoading()
+        web = nil
+        ready(false)
+    }
+
+    // MARK: - WKNavigationDelegate
+
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        // Only the empty page it starts on; never a site.
+        decisionHandler(action.request.url?.absoluteString == "about:blank" ? .allow : .cancel)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === web else { return }
+        ready(true)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard webView === web else { return }
+        letGo()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard webView === web else { return }
+        letGo()
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard webView === web else { return }
+        letGo()
+    }
 }
