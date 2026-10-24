@@ -93,12 +93,12 @@ final class Browser: NSObject, ObservableObject {
                 if let id = activeID, pair.contains(id) { return }
                 tabSwitcher.cancel()
                 if let first = tabs.first(where: { $0.id == pair.left }) {
-                    tabSwitcher.left(first, alive: Set((tabs + parkedTabs).map(\.id)))
+                    tabSwitcher.left(first, current: activeSplit?.left ?? activeID, alive: Set((tabs + parkedTabs).map(\.id)))
                 }
                 return
             }
             tabSwitcher.cancel()
-            if let left { tabSwitcher.left(left, alive: Set((tabs + parkedTabs).map(\.id))) }
+            if let left { tabSwitcher.left(left, current: activeSplit?.left ?? activeID, alive: Set((tabs + parkedTabs).map(\.id))) }
         }
     }
 
