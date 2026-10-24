@@ -68,11 +68,11 @@ def urls(): return [x["url"] for x in sv.sp("state")["tabs"]]
 def main():
     t = sv.T()
     try:
-        # Off, as it is unless turned on.
-        sv.setup(sidebar=True); sv.launch()
+        # Always there since 24 Oct 2026, an old "off" on disk included.
+        sv.setup(sidebar=True, **{"panel.sites": False}); sv.launch()
         sv.page("a")
         panel("site", url=f"{sv.BASE}/panel")
-        t.ok("off: a site doesn't go into the panel", not panel()["shown"], panel())
+        t.ok("always on: a site goes into the panel, an old off notwithstanding", panel()["shown"], panel())
         sv.quit()
 
         sv.setup(sidebar=True, **{"panel.sites": True})

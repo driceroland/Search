@@ -5,19 +5,30 @@ import SwiftUI
 /// Disconnect. The code is typed into Search, never into a page.
 struct ApplePasswordsCard: View {
     @ObservedObject var prefs: Preferences
+    /// Under Settings' own row for the switch: only the pairing, once on.
+    var bare = false
     @ObservedObject private var apple = ApplePasswords.shared
     @State private var code = ""
     @FocusState private var typing: Bool
 
     var body: some View {
-        Card {
-            Line("Passwords from Apple's Passwords app",
-                 "Accounts saved in the Passwords app, under the sign-in box. Unofficial: Search talks to the helper Apple made for its Chrome extension, as that extension. Never in private tabs.") {
-                Switch(on: $prefs.applePasswords)
-            }
-            if prefs.applePasswords {
-                Rule()
-                pairing
+        Group {
+            if bare {
+                if prefs.applePasswords {
+                    Rule()
+                    pairing
+                }
+            } else {
+                Card {
+                    Line("Passwords from Apple's Passwords app",
+                         "Accounts saved in the Passwords app, under the sign-in box. Unofficial: Search talks to the helper Apple made for its Chrome extension, as that extension. Never in private tabs.") {
+                        Switch(on: $prefs.applePasswords)
+                    }
+                    if prefs.applePasswords {
+                        Rule()
+                        pairing
+                    }
+                }
             }
         }
         .onChange(of: apple.state) { _, state in

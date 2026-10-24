@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Settings › Shortcuts: every menu command with its key, a card to a menu,
+/// Settings › Keyboard & Mouse › Shortcuts: every menu command with its key, a card to a menu,
 /// narrowed by name or key. Click a key and press the new one; right-click
 /// to clear it or put the default back.
 struct ShortcutsPage: View {
@@ -15,8 +15,6 @@ struct ShortcutsPage: View {
     /// By name, or by key as the menus write it: "tab" and "⌘T" both find New Tab.
     private func shown(_ command: Command) -> Bool {
         if command.section == .spaces, !prefs.usesSpaces { return false }
-        // Split View's commands only once it is on.
-        if Command.split.contains(command.id), !browser.prefs.splitView { return false }
         if Command.ai.contains(command.id), !browser.prefs.ai { return false }
         if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
         let words = hunt.trimmingCharacters(in: .whitespaces)
@@ -26,17 +24,11 @@ struct ShortcutsPage: View {
             || key.localizedCaseInsensitiveContains(words.replacingOccurrences(of: " ", with: ""))
     }
 
-    private var showsPeek: Bool {
-        let words = hunt.trimmingCharacters(in: .whitespaces)
-        return prefs.peeksLinks && (words.isEmpty || "Peek at a link".localizedCaseInsensitiveContains(words)
-            || prefs.peekClick.title.localizedCaseInsensitiveContains(words))
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Hunt(text: $hunt, prompt: "Search commands or keys", focus: $hunting)
             let found = Command.all.filter(shown)
-            if found.isEmpty && !showsPeek { Nothing("No command called that, or on that key") }
+            if found.isEmpty { Nothing("No command called that, or on that key") }
             ForEach(Command.Section.allCases, id: \.self) { section in
                 let commands = found.filter { $0.section == section }
                 if !commands.isEmpty {
@@ -57,23 +49,6 @@ struct ShortcutsPage: View {
                         }
                     }
                 }
-                }
-            }
-            if showsPeek {
-                Card {
-                    Line("Peek at a link") {
-                        Picker("Peek at a link", selection: $prefs.peekClick) {
-                            ForEach(PeekClick.allCases, id: \.self) { choice in
-                                Text(choice.title).tag(choice)
-                            }
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-                    }
-                    .contextMenu {
-                        Button("Reset to Default") { prefs.peekClick = .shift }
-                            .disabled(prefs.peekClick == .shift)
-                    }
                 }
             }
             if #available(macOS 15.4, *) { extensionCommands }

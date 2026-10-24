@@ -276,8 +276,25 @@ enum ProfileMenu {
 
 // MARK: - Settings
 
-/// Settings › Tabs › Profiles: New Profile…, and once there is more than
-/// one, each with its spaces, Rename… and Delete….
+/// Settings › Spaces & Pins: once there is more than one profile, each
+/// with its spaces, Open, Rename… and Delete…, under the Profiles row.
+struct ProfileList: View {
+    @ObservedObject var browser: Browser
+    @ObservedObject var profiles = Profiles.shared
+
+    var body: some View {
+        if profiles.several {
+            ForEach(profiles.list) { profile in
+                Rule()
+                ProfilesSettings.Row(profile: profile, current: profile.id == browser.profileID,
+                                     spaces: profiles.spaces(of: profile.id).map(\.name))
+            }
+        }
+    }
+}
+
+/// Profiles in a card of its own: New Profile…, and once there is more
+/// than one, each with its spaces, Rename… and Delete….
 struct ProfilesSettings: View {
     @ObservedObject var browser: Browser
     @ObservedObject var profiles = Profiles.shared
@@ -296,7 +313,7 @@ struct ProfilesSettings: View {
         }
     }
 
-    private struct Row: View {
+    struct Row: View {
         let profile: Profile
         let current: Bool
         let spaces: [String]

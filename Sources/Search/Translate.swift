@@ -48,7 +48,8 @@ struct TranslationMark: Equatable {
 
 @MainActor
 final class PageTranslator {
-    /// The switch in Settings. Off unless asked for.
+    /// Where the switch in Settings was kept, before Translate Page was
+    /// always there (24 Oct 2026). Left on disk, read by nothing.
     static let key = "translate.pages"
     /// The languages translated as their pages open (Settings lists them).
     static let alwaysKey = "translate.always"
@@ -58,7 +59,7 @@ final class PageTranslator {
         if #available(macOS 15, *) { return true }
         return false
     }
-    static var enabled: Bool { available && Store.settings.bool(forKey: key) }
+    static var enabled: Bool { available }
 
     /// Test runs only: a stand-in that marks each string instead of
     /// translating it, to test the page side without a language downloaded.
@@ -1021,7 +1022,7 @@ struct TranslateMenu: View {
                              title: tab.shy ? "Translate \(PageTranslator.name(from)) in This Tab" : "Always Translate \(PageTranslator.name(from))") {
                             tab.setAlwaysTranslates(from, !on)
                         }
-                        .help(tab.shy ? "Only until this private tab closes" : "Settings › General lists the languages always translated")
+                        .help(tab.shy ? "Only until this private tab closes" : "Settings › Browsing › Pages lists the languages always translated")
                     }
                 }
                 .padding(6)

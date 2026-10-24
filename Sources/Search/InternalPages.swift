@@ -136,9 +136,6 @@ struct InternalPageView: View {
                 if browser.activeID != tab.id, browser.split(for: tab) != nil { browser.focusPane(tab) }
             })
             .transition(.opacity)
-            // Brought back from the last session, the list of passwords
-            // is read as the page is first drawn.
-            .onAppear { if page.kind == .passwords, browser.saved.isEmpty { browser.relist() } }
     }
 
     @ViewBuilder
@@ -153,7 +150,15 @@ struct InternalPageView: View {
         case .bookmarks:
             BookmarksPanel(browser: browser, bookmarks: browser.bookmarks)
         case .passwords:
+            // The list is read each time the page is drawn, whichever way it
+            // came: brought back from the last session, Settings › Passwords ›
+            // Open… turning the Settings tab into it, Back or Forward. Here,
+            // under `.id(page.kind)`, and not on the view around it, which a
+            // tab going from one of these pages to another keeps: there it
+            // ran once, and the page reached from Settings said "Nothing kept
+            // yet" while the sign-in box offered the accounts.
             PasswordsPanel(browser: browser)
+                .onAppear { browser.relist() }
         case .importing:
             ImportPanel(browser: browser)
         case .notes:

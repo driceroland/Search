@@ -181,21 +181,17 @@ var r = document.getElementById('host'); if (r && r.shadowRoot) out.push(r.shado
 def main():
     t = sv.T()
     try:
-        # 1: off by default — no menu item, the bench refused.
-        sv.setup()
+        # 1: always there since 24 Oct 2026, an old "off" on disk included:
+        # the menu offers it, and nothing is translated until it's chosen.
+        sv.setup(**{"translate.pages": False})
         launch()
         page = visit("/plain")
         st = tr(page, "state")
-        t.ok("off by default", st["enabled"] is False and st["available"] is True, st)
+        t.ok("always on, an old off notwithstanding", st["enabled"] is True and st["available"] is True, st)
         items = menu(page)
-        t.ok("no Translate Page in the page's menu while off", items == "", items)
-        st = tr(page)
-        t.ok("refused while off", st["report"].get("error") == "off", st)
-        t.ok("and the page is untouched", text(page, "#p1") == FR)
+        t.ok("Translate Page in the page's menu", items == "Translate Page to English", items)
+        t.ok("and the page is untouched until it's chosen", text(page, "#p1") == FR)
         sv.quit()
-
-        # The switch on, as Settings does.
-        subprocess.run(["defaults", "write", sv.SUITE, "translate.pages", "-bool", "true"])
         launch()
 
         # 2: what is translated and what isn't; marks; attributes; title;

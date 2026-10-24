@@ -31,14 +31,17 @@ def pin(id, **f): return sv.cmd({"do": "pin", "id": id, **f})
 def ui(**f): sv.cmd({"do": "ui", **f}); time.sleep(0.8)
 
 try:
-    # The switch off, as for everyone who never turns it on.
-    sv.setup(spaces=True); sv.launch()
+    # Always there since 24 Oct 2026, an old "off" on disk included: a pin
+    # is kept in every space only when asked, so nothing changes by itself.
+    sv.setup(spaces=True, **{"pins.shared": False}); sv.launch()
     a = sv.page("a"); pin(a)
-    t.ok("switch off: Keep in Every Space does nothing", pin(a, everywhere=True)["everywhere"] is False)
     sv.cmd({"do": "space", "action": "new", "name": "Two"}); time.sleep(1)
-    t.ok("switch off: another space has none of this space's pins", pins(state()) == [], pins(state()))
+    t.ok("not asked: another space has none of this space's pins", pins(state()) == [], pins(state()))
+    go(1)
+    t.ok("an old off: Keep in Every Space works", pin(tab_of(state(), "a"), everywhere=True)["everywhere"] is True)
+    go(2)
+    t.ok("…and the other space shows it", pins(state()) == ["a"], pins(state()))
     sv.sp("save"); sv.quit()
-    t.ok("switch off: pins.json has no shared key", "shared" not in json.load(open(f"{sv.SUPPORT}/pins.json")))
 
     # On.
     sv.setup(spaces=True, **{"pins.shared": True}); sv.launch()
