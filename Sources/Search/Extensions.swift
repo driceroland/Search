@@ -991,7 +991,7 @@ final class Extensions: NSObject, ObservableObject {
         let shown = newTabPage.flatMap(Browser.extensionHost(of:))
         let replacing = holder.map { "It asked to replace the new tab page, which “\($0.name)” shows now." } ?? "It asked to replace the new tab page."
         Task {
-            let yes = await ask("Show “\(item.name)” in new tabs?", detail: "\(replacing) You can change this later in Settings › General › Home page.",
+            let yes = await ask("Show “\(item.name)” in new tabs?", detail: "\(replacing) You can change this later in Settings › Browsing › Home page.",
                                 icon: contexts[item.id]?.webExtension.icon(for: CGSize(width: 64, height: 64)), yes: "Keep It", no: "Don't Allow")
             if yes { setNewTabPage(item.id) } else { Store.settings.set(false, forKey: "extensions.newtab.\(item.id)") }
             // The tab just opened, if it is still the page it opened on.
@@ -1551,9 +1551,10 @@ extension Extensions: WKWebExtensionControllerDelegate {
         return adapter(for: tab)
     }
 
-    /// windows.create: a window of its own, with the pages asked for, in
-    /// the space of the window in front (see Windows.swift). A popup-type
-    /// window is a window like the others here.
+    /// windows.create: a window of its own, with the pages asked for and
+    /// the tabs it was asked to take (`tabId`, macOS 27), in the space of
+    /// the window in front, or of the tab it takes (see Windows.swift). A
+    /// popup-type window is a window like the others here.
     func webExtensionController(_ controller: WKWebExtensionController, openNewWindowUsing configuration: WKWebExtension.WindowConfiguration, for extensionContext: WKWebExtensionContext) async throws -> (any WKWebExtensionWindow)? {
         // A private window isn't something an extension can have here: made
         // as a normal one, its pages would land in the normal space's store
@@ -1563,10 +1564,29 @@ extension Extensions: WKWebExtensionControllerDelegate {
             throw NSError(domain: "Search", code: 2, userInfo: [NSLocalizedDescriptionKey: "Private windows can't be opened by extensions."])
         }
         for url in configuration.tabURLs { try Extensions.mayOpen(url) }
+        // Tabs to move in, each as moveToWindow takes one: in a window's
+        // row, not a pin (pins are in every window already), not a script's
+        // bench tab, and all of one profile. Refused whole rather than
+        // leaving the extension a window without the tab it asked for.
+        var moving: [(tab: Tab, from: Browser)] = []
+        for asked in configuration.tabs {
+            guard let tab = (asked as? ExtensionTab)?.tab, seen(tab, for: extensionContext), let from = browser(of: tab) else {
+                throw NSError(domain: "Search", code: 1, userInfo: [NSLocalizedDescriptionKey: "No tab with that id."])
+            }
+            guard tab.pin == nil, !tab.bench, moving.first.map({ $0.from.profileID == from.profileID }) ?? true else {
+                throw NSError(domain: "Search", code: 4, userInfo: [NSLocalizedDescriptionKey: "That tab can't be moved to another window."])
+            }
+            moving.append((tab, from))
+        }
+        // A tab moved in makes a browser window even when a popup was asked
+        // for. A popup is never saved, never brought back, and closes when
+        // its extension is turned off: one of your tabs, its history and
+        // sign-ins, would go with it, for good. Chrome would make the popup.
+        let popup = configuration.windowType == .popup && moving.isEmpty
         // A popup has no address bar, only the site over the page: a website,
         // or this extension's own page. Not a data: or blob: page, which
         // could draw anything and name no site, nor another extension's.
-        if configuration.windowType == .popup {
+        if popup {
             for url in configuration.tabURLs {
                 let scheme = url.scheme?.lowercased() ?? ""
                 let own = [Extensions.scheme, Extensions.formerScheme].contains(scheme)
@@ -1576,18 +1596,21 @@ extension Extensions: WKWebExtensionControllerDelegate {
                 }
             }
         }
-        let fresh = Browser(record: WindowRecord(space: browser?.spaceID ?? Space.firstID))
+        // In the moved tab's space, so its profile's sign-ins come with it.
+        let fresh = Browser(record: WindowRecord(space: moving.first?.from.spaceID ?? browser?.spaceID ?? Space.firstID))
         // A popup, as a password manager's vault or a sign-in opens: a small
         // window of the page, not another browser window.
-        if configuration.windowType == .popup {
+        if popup {
             fresh.extensionPopup = contexts.first { $0.value === extensionContext }?.key ?? extensionContext.uniqueIdentifier
         }
+        for (tab, from) in moving { from.moveToWindow(tab, fresh) }
         for (index, url) in configuration.tabURLs.enumerated() {
-            fresh.open(url, foreground: index == 0, atEnd: true)
+            fresh.open(url, foreground: index == 0 && moving.isEmpty, atEnd: true)
         }
-        // The empty tab a new window starts with goes once there are pages.
-        if !configuration.tabURLs.isEmpty {
-            for blank in fresh.tabs where blank.isBlank && !blank.bench { fresh.close(blank) }
+        // The empty tab a new window starts with goes once there are pages,
+        // never a moved one that happens to be empty.
+        if !configuration.tabURLs.isEmpty || !moving.isEmpty {
+            for blank in fresh.tabs where blank.isBlank && !blank.bench && !moving.contains(where: { $0.tab === blank }) { fresh.close(blank) }
         }
         // The frame asked for, when it is one: parts left unset come as
         // numbers that aren't (NaN), and AppKit traps on a frame made of them.

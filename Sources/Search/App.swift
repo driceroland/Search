@@ -103,7 +103,8 @@ struct SearchApp: App {
                 Divider()
                 Button("Find on Page…") { browser.openFind() }
                     .shortcut("edit.find")
-                    .disabled(!(browser.active?.isWeb ?? false))
+                    // On the Settings tab, ⌘F finds a setting.
+                    .disabled(!(browser.active?.isWeb ?? false) && browser.active?.page?.kind != .settings)
                 Button("Find Next") { browser.look(forward: true) }
                     .shortcut("edit.findNext")
                     .disabled(!browser.finding)
@@ -122,6 +123,14 @@ struct SearchApp: App {
                             set: { _ in browser.toggleSubstitution(kind) }
                         ))
                     }
+                }
+                // Moved here from Settings, as Safari has it. WebKit reads it
+                // once, so it counts from the next page on.
+                Menu("Spelling and Grammar") {
+                    Toggle("Correct Spelling Automatically", isOn: Binding(
+                        get: { browser.prefs.autocorrect },
+                        set: { browser.prefs.autocorrect = $0 }
+                    ))
                 }
             }
             CommandGroup(replacing: .toolbar) {
