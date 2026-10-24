@@ -233,18 +233,43 @@ struct TabBar: View {
             let row = space.id == browser.spaceID
                 ? Parked(tabs: browser.tabs, active: browser.activeID, splits: browser.splits)
                 : browser.parked[space.id] ?? Parked(tabs: [], active: nil)
-            let shown = rowTabs(row.tabs, splits: row.splits)
+            let groupsOn = browser.prefs.usesTabGroups
+            // Its groups as they were left, folded or not (see Parked.drawn):
+            // drawn flat, a folded group's tabs came out for the swipe.
+            let (groups, loose) = row.drawn(groupsOn: groupsOn, splitView: browser.prefs.splitView)
+            let pins = rowTabs(row.tabs, splits: row.splits).filter { $0.pin != nil }
+            let shown = groupsOn ? pins + groups.flatMap(\.tabs) + loose : rowTabs(row.tabs, splits: row.splits)
             let each = width(in: strip, tabs: shown, splits: row.splits)
-            // The neighbour draws no group headings, so its line only ever
-            // stands between its pins and its own loose tabs.
-            let line = TabBar.showsPinLine(shown)
+            let line = TabBar.showsPinLine(shown, groups: groups.count)
             let firstLoose = shown.firstIndex { $0.pin == nil }
             HStack(spacing: Metrics.tabGap) {
-                ForEach(Array(shown.enumerated()), id: \.element.id) { index, tab in
-                    if line, index == firstLoose { PinLine() }
-                    rowItem(tab, in: row.tabs, splits: row.splits, activeID: row.active,
-                            width: each, room: strip - lights - 12,
-                            height: Metrics.strip, interactive: false, pill: pill)
+                if groupsOn {
+                    ForEach(pins) { tab in
+                        rowItem(tab, in: row.tabs, splits: row.splits, activeID: row.active,
+                                width: each, room: strip - lights - 12,
+                                height: Metrics.strip, interactive: false, pill: pill)
+                    }
+                    if line { PinLine() }
+                    ForEach(groups) { drawn in
+                        GroupHeading(browser: browser, group: drawn.group, horizontal: true)
+                        ForEach(drawn.tabs) { tab in
+                            rowItem(tab, in: row.tabs, splits: row.splits, activeID: row.active,
+                                    width: each, room: strip - lights - 12,
+                                    height: Metrics.strip, interactive: false, pill: pill)
+                        }
+                    }
+                    ForEach(loose) { tab in
+                        rowItem(tab, in: row.tabs, splits: row.splits, activeID: row.active,
+                                width: each, room: strip - lights - 12,
+                                height: Metrics.strip, interactive: false, pill: pill)
+                    }
+                } else {
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, tab in
+                        if line, index == firstLoose { PinLine() }
+                        rowItem(tab, in: row.tabs, splits: row.splits, activeID: row.active,
+                                width: each, room: strip - lights - 12,
+                                height: Metrics.strip, interactive: false, pill: pill)
+                    }
                 }
             }
             .frame(height: Metrics.strip)
@@ -844,6 +869,15 @@ struct Carried: ViewModifier {
     var outside: (() -> Bool)? = nil
     var browser: Browser? = nil
     var tab: Tab? = nil
+    /// Carried over another block that would take it — the pins, for a
+    /// tab; the tabs, for a pinned row — at this point in the row's space:
+    /// true while that block shows where it would land, and the row then
+    /// holds its place rather than moving along its own.
+    var cross: ((CGPoint) -> Bool)? = nil
+    /// Let go (nil: the drag was called off): true when that block took it.
+    var land: ((CGPoint?) -> Bool)? = nil
+    /// Over that block: faint, so the place it opened shows through.
+    var faded = false
     let move: (Int) -> Void
 
     @State private var held = false
@@ -864,6 +898,7 @@ struct Carried: ViewModifier {
             .transaction { if held { $0.animation = nil } }
             .zIndex(held ? 1 : 0)
             .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
+            .opacity(held && faded ? 0.4 : 1)
             .gesture(
                 DragGesture(minimumDistance: 5, coordinateSpace: .named(space))
                     .onChanged { value in
@@ -872,9 +907,13 @@ struct Carried: ViewModifier {
                             from = index
                         }
                         travel = vertical ? value.translation.height : value.translation.width
+                        // Asked every move, so the block it left lets go
+                        // of it as soon as it is elsewhere.
+                        let crossed = cross?(value.location) == true
                         if let browser, let tab, browser.prefs.splitView,
                            TabDrag.shared.update(browser: browser, tab: tab,
                                                  translation: value.translation) { return }
+                        if crossed { return }
                         let target = min(max(0, from + Int((travel / step).rounded())), count - 1)
                         if target != index {
                             withAnimation(Motion.settle) { move(target) }
@@ -884,22 +923,28 @@ struct Carried: ViewModifier {
                         if let browser, let tab, browser.prefs.splitView {
                             let finished = TabDrag.shared.finish(browser: browser, tab: tab)
                             let source = finished.source
-                            switch finished.drop {
-                            case .stage(let target, let onLeft):
-                                browser.pair(source, with: target, onLeft: onLeft)
-                            case .strip(let target):
-                                browser.dropTabIntoStrip(source, before: target)
-                                if let onDropTab { onDropTab(source, value.location) }
-                                else if source.id == tab.id { onDrop?(value.location) }
-                            case .outside:
-                                if !browser.dragOut(source, at: finished.point) {
+                            // Let go over the pins, or out of them: theirs,
+                            // before anything else here.
+                            let cancelled: Bool
+                            if case .cancelled = finished.drop { cancelled = true } else { cancelled = false }
+                            if land?(cancelled ? nil : value.location) != true {
+                                switch finished.drop {
+                                case .stage(let target, let onLeft):
+                                    browser.pair(source, with: target, onLeft: onLeft)
+                                case .strip(let target):
+                                    browser.dropTabIntoStrip(source, before: target)
                                     if let onDropTab { onDropTab(source, value.location) }
                                     else if source.id == tab.id { onDrop?(value.location) }
+                                case .outside:
+                                    if !browser.dragOut(source, at: finished.point) {
+                                        if let onDropTab { onDropTab(source, value.location) }
+                                        else if source.id == tab.id { onDrop?(value.location) }
+                                    }
+                                case .cancelled:
+                                    move(from)
                                 }
-                            case .cancelled:
-                                move(from)
                             }
-                        } else if outside?() != true {
+                        } else if land?(value.location) != true, outside?() != true {
                             if let onDropTab, let tab { onDropTab(tab, value.location) }
                             else { onDrop?(value.location) }
                         }
@@ -911,6 +956,7 @@ struct Carried: ViewModifier {
             )
             .onReceive(TabDrag.shared.$cancelledID) { id in
                 guard id == tab?.id, held else { return }
+                _ = land?(nil)
                 move(from)
                 held = false
                 travel = 0
@@ -1237,9 +1283,25 @@ struct TabPress: ViewModifier {
     @Binding var selected: Bool
     let act: () -> Void
 
+    /// How far the hand may go before the press gives way to the row's
+    /// drag, which starts at 5. A long press that never gave way (as this
+    /// was first written, with no limit) kept the press to itself: the drag
+    /// that carries a row or a pin waited for it to fail, which it only did
+    /// at the release, so nothing moved under the hand — the row jumped to
+    /// its place on letting go, and a pin held still a moment before
+    /// letting go wasn't moved at all.
+    static let travel: CGFloat = 4
+
     func body(content: Content) -> some View {
-        content.onLongPressGesture(minimumDuration: .infinity, maximumDistance: .infinity, pressing: { down in
+        content.onLongPressGesture(minimumDuration: .infinity, maximumDistance: TabPress.travel, pressing: { down in
             if !down {
+                // Given way to a drag, the button still down: what the press
+                // did stands until the release, so the release can't take
+                // it for a fresh click on the tab now on screen.
+                if NSEvent.pressedMouseButtons & 1 != 0 {
+                    TabPress.untilRelease { selected = false }
+                    return
+                }
                 // The row's release handler must see which press selected it.
                 DispatchQueue.main.async { selected = false }
                 return
@@ -1248,6 +1310,17 @@ struct TabPress: ViewModifier {
             selected = !active
             if selected { act() }
         }, perform: {})
+    }
+
+    /// Once, at the left button's release.
+    private static func untilRelease(_ act: @escaping () -> Void) {
+        var monitor: Any?
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { event in
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            DispatchQueue.main.async(execute: act)
+            return event
+        }
     }
 }
 
@@ -1268,12 +1341,12 @@ struct OneClick: ViewModifier {
     let double: Bool
     let act: () -> Void
 
+    /// One gesture whose count changes, not two in turn: a pin becomes
+    /// the one on screen as the button goes down (TabPress), and swapping
+    /// one tap for the other then made the square anew under the hand, which
+    /// dropped the drag that had picked it up.
     func body(content: Content) -> some View {
-        if double {
-            content.onTapGesture(count: 2, perform: act)
-        } else {
-            content.onTapGesture(perform: act)
-        }
+        content.onTapGesture(count: double ? 2 : 1, perform: act)
     }
 }
 

@@ -25,6 +25,8 @@ struct PaneStageView: NSViewRepresentable {
     let action: (PaneStage.Action) -> Void
     let hover: (Tab.ID?) -> Void
     var find: Browser? = nil
+    /// The accounts hanging from the sign-in box the caret is in, if any.
+    var accounts: (browser: Browser, asked: Browser.Suggesting)? = nil
     /// Each page's corners, as a card (see CardEdge).
     var corner: CGFloat = 0
     /// The page filling the screen, if one is (see SplitStage.immersed).
@@ -42,6 +44,7 @@ struct PaneStageView: NSViewRepresentable {
         stage.onHover = hover
         stage.show(tabs, split: split, focused: focused)
         stage.showFind(find)
+        stage.showAccounts(accounts)
     }
 }
 
@@ -106,6 +109,34 @@ final class PaneStage: NSView {
             findBar = bar
             addSubview(bar, positioned: .above, relativeTo: nil)
         }
+        needsLayout = true
+    }
+
+    private var accountList: AccountHost?
+    private var accountsFor: Tab.ID?
+
+    /// The accounts under a sign-in box, for the same reason: drawn by
+    /// SwiftUI over the stage, they were under WebKit's pages and never
+    /// seen, though the list was up and a click on the box did nothing.
+    func showAccounts(_ accounts: (browser: Browser, asked: Browser.Suggesting)?) {
+        guard let accounts else {
+            accountList?.removeFromSuperview()
+            accountList = nil
+            accountsFor = nil
+            return
+        }
+        var view = AccountList(browser: accounts.browser, asked: accounts.asked)
+        if accountList == nil {
+            let host = AccountHost(rootView: view)
+            host.sizingOptions = []
+            accountList = host
+            addSubview(host, positioned: .above, relativeTo: nil)
+        }
+        guard let host = accountList else { return }
+        view.onSize = { [weak host] in host?.listSize = $0 }
+        host.spot = accounts.asked.spot
+        host.rootView = view
+        accountsFor = accounts.asked.tab
         needsLayout = true
     }
     fileprivate var slots: [StageView] = []
@@ -363,6 +394,14 @@ final class PaneStage: NSView {
                 bar.frame = CGRect(x: page.maxX - width, y: page.minY,
                                    width: width, height: min(60, page.height))
             }
+        }
+        if let host = accountList {
+            // Over the page the box is on, as large as it: the list places
+            // itself under the box from that page's top-left.
+            let page = accountsFor.flatMap { id in tabs.firstIndex { $0.id == id } }
+                .flatMap { frames.indices.contains($0) ? frames[$0] : nil }
+            host.isHidden = page == nil || page?.width == 0
+            if let page, host.frame != page { host.frame = page }
         }
         guard live == nil else { return }
         var now: [Tab.ID: CGRect] = [:]
@@ -855,5 +894,24 @@ private final class FindHost: NSHostingView<FindBar> {
         let inside = convert(point, from: superview)
         // SwiftUI buttons can be hit on the hosting view itself.
         return Capsule().path(in: pillFrame).contains(inside) ? hit : nil
+    }
+}
+
+/// The accounts' box is the whole page, so the list can hang anywhere on it;
+/// the list itself is a small card under the sign-in box. A press on the
+/// card picks an account; anywhere else it is the page's, as if the box
+/// weren't there — the sign-in box itself above all.
+private final class AccountHost: NSHostingView<AccountList> {
+    /// The sign-in box, from the page's top-left (Browser.Suggesting.spot).
+    var spot = CGRect.zero
+    /// How big the card came out (AccountList.onSize).
+    var listSize = CGSize.zero
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let inside = convert(point, from: superview)
+        // Where AccountList puts the card: under the box, left edges lined up.
+        let card = CGRect(origin: CGPoint(x: spot.minX, y: spot.maxY + 6), size: listSize)
+        return RoundedRectangle(cornerRadius: 10, style: .continuous).path(in: card).contains(inside)
+            ? super.hitTest(point) : nil
     }
 }

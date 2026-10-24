@@ -4,7 +4,7 @@ A small, fast, quiet web browser for the Mac, by [Office Commun](https://officec
 
 ![Search, with its tabs down the left and a page taking the rest of the window](.github/screenshot.png)
 
-**[Download for macOS →](https://officecommun.com/search)** · macOS 14 or later · free · about 7 MB
+**[Download for macOS →](https://officecommun.com/search)** · macOS 14 or later · free · about 8 MB
 
 Or with [Homebrew](https://brew.sh): `brew install --cask driceroland/tap/search`
 
@@ -14,7 +14,7 @@ Or with [Homebrew](https://brew.sh): `brew install --cask driceroland/tap/search
 
 Search is a browser with nothing in the way. A row of tabs — across the top or down the left, your choice — and the page. There is no toolbar, no start page, no sidebar of suggestions, no account to sign into, nothing that wants your attention. You type an address or a few words in one field and you are on the page.
 
-It uses **WebKit**, the engine already inside every Mac (it is what Safari runs on). That is why the whole app is about 3 MB on disk and opens instantly: there is no second copy of Chromium to download, update and keep in memory.
+It uses **WebKit**, the engine already inside every Mac (it is what Safari runs on). That is why the whole app is about 8 MB on disk and opens instantly: there is no second copy of Chromium to download, update and keep in memory.
 
 It was built by a design studio that spends its whole day in a browser and was tired of the ones that had become products. This one is a tool.
 
