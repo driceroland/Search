@@ -165,11 +165,15 @@ enum Metrics {
     static let helm: CGFloat = 3 * 26 + 2 * 2 + 8
     /// The same three doors again, in the sidebar, where they sit right of
     /// the lights instead. The column already has 10 of horizontal padding
-    /// of its own before this even starts, so this is the lights' own edge
-    /// (79) less that padding, plus a sliver of air — not the full breathing
-    /// room a tab row gets, because the sidebar's minimum width doesn't have
-    /// it to give.
-    static let sideLights: CGFloat = 72
+    /// of its own before this even starts. 72 put the back door's box 3
+    /// points from the zoom button and its chevron 12, "a little tight"
+    /// (feedback, 22 Oct 2026): at 80 the chevron is 20 points clear of the
+    /// lights, about the 19 the window leaves on their left, as a toolbar's
+    /// first item sits in Safari. A column too narrow for that gives back
+    /// what it must (SideBar.lights), down to where it was.
+    static let sideLights: CGFloat = 80
+    /// The three doors' own width, without the air after them.
+    static let helmDoors: CGFloat = 3 * 26 + 2 * 4
     /// The band left at the top when there is no strip: just enough for the
     /// traffic lights to sit in, and nothing else.
     static let bare: CGFloat = 34

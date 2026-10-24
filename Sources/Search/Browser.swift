@@ -1602,6 +1602,13 @@ final class Browser: NSObject, ObservableObject {
         announce("Address copied")
     }
 
+    /// ⌥⇧⌘C. The address without its tracking parameters (CleanLink).
+    func copyCleanLink() {
+        guard let url = active?.address else { return }
+        CleanLink.copy(url)
+        announce("Clean link copied")
+    }
+
     /// For pasting into notes and messages that read Markdown: a title that
     /// links, not a bare address to explain in your own words.
     func copyMarkdownLink() {
@@ -2990,14 +2997,14 @@ final class Browser: NSObject, ObservableObject {
         if activeID == tab.id { activeID = page.id; editing = false }
     }
 
-    func select(_ tab: Tab, floatPrevious: Bool = true) {
+    func select(_ tab: Tab, floatPrevious: Bool = true, unfoldGroup: Bool = true) {
         if let pair = split(for: tab), activeSplit?.id == pair.id, activeID != tab.id {
             focusPane(tab)
             return
         }
         // A folded group opens for the tab you go to in it. With groups off,
         // they are kept as they were and nothing about them is saved.
-        if prefs.usesTabGroups, let id = tab.groupID,
+        if unfoldGroup, prefs.usesTabGroups, let id = tab.groupID,
            let index = tabGroups.firstIndex(where: { $0.id == id }), tabGroups[index].collapsed {
             tabGroups[index].collapsed = false
             writeSession(now: true)
@@ -3020,6 +3027,7 @@ final class Browser: NSObject, ObservableObject {
         // Coming back to the tab whose video is out brings it home first, so
         // it is never lifted and landed in the same breath.
         if floating == tab.id { land() }
+        if pictured == tab.id { unpicture() }
         if floatPrevious { leaving() }
         activeID = tab.id
         tab.touch()
@@ -3407,8 +3415,64 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// Group menu › Move Group to Space: every tab of a group, in its order,
+    /// into another space, where it is the same group — its name, folded or
+    /// not — after that space's own groups. As Move to Space for one tab: a
+    /// space with other sign-ins asks first only when a page has unsaved
+    /// form entries, once for the group.
+    func move(group id: UUID, toSpace target: UUID) {
+        guard prefs.usesSpaces, target != spaceID,
+              let destination = spaces.first(where: { $0.id == target }),
+              let group = tabGroups.first(where: { $0.id == id })
+        else { return }
+        let members = tabs.filter { $0.groupID == id && $0.pin == nil && !$0.bench
+            && $0.address.flatMap({ Browser.extensionHost(of: $0) }) == nil }
+        guard !members.isEmpty else { return }
+        let from = spaceID
+        let complete: () -> Void = { [weak self] in
+            guard let self, self.spaceID == from else { return }
+            self.finishGroupMove(group, members.filter { tab in self.tabs.contains { $0.id == tab.id } }, to: destination)
+        }
+        let store = Spaces.store(for: target)
+        guard members.contains(where: { !$0.shy && $0.store !== store }) else { return complete() }
+        // Any page with something typed and not sent, asked once.
+        var unsaved = false
+        let asked = DispatchGroup()
+        for tab in members where !tab.shy && tab.store !== store {
+            asked.enter()
+            tab.unsaved { if $0 { unsaved = true }; asked.leave() }
+        }
+        asked.notify(queue: .main) {
+            guard unsaved else { return complete() }
+            Ask.sure(
+                "Move Group?",
+                detail: "A page in this group has unsaved form entries. The group will reopen in “\(destination.name)” with that Space’s sign-ins, so the entries may be lost.",
+                confirm: "Move",
+                then: complete
+            )
+        }
+    }
+
+    private func finishGroupMove(_ group: TabGroup, _ members: [Tab], to destination: Space) {
+        guard !members.isEmpty else { return }
+        // The tab on screen goes with the group: the one after the group
+        // comes to the front instead, or the one before it, not each of the
+        // group's tabs in turn on the way out.
+        if let activeID, members.contains(where: { $0.id == activeID }) {
+            let ids = Set(members.map(\.id))
+            let at = tabs.firstIndex { $0.id == activeID } ?? 0
+            let after = tabs[at...].first { !ids.contains($0.id) && standsInRow($0) }
+            let before = tabs[..<at].last { !ids.contains($0.id) && standsInRow($0) }
+            if let next = after ?? before { select(next, floatPrevious: false) }
+        }
+        for tab in members { finishMove(tab, toSpace: destination.id, group: group, quietly: true) }
+        writeSession(now: true)
+        if let row = parked[destination.id] { writeSession(now: true, space: destination.id, row: row) }
+        announce("Moved \(group.name) to \(destination.name)")
+    }
+
     @discardableResult
-    private func finishMove(_ tab: Tab, toSpace id: UUID) -> Bool {
+    private func finishMove(_ tab: Tab, toSpace id: UUID, group: TabGroup? = nil, quietly: Bool = false) -> Bool {
         guard prefs.usesSpaces, id != spaceID,
               let destination = spaces.first(where: { $0.id == id }),
               let index = tabs.firstIndex(where: { $0.id == tab.id })
@@ -3432,9 +3496,15 @@ final class Browser: NSObject, ObservableObject {
         if tabs.isEmpty { adopt(Tab(configuration: Web.configuration(space: spaceID))) }
 
         tab.rehome(in: id)
-        // Its group stays behind: the space it goes to has groups of its own.
-        tab.groupID = nil
+        // Its group stays behind: the space it goes to has groups of its own
+        // — unless the whole group is going (Move Group to Space).
+        tab.groupID = group?.id
         var row = parked[id] ?? loadRow(id)
+        if let group {
+            var groups = row.groups ?? readRow(id).groups ?? []
+            if !groups.contains(where: { $0.id == group.id }) { groups.append(group) }
+            row.groups = groups
+        }
         // A pin is that space's pin from now on, in pins.json too: kept only
         // in its row, the next look at the space's pins (another window's
         // change, a change to the shared pins, or a relaunch before the space
@@ -3451,6 +3521,7 @@ final class Browser: NSObject, ObservableObject {
         if row.active == nil { row.active = tab.id }
         parked[id] = row
 
+        guard !quietly else { return true }
         writeSession(now: true)
         writeSession(now: true, space: id, row: row)
         announce("Moved to \(destination.name)")
@@ -3675,13 +3746,41 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// The tabs as they are on screen: with groups on, the ones folded away
-    /// in a group are not among them. ⌘1–9 and ⌃Tab count these, so the key
-    /// goes to the tab you see in that place, never to one you can't.
+    /// in a group are not among them. Tab cycling and selection ranges count
+    /// these; number shortcuts also give folded groups a place of their own.
     var shownTabs: [Tab] {
         guard prefs.usesTabGroups else { return displayedTabs }
         return displayedTabs.filter { $0.pin != nil }
             + tabGroups.flatMap { visibleTabs(in: $0) }
             + tabs(in: nil).filter(standsInRow)
+    }
+
+    /// Number shortcuts count a folded group once, even while its active tab
+    /// is shown below its heading. Other tab navigation keeps using shownTabs.
+    var tabShortcutTargets: [(id: UUID, tab: Tab)] {
+        let row = displayedTabs
+        guard prefs.usesTabGroups else { return row.map { ($0.id, $0) } }
+        let groups = tabGroups.flatMap { group -> [(id: UUID, tab: Tab)] in
+            let members = tabs(in: group.id).filter(standsInRow)
+            guard group.collapsed else { return members.map { ($0.id, $0) } }
+            let current = active.flatMap { self.group(of: $0) == group.id ? $0 : nil }
+            guard let tab = current ?? members.max(by: { $0.touched < $1.touched }) else { return [] }
+            return [(group.id, tab)]
+        }
+        return row.filter { $0.pin != nil }.map { ($0.id, $0) }
+            + groups
+            + tabs(in: nil).filter(standsInRow).map { ($0.id, $0) }
+    }
+
+    @Published var commandHeld = false
+
+    /// Only nine hints, worked out once for the window rather than by each tab.
+    var tabShortcutNumbers: [UUID: Int] {
+        guard prefs.showsTabShortcuts, commandHeld else { return [:] }
+        let shown = tabShortcutTargets
+        var numbers = Dictionary(uniqueKeysWithValues: shown.prefix(8).enumerated().map { ($0.element.id, $0.offset + 1) })
+        if shown.count > 8, let last = shown.last { numbers[last.id] = 9 }
+        return numbers
     }
 
     func clearTabSelection() {
@@ -3760,11 +3859,25 @@ final class Browser: NSObject, ObservableObject {
         return focused
     }
 
-    /// ⌘1–8: the tab in that place on screen.
+    /// ⌘1–8: a tab or folded group in that place, without unfolding it.
+    /// With Settings › Tabs › A pin's number again goes back, the number of
+    /// the pin you're on takes you back to the tab you were on before it.
     func select(index: Int) {
-        let shown = shownTabs
-        guard shown.indices.contains(index) else { return }
-        select(entry(shown[index]))
+        let targets = tabShortcutTargets
+        guard targets.indices.contains(index) else { return }
+        let tab = entry(targets[index].tab)
+        if prefs.pinNumberGoesBack, tab.pin != nil, activeID == tab.id, let back = tabBefore(tab) {
+            select(back)
+            return
+        }
+        select(tab, unfoldGroup: false)
+    }
+
+    /// The tab last left that is still in the row, other than `tab`.
+    func tabBefore(_ tab: Tab) -> Tab? {
+        let row = tabs.filter(standsInRow)
+        guard let id = tabSwitcher.lastLeft(among: Set(row.map(\.id)), other: tab.id) else { return nil }
+        return row.first { $0.id == id }
     }
 
     /// ⌃Tab: the space's tabs, the most recently used first, and the small
@@ -4028,6 +4141,57 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// Pages in a window of their own, in this window's space, the first in
+    /// front. The empty tab a new window starts with goes once they are in,
+    /// as it does for a window an extension opens. Used, for one, by the
+    /// bookmarks bar's Open in New Window and Open All in New Window.
+    func openInNewWindow(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let fresh = Browser(record: WindowRecord(space: spaceID))
+        for (index, url) in urls.enumerated() {
+            fresh.open(url, foreground: index == 0, atEnd: true, mayWait: true)
+        }
+        for blank in fresh.tabs where blank.isBlank && !blank.bench { fresh.close(blank) }
+        Browsers.open(fresh, frame: nil)
+    }
+
+    /// A page in a new tab, paired with the one on screen as a tab's Open in
+    /// Split View pairs it. Used, for one, by the bookmarks bar's Open in
+    /// Split View.
+    func openInSplit(_ url: URL) {
+        guard prefs.splitView else { return }
+        openInSplit(open(url, foreground: false, from: active))
+    }
+
+    /// A page in a tab that keeps nothing, as ⌘⇧N makes one, already on its
+    /// way there. Not `open(_:foreground:)`, whose tab is private only when
+    /// the one it comes from is. Used, for one, by the bookmarks bar's Open
+    /// in Private Tab.
+    func openShy(_ url: URL) {
+        let tab = Tab(shy: true)
+        adopt(tab)
+        tab.go(to: url)
+        leaving()
+        activeID = tab.id
+        typed = ""
+        editing = false
+    }
+
+    /// Pages in a tab group of their own, under `name`. A group made from a
+    /// tab's menu opens with its name ready to be typed; this one is named
+    /// already, so it doesn't. Used, for one, by the bookmarks bar's Open All
+    /// in Tab Group.
+    func openInTabGroup(_ urls: [URL], named name: String) {
+        guard prefs.usesTabGroups, !urls.isEmpty else { return }
+        let opened = urls.enumerated().map { index, url in
+            open(url, foreground: index == 0, atEnd: true, mayWait: true)
+        }
+        let id = addTabGroup(containing: opened[0])
+        renameTabGroup(id, to: name)
+        editingGroupID = nil
+        for tab in opened.dropFirst() { move(tab, toGroup: id) }
+    }
+
     /// ⌘⇧N. A tab that keeps nothing — its own cookies, its own sign-ins, no
     /// history, and no place in tomorrow's session.
     func newShyTab() {
@@ -4287,7 +4451,7 @@ final class Browser: NSObject, ObservableObject {
 
     func appLeft() {
         guard prefs.floatsAway, Browsers.front == nil || Browsers.front === self else { return }
-        liftedAway = !floater.showing
+        liftedAway = !floater.showing && pictured == nil
         lift(active, quietly: true, otherwise: otherPane)
     }
 
@@ -4295,6 +4459,7 @@ final class Browser: NSObject, ObservableObject {
     func appBack() {
         defer { liftedAway = false }
         if liftedAway, let id = floating, id == activeID { land() }
+        if liftedAway, let id = pictured, id == activeID { unpicture() }
     }
 
     /// ⌘⇧P, for lifting one out by hand.
@@ -4303,7 +4468,49 @@ final class Browser: NSObject, ObservableObject {
             land()
             return
         }
+        if prefs.floatStyle == .system {
+            picture(active, quietly: false, toggle: true, otherwise: otherPane)
+            return
+        }
         lift(active, quietly: false, otherwise: otherPane)
+    }
+
+    /// The tab whose video Search last sent to macOS's picture in picture
+    /// (Settings › General › The floating video), to bring back when you
+    /// return to it, as Search's own window lands.
+    private(set) var pictured: Tab.ID?
+
+    /// The video playing in `tab` into picture in picture (NativePiP).
+    /// `toggle`: ⇧⌘P, which also brings one back.
+    private func picture(_ tab: Tab?, quietly: Bool, toggle: Bool = false, otherwise: Tab? = nil) {
+        guard let tab, !tab.isBlank, !tab.asleep, tab.web.fullscreenState == .notInFullscreen else {
+            if let otherwise { picture(otherwise, quietly: quietly, toggle: toggle) }
+            return
+        }
+        if quietly, !Players.knows(tab.address) || tab.pageAddress?.host().map(Grounded.holds) == true {
+            if let otherwise { picture(otherwise, quietly: quietly, toggle: toggle) }
+            return
+        }
+        tab.web.evaluateInSearch(NativePiP.script(toggle: toggle)) { [weak self, weak tab] answer in
+            MainActor.assumeIsolated {
+                guard let self, let tab else { return }
+                switch answer as? String {
+                case "in": self.pictured = tab.id
+                case "out": if self.pictured == tab.id { self.pictured = nil }
+                case "refused": if !quietly { self.announce("This page keeps its video to itself") }
+                default:
+                    if let otherwise { return self.picture(otherwise, quietly: quietly, toggle: toggle) }
+                    if !quietly { self.announce("Nothing is playing here") }
+                }
+            }
+        }
+    }
+
+    /// Back into its tab, from macOS's picture in picture.
+    func unpicture() {
+        guard let id = pictured else { return }
+        pictured = nil
+        tabs.first { $0.id == id }?.web.evaluateInSearch(NativePiP.off)
     }
 
     /// Everything but the video goes out of the way, and the page it lives in
@@ -4311,6 +4518,7 @@ final class Browser: NSObject, ObservableObject {
     /// `otherwise`: the other page of a pair, tried when this one has
     /// nothing playing.
     private func lift(_ tab: Tab?, quietly: Bool, otherwise: Tab? = nil) {
+        if prefs.floatStyle == .system { return picture(tab, quietly: quietly, otherwise: otherwise) }
         // A tab just put down with ⌘W has no page to lift a video out of, and
         // asking it would only build an empty view to ask.
         guard let tab, !tab.isBlank, !tab.asleep, !floater.showing else {
