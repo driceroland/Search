@@ -21,6 +21,35 @@ enum Shared {
     static let fetches = Fetches()
 }
 
+/// What is being typed into an address field, ⌘L's or the one in the tab,
+/// and what each offers back. Its own object, watched by the fields and
+/// their lists alone: on the Browser, every key pressed drew every tab's row
+/// again, and the menu bar's items with them. The Browser still owns the
+/// thinking (guess, tabTyped); this only holds the answers.
+@MainActor
+final class Typing: ObservableObject {
+    @Published var typed = ""
+    @Published var offers: [Suggestion] = []
+    @Published var ending: String?
+    @Published var picked: Int?
+    @Published var siteOffer: SearchSite?
+    @Published var tabDraft = ""
+    @Published var tabOffers: [Suggestion] = []
+    @Published var tabPicked: Int?
+}
+
+/// Find on Page's words, its two switches and what the page last answered,
+/// for the find bar alone to watch, as Typing is for the address field.
+@MainActor
+final class Seeking: ObservableObject {
+    @Published var needle = ""
+    @Published var matchCase = false
+    @Published var wholeWords = false
+    @Published var missed = false
+    @Published var focus = 0
+    @Published var result: PageFind.Result?
+}
+
 @MainActor
 final class Browser: NSObject, ObservableObject {
     private static var activeFileImports: [UUID: ImportFile.Control] = [:]
@@ -317,23 +346,45 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var launching = false
     /// The site the list offers to search, for what has been typed so far
     /// (Settings › General › Search a site from the address field).
-    @Published private(set) var siteOffer: SearchSite?
+    private(set) var siteOffer: SearchSite? {
+        get { typing.siteOffer }
+        set { typing.siteOffer = newValue }
+    }
     /// The site Tab put in the field: what is typed next searches it.
     @Published var siteChip: SearchSite? {
         didSet { if siteChip != oldValue { guess() } }
     }
+    /// What the address fields hold as they are typed in, kept apart (see
+    /// Typing): every key changes it, and only the fields and their lists
+    /// watch it.
+    let typing = Typing()
     /// What is in the field. Every change re-reads the history, because the
     /// list under the field and the grey ending inside it are both just
     /// answers to this string.
-    @Published var typed = "" { didSet { guess() } }
+    var typed: String {
+        get { typing.typed }
+        set {
+            typing.typed = newValue
+            guess()
+        }
+    }
 
     let history = Shared.history
     /// What the field is offering, best first.
-    @Published private(set) var offers: [Suggestion] = []
+    private(set) var offers: [Suggestion] {
+        get { typing.offers }
+        set { typing.offers = newValue }
+    }
     /// The rest of the best match, drawn grey after the caret. Tab takes it.
-    @Published private(set) var ending: String?
+    private(set) var ending: String? {
+        get { typing.ending }
+        set { typing.ending = newValue }
+    }
     /// Which row the arrow keys have walked to, if any.
-    @Published var picked: Int?
+    var picked: Int? {
+        get { typing.picked }
+        set { typing.picked = newValue }
+    }
     /// Bumped when what was typed isn't an address and can't be searched for.
     @Published private(set) var refusals = 0
     /// Bumped whenever the cursor should go back into the field.
@@ -378,22 +429,49 @@ final class Browser: NSObject, ObservableObject {
         }
         set { Store.settings.set(newValue.rawValue, forKey: "settings.page") }
     }
+    /// What is looked for and what the page said, kept apart (see Seeking)
+    /// for the bar alone to watch: every letter typed into it changes them.
+    let seeking = Seeking()
     // The same words written back (the field does, as it appears) aren't
     // a Next: Return and the buttons ask for that themselves.
-    @Published var needle = "" {
-        didSet { if !resettingFind, oldValue != needle { look(forward: true) } }
+    var needle: String {
+        get { seeking.needle }
+        set {
+            let old = seeking.needle
+            seeking.needle = newValue
+            if !resettingFind, old != newValue { look(forward: true) }
+        }
     }
-    @Published var matchCase = false {
-        didSet { if !resettingFind, oldValue != matchCase { look(forward: true) } }
+    var matchCase: Bool {
+        get { seeking.matchCase }
+        set {
+            let old = seeking.matchCase
+            seeking.matchCase = newValue
+            if !resettingFind, old != newValue { look(forward: true) }
+        }
     }
-    @Published var wholeWords = false {
-        didSet { if !resettingFind, oldValue != wholeWords { look(forward: true) } }
+    var wholeWords: Bool {
+        get { seeking.wholeWords }
+        set {
+            let old = seeking.wholeWords
+            seeking.wholeWords = newValue
+            if !resettingFind, old != newValue { look(forward: true) }
+        }
     }
     /// Set when the page doesn't hold what was asked for.
-    @Published private(set) var missed = false
-    @Published private(set) var findFocus = 0
+    private(set) var missed: Bool {
+        get { seeking.missed }
+        set { seeking.missed = newValue }
+    }
+    private(set) var findFocus: Int {
+        get { seeking.focus }
+        set { seeking.focus = newValue }
+    }
     /// The count and which match is current, as the page last answered.
-    @Published private(set) var findResult: PageFind.Result?
+    private(set) var findResult: PageFind.Result? {
+        get { seeking.result }
+        set { seeking.result = newValue }
+    }
 
     private let pageFind = PageFind()
     private struct FindSpec: Equatable {
@@ -1394,14 +1472,24 @@ final class Browser: NSObject, ObservableObject {
     /// Clicking the tab you are already on turns it into the address, short
     /// form, ready to be changed.
     @Published private(set) var editingTab: Tab.ID?
-    @Published var tabDraft = ""
+    /// What is in that field, kept with the other field's (Typing).
+    var tabDraft: String {
+        get { typing.tabDraft }
+        set { typing.tabDraft = newValue }
+    }
     /// Set while that field is being used to name the tab rather than to go
     /// somewhere: the same field, the same keys, a different thing at the end.
     @Published private(set) var renamingTab = false
     /// What the field in the tab offers as you type, as ⌘L's does (#534),
     /// and the row the arrow keys are on.
-    @Published private(set) var tabOffers: [Suggestion] = []
-    @Published private(set) var tabPicked: Int?
+    private(set) var tabOffers: [Suggestion] {
+        get { typing.tabOffers }
+        set { typing.tabOffers = newValue }
+    }
+    private(set) var tabPicked: Int? {
+        get { typing.tabPicked }
+        set { typing.tabPicked = newValue }
+    }
     /// The address the edit began with: nothing is offered for that.
     private var tabOriginal = ""
 

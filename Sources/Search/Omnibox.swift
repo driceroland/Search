@@ -21,6 +21,16 @@ struct Omnibox: View {
     /// Sized to a pane of a split rather than to the window.
     var fitted = false
 
+    /// What is typed and offered, which the Browser doesn't announce.
+    @ObservedObject private var typing: Typing
+
+    init(browser: Browser, over: Bool, fitted: Bool = false) {
+        self.browser = browser
+        self.over = over
+        self.fitted = fitted
+        typing = browser.typing
+    }
+
     var body: some View {
         if fitted {
             GeometryReader { geometry in
@@ -78,7 +88,7 @@ struct Omnibox: View {
                 SiteChip(site: site)
                     .transition(.scale(scale: 0.9, anchor: .leading).combined(with: .opacity))
             }
-            AddressField(browser: browser)
+            AddressField(browser: browser, typing: typing)
         }
             .animation(Motion.quick, value: browser.siteChip)
             .frame(height: 22)
@@ -377,6 +387,9 @@ private struct Breath: NSViewRepresentable {
 /// needs a real text field and its delegate.
 struct AddressField: NSViewRepresentable {
     @ObservedObject var browser: Browser
+    /// What it holds and completes to: an arrow key walking the list
+    /// changes what the field shows.
+    @ObservedObject var typing: Typing
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 
