@@ -206,6 +206,9 @@ struct WelcomePanel: View {
                 Key("⌘,", "Claude or ChatGPT in a side panel beside the page — turn on Websites in the side panel in Settings › General.")
                 Key("⌘Q", "Search can ask before it quits. Settings › General.")
                 Key("⌘,", "Passwords from Apple's Passwords app under the sign-in box — off until you turn it on in Settings › Passwords.")
+                if PageTranslator.available {
+                    Key("⌃-click", "Translate a page into your language, on this Mac — nothing is sent anywhere. Off until you turn it on in Settings › General.")
+                }
                 if AI.shipped {
                     Key("⌘,", "AI summaries and questions about a page — off until you turn it on in Settings › AI.")
                 }

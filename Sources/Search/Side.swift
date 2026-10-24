@@ -933,6 +933,8 @@ private struct SideRow: View {
                     }
                     // A window the page asked for was refused (BlockedPopups).
                     PopupSign(browser: browser, tab: tab, colour: colour)
+                    // The page is translated (Translate.swift).
+                    TranslateSign(tab: tab, colour: colour)
                     TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
                                 size: prefs.sideTitle, colour: colour, roomy: true)
                 }
@@ -1018,6 +1020,7 @@ private struct SideRow: View {
         .animation(Motion.quick, value: tab.loading)
         .animation(Motion.quick, value: speaker)
         .animation(Motion.quick, value: tab.blockedPopups.isEmpty)
+        .animation(Motion.quick, value: tab.translation == nil)
         .animation(Motion.quick, value: peeking)
         .background { ground.animation(Motion.quick, value: live) }
         .overlay {

@@ -742,6 +742,8 @@ private struct TabPill: View {
                 }
                 // A window the page asked for was refused (BlockedPopups).
                 PopupSign(browser: browser, tab: tab, colour: colour)
+                // The page is translated (Translate.swift).
+                TranslateSign(tab: tab, colour: colour)
                 TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
                             size: 12.5, colour: colour, roomy: false)
             }
@@ -802,6 +804,7 @@ private struct TabPill: View {
         .frame(width: span, alignment: .leading)
         .animation(Motion.quick, value: speaker)
         .animation(Motion.quick, value: tab.blockedPopups.isEmpty)
+        .animation(Motion.quick, value: tab.translation == nil)
     }
 
     @ViewBuilder

@@ -19,6 +19,8 @@
     ./bench press CODE CHARS [MODS…]   press a key on the whole app (cmd shift ctrl opt, repeat) — --test runs only
     ./bench tap ID SELECTOR [MODS…]    a real mouse click on an element (or text=Words), shift/cmd/opt held — --test runs only
     ./bench text ID                    the page's text
+    ./bench translate ID [LANG]        Translate Page on a tab → what it measured
+    ./bench translate ID original|state|toggle|always LANG|never LANG
     ./bench eval ID JS [search]        run JavaScript, print what it returns; search: in Search's own world
     ./bench click ID SELECTOR
     ./bench type ID SELECTOR TEXT
@@ -215,6 +217,13 @@ def main(argv):
     elif verb in ("text", "close", "sleep", "select", "visible"):
         if len(args) != 1: sys.exit(f"usage: bench {verb} ID")
         request["id"] = args[0]
+    elif verb == "translate":
+        if len(args) not in (1, 2, 3): sys.exit("usage: bench translate ID [LANG|original|state|toggle|always LANG|never LANG]")
+        request["id"] = args[0]
+        if len(args) >= 2:
+            if args[1] in ("original", "state", "toggle", "always", "never"): request["action"] = args[1]
+            else: request["lang"] = args[1]
+        if len(args) == 3: request["lang"] = args[2]
     elif verb == "eval":
         if len(args) not in (2, 3) or (len(args) == 3 and args[2] != "search"): sys.exit("usage: bench eval ID JS [search]")
         request["id"], request["js"] = args[0], args[1]

@@ -29,7 +29,8 @@ enum Web {
     /// included, and registering a name twice is a hard crash.
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name, MediaKeys.name,
-                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name, DuskRelay.name] {
+                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name, DuskRelay.name,
+                     TranslateRelay.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
@@ -334,6 +335,8 @@ final class Tab: ObservableObject, Identifiable {
         popupGesture.clear()
         // What the old page was refused went with it.
         if !blockedPopups.isEmpty { blockedPopups = [] }
+        // A translated page is gone; its frames with it.
+        if translator != nil || translation != nil || !translateFrames.isEmpty { translationGone(sleeping: false) }
         // A new document: whatever the old one waited for under its field
         // went with it.
         if let built { Passkeys.shared.forget(built) }
@@ -589,6 +592,16 @@ final class Tab: ObservableObject, Identifiable {
     /// A private tab's own Always Allow: only for as long as the tab, never
     /// written anywhere, as its Keep This Site Awake.
     var popupSites: Set<String> = []
+    /// Translate Page (Translate.swift): what the sign beside the title
+    /// shows, the run while there is one, the frames that said they're
+    /// there, a private tab's own Always Translate, and the page a tab put
+    /// to sleep translated was on. All in memory, gone with the tab.
+    @Published var translation: TranslationMark?
+    var translator: PageTranslator?
+    var translateFrames: [WKFrameInfo] = []
+    var translateLanguages: Set<String> = []
+    var translateOnWake: (url: URL, to: String)?
+    private let translateRelay = TranslateRelay()
     private let passkeyRelay = PasskeyRelay()
     private let hovered = HoveredLink()
     private let ears = AudioWatch()
@@ -809,6 +822,8 @@ final class Tab: ObservableObject, Identifiable {
         web.onMenuClosed = { [weak self] in self?.popupGesture.menuClosed() }
         web.onKeys = { [weak self] in if let self { self.onKeys?(self) } }
         web.searchName = { [weak self] in self?.searchName?() }
+        web.translating = { [weak self] in self.map { $0.translator != nil && $0.translation?.failed != true } ?? false }
+        web.onTranslate = { [weak self] in self?.toggleTranslation() }
         web.onSearch = { [weak self] text in
             guard let self else { return }
             self.onSearch?(self, text)
@@ -847,6 +862,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
         controller.add(dusk, contentWorld: Web.world, name: DuskRelay.name)
+        controller.add(translateRelay, contentWorld: Web.world, name: TranslateRelay.name)
         PopupGestureRelay.install(on: controller)
         Shield.shared.protect(controller)
         built = web
@@ -924,6 +940,7 @@ final class Tab: ObservableObject, Identifiable {
         iconChanges.tab = self
         middles.tab = self
         dusk.tab = self
+        translateRelay.tab = self
         ears.watch(web) { [weak self] on in self?.heard(on) }
         return web
     }
@@ -1043,6 +1060,13 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: PasskeyRelay.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
         )
+        // Every frame but the top, only while Translate Page is switched on:
+        // a frame of another site says it's there, to be translated too.
+        if PageTranslator.enabled {
+            controller.addUserScript(
+                WKUserScript(source: PageTranslator.announce, injectionTime: .atDocumentEnd, forMainFrameOnly: false, in: Web.world)
+            )
+        }
         // Only while it is on and not paused: otherwise pages get nothing
         // (see Dusk.swift). Before the document, so a site known to be light
         // is never seen white. Every frame: a frame darkens its own document,
@@ -1713,6 +1737,7 @@ final class Tab: ObservableObject, Identifiable {
     private func discard() {
         popupGesture.clear()
         if !blockedPopups.isEmpty { blockedPopups = [] }
+        translationGone(sleeping: true)
         watch = []
         ears.stop()
         quiet?.invalidate()
@@ -1736,6 +1761,8 @@ final class Tab: ObservableObject, Identifiable {
         web.onTouch = nil
         web.onKeys = nil
         web.searchName = nil
+        web.translating = nil
+        web.onTranslate = nil
         web.onSearch = nil
         web.stopLoading()
         // Detaching a view doesn't end capture while something still holds it.
@@ -1975,6 +2002,11 @@ final class PageView: WKWebView {
                 menu.cancelTracking()
             }
         }
+        // Translate Page, off unless switched on in Settings (Translate.swift).
+        if let item = translateItem() {
+            menu.addItem(.separator())
+            menu.addItem(item)
+        }
         if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierSearchWeb" }),
            let name = searchName?() {
             webSearch = (item.target, item.action)
@@ -1987,6 +2019,21 @@ final class PageView: WKWebView {
             item.action = #selector(searchSelection(_:))
         }
     }
+
+    /// Translate Page to <your language>, or Show Original once it is:
+    /// nothing while the switch is off.
+    func translateItem() -> NSMenuItem? {
+        guard PageTranslator.enabled, let on = translating?() else { return nil }
+        let language = PageTranslator.name(PageTranslator.code(PageTranslator.reader))
+        let item = NSMenuItem(title: on ? "Show Original" : "Translate Page to \(language)", action: #selector(translatePage(_:)), keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    @objc private func translatePage(_ item: NSMenuItem) { onTranslate?() }
+    /// Whether the page is translated, and Translate Page / Show Original.
+    var translating: (() -> Bool)?
+    var onTranslate: (() -> Void)?
 
     /// The item the bench's linkmenu will choose in the next menu.
     static var picking: String?
