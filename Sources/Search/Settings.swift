@@ -382,10 +382,6 @@ struct SettingsPanel: View {
                 Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
             }
             Rule()
-            Line("Save energy in Low Power Mode", "While the Mac is in Low Power Mode, pages keep to 60 frames a second and tabs you aren't using sleep after ten minutes") {
-                Switch(on: $prefs.savesInLowPower)
-            }
-            Rule()
             Line("Hold a swipe to pick from history", "Swipe back or forward and keep your fingers down: the pages that way appear, and moving up or down picks one to go to") {
                 Switch(on: $prefs.holdsHistory)
             }

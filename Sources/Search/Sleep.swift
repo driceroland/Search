@@ -24,8 +24,7 @@ import WebKit
 // two hours (Later) or ten minutes (Sooner).
 //
 // When macOS says memory is short, the wait shrinks, whatever was chosen: to
-// five minutes on a warning, to nothing when it is critical. In Low Power
-// Mode it is ten minutes at most, as on Sooner (see LowPower.swift).
+// five minutes on a warning, to nothing when it is critical.
 
 /// How soon tabs sleep, as chosen in Settings. Three levels rather than
 /// numbers: what someone decides is how much a waking tab bothers them, not
@@ -72,12 +71,9 @@ enum SleepPace: String, CaseIterable, Identifiable {
 extension Browser {
     /// How long a tab has to go without being looked at: the chosen pace's
     /// wait, or `sleep.after` in seconds — for the bench and the measurements.
-    /// In Low Power Mode no longer than Sooner's (see LowPower.swift).
     static var sleepAfter: TimeInterval {
         let set = Store.settings.double(forKey: "sleep.after")
-        if set > 0 { return set }
-        let wait = SleepPace.chosen.wait
-        return LowPower.on ? min(wait, SleepPace.sooner.wait) : wait
+        return set > 0 ? set : SleepPace.chosen.wait
     }
 
     /// Started once, at launch. The same look closes the tabs left alone
