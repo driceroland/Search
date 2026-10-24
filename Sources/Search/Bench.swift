@@ -763,6 +763,9 @@ final class Bench {
                 guard let preferences = tab.built?.configuration.preferences else { return nil }
                 return FrameRate.prefersNear60(preferences)
             }
+            // Saving energy for Low Power Mode, and the wait it leaves tabs.
+            out["lowPower"] = LowPower.on
+            out["sleepAfter"] = Browser.sleepAfter
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
             out["peek"] = browser.peekTab?.address?.absoluteString ?? ""
             out["peekFrom"] = browser.peekFrom?.uuidString ?? ""
@@ -2903,6 +2906,10 @@ final class Bench {
                 browser.prefs.sidePosition = position
             }
             if let mode = (request["pages120"] as? String).flatMap(FastPages.init) { browser.prefs.fastPages = mode }
+            // Low Power Mode, standing in for the Mac's own; "mac" gives it back.
+            if let on = request["lowpower"] as? Bool, Store.testing { LowPower.testing = on }
+            if request["lowpower"] as? String == "mac" { LowPower.testing = nil }
+            if let on = request["savespower"] as? Bool { browser.prefs.savesInLowPower = on }
             if let on = request["dusk"] as? Bool { browser.prefs.darkensPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             // Swipe between pages, standing in for the Mac's own setting.

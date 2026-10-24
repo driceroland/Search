@@ -138,6 +138,7 @@
                                        import on|off|extensions|BROWSER,
                                        look light|dark|system, sidebar on|off, side left|right, spaces on|off, sharedpins on|off, swipepages on|off, confirm on|off, hides on|off,
                                        folded on|off, peek on|off, peeklink keep|close, pages120 never|onPower|always,
+                                       lowpower on|off|mac (test run: Low Power Mode as the browser sees it), savespower on|off,
                                        cards on|off (the page as a card), fullscreen on|off (test run: the
                                        window's full screen as the chrome sees it, the window staying put)
 
@@ -243,7 +244,7 @@ def main(argv):
         if len(args) != 2: sys.exit("usage: bench ui KEY VALUE")
         key, value = args
         if key == "side" and value not in ("left", "right"): sys.exit("usage: bench ui side left|right")
-        request[key] = value if key in ("look", "edittab", "peeklink", "import", "side", "pages120") else value in ("on", "true", "1", "yes")
+        request[key] = value if key in ("look", "edittab", "peeklink", "import", "side", "pages120") or (key, value) == ("lowpower", "mac") else value in ("on", "true", "1", "yes")
     elif verb in ("ext-add", "ext-press", "ext-remove", "ext-reload"):
         if len(args) != 1: sys.exit(f"usage: bench {verb} ID")
         request["id"] = args[0]

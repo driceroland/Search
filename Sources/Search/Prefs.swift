@@ -330,6 +330,14 @@ final class Preferences: ObservableObject {
             FrameRate.mode = fastPages
         }
     }
+    /// The browser saves energy while the Mac is in Low Power Mode (see
+    /// LowPower.swift). On unless turned off.
+    @Published var savesInLowPower: Bool {
+        didSet {
+            store.set(savesInLowPower, forKey: "power.lowPowerMode")
+            LowPower.follows = savesInLowPower
+        }
+    }
     /// The modifier chosen in Settings › Shortcuts; Shift-click by default.
     @Published var peekClick: PeekClick {
         didSet { store.set(peekClick.rawValue, forKey: "links.peekClick") }
@@ -634,6 +642,11 @@ final class Preferences: ObservableObject {
         // "pages.120" was a switch before it was three choices: on is now always.
         let fast = store.string(forKey: "pages.120.mode").flatMap(FastPages.init)
             ?? (store.bool(forKey: "pages.120") ? .always : .never)
+        // Before the pages' rate is worked out, which follows it.
+        let saves = store.object(forKey: "power.lowPowerMode") as? Bool ?? true
+        savesInLowPower = saves
+        LowPower.follows = saves
+        LowPower.watch()
         fastPages = fast
         FrameRate.mode = fast
         // Left behind by the Web Inspector's switch, from before it was

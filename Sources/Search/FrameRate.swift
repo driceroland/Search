@@ -14,6 +14,9 @@ import WebKit
 //
 // Never, WebKit's flag is not touched at all: a page gets whatever this Mac's
 // WebKit does on its own, the same as Safari.
+//
+// In Low Power Mode it is 60 whatever was chosen, unless Settings says the
+// browser shouldn't follow it (see LowPower.swift).
 
 /// Settings › General › Pages at 120 Hz.
 enum FastPages: String, CaseIterable, Identifiable {
@@ -83,8 +86,10 @@ enum FrameRate {
         }
     }
 
-    @MainActor private static func update() {
-        fast = mode == .always || (mode == .onPower && onPower)
+    /// Low Power Mode holds every page to 60, whatever the mode (see
+    /// LowPower.swift).
+    @MainActor static func update() {
+        fast = !LowPower.on && (mode == .always || (mode == .onPower && onPower))
     }
 
     /// The Mac is on its adapter, or has no battery to spare: only a laptop
