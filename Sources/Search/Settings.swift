@@ -390,7 +390,7 @@ struct SettingsPanel: View {
                 Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
             }
             Rule()
-            Line("Reduce animations in Low Power Mode", "Quicker, simpler motion while the Mac is saving power or running hot") {
+            Line("Save power in Low Power Mode", "Quicker, simpler motion while the Mac is saving power or running hot. In Low Power Mode, tabs you aren't using also sleep after ten minutes at most") {
                 Switch(on: $prefs.lightMotion)
             }
             Rule()

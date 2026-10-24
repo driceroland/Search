@@ -222,11 +222,26 @@ enum Motion {
     /// Only once it is turned on in Settings › General (Preferences.lightMotion).
     static var light: Bool {
         guard Store.settings.bool(forKey: lightKey) else { return false }
-        let info = ProcessInfo.processInfo
-        return info.isLowPowerModeEnabled || info.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+        return lowPowerMode || ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+    }
+
+    /// The same switch, with Low Power Mode on and nothing else: idle tabs
+    /// sleep sooner then (see Browser.sleepAfter). Heat alone doesn't count,
+    /// since what a sleeping tab gives back is mostly memory, and a hot Mac
+    /// has enough of that.
+    static var savingPower: Bool {
+        Store.settings.bool(forKey: lightKey) && lowPowerMode
     }
 
     nonisolated static let lightKey = "motion.light"
+
+    /// Low Power Mode, from Battery in System Settings, or a test run's stand-in
+    /// for it: only an admin can turn the real one on.
+    nonisolated(unsafe) static var testLowPower: Bool?
+
+    private static var lowPowerMode: Bool {
+        testLowPower ?? ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
 
     static var glide: Animation? {
         reduced ? nil : light ? .easeOut(duration: 0.16) : .spring(response: 0.34, dampingFraction: 0.82)
