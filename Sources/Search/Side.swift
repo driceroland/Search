@@ -161,22 +161,14 @@ struct SideBar: View {
     }
 
     private var pages: some View {
-        let width = prefs.sideWidth
-        let swipe = browser.spaceSwipe
         let at = spaceAt
-        return ZStack(alignment: .topLeading) {
-            page(at, pill: pill)
-                .offset(x: swipe)
-            // Only while the fingers are bringing one in: the one they are
-            // bringing, a page's width away.
-            if swipe > 0, at > 0 {
-                page(at - 1, pill: before)
-                    .offset(x: swipe - width)
-            }
-            if swipe < 0, at < browser.spaces.count {
-                page(at + 1, pill: after)
-                    .offset(x: swipe + width)
-            }
+        // Only while the fingers are bringing one in: the one they are
+        // bringing, a page's width away.
+        return SpacePages(
+            travel: browser.spaceTravel, axis: .horizontal, span: prefs.sideWidth, alignment: .topLeading,
+            before: at > 0, after: at < browser.spaces.count, here: page(at, pill: pill)
+        ) { step in
+            page(at + step, pill: step < 0 ? before : after)
         }
         // The pages are the column's whole width, each with its own margin.
         .padding(.horizontal, -10)

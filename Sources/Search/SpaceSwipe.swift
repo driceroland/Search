@@ -238,6 +238,51 @@ final class SpaceSwipe {
     }
 }
 
+// MARK: - the pages following the fingers
+
+/// How far the rows have followed two fingers sideways (or up and down, in
+/// the bar), on its own rather than on the Browser: it changes with every
+/// scroll event of a swipe, and only the pages that move with it need to
+/// know. With it on the Browser, every tab's row was drawn again for each
+/// event.
+@MainActor
+final class SpaceTravel: ObservableObject {
+    @Published var offset: CGFloat = 0
+}
+
+/// The space on screen and, while the fingers bring one in, its neighbour a
+/// page away: the one view that watches the swipe. The space on screen is
+/// made by the column or the bar and handed in already made, so a swipe
+/// moves it without drawing its rows again.
+struct SpacePages<Here: View, Neighbour: View>: View {
+    @ObservedObject var travel: SpaceTravel
+    /// Sideways in the column, up and down in the bar.
+    let axis: Axis
+    /// A page's width in the column, the bar's height across the top.
+    let span: CGFloat
+    let alignment: Alignment
+    /// Whether there is a space before this one, and one after (or the card
+    /// for a new one).
+    let before: Bool
+    let after: Bool
+    let here: Here
+    /// The space a step away: -1 the one before, 1 the one after.
+    @ViewBuilder let neighbour: (Int) -> Neighbour
+
+    var body: some View {
+        let swipe = travel.offset
+        ZStack(alignment: alignment) {
+            moved(here, by: swipe)
+            if swipe > 0, before { moved(neighbour(-1), by: swipe - span) }
+            if swipe < 0, after { moved(neighbour(1), by: swipe + span) }
+        }
+    }
+
+    private func moved(_ view: some View, by distance: CGFloat) -> some View {
+        view.offset(x: axis == .horizontal ? distance : 0, y: axis == .vertical ? distance : 0)
+    }
+}
+
 // MARK: - the card
 
 /// A new space, made where the next one would have been: its name, its
