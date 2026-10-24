@@ -149,6 +149,7 @@ final class Links: NSObject, NSApplicationDelegate {
         // in the middle of it — a Safari export's passwords in the clear
         // among it — goes (Security).
         DispatchQueue.global(qos: .utility).async { ImportFile.sweepScratch() }
+        Trim.start()
         let plain = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
         guard !plain else { return }
         DispatchQueue.main.async {
@@ -308,7 +309,7 @@ final class Links: NSObject, NSApplicationDelegate {
         guard Shared.prefs.littleLinks else { return false }
         if !launched { Browsers.keepAway() }
         // The space and sign-ins of the window in front, on screen or not.
-        let browser = Browsers.front.flatMap { $0.extensionPopup == nil ? $0 : nil }
+        let browser = Browsers.front.flatMap { !$0.isPopup ? $0 : nil }
             ?? Browsers.primary ?? SceneSlot.shared.browser
         LittleWindow.show(url, for: browser)
         return true

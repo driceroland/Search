@@ -1,13 +1,45 @@
 import SwiftUI
 import AppKit
 
-/// Heading positions in the tab row's own coordinate space, so its existing
-/// reorder drag can also land a tab on a group without a second drag gesture.
-struct GroupDropFrames: PreferenceKey {
-    static var defaultValue: [UUID: CGRect] = [:]
+/// Unshifted heading and member frames in the layout's named coordinate space.
+struct GroupDropFrame: Equatable {
+    let group: UUID
+    var tab: UUID? = nil
+    let rect: CGRect
+}
 
-    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+struct GroupDropTarget: Equatable {
+    let group: UUID
+    var member: UUID? = nil
+    var after = false
+}
+
+struct GroupDropFrames: PreferenceKey {
+    static var defaultValue: [UUID: GroupDropFrame] = [:]
+
+    static func reduce(value: inout [UUID: GroupDropFrame], nextValue: () -> [UUID: GroupDropFrame]) {
         value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+
+    static func resolve(_ point: CGPoint, frames: [UUID: GroupDropFrame],
+                        groups: [TabGroup], excluding source: UUID, vertical: Bool) -> GroupDropTarget? {
+        // Model group order gives overlapping regions a deterministic priority.
+        for group in groups {
+            let heading = frames[group.id]?.rect
+            let members = frames.values.filter { $0.group == group.id && $0.tab != nil && $0.tab != source }
+                .sorted { vertical ? $0.rect.minY < $1.rect.minY : $0.rect.minX < $1.rect.minX }
+            let extent = members.reduce(heading ?? .null) { $0.union($1.rect) }
+            guard extent.contains(point) else { continue }
+            if heading?.contains(point) == true || group.collapsed || members.isEmpty {
+                return GroupDropTarget(group: group.id)
+            }
+            let position = vertical ? point.y : point.x
+            if let next = members.first(where: { position < (vertical ? $0.rect.midY : $0.rect.midX) }) {
+                return GroupDropTarget(group: group.id, member: next.tab)
+            }
+            return GroupDropTarget(group: group.id, member: members.last?.tab, after: true)
+        }
+        return nil
     }
 }
 
@@ -79,7 +111,7 @@ struct GroupHeading: View {
             if let dragSpace {
                 GeometryReader { geometry in
                     Color.clear.preference(key: GroupDropFrames.self,
-                                           value: [group.id: geometry.frame(in: .named(dragSpace))])
+                                           value: [group.id: GroupDropFrame(group: group.id, rect: geometry.frame(in: .named(dragSpace)))])
                 }
             }
         }

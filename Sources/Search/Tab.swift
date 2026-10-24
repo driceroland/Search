@@ -344,6 +344,9 @@ final class Tab: ObservableObject, Identifiable {
         // sending its window there, then writing) is that page's, not the
         // one before it, and is offered nothing that belonged to it.
         if let url = built?.url { committed = url }
+        // A link followed out of an article is a page, not an article: ⇧⌘R
+        // reads it rather than reloading it, and the article's corner goes.
+        reader = false
         // A page arrived after all: the address is its own again.
         if held != nil, let url = built?.url, url.absoluteString != "about:blank" {
             held = nil
@@ -390,6 +393,10 @@ final class Tab: ObservableObject, Identifiable {
     /// True while the page has been stripped back to its article.
     @Published private(set) var reader = false
 
+    /// Asking the site for its markdown, which can take a moment; a second
+    /// ⇧⌘R meanwhile is the same request, not another.
+    private var seekingTwin = false
+
     /// Leaving reading mode reloads rather than putting the old markup back:
     /// restoring the HTML gives you a page that looks right and does nothing,
     /// because every listener the page had was thrown away with it.
@@ -404,8 +411,51 @@ final class Tab: ObservableObject, Identifiable {
             done(true)
             return
         }
-        web.evaluateJavaScript(Reader.script) { [weak self] answer, _ in
-            let worked = (answer as? String) == "read"
+        guard !seekingTwin else { return }
+        guard Shared.prefs.readsTwins else {
+            guess(done)
+            return
+        }
+        seekingTwin = true
+        let page = web.url
+        web.callAsyncJavaScript(Reader.twin, arguments: [:], in: nil, in: Web.world) { [weak self] result in
+            guard let self else { return }
+            self.seekingTwin = false
+            // Gone somewhere else while the twin was on its way: it belongs
+            // to a page that isn't there any more, and so does the guess.
+            guard self.web.url == page else { return }
+            guard let found = try? result.get() as? [String: Any],
+                  let text = found["text"] as? String,
+                  let address = (found["url"] as? String).flatMap(URL.init(string:)) else {
+                self.guess(done)
+                return
+            }
+            let twin = Markdown.page(text, base: address)
+            guard !twin.html.isEmpty else {
+                self.guess(done)
+                return
+            }
+            let from = (found["from"] as? String).map { $0.isEmpty ? "markdown" : "\($0) · markdown" } ?? "markdown"
+            let arguments: [String: Any] = [
+                "html": twin.html,
+                "title": twin.title ?? found["title"] as? String ?? "",
+                "from": from,
+                "sheet": Reader.sheet,
+                "readerLook": Reader.look.rawValue,
+            ]
+            self.web.callAsyncJavaScript(Reader.show, arguments: arguments, in: nil, in: Web.world) { [weak self] result in
+                let worked = (try? result.get()) as? String == "read"
+                if worked { self?.reader = true }
+                done(worked)
+            }
+        }
+    }
+
+    /// The page's own article, worked out from the page (see Reader.script).
+    private func guess(_ done: @escaping (Bool) -> Void) {
+        let arguments: [String: Any] = ["sheet": Reader.sheet, "readerLook": Reader.look.rawValue]
+        web.callAsyncJavaScript(Reader.script, arguments: arguments, in: nil, in: .page) { [weak self] result in
+            let worked = (try? result.get()) as? String == "read"
             if worked { self?.reader = true }
             done(worked)
         }
@@ -433,11 +483,7 @@ final class Tab: ObservableObject, Identifiable {
             icon = page.glyph
             return
         }
-        guard let site = address.flatMap(Favicons.site) else {
-            icon = nil
-            return
-        }
-        icon = Favicons.shared.cached(site)
+        icon = Favicons.shared.cached(for: address, shy: shy)
     }
 
     /// True while the caret is in something on the page that takes typing.
@@ -888,8 +934,10 @@ final class Tab: ObservableObject, Identifiable {
                         self.held = nil
                     }
                     // By site, port included: localhost:3000 to localhost:5173
-                    // is another project, with another icon.
+                    // is another project, with another icon. Another path on
+                    // the same host may be another app, with one of its own.
                     let moved = Favicons.site(fresh) != self.address.flatMap(Favicons.site)
+                        || fresh.path() != self.address?.path()
                     self.address = fresh
                     // Within the same origin — history.pushState, a fragment —
                     // the page on screen is the one at the new address.
@@ -1693,6 +1741,16 @@ final class Tab: ObservableObject, Identifiable {
         }
         web.goForward()
     }
+    /// Every page that way, nearest first, for the list a held Back or
+    /// Forward shows: the web pages WebKit keeps. Nothing for a tab whose
+    /// page was never built, or one showing a page of Search's own, whose
+    /// steps are kept apart (`trail`, `ahead`).
+    func pages(back: Bool) -> [WKBackForwardListItem] {
+        guard let built, page == nil else { return [] }
+        return back ? built.backForwardList.backList.reversed() : built.backForwardList.forwardList
+    }
+    /// Straight to a page several steps away, as one step.
+    func go(to item: WKBackForwardListItem) { web.go(to: item) }
 
     /// Called when the tab is thrown away. Without it the view keeps running
     /// whatever the page left behind — timers, video, sockets.
@@ -1705,6 +1763,11 @@ final class Tab: ObservableObject, Identifiable {
         onField = nil
         onCredentials = nil
         discard()
+        // The last private tab gone, in every window: what its pages wore
+        // goes with it.
+        guard shy else { return }
+        let others = Browsers.all.flatMap { $0.tabs + $0.parkedTabs }
+        if !others.contains(where: { $0.shy && $0 !== self }) { Favicons.shared.forgetShy() }
     }
 
     /// The page's sound started or stopped. Stopped, after it had played,
@@ -1752,6 +1815,7 @@ final class Tab: ObservableObject, Identifiable {
         quiet = nil
         media.forget()
         guard let web = built else { return }
+        (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
         Passkeys.shared.forget(web)
         let controller = web.configuration.userContentController

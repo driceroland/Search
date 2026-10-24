@@ -315,6 +315,8 @@ final class History: ObservableObject {
     }
 
     func forget(_ key: String) {
+        // Its page's icon is a trace of the visit too.
+        if let url = visits[key].flatMap({ URL(string: $0.url) }) { Favicons.shared.forget(url) }
         visits[key] = nil
         forgetText(for: key)
         save()
