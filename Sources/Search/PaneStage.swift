@@ -108,8 +108,8 @@ final class PaneStage: NSView {
             bar.rootView.onPillFrame = { [weak bar] in bar?.pillFrame = $0 }
             findBar = bar
             addSubview(bar, positioned: .above, relativeTo: nil)
+            needsLayout = true
         }
-        needsLayout = true
     }
 
     private var accountList: AccountHost?
@@ -125,19 +125,28 @@ final class PaneStage: NSView {
             accountsFor = nil
             return
         }
-        var view = AccountList(browser: accounts.browser, asked: accounts.asked)
-        if accountList == nil {
-            let host = AccountHost(rootView: view)
+        let made = accountList == nil
+        if made {
+            let host = AccountHost(rootView: AccountList(browser: accounts.browser, asked: accounts.asked))
             host.sizingOptions = []
             accountList = host
             addSubview(host, positioned: .above, relativeTo: nil)
         }
         guard let host = accountList else { return }
-        view.onSize = { [weak host] in host?.listSize = $0 }
         host.spot = accounts.asked.spot
-        host.rootView = view
-        accountsFor = accounts.asked.tab
-        needsLayout = true
+        // Told again only when the list itself is another: SwiftUI asks the
+        // stage once more on every change to the window, and a list given
+        // anew each time was a new tree for it to compare, keystroke by
+        // keystroke in the box.
+        if made || host.rootView.asked != accounts.asked || host.rootView.browser !== accounts.browser {
+            var view = AccountList(browser: accounts.browser, asked: accounts.asked)
+            view.onSize = { [weak host] in host?.listSize = $0 }
+            host.rootView = view
+        }
+        if made || accountsFor != accounts.asked.tab {
+            accountsFor = accounts.asked.tab
+            needsLayout = true
+        }
     }
     fileprivate var slots: [StageView] = []
     private var cues: [FocusCue] = []
@@ -210,6 +219,10 @@ final class PaneStage: NSView {
 
     private func apply(_ tabs: [Tab], split: TabSplit?, focused: Tab.ID?) {
         let ids = tabs.map(ObjectIdentifier.init)
+        // Laid out again only for a change to what is laid out: SwiftUI asks
+        // again on every change to the window, and on each step of a resize
+        // once the stage has said where the pages went.
+        let moved = ids != watched || split != self.split || focused != self.focused
         if ids != watched {
             watched = ids
             // A tab going from blank to a page, to sleep or to the floating
@@ -224,7 +237,7 @@ final class PaneStage: NSView {
         self.split = split
         self.focused = focused
         if live != nil, split == nil { live = nil }
-        refill()
+        refill(moved: moved)
     }
 
     private func queue() {
@@ -233,7 +246,9 @@ final class PaneStage: NSView {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             queued = false
-            refill()
+            // Most of what a tab says of itself, its title or its progress,
+            // leaves its slot holding the page it held.
+            if stale { needsLayout = true }
         }
     }
 
@@ -243,7 +258,8 @@ final class PaneStage: NSView {
         tab.isBlank || tab.asleep || tab.floating ? nil : tab.web
     }
 
-    private func refill() {
+    private func refill(moved: Bool) {
+        let had = slots.count
         while slots.count < tabs.count {
             let slot = StageView()
             slot.corner = corner
@@ -263,8 +279,8 @@ final class PaneStage: NSView {
         // in layout(), not here: told from SwiftUI's update, a page filling
         // the screen took the other one off a frame before the stage grew
         // to give it the room.
-        paint()
-        needsLayout = true
+        if slots.count > had { paint() }
+        if moved || slots.count > had { needsLayout = true }
         watchClicks()
     }
 
@@ -306,11 +322,22 @@ final class PaneStage: NSView {
     private func feed() {
         while fed.count < slots.count { fed.append(nil) }
         for (index, slot) in slots.enumerated() {
-            let wanted = index < tabs.count && shown(index) ? page(tabs[index]) : nil
+            let wanted = wanted(index)
             let id = wanted.map(ObjectIdentifier.init)
             guard fed[index] != id else { continue }
             fed[index] = id
             slot.show(wanted)
+        }
+    }
+
+    private func wanted(_ index: Int) -> NSView? {
+        index < tabs.count && shown(index) ? page(tabs[index]) : nil
+    }
+
+    /// A slot that would be fed another page than it holds.
+    private var stale: Bool {
+        slots.indices.contains { index in
+            (index < fed.count ? fed[index] : nil) != wanted(index).map(ObjectIdentifier.init)
         }
     }
 
