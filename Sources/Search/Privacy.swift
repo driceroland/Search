@@ -7,39 +7,53 @@ import WebKit
 // reads navigator.globalPrivacyControl finds it true. It is how a browser
 // says you don't want your data sold or shared, and some laws (California's,
 // Colorado's) make a site honour it. WebKit has it from macOS 27, per
-// navigation; it is set in Browser's policy decision, and on an older
-// WebKit there is nothing to set and nothing is sent.
+// navigation, set in Browser's policy decision. Reached by selector, so
+// Search builds against an SDK without it; on a WebKit without it there is
+// nothing to set, nothing is sent and the switch isn't shown.
 //
 // Click IDs: the gclid, fbclid and the like that an ad network adds to a
 // link so the site it leads to can tell whose click on which ad it was.
-// WebKit takes them off the address before the page loads, from its own
-// list; utm_ tags, which only name a campaign, stay, as in Safari. One of
-// WebKit's feature flags, as FrameRate's is, and a WebKit without it is
-// left alone.
+// WebKit takes them off the address before the page loads; utm_ tags, which
+// only name a campaign, stay, as in Safari. One of WebKit's feature flags,
+// as FrameRate's is. The names come from the system's own list (WebPrivacy),
+// which is not CleanLink.tracking: the two disagree on some (mc_eid, _hsenc,
+// si…), so a copied clean link and a loaded address can differ. Unlike
+// CleanLink, the flag can't spare an address that carries a signature: it is
+// set per WKPreferences, not per navigation.
 //
 // Both on unless turned off in Settings › Privacy. A private tab always
-// has both, as it keeps cross-site tracking prevention.
+// has both, as in Safari's Private Browsing.
+//
+// Pages made through a Tab follow a switch from their next load. The side
+// panel's get the click-ID flag and GPC when they are made, from
+// Web.configuration, and keep them until they are made again; an
+// extension's offscreen documents get neither.
 
 /// Settings › Privacy › Tell sites not to sell or share your data.
 enum PrivacySignal {
     @MainActor static var on = true
 
-    /// Whether this Mac's WebKit can send it at all.
-    static var possible: Bool {
-        if #available(macOS 27, *) { return true }
-        return false
-    }
+    /// Whether this Mac's WebKit can send it at all: the setter is there.
+    static let possible = WKWebpagePreferences.instancesRespond(to: setter)
 
     /// For one navigation, from Browser's policy decision, so a switch
     /// moved in Settings reaches open tabs from their next load.
     @MainActor static func apply(to preferences: WKWebpagePreferences, shy: Bool) {
-        if #available(macOS 27, *) { preferences.globalPrivacyControlEnabled = on || shy }
+        set(on || shy, in: preferences)
     }
 
     /// What a view starts with, for pages whose navigations aren't decided
-    /// by a Browser (the side panel's, an extension's offscreen page).
+    /// by a Browser (the side panel's).
     @MainActor static func apply(to configuration: WKWebViewConfiguration, shy: Bool) {
-        if #available(macOS 27, *) { configuration.defaultWebpagePreferences.globalPrivacyControlEnabled = on || shy }
+        set(on || shy, in: configuration.defaultWebpagePreferences)
+    }
+
+    private static let setter = NSSelectorFromString("setGlobalPrivacyControlEnabled:")
+
+    private static func set(_ on: Bool, in preferences: WKWebpagePreferences) {
+        guard preferences.responds(to: setter) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(preferences.method(for: setter), to: Setter.self)(preferences, setter, on)
     }
 }
 
@@ -56,11 +70,18 @@ enum ClickIDs {
         }
     }
 
-    /// Whether this Mac's WebKit has the flag.
-    static var possible: Bool { flag != nil }
+    /// Whether to offer the switch: the flag is there, on a macOS where it
+    /// was seen to take the IDs off (27.2). macOS 26 has the flag too, but
+    /// whether its WebPrivacy list strips anything there is unchecked.
+    static var possible: Bool {
+        guard flag != nil else { return false }
+        if #available(macOS 27, *) { return true }
+        return false
+    }
 
-    /// Before a page's view is made: a new tab, one opened by a site, and
-    /// one woken from sleep.
+    /// Before a page's view is made: in Web.configuration, and again as a
+    /// Tab builds its view (a new tab, one opened by a site, one woken from
+    /// sleep), in case the switch moved since its configuration was made.
     @MainActor static func apply(to preferences: WKPreferences, shy: Bool) {
         set(on || shy, in: preferences)
     }

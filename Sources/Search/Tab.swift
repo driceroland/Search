@@ -126,7 +126,10 @@ enum Web {
         // Sound waits for a click, as everywhere; video too when Settings
         // says videos wait (Never Auto-Play, in Safari's words).
         config.mediaTypesRequiringUserActionForPlayback = Web.playback
-        MainActor.assumeIsolated { PrivacySignal.apply(to: config, shy: shy) }
+        MainActor.assumeIsolated {
+            PrivacySignal.apply(to: config, shy: shy)
+            ClickIDs.apply(to: config.preferences, shy: shy)
+        }
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
         inspector(config.preferences)
         NativePiP.allow(config.preferences)
