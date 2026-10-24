@@ -389,7 +389,7 @@ final class Browser: NSObject, ObservableObject {
     /// The Settings page it opens on next.
     var settingsPage: SettingsPanel.Page {
         get {
-            let page = SettingsPanel.Page(rawValue: Store.settings.string(forKey: "settings.page") ?? "") ?? .general
+            let page = SettingsPanel.Page.named( Store.settings.string(forKey: "settings.page") ?? "") ?? .general
             return page == .ai && !AI.shipped ? .general : page
         }
         set { Store.settings.set(newValue.rawValue, forKey: "settings.page") }
@@ -448,7 +448,14 @@ final class Browser: NSObject, ObservableObject {
         return "\(index) of \(count)\(result.more ? "+" : "")"
     }
 
+    /// ⌘F on the Settings tab: its Find a setting field takes the keys.
+    @Published var settingsFind = 0
+
     func openFind() {
+        if active?.page?.kind == .settings {
+            settingsFind += 1
+            return
+        }
         guard active?.isWeb == true else { return }
         finding = true
         findFocus += 1
@@ -6956,7 +6963,7 @@ extension Browser {
     func show(_ page: InternalPage) -> Tab {
         // A pop-up window holds its one page: Search's own open beside it.
         if websitePopup { return tabDestination.show(page) }
-        if page.kind == .settings, let detail = page.detail, let section = SettingsPanel.Page(rawValue: detail) {
+        if page.kind == .settings, let detail = page.detail, let section = SettingsPanel.Page.named( detail) {
             settingsPage = section
         }
         if page.kind == .passwords { relist() }
@@ -6999,9 +7006,11 @@ extension Browser {
             show(page)
             return
         }
-        if page.kind == .settings, let detail = page.detail, let section = SettingsPanel.Page(rawValue: detail) {
+        if page.kind == .settings, let detail = page.detail, let section = SettingsPanel.Page.named( detail) {
             settingsPage = section
         }
+        // As show(_:) does: the list read before the page is drawn.
+        if page.kind == .passwords { relist() }
         here.show(page)
         writeSessionSoon()
     }

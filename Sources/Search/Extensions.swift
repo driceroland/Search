@@ -991,7 +991,7 @@ final class Extensions: NSObject, ObservableObject {
         let shown = newTabPage.flatMap(Browser.extensionHost(of:))
         let replacing = holder.map { "It asked to replace the new tab page, which “\($0.name)” shows now." } ?? "It asked to replace the new tab page."
         Task {
-            let yes = await ask("Show “\(item.name)” in new tabs?", detail: "\(replacing) You can change this later in Settings › General › Home page.",
+            let yes = await ask("Show “\(item.name)” in new tabs?", detail: "\(replacing) You can change this later in Settings › Browsing › Home page.",
                                 icon: contexts[item.id]?.webExtension.icon(for: CGSize(width: 64, height: 64)), yes: "Keep It", no: "Don't Allow")
             if yes { setNewTabPage(item.id) } else { Store.settings.set(false, forKey: "extensions.newtab.\(item.id)") }
             // The tab just opened, if it is still the page it opened on.
