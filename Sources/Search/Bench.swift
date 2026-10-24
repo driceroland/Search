@@ -37,6 +37,30 @@ final class Bench {
     /// True while something is listening.
     private(set) var running = false
 
+    /// How many times each view that counts itself was built ("hoversweep").
+    /// Test runs only; anywhere else counting is one check of a constant.
+    private static let counting = Store.testing
+    static var bodies: [String: Int] = [:]
+    static func count(_ name: String) {
+        if counting { bodies[name, default: 0] += 1 }
+    }
+    /// Each row in the column's own answer to the pointer coming and going,
+    /// the very one its onHover gives (SideRow), for "hoversweep". Counted,
+    /// since a row built anew can appear before the one it replaces has
+    /// gone: the last to appear answers, until the last one goes.
+    static var hoverRows: [Tab.ID: (Bool) -> Void] = [:]
+    private static var hoverRowsShown: [Tab.ID: Int] = [:]
+    static func rowAppeared(_ id: Tab.ID, hover: @escaping (Bool) -> Void) {
+        guard counting else { return }
+        hoverRows[id] = hover
+        hoverRowsShown[id, default: 0] += 1
+    }
+    static func rowDisappeared(_ id: Tab.ID) {
+        guard counting else { return }
+        hoverRowsShown[id, default: 1] -= 1
+        if hoverRowsShown[id] == 0 { hoverRows[id] = nil; hoverRowsShown[id] = nil }
+    }
+
     /// The key code of a letter on a US keyboard, which is what WebKit reads
     /// alongside the characters; anything else goes as the space bar's.
     static func keyCode(for character: Character) -> UInt16 {
@@ -904,6 +928,58 @@ final class Bench {
                 }
             }
             step(1)
+
+        case "hoversweep":
+            // The pointer taken down the column's rows and back, one row a
+            // frame, for what each crossing costs: how many rows were built
+            // again, and how long each pass of the main run loop took
+            // meanwhile, from waking to going back to sleep (the event,
+            // SwiftUI's update, layout, Core Animation's commit). A hidden
+            // probe's window gets no pointer, so each step calls the rows'
+            // own hover answers, the one left and then the one entered, as
+            // AppKit hands them over in one pass. Test runs only.
+            guard Store.testing else { answer(["error": "hoversweep is for test runs"]); return }
+            guard let window = browser.window ?? Links.window, browser.prefs.sidebar else {
+                answer(["error": "hoversweep needs the tabs down the side"])
+                return
+            }
+            let prefs = browser.prefs
+            // The rows on screen, top to bottom.
+            let fit = Int((Double(window.frame.height) - Double(Metrics.strip) - 60) / (Double(prefs.sideRow) + 2))
+            let order = browser.displayedTabs.map(\.id).filter { Bench.hoverRows[$0] != nil }
+            let rows = max(1, min(request["rows"] as? Int ?? fit, fit, order.count))
+            let interval = request["interval"] as? Double ?? 1.0 / 60
+            let ids = Array(order.prefix(rows))
+            let path = ids + ids.reversed().dropFirst()
+            var under: Tab.ID?
+            func send(_ id: Tab.ID?) {
+                if let under, under != id { Bench.hoverRows[under]?(false) }
+                if let id, id != under { Bench.hoverRows[id]?(true) }
+                under = id
+            }
+            let clock = LoopClock()
+            Bench.bodies = [:]
+            clock.start()
+            func walk(_ n: Int) {
+                guard n < path.count else {
+                    send(nil)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        clock.stop()
+                        let crossings = path.count
+                        answer([
+                            "rows": rows, "crossings": crossings, "tabs": browser.tabs.count,
+                            "bodies": Bench.bodies,
+                            "crossingMs": LoopClock.summary(clock.marked),
+                            "otherMs": LoopClock.summary(clock.unmarked),
+                        ])
+                    }
+                    return
+                }
+                clock.mark()
+                send(path[n])
+                DispatchQueue.main.asyncAfter(deadline: .now() + interval) { walk(n + 1) }
+            }
+            walk(0)
 
         case "hit":
             // What a press at a point of the window lands on, and whether
@@ -3896,5 +3972,50 @@ private final class LayoutRecord {
         look()
         timer?.invalidate()
         if let observer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+    }
+}
+
+/// Each pass of the main run loop, from waking to going back to sleep, in
+/// milliseconds: the ones that carried a pointer move ("hoversweep") apart
+/// from the rest (timers, animation, anything else).
+private final class LoopClock: @unchecked Sendable {
+    private(set) var marked: [Double] = []
+    private(set) var unmarked: [Double] = []
+    private var woke: CFAbsoluteTime = 0
+    private var carrying = false
+    private var observers: [CFRunLoopObserver] = []
+
+    func mark() { carrying = true }
+
+    func start() {
+        // First to hear the loop wake, last to hear it sleep: after Core
+        // Animation's commit, which is where SwiftUI's update lands.
+        let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { [unowned self] _, _ in
+            woke = CFAbsoluteTimeGetCurrent()
+        }
+        let sleep = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { [unowned self] _, _ in
+            guard woke > 0 else { return }
+            let ms = (CFAbsoluteTimeGetCurrent() - woke) * 1000
+            if carrying { marked.append(ms) } else { unmarked.append(ms) }
+            carrying = false
+            woke = 0
+        }
+        for observer in [wake, sleep].compactMap({ $0 }) {
+            CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+            observers.append(observer)
+        }
+    }
+
+    func stop() {
+        for observer in observers { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+        observers = []
+    }
+
+    static func summary(_ values: [Double]) -> [String: Double] {
+        guard !values.isEmpty else { return ["count": 0] }
+        let sorted = values.sorted()
+        func at(_ q: Double) -> Double { sorted[min(sorted.count - 1, Int(q * Double(sorted.count)))] }
+        return ["count": Double(sorted.count), "p50": at(0.5), "p95": at(0.95), "max": sorted.last!,
+                "total": sorted.reduce(0, +)]
     }
 }

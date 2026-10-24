@@ -716,6 +716,7 @@ private struct SideRow: View {
     private var peeking: Bool { !editing && tab.pin != nil && browser.peekFrom == tab.id && browser.peekTab != nil }
 
     var body: some View {
+        let _ = Bench.count("row")
         HStack(spacing: 8) {
             HStack(spacing: 8) {
                 if editing {
@@ -845,7 +846,9 @@ private struct SideRow: View {
         })
         .modifier(ModifiedTabClick { if interactive && !editing { browser.extendTabSelection(to: tab, modifiers: $0) } })
         .overlay { if interactive { MiddleClick(act: close) } }
-        .onHover { hovering = $0 }
+        .onHover(perform: hover)
+        .onAppear { if interactive { Bench.rowAppeared(tab.id, hover: hover) } }
+        .onDisappear { if interactive { Bench.rowDisappeared(tab.id) } }
         .contextMenu { if interactive { TabMenu(browser: browser, tab: tab, close: close) } }
         .background {
             if interactive && prefs.splitView {
@@ -861,6 +864,8 @@ private struct SideRow: View {
         }
         .transition(.scale(scale: 0.94, anchor: .leading).combined(with: .opacity))
     }
+
+    private func hover(_ over: Bool) { hovering = over }
 
     @ViewBuilder
     private var ground: some View {
