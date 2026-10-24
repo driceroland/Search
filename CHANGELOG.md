@@ -15,6 +15,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 - One letter in the address field finishes the site you go to most that starts with it, as in Safari and Chrome: "x" and Return go to x.com. Only the top row, and only a site you have been to; a page inside a site, or a letter inside a name, still waits for a second letter. Thanks [@murahovsky](https://github.com/murahovsky) for reporting ([#696](https://github.com/driceroland/Search/issues/696))
 - A peek opens at your default page zoom from Settings › General, or at the zoom you set for that site, as a tab does; it always opened at 100%. So does the small window a link from another app opens in. Thanks [@ralvs](https://github.com/ralvs) for reporting ([#691](https://github.com/driceroland/Search/issues/691))
+- A site whose only icon is an SVG wears it instead of its letter, and so does one whose icon is written into the page itself (an emoji, often). The SVG is drawn by WebKit in a sandboxed process of its own, the way a page shows one, and only the small picture it makes comes back: no new image decoder in Search. Thanks [@maxvoltar](https://github.com/maxvoltar) for reporting ([#680](https://github.com/driceroland/Search/issues/680))
 
 ### Held back
 
