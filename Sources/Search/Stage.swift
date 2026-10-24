@@ -65,21 +65,23 @@ struct Page: View {
                     .transition(.opacity)
             }
 
-            Swiping(pull: tab.pull)
+            Swiping(pulling: tab.pulling)
         }
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
         .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
-        .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
     }
 }
 
 /// What a sideways swipe puts over the page: the disc, or the list a held
 /// one opens. The page's own stage, and a small window's (Little.swift).
+/// The one view that watches the swipe, which changes with every scroll
+/// event of it (see Pulling).
 struct Swiping: View {
-    let pull: Pull?
+    @ObservedObject var pulling: Pulling
 
     var body: some View {
+        let pull = pulling.pull
         ZStack {
             if let pull, pull.stops != nil {
                 // In the disc's place, grown from its own edge: it sits in a
@@ -103,6 +105,7 @@ struct Swiping: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
         }
+        .animation(.easeOut(duration: 0.16), value: pull == nil)
     }
 }
 
