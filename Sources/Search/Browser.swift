@@ -5811,6 +5811,14 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             return
         }
 
+        // A sign-in sent by the page's own script, which the page's side of
+        // Forms.swift never hears about: no submit event, no button. The
+        // policy question still comes, while the boxes are still filled.
+        if action.navigationType == .formSubmitted, action.sourceFrame.isMainFrame,
+           action.targetFrame?.isMainFrame == true {
+            tab(for: webView)?.formSent()
+        }
+
         // An extension's OAuth sign-in coming back: the address is the
         // answer, handed to the extension, and never loaded.
         if ExtensionAuth.intercept(url, browser: self, from: webView)

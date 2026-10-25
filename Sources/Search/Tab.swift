@@ -1204,6 +1204,14 @@ final class Tab: ObservableObject, Identifiable {
         sent = (bare, user, password, pageAddress?.scheme?.lowercased() == "http", Date())
     }
 
+    /// A form of this page's on its way out, as the browser is asked
+    /// whether it may go. The page still has its boxes filled in, so what
+    /// is in them is read now (see `sent` in Forms.swift) and held like
+    /// any other sign-in, to be offered only if the next page takes it.
+    func formSent() {
+        built?.evaluateInSearch("window.__officeForms && window.__officeForms.sent && window.__officeForms.sent()")
+    }
+
     /// The page has moved on — a new document has loaded, or the sign-in
     /// fields have gone. If a password went out recently and there is no
     /// longer a box for it, that is a sign-in that took.
