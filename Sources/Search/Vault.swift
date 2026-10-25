@@ -86,7 +86,9 @@ enum Vault {
     static func kept(matching host: String, wide: Bool = true) -> [Kept] {
         let domain = registrable(host)
         let exact = kept(for: host)
-        let wider = !wide ? [] : rows(where: [:])
+        // The host's own accounts first: admin.example.com's list has no use
+        // for admin-qa.example.com's. The site's others only when it has none.
+        let wider = !wide || !exact.isEmpty ? [] : rows(where: [:])
             .filter { ($0[kSecAttrServer as String] as? String).map { $0 != host && belongs($0, to: host, domain: domain) } ?? false }
             .compactMap(kept(from:))
         return (exact + wider).sorted { ($0.used ?? .distantPast) > ($1.used ?? .distantPast) }
