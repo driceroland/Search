@@ -3326,14 +3326,17 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘T, the + button and the menu. With the floating field turned on and
     /// a page in front, the field comes up over that page instead of a blank
     /// tab: the tab is made by Return, not by asking for one. Anywhere else
-    /// — a blank tab already in front, or an extension's new tab page you
-    /// chose — it is an ordinary new tab.
+    /// — a blank tab already in front, an extension's new tab page you
+    /// chose, or one still to be asked about, whose page needs the tab to
+    /// show in — it is an ordinary new tab. From a private tab the field
+    /// still comes up for one to be asked about: a private new tab never
+    /// asks.
     func launch() {
         guard prefs.floatingNewTab, let tab = active, !tab.isBlank, peekTab == nil else {
             newTab()
             return
         }
-        if #available(macOS 15.4, *), Extensions.shared.newTabPage != nil {
+        if #available(macOS 15.4, *), Extensions.shared.newTabPage != nil || (!tab.shy && Extensions.shared.newTabUnaskedAsker != nil) {
             newTab()
             return
         }
