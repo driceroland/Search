@@ -2999,13 +2999,14 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Whether a tab goes into the session: not a private one or the
-    /// bench's, and only with a web address. A sleeping view is blank, so
-    /// `pending` must win or its page will disappear from the next session.
+    /// bench's, and only a web page, local file or one of Search's own pages.
+    /// A sleeping view is blank, so `pending` must win or its page disappears.
     private func kept(_ tab: Tab) -> Bool {
         // A tab holding an extension's sign-in answer (Tab.hold) carries its
         // code in the address: that is never written down.
-        !tab.shy && !tab.bench && tab.held == nil
-            && ((tab.pending ?? tab.address)?.scheme?.hasPrefix("http") == true || tab.page != nil)
+        let url = tab.pending ?? tab.address
+        return !tab.shy && !tab.bench && tab.held == nil
+            && (url?.scheme?.hasPrefix("http") == true || url?.isFileURL == true || tab.page != nil)
     }
 
     /// Another space's row. Its groups are the ones in its own file, the
@@ -3326,14 +3327,17 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘T, the + button and the menu. With the floating field turned on and
     /// a page in front, the field comes up over that page instead of a blank
     /// tab: the tab is made by Return, not by asking for one. Anywhere else
-    /// — a blank tab already in front, or an extension's new tab page you
-    /// chose — it is an ordinary new tab.
+    /// — a blank tab already in front, an extension's new tab page you
+    /// chose, or one still to be asked about, whose page needs the tab to
+    /// show in — it is an ordinary new tab. From a private tab the field
+    /// still comes up for one to be asked about: a private new tab never
+    /// asks.
     func launch() {
         guard prefs.floatingNewTab, let tab = active, !tab.isBlank, peekTab == nil else {
             newTab()
             return
         }
-        if #available(macOS 15.4, *), Extensions.shared.newTabPage != nil {
+        if #available(macOS 15.4, *), Extensions.shared.newTabPage != nil || (!tab.shy && Extensions.shared.newTabUnaskedAsker != nil) {
             newTab()
             return
         }
@@ -4506,6 +4510,15 @@ final class Browser: NSObject, ObservableObject {
         fresh.popup = tab.popup
         fresh.pin = tab.pin
         fresh.listed = tab.listed
+        // And it stays the same pin. With no id of its own it would be given
+        // a new one, and every other window would close its tab for the old
+        // pin and make a sleeping one for the new, losing the page it had
+        // there; with no home, the page it was pinned at would become
+        // wherever this swap went; and a pin every space shows would be
+        // written back as this space's own (see writeSession).
+        fresh.pinID = tab.pinID
+        fresh.home = tab.home
+        fresh.everywhere = tab.everywhere
         fresh.name = tab.name
         prepare(fresh)
         fresh.groupID = tab.groupID
@@ -5767,6 +5780,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
                 let shy = self?.tab(for: webView)?.shy == true || !webView.configuration.websiteDataStore.isPersistent
                 Autoplay.apply(to: preferences, for: url, shy: shy,
                                made: webView.configuration.mediaTypesRequiringUserActionForPlayback)
+                PrivacySignal.apply(to: preferences, shy: shy)
             }
             decisionHandler(policy, preferences)
         }

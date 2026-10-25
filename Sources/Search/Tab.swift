@@ -126,6 +126,10 @@ enum Web {
         // Sound waits for a click, as everywhere; video too when Settings
         // says videos wait (Never Auto-Play, in Safari's words).
         config.mediaTypesRequiringUserActionForPlayback = Web.playback
+        MainActor.assumeIsolated {
+            PrivacySignal.apply(to: config, shy: shy)
+            ClickIDs.apply(to: config.preferences, shy: shy)
+        }
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
         inspector(config.preferences)
         NativePiP.allow(config.preferences)
@@ -851,6 +855,7 @@ final class Tab: ObservableObject, Identifiable {
         // made with the tab, often long before its page, and a site or an
         // extension can hand over one of its own.
         FrameRate.apply(to: configuration.preferences)
+        ClickIDs.apply(to: configuration.preferences, shy: shy)
         let web = PageView(frame: .zero, configuration: configuration)
         // The trackpad pinch is WebKit's own: it magnifies what is on screen
         // and lets you move around inside it, the way pinching does everywhere

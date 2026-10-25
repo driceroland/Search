@@ -3202,6 +3202,9 @@ final class Bench {
             if let on = request["address"] as? Bool { browser.prefs.showsAddress = on }
             // Settings › Videos wait for a click, moved as its switch moves it.
             if let on = request["waits"] as? Bool, Store.testing { browser.prefs.waitsForPlay = on }
+            // Settings › Privacy's two switches (see Privacy.swift).
+            if let on = request["gpc"] as? Bool, Store.testing { browser.prefs.sendsPrivacySignal = on }
+            if let on = request["clickids"] as? Bool, Store.testing { browser.prefs.removesClickIDs = on }
             if let on = request["folded"] as? Bool { browser.folded = on }
             // The window's own full screen as the chrome sees it, without
             // the window going there: a test run never takes the screen.
