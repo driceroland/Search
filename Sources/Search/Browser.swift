@@ -2999,13 +2999,14 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Whether a tab goes into the session: not a private one or the
-    /// bench's, and only with a web address. A sleeping view is blank, so
-    /// `pending` must win or its page will disappear from the next session.
+    /// bench's, and only a web page, local file or one of Search's own pages.
+    /// A sleeping view is blank, so `pending` must win or its page disappears.
     private func kept(_ tab: Tab) -> Bool {
         // A tab holding an extension's sign-in answer (Tab.hold) carries its
         // code in the address: that is never written down.
-        !tab.shy && !tab.bench && tab.held == nil
-            && ((tab.pending ?? tab.address)?.scheme?.hasPrefix("http") == true || tab.page != nil)
+        let url = tab.pending ?? tab.address
+        return !tab.shy && !tab.bench && tab.held == nil
+            && (url?.scheme?.hasPrefix("http") == true || url?.isFileURL == true || tab.page != nil)
     }
 
     /// Another space's row. Its groups are the ones in its own file, the
