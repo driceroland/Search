@@ -6,6 +6,13 @@ struct FindBar: View {
     @ObservedObject var browser: Browser
     var availableWidth: CGFloat? = nil
     var onPillFrame: ((CGRect) -> Void)? = nil
+    /// The words and the page's answer, which the Browser doesn't announce.
+    @ObservedObject private var seeking: Seeking
+
+    init(browser: Browser) {
+        self.browser = browser
+        seeking = browser.seeking
+    }
 
     @FocusState private var focused: Bool
 

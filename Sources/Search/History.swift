@@ -63,12 +63,40 @@ private struct PageText {
     let homepage: Bool
 }
 
+/// The History menu's few places (History.recent), for the menu alone to
+/// watch.
+@MainActor
+final class RecentPlaces: ObservableObject {
+    @Published fileprivate(set) var traces: [History.Trace] = []
+}
+
 @MainActor
 final class History: ObservableObject {
     private var visits: [String: Visit] = [:] {
         didSet {
             recentCache = nil
             objectWillChange.send()
+            noteRecent()
+        }
+    }
+    /// What the History menu lists, said only when it changes. Every page
+    /// loaded and every title a background tab takes changes the history;
+    /// passed on whole to each window, each of those drew every tab's row
+    /// again, for a menu that mostly shows the same eight places.
+    let places = RecentPlaces()
+    private var notingRecent = false
+
+    /// Once a turn of the run loop, however many visits changed in it (an
+    /// import takes thousands): the last few places worked out again, and
+    /// handed on if they are not what the menu already has.
+    private func noteRecent() {
+        guard !notingRecent else { return }
+        notingRecent = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            notingRecent = false
+            let now = recent()
+            if now != places.traces { places.traces = now }
         }
     }
     /// The last few places, as the History menu lists them. The menu bar is

@@ -322,7 +322,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         let switcher = LittleWindow.switcher
         if switcher.home == tab.id { switcher.cancel() }
         guard !kept else { return }
-        switcher.left(tab, alive: Set(LittleWindow.open.map(\.tab.id)))
+        switcher.left(tab, current: nil, alive: Set(LittleWindow.open.map(\.tab.id)))
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -371,10 +371,9 @@ struct LittleView: View {
                     Trouble(message: failure) { tab.reload() }
                         .transition(.opacity)
                 }
-                Swiping(pull: tab.pull)
+                Swiping(pulling: tab.pulling)
             }
             .animation(Motion.quick, value: tab.failure)
-            .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
         }
         .background(Palette.ground)
         .overlay(alignment: .bottom) { if let note { LittleToast(note: note) } }

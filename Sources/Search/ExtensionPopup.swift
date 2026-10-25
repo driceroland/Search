@@ -13,6 +13,12 @@ import WebKit
 // Chrome sizes a popup to its content, between 25 and 800 points wide and
 // up to 600 tall; the page is measured after it loads and again as it
 // changes, and the popover follows. window.close() closes it.
+//
+// What changes is told by the page itself, from a world of the browser's
+// own beside the page's: an observer there says when the document's size
+// or its content moves, and only then is it measured. Measured on a timer,
+// each look wrote a style onto the page and took it off again, two layouts
+// four times a second for as long as the popup was open.
 
 @available(macOS 15.4, *)
 @MainActor
@@ -27,6 +33,18 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
     /// last focused one.
     private var page: PopupPage?
     private var measuring: Timer?
+    /// The page tells of its own changes (see `watch`); until it does, the
+    /// timer goes on looking.
+    private var watched = false
+    /// A look asked for by the page and not yet taken, and when the last
+    /// one was.
+    private var asked = false
+    private var looked = Date.distantPast
+    /// When the page began to be followed.
+    private var followed = Date()
+    /// The page's controller, shared with the extension's other pages, for
+    /// as long as the popup's handler is on it.
+    private weak var listening: WKUserContentController?
     private(set) var extensionID: String?
     /// The extension's own button, when the popup hangs from it.
     private weak var button: NSView?
@@ -80,6 +98,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         // background unset, and their dark text over the popover's dark
         // material would vanish.
         web.alphaValue = 0
+        listen(web.configuration.userContentController)
         web.load(URLRequest(url: url))
 
         let stage = NSView(frame: NSRect(origin: .zero, size: ExtensionPopup.lastSize[context.uniqueIdentifier] ?? NSSize(width: 360, height: 240)))
@@ -156,17 +175,97 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
     /// From the page's first load: sized, then followed as it grows — a
     /// list filled in by a reply from the worker — for as long as it's open.
     private func follow() {
-        guard measuring == nil else { return }
+        watch()
+        guard measuring == nil, !watched || ticks < 8 else { return }
         if !shown { firstMeasure() }
         ticks = 0
+        followed = Date()
         measuring = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.grow() }
+        }
+    }
+
+    // MARK: - the page telling of its changes
+
+    private static let world = WKContentWorld.world(name: "SearchPopupSize")
+    private static let handler = "searchPopupSize"
+
+    /// What sees the page change, in the browser's own world: the page's
+    /// box and its body growing or shrinking, and anything put into or
+    /// taken out of the document, told once a turn however much moved. The
+    /// style the measure itself writes on the document's root, and takes
+    /// off again, is no change. Taken up again with every document loaded.
+    private static let observer = """
+    (() => {
+      if (window.__searchWatch) return true;
+      const d = document.documentElement;
+      if (!d) return false;
+      window.__searchWatch = true;
+      let told = false, body = null;
+      const tell = () => {
+        if (told) return;
+        told = true;
+        setTimeout(() => { told = false; webkit.messageHandlers.searchPopupSize.postMessage(0); }, 0);
+      };
+      const sizes = new ResizeObserver(tell);
+      sizes.observe(d);
+      const keep = () => { if (document.body && document.body !== body) { body = document.body; sizes.observe(body); } };
+      keep();
+      new MutationObserver((records) => {
+        keep();
+        if (records.some((r) => !(r.type === "attributes" && r.target === d && r.attributeName === "style"))) tell();
+      }).observe(d, { childList: true, subtree: true, attributes: true, characterData: true });
+      return true;
+    })()
+    """
+
+    /// The popup's handler on the controller its page uses, in a world the
+    /// extension's own scripts never see.
+    private func listen(_ controller: WKUserContentController) {
+        unlisten()
+        controller.removeScriptMessageHandler(forName: ExtensionPopup.handler, contentWorld: ExtensionPopup.world)
+        controller.add(PopupSizeHandler(), contentWorld: ExtensionPopup.world, name: ExtensionPopup.handler)
+        listening = controller
+    }
+
+    private func unlisten() {
+        listening?.removeScriptMessageHandler(forName: ExtensionPopup.handler, contentWorld: ExtensionPopup.world)
+        listening = nil
+    }
+
+    /// The observer, put into the document on screen now.
+    private func watch() {
+        guard let web, listening != nil else { return }
+        web.evaluateJavaScript(ExtensionPopup.observer, in: nil, in: ExtensionPopup.world) { [weak self, weak web] result in
+            MainActor.assumeIsolated {
+                guard let self, let web, web === self.web, case .success(let value) = result, value as? Bool == true else { return }
+                self.watched = true
+            }
+        }
+    }
+
+    /// The page said it changed: looked at again, no more often than the
+    /// timer used to look: four times a second for its first six seconds,
+    /// then once a second.
+    fileprivate func changed(_ from: WKWebView?) {
+        guard let from, from === web, watched, measuring == nil, !asked else { return }
+        let every: TimeInterval = Date().timeIntervalSince(followed) < 6 ? 0.25 : 1
+        let wait = max(0, every - Date().timeIntervalSince(looked))
+        asked = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self, weak from] in
+            guard let self, let from, from === self.web else { return }
+            self.asked = false
+            self.looked = Date()
+            self.reach()
         }
     }
 
     func close() {
         measuring?.invalidate()
         measuring = nil
+        unlisten()
+        watched = false
+        asked = false
         let closing = popover
         forget()
         closing?.performClose(nil)
@@ -178,6 +277,9 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         page = nil
         popover = nil
         web = nil
+        unlisten()
+        watched = false
+        asked = false
         extensionID = nil
         button = nil
     }
@@ -318,8 +420,23 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
             }
             return
         }
+        // From here the page says when it changes (see `changed`), and is
+        // looked at only then.
+        if watched {
+            measuring?.invalidate()
+            measuring = nil
+            looked = Date()
+            return
+        }
         // after its first six seconds, once a second is enough to follow it.
         if ticks > 24, ticks % 4 != 0 { return }
+        reach()
+    }
+
+    /// Followed once the page has settled: it only grows, except for a
+    /// width the page names for itself.
+    private func reach() {
+        guard shown, let web, let popover else { return }
         // a width the page names for itself, remembered as the first measure does, is followed both ways:
         // Bitwarden's narrow setting shrinks it.
         web.evaluateJavaScript("[\(ExtensionPopup.reach)('width'), (() => { const d = document.documentElement; return d && d.scrollHeight > d.clientHeight ? d.scrollHeight : 0; })(), (() => { const m = window.__searchSizing || (window.__searchSizing = {}), d = document.documentElement, v = document.compatMode === 'BackCompat' ? document.body : d, w = d.getBoundingClientRect().width, gutter = innerWidth - v.clientWidth; if (Math.abs(w - v.clientWidth) > 1) return (m.w = w) + gutter; return m.w && Math.abs(m.w - v.clientWidth) <= 1 ? m.w + gutter : 0; })()]") { value, _ in
@@ -368,6 +485,15 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         measuring?.invalidate()
         measuring = nil
         forget()
+    }
+}
+
+/// The popup's page saying it changed. Held by the controller, which the
+/// extension's other pages share, so it holds nothing back.
+@available(macOS 15.4, *)
+private final class PopupSizeHandler: NSObject, WKScriptMessageHandler {
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        MainActor.assumeIsolated { ExtensionPopup.shared.changed(message.webView) }
     }
 }
 

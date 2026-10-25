@@ -378,9 +378,10 @@ final class Preferences: ObservableObject {
             FrameRate.mode = fastPages
         }
     }
-    /// Springs become a short ease-out in Low Power Mode (see Motion.light).
-    /// Off unless turned on, and even then nothing changes until the Mac is
-    /// asked to save power.
+    /// Springs become a short ease-out in Low Power Mode (see Motion.light),
+    /// and idle tabs sleep after Sooner's ten minutes at most (see
+    /// Motion.savingPower). Off unless turned on, and even then nothing
+    /// changes until the Mac is asked to save power.
     @Published var lightMotion: Bool {
         didSet { store.set(lightMotion, forKey: Motion.lightKey) }
     }

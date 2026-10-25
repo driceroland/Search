@@ -266,6 +266,15 @@ struct ReadingFill: View {
     }
 }
 
+/// A sideways swipe over the page as it goes, back or forward. Its own
+/// object, watched by the disc alone (Swiping), as the reading meter is: it
+/// changes with every scroll event of the swipe, and as part of the tab each
+/// one drew the tab's row, its buttons and the page's stage again.
+@MainActor
+final class Pulling: ObservableObject {
+    @Published var pull: Pull?
+}
+
 @MainActor
 final class Tab: ObservableObject, Identifiable {
     let id = UUID()
@@ -344,6 +353,8 @@ final class Tab: ObservableObject, Identifiable {
         // A new document: whatever the old one waited for under its field
         // went with it.
         if let built { Passkeys.shared.forget(built) }
+        // Its videos too: the new one says when one of its own plays.
+        playingVideo = false
         // about:blank too: a document another page wrote into (an opener
         // sending its window there, then writing) is that page's, not the
         // one before it, and is offered nothing that belonged to it.
@@ -373,7 +384,6 @@ final class Tab: ObservableObject, Identifiable {
         address = url
         failure = nil
     }
-    @Published private(set) var progress: Double = 0
     @Published private(set) var loading = false
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
@@ -507,8 +517,13 @@ final class Tab: ObservableObject, Identifiable {
     /// True while this tab's page is out in the little window.
     @Published var floating = false
 
-    /// A sideways swipe in progress, for the disc that shows it.
-    @Published var pull: Pull?
+    /// A sideways swipe in progress, for the disc that shows it. Kept apart
+    /// (see Pulling), as the reading meter is.
+    let pulling = Pulling()
+    var pull: Pull? {
+        get { pulling.pull }
+        set { pulling.pull = newValue }
+    }
 
     /// What going back from the first page does, for a tab where it does
     /// anything (see PageView.leave).
@@ -557,6 +572,9 @@ final class Tab: ObservableObject, Identifiable {
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
     @Published var noisy = false
+    /// A video of the page's own document is playing, as the page last
+    /// said (see MediaKeys.watch). Sound or none: a muted one counts.
+    var playingVideo = false
     /// Darkened by Search, as its page last said (see Dusk.swift).
     @Published var dusked = false
     /// What the page measured: true, dark by itself; nil, not yet measured.
@@ -809,7 +827,6 @@ final class Tab: ObservableObject, Identifiable {
             cover = nil
             failure = nil
             loading = false
-            progress = 0
             reader = false
             behind = nil
             trail = []
@@ -955,9 +972,6 @@ final class Tab: ObservableObject, Identifiable {
                     if self.dusked, !moved { self.built?.evaluateInSearch("window.__officeDusk && window.__officeDusk.again()") }
                 }
             },
-            web.observe(\.estimatedProgress, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.progress = self?.built?.estimatedProgress ?? 0 }
-            },
             web.observe(\.isLoading, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.loading = self?.built?.isLoading ?? false }
             },
@@ -1033,68 +1047,67 @@ final class Tab: ObservableObject, Identifiable {
         veils = css
         guard let built else { return }
         let controller = built.configuration.userContentController
-        controller.removeAllUserScripts()
-        controller.addUserScript(PopupGestureRelay.userScript)
-        controller.addUserScript(
-            WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
+        var scripts = [Armed.Piece(source: PopupGestureRelay.script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)]
+        scripts.append(
+            Armed.Piece(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
-        controller.addUserScript(
-            WKUserScript(source: Veiling.picker, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
+        scripts.append(
+            Armed.Piece(source: Veiling.picker, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
         )
-        controller.addUserScript(
-            WKUserScript(source: FormRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
+        scripts.append(
+            Armed.Piece(source: FormRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
-        controller.addUserScript(
-            WKUserScript(source: IconRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
+        scripts.append(
+            Armed.Piece(source: IconRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
         if AutoScroll.on {
-            controller.addUserScript(
-                WKUserScript(source: AutoScroll.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
+            scripts.append(
+                Armed.Piece(source: AutoScroll.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
             )
         }
         // Every frame: a swipe over an embedded map is the map's, and only the
         // map's own document can say so.
-        controller.addUserScript(
-            WKUserScript(source: Swipe.watch, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
+        scripts.append(
+            Armed.Piece(source: Swipe.watch, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
         )
-        controller.addUserScript(
-            WKUserScript(source: ImageRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
+        scripts.append(
+            Armed.Piece(source: ImageRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
         )
         // Every frame, in Search's world: a paused video gives the media keys
         // back (see MediaKeys.swift).
-        controller.addUserScript(
-            WKUserScript(source: MediaKeys.watch, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
+        scripts.append(
+            Armed.Piece(source: MediaKeys.watch, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
         )
         // The store's "Add to Search" only where Search can add extensions.
         // Before macOS 15.4 it was drawn all the same, and pressing it did
         // nothing at all; Settings › Extensions says what they need instead.
         if #available(macOS 15.4, *) {
-            controller.addUserScript(
-                WKUserScript(source: StoreRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
+            scripts.append(
+                Armed.Piece(source: StoreRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
             )
         }
         // Only while Settings says so: off, pages get nothing at all.
         if HoveredLink.on {
-            controller.addUserScript(WKUserScript(
+            scripts.append(Armed.Piece(
                 source: HoveredLink.script, injectionTime: .atDocumentStart,
                 forMainFrameOnly: false, in: .defaultClient
             ))
         }
         // The main frame only: a middle-click on a link inside an ad iframe is
         // that frame's own business, and its link is not this tab's to open.
-        controller.addUserScript(
-            WKUserScript(source: MiddleRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
+        scripts.append(
+            Armed.Piece(source: MiddleRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
         )
         // Every frame, in the page's own world and ahead of its scripts: a
         // live player's speed nudges go through it (see LiveRate.swift).
-        controller.addUserScript(
-            WKUserScript(source: LiveRate.script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
+        scripts.append(
+            Armed.Piece(source: LiveRate.script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
         )
         // Every frame, in the page's own world: a page an extension lists
         // reaches it as chrome.runtime (see ExtensionExternal.swift).
         if let external = ExtensionExternal.script {
-            controller.addUserScript(
-                WKUserScript(source: external, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
+            scripts.append(
+                Armed.Piece(source: external, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
             )
         }
         // Passkeys stand in the page's own world — they replace the page's
@@ -1102,16 +1115,16 @@ final class Tab: ObservableObject, Identifiable {
         // an extension's page script can carry the patch either way (see
         // Passkeys.swift and ExtensionShims.passkeys).
         if !FormRelay.passkeysOffered {
-            controller.addUserScript(
-                WKUserScript(source: FormRelay.withoutPasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
+            scripts.append(
+                Armed.Piece(source: FormRelay.withoutPasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
             )
         } else {
-            controller.addUserScript(
-                WKUserScript(source: PasskeyRelay.page, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
+            scripts.append(
+                Armed.Piece(source: PasskeyRelay.page, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
             )
         }
-        controller.addUserScript(
-            WKUserScript(source: PasskeyRelay.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
+        scripts.append(
+            Armed.Piece(source: PasskeyRelay.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
         )
         // Every frame but the top, only while Translate Page is switched on:
         // a frame of another site says it's there, to be translated too.
@@ -1125,14 +1138,55 @@ final class Tab: ObservableObject, Identifiable {
         // is never seen white. Every frame: a frame darkens its own document,
         // led by its page.
         if let dusk = Dusk.shared.script(for: Dusk.host(of: url ?? pageAddress)) {
-            controller.addUserScript(
-                WKUserScript(source: dusk, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
+            scripts.append(
+                Armed.Piece(source: dusk, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
             )
         }
-        guard !css.isEmpty else { return }
-        controller.addUserScript(
-            WKUserScript(source: Veiling.style(css), injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
-        )
+        if !css.isEmpty {
+            scripts.append(
+                Armed.Piece(source: Veiling.style(css), injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
+            )
+        }
+        // The same scripts as the last page's, which is most pages: left as
+        // they are. Taking every one out and putting it back sent them all
+        // to the page's process again on every page loaded.
+        if Tab.armed.object(forKey: controller)?.pieces == scripts { return }
+        controller.removeAllUserScripts()
+        for piece in scripts {
+            controller.addUserScript(WKUserScript(source: piece.source, injectionTime: piece.injectionTime,
+                                                  forMainFrameOnly: piece.forMainFrameOnly, in: piece.world))
+        }
+        Tab.armed.setObject(Armed(scripts), forKey: controller)
+    }
+
+    /// What `arm` last put in each controller, for telling whether the next
+    /// page needs anything different. By the controller, not the tab: an
+    /// extension's pages share one (see discard). Forgotten with it.
+    private static let armed = NSMapTable<WKUserContentController, Armed>.weakToStrongObjects()
+
+    private final class Armed {
+        /// A script as it is to be put in, compared before any is made.
+        struct Piece: Equatable {
+            let source: String
+            let injectionTime: WKUserScriptInjectionTime
+            let forMainFrameOnly: Bool
+            let world: WKContentWorld
+
+            init(source: String, injectionTime: WKUserScriptInjectionTime, forMainFrameOnly: Bool, in world: WKContentWorld) {
+                self.source = source
+                self.injectionTime = injectionTime
+                self.forMainFrameOnly = forMainFrameOnly
+                self.world = world
+            }
+
+            static func == (a: Piece, b: Piece) -> Bool {
+                a.injectionTime == b.injectionTime && a.forMainFrameOnly == b.forMainFrameOnly
+                    && a.world === b.world && a.source == b.source
+            }
+        }
+
+        let pieces: [Piece]
+        init(_ pieces: [Piece]) { self.pieces = pieces }
     }
 
     /// The same stylesheet, for the page that is already up.
@@ -1143,7 +1197,12 @@ final class Tab: ObservableObject, Identifiable {
     func startPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on()") }
     func stopPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.off()") }
 
-    func foundSignIn() { onSignIn?(self) }
+    /// A sign-in on the page: what is kept for its site is read ahead, off
+    /// the main thread, for the box about to be focused (see Vault.warm).
+    func foundSignIn() {
+        Vault.warm()
+        onSignIn?(self)
+    }
 
     /// From the page, in CSS pixels; passed on in points. Page zoom is the
     /// only scale between the two that matters here.
@@ -1818,6 +1877,7 @@ final class Tab: ObservableObject, Identifiable {
         let controller = web.configuration.userContentController
         Web.release(controller)
         controller.removeAllUserScripts()
+        Tab.armed.removeObject(forKey: controller)
         // Other extension tabs still use this controller. Their existing
         // listeners need the relay, and their next documents need its script.
         if #available(macOS 15.4, *), controller === Extensions.pages {

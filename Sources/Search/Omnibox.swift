@@ -21,6 +21,16 @@ struct Omnibox: View {
     /// Sized to a pane of a split rather than to the window.
     var fitted = false
 
+    /// What is typed and offered, which the Browser doesn't announce.
+    @ObservedObject private var typing: Typing
+
+    init(browser: Browser, over: Bool, fitted: Bool = false) {
+        self.browser = browser
+        self.over = over
+        self.fitted = fitted
+        typing = browser.typing
+    }
+
     var body: some View {
         if fitted {
             GeometryReader { geometry in
@@ -78,7 +88,7 @@ struct Omnibox: View {
                 SiteChip(site: site)
                     .transition(.scale(scale: 0.9, anchor: .leading).combined(with: .opacity))
             }
-            AddressField(browser: browser)
+            AddressField(browser: browser, typing: typing)
         }
             .animation(Motion.quick, value: browser.siteChip)
             .frame(height: 22)
@@ -306,11 +316,15 @@ private struct SiteOfferRow: View {
 /// Core Animation, it is played in the render server and costs the app
 /// nothing; and it is a layer, not a second SwiftUI view to build before
 /// the first frame.
-private struct Breath: NSViewRepresentable {
+struct Breath: NSViewRepresentable {
     /// As dark as the shape it replaces, 5% ink blurred by 26: a shadow of
     /// the same radius comes out at 0.7 of the darkness at equal strength,
     /// measured on pictures of both (24 Sep 2026), so 7%.
     static let strength: Swift.Float = 0.07
+
+    /// Whether a window is seen and in use, which is when the breath moves.
+    /// Tests, whose windows are never either, say otherwise here.
+    static var inUse: (NSWindow) -> Bool = { $0.isKeyWindow && $0.occlusionState.contains(.visible) }
 
     func makeNSView(context: Context) -> NSView { Lung() }
     func updateNSView(_ view: NSView, context: Context) {}
@@ -350,22 +364,83 @@ private struct Breath: NSViewRepresentable {
             glow.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 26, cornerHeight: 26, transform: nil)
             effectiveAppearance.performAsCurrentDrawingAppearance { glow.shadowColor = Palette.NS.ink.cgColor }
             CATransaction.commit()
-            // From 0.97 to 1.03, from 0.65 to full, 2.6 s each way, for as
-            // long as the field is there.
-            let size = CABasicAnimation(keyPath: "transform.scale")
-            size.fromValue = 0.97
-            size.toValue = 1.03
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 0.65
-            fade.toValue = 1.0
-            let both = CAAnimationGroup()
-            both.animations = [size, fade]
-            both.duration = 2.6
-            both.autoreverses = true
-            both.repeatCount = .infinity
-            both.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            glow.add(both, forKey: "breath")
+            // A new size, a new breath, from where the last one had got to.
+            rest()
+            breathe()
         }
+
+        /// Where in its breath it was when it last stopped.
+        private var phase: CFTimeInterval = 0
+        private var watching: [NSObjectProtocol] = []
+
+        /// Breathing only while its window can be seen and is the one in
+        /// use. Behind another window, on another Space, or with another app
+        /// in front, nobody is watching it, and an animation that never ends
+        /// keeps the screen drawing all the same.
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            for token in watching { NotificationCenter.default.removeObserver(token) }
+            watching = []
+            if let window {
+                for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didBecomeKeyNotification,
+                             NSWindow.didResignKeyNotification] {
+                    watching.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                        MainActor.assumeIsolated { self?.breathe() }
+                    })
+                }
+            }
+            breathe()
+        }
+
+        /// Breathes, or rests, as its window is.
+        private func breathe() {
+            let seen = window.map(Breath.inUse) ?? false
+            guard seen else { return rest() }
+            guard glow.animation(forKey: "breath") == nil, breathed.width > 0 else { return }
+            glow.add(Breath.breath(from: phase), forKey: "breath")
+        }
+
+        /// Stops where it is: the glow keeps the size and strength it had,
+        /// and the next breath goes on from there rather than jumping back.
+        private func rest() {
+            guard let running = glow.animation(forKey: "breath") else { return }
+            let now = glow.convertTime(CACurrentMediaTime(), from: nil)
+            // Not drawn yet, its start not yet set: no further than it began.
+            let into = running.beginTime > 0 ? now - running.beginTime : 0
+            phase = (running.timeOffset + into).truncatingRemainder(dividingBy: 2 * running.duration)
+            let shown = glow.presentation()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            if let shown {
+                glow.opacity = shown.opacity
+                glow.transform = shown.transform
+            }
+            glow.removeAnimation(forKey: "breath")
+            CATransaction.commit()
+        }
+    }
+
+    /// From 0.97 to 1.03, from 0.65 to full, 2.6 s each way, for as long as
+    /// the field is there and its window in use; `phase` seconds in.
+    static func breath(from phase: CFTimeInterval = 0) -> CAAnimation {
+        let size = CABasicAnimation(keyPath: "transform.scale")
+        size.fromValue = 0.97
+        size.toValue = 1.03
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.65
+        fade.toValue = 1.0
+        let both = CAAnimationGroup()
+        both.animations = [size, fade]
+        both.duration = 2.6
+        both.autoreverses = true
+        both.repeatCount = .infinity
+        both.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        both.timeOffset = phase
+        // A breath this slow looks no different at 30 frames a second. Asked
+        // for no more, a ProMotion screen can drop below 120 while it is the
+        // only thing moving.
+        both.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
+        return both
     }
 }
 
@@ -377,6 +452,9 @@ private struct Breath: NSViewRepresentable {
 /// needs a real text field and its delegate.
 struct AddressField: NSViewRepresentable {
     @ObservedObject var browser: Browser
+    /// What it holds and completes to: an arrow key walking the list
+    /// changes what the field shows.
+    @ObservedObject var typing: Typing
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 

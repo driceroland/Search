@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// The column's and the side panel's widths while an edge of theirs is held,
+/// for the page beside them: it follows the pointer from here, and the
+/// settings are written once, when the edge is let go. Each window has its
+/// own, so only the window being pulled moves until then.
+final class HeldEdges: ObservableObject {
+    @Published var side: CGFloat?
+    @Published var panel: CGFloat?
+}
+
 /// The tabs, down either side instead of across the top.
 ///
 /// The same pieces as the strip — the grey that slides to the tab you picked,
@@ -20,6 +29,13 @@ struct SideBar: View {
     @State private var landing = false
     /// The width the column had when the edge was picked up.
     @State private var grabbed: CGFloat?
+    /// The width while the edge is held. The setting is written once, when
+    /// it is let go: written on every step, each one was a write to the
+    /// settings and a change heard by every window and all that is in it.
+    @State private var live: CGFloat?
+    /// The width while the edge is held, nil once it is let go, for the page
+    /// beside the column to follow (see HeldEdges).
+    var onDrag: (CGFloat?) -> Void = { _ in }
     @State private var onEdge = false
 
     /// A pin, picked up out of the grid — a separate state from the loose
@@ -48,6 +64,8 @@ struct SideBar: View {
 
     /// A tab's line: taller with roomier tabs turned on.
     private var rowHeight: CGFloat { prefs.sideRow }
+    /// The column's width: the setting, or where the edge is while it is held.
+    private var width: CGFloat { live ?? prefs.sideWidth }
     private static let gap: CGFloat = 2
     private static let square: CGFloat = 34
     private static let pinGap: CGFloat = 4
@@ -110,7 +128,7 @@ struct SideBar: View {
             }
         }
         .environment(\.greys, greys)
-        .frame(width: prefs.sideWidth)
+        .frame(width: width)
         .frame(maxHeight: .infinity)
         // Rows on their way to or from another space stay in the column.
         .clipped()
@@ -159,9 +177,15 @@ struct SideBar: View {
                         if grabbed == nil { grabbed = prefs.sideWidth }
                         let delta = onRight ? -value.translation.width : value.translation.width
                         let wanted = (grabbed ?? prefs.sideWidth) + delta
-                        prefs.sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, wanted))
+                        live = min(Metrics.sideMax, max(Metrics.sideMin, wanted))
+                        onDrag(live)
                     }
-                    .onEnded { _ in grabbed = nil }
+                    .onEnded { _ in
+                        if let live { prefs.sideWidth = live }
+                        live = nil
+                        grabbed = nil
+                        onDrag(nil)
+                    }
             )
             .modifier(OneClick(double: true) {
                 withAnimation(Motion.settle) { prefs.sideWidth = Metrics.side }
@@ -178,22 +202,14 @@ struct SideBar: View {
     }
 
     private var pages: some View {
-        let width = prefs.sideWidth
-        let swipe = browser.spaceSwipe
         let at = spaceAt
-        return ZStack(alignment: .topLeading) {
-            page(at, pill: pill)
-                .offset(x: swipe)
-            // Only while the fingers are bringing one in: the one they are
-            // bringing, a page's width away.
-            if swipe > 0, at > 0 {
-                page(at - 1, pill: before)
-                    .offset(x: swipe - width)
-            }
-            if swipe < 0, at < browser.spaces.count {
-                page(at + 1, pill: after)
-                    .offset(x: swipe + width)
-            }
+        // Only while the fingers are bringing one in: the one they are
+        // bringing, a page's width away.
+        return SpacePages(
+            travel: browser.spaceTravel, axis: .horizontal, span: width, alignment: .topLeading,
+            before: at > 0, after: at < browser.spaces.count, here: page(at, pill: pill)
+        ) { step in
+            page(at + step, pill: step < 0 ? before : after)
         }
         // The pages are the column's whole width, each with its own margin.
         .padding(.horizontal, -10)
@@ -296,7 +312,7 @@ struct SideBar: View {
             }
         }
         .padding(.horizontal, 10)
-        .frame(width: prefs.sideWidth, alignment: .topLeading)
+        .frame(width: width, alignment: .topLeading)
     }
 
     private func refit() {
@@ -441,7 +457,7 @@ struct SideBar: View {
     /// cell allows, never taller than the classic square: past that a cell
     /// turns into a wide, short button rather than a bigger icon.
     private func pinCells(_ count: Int) -> [CGRect] {
-        let room = prefs.sideWidth - 20
+        let room = width - 20
         let gap = SideBar.pinGap
         let fits = Int((room + gap) / (SideBar.square + gap))
         let rows = SideBar.pinRows(count, most: min(4, max(1, fits)))
@@ -761,7 +777,7 @@ struct SideBar: View {
 
     /// One small door at the bottom: the settings.
     private var foot: some View {
-        SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches)
+        SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, width: width)
     }
 
 }
@@ -775,6 +791,8 @@ private struct SideFoot: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var fetches: Fetches
+    /// The column's width, as it is drawn.
+    let width: CGFloat
 
     var body: some View {
         HStack(spacing: 2) {
@@ -798,7 +816,7 @@ private struct SideFoot: View {
         if prefs.usesSpaces { kept += 1 }
         if Profiles.shared.several { kept += 1 }
         if FetchDoor.shows(fetches, prefs) { kept += 1 }
-        let free = prefs.sideWidth - 2 * 10 + 2 - CGFloat(kept) * door
+        let free = width - 2 * 10 + 2 - CGFloat(kept) * door
         return max(0, Int((free / door).rounded(.down)))
     }
 }
@@ -830,16 +848,43 @@ private struct PinGrid: Layout {
 /// A pinned tab as a cell in the block at the top of the column — as wide as
 /// its row asks for, but never taller than the classic square, so a row with
 /// room to spare turns into a wide, short button rather than a bigger icon.
-private struct PinSquare: View {
+private struct PinSquare: View, Equatable {
     @Environment(\.greys) private var greys
     @Environment(\.tabShortcutNumbers) private var shortcutNumbers
-    @ObservedObject var browser: Browser
+    /// Kept for what a click does, not watched: what the square shows of the
+    /// Browser is read as the column makes it, as a row's is (see SideRow).
+    let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
     let live: Bool
     let pill: Namespace.ID
     var width: CGFloat = 34
     var height: CGFloat = 34
+    /// Its letter being changed.
+    private let lettering: Bool
+    private let selected: Bool
+    /// The peek opened from it, while it is up.
+    private let peek: Tab?
+
+    init(browser: Browser, prefs: Preferences, tab: Tab, live: Bool, pill: Namespace.ID,
+         width: CGFloat = 34, height: CGFloat = 34) {
+        self.browser = browser
+        self.prefs = prefs
+        self.tab = tab
+        self.live = live
+        self.pill = pill
+        self.width = width
+        self.height = height
+        lettering = browser.editingPin == tab.id
+        selected = browser.selectedTabIDs.contains(tab.id)
+        peek = browser.peekFrom == tab.id ? browser.peekTab : nil
+    }
+
+    static func == (a: PinSquare, b: PinSquare) -> Bool {
+        a.browser === b.browser && a.prefs === b.prefs && a.tab === b.tab && a.live == b.live
+            && a.pill == b.pill && a.width == b.width && a.height == b.height
+            && a.lettering == b.lettering && a.selected == b.selected && a.peek === b.peek
+    }
 
     @State private var hovering = false
     @State private var selectedOnPress = false
@@ -851,7 +896,7 @@ private struct PinSquare: View {
 
     var body: some View {
         Group {
-            if browser.editingPin == tab.id {
+            if lettering {
                 PinField(browser: browser, tab: tab)
             } else if let number = shortcutNumbers[tab.id] {
                 TabShortcutNumber(number: number)
@@ -879,14 +924,14 @@ private struct PinSquare: View {
                         .matchedGeometryEffect(id: "live", in: pill)
                 } else {
                     RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
-                        .fill(browser.selectedTabIDs.contains(tab.id) ? greys.wash :
+                        .fill(selected ? greys.wash :
                               hovering ? greys.hover : greys.tile)
                 }
             }
             .animation(Motion.quick, value: live)
         }
         .overlay {
-            if browser.selectedTabIDs.contains(tab.id) {
+            if selected {
                 RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
                     .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
                     .allowsHitTesting(false)
@@ -894,14 +939,14 @@ private struct PinSquare: View {
         }
         .overlay(alignment: .topTrailing) {
             // The peek opened from it, while it is up.
-            if browser.peekFrom == tab.id, let page = browser.peekTab {
+            if let page = peek {
                 PeekBadge(page: page, size: scale * 16 / 34)
                     .offset(x: scale * 4 / 34, y: -scale * 4 / 34)
             }
         }
-        .animation(Motion.quick, value: browser.peekFrom)
+        .animation(Motion.quick, value: peek?.id)
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
-        .modifier(TabPress(enabled: browser.editingPin != tab.id, active: live, selected: $selectedOnPress) {
+        .modifier(TabPress(enabled: !lettering, active: live, selected: $selectedOnPress) {
             browser.clearTabSelection()
             browser.select(tab)
         })
@@ -922,23 +967,57 @@ private struct PinSquare: View {
 }
 
 /// One tab, as a line in the column.
-private struct SideRow: View {
+///
+/// It doesn't watch the Browser. The little of it a row shows is read as the
+/// column makes the row, and a row is drawn again only when that, its tab or
+/// the settings change (==): watching the whole Browser, every row was drawn
+/// again for anything that changed in the window. The Browser is kept for
+/// what a click on the row does.
+private struct SideRow: View, Equatable {
     @Environment(\.greys) private var greys
     @Environment(\.tabShortcutNumbers) private var shortcutNumbers
-    @ObservedObject var browser: Browser
+    let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
     let live: Bool
     let pill: Namespace.ID
     let close: () -> Void
     var interactive = true
+    /// Its address being typed in the row.
+    private let editing: Bool
+    /// Picked with ⌘ or ⇧ along with others.
+    private let selected: Bool
+    /// The peek opened from it, while it is up.
+    private let peek: Tab?
+    /// Bumped when what was typed in a tab can't be gone to (see Shake).
+    private let refusals: Int
+
+    init(browser: Browser, prefs: Preferences, tab: Tab, live: Bool, pill: Namespace.ID,
+         close: @escaping () -> Void, interactive: Bool = true) {
+        self.browser = browser
+        self.prefs = prefs
+        self.tab = tab
+        self.live = live
+        self.pill = pill
+        self.close = close
+        self.interactive = interactive
+        editing = browser.editingTab == tab.id
+        selected = browser.selectedTabIDs.contains(tab.id)
+        peek = browser.peekFrom == tab.id ? browser.peekTab : nil
+        refusals = browser.refusals
+    }
+
+    /// The close action is left out: it closes the same tab every time.
+    static func == (a: SideRow, b: SideRow) -> Bool {
+        a.browser === b.browser && a.prefs === b.prefs && a.tab === b.tab && a.live == b.live
+            && a.pill == b.pill && a.interactive == b.interactive && a.editing == b.editing
+            && a.selected == b.selected && a.peek === b.peek && a.refusals == b.refusals
+    }
 
     @State private var hovering = false
     @State private var selectedOnPress = false
     @State private var shake: CGFloat = 0
     @State private var pressed = false
-
-    private var editing: Bool { browser.editingTab == tab.id }
 
     /// The ring or the speaker, which stay for as long as the page loads or
     /// plays (or is muted) and so keep a place of their own at the end of the
@@ -949,7 +1028,7 @@ private struct SideRow: View {
     private var speaker: Bool { !tab.loading && (tab.noisy || tab.muted) }
     /// A pinned row with a peek opened from it: the peek's icon at its end,
     /// as on a square's corner.
-    private var peeking: Bool { !editing && tab.pin != nil && browser.peekFrom == tab.id && browser.peekTab != nil }
+    private var peeking: Bool { !editing && tab.pin != nil && peek != nil }
     /// Where the page is, said on the row you're on (Settings › Tabs › Show
     /// the address on the tab you're on).
     private var rest: AtRest? { live && !editing ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
@@ -1002,7 +1081,7 @@ private struct SideRow: View {
                 browser.select(tab)
             })
 
-            if peeking, let page = browser.peekTab {
+            if peeking, let page = peek {
                 // Under the pointer the cross takes its place, unless the
                 // ring or the speaker already holds the end of the row.
                 PeekBadge(page: page, size: 16)
@@ -1077,7 +1156,7 @@ private struct SideRow: View {
         .animation(Motion.quick, value: peeking)
         .background { ground.animation(Motion.quick, value: live) }
         .overlay {
-            if browser.selectedTabIDs.contains(tab.id) {
+            if selected {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
                     .allowsHitTesting(false)
@@ -1104,7 +1183,7 @@ private struct SideRow: View {
         }
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)
-        .onChange(of: browser.refusals) { _, _ in
+        .onChange(of: refusals) { _, _ in
             guard editing else { return }
             shake = 0
             withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
@@ -1127,7 +1206,7 @@ private struct SideRow: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .matchedGeometryEffect(id: "live", in: pill)
-        } else if browser.selectedTabIDs.contains(tab.id) {
+        } else if selected {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(greys.wash)
         } else if hovering {
