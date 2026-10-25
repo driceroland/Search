@@ -37,6 +37,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- The look and layout of the tabs, the sidebar and the window follow a change made from Terminal while Search runs, `defaults write com.officecommun.search sidebar.position -string right` and the like: the switch in Settings moves to match and does what it does when flipped there. Before, the running app kept what it read at launch until the next one. Privacy, security, passwords, extensions and Let a script drive Search are still read only at launch.
 - Copy Address in a download's right-click menu, while it runs and once it is done, for files downloaded from now on, to hand it to another download app. Clearing history takes these addresses with it; the files stay listed. Asked for by [@ejzpan](https://github.com/ejzpan) ([#853](https://github.com/driceroland/Search/issues/853))
 - With a site put in the address field with Tab, the list offers what you searched that site for before, newest first, read from your history on this Mac and sent nowhere; the last few show before you type, and none in a private tab. A site shortcut ("yt naruto") offers the same. With Google in the field and Google your search engine, Suggestions from your search engine shows its suggestions there too; words typed to any other site never go to your engine. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#882](https://github.com/driceroland/Search/pull/882))
 
