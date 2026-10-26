@@ -231,6 +231,11 @@ final class Preferences: ObservableObject {
     @Published var newTabAfterLast: Bool {
         didSet { store.set(newTabAfterLast, forKey: "tabs.newAfterLast") }
     }
+    /// Closing the tab on screen goes back to the one viewed before it
+    /// rather than the neighbour (see Browser.close). Off unless asked for.
+    @Published var closeGoesBack: Bool {
+        didSet { store.set(closeGoesBack, forKey: "tabs.closeGoesBack") }
+    }
     /// Where a new tab goes in the row. Next unless asked for.
     @Published var newTabPlace: NewTabPlace {
         didSet { store.set(newTabPlace.rawValue, forKey: "tabs.newPlace") }
@@ -668,6 +673,7 @@ final class Preferences: ObservableObject {
         sleepPace = SleepPace.chosen
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
+        closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
         confirmsQuit = store.bool(forKey: Preferences.confirmQuitKey)

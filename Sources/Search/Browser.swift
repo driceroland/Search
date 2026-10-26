@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import Combine
+import UniformTypeIdentifiers
 
 // Everything the window knows: which tabs exist, which one is showing, and
 // whether the address field is up. Small enough to read in one sitting, which
@@ -66,6 +67,8 @@ final class Browser: NSObject, ObservableObject {
                 DispatchQueue.main.async { held.forEach { $0.present() } }
             }
             guard oldValue != activeID else { return }
+            // Going to another tab ends a page's run of links (see placeForLink).
+            linkRun = nil
             if displayTab?.id == oldValue { cancelDisplay() }
             clearTabSelection()
             // What was found belongs to the page just left; the words typed
@@ -330,6 +333,13 @@ final class Browser: NSObject, ObservableObject {
     /// what was typed in a new tab, and putting the field away leaves the
     /// page you were on as it was.
     @Published private(set) var launching = false
+    /// The page links were last opened behind from, and the last of them:
+    /// the next one from that page goes after it (see placeForLink).
+    private struct LinkRun { let opener: Tab.ID; let last: Tab.ID }
+    private var linkRun: LinkRun?
+    /// The run as it was when a page's script opened a tab in front, for the
+    /// ⌘-click that tab turns out to be (see openClicked).
+    private var runBeforeScript: (tab: Tab.ID, run: LinkRun)?
     /// The site the list offers to search, for what has been typed so far
     /// (Settings › General › Search a site from the address field).
     @Published private(set) var siteOffer: SearchSite?
@@ -3683,8 +3693,11 @@ final class Browser: NSObject, ObservableObject {
             // The neighbour on the right, or the last one if there is no
             // right — through select(), same as everywhere else you land on
             // a tab, so one that was never built yet actually wakes up
-            // instead of sitting there blank until a manual reload.
-            select(partner ?? tabs[min(index, tabs.count - 1)])
+            // instead of sitting there blank until a manual reload. Asked
+            // for, the tab viewed before this one comes first, as ⌃Tab
+            // would take you there.
+            let before = prefs.closeGoesBack ? tabBefore(tab) : nil
+            select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
         }
         rememberSession()
     }
@@ -4606,6 +4619,9 @@ final class Browser: NSObject, ObservableObject {
     /// the far end of the row — unless it is one of a batch, which keeps the
     /// order it came in.
     ///
+    /// `link`: opened out of a page by a click (⌘-click, the middle button):
+    /// after the ones that page already opened (see placeForLink).
+    ///
     /// `from`: the tab it was opened out of. A private one's opens private,
     /// in the same store, as a link that asks for a new window already does.
     ///
@@ -4616,9 +4632,10 @@ final class Browser: NSObject, ObservableObject {
     /// tab in front always loads, and so does one an extension opens, which
     /// may be waiting on its page.
     @discardableResult
-    func open(_ url: URL, foreground: Bool, atEnd: Bool = false, from source: Tab? = nil, mayWait: Bool = false) -> Tab {
+    func open(_ url: URL, foreground: Bool, atEnd: Bool = false, from source: Tab? = nil, mayWait: Bool = false,
+              link: Bool = false) -> Tab {
         if websitePopup {
-            return tabDestination.open(url, foreground: foreground, atEnd: atEnd, from: source ?? active, mayWait: mayWait)
+            return tabDestination.open(url, foreground: foreground, atEnd: atEnd, from: source ?? active, mayWait: mayWait, link: link)
         }
         // One of Search's own pages, from a link, a script or another app:
         // its own tab, one of each (see InternalPages.swift).
@@ -4638,7 +4655,8 @@ final class Browser: NSObject, ObservableObject {
         // A link opened from a grouped tab joins its group, only while groups
         // are on: turned off, they sleep, and nothing new goes into one.
         if prefs.usesTabGroups, let source, !tab.shy, !tab.bench { tab.groupID = source.groupID }
-        tabs.insert(tab, at: atEnd ? tabs.count : placeForNew())
+        tabs.insert(tab, at: atEnd ? tabs.count : link ? placeForLink(from: source) : placeForNew())
+        if link, !atEnd, !foreground { noteLink(tab, from: source) }
         if mayWait, !foreground, prefs.lazyTabs, page == nil {
             tab.restore(url: url, title: "")
         } else {
@@ -4898,19 +4916,36 @@ final class Browser: NSObject, ObservableObject {
     /// layout and takes its whole current length. WebKit splits only a page
     /// taller than a PDF page can be (200 inches).
     func exportPDF() {
-        guard let tab = active, tab.isWeb, let window = tab.web.window ?? self.window else { return }
+        askWhereToSave(active, as: .pdf, ending: "pdf") { [weak self] tab, file in
+            self?.exportPDF(tab, to: file)
+        }
+    }
+
+    /// File › Save Page As…: the page with its pictures and styles in one
+    /// web archive, as Safari's Save As makes it. It opens again in Search
+    /// or Safari, offline too.
+    func savePage() {
+        askWhereToSave(active, as: .webArchive, ending: "webarchive") { [weak self] tab, file in
+            self?.savePage(tab, to: file)
+        }
+    }
+
+    /// The save panel for a page, named after its title (or its site), in
+    /// Downloads.
+    private func askWhereToSave(_ tab: Tab?, as type: UTType, ending: String, then save: @escaping (Tab, URL) -> Void) {
+        guard let tab, tab.isWeb, let window = tab.web.window ?? self.window else { return }
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.pdf]
+        panel.allowedContentTypes = [type]
         panel.canCreateDirectories = true
         let title = tab.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let stem = (title.isEmpty ? tab.pageAddress?.host() ?? "Page" : title)
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
-        panel.nameFieldStringValue = stem.lowercased().hasSuffix(".pdf") ? stem : stem + ".pdf"
+        panel.nameFieldStringValue = stem.lowercased().hasSuffix(".\(ending)") ? stem : stem + ".\(ending)"
         panel.directoryURL = downloadsFolder
-        panel.beginSheetModal(for: window) { [weak self] answer in
+        panel.beginSheetModal(for: window) { answer in
             guard answer == .OK, let file = panel.url else { return }
-            self?.exportPDF(tab, to: file)
+            save(tab, file)
         }
     }
 
@@ -4929,6 +4964,25 @@ final class Browser: NSObject, ObservableObject {
                 finished?(true)
             } catch {
                 self?.announce("Couldn't export page")
+                finished?(false)
+            }
+        }
+    }
+
+    /// As exportPDF(_:to:finished:), for Save Page As….
+    func savePage(_ tab: Tab, to file: URL, finished: ((Bool) -> Void)? = nil) {
+        guard tab.isWeb else {
+            finished?(false)
+            return
+        }
+        tab.web.createWebArchiveData { [weak self] result in
+            do {
+                let data = try result.get()
+                try data.write(to: file, options: .atomic)
+                self?.announce("Saved \(file.lastPathComponent)", file: file)
+                finished?(true)
+            } catch {
+                self?.announce("Couldn't save page")
                 finished?(false)
             }
         }
@@ -5058,6 +5112,35 @@ final class Browser: NSObject, ObservableObject {
     /// After current is for links opened from the tab you are on.
     func placeForFront() -> Int {
         prefs.newTabPlace == .top ? pinnedCount : tabs.count
+    }
+
+    /// Where a link opened behind its page goes — ⌘-click, the middle button,
+    /// Open Link in New Tab — with After current: right after that page, and
+    /// after the links it already opened, so a row of them reads in the order
+    /// they were clicked, as in Safari, Chrome and Arc. Each went straight
+    /// after the page, the last clicked first. The run ends when you go to
+    /// another tab or the page goes somewhere else. Whatever the new tab
+    /// position: Top and Bottom (#621) are for ⌘T and pages opened in front,
+    /// and with Top a ⌘-click went to the top too, away from the page it
+    /// came from — Arc keeps new tabs on top and links under their page.
+    /// In a group, the run stays in it; a pair is one place.
+    func placeForLink(from source: Tab?) -> Int {
+        guard let source = source.flatMap({ source in tabs.first { $0.id == source.id } }) ?? active,
+              let here = tabs.firstIndex(where: { $0.id == source.id }) else { return placeForNew() }
+        var anchor = here
+        if let run = linkRun, run.opener == source.id,
+           let last = tabs.firstIndex(where: { $0.id == run.last }), last > here,
+           tabs[last].groupID == source.groupID {
+            anchor = last
+        }
+        let after = split(for: tabs[anchor]).flatMap { pair in tabs.firstIndex { $0.id == pair.right } } ?? anchor
+        return max(after + 1, pinnedCount)
+    }
+
+    /// A link just opened behind `source`: the next one goes after it.
+    private func noteLink(_ tab: Tab, from source: Tab?) {
+        guard let source, tabs.contains(where: { $0.id == source.id }) else { return }
+        linkRun = LinkRun(opener: source.id, last: tab.id)
     }
 
     private func placeBlank(_ tab: Tab) {
@@ -5532,7 +5615,9 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         // "red": Reddit's search, a Tab away.
-        let site = prefs.searchesSites && !summoning ? SiteSearch.match(typed, learnedToo: profileID == Profile.personalID) : nil
+        let site = prefs.searchesSites && !summoning
+            ? SiteSearch.match(typed, learnedToo: profileID == Profile.personalID) { [history] in history.visits(to: $0.map(\.host)) }
+            : nil
         if siteOffer != site { siteOffer = site }
 
         (offers, ending) = placeOffers(for: typed)
@@ -6313,9 +6398,11 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         destination.prepare(tab)
         if behind {
             if prefs.usesTabGroups, !tab.shy, !tab.bench { tab.groupID = opener.groupID }
-            destination.tabs.insert(tab, at: destination.placeForNew())
+            destination.tabs.insert(tab, at: destination.placeForLink(from: opener))
+            destination.noteLink(tab, from: opener)
         } else {
             destination.tabs.insert(tab, at: destination.placeForFront())
+            if clicked, let run = destination.linkRun { destination.runBeforeScript = (tab.id, run) }
             destination.activeID = tab.id
             destination.editing = false
         }
@@ -6334,12 +6421,24 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         let opener = view.flatMap { popupTab(for: $0) }
         if let made = opener?.popupGesture.claim(),
            let tab = Browsers.all.lazy.flatMap(\.tabs).first(where: { $0.id == made }) {
+            let run = runBeforeScript?.tab == made ? runBeforeScript?.run : nil
+            runBeforeScript = nil
             if !foreground, activeID == tab.id, let source, tabs.contains(where: { $0.id == source.id }) {
                 activeID = source.id
             }
+            // The script's tab went where a page opened in front goes; it is
+            // the ⌘-click's, so it goes where the ⌘-click's would have.
+            if let source, tabs.contains(where: { $0.id == source.id }), source.id != tab.id,
+               split(for: tab) == nil, let at = tabs.firstIndex(where: { $0.id == tab.id }) {
+                if !foreground, run?.opener == source.id { linkRun = run }
+                tabs.remove(at: at)
+                if prefs.usesTabGroups, !tab.shy, !tab.bench { tab.groupID = source.groupID }
+                tabs.insert(tab, at: placeForLink(from: source))
+                if !foreground { noteLink(tab, from: source) }
+            }
             return
         }
-        open(url, foreground: foreground, from: source, mayWait: true)
+        open(url, foreground: foreground, from: source, mayWait: true, link: true)
     }
 
     /// Anything the window can't show is something to keep instead.
@@ -6805,6 +6904,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             return
         }
         tab.didCommit()
+        // A page that went somewhere else starts a new run of links.
+        if linkRun?.opener == tab.id { linkRun = nil }
         tab.extensionReturn.finished(navigation)
         if tab.id == activeID {
             invalidateFindPage(retryOnActiveTab: false)

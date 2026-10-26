@@ -1572,7 +1572,7 @@ final class Bench {
             // one as the panel's cross does. Answers with every address kept.
             guard Store.testing else { answer(["error": "history only works on a --test run"]); return }
             if let text = request["take"] as? String, let url = Address.url(from: text) {
-                browser.history.take(url, title: text, count: 1, last: Date())
+                browser.history.take(url, title: text, count: request["count"] as? Int ?? 1, last: Date())
                 browser.history.settle()
             }
             if let text = request["forget"] as? String, let url = Address.url(from: text) {

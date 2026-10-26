@@ -29,6 +29,7 @@ enum SiteSearch {
     /// goes on to it after (X, Claude, Google Maps).
     static var builtIn: [SearchSite] {
         [
+            SearchSite(name: "Google", host: "google.com", template: "https://www.google.com/search?q=%s"),
             SearchSite(name: "Reddit", host: "reddit.com", template: "https://www.reddit.com/search/?q=%s"),
             SearchSite(name: "YouTube", host: "youtube.com", template: "https://www.youtube.com/results?search_query=%s", aliases: ["yt"]),
             SearchSite(name: "X", host: "x.com", template: "https://x.com/search?q=%s", aliases: ["twitter"]),
@@ -76,25 +77,66 @@ enum SiteSearch {
     }
 
     /// The site the words typed so far begin the name of, if any, two
-    /// letters at least, nothing after a space. A built-in one by the start
-    /// of its name, its address or one of its other names; a learned one by
-    /// the start of its address only — never by the name it gives itself,
-    /// which could be anyone's ("Google", a bank's). Among them the one whose
-    /// name is the shortest.
+    /// letters at least. A built-in one by the start of its name, its
+    /// address or one of its other names; a learned one by the start of its
+    /// address only — never by the name it gives itself, which could be
+    /// anyone's ("Google", a bank's). Words with a space in them name only a
+    /// site whose name has one: "google m" is Google Maps, "red panda" nothing.
+    ///
+    /// Which, when several begin that way: one the words name whole ("google",
+    /// "yt"); else the one with the shortest name they begin — "goo" is Google,
+    /// not Google Maps, which only "google m" or "maps" names — a built-in
+    /// one before a learned one, and at a tie the one you go to most. A site
+    /// you go to far more often still wins over a shorter name (`visits`:
+    /// how often each has been visited, from the window's own history).
     /// `learnedToo`: the sites learned from visits are Personal's (see
     /// Profiles.swift); another profile's window is offered the built-in
     /// ones only, so no profile's field says where another has been.
-    static func match(_ typed: String, learnedToo: Bool = true) -> SearchSite? {
-        let word = typed.trimmingCharacters(in: .whitespaces).lowercased()
-        guard word.count >= 2, !word.contains(" "), !word.contains("/") else { return nil }
+    static func match(_ typed: String, learnedToo: Bool = true,
+                      visits: ([SearchSite]) -> [String: Int] = { _ in [:] }) -> SearchSite? {
+        let word = typed.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard word.count >= 2, !word.contains("/") else { return nil }
+        let spaced = word.contains(" ")
         func names(_ site: SearchSite) -> [String] {
+            if spaced { return site.name.contains(" ") ? [site.name.lowercased()] : [] }
             let host = site.host.hasPrefix("www.") ? String(site.host.dropFirst(4)) : site.host
             return [site.name.lowercased().replacingOccurrences(of: " ", with: ""), host] + site.aliases
         }
-        let found = builtIn.filter { site in names(site).contains { $0.hasPrefix(word) } }
-        if let best = found.min(by: { $0.name.count < $1.name.count }) { return best }
-        guard learnedToo else { return nil }
-        return learned.filter { $0.host.hasPrefix(word) }.min { $0.host.count < $1.host.count }
+        struct Found { let site: SearchSite; let length: Int; let whole: Bool; let builtIn: Bool }
+        var found: [Found] = []
+        for site in builtIn {
+            let fits = names(site).filter { $0.hasPrefix(word) }
+            guard let length = fits.map(\.count).min() else { continue }
+            found.append(Found(site: site, length: length, whole: fits.contains(word), builtIn: true))
+        }
+        if learnedToo, !spaced {
+            for site in learned where site.host.hasPrefix(word) {
+                let label = site.host.split(separator: ".").first.map(String.init) ?? site.host
+                // Measured by its whole address, so a built-in name as short
+                // stays first; named whole by it or by its first part.
+                found.append(Found(site: site, length: site.host.count,
+                                   whole: word == site.host || word == label, builtIn: false))
+            }
+        }
+        guard found.count > 1 else { return found.first?.site }
+        let whole = found.filter(\.whole)
+        let pool = whole.isEmpty ? found : whole
+        // History is read only when it has something to decide.
+        let seen = visits(pool.map(\.site))
+        func count(_ one: Found) -> Int { seen[one.site.host] ?? 0 }
+        let ranked = pool.sorted { a, b in
+            if a.builtIn != b.builtIn { return a.builtIn }
+            if a.length != b.length { return a.length < b.length }
+            return count(a) > count(b)
+        }
+        guard let first = ranked.first else { return nil }
+        // Ten visits at least, and three times the other's: a habit, not a
+        // page seen once. Never over a site the words name whole.
+        if whole.isEmpty, let busiest = ranked.max(by: { count($0) < count($1) }),
+           count(busiest) >= 10, count(busiest) >= 3 * count(first) {
+            return busiest.site
+        }
+        return first.site
     }
 
     // MARK: - learned from sites you visit (OpenSearch)

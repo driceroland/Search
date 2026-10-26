@@ -36,7 +36,10 @@ def main():
         sv.page("start")
         for typed, want in [("red", "Reddit"), ("yout", "YouTube"), ("yt", "YouTube"), ("wiki", "Wikipedia"),
                             ("gh", "GitHub"), ("chat", "ChatGPT"), ("twi", "X"), ("stack", "Stack Overflow"),
-                            ("x", ""), ("red panda", "")]:
+                            ("x", ""), ("red panda", ""),
+                            # The best site, not the first: "goo" + Tab was Google Maps (X, 26 Oct 2026).
+                            ("goo", "Google"), ("goog", "Google"), ("google", "Google"),
+                            ("google m", "Google Maps"), ("maps", "Google Maps"), ("op", "ChatGPT")]:
             field(typed); time.sleep(0.2)
             got = site()["offer"]
             t.ok(f"typing {typed!r} offers {want or 'nothing'}", got == want, got)
@@ -78,6 +81,23 @@ def main():
             site("esc")
         field("looka"); time.sleep(0.2)
         t.ok("typing its address offers it, by its address", site()["offer"] == "lookalike.example", site()["offer"])
+        site("esc")
+        # Visits weigh in: a site visited far more wins over a shorter name,
+        # but a part of a site never outweighs the site (google.com/maps).
+        sv.cmd({"do": "history", "take": "https://www.google.com/maps/place/x", "count": 50})
+        field("goo"); time.sleep(0.2)
+        t.ok("google.com/maps visited 50 times: 'goo' is still Google", site()["offer"] == "Google", site()["offer"])
+        site("esc")
+        site("adopt", host="redcorner.example", template="https://redcorner.example/?q=%s")
+        field("red"); time.sleep(0.2)
+        t.ok("a learned site never visited: 'red' is still Reddit", site()["offer"] == "Reddit", site()["offer"])
+        site("esc")
+        sv.cmd({"do": "history", "take": "https://redcorner.example/", "count": 30})
+        field("red"); time.sleep(0.2)
+        t.ok("visited 30 times, Reddit never: 'red' is the learned site", site()["offer"] == "redcorner.example", site()["offer"])
+        site("esc")
+        field("reddit"); time.sleep(0.2)
+        t.ok("'reddit', its whole name, is Reddit however often the other", site()["offer"] == "Reddit", site()["offer"])
         site("esc")
         s = site("adopt", host="foo.github.io", template="https://github.io/?q=%s")
         t.ok("a page can't name a public suffix above it (github.io)", not any(l[1] == "foo.github.io" for l in s["learned"]), s["learned"])
