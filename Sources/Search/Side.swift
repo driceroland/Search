@@ -207,14 +207,14 @@ struct SideBar: View {
                         onDrag(live)
                     }
                     .onEnded { _ in
-                        if let live { prefs.columnWidth = live }
+                        if let live { prefs.sideWidth = live }
                         live = nil
                         grabbed = nil
                         onDrag(nil)
                     }
             )
             .modifier(OneClick(double: true) {
-                withAnimation(Motion.settle) { prefs.columnWidth = Metrics.side }
+                withAnimation(Motion.settle) { prefs.sideWidth = Metrics.side }
             })
             .animation(Motion.quick, value: onEdge)
     }
@@ -506,7 +506,6 @@ struct SideBar: View {
     /// cell allows, never taller than the classic square: past that a cell
     /// turns into a wide, short button rather than a bigger icon.
     private func pinCells(_ count: Int) -> [CGRect] {
-        let room = prefs.columnWidth - 20
         let room = width - 20
         let gap = SideBar.pinGap
         let fits = Int((room + gap) / (SideBar.square + gap))
