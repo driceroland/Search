@@ -189,9 +189,9 @@ enum SettingsIndex {
               title: "Show the bookmarks bar", detail: "Your bookmarks in a row above the page",
               keys: ["bookmarks.bar"], words: ["favorites bar"]),
         .init(id: "motion.light", group: "motion", icon: "leaf",
-              title: "Save power in Low Power Mode", detail: "Quicker, simpler motion, and idle tabs sleep sooner, while the Mac saves power",
-              more: "Motion in Low Power Mode or while the Mac runs hot; tabs you aren't using sleep after ten minutes at most in Low Power Mode alone. Pages are left as they are.",
-              keys: [Motion.lightKey], words: ["battery", "animations", "motion", "sleep", "energy"]),
+              title: "Reduce animations in Low Power Mode", detail: "Quicker, simpler motion while the Mac saves power",
+              more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
+              keys: [Motion.lightKey], words: ["battery", "animations", "motion"]),
 
         // Tabs
         .init(id: "tabs.newPlace", group: "newtabs", icon: "arrow.right.to.line",

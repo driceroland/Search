@@ -289,7 +289,6 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           user: both.user ? both.user.value : '',
           password: both.pass.value
         });
-        watch();
       }
 
       document.addEventListener('submit', offer, true);
@@ -328,14 +327,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // and looking for the boxes each time — through the whole page — made
       // a long conversation slower with every word it wrote (3,000 words:
       // 0.3 s without this, up to 3.7 s with it, and climbing).
-      //
-      // And only for the 45 seconds after a password went out, the most
-      // the browser waits to hear (Tab.settleSignIn): before then a sign-in
-      // has nothing to show, and every page watched itself change all the
-      // same, a look through it four times a second (a page of 20,000
-      // elements: 0.25 ms a look with no password box on it, 2.7 ms with
-      // one shown, which makes the page lay itself out there and then).
-      var settling = null, looking = null, watching = null;
+      var settling = null, looking = null;
       function look() {
         looking = null;
         if (!told) { tell(); return; }
@@ -347,22 +339,9 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           window.webkit.messageHandlers.officeForms.postMessage({ kind: 'settled' });
         }, 400);
       }
-      var changes = new MutationObserver(function () {
+      new MutationObserver(function () {
         if (!looking) looking = setTimeout(look, 250);
-      });
-      // The boxes were there as the password went: they are the page's
-      // sign-in, whether or not they had been seen before.
-      function watch() {
-        told = true;
-        if (!watching) changes.observe(document.documentElement, { childList: true, subtree: true });
-        clearTimeout(watching);
-        watching = setTimeout(function () {
-          watching = null;
-          changes.disconnect();
-          clearTimeout(looking);
-          looking = null;
-        }, 45000);
-      }
+      }).observe(document.documentElement, { childList: true, subtree: true });
 
       // Whether the caret is somewhere on the page that takes typing.
       //

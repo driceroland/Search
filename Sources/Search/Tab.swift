@@ -262,15 +262,6 @@ struct ReadingFill: View {
     }
 }
 
-/// A sideways swipe over the page as it goes, back or forward. Its own
-/// object, watched by the disc alone (Swiping), as the reading meter is: it
-/// changes with every scroll event of the swipe, and as part of the tab each
-/// one drew the tab's row, its buttons and the page's stage again.
-@MainActor
-final class Pulling: ObservableObject {
-    @Published var pull: Pull?
-}
-
 @MainActor
 final class Tab: ObservableObject, Identifiable {
     let id = UUID()
@@ -349,8 +340,6 @@ final class Tab: ObservableObject, Identifiable {
         // A new document: whatever the old one waited for under its field
         // went with it.
         if let built { Passkeys.shared.forget(built) }
-        // Its videos too: the new one says when one of its own plays.
-        playingVideo = false
         // about:blank too: a document another page wrote into (an opener
         // sending its window there, then writing) is that page's, not the
         // one before it, and is offered nothing that belonged to it.
@@ -380,6 +369,7 @@ final class Tab: ObservableObject, Identifiable {
         address = url
         failure = nil
     }
+    @Published private(set) var progress: Double = 0
     @Published private(set) var loading = false
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
@@ -513,13 +503,8 @@ final class Tab: ObservableObject, Identifiable {
     /// True while this tab's page is out in the little window.
     @Published var floating = false
 
-    /// A sideways swipe in progress, for the disc that shows it. Kept apart
-    /// (see Pulling), as the reading meter is.
-    let pulling = Pulling()
-    var pull: Pull? {
-        get { pulling.pull }
-        set { pulling.pull = newValue }
-    }
+    /// A sideways swipe in progress, for the disc that shows it.
+    @Published var pull: Pull?
 
     /// What going back from the first page does, for a tab where it does
     /// anything (see PageView.leave).
@@ -568,9 +553,6 @@ final class Tab: ObservableObject, Identifiable {
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
     @Published var noisy = false
-    /// A video of the page's own document is playing, as the page last
-    /// said (see MediaKeys.watch). Sound or none: a muted one counts.
-    var playingVideo = false
     /// Darkened by Search, as its page last said (see Dusk.swift).
     @Published var dusked = false
     /// What the page measured: true, dark by itself; nil, not yet measured.
@@ -823,6 +805,7 @@ final class Tab: ObservableObject, Identifiable {
             cover = nil
             failure = nil
             loading = false
+            progress = 0
             reader = false
             behind = nil
             trail = []
@@ -966,6 +949,9 @@ final class Tab: ObservableObject, Identifiable {
                     // own is watched again for a while (see Dusk.swift).
                     if self.dusked, !moved { self.built?.evaluateInSearch("window.__officeDusk && window.__officeDusk.again()") }
                 }
+            },
+            web.observe(\.estimatedProgress, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.progress = self?.built?.estimatedProgress ?? 0 }
             },
             web.observe(\.isLoading, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.loading = self?.built?.isLoading ?? false }
@@ -1192,12 +1178,7 @@ final class Tab: ObservableObject, Identifiable {
     func startPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on()") }
     func stopPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.off()") }
 
-    /// A sign-in on the page: what is kept for its site is read ahead, off
-    /// the main thread, for the box about to be focused (see Vault.warm).
-    func foundSignIn() {
-        Vault.warm()
-        onSignIn?(self)
-    }
+    func foundSignIn() { onSignIn?(self) }
 
     /// From the page, in CSS pixels; passed on in points. Page zoom is the
     /// only scale between the two that matters here.

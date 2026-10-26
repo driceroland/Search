@@ -37,7 +37,7 @@ enum SiteCardPanel {
         anchor = field
         let key = ObjectIdentifier(browser)
         guard watching[key] == nil else { return }
-        watching[key] = browser.$editingTab.combineLatest(browser.typing.$tabDraft)
+        watching[key] = browser.$editingTab.combineLatest(browser.$tabDraft)
             .receive(on: DispatchQueue.main)
             .sink { [weak browser] editing, draft in
                 MainActor.assumeIsolated {

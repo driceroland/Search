@@ -678,14 +678,8 @@ struct SidePanelBeside: View {
     let card: Bool
     /// As wide as it is drawn: the width asked for, or less in a narrow window.
     let width: CGFloat
-    /// The width while the handle is held, nil once it is let go, for the
-    /// window to draw the panel and the page at (see HeldEdges).
-    var onDrag: (CGFloat?) -> Void = { _ in }
 
     @State private var start: CGFloat?
-    /// The width while the handle is held. The setting is written once, when
-    /// it is let go, as the column's is (see SideBar.edge).
-    @State private var live: CGFloat?
     @State private var over = false
 
     var body: some View {
@@ -723,17 +717,9 @@ struct SidePanelBeside: View {
                         let from = start ?? prefs.sidePanelWidth
                         if start == nil { start = from }
                         let moved = drag.translation.width
-                        let wanted = from + (onLeft ? moved : -moved)
-                        let kept = Preferences.sidePanelWidths
-                        live = min(max(wanted, kept.lowerBound), kept.upperBound)
-                        onDrag(live)
+                        prefs.sidePanelWidth = from + (onLeft ? moved : -moved)
                     }
-                    .onEnded { _ in
-                        if let live { prefs.sidePanelWidth = live }
-                        live = nil
-                        start = nil
-                        onDrag(nil)
-                    }
+                    .onEnded { _ in start = nil }
             )
             // Double-click: back to where it starts.
             .onTapGesture(count: 2) { prefs.sidePanelWidth = Preferences.sidePanelStart }
