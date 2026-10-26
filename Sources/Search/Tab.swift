@@ -1156,7 +1156,12 @@ final class Tab: ObservableObject, Identifiable {
     func startPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on()") }
     func stopPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.off()") }
 
-    func foundSignIn() { onSignIn?(self) }
+    /// A sign-in on the page: what is kept for its site is read ahead, off
+    /// the main thread, for the box about to be focused (see Vault.warm).
+    func foundSignIn() {
+        Vault.warm()
+        onSignIn?(self)
+    }
 
     /// From the page, in CSS pixels; passed on in points. Page zoom is the
     /// only scale between the two that matters here.
