@@ -95,12 +95,12 @@ final class Browser: NSObject, ObservableObject {
                 if let id = activeID, pair.contains(id) { return }
                 tabSwitcher.cancel()
                 if let first = tabs.first(where: { $0.id == pair.left }) {
-                    tabSwitcher.left(first, alive: Set((tabs + parkedTabs).map(\.id)))
+                    tabSwitcher.left(first, current: activeSplit?.left ?? activeID, alive: Set((tabs + parkedTabs).map(\.id)))
                 }
                 return
             }
             tabSwitcher.cancel()
-            if let left { tabSwitcher.left(left, alive: Set((tabs + parkedTabs).map(\.id))) }
+            if let left { tabSwitcher.left(left, current: activeSplit?.left ?? activeID, alive: Set((tabs + parkedTabs).map(\.id))) }
         }
     }
 
@@ -5276,7 +5276,11 @@ final class Browser: NSObject, ObservableObject {
         // A hero background on a studio's home page is a video too, and it
         // followed people around the desktop. Nor from one you grounded in
         // its site card. ⌘⇧P still lifts from anywhere.
-        if quietly, !Players.knows(tab.address) || tab.pageAddress?.host().map(Grounded.holds) == true {
+        // And only with a video playing there, as the page says (see
+        // MediaKeys.watch): leaving a paused one on YouTube took a picture
+        // of the page and a look through it, 20 to 30 ms, for nothing.
+        if quietly, !Players.knows(tab.address) || tab.pageAddress?.host().map(Grounded.holds) == true
+            || !(tab.playingVideo || tab.noisy) {
             if let otherwise { lift(otherwise, quietly: quietly) }
             return
         }

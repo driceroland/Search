@@ -126,12 +126,54 @@ final class TabSwitcher: ObservableObject {
         recentIDs.first { $0 != id && row.contains($0) }
     }
 
-    /// The tab just left goes to the front, with a picture of it as it was.
-    /// Tabs that are gone fall out, and only the ten latest keep a picture.
-    func left(_ tab: Tab, alive: Set<Tab.ID>) {
+    /// Tabs left and not pictured yet. Every switch used to picture the tab
+    /// it left at once: a page painted again for each ⌘1 and ⌘2 on the way
+    /// somewhere else, and none of those pictures looked at. Now the tab
+    /// just left is pictured once you have stayed where you went for half a
+    /// second, and every tab still waiting when ⌃Tab is pressed.
+    private var unpictured: [Tab.ID: Unpictured] = [:]
+    private var picturing: DispatchWorkItem?
+    private static let settle: TimeInterval = 0.5
+
+    private struct Unpictured {
+        weak var tab: Tab?
+    }
+
+    /// The tab just left goes to the front, to be pictured as it was (see
+    /// `unpictured`). Tabs that are gone fall out, and only the ten latest
+    /// keep a picture. `current`: the tab gone to, whose picture waits
+    /// until it is left in turn; none when it isn't known yet, as when a
+    /// space is left before its row is swapped.
+    func left(_ tab: Tab, current: Tab.ID? = nil, alive: Set<Tab.ID>) {
         recentIDs = [tab.id] + recentIDs.filter { $0 != tab.id && alive.contains($0) }
         prune { kept($0) }
-        if tab.isWeb { requestPreview(of: tab, gesture: nil) }
+        unpictured = unpictured.filter { $0.key != current && kept($0.key) && $0.value.tab != nil }
+        unpictured[tab.id] = !tab.isWeb ? nil : Unpictured(tab: tab)
+        picturing?.cancel()
+        let id = tab.id
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            picturing = nil
+            if let waiting = unpictured.removeValue(forKey: id) { picture(waiting) }
+        }
+        picturing = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.settle, execute: work)
+    }
+
+    /// Every tab still waiting for its picture, asked for now: ⌃Tab is
+    /// about to show them.
+    private func pictureWaiting() {
+        picturing?.cancel()
+        picturing = nil
+        let waiting = unpictured
+        unpictured = [:]
+        for (id, one) in waiting where kept(id) { picture(one) }
+    }
+
+    private func picture(_ waiting: Unpictured) {
+        guard let tab = waiting.tab, tab.isWeb else { return }
+        requestPreview(of: tab, gesture: nil)
+
     }
 
     /// The first ⌃Tab of a gesture takes the space's tabs in that order, the
@@ -187,6 +229,7 @@ final class TabSwitcher: ObservableObject {
             return
         }
         self.home = home
+        pictureWaiting()
         selectedID = backwards ? ring.last : ring[1]
         let work = DispatchWorkItem { [weak self] in self?.show() }
         reveal = work
@@ -285,6 +328,9 @@ final class TabSwitcher: ObservableObject {
     func reset() {
         cancel()
         recentIDs = []
+        unpictured = [:]
+        picturing?.cancel()
+        picturing = nil
         previewRequests = [:]
         if !previews.isEmpty { previews = [:] }
     }
