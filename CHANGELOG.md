@@ -20,6 +20,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 - GPTZero can start again: WebKit sent its worker an empty cookie-change notification, and left Chrome's install-reason constants out of content scripts. Both stopped parts of the extension as they began, including its copy tracker, LMS bridge and recorder. Thanks [@mastercoder26](https://github.com/mastercoder26) for reporting ([#724](https://github.com/driceroland/Search/issues/724))
 - The address field's page cover fades without scaling, so its edges stay over the page while the field opens and closes. The field keeps its small zoom and the same animation timing, with Split View on or off. Thanks [@mocki-toki](https://github.com/mocki-toki) ([#718](https://github.com/driceroland/Search/pull/718))
+- Settings scrolls with the pointer anywhere over its page, the empty margins beside the rows included; it scrolled only over the column of rows. Thanks [@mocki-toki](https://github.com/mocki-toki) ([#719](https://github.com/driceroland/Search/pull/719))
 
 ### Held back
 
