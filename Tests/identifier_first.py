@@ -130,7 +130,7 @@ def main():
         # The impots.gouv.fr shape: one plain text box and a button.
         f = open_page(base, "/fiscal")
         r = focus(f, "u")
-        t.ok("a lone text box with a button counts as the name box",
+        t.ok("a box labelled as a fiscal number, with a Continue button, counts as the name box",
              r.get("shown") and r.get("nameOnly") is True, r)
         go(f, f"document.getElementById('u').value = '{ONE}'; document.getElementById('u').dispatchEvent("
               "new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); document.forms[0].requestSubmit(); true")

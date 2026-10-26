@@ -18,6 +18,8 @@ struct Suggestion: Identifiable, Equatable {
         case open
         /// Somewhere you have actually been.
         case visited
+        /// One of your bookmarks, the window's profile's.
+        case bookmark
         /// One of the well-known addresses the field knows from the start.
         case known
         /// Not a place at all — words, and an engine to ask.
@@ -37,6 +39,7 @@ struct Suggestion: Identifiable, Equatable {
         if kind.isCommand { return "command " + key }
         if case .suggested = kind { return "suggested " + key }
         if case .visited = kind { return History.identity(for: url) }
+        if case .bookmark = kind { return History.identity(for: url) }
         return key
     }
 
@@ -155,7 +158,7 @@ final class History: ObservableObject {
         )
     }
 
-    private static func stripped(_ address: String) -> String {
+    static func stripped(_ address: String) -> String {
         var text = address.trimmingCharacters(in: .whitespaces).lowercased()
         for scheme in ["https://", "http://"] where text.hasPrefix(scheme) {
             text = String(text.dropFirst(scheme.count))

@@ -69,15 +69,25 @@ enum Vault {
         rows(where: [kSecAttrServer as String: host]).compactMap(kept(from:))
     }
 
+    /// Whether an account kept for `server` is offered on `host`: the same
+    /// host, or with `wide`, another host of the same site.
+    static func belongs(_ server: String, to host: String, wide: Bool = true, domain: String? = nil) -> Bool {
+        server == host || (wide && registrable(server) == (domain ?? registrable(host)))
+    }
+
     /// The keychain matches a server name exactly, and a sign-in rarely lives
     /// on the page you saved it from — accounts.example.com asks, and the
     /// password was kept for example.com. So the site is matched as a site:
     /// the host first, then anything sharing its registrable domain.
-    static func kept(matching host: String) -> [Kept] {
+    ///
+    /// `wide` false: the host alone. For a box that only might be a sign-in's
+    /// — accounts.google.com's Gmail account has nothing to do in a project's
+    /// name on console.cloud.google.com.
+    static func kept(matching host: String, wide: Bool = true) -> [Kept] {
         let domain = registrable(host)
         let exact = kept(for: host)
-        let wider = rows(where: [:])
-            .filter { ($0[kSecAttrServer as String] as? String).map { $0 != host && registrable($0) == domain } ?? false }
+        let wider = !wide ? [] : rows(where: [:])
+            .filter { ($0[kSecAttrServer as String] as? String).map { $0 != host && belongs($0, to: host, domain: domain) } ?? false }
             .compactMap(kept(from:))
         return (exact + wider).sorted { ($0.used ?? .distantPast) > ($1.used ?? .distantPast) }
     }

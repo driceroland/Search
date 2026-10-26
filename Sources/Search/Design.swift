@@ -199,6 +199,35 @@ enum Metrics {
     static let sideMax: CGFloat = 440
 }
 
+/// The handle on an edge that pulls: the column's, the side panel's and the
+/// one between two pages in Split View. Not a line the edge's whole height —
+/// a short pill in the middle of it, as macOS and iPadOS draw theirs, that
+/// grows a little and darkens under the pointer and while it is held. What
+/// takes the pointer is still the whole edge; only the drawing is small.
+enum Grip {
+    static let width: CGFloat = 4
+    /// Its length at rest, and under the pointer or held.
+    static let rest: CGFloat = 28
+    static let lit: CGFloat = 40
+}
+
+/// The pill itself (see Grip). `resting`: drawn, faint, before the pointer
+/// comes; otherwise it is only there once the pointer is on the edge.
+struct EdgeGrip: View {
+    let lit: Bool
+    var resting = false
+
+    var body: some View {
+        Capsule(style: .continuous)
+            .fill(lit ? Palette.muted : Palette.faint)
+            .frame(width: Grip.width, height: lit ? Grip.lit : Grip.rest)
+            .opacity(lit || resting ? 1 : 0)
+            .animation(Motion.quick, value: lit)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
 // One spring for anything that moves between two places, one for anything that
 // arrives or leaves. Using the same two everywhere is most of why a thing feels
 // like a single piece of software rather than a pile of views.

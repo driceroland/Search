@@ -508,14 +508,16 @@ struct PinLine: View {
 /// far end of the row, in the sidebar.
 struct Helm: View {
     @ObservedObject var browser: Browser
+    /// One above the other, for the column of icons.
+    var vertical = false
 
     var body: some View {
         if let tab = browser.active {
-            Wheel(browser: browser, tab: tab)
+            Wheel(browser: browser, tab: tab, vertical: vertical)
         } else {
             // Nowhere to go and nothing to reload: the doors stay in place,
             // greyed, so the row doesn't shift when a tab arrives.
-            HStack(spacing: 4) {
+            Helm.stack(vertical) {
                 Door(icon: "chevron.left") {}
                 Door(icon: "chevron.right") {}
                 Door(icon: "arrow.clockwise") {}
@@ -525,14 +527,20 @@ struct Helm: View {
         }
     }
 
+    static func stack<Content: View>(_ vertical: Bool, @ViewBuilder _ content: () -> Content) -> some View {
+        let layout = vertical ? AnyLayout(VStackLayout(spacing: 4)) : AnyLayout(HStackLayout(spacing: 4))
+        return layout { content() }
+    }
+
     private struct Wheel: View {
         let browser: Browser
         @ObservedObject var tab: Tab
+        var vertical = false
 
         var body: some View {
             let back = !tab.isBlank && tab.canGoBack
             let forward = !tab.isBlank && tab.canGoForward
-            HStack(spacing: 4) {
+            Helm.stack(vertical) {
                 Door(icon: "chevron.left", help: "Back   ⌘[", held: { Rewind.menu(tab, back: true) }) { browser.back() }
                     .disabled(!back)
                     .opacity(back ? 1 : 0.3)
@@ -1371,6 +1379,8 @@ struct TabMenu: View {
         Button("Close Tab", action: close)
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }
             .disabled(browser.tabs.count < 2)
+        Button(browser.prefs.sidebar ? "Close Tabs Below" : "Close Tabs to the Right") { browser.closeTabsBelow(tab) }
+            .disabled(browser.tabsBelow(tab).isEmpty)
         // ⌘⇧T, and the History menu's Recently Closed, where few think to
         // look for it: here too, where tabs are closed.
         Button(browser.reopenTitle) { browser.reopen() }

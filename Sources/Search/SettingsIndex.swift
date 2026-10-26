@@ -10,14 +10,13 @@ import SwiftUI
 // Settings.swift; what a merged control does to the old keys is here, on
 // Preferences, so the switch and the bench write the same thing.
 
-/// A titled group inside a section: a small heading with its icon, a line
-/// saying what the group is for, then its rows in one card.
+/// A titled group inside a section: a small heading with its icon, then
+/// its rows in one card.
 struct SettingsGroup: Identifiable {
     let id: String
     let page: SettingsPanel.Page
     let title: String
     let icon: String
-    let blurb: String
 }
 
 /// One row of Settings.
@@ -46,82 +45,54 @@ struct SettingsItem: Identifiable {
     /// Other words someone might type for it.
     var words: [String] = []
     var kind: Kind = .control
-    /// The row it hangs under: indented, and only there while that one
-    /// makes it count (see SettingsIndex.applies).
+    /// The row that makes this one count. It stands at the same level as
+    /// every other row, and is only there while that one makes it count
+    /// (see SettingsIndex.applies).
     var parent: String? = nil
     /// Only the find field shows it (moved to a menu, or always on).
     var findOnly = false
 
     var page: SettingsPanel.Page { SettingsIndex.group(group)?.page ?? .general }
-    /// Drawn under its parent, indented, when that is the row above it in
-    /// the same group; a row whose parent is elsewhere is only hidden.
-    var hangs: Bool { parent.flatMap(SettingsIndex.item)?.group == group }
 }
 
 enum SettingsIndex {
     // MARK: - groups
 
     static let groups: [SettingsGroup] = [
-        .init(id: "browser", page: .general, title: "Your browser", icon: "globe.desk",
-              blurb: "How Search fits in with the rest of your Mac."),
-        .init(id: "downloads", page: .general, title: "Downloads", icon: "arrow.down.circle",
-              blurb: "Where files go, and when you see them coming in."),
+        .init(id: "browser", page: .general, title: "Your browser", icon: "globe.desk"),
+        .init(id: "downloads", page: .general, title: "Downloads", icon: "arrow.down.circle"),
 
-        .init(id: "theme", page: .appearance, title: "Light and dark", icon: "circle.lefthalf.filled",
-              blurb: "The look of Search, and of the pages in it."),
-        .init(id: "window", page: .appearance, title: "Window", icon: "macwindow",
-              blurb: "Where the tabs sit, and how the page fits around them."),
-        .init(id: "tablook", page: .appearance, title: "Tabs", icon: "textformat.size",
-              blurb: "What each tab shows, and how it feels to press."),
-        .init(id: "motion", page: .appearance, title: "Motion", icon: "wind",
-              blurb: "How much things move on screen."),
+        .init(id: "theme", page: .appearance, title: "Light and dark", icon: "circle.lefthalf.filled"),
+        .init(id: "window", page: .appearance, title: "Window", icon: "macwindow"),
+        .init(id: "tablook", page: .appearance, title: "Tabs", icon: "textformat.size"),
+        .init(id: "motion", page: .appearance, title: "Motion", icon: "wind"),
 
-        .init(id: "newtabs", page: .tabs, title: "New tabs", icon: "plus.square",
-              blurb: "Where new tabs open, and what's left when the last one closes."),
-        .init(id: "memory", page: .tabs, title: "Memory", icon: "moon.zzz",
-              blurb: "Tabs you leave alone can rest, so your Mac stays quick."),
-        .init(id: "tabbar", page: .tabs, title: "In the tab bar", icon: "number",
-              blurb: "What a tab tells you at a glance."),
+        .init(id: "newtabs", page: .tabs, title: "New tabs", icon: "plus.square"),
+        .init(id: "memory", page: .tabs, title: "Memory", icon: "moon.zzz"),
+        .init(id: "tabbar", page: .tabs, title: "In the tab bar", icon: "number"),
 
-        .init(id: "search", page: .browsing, title: "Searching", icon: "magnifyingglass",
-              blurb: "Where the words you type go when they aren't an address."),
-        .init(id: "links", page: .browsing, title: "Links", icon: "link",
-              blurb: "What happens to a link from another app."),
-        .init(id: "reading", page: .browsing, title: "Reading mode", icon: "doc.plaintext",
-              blurb: "⇧⌘R shows a page's article alone, in clean type."),
-        .init(id: "video", page: .browsing, title: "Video", icon: "play.rectangle",
-              blurb: "Videos that float while you do something else."),
-        .init(id: "pages", page: .browsing, title: "Pages", icon: "doc.richtext",
-              blurb: "How every page is drawn."),
+        .init(id: "search", page: .browsing, title: "Searching", icon: "magnifyingglass"),
+        .init(id: "links", page: .browsing, title: "Links", icon: "link"),
+        .init(id: "reading", page: .browsing, title: "Reading mode", icon: "doc.plaintext"),
+        .init(id: "video", page: .browsing, title: "Video", icon: "play.rectangle"),
+        .init(id: "pages", page: .browsing, title: "Pages", icon: "doc.richtext"),
 
-        .init(id: "arc", page: .spaces, title: "Coming from Arc?", icon: "arrow.down.forward.square",
-              blurb: "One click sets Search up the way Arc felt. Change any of it after."),
-        .init(id: "spaces", page: .spaces, title: "Spaces and profiles", icon: "rectangle.3.group",
-              blurb: "Separate sets of tabs, each signed in its own way."),
-        .init(id: "pins", page: .spaces, title: "Pins", icon: "pin",
-              blurb: "The sites you live in, always one click away."),
-        .init(id: "opening", page: .spaces, title: "Opening and starting", icon: "command",
-              blurb: "Arc's ways into a new tab, and into a new day."),
+        .init(id: "arc", page: .spaces, title: "Coming from Arc?", icon: "arrow.down.forward.square"),
+        .init(id: "spaces", page: .spaces, title: "Spaces and profiles", icon: "rectangle.3.group"),
+        .init(id: "pins", page: .spaces, title: "Pins", icon: "pin"),
+        .init(id: "opening", page: .spaces, title: "Opening and starting", icon: "command"),
 
-        .init(id: "passwords", page: .passwords, title: "Your passwords", icon: "key",
-              blurb: "Kept in the macOS keychain, and filled in for you."),
-        .init(id: "apple", page: .passwords, title: "Apple Passwords", icon: "lock.rectangle.stack",
-              blurb: "The accounts in your Mac's Passwords app, under the sign-in box."),
+        .init(id: "passwords", page: .passwords, title: "Your passwords", icon: "key"),
+        .init(id: "apple", page: .passwords, title: "Apple Passwords", icon: "lock.rectangle.stack"),
 
-        .init(id: "blocking", page: .privacy, title: "Blocking", icon: "shield",
-              blurb: "What is stopped before it reaches you."),
-        .init(id: "permissions", page: .privacy, title: "Site permissions", icon: "checkmark.shield",
-              blurb: "What sites may ask of you, and what you told them."),
-        .init(id: "clear", page: .privacy, title: "Clear", icon: "trash",
-              blurb: "Take away what Search keeps about where you've been."),
+        .init(id: "blocking", page: .privacy, title: "Blocking", icon: "shield"),
+        .init(id: "permissions", page: .privacy, title: "Site permissions", icon: "checkmark.shield"),
+        .init(id: "clear", page: .privacy, title: "Clear", icon: "trash"),
 
-        .init(id: "mouse", page: .keyboard, title: "Mouse and trackpad", icon: "computermouse",
-              blurb: "Clicks, swipes and the wheel."),
+        .init(id: "mouse", page: .keyboard, title: "Mouse and trackpad", icon: "computermouse"),
 
-        .init(id: "updates", page: .about, title: "Updates", icon: "arrow.triangle.2.circlepath",
-              blurb: "Search looks for a newer version every hour."),
-        .init(id: "developer", page: .about, title: "Developer", icon: "hammer",
-              blurb: "For testing Search with scripts."),
+        .init(id: "updates", page: .about, title: "Updates", icon: "arrow.triangle.2.circlepath"),
+        .init(id: "developer", page: .about, title: "Developer", icon: "hammer"),
     ]
 
     static func group(_ id: String) -> SettingsGroup? { groups.first { $0.id == id } }
@@ -160,9 +131,11 @@ enum SettingsIndex {
               more: "Sites with a dark look of their own already follow it. ⇧⌘D for the site you're on, ⌥⇧⌘D to pause everywhere.",
               keys: ["pages.dusk"], words: ["dark", "dusk", "night"], parent: "look"),
         .init(id: "tabs.layout", group: "window", icon: "sidebar.left",
-              title: "Tabs", detail: "Across the top of the window, or down a side as a column",
-              keys: ["sidebar", "sidebar.position"],
-              words: ["sidebar", "vertical tabs", "column", "left", "right", "top", "tab bar", "position"], kind: .wide),
+              title: "Tabs", detail: "Across the top of the window, down a side as a column, or as icons only",
+              more: "Icons only is a narrow column of each tab's icon, the title in a tooltip. Nothing grows under the pointer.",
+              keys: ["sidebar", "sidebar.position", "sidebar.icons"],
+              words: ["sidebar", "vertical tabs", "column", "left", "right", "top", "tab bar", "position",
+                      "icons only", "compact", "collapsed", "narrow", "favicons"], kind: .wide),
         .init(id: "sidebar.hides", group: "window", icon: "sidebar.squares.left",
               title: "Hide the column until the pointer reaches the edge", detail: "The page takes the whole window; ⌘S keeps the tabs out",
               keys: ["sidebar.hides"], words: ["auto hide", "sidebar"], parent: "tabs.layout"),
@@ -176,7 +149,7 @@ enum SettingsIndex {
         .init(id: "sidebar.roomy", group: "tablook", icon: "textformat.size.larger",
               title: "Roomier tabs", detail: "Taller rows and larger titles in the column",
               keys: ["sidebar.roomy"], words: ["bigger", "larger", "text size", "accessibility"], parent: "tabs.layout"),
-        .init(id: "glyph", group: "tablook", icon: "character",
+        .init(id: "glyph", group: "tablook", icon: "app",
               title: "Tabs show", detail: "Beside the title, and on a pinned square",
               keys: ["glyph"], words: ["favicon", "icons", "letters"]),
         .init(id: "tabs.reading", group: "tablook", icon: "text.line.first.and.arrowtriangle.forward",
@@ -241,7 +214,7 @@ enum SettingsIndex {
               keys: ["links.little"], words: ["little arc", "mini window"]),
         .init(id: "reader.twins", group: "reading", icon: "doc.text",
               title: "Read the site's own Markdown", detail: "When a page has a Markdown copy, reading mode shows that",
-              more: "Most docs sites publish one. Nothing in it can run: its text is escaped.",
+              more: "⇧⌘R shows a page's article alone, in clean type. Most docs sites publish a Markdown copy; nothing in it can run, its text is escaped.",
               keys: ["reader.twins"], words: ["markdown", "reader"]),
         .init(id: "reader.follows", group: "reading", icon: "circle.righthalf.filled",
               title: "Reading mode follows light and dark", detail: "In a dark window the article is light on dark",
@@ -323,8 +296,9 @@ enum SettingsIndex {
 
         // Privacy
         .init(id: "shield", group: "blocking", icon: "shield.lefthalf.filled",
-              title: "Block ads and trackers", detail: "Third parties whose only job is to watch",
-              keys: ["shield"], words: ["adblock", "ad blocker", "ads"]),
+              title: "Block ads and trackers", detail: "Third parties whose only job is to watch, and YouTube's ads",
+              more: "On YouTube, the ads announced in the player's own data are taken out before the video starts. Turn it off for one site from the site's row.",
+              keys: ["shield"], words: ["adblock", "ad blocker", "ads", "youtube"]),
         .init(id: "shield.lists", group: "blocking", icon: "list.bullet.rectangle",
               title: "Filter lists", detail: "EasyList, a hosts file or your own, added to the blocker and kept up to date",
               more: "Each list is turned into WebKit's own rules and compiled once, a few seconds for a big one. What WebKit can't do, like scriptlets and redirects, is skipped and counted. WebKit takes up to 150,000 rules from one list.",
@@ -460,7 +434,8 @@ enum SettingsIndex {
     @MainActor static func applies(_ item: SettingsItem, _ prefs: Preferences) -> Bool {
         switch item.id {
         case "pages.dusk": return prefs.look != .light
-        case "sidebar.hides", "layout.cards", "sidebar.roomy", "pins.list": return prefs.sidebar
+        case "sidebar.roomy": return prefs.sidebar && !prefs.sideIcons
+        case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
         case "toolbar.left": return !prefs.sidebar
         case "shield.lists": return prefs.shielded
         default: return true
@@ -472,6 +447,7 @@ enum SettingsIndex {
         switch item.id {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "toolbar.left": return "Only with the tabs across the top"
+        case "sidebar.roomy": return "Only with titles in the column"
         case "shield.lists": return "Only while ads and trackers are blocked"
         default: return "Only with the tabs down a side"
         }
@@ -480,16 +456,19 @@ enum SettingsIndex {
 
 // MARK: - merged controls
 
-/// Tabs: across the top, or a column down either side. Reads and writes
-/// `sidebar` and `sidebar.position`, as the two switches did.
+/// Tabs: across the top, a column down either side, or that column as
+/// icons only. Reads and writes `sidebar` and `sidebar.position`, as the
+/// two switches did, and `sidebar.icons`. Icons only keeps the side the
+/// column was on.
 enum TabsLayout: String, CaseIterable, Identifiable {
-    case top, left, right
+    case top, left, right, icons
     var id: String { rawValue }
     var title: String {
         switch self {
         case .top: return "Top"
         case .left: return "Left"
         case .right: return "Right"
+        case .icons: return "Icons only"
         }
     }
 }
@@ -530,12 +509,17 @@ enum PeekChoice: String, CaseIterable, Identifiable {
 
 extension Preferences {
     var tabsLayout: TabsLayout {
-        get { !sidebar ? .top : (sidePosition == .right ? .right : .left) }
+        get { !sidebar ? .top : sideIcons ? .icons : (sidePosition == .right ? .right : .left) }
         set {
-            if newValue == .top {
+            switch newValue {
+            case .top:
                 sidebar = false
-            } else {
+            case .icons:
+                sideIcons = true
+                sidebar = true
+            case .left, .right:
                 sidePosition = newValue == .right ? .right : .left
+                sideIcons = false
                 sidebar = true
             }
         }

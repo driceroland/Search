@@ -667,7 +667,7 @@ private struct PanelPage: NSViewRepresentable {
 /// The panel beside the page, on the side away from the column. With the
 /// page as a card it is a card of its own after the same gap; edge to edge,
 /// it meets the page at a hairline. The gap, or a strip along the hairline,
-/// is its handle: dragged, the panel is wider or narrower, kept within
+/// is its handle, with a small pill in the middle (see Grip): dragged, the panel is wider or narrower, kept within
 /// reason and remembered; double-clicked, back to where it starts.
 struct SidePanelBeside: View {
     @ObservedObject var browser: Browser
@@ -703,8 +703,11 @@ struct SidePanelBeside: View {
         }
     }
 
+    /// The whole edge takes the pointer; a small pill in the middle of it
+    /// shows under the pointer and while held (see Grip).
     private var handle: some View {
-        Color.clear
+        EdgeGrip(lit: over || start != nil)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .onHover { inside in
                 guard inside != over else { return }

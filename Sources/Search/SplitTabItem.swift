@@ -8,6 +8,12 @@ import SwiftUI
 ///
 /// The page the keys go to wears the live grey, the same one that glides
 /// from tab to tab, so it glides from one half to the other too.
+///
+/// The pair reads as one thing: a faint ground of its own under both halves
+/// and an outline round them, with a fine line between the halves while
+/// neither is lit. Two lit halves — the live one and the one under the
+/// pointer — meet square where they touch, so the two greys join with no
+/// notch between their corners.
 struct SplitTabItem: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
@@ -23,6 +29,7 @@ struct SplitTabItem: View {
     let interactive: Bool
     let pill: Namespace.ID
 
+    @Environment(\.greys) private var greys
     @State private var hovered: Tab.ID?
 
     private var stacked: Bool { width == nil }
@@ -32,21 +39,35 @@ struct SplitTabItem: View {
         Group {
             if stacked {
                 VStack(spacing: 0) {
-                    half(left)
-                    half(right)
+                    half(left, first: true)
+                    half(right, first: false)
+                }
+                .overlay {
+                    Rectangle()
+                        .fill(Palette.hairline)
+                        .frame(height: 1)
+                        .padding(.horizontal, 10)
+                        .opacity(lit(left) || lit(right) ? 0 : 1)
+                        .allowsHitTesting(false)
                 }
             } else {
                 HStack(spacing: 0) {
-                    half(left)
+                    half(left, first: true)
                     Rectangle()
                         .fill(Palette.hairline)
                         .frame(width: 1)
                         .padding(.vertical, 12)
-                    half(right)
+                    half(right, first: false)
                 }
                 .frame(width: width, height: height)
                 .overlay(alignment: .trailing) { cross }
             }
+        }
+        .background {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(greys.tile)
+                .padding(.vertical, stacked ? 0 : 6)
+                .allowsHitTesting(false)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -60,13 +81,21 @@ struct SplitTabItem: View {
         .animation(Motion.quick, value: hovered)
     }
 
-    private func half(_ tab: Tab) -> some View {
+    /// A half wearing a grey: the live one, a selected one, the one under
+    /// the pointer.
+    private func lit(_ tab: Tab) -> Bool {
+        focused == tab.id || hovered == tab.id || browser.selectedTabIDs.contains(tab.id)
+    }
+
+    private func half(_ tab: Tab, first: Bool) -> some View {
         SplitTabHalf(
             browser: browser,
             prefs: prefs,
             tab: tab,
             focused: focused == tab.id,
             stacked: stacked,
+            first: first,
+            joined: lit(first ? right : left),
             height: height,
             narrow: width.map { ($0 - 1) / 2 < 64 } ?? false,
             interactive: interactive,
@@ -106,6 +135,11 @@ private struct SplitTabHalf: View {
     @ObservedObject var tab: Tab
     let focused: Bool
     let stacked: Bool
+    /// The top half in the column, the left one across the top.
+    let first: Bool
+    /// The other half is lit too: the corners where the two touch are square,
+    /// so the greys meet without a notch.
+    let joined: Bool
     let height: CGFloat
     /// Too narrow for a title: the mark alone, as a narrow tab has.
     let narrow: Bool
@@ -129,7 +163,7 @@ private struct SplitTabHalf: View {
             .padding(.trailing, stacked ? 7 : 4)
             .frame(height: stacked ? height : 28)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background { ground.animation(Motion.quick, value: stacked && focused) }
+            .background { ground.animation(Motion.quick, value: stacked && focused).animation(Motion.quick, value: joined) }
             .frame(height: height)
             .contentShape(Rectangle())
     }
@@ -179,6 +213,21 @@ private struct SplitTabHalf: View {
             .help(title)
     }
 
+    /// The grey's shape: round, but square on the side it shares with the
+    /// other half while that one is lit too.
+    private var shape: UnevenRoundedRectangle {
+        let round: CGFloat = 9
+        let seam: CGFloat = joined ? 0 : round
+        let radii: RectangleCornerRadii
+        switch (stacked, first) {
+        case (true, true): radii = .init(topLeading: round, bottomLeading: seam, bottomTrailing: seam, topTrailing: round)
+        case (true, false): radii = .init(topLeading: seam, bottomLeading: round, bottomTrailing: round, topTrailing: seam)
+        case (false, true): radii = .init(topLeading: round, bottomLeading: round, bottomTrailing: seam, topTrailing: seam)
+        case (false, false): radii = .init(topLeading: seam, bottomLeading: seam, bottomTrailing: round, topTrailing: round)
+        }
+        return UnevenRoundedRectangle(cornerRadii: radii, style: .continuous)
+    }
+
     @ViewBuilder
     private var ground: some View {
         if focused {
@@ -190,13 +239,12 @@ private struct SplitTabHalf: View {
                     }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .clipShape(shape)
             .matchedGeometryEffect(id: "live", in: pill)
         } else if browser.selectedTabIDs.contains(tab.id) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(greys.wash)
+            shape.fill(greys.wash)
         } else if hovering {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(greys.hover)
+            shape.fill(greys.hover)
         }
     }
 

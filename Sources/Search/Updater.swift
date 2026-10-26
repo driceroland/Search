@@ -228,7 +228,7 @@ final class Updater: ObservableObject {
                     if Store.testing { Updater.diskVerdict = "verified" } else { NSWorkspace.shared.open(dmg) }
                 case .failure(let error):
                     Updater.diskVerdict = "refused: \(error)"
-                    say?("That download didn't check out — get Search from officecommun.com/search")
+                    say?("That download didn't check out — get Search from searchbrowser.app")
                 }
             }
         }

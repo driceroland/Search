@@ -138,8 +138,19 @@ final class Preferences: ObservableObject {
     @Published var roomyTabs: Bool {
         didSet { store.set(roomyTabs, forKey: "sidebar.roomy") }
     }
+    /// The column as icons only: each tab its site's mark, no titles, a
+    /// fixed narrow width, and nothing that grows under the pointer (idea
+    /// 413). Off unless asked for; Settings › Appearance › Tabs, Icons only.
+    @Published var sideIcons: Bool {
+        didSet { store.set(sideIcons, forKey: "sidebar.icons") }
+    }
+    /// Whether the column is showing as icons now: down a side, and asked for.
+    var iconColumn: Bool { sidebar && sideIcons }
+    /// The column's width as drawn: fixed with icons only, pulled by its
+    /// edge otherwise (the width pulled is kept for when titles come back).
+    var columnWidth: CGFloat { iconColumn ? Metrics.iconColumn : sideWidth }
     /// One tab's line in the column, and the size its title is set in.
-    var sideRow: CGFloat { roomyTabs ? 36 : 28 }
+    var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 28 }
     var sideTitle: CGFloat { roomyTabs ? 14 : 12.5 }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
@@ -639,6 +650,7 @@ final class Preferences: ObservableObject {
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
         roomyTabs = store.bool(forKey: "sidebar.roomy")
+        sideIcons = store.bool(forKey: "sidebar.icons")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true

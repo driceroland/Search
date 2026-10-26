@@ -306,6 +306,7 @@ final class PaneStage: NSView {
     /// without corners, where the pages fill the stage as they always did.
     private func paint() {
         let card = corner > 0
+        divider.card = card
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let edge = NSColor.labelColor.withAlphaComponent(CardEdge.edge).cgColor
             let ground = Palette.NS.ground.cgColor
@@ -589,32 +590,53 @@ final class FocusCue: NSView {
     }
 }
 
-/// The line between two pages. A hairline in a narrow gutter, that grows a
-/// little under the pointer; dragged, the pages follow it; double-clicked,
-/// they are made even. It never takes the keys: the page keeps them.
+/// Between two pages: a narrow gutter that takes the pointer, with a small
+/// pill in its middle (see Grip) — faint at rest, longer and darker under the
+/// pointer and while held. As cards, the gap is what parts the pages; edge to
+/// edge, a hairline down the gutter does. Dragged, the pages follow it;
+/// double-clicked, they are made even. It never takes the keys: the page
+/// keeps them.
 final class PaneDivider: NSView {
     weak var stage: PaneStage?
+    /// The pages are cards (see PaneStage.paint): no hairline then.
+    var card = false {
+        didSet { if card != oldValue { needsDisplay = true } }
+    }
 
-    private let line = CALayer()
+    private let pill = CALayer()
+    private let seam = CALayer()
     private var hovering = false
     private var dwell: DispatchWorkItem?
     private var dragging = false
+    private var lit: Bool { hovering || dragging }
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var wantsUpdateLayer: Bool { true }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.addSublayer(line)
-        line.actions = ["bounds": NSNull(), "position": NSNull()]
+        layer?.addSublayer(seam)
+        layer?.addSublayer(pill)
+        for part in [pill, seam] {
+            part.actions = ["bounds": NSNull(), "position": NSNull(), "backgroundColor": NSNull(), "hidden": NSNull()]
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func updateLayer() {
-        line.backgroundColor = (hovering || dragging ? Palette.NS.muted : Palette.NS.faint).cgColor
+        paint()
+    }
+
+    private func paint() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            pill.backgroundColor = (lit ? Palette.NS.muted : Palette.NS.faint).cgColor
+            seam.backgroundColor = Palette.NS.hairline.cgColor
+        }
+        seam.isHidden = card
     }
 
     override func layout() {
@@ -623,19 +645,27 @@ final class PaneDivider: NSView {
     }
 
     private func place() {
-        let width: CGFloat = hovering || dragging ? 3 : 1
-        line.frame = CGRect(x: (bounds.width - width) / 2, y: 0, width: width, height: bounds.height)
-        line.cornerRadius = width / 2
+        let length = min(bounds.height, lit ? Grip.lit : Grip.rest)
+        pill.frame = CGRect(x: (bounds.width - Grip.width) / 2, y: (bounds.height - length) / 2,
+                            width: Grip.width, height: length)
+        pill.cornerRadius = Grip.width / 2
+        seam.frame = CGRect(x: (bounds.width - 1) / 2, y: 0, width: 1, height: bounds.height)
     }
 
     private func light(_ on: Bool) {
         guard hovering != on else { return }
         hovering = on
+        // Only this change moves; the pill keeps still while the window or
+        // the pages are being resized.
+        let still = pill.actions
+        pill.actions = nil
         CATransaction.begin()
         CATransaction.setAnimationDuration(Motion.reduced ? 0 : 0.14)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
         place()
-        line.backgroundColor = (on || dragging ? Palette.NS.muted : Palette.NS.faint).cgColor
+        paint()
         CATransaction.commit()
+        pill.actions = still
     }
 
     override func resetCursorRects() {

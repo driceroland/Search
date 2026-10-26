@@ -41,6 +41,7 @@ struct Space: Codable, Identifiable, Equatable {
     /// The first space: the session and the store there were before spaces.
     static let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000001") ?? UUID()
     var isFirst: Bool { id == Space.firstID }
+    static func first() -> Space { Space(id: firstID, name: "Personal", colour: 0) }
 
     /// The icon it shows: its own, or a house for the first and a
     /// briefcase for any other that has none yet.
@@ -75,23 +76,59 @@ enum Spaces {
 
     private static var file: URL { Store.file("spaces.json") }
 
-    /// Every space of every profile, the first one first — made on the
-    /// spot if there is no list yet.
+    /// Every space of every profile, in the order the user arranged them —
+    /// made on the spot if there is no list yet. The first space is the
+    /// profile's home, not necessarily the leftmost one: it can be moved.
     static func read() -> [Space] {
         let saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Space].self, from: $0) } ?? []
-        var first = saved.first(where: \.isFirst) ?? Space(id: Space.firstID, name: "Personal", colour: 0)
-        // The first space is Personal's, whatever a file says.
-        first.profile = nil
-        return [first] + saved.filter { !$0.isFirst }
+        guard !saved.isEmpty else { return [Space.first()] }
+        var foundHome = false
+        var spaces = saved.compactMap { space -> Space? in
+            var space = space
+            if space.isFirst {
+                // Keep the old reader's repair of a damaged list, without
+                // moving the first home entry away from its chosen place.
+                guard !foundHome else { return nil }
+                foundHome = true
+                space.profile = nil
+            }
+            return space
+        }
+        // The first space is the store and session there were before
+        // spaces. A file without it still has to leave that home reachable,
+        // once the profile's other spaces are restored.
+        if !spaces.contains(where: \.isFirst) { spaces.insert(Space.first(), at: 0) }
+        if keepsOrder(in: saved) { return spaces }
+        return spaces.filter(\.isFirst) + spaces.filter { !$0.isFirst }
     }
 
-    /// One profile's spaces, its first space first: what a window of that
+    /// One profile's spaces in their saved order: what a window of that
     /// profile shows, and all it shows.
     static func read(profile: UUID) -> [Space] {
+        let saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Space].self, from: $0) } ?? []
         let mine = read().filter { $0.profileID == profile }
-        let home = profile == Profile.personalID ? Space.firstID
+        guard !keepsOrder(in: saved) else { return mine }
+        let home = profile == Profile.personalID
+            ? Space.firstID
             : (Profiles.read().first { $0.id == profile }?.home ?? mine.first?.id ?? Space.firstID)
         return mine.filter { $0.id == home } + mine.filter { $0.id != home }
+    }
+
+    /// Whether a spaces.json carries the user's order. A move made now marks
+    /// it. A move made by an older Search is also recognised: within each
+    /// profile's block, its home away from the front could only have been
+    /// written by that move. Older untouched files still read home first.
+    private static func keepsOrder(in spaces: [Space]) -> Bool {
+        if Store.settings.bool(forKey: "spaces.orderKept") { return true }
+        for profile in Set(spaces.map(\.profileID)) {
+            let block = spaces.filter { $0.profileID == profile }
+            guard let first = block.first else { continue }
+            let home = profile == Profile.personalID
+                ? Space.firstID
+                : (Profiles.read().first { $0.id == profile }?.home ?? first.id)
+            if first.id != home { return true }
+        }
+        return false
     }
 
     /// The whole list, every profile's spaces.
@@ -360,6 +397,9 @@ extension Browser {
         makingSpace = false
         let made = Space(id: UUID(), name: name, colour: 0, icon: icon ?? freeIcon, sharesSignIns: sharesSignIns,
                          profile: profileID == Profile.personalID ? nil : profileID)
+        // The profile's first space is its home, not its permanent leftmost
+        // position. A newly made space belongs at the right-hand end, even
+        // after the home has been moved away from the start.
         spaces.append(made)
         Spaces.write(spaces, profile: profileID)
         if let afterSpaceCreated {
@@ -374,6 +414,7 @@ extension Browser {
     func moveSpace(_ id: UUID, to index: Int) {
         guard let from = spaces.firstIndex(where: { $0.id == id }), spaces.indices.contains(index), from != index else { return }
         spaces.move(fromOffsets: IndexSet(integer: from), toOffset: index > from ? index + 1 : index)
+        Store.settings.set(true, forKey: "spaces.orderKept")
         Spaces.write(spaces, profile: profileID)
     }
 
@@ -417,8 +458,11 @@ extension Browser {
     }
 
     /// The profile's first space: the one a window shows with spaces off,
-    /// and the one that can't be deleted.
-    var homeSpaceID: UUID { spaces.first?.id ?? Space.firstID }
+    /// and the one that can't be deleted. It is identified by its id, not
+    /// the first list position, because the spaces can be reordered.
+    var homeSpaceID: UUID {
+        profileID == Profile.personalID ? Space.firstID : Profiles.shared.profile(profileID).home
+    }
 
     /// A space, its tabs, and its cookies and sign-ins, gone. The first one
     /// of the profile stays: it is where everything was before there were spaces.
@@ -562,6 +606,11 @@ enum SpaceMenu {
     }
 
     static func show(for browser: Browser) {
+        menu(for: browser).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    /// The menu itself, for show() to pop up, and for the bench to read.
+    static func menu(for browser: Browser) -> NSMenu {
         actions = []
         let menu = NSMenu()
         for (index, space) in browser.spaces.enumerated() {
@@ -601,6 +650,18 @@ enum SpaceMenu {
             if at > 0 { menu.addItem(item("Move Left") { browser.moveSpace(here.id, to: at - 1) }) }
             if at < browser.spaces.count - 1 { menu.addItem(item("Move Right") { browser.moveSpace(here.id, to: at + 1) }) }
         }
+        // Every group of this space, folded or opened at once, as in Arc.
+        if browser.prefs.usesTabGroups, !browser.tabGroups.isEmpty {
+            menu.addItem(.separator())
+            let fold = item("Fold All Groups") { browser.foldAllGroups(true) }
+            fold.isEnabled = browser.canFoldAllGroups
+            let unfold = item("Unfold All Groups") { browser.foldAllGroups(false) }
+            unfold.isEnabled = browser.canUnfoldAllGroups
+            menu.autoenablesItems = false
+            menu.addItem(fold)
+            menu.addItem(unfold)
+            menu.addItem(.separator())
+        }
         let folder = here.downloads.map { URL(fileURLWithPath: $0).lastPathComponent }
         menu.addItem(item(folder.map { "Downloads to “\($0)”…" } ?? "Downloads Folder…") {
             Ask.folder { browser.setSpaceDownloads(here.id, to: $0) }
@@ -616,7 +677,7 @@ enum SpaceMenu {
                 }
             })
         }
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        return menu
     }
 }
 

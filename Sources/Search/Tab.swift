@@ -567,8 +567,8 @@ final class Tab: ObservableObject, Identifiable {
     var duskFrames: [WKFrameInfo] = []
     /// Silenced by hand from its speaker or its menu: the page plays on and
     /// is not heard. WebKit keeps the mute on the view from one page to the
-    /// next, so it is only set again on a view built new, as a sleeping tab
-    /// wakes (see build()).
+    /// next, so it is set on a view built new before that view begins loading
+    /// the tab's page (see build()).
     @Published var muted = false
     /// An extension is recording from this tab's page (see RecordingIndicator).
     @Published var recording = false
@@ -588,7 +588,7 @@ final class Tab: ObservableObject, Identifiable {
     /// is, in the web view's points, or nil when it has left. Then whether
     /// it goes with a password, and whether it is a first step's name box,
     /// which takes the name alone.
-    var onField: ((Tab, CGRect?, Bool, Bool) -> Void)?
+    var onField: ((Tab, CGRect?, Bool, Bool, Bool) -> Void)?
     /// The site the sign-in was sent from — not the one it landed on —
     /// then the name and the password, and whether that page came over
     /// plain http.
@@ -917,7 +917,8 @@ final class Tab: ObservableObject, Identifiable {
         PopupGestureRelay.install(on: controller)
         Shield.shared.protect(controller)
         built = web
-        // A tab muted before it went to sleep wakes muted.
+        // Set before loadAndVerify gives this view a page: a tab restored or
+        // woken muted must not make its first sound while that page boots.
         if muted { Muter.set(true, on: web) }
         arm(hiding: veils)
 
@@ -1129,6 +1130,12 @@ final class Tab: ObservableObject, Identifiable {
                 WKUserScript(source: dusk, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
             )
         }
+        // YouTube's ads, while Shield is on for the site this tab is on
+        // (see YouTubeAds.swift). Every frame; each script does nothing in a
+        // frame that isn't YouTube's.
+        for script in YouTubeAds.scripts(for: Dusk.host(of: url ?? pageAddress)) {
+            controller.addUserScript(script)
+        }
         guard !css.isEmpty else { return }
         controller.addUserScript(
             WKUserScript(source: Veiling.style(css), injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
@@ -1150,16 +1157,24 @@ final class Tab: ObservableObject, Identifiable {
     /// `passwords`: a box of a sign-in with a password, not one only for
     /// passkeys. `name`: the name box of a sign-in that asks for the
     /// password on the next page.
-    func fieldFocused(_ rect: CGRect?, passwords: Bool = true, name: Bool = false) {
+    /// The host of the frame the sign-in box with the caret is in, when it
+    /// isn't the page itself: an offer is only made from the page's own site
+    /// (ApplePasswordsOffer). Set before `fieldFocused` by FormRelay.
+    var fieldFrameHost: String?
+
+    /// `wide`: clearly a sign-in's box, so accounts kept for the site's
+    /// other hosts (its registrable domain) may come; otherwise only this
+    /// host's own.
+    func fieldFocused(_ rect: CGRect?, passwords: Bool = true, name: Bool = false, wide: Bool = true) {
         guard let rect else {
-            onField?(self, nil, false, false)
+            onField?(self, nil, false, false, false)
             return
         }
         let zoom = built?.pageZoom ?? 1
         onField?(self, CGRect(
             x: rect.minX * zoom, y: rect.minY * zoom,
             width: rect.width * zoom, height: rect.height * zoom
-        ), passwords, name)
+        ), passwords, name, wide)
     }
 
     /// The name a sign-in that asks for it first was just sent, for the
@@ -2209,8 +2224,74 @@ final class PageView: WKWebView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        // A press that reaches the page under a peek is a press beside the
+        // panel, which puts the peek away (see Peek.swift); under the column
+        // it is nobody's.
+        if underCover(event) {
+            if let browser, browser.peekTab != nil, browser.peekTab?.built !== self { browser.closePeek() }
+            return
+        }
         onTouch?()
         super.mouseDown(with: event)
+    }
+
+    // MARK: - under the column or a peek
+
+    /// The pointer is over the page, but under something of the window's
+    /// lying on it: the column out over the page while it is folded, or a
+    /// peek and the dimming round it (Browser.covers). The window gives a
+    /// click there to what is on top, but the page's own tracking area hears
+    /// every move under it all the same — AppKit tracks by rectangle, not by
+    /// what is in front — so WebKit went on lighting up links, opening menus
+    /// that open on hover, showing their tooltips and turning the pointer
+    /// into a hand or a caret over the column and the dimmed page (idea 418).
+    /// Under cover the page is told once that the pointer has gone, and
+    /// hears nothing more of it until it is back.
+    private(set) var covered = false
+
+    /// The browser of the window the page is in.
+    private var browser: Browser? {
+        guard let window else { return nil }
+        return Browsers.all.first { $0.window === window }
+    }
+
+    /// Whether the event is under cover, and if so, the page told so.
+    private func underCover(_ event: NSEvent) -> Bool {
+        guard let window, event.window == nil || event.window === window,
+              browser?.covers(self, at: event.locationInWindow) == true
+        else {
+            covered = false
+            return false
+        }
+        guard !covered else { return true }
+        covered = true
+        // WebKit reads a pointer leaving as one more move, where it left:
+        // told it left from far outside the page, nothing in the page is
+        // under it any more, and the pointer goes back to an arrow.
+        if let gone = NSEvent.enterExitEvent(
+            with: .mouseExited, location: NSPoint(x: -10_000, y: -10_000), modifierFlags: [],
+            timestamp: event.timestamp, windowNumber: window.windowNumber, context: nil,
+            eventNumber: 0, trackingNumber: 0, userData: nil
+        ) {
+            super.mouseExited(with: gone)
+        }
+        NSCursor.arrow.set()
+        return true
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        if underCover(event) { return }
+        super.mouseMoved(with: event)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        if underCover(event) { return }
+        super.mouseEntered(with: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if underCover(event) { return }
+        super.rightMouseDown(with: event)
     }
 
     /// The side buttons a mouse has for back and forward — button 3 and 4.
@@ -2219,6 +2300,7 @@ final class PageView: WKWebView {
     /// drivers settled on regardless, so it's what a mouse's own firmware
     /// is tuned to send.
     override func otherMouseDown(with event: NSEvent) {
+        if underCover(event) { return }
         switch event.buttonNumber {
         case 3 where canGoBack: goBack()
         case 4 where canGoForward: goForward()

@@ -53,6 +53,15 @@ struct SideBar: View {
     private static let pinGap: CGFloat = 4
 
     private var onRight: Bool { prefs.sidePosition == .right }
+    /// Icons only (SideIcons.swift): tiles for rows, a fixed width, the
+    /// lights and the three doors stacked at the top.
+    private var icons: Bool { prefs.iconColumn }
+    /// With icons only, the band the stacked lights take: gone in full
+    /// screen, with them.
+    private var lightsBand: CGFloat { browser.fullScreen ? 8 : Metrics.iconLights }
+    /// What sits above the pins: the lights' band, and with icons only the
+    /// three doors under it.
+    private var top: CGFloat { icons ? lightsBand + Metrics.helmDoors + 8 : Metrics.strip }
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
 
     /// The window's buttons' corner: gone in full screen, where macOS takes
@@ -71,27 +80,41 @@ struct SideBar: View {
             // is dragged by it and a double-click fills the screen with it,
             // everywhere but over the three doors, which take their own
             // clicks. The lights are the title bar's own and answer first.
-            HStack(spacing: 0) {
+            if icons {
                 DragStrip()
-                    .frame(width: 10 + lights)
-                Color.clear
-                    .frame(width: Metrics.helm)
-                    .allowsHitTesting(false)
-                DragStrip()
+                    .frame(height: lightsBand)
+            } else {
+                HStack(spacing: 0) {
+                    DragStrip()
+                        .frame(width: 10 + lights)
+                    Color.clear
+                        .frame(width: Metrics.helm)
+                        .allowsHitTesting(false)
+                    DragStrip()
+                }
+                .frame(height: Metrics.strip)
             }
-            .frame(height: Metrics.strip)
 
             VStack(alignment: .leading, spacing: 0) {
                 // The traffic lights' corner, with back, forward and reload
                 // sitting right of them — the same three doors as the top
                 // bar, moved beside the lights since there's no far end of a
                 // row to put them at in this mode.
-                HStack(spacing: 0) {
-                    Color.clear.frame(width: lights)
-                    Helm(browser: browser)
-                    Spacer(minLength: 0)
+                if icons {
+                    // The lights stacked in their band (Lights, vertical),
+                    // the three doors one above the other under them.
+                    Color.clear.frame(height: lightsBand)
+                    Helm(browser: browser, vertical: true)
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 8)
+                } else {
+                    HStack(spacing: 0) {
+                        Color.clear.frame(width: lights)
+                        Helm(browser: browser)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(height: Metrics.strip)
                 }
-                .frame(height: Metrics.strip)
 
                 // The spaces side by side, as pages: two fingers sideways move
                 // the one on screen and the next one together, the next one
@@ -102,7 +125,7 @@ struct SideBar: View {
             }
             .padding(.horizontal, 10)
             // Clear of the foot, which sits over the column's bottom edge.
-            .padding(.bottom, SideBar.footHeight)
+            .padding(.bottom, footHeight)
 
             VStack {
                 Spacer()
@@ -110,7 +133,7 @@ struct SideBar: View {
             }
         }
         .environment(\.greys, greys)
-        .frame(width: prefs.sideWidth)
+        .frame(width: prefs.columnWidth)
         .frame(maxHeight: .infinity)
         // Rows on their way to or from another space stay in the column.
         .clipped()
@@ -126,7 +149,8 @@ struct SideBar: View {
         .overlay(alignment: innerEdge) {
             if !onFrame { Rectangle().fill(Palette.hairline).frame(width: 1) }
         }
-        .overlay(alignment: innerEdge) { edge }
+        // A fixed width with icons only: nothing to pull.
+        .overlay(alignment: innerEdge) { if !icons { edge } }
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
             browser.take(providers)
         }
@@ -141,13 +165,15 @@ struct SideBar: View {
     }
 
     /// The column's edge: pull it to make the column wider or narrower,
-    /// double-click it to put it back. The hairline darkens under the pointer
-    /// so the edge says it can be taken before it is.
+    /// double-click it to put it back. The whole edge takes the pointer; on
+    /// it, a small pill shows in the middle (see Grip) so the edge says it
+    /// can be taken before it is. Edge to edge, the pill sits on the page's
+    /// hairline; as cards, in the gap before the page.
     private var edge: some View {
-        Rectangle()
-            .fill(Palette.ink.opacity(onEdge || grabbed != nil ? 0.18 : 0))
-            .frame(width: onEdge || grabbed != nil ? 2 : 1)
+        EdgeGrip(lit: onEdge || grabbed != nil)
+            .offset(x: onFrame ? 0 : onRight ? -4 : 4)
             .frame(width: 9)
+            .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
             .onHover { over in
                 onEdge = over
@@ -178,7 +204,7 @@ struct SideBar: View {
     }
 
     private var pages: some View {
-        let width = prefs.sideWidth
+        let width = prefs.columnWidth
         let swipe = browser.spaceSwipe
         let at = spaceAt
         return ZStack(alignment: .topLeading) {
@@ -296,7 +322,7 @@ struct SideBar: View {
             }
         }
         .padding(.horizontal, 10)
-        .frame(width: prefs.sideWidth, alignment: .topLeading)
+        .frame(width: prefs.columnWidth, alignment: .topLeading)
     }
 
     private func refit() {
@@ -326,12 +352,17 @@ struct SideBar: View {
             }
             VStack(spacing: SideBar.gap) {
                 ForEach(listed) { tab in
-                    SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
-                            pill: pill, close: {}, interactive: false)
+                    if icons {
+                        IconTile(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
+                                 pill: pill, close: {}, interactive: false)
+                    } else {
+                        SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
+                                pill: pill, close: {}, interactive: false)
+                    }
                 }
                 // Its groups, folded as they were left (see Parked.drawn).
                 ForEach(groups) { drawn in
-                    GroupHeading(browser: browser, group: drawn.group)
+                    GroupHeading(browser: browser, group: drawn.group, compact: icons)
                     ForEach(drawn.tabs) { tab in
                         rowItem(tab, tabs: row.tabs, splits: row.splits, activeID: row.active,
                                 interactive: false, pill: pill, close: {})
@@ -357,7 +388,7 @@ struct SideBar: View {
     private var rowsEnd: CGFloat {
         let pins = browser.squarePins.count
         let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + 10
-        return Metrics.strip + pinBlock + rowsHeight
+        return top + pinBlock + rowsHeight
     }
 
     /// The pinned rows, the loose tabs and the row that makes another, added
@@ -375,7 +406,8 @@ struct SideBar: View {
             : displayed.filter { $0.pin == nil }
         // A pair is two lines (see SplitTabItem).
         let pairs = rows.filter { browser.split(for: $0) != nil }.count
-        let headings = prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) * (GroupHeading.height + SideBar.gap) : 0
+        let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
+        let headings = prefs.usesTabGroups ? CGFloat(browser.tabGroups.count) * (heading + SideBar.gap) : 0
         let loose = CGFloat(rows.count) * (rowHeight + SideBar.gap) + CGFloat(pairs) * rowHeight + headings
         return listBlock + loose + rowHeight + 8
     }
@@ -391,7 +423,16 @@ struct SideBar: View {
         close: @escaping () -> Void
     ) -> some View {
         let pair = prefs.splitView ? splits.first(where: { $0.left == tab.id }) : nil
-        if let pair, let right = tabs.first(where: { $0.id == pair.right }) {
+        if icons {
+            if let pair, let right = tabs.first(where: { $0.id == pair.right }) {
+                IconPair(browser: browser, prefs: prefs, left: tab, right: right,
+                         live: activeID.map { pair.contains($0) } ?? false,
+                         focusedID: activeID, interactive: interactive, pill: pill)
+            } else {
+                IconTile(browser: browser, prefs: prefs, tab: tab, live: tab.id == activeID,
+                         pill: pill, close: close, interactive: interactive)
+            }
+        } else if let pair, let right = tabs.first(where: { $0.id == pair.right }) {
             SplitTabItem(browser: browser, prefs: prefs, left: tab, right: right,
                          width: nil, height: rowHeight,
                          live: activeID.map { pair.contains($0) } ?? false,
@@ -441,7 +482,7 @@ struct SideBar: View {
     /// cell allows, never taller than the classic square: past that a cell
     /// turns into a wide, short button rather than a bigger icon.
     private func pinCells(_ count: Int) -> [CGRect] {
-        let room = prefs.sideWidth - 20
+        let room = prefs.columnWidth - 20
         let gap = SideBar.pinGap
         let fits = Int((room + gap) / (SideBar.square + gap))
         let rows = SideBar.pinRows(count, most: min(4, max(1, fits)))
@@ -513,9 +554,17 @@ struct SideBar: View {
                 if ghost == index, let carried = crossingTab {
                     RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
                 }
-                SideRow(browser: browser, prefs: prefs, tab: tab,
-                        live: tab.id == browser.activeID, pill: pill,
-                        close: { browser.close(tab) })
+                Group {
+                    if icons {
+                        IconTile(browser: browser, prefs: prefs, tab: tab,
+                                 live: tab.id == browser.activeID, pill: pill,
+                                 close: { browser.close(tab) })
+                    } else {
+                        SideRow(browser: browser, prefs: prefs, tab: tab,
+                                live: tab.id == browser.activeID, pill: pill,
+                                close: { browser.close(tab) })
+                    }
+                }
                     .modifier(Carried(index: index, count: pins.count,
                                       step: rowHeight + SideBar.gap, vertical: true,
                                       space: "listed",
@@ -537,7 +586,7 @@ struct SideBar: View {
         VStack(spacing: SideBar.gap) {
             if prefs.usesTabGroups {
                 ForEach(browser.tabGroups) { group in
-                    GroupHeading(browser: browser, group: group, dragSpace: "rows")
+                    GroupHeading(browser: browser, group: group, dragSpace: "rows", compact: icons)
                     groupRows(group)
                 }
             }
@@ -608,7 +657,7 @@ struct SideBar: View {
                 rowItem(tab, tabs: browser.tabs, splits: browser.splits,
                         activeID: browser.activeID, interactive: true, pill: pill,
                         close: { browser.close(tab) })
-                    .padding(.leading, 14)
+                    .padding(.leading, icons ? 0 : 14)
                     .modifier(Carried(index: index, count: members.count,
                                       step: rowHeight + SideBar.gap, vertical: true,
                                       space: "rows", onDropTab: { source, point in drop(source, at: point) },
@@ -622,8 +671,13 @@ struct SideBar: View {
             // A pin carried over its heading goes in at the end.
             if crossing?.target == .group(group.id), let carried = crossingTab {
                 RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
-                    .padding(.leading, 14)
+                    .padding(.leading, icons ? 0 : 14)
             }
+        }
+        // With icons only, the group's tiles held by a thin bracket in the
+        // margin, rather than set in under a name.
+        .overlay(alignment: .leading) {
+            if icons && !members.isEmpty { IconGroupBracket(folded: group.collapsed).offset(x: -6) }
         }
     }
 
@@ -667,7 +721,7 @@ struct SideBar: View {
         let gridShown = !squares.isEmpty || ghostSquare != nil
         let rowsOn = prefs.showsPinRows
         let listedShown = rowsOn && (!browser.listedPins.isEmpty || isListedGhost)
-        let zone = PinDrop.zone(point, width: prefs.sideWidth - 20,
+        let zone = PinDrop.zone(point, width: prefs.columnWidth - 20,
                                 gridBottom: gridShown ? frames.grid?.maxY : nil,
                                 listed: listedShown ? frames.listed : nil)
         switch zone {
@@ -751,17 +805,27 @@ struct SideBar: View {
         }
     }
 
-    /// The foot's door and its margin beneath.
-    private static let footHeight: CGFloat = 26 + 10
+    /// The foot's door and its margin beneath; with icons only, its doors
+    /// one above the other.
+    private var footHeight: CGFloat {
+        icons ? CGFloat(SideFoot.doors(prefs, browser.fetches)) * 28 + 8 : 26 + 10
+    }
 
+    @ViewBuilder
     private var newTab: some View {
-        Quiet(icon: "plus", title: "New tab", height: rowHeight, size: prefs.sideTitle) { browser.launch() }
-            .padding(.top, SideBar.gap)
+        if icons {
+            Quiet(icon: "plus", title: "", height: rowHeight, size: prefs.sideTitle, centred: true) { browser.launch() }
+                .help("New Tab   ⌘T")
+                .padding(.top, SideBar.gap)
+        } else {
+            Quiet(icon: "plus", title: "New tab", height: rowHeight, size: prefs.sideTitle) { browser.launch() }
+                .padding(.top, SideBar.gap)
+        }
     }
 
     /// One small door at the bottom: the settings.
     private var foot: some View {
-        SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches)
+        SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, vertical: icons)
     }
 
 }
@@ -775,19 +839,43 @@ private struct SideFoot: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var fetches: Fetches
+    /// The column of icons: one above the other, centred, no pinned
+    /// extensions (their list is still the puzzle's).
+    var vertical = false
 
     var body: some View {
-        HStack(spacing: 2) {
-            if Profiles.shared.several { ProfileBadge(browser: browser) }
-            if prefs.usesSpaces { SpaceDot(browser: browser) }
-            ExtensionSlot(edge: .trailing, room: room)
-            BookmarkDoor(browser: browser, arrowEdge: .trailing)
-            // Only while a download is running, and a moment after.
-            FetchDoor(browser: browser, fetches: fetches)
-            Spacer(minLength: 0)
+        if vertical {
+            VStack(spacing: 2) {
+                FetchDoor(browser: browser, fetches: fetches)
+                ExtensionSlot(edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
+                BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
+                if prefs.usesSpaces { SpaceDot(browser: browser) }
+                if Profiles.shared.several { ProfileBadge(browser: browser) }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 8)
+        } else {
+            HStack(spacing: 2) {
+                if Profiles.shared.several { ProfileBadge(browser: browser) }
+                if prefs.usesSpaces { SpaceDot(browser: browser) }
+                ExtensionSlot(edge: .trailing, room: room)
+                BookmarkDoor(browser: browser, arrowEdge: .trailing)
+                // Only while a download is running, and a moment after.
+                FetchDoor(browser: browser, fetches: fetches)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 10)
+    }
+
+    /// How many doors the foot has, stacked: what the rows stop short of.
+    @MainActor static func doors(_ prefs: Preferences, _ fetches: Fetches) -> Int {
+        var kept = 2  // the puzzle and bookmarks
+        if prefs.usesSpaces { kept += 1 }
+        if Profiles.shared.several { kept += 1 }
+        if FetchDoor.shows(fetches, prefs) { kept += 1 }
+        return kept
     }
 
     /// How many pinned extensions fit beside the doors that stay. Every door
@@ -1149,6 +1237,8 @@ struct Quiet: View {
     let title: String
     var height: CGFloat = 28
     var size: CGFloat = 12.5
+    /// The icon alone, in the middle: the column of icons' new tab.
+    var centred = false
     let act: () -> Void
 
     @State private var hovering = false
@@ -1156,15 +1246,18 @@ struct Quiet: View {
     var body: some View {
         Button(action: act) {
             HStack(spacing: 8) {
+                if centred { Spacer(minLength: 0) }
                 Image(systemName: icon)
                     .font(.system(size: 10, weight: .medium))
                     .frame(width: 15)
-                Text(title)
-                    .font(.system(size: size))
+                if !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: size))
+                }
                 Spacer(minLength: 0)
             }
             .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.faint)
-            .padding(.leading, 10)
+            .padding(.leading, centred ? 0 : 10)
             .frame(height: height)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(

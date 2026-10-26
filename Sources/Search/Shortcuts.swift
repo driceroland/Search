@@ -178,6 +178,10 @@ struct Command: Identifiable {
 
         Command("view.sidebar", "Show Tabs in Sidebar", .view, KeyCombo("s", shift: true)) { $0.toggleSidebar() },
         Command("view.fold", "Hide Sidebar or Tab Bar", .view, KeyCombo("s")) { $0.toggleFold() },
+        // Every tab group of the space at once, as Arc's folders (⌥⌘[ and ⌥⌘],
+        // beside ⌘[ and ⌘], which go back and forward).
+        Command("view.foldGroups", "Fold All Groups", .view, KeyCombo("[", option: true)) { $0.foldAllGroups(true) },
+        Command("view.unfoldGroups", "Unfold All Groups", .view, KeyCombo("]", option: true)) { $0.foldAllGroups(false) },
         Command("view.reload", "Reload Page", .view, KeyCombo("r")) { $0.reload() },
         Command("view.reloadOrigin", "Reload Page From Origin", .view, KeyCombo("r", option: true)) { $0.reload(fromOrigin: true) },
         Command("view.reader", "Reading Mode", .view, KeyCombo("r", shift: true)) { $0.toggleReader() },

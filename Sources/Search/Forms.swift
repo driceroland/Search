@@ -43,10 +43,14 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
                 // page — so a list of accounts can hang from it.
                 // A box of a name and password, or one the page marks for
                 // passkeys alone ("webauthn"), which takes no password.
+                tab?.fieldFrameHost = message.frameInfo.isMainFrame ? nil : message.frameInfo.securityOrigin.host
                 if let rect = body["rect"] as? [String: Double],
                    let x = rect["x"], let y = rect["y"], let w = rect["w"], let h = rect["h"] {
+                    // `wide`: a box that is clearly a sign-in's, offered the
+                    // accounts of the site's other hosts too; otherwise only
+                    // those kept for this very host.
                     tab?.fieldFocused(CGRect(x: x, y: y, width: w, height: h), passwords: body["passwords"] as? Bool ?? true,
-                                      name: body["name"] as? Bool ?? false)
+                                      name: body["name"] as? Bool ?? false, wide: body["wide"] as? Bool ?? true)
                 } else {
                     tab?.fieldFocused(nil)
                 }
@@ -160,12 +164,21 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return { user: user, pass: pass };
       }
 
-      // A sign-in that asks for the name first and the password on a page
-      // of its own after it — impots.gouv.fr, Google, Microsoft, Okta. With
-      // no password box in sight, a box is the name's when the page says so
-      // (autocomplete "username" or "email") beside one other box at most,
-      // or when it is the only box to type in that its form has, with a
-      // button to send it. Never a search box, a code's or a coupon's.
+      // Which boxes a saved account is offered in. Strict on purpose, as
+      // Safari's and Chrome's are: an account list under a project's name
+      // or a message is noise, and a pick there types a login into a page
+      // that never asked for one (#631).
+      //
+      // A password box, unless it is for a new password. A name box beside
+      // a password, in its form or saying it is one. Or, with no password
+      // box in sight — impots.gouv.fr, Google, Microsoft, Okta, which ask
+      // for the name first — a box that says it takes a name, an address
+      // or a phone number, alone in its form or nearly, and never one for
+      // a search, a code, a title, a message or a checkout. Its page then
+      // has to look like a sign-in's (its address, its form's, a button
+      // labelled Next or Sign in) for the site's other hosts' accounts to
+      // come; otherwise only accounts kept for this very host do (wide:
+      // false).
       function texty(el) {
         if (!el || (el.tagName || '').toLowerCase() !== 'input' || el.disabled || el.readOnly) return false;
         var kind = (el.type || 'text').toLowerCase();
@@ -173,22 +186,104 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         var r = el.getBoundingClientRect();
         return r.width > 0 && r.height > 0;
       }
-      function aside(el) {
-        var words = [el.name, el.id, el.getAttribute('autocomplete'), el.getAttribute('aria-label'),
-          el.getAttribute('placeholder')].join(' ').toLowerCase();
-        if (/(^|[\\s_-])(q|title)($|[\\s_-])|query|search|otp|otc|one-time|captcha|code|coupon|promo/.test(words)) return true;
-        return !!(el.closest && el.closest('[role="search"]'));
+      function tokens(el) {
+        return (el.getAttribute('autocomplete') || '').toLowerCase().split(/\\s+/).filter(Boolean);
       }
-      function nameBox(el) {
-        if (!texty(el) || aside(el)) return false;
+      // autocomplete says it is something else: a person's name, an
+      // organisation, an address, a card, a code, a delivery's email.
+      var foreign = /^(name|honorific-prefix|given-name|additional-name|family-name|honorific-suffix|nickname|organization|organization-title|one-time-code|new-password|street-address|postal-code|country|country-name|bday(-.*)?|sex|url|photo|language|impp|transaction-.*|cc-.*|address-.*|shipping|billing)$/;
+      function elsewhere(el) { return tokens(el).some(function (t) { return foreign.test(t); }); }
+      function vouched(el) {
+        return tokens(el).some(function (t) { return /^(username|email|webauthn)$/.test(t); });
+      }
+      function labels(el) {
+        var out = [];
+        try { (el.labels || []).forEach(function (l) { out.push(l.textContent || ''); }); } catch (e) {}
+        var by = el.getAttribute('aria-labelledby');
+        if (by) by.split(/\\s+/).forEach(function (id) {
+          var l = document.getElementById(id);
+          if (l) out.push(l.textContent || '');
+        });
+        return out.join(' ').slice(0, 200);
+      }
+      function words(el) {
+        return [el.name, el.id, el.getAttribute('aria-label'), el.getAttribute('placeholder'), labels(el)]
+          .join(' ').toLowerCase();
+      }
+      function aside(el) {
+        if (/^(q|to|cc|bcc|subject)$/.test(((el.name || '') + '').toLowerCase()) || /^(q|to|cc|bcc|subject)$/.test((el.id || '').toLowerCase())) return true;
+        if (/(^|[\\s_\\-\\[])title($|[\\s_\\-\\]])|query|search|recherche|suche|buscar|otp|otc|one-time|captcha|code|coupon|promo|voucher|gift|recipient|destinataire|comment|message|description|project|projet/.test(words(el))) return true;
+        return !!(el.closest && el.closest('[role="search"], [role="combobox"] input, form[role="search"]'))
+          || (el.getAttribute('role') || '') === 'combobox' && !vouched(el);
+      }
+      // What a box says it takes: a name to sign in with, in a few languages.
+      var who = /user|login|log-in|logon|e-?mail|courriel|correo|identifi|account|compte|cuenta|konto|phone|mobile|portable|t[e\\u00e9]l[e\\u00e9]phone|benutzer|nutzer|anmelde|usuario|utente|utilizador|gebruiker|nom d.utilisateur|fiscal|(^|[\\s_\\-])spi($|[\\s_\\-])/;
+      function claimsName(el) {
+        return vouched(el) || (el.type || '').toLowerCase() === 'email' || who.test(words(el));
+      }
+      // A form, or a page, that is clearly about something else.
+      var otherForm = /project|projet|title|titre|descri|comment|message|compose|reply|(?<!e-?mail[\\s_\\-]?)address|adresse|coupon|promo|newsletter|subscri|abonn|checkout|cart|basket|panier|shipping|billing|payment|paiement|search|contact|feedback|survey|invite|share/;
+      var otherPage = /checkout|\\/cart|basket|panier|commande|payment|paiement|newsletter|subscribe|abonnement/;
+      function about(scope) {
+        if (!scope || scope === document || !scope.getAttribute) return '';
+        return [scope.id, scope.getAttribute('name'), scope.getAttribute('class'), scope.getAttribute('aria-label'),
+          scope.getAttribute('action')].join(' ').toLowerCase();
+      }
+      // The page looks like a sign-in: its address or its form's says so,
+      // or a button near the box is a sign-in's.
+      var signInPath = /log-?in|log-?on|sign-?in|sign_in|signon|auth(?!or)|account|identif|connexion|connect|session|sso|saml|idp/;
+      var signInHost = /^(login|signin|auth|accounts?|sso|id|idp|identity|connexion|connect|secure|compte)\\./;
+      var signInButton = /^(next|continue|continuer|suivant|sign ?in|log ?in|login|log on|se connecter|connexion|me connecter|s.identifier|weiter|anmelden|einloggen|siguiente|continuar|iniciar sesi[o\\u00f3]n|entrar|acceder|avanti|accedi|volgende|inloggen|doorgaan|dalej|zaloguj)(\\s|$)/;
+      function looksLikeSignIn(el, scope) {
+        if (signInHost.test(location.hostname) || signInPath.test(location.pathname.toLowerCase())) return true;
+        var action = scope && scope.getAttribute ? scope.getAttribute('action') : '';
+        if (action) {
+          try { if (signInPath.test(new URL(action, location.href).pathname.toLowerCase())) return true; } catch (e) {}
+        }
+        // The nearest buttons: the form's, or those of the few boxes around
+        // the field when there is no form (Google's Next is outside it).
+        var near = el;
+        for (var up = 0; near && up < 5; up++, near = near.parentElement) {
+          var buttons = near.querySelectorAll('button, input[type="submit"], [role="button"]');
+          for (var i = 0; i < buttons.length && i < 20; i++) {
+            var b = buttons[i];
+            var said = ((b.tagName || '').toLowerCase() === 'input' ? b.value : b.textContent) || b.getAttribute('aria-label') || '';
+            said = said.replace(/[^\\p{L}\\s']/gu, ' ').replace(/\\s+/g, ' ').trim().toLowerCase();
+            if (said.length <= 40 && signInButton.test(said)) return true;
+          }
+          if (near === scope) break;
+        }
+        return false;
+      }
+      // The name box of a sign-in that asks for the password on the next
+      // page: "wide", "exact" (only this host's accounts), or nothing.
+      function firstStep(el) {
+        if (!texty(el) || aside(el) || elsewhere(el) || !claimsName(el)) return null;
         var scope = el.form || (el.closest && el.closest('form')) || document;
+        if (otherForm.test(about(scope)) || otherPage.test(location.pathname.toLowerCase())) return null;
         var all = scope.querySelectorAll('input'), others = 0;
         for (var i = 0; i < all.length; i++) {
           if (all[i] !== el && texty(all[i]) && !aside(all[i])) others++;
         }
-        if (/(^|\\s)(username|email)(\\s|$)/i.test(el.getAttribute('autocomplete') || '')) return others <= 1;
-        return others === 0 &&
-          !!scope.querySelector('button, input[type="submit"], input[type="image"], [role="button"]');
+        if (others > (vouched(el) ? 1 : 0)) return null;
+        if (!vouched(el) && !scope.querySelector('button, input[type="submit"], input[type="image"], [role="button"]')) return null;
+        return looksLikeSignIn(el, scope) ? 'wide' : 'exact';
+      }
+      function nameBox(el) { return !!firstStep(el); }
+      function newPassword(el) { return tokens(el).indexOf('new-password') >= 0; }
+      // What a box the caret is in is offered: null for nothing.
+      function judge(el) {
+        if (!el || (el.tagName || '').toLowerCase() !== 'input') return null;
+        var both = pair();
+        if (both) {
+          if (el === both.pass) return newPassword(el) ? null : { name: false, wide: true };
+          if (el !== both.user || newPassword(both.pass)) return null;
+          if (aside(el) || elsewhere(el)) return null;
+          var together = !!el.form && el.form === both.pass.form;
+          return together || claimsName(el) ? { name: false, wide: true } : null;
+        }
+        var step = firstStep(el);
+        return step ? { name: true, wide: step === 'wide' } : null;
       }
       // The name box of a first step, if this page is one: the box the
       // caret is in, or else the one box on the page that is. A page with
@@ -265,7 +360,11 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         },
         // Whether there is still a sign-in on the page. Asked after a
         // password went out, to tell a sign-in that took from one refused.
-        hasPassword: function () { return !!pair(); }
+        hasPassword: function () { return !!pair(); },
+        // What a box would be offered, for the tests: null, or whether a
+        // pick puts in the name alone and whether the site's other hosts'
+        // accounts come too.
+        verdict: function (el) { return judge(el || document.activeElement); }
       };
 
       // What is in the boxes when they are sent. Said every time — a click
@@ -374,23 +473,27 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return !!(el && (el.tagName || '').toLowerCase() === 'input' &&
           /(^|\\s)webauthn(\\s|$)/i.test(el.getAttribute('autocomplete') || ''));
       }
+      // What the box the caret is in was judged to be: judged again when the
+      // caret moves, not on every frame of a scroll, which only moves it.
+      var judged = { el: null, verdict: null };
       function caret(scrolled) {
         var el = document.activeElement;
         // The boxes are only looked for with the caret in one: this runs on
         // every frame of every scroll, and looking goes through the whole page.
-        var both = el && (el.tagName || '').toLowerCase() === 'input' ? pair() : null;
+        if (scrolled !== true || judged.el !== el) judged = { el: el, verdict: judge(el) };
+        var verdict = judged.verdict;
         var rect = null;
-        var passwords = !!(both && el && (el === both.user || el === both.pass));
         // A first step's name box: the accounts hang from it as from a
         // name box beside a password, and a pick puts in the name alone.
-        var name = !both && !!el && (el.tagName || '').toLowerCase() === 'input' && nameBox(el);
-        if (name) passwords = true;
+        var passwords = !!verdict;
+        var name = !!(verdict && verdict.name);
+        var wide = !verdict || verdict.wide;
         if (passwords || forPasskeys(el)) {
           var r = el.getBoundingClientRect();
           if (r.width > 0 && r.height > 0) rect = { x: r.left, y: r.top, w: r.width, h: r.height };
         }
         var typing = editable(el);
-        var now = typing + (rect ? ' ' + passwords + ' ' + name + ' ' + rect.x + ' ' + rect.y + ' ' + rect.w + ' ' + rect.h : '');
+        var now = typing + (rect ? ' ' + passwords + ' ' + name + ' ' + wide + ' ' + rect.x + ' ' + rect.y + ' ' + rect.w + ' ' + rect.h : '');
         if (scrolled === true && now === said) return;
         said = now;
         window.webkit.messageHandlers.officeForms.postMessage({
@@ -398,7 +501,8 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           typing: typing,
           rect: rect,
           passwords: passwords,
-          name: name
+          name: name,
+          wide: wide
         });
       }
 

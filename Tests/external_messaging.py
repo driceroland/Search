@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A website an extension lists, talking to it (#496), and an extension's
-tab groups while groups are off, in a hidden probe.
+tab groups, in a hidden probe.
 
 Build first (`./build.sh`), then `python3 Tests/external_messaging.py`. It
 runs a copy of build/Search.app under a bundle id of its own (WebKit stops
@@ -20,10 +20,12 @@ function. What is checked:
   an empty answer: claude.ai's sign-in asks Anthropic's own build of
   Claude in Chrome first and stopped at the empty answer (16 Oct 2026,
   the approve button spun for good);
-- with groups off in Settings, chrome.tabs.group still makes a group and
-  tabGroups.query finds it, so a second call reuses it (Claude in Chrome
-  can't act on a tab outside a group of its own), but the column draws
-  no heading for it; turned on, the group is there.
+- chrome.tabs.group makes a group and tabGroups.query finds it, so a
+  second call reuses it (Claude in Chrome can't act on a tab outside a
+  group of its own). Tab groups are always on since the Settings rework
+  (5e8ea674, no switch): an "off" stored by an older Search changes
+  nothing, the column draws the group's heading, and folded the group
+  keeps its tabs and the extension still finds it.
 """
 import json
 import os
@@ -150,6 +152,7 @@ def main():
     for name, body in FILES.items(): (folder / name).write_text(body)
     sv.APP = probe_copy()
     try:
+        # An "off" left by a Search from before groups were always on.
         sv.setup(sidebar=True, **{"tabs.groups": False})
         sv.launch()
         sv.cmd({"do": "ext-folder", "path": str(folder), "yes": True})
@@ -193,7 +196,7 @@ def main():
         t.ok("the extension heard every message meant for it, and nothing else",
              heard and heard["reply"] == ["ping", "later", "async", "ping", "heard"], heard)
 
-        # Tab groups, off in Settings.
+        # Tab groups: always on, whatever an older Search stored.
         second = sv.page("second")
         time.sleep(1)
         before = column("before")
@@ -201,21 +204,25 @@ def main():
         r1 = g1 and g1["reply"] or {}
         state = groups()
         made = [g for g in state["groups"] if g["name"] == "Claude"]
-        t.ok("groups off: tabs.group makes a group all the same", r1.get("id") and not r1.get("error") and state["on"] is False and len(made) == 1, (g1, state))
-        t.ok("groups off: the tab says it is in it, and query finds it",
+        t.ok("groups on with no switch (an old stored off counts for nothing): tabs.group makes a group",
+             r1.get("id") and not r1.get("error") and state["on"] is True and len(made) == 1, (g1, state))
+        t.ok("the tab says it is in it, and query finds it",
              r1.get("groupId") == r1.get("id") and r1.get("found") == [r1.get("id")], r1)
         g2 = ask(second, "group2", ID, {"type": "group"}, within=8)
         r2 = g2 and g2["reply"] or {}
         made = [g for g in groups()["groups"] if g["name"] == "Claude"]
-        t.ok("groups off: the extension finds its group again, no second one",
+        t.ok("the extension finds its group again, no second one",
              r2.get("id") == r1.get("id") and len(made) == 1 and len(made[0]["tabs"]) == 2, (r2, made))
         after = column("after")
-        t.ok("groups off: no heading in the column", after == before)
-        sv.cmd({"do": "ui", "groups": True}); time.sleep(0.8)
-        on = groups()
-        t.ok("groups on: the group is there", on["on"] is True and [g["name"] for g in on["groups"]] == ["Claude"], on)
-        t.ok("groups on: the column draws it", column("on") != after)
-        sv.cmd({"do": "ui", "groups": False})
+        t.ok("the column draws the group's heading", after != before)
+        folded = sv.cmd({"do": "group", "name": "Claude", "fold": True}); time.sleep(0.8)
+        made = [g for g in folded["groups"] if g["name"] == "Claude"]
+        t.ok("folded, the group keeps both tabs", len(made) == 1 and made[0]["collapsed"] and len(made[0]["tabs"]) == 2, folded)
+        g3 = ask(listed, "group3", ID, {"type": "group"}, within=8)
+        r3 = g3 and g3["reply"] or {}
+        made = [g for g in groups()["groups"] if g["name"] == "Claude"]
+        t.ok("folded, the extension still finds its group",
+             r3.get("id") == r1.get("id") and r3.get("groupId") == r1.get("id") and len(made) == 1, (r3, made))
     finally:
         sv.finish()
         for kind in ("WebKit", "Caches", "HTTPStorages"):

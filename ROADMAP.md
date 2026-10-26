@@ -39,19 +39,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 
 - [ ] **Window stutters between screens** Dragging the window from one screen to another stutters. Needs a trace recorded on two screens. *(X)*
 - [ ] **Figma and LinkedIn feel slow** Figma blurs for a moment as you zoom in; LinkedIn's feed and profiles scroll with lag. *(email)*
-- [ ] **Translate pages on the Mac** Translate a page, or the text in a picture, on the Mac itself; nothing is sent anywhere. Off until turned on. *([#265](https://github.com/driceroland/Search/pull/265), email)*
-- [ ] **Apple Passwords under the sign-in field** Passwords saved in the Mac's Passwords app listed under the sign-in field, as in Safari, without the iCloud Passwords extension. It goes through Apple's own helper, which only a Developer ID build may launch. Off unless turned on. *([#425](https://github.com/driceroland/Search/issues/425), email ×3)*
-- [ ] **Profiles: separate sets of spaces with their own sign-ins, history and bookmarks** A profile above spaces, as in Chrome and Arc: its own spaces, sign-ins, history and bookmarks, in windows of its own. Personal is everything there is today. *([#459](https://github.com/driceroland/Search/issues/459))*
-
-## Done, in the next version
-
-- [x] **Pressing a pin's number again** ⌘1–⌘9 pressed again on the pin you are on takes you back to the tab you were on before it. Off by default. *(email)*
-- [x] **A right-click menu on the bookmarks bar** *([#438](https://github.com/driceroland/Search/issues/438), [#439](https://github.com/driceroland/Search/pull/439))*
-- [x] **Copy Clean Link** In a tab's menu: copy its address without tracking parameters. *([#594](https://github.com/driceroland/Search/issues/594))*
-- [x] **Websites in the side panel** Keep a site such as claude.ai or chatgpt.com open in the side panel beside the page, not only an extension's panel. Off until you put one there. *(email)*
-- [x] **Ask before quitting** An optional question before ⌘Q quits Search, off by default. *([#653](https://github.com/driceroland/Search/issues/653), [#659](https://github.com/driceroland/Search/pull/659))*
-- [x] **Tab numbers while ⌘ is held** Holding ⌘ shows which tab ⌘1–9 picks, off by default. *([#654](https://github.com/driceroland/Search/issues/654), [#658](https://github.com/driceroland/Search/pull/658))*
-- [x] **Native picture in picture as a choice** macOS's own picture in picture as an alternative to the floating video. *([#591](https://github.com/driceroland/Search/issues/591))*
 
 ## Now — fixes for the next update
 
@@ -64,10 +51,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **The page as a card, with a bar above it** A bar above the page with back, forward, reload, the page's title and its address; the page drawn as a card with a small gap around it and rounded corners; Settings opened as a tab. *(message)*
 - [ ] **Loading shown with the column hidden** With the column hidden nothing says a page is loading; the new layout's bar above the page will show it. *([#443](https://github.com/driceroland/Search/issues/443))*
 - [ ] **Arc import twice: a second pin** Bringing Arc over again adds a second pin for a site whose pin has moved address (Gmail): the guard compares the pin's current address. *([#482](https://github.com/driceroland/Search/issues/482))*
-- [ ] **Proxy for the whole browser** HTTP and SOCKS5 proxy in Settings, off by default, everything through it. *([#510](https://github.com/driceroland/Search/pull/510))*
 - [ ] **iCloud Passwords keeps its pairing** On macOS 27 iCloud Passwords asks for its code again every couple of minutes; the keep-alive no longer holds. *([#610](https://github.com/driceroland/Search/issues/610))*
-- [ ] **A peek opens at the default zoom** A link opened in a peek starts at 100% instead of the default page zoom from Settings, or the site's own zoom. *([#691](https://github.com/driceroland/Search/issues/691))*
-- [ ] **One letter completes a site you visit often** Typing x then Return goes to x.com when it's a site you visit often; inline completion starts at two letters today. *([#696](https://github.com/driceroland/Search/issues/696))*
 
 ## Next — small additions people asked for
 
@@ -75,14 +59,10 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **1Password desktop app, in the FAQ** 1Password with its desktop app. Say in the FAQ that Search is added in 1Password › Settings › Browser › Add Browser.
 - [ ] **A user agent per tab** Presets and a string of your own, per tab, as in Safari's Develop menu; shares its plumbing with Responsive Design Mode. *([#460](https://github.com/driceroland/Search/issues/460))*
 - [ ] **Icons drawn as SVG** A site whose only icon is an SVG shows a letter: only bitmap icons are decoded today. Draw SVG icons without opening a new decoder in the app. *([#680](https://github.com/driceroland/Search/issues/680))*
-- [ ] **Esc twice to leave full screen** A switch, as in Arc: the first Esc in full screen stays and says so, a second one leaves. *([#678](https://github.com/driceroland/Search/pull/678))*
-- [ ] **Dev builds named after their branch** A development build carries its branch's name and its own icon, so several builds can run side by side. *([#475](https://github.com/driceroland/Search/pull/475))*
-- [ ] **Each checkout tests in its own world** Build tests from two checkouts no longer share one test world. *([#497](https://github.com/driceroland/Search/pull/497))*
 
 ## Later — bigger pieces of work
 
 - [ ] **More extension APIs** More of the extension APIs. The side panel, and invisible offscreen documents ([#192](https://github.com/driceroland/Search/pull/192)). *([#12](https://github.com/driceroland/Search/issues/12), X, [#192](https://github.com/driceroland/Search/pull/192) ×2, [#273](https://github.com/driceroland/Search/issues/273), [#351](https://github.com/driceroland/Search/issues/351), [#352](https://github.com/driceroland/Search/pull/352), [#484](https://github.com/driceroland/Search/issues/484))*
-- [ ] **Drive Search from an agent** An MCP server over the bench, for automation and testing. An earlier pull request, [#14](https://github.com/driceroland/Search/pull/14), began one. *(X)*
 - [ ] **Faster animations** Spaces especially, compared with Zen. *(email)*
 - [ ] **Extensions per space** Each space with the extensions it wants, on and off apart from the others. WebKit has one extension controller for the whole app, so this means one per space. Drice's call, 24 Sep: later. *(X)*
 - [ ] **User scripts fail on GitHub** Tampermonkey runs each script through an inline script, and WebKit holds it to the page's content security policy, where Chrome exempts it; GitHub's policy blocks it. No safe narrow fix yet. *([#289](https://github.com/driceroland/Search/issues/289), [#319](https://github.com/driceroland/Search/issues/319))*
@@ -94,8 +74,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **A picture behind the new tab** An image behind the new tab page, perhaps from Unsplash. Off unless turned on, if it ever comes. *([#447](https://github.com/driceroland/Search/issues/447))*
 - [ ] **Main process grows over days** The app's own process grew to several times its fresh size over a week of use; find what accumulates (closed windows, caches).
 - [ ] **Small windows: alone and keyed** A link small window opens alone, takes its keys, closes with a swipe back, cascades, and shows in the switcher. *([#431](https://github.com/driceroland/Search/pull/431), [#519](https://github.com/driceroland/Search/pull/519), [#474](https://github.com/driceroland/Search/pull/474), [#493](https://github.com/driceroland/Search/pull/493), [#480](https://github.com/driceroland/Search/pull/480))*
-- [ ] **UTF-8 in extension scripts** Non-ASCII text in injected extension scripts stays intact. *([#521](https://github.com/driceroland/Search/pull/521))*
-- [ ] **Back and Forward lists** Hold or right-click Back and Forward to pick a page from that way. *([#567](https://github.com/driceroland/Search/pull/567))*
+- [ ] **Proxy for the whole browser** HTTP and SOCKS5 proxy in Settings, off by default, everything through it. *([#510](https://github.com/driceroland/Search/pull/510))*
 - [ ] **Float a whole page** Any page, not only a video, in the floating window, and meetings that float when you switch away. Off unless turned on. *([#584](https://github.com/driceroland/Search/pull/584))*
 - [ ] **One window per space** A switch so each space opens in a window of its own. *([#611](https://github.com/driceroland/Search/issues/611))*
 - [ ] **Why a tab stays awake** A small view listing which tabs sleep and why the others stay awake. Off by default. *([#624](https://github.com/driceroland/Search/issues/624), [#628](https://github.com/driceroland/Search/pull/628))*
@@ -103,12 +82,11 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 
 ## Pull requests to review
 
-- [ ] **Ask before a website shares the screen** *([#528](https://github.com/driceroland/Search/issues/528), [#530](https://github.com/driceroland/Search/pull/530), [#651](https://github.com/driceroland/Search/pull/651))*
-- [ ] **Sized pop-ups as small windows** A pop-up a page asks for at its own size opens as a small window, off by default. *([#552](https://github.com/driceroland/Search/issues/552), [#660](https://github.com/driceroland/Search/pull/660))*
-- [ ] **Side panel and private tabs** A window-wide extension panel stays up while a private tab is in front; hide it then unless that extension may run in private tabs (after #536). *([#662](https://github.com/driceroland/Search/issues/662), [#677](https://github.com/driceroland/Search/pull/677))*
-- [ ] **Each app on one host wears its own icon** Icons kept per page instead of per host, so apps under sub-paths of one server each show their own. *([#641](https://github.com/driceroland/Search/pull/641) ×2)*
-- [ ] **Extensions take less memory** Extensions with big content scripts kept a copy per site and per tab, gigabytes in all. *([#663](https://github.com/driceroland/Search/issues/663), [#669](https://github.com/driceroland/Search/pull/669), [#604](https://github.com/driceroland/Search/pull/604))*
-- [ ] **Figma's permissions page** Figma's extension asks for more permissions and gets nothing back. *([#675](https://github.com/driceroland/Search/pull/675))*
+- [ ] **Drive Search from an agent** An MCP server over the bench, for automation and testing. An earlier pull request, [#14](https://github.com/driceroland/Search/pull/14), began one. *(X, [#715](https://github.com/driceroland/Search/pull/715))*
+- [ ] **Close Tabs Below** A tab's menu closes every tab under it (to the right with tabs across the top); pins and the clicked split stay. *([#704](https://github.com/driceroland/Search/issues/704), [#710](https://github.com/driceroland/Search/pull/710))*
+- [ ] **uBlock blocks from the first second after launch** Session rules set again at every launch recompile every rule, and new tabs go unblocked meanwhile. *([#711](https://github.com/driceroland/Search/pull/711))*
+- [ ] **Offer to save sign-ins sent by the page's script** form.submit() from a link, a timer or a styled box fires no submit event, so no offer came. *([#705](https://github.com/driceroland/Search/pull/705))*
+- [ ] **Redraw only what changed** Typing, Find and swipes redraw only the views that show them; rows stop observing the whole browser. *([#706](https://github.com/driceroland/Search/pull/706))*
 
 ## Drice's call
 
@@ -116,9 +94,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **A pinned tab in a group** Move a pinned tab into a tab group without unpinning it first, as Arc's pinned folders allow. *([#692](https://github.com/driceroland/Search/issues/692))*
 - [ ] **Peek into a folded group** Rest the pointer on a folded group to see its tabs in a small list and pick one, as in Arc's folder previews. Off unless turned on. *([#690](https://github.com/driceroland/Search/issues/690))*
 - [ ] **Bring a tab to the front from a script** A tab id and one focus command in the AppleScript dictionary, so a launcher such as Raycast can switch to a tab. Everything else stays read-only. *([#684](https://github.com/driceroland/Search/issues/684))*
-- [ ] **A tab gives when pressed** A tab shrinks slightly under the pointer while pressed, and the tab switcher's corners match the rest of Search. *([#686](https://github.com/driceroland/Search/pull/686))*
-- [ ] **Reading mode uses a site's own Markdown** When a site publishes a Markdown copy of a page, reading mode reads that instead of guessing; the page's own styles stay out of the reader. Off unless turned on. *([#687](https://github.com/driceroland/Search/pull/687), [#689](https://github.com/driceroland/Search/pull/689))*
-- [ ] **Lighter animations in Low Power Mode** Interface springs become short ease-outs while Low Power Mode is on or the Mac runs hot. Off unless turned on. *([#688](https://github.com/driceroland/Search/pull/688))*
+- [ ] **Tabs in a folder stay when closed** ⌘W on a tab in a folder puts it away but keeps it in the folder, as in Arc. *(email)*
 
 ## Asked to try again on the latest version
 
@@ -126,14 +102,15 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Google Docs blurry on one Mac** Docs, Sheets and Slides look soft on a Retina screen for one person; not reproduced. *([#666](https://github.com/driceroland/Search/issues/666))*
 - [ ] **Passkey from a phone** Signing in with a passkey held on an iPhone (the QR code) fails, here on an Apple Account sign-in. *([#679](https://github.com/driceroland/Search/issues/679))*
 - [ ] **1Password's unlock doesn't open** With 1Password locked, its button in a field and the toolbar button open nothing. *([#685](https://github.com/driceroland/Search/issues/685))*
+- [ ] **Bitwarden says WebAssembly isn't supported** Bitwarden's popup refuses to start on some Macs; waiting on the macOS version and the popup's console. *([#716](https://github.com/driceroland/Search/issues/716))*
 
 ## Just in, not sorted yet
 
 - [ ] **Bookmarks bar: move and new folder** Rearrange bookmarks on the bar itself (the bar now moves the window, so perhaps with a key held) and make a folder from the bar. *(email)*
 - [ ] **A site's permissions in its card** The site card lists what the site may use (camera, microphone, location, notifications, sound) and lets each be changed or forgotten there. *(email)*
 - [ ] **Links from a pin open a new tab** A link followed from a pinned tab opens beside it, so the pin stays on its page. *(email)*
-- [ ] **Bookmarks per space** Each space keeps bookmarks of its own. *(email)*
-- [ ] **Window colours** A colour for the window, or for each space, with a light and a dark version, as in Helium and Arc. *(email ×2)*
+- [ ] **Bookmarks per space** Each space keeps bookmarks of its own. *(email ×2)*
+- [ ] **Window colours** A colour for the window, or for each space, with a light and a dark version, as in Helium and Arc. *(email ×3)*
 - [ ] **Extension side panels** Extensions that open in Chrome's side panel, like ChatGPT's and Claude's, have nowhere to open: WebKit has no side panel. *(email)*
 - [ ] **Group tabs by dropping one on another** Drop a tab onto another in the column and the two become a group. *(email)*
 - [ ] **Send links to a space** Links from chosen sites open in a given space, with its sign-ins, as Arc's Air Traffic Control does. *(email, [#595](https://github.com/driceroland/Search/issues/595) ×2, [#596](https://github.com/driceroland/Search/pull/596))*
@@ -143,21 +120,21 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Tabs that pause, not reload** An option to keep a resting tab's page and let WebKit suspend it, off by default. *([#520](https://github.com/driceroland/Search/issues/520))*
 - [ ] **Option-Command arrows to move between tabs** *([#532](https://github.com/driceroland/Search/issues/532))*
 - [ ] **Share the screen with its sound** WebKit gives a shared screen no sound track, even when a call asks for one; it would mean capturing the sound ourselves and feeding it to the page. *([#540](https://github.com/driceroland/Search/issues/540))*
-- [ ] **Floating video flickers popping out** The video shifts and flickers as it pops out of the page. *([#543](https://github.com/driceroland/Search/issues/543), [#547](https://github.com/driceroland/Search/pull/547), [#562](https://github.com/driceroland/Search/pull/562))*
+- [ ] **Floating video flickers popping out** The video shifts and flickers as it pops out of the page. *([#543](https://github.com/driceroland/Search/issues/543), [#547](https://github.com/driceroland/Search/pull/547), [#562](https://github.com/driceroland/Search/pull/562), [#584](https://github.com/driceroland/Search/pull/584))*
 - [ ] **Float a meeting page when you switch away** *([#544](https://github.com/driceroland/Search/issues/544), [#547](https://github.com/driceroland/Search/pull/547))*
 - [ ] **CleanMyMac flags Search as unwanted** CleanMyMac's "Mac Search - PUA" is a false positive: Search is a notarised Developer ID app, and MacPaw has been told. *([#556](https://github.com/driceroland/Search/issues/556))*
-- [ ] **Reading mode follows dark mode** *([#563](https://github.com/driceroland/Search/issues/563), [#564](https://github.com/driceroland/Search/pull/564), [#565](https://github.com/driceroland/Search/pull/565), [#566](https://github.com/driceroland/Search/pull/566))*
 - [ ] **YouTube dislike counts don't show** Return YouTube Dislike installs but its counts never appear on YouTube; a userscript doing the same works. *([#588](https://github.com/driceroland/Search/issues/588))*
 - [ ] **Some sites stay on http** Choose hosts that are never sent to https. *([#671](https://github.com/driceroland/Search/issues/671))*
 - [ ] **PDFs sent as downloads open in a tab** A setting to show a PDF the site sends as a download, with Save still there, off by default. *([#672](https://github.com/driceroland/Search/issues/672))*
-- [ ] **Dragging tabs into and within a group** Adding a fourth tab to a group, and reordering inside one, reported not to work. *([#673](https://github.com/driceroland/Search/issues/673))*
 - [ ] **Trackpad taps for spaces and tabs** A light tap from the trackpad when a space swipe, a tab drag or the column's edge crosses the point where letting go changes something, as the back swipe and Split View's divider already do. *([#695](https://github.com/driceroland/Search/issues/695))*
+- [ ] **Choose which space comes first** Pick the space Search opens on and lists first, instead of the original first space. *(email)*
+- [ ] **Rounded corners in full screen** An option to keep the page as a card, with its rounded corners, in full screen. *(email)*
+- [ ] **The page as a card with tabs across the top** The card around the page (Settings › Appearance) is offered only with tabs in the column; asked for with tabs across the top too. *([#712](https://github.com/driceroland/Search/issues/712))*
 
 ## Not on the list, for now
 
 - **Web processes start before the window** The web process pool is made before the first window; check whether 1.0.2's launch order already covers it. Measured at about 1.5 ms on macOS 26 (8–9 ms on macOS 27): not worth the change it needs. *([#157](https://github.com/driceroland/Search/issues/157))*
 - **Hidden sidebar closes too soon** It closes while the pointer is over the extension buttons at its foot. Maybe fixed by [#115](https://github.com/driceroland/Search/pull/115) in 1.0.2; unconfirmed. No reply; reopen anytime. *(email)*
-- **Block YouTube's ads** YouTube's ads. They come from youtube.com itself, which the blocker's lists can't tell apart. Whether to go that far is an open question. Search's built-in blocker stays as it is; blocking YouTube's ads is not planned. An optional ad-blocking add-on, downloaded only by those who want it, may come later. *([#218](https://github.com/driceroland/Search/issues/218), email ×4)*
 - **Tab bar in the page's colour** The tab bar or title bar in the page's own colour. Not planned: Search stays minimal. *([#158](https://github.com/driceroland/Search/issues/158), [#168](https://github.com/driceroland/Search/pull/168), [#25](https://github.com/driceroland/Search/pull/25))*
 - **Dark mode for the Search site** A dark mode for the site's Search page. The Search page keeps the one look it has. *([#51](https://github.com/driceroland/Search/issues/51))*
 - **Home page or home button** A home page or home button. Not planned: Search stays minimal. *(email, [#299](https://github.com/driceroland/Search/pull/299))*
@@ -204,3 +181,4 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - **GitHub's Files page slow to paint** A GitHub pull request's Files page can stay blank for tens of seconds while its CSS comes in; a bare WKWebView is about as slow. Waiting on a comparison with Safari. No reply; reopen anytime. *([#458](https://github.com/driceroland/Search/issues/458))*
 - **Bitwarden popup spins** Its background never answers the popup (no runtime.onConnect listener). Stopped happening for the reporter; reopen anytime. *([#541](https://github.com/driceroland/Search/issues/541))*
 - **Ask before a site's first pop-up** Ask even for a pop-up after a click, beyond what Safari and Chrome do. Goes further than Safari and Chrome; 1.0.6 brings Safari's blocked pop-up sign instead. *([#656](https://github.com/driceroland/Search/issues/656), [#661](https://github.com/driceroland/Search/pull/661))*
+- **Each checkout tests in its own world** Build tests from two checkouts no longer share one test world. The tests' harness already gives each checkout its own world; moving Store.world's default would move every session's at once *([#497](https://github.com/driceroland/Search/pull/497))*
