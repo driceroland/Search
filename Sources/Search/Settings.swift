@@ -19,9 +19,12 @@ struct SettingsPanel: View {
 
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shield = Shield.shared
+    @ObservedObject private var filterLists = FilterLists.shared
     @State private var isDefault = Links.isDefault
     /// A site shortcut being written, kept out of Preferences until it's saved.
     @State private var draft: Keyword?
+    /// A filter list's address being typed, until it's added.
+    @State private var listDraft: String?
     @State private var page: Page = Page.named(Store.settings.string(forKey: "settings.page") ?? "") ?? .general
     /// What is typed in Find a setting.
     @State private var query = ""
@@ -423,6 +426,13 @@ struct SettingsPanel: View {
                 ? "macOS was told no: System Settings › Privacy & Security › Passkeys"
                 : item.detail
         case "shield": return shield.trouble ?? item.detail
+        case "shield.lists":
+            // Only the lists that are blocking: one that never fetched counts
+            // for nothing.
+            let on = filterLists.sources.filter { $0.on && filterLists.compiled($0.id) }
+            guard !on.isEmpty else { return item.detail }
+            let rules = on.compactMap(\.rules).reduce(0, +)
+            return "\(on.count) \(on.count == 1 ? "list" : "lists") blocking, \(rules.formatted()) rules, kept up to date"
         case "updates.version": return versionDetail
         case "arc.import": return arcHere ? item.detail : "Arc isn't on this Mac. Bring Things Over can read an export"
         default: return item.detail
@@ -641,6 +651,17 @@ struct SettingsPanel: View {
         case "passkeys": Switch(on: $prefs.passkeys)
         case "passwords.apple": Switch(on: $prefs.applePasswords)
         case "shield": Switch(on: $prefs.shielded)
+        case "shield.lists":
+            if listDraft == nil {
+                Pill("Add…") { listDraft = "" }
+            } else {
+                HStack(spacing: 6) {
+                    Pill("Cancel") { listDraft = nil }
+                    Pill("Add", filled: true) { addListDraft() }
+                        .disabled(listDraftProblem != nil)
+                        .opacity(listDraftProblem == nil ? 1 : 0.4)
+                }
+            }
         case "sites.keep": Switch(on: Binding(get: { !prefs.keepsSignIns }, set: { prefs.keepsSignIns = !$0 }))
         case "privacy.clickIDs": Switch(on: $prefs.removesClickIDs)
         case "privacy.gpc": Switch(on: $prefs.sendsPrivacySignal)
@@ -709,6 +730,13 @@ struct SettingsPanel: View {
                         }
                     ))
                 }
+            }
+        case "shield.lists":
+            if prefs.shielded {
+                if listDraft != nil { listEditor }
+                FilterListRows(lists: filterLists)
+                    .padding(.leading, SettingsPanel.textInset)
+                    .padding(.trailing, 14)
             }
         case "privacy.forget":
             if !searched {
@@ -819,6 +847,57 @@ struct SettingsPanel: View {
             .padding(.trailing, 14)
             .padding(.bottom, 6)
         }
+    }
+
+    /// An address to add, or a file to choose instead.
+    private var listEditor: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                TextField("https://easylist.to/easylist/easylist.txt", text: Binding(
+                    get: { listDraft ?? "" },
+                    set: { listDraft = $0 }
+                ))
+                .textFieldStyle(.plain)
+                .onSubmit(addListDraft)
+                Pill("Choose File…") { chooseListFile() }
+            }
+            .font(.system(size: 12.5))
+            .foregroundStyle(Palette.ink)
+            .padding(.leading, 10)
+            .padding(.trailing, 4)
+            .padding(.vertical, 4)
+            .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            if let problem = listDraftProblem, !(listDraft ?? "").isEmpty {
+                Text(problem)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.leading, 10)
+            }
+        }
+        .padding(.leading, SettingsPanel.textInset)
+        .padding(.trailing, 14)
+        .padding(.bottom, 6)
+    }
+
+    private var listDraftProblem: String? {
+        guard let listDraft else { return nil }
+        return filterLists.problem(with: listDraft)
+    }
+
+    private func addListDraft() {
+        guard let typed = listDraft, listDraftProblem == nil else { return }
+        filterLists.add(typed)
+        listDraft = nil
+    }
+
+    private func chooseListFile() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose a filter list: Adblock Plus syntax, or a hosts file"
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        listDraft = url.path
+        addListDraft()
     }
 
     /// Checked when it's saved, not as it's typed into the list: a shortcut
@@ -1398,6 +1477,126 @@ struct Pill: View {
         .onHover { hovering = $0 }
         .animation(Motion.quick, value: hovering)
     }
+}
+
+/// Settings › Privacy: the filter lists added to the blocker, each with what
+/// it came to, when it was last fetched, and what went wrong if anything did.
+private struct FilterListRows: View {
+    @ObservedObject var lists: FilterLists
+
+    var body: some View {
+        ForEach(lists.sources) { source in
+            FilterListRow(source: source, working: lists.working.contains(source.id), lists: lists)
+                .padding(.bottom, 6)
+        }
+    }
+}
+
+private struct FilterListRow: View {
+    let source: FilterLists.Source
+    let working: Bool
+    let lists: FilterLists
+    @State private var open = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(source.name)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    status
+                }
+                .help(source.origin)
+                Spacer(minLength: 8)
+                if working {
+                    ProgressView().controlSize(.small)
+                } else {
+                    icon("arrow.clockwise", help: source.isFile ? "Read the file again" : "Update now") {
+                        lists.refresh(source.id)
+                    }
+                }
+                if source.skipped > 0 {
+                    icon(open ? "info.circle.fill" : "info.circle", help: "What was skipped, and why") {
+                        withAnimation(Motion.quick) { open.toggle() }
+                    }
+                }
+                Switch(on: Binding(get: { source.on }, set: { lists.turn(source.id, on: $0) }))
+                icon("xmark.circle.fill", help: "Remove") { lists.remove(source.id) }
+            }
+            if open { skipped }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
+    /// What it came to, or what's wrong: the trouble and the near-limit
+    /// warning stand out from the quiet count.
+    @ViewBuilder
+    private var status: some View {
+        if working {
+            note(source.rules == nil ? "Fetching and converting…" : "Updating…")
+        } else if let trouble = source.trouble {
+            warning(lists.compiled(source.id) ? "\(trouble). The last good version still blocks" : trouble)
+        } else if let rules = source.rules {
+            VStack(alignment: .leading, spacing: 2) {
+                note("\(rules.formatted()) rules from \(source.used?.formatted() ?? "0") filters"
+                     + (source.skipped > 0 ? ", \(source.skipped.formatted()) skipped" : "")
+                     + (source.fetched.map { ", updated \(FilterListRow.ago.localizedString(for: $0, relativeTo: Date()))" } ?? ""))
+                if source.nearLimit {
+                    warning("Near WebKit's limit of \(FilterList.limit.formatted()) rules for one list")
+                }
+            }
+        }
+    }
+
+    private var skipped: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("WebKit has no way to do these, so they were left out:")
+                .padding(.bottom, 2)
+            ForEach(source.dropped.sorted { $0.value > $1.value }.prefix(8), id: \.key) { why, count in
+                Text("\(count.formatted())  \(why)")
+            }
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(Palette.muted)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(Palette.muted)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func warning(_ text: String) -> some View {
+        Label(text, systemImage: "exclamationmark.triangle")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(Palette.ink)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func icon(_ name: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: name)
+                .font(.system(size: 12))
+                .foregroundStyle(name == "xmark.circle.fill" ? Palette.faint : Palette.muted)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+
+    static let ago: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
 }
 
 /// Settings › Privacy: the sites allowed to send notifications, each with a
