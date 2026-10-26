@@ -34,6 +34,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- ⌘T's floating field (Settings › Spaces & Pins › New tab in a floating field) works more like Arc's: New tab (⌘T or the button) again puts it away, and holding ⌘T leaves it up. Its list starts with the open tabs whose name or address begins with what you type, or, from two letters, a word in the name; what you type as an address, with http:// or without, matches the address only. Return switches to the one you used last instead of opening it again.
 - Settings says less and sits flatter: no line of explanation under each group's heading, every row of a card at the same level (Darken pages that stay light, Hide the column and The page as a card no longer indented under the row they depend on), and the hairlines between rows run from one edge of the card to the other. Every setting is still there, and still found by its words.
 
 ### Held back

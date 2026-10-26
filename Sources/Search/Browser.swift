@@ -3433,6 +3433,15 @@ final class Browser: NSObject, ObservableObject {
     /// still comes up for one to be asked about: a private new tab never
     /// asks.
     func launch() {
+        // Again while it is up: it goes, as in Arc, and the page is as it was.
+        // Held down, on whichever key New Tab is, the repeats leave it up
+        // rather than flickering it away and back. A click has no repeat to
+        // ask about (AppKit throws), so only a key's is read.
+        if launching {
+            let held = NSApp.currentEvent.map { $0.type == .keyDown && $0.isARepeat } ?? false
+            if !held { dismiss() }
+            return
+        }
         guard prefs.floatingNewTab, let tab = active, !tab.isBlank, peekTab == nil else {
             newTab()
             return
@@ -3441,7 +3450,6 @@ final class Browser: NSObject, ObservableObject {
             newTab()
             return
         }
-        // Again while it is up: it stays, with what was typed cleared.
         reviewing = false
         cancelTabEdit()
         summoning = false
@@ -5628,7 +5636,26 @@ final class Browser: NSObject, ObservableObject {
         // A row that was picked stops being the right row the moment the
         // question changes.
         picked = nil
+        if launching { offerOpenPages() }
         askEngine()
+    }
+
+    /// The floating new tab answers as Arc's ⌘T does: the open tabs the words
+    /// clearly name come first, under a command if one is on top, and the
+    /// most recent of them is what Return takes, rather than a second copy of
+    /// it. The rest stay with ⌘K, as every open tab does in ⌘L's field (see
+    /// placeOffers). An address typed out goes to an open tab whose address
+    /// it starts, as in Arc, or else where it says.
+    private func offerOpenPages() {
+        let open = openPages(matching: typed, clearly: true)
+        guard !open.isEmpty else { return }
+        let addresses = Set(open.map(\.url))
+        let rest = offers.filter { !addresses.contains($0.url) }
+        let commands = rest.prefix { $0.kind.isCommand }.count
+        offers = Array(rest.prefix(commands)) + open + rest.dropFirst(commands)
+        guard commands == 0 else { return }
+        picked = 0
+        ending = nil
     }
 
     // MARK: - the engine's suggestions
@@ -5744,13 +5771,29 @@ final class Browser: NSObject, ObservableObject {
     /// What is open, most recently looked at first, filtered by what has been
     /// typed. On an empty field this is the whole point of the summon: it is
     /// the tab strip, except you read it only when you ask for it.
-    private func openPages(matching typed: String) -> [Suggestion] {
+    ///
+    /// `clearly`: only the tabs the words clearly name, before the newest
+    /// few are kept: the start of the name or the address, from one letter,
+    /// or of a word inside the name, from two. One letter starting a word
+    /// anywhere would name a tab a search only brushed ("a" in "How to
+    /// write a parser"). An address typed out names only the tabs whose
+    /// address it starts, both as the field writes one, http:// or not (see
+    /// Address.editable), without www.; the shown address drops the port.
+    private func openPages(matching typed: String, clearly: Bool = false) -> [Suggestion] {
         let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        let written = { (url: URL) in Address.withoutWWW(Address.editable(url).lowercased()) }
+        let place = clearly ? Address.url(from: typed).map(written) : nil
         return tabs
             .filter { $0.id != activeID && !$0.isBlank }
             .filter { tab in
                 guard !needle.isEmpty else { return true }
+                if let place { return tab.address.map { written($0).hasPrefix(place) } ?? false }
                 let address = tab.address.map { Address.pretty($0) } ?? ""
+                if clearly {
+                    let name = tab.label.lowercased()
+                    return name.hasPrefix(needle) || address.hasPrefix(needle)
+                        || (needle.count > 1 && name.contains(" " + needle))
+                }
                 return tab.label.lowercased().contains(needle) || address.contains(needle)
             }
             .sorted { $0.touched > $1.touched }
