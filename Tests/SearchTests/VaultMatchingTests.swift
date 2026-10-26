@@ -10,8 +10,9 @@ final class VaultMatchingTests: XCTestCase {
         guard Vault.save(host: own, user: "ada", password: "x"), Vault.save(host: qa, user: "ada", password: "x") else {
             throw XCTSkip("no keychain here")
         }
-        XCTAssertEqual(Vault.kept(matching: own).map(\.host), [own])
-        XCTAssertEqual(Vault.kept(matching: qa).map(\.host), [qa])
+        XCTAssertEqual(Vault.kept(matching: own).map(\.host), [own, qa], "its own first, the site's after")
+        XCTAssertEqual(Vault.kept(matching: qa).map(\.host), [qa, own])
+        XCTAssertEqual(Vault.kept(matching: own, wide: false).map(\.host), [own])
         XCTAssertEqual(Set(Vault.kept(matching: other).map(\.host)), [own, qa], "no account of its own: the site's")
         XCTAssertTrue(Vault.kept(matching: other, wide: false).isEmpty)
     }

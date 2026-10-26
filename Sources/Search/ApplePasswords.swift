@@ -399,13 +399,13 @@ final class ApplePasswords: ObservableObject {
         }
     }
 
-    /// The accounts kept for the host itself when there are any; only then the
-    /// site's others (admin.example.com's list has no use for admin-qa's).
-    nonisolated static func closest(_ logins: [AppleLogin], to host: String, wide: Bool = true,
-                                    registrable: (String) -> String = Vault.registrable) -> [AppleLogin] {
+    /// The accounts kept for the host itself first, then the site's others
+    /// (admin.example.com's own before admin-qa's).
+    nonisolated static func exactFirst(_ logins: [AppleLogin], to host: String, wide: Bool = true,
+                                       registrable: (String) -> String = Vault.registrable) -> [AppleLogin] {
         let site = logins.filter { belongs($0.sites, to: host, wide: wide, registrable: registrable) }
         let own = site.filter { belongs($0.sites, to: host, wide: false, registrable: registrable) }
-        return own.isEmpty ? site : own
+        return own + site.filter { !own.contains($0) }
     }
 
     nonisolated private static func bare(_ host: String) -> String {

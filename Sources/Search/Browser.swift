@@ -890,7 +890,7 @@ final class Browser: NSObject, ObservableObject {
                   ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) == appleHost
             else { return }
             let mine = suggesting?.tab == tab.id ? suggesting?.logins ?? [] : []
-            let apple = Array(ApplePasswords.closest(found, to: appleHost, wide: wide)
+            let apple = Array(ApplePasswords.exactFirst(found, to: appleHost, wide: wide)
                 .filter { theirs in !mine.contains { $0.user.caseInsensitiveCompare(theirs.user) == .orderedSame } }
                 .prefix(5))
             guard !apple.isEmpty else { return }

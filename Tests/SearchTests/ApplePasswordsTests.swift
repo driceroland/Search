@@ -229,12 +229,14 @@ final class ApplePasswordsTests: XCTestCase {
         let registrable: (String) -> String = { $0.split(separator: ".").suffix(2).joined(separator: ".") }
         let qa = AppleLogin(user: "qa", sites: ["admin-qa.example.com"])
         let prod = AppleLogin(user: "prod", sites: ["admin.example.com"])
-        func closest(_ host: String) -> [AppleLogin] {
-            ApplePasswords.closest([qa, prod], to: host, registrable: registrable)
+        let root = AppleLogin(user: "root", sites: ["example.com"])
+        func ordered(_ host: String, wide: Bool = true) -> [AppleLogin] {
+            ApplePasswords.exactFirst([qa, root, prod], to: host, wide: wide, registrable: registrable)
         }
-        XCTAssertEqual(closest("admin.example.com"), [prod])
-        XCTAssertEqual(closest("admin-qa.example.com"), [qa])
-        XCTAssertEqual(closest("accounts.example.com"), [qa, prod], "no account of its own: the site's")
+        XCTAssertEqual(ordered("admin.example.com"), [prod, qa, root])
+        XCTAssertEqual(ordered("admin-qa.example.com"), [qa, root, prod])
+        XCTAssertEqual(ordered("accounts.example.com"), [qa, root, prod], "none of its own: the site's, as they came")
+        XCTAssertEqual(ordered("admin.example.com", wide: false), [prod])
     }
 
     func testFillIsRecognisedWithoutKeepingThePassword() {
