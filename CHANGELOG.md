@@ -13,7 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- Saved accounts are no longer mixed between hosts of one site. With separate logins for admin.example.com and admin-qa.example.com, both were suggested on either; now a host's own accounts come first, in Search's keychain and in Apple Passwords alike, and the site's other accounts are offered only when the host has none of its own, so accounts.example.com still gets the login saved for example.com. Thanks [@tomaswarynyca](https://github.com/tomaswarynyca) ([#723](https://github.com/driceroland/Search/pull/723))
+- Saved accounts under a sign-in box no longer mix the hosts of one site. With separate logins for admin.example.com and admin-qa.example.com, both were listed on either in no particular order; now the host's own accounts, from your keychain and from Apple Passwords, come first, and the site's other accounts follow under "Other accounts on example.com", so a login saved for example.com is still there on accounts.example.com. Thanks [@tomaswarynyca](https://github.com/tomaswarynyca) ([#723](https://github.com/driceroland/Search/pull/723))
 
 ### Held back
 
