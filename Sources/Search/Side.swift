@@ -85,7 +85,7 @@ struct SideBar: View {
     /// The window's buttons' corner: gone in full screen, where macOS takes
     /// them away, and back, forward and reload move up to the edge (idea 184).
     private var lights: CGFloat {
-        browser.fullScreen ? 0 : max(0, min(Metrics.sideLights, prefs.columnWidth - 20 - Metrics.helmDoors))
+        browser.fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors))
     }
 
     var body: some View {
@@ -745,7 +745,7 @@ struct SideBar: View {
         let gridShown = !squares.isEmpty || ghostSquare != nil
         let rowsOn = prefs.showsPinRows
         let listedShown = rowsOn && (!browser.listedPins.isEmpty || isListedGhost)
-        let zone = PinDrop.zone(point, width: prefs.columnWidth - 20,
+        let zone = PinDrop.zone(point, width: width - 20,
                                 gridBottom: gridShown ? frames.grid?.maxY : nil,
                                 listed: listedShown ? frames.listed : nil)
         switch zone {
