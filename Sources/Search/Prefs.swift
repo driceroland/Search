@@ -704,12 +704,15 @@ final class Preferences: ObservableObject {
         passkeysPossible = entitled
         let settledFor = store.object(forKey: "passkeys.for") as? Bool
             ?? (entitled && store.bool(forKey: "passkeys.entitled") ? true : nil)
+        let offers: Bool
         if settledFor != entitled {
-            passkeys = entitled
+            offers = entitled
             store.set(entitled, forKey: "passkeys")
         } else {
-            passkeys = store.object(forKey: "passkeys") as? Bool ?? entitled
+            offers = store.object(forKey: "passkeys") as? Bool ?? entitled
         }
+        passkeys = offers
+        FormRelay.passkeysOffered = offers
         store.set(entitled, forKey: "passkeys.for")
         store.set(entitled, forKey: "passkeys.entitled")
         // A test run downloads into its own folder: ~/Downloads would have
