@@ -620,6 +620,34 @@ final class Bench {
             answer(["quitting": true])
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
 
+        case "alive":
+            // What is still in memory: tabs, their page views, and the web
+            // processes those views run in, against what the rows hold. A
+            // closed tab or window should leave nothing behind here
+            // (Tests/memory_close.py). Read a turn later, once whatever the
+            // close let go of has been released. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "alive only works on a --test run"]); return }
+            DispatchQueue.main.async {
+                let pages = Web.pages.allObjects
+                let pids = Set(pages.compactMap { $0.value(forKey: "_webProcessIdentifier") as? Int }.filter { $0 > 0 })
+                // The shared helpers too, where this WebKit names them.
+                let ask: (NSObject?, String) -> Int = { object, name in
+                    guard let object, object.responds(to: NSSelectorFromString(name)) else { return 0 }
+                    return object.value(forKey: name) as? Int ?? 0
+                }
+                answer([
+                    "tabs": Tab.live.allObjects.count,
+                    "pages": pages.count,
+                    "processes": pids.sorted(),
+                    "inRows": Browsers.all.reduce(0) { $0 + $1.tabs.count + $1.parkedTabs.count },
+                    "built": Browsers.all.reduce(0) { $0 + ($1.tabs + $1.parkedTabs).filter { $0.built != nil }.count },
+                    "windows": Browsers.all.count,
+                    "urls": pages.map { $0.url?.absoluteString ?? "" },
+                    "gpu": pages.map { ask($0, "_gpuProcessIdentifier") }.first { $0 > 0 } ?? 0,
+                    "network": pages.map { ask($0.configuration.websiteDataStore, "_networkProcessIdentifier") }.first { $0 > 0 } ?? 0,
+                ])
+            }
+
         case "windows":
             // The windows, oldest first, and what the tests do to them. Only
             // on a SEARCH_PROBE run: it opens and closes windows.
@@ -1572,7 +1600,7 @@ final class Bench {
             // one as the panel's cross does. Answers with every address kept.
             guard Store.testing else { answer(["error": "history only works on a --test run"]); return }
             if let text = request["take"] as? String, let url = Address.url(from: text) {
-                browser.history.take(url, title: text, count: 1, last: Date())
+                browser.history.take(url, title: text, count: request["count"] as? Int ?? 1, last: Date())
                 browser.history.settle()
             }
             if let text = request["forget"] as? String, let url = Address.url(from: text) {
@@ -3560,7 +3588,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings", "filterlists",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings", "filterlists",
             ]])
         }
     }

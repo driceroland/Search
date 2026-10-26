@@ -848,7 +848,13 @@ final class Tab: ObservableObject, Identifiable {
         self.shy = shy
         self.bench = bench
         self.configuration = configuration ?? Web.configuration(shy: shy)
+        if Store.testing { Tab.live.add(self) }
     }
+
+    /// Every tab still in memory, on a test run, for the bench's `alive`
+    /// (Tests/memory_close.py): a tab closed and still counted here is
+    /// held by something, and so may be its page.
+    static let live = NSHashTable<Tab>.weakObjects()
 
     private func build() -> PageView {
         // Here rather than in Web.configuration: a tab's configuration is
