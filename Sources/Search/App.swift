@@ -326,13 +326,7 @@ struct SearchApp: App {
             }
             CommandMenu("History") {
                 Section("Recently Visited") {
-                    ForEach(browser.recentlyVisited) { trace in
-                        Button {
-                            browser.open(trace.url, foreground: true)
-                        } label: {
-                            MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
-                        }
-                    }
+                    RecentlyVisited(places: browser.history.places, browser: browser)
                 }
                 if !browser.ghosts.isEmpty {
                     Section("Recently Closed") {
@@ -383,6 +377,23 @@ private struct QuitAndHelp: Commands {
         }
         CommandGroup(replacing: .help) {
             Button("Send Feedback…") { Links.writeFeedback() }
+        }
+    }
+}
+
+/// The History menu's last few places. It watches them itself, so a visit
+/// or a new title redraws these lines and nothing else in the window.
+private struct RecentlyVisited: View {
+    @ObservedObject var places: RecentPlaces
+    let browser: Browser
+
+    var body: some View {
+        ForEach(places.traces) { trace in
+            Button {
+                browser.open(trace.url, foreground: true)
+            } label: {
+                MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
+            }
         }
     }
 }
