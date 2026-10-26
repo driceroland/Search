@@ -3675,8 +3675,11 @@ final class Browser: NSObject, ObservableObject {
             // The neighbour on the right, or the last one if there is no
             // right — through select(), same as everywhere else you land on
             // a tab, so one that was never built yet actually wakes up
-            // instead of sitting there blank until a manual reload.
-            select(partner ?? tabs[min(index, tabs.count - 1)])
+            // instead of sitting there blank until a manual reload. Asked
+            // for, the tab viewed before this one comes first, as ⌃Tab
+            // would take you there.
+            let before = prefs.closeGoesBack ? tabBefore(tab) : nil
+            select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
         }
         rememberSession()
     }
