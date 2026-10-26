@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import Combine
+import UniformTypeIdentifiers
 
 // Everything the window knows: which tabs exist, which one is showing, and
 // whether the address field is up. Small enough to read in one sitting, which
@@ -4888,19 +4889,36 @@ final class Browser: NSObject, ObservableObject {
     /// layout and takes its whole current length. WebKit splits only a page
     /// taller than a PDF page can be (200 inches).
     func exportPDF() {
-        guard let tab = active, tab.isWeb, let window = tab.web.window ?? self.window else { return }
+        askWhereToSave(active, as: .pdf, ending: "pdf") { [weak self] tab, file in
+            self?.exportPDF(tab, to: file)
+        }
+    }
+
+    /// File › Save Page As…: the page with its pictures and styles in one
+    /// web archive, as Safari's Save As makes it. It opens again in Search
+    /// or Safari, offline too.
+    func savePage() {
+        askWhereToSave(active, as: .webArchive, ending: "webarchive") { [weak self] tab, file in
+            self?.savePage(tab, to: file)
+        }
+    }
+
+    /// The save panel for a page, named after its title (or its site), in
+    /// Downloads.
+    private func askWhereToSave(_ tab: Tab?, as type: UTType, ending: String, then save: @escaping (Tab, URL) -> Void) {
+        guard let tab, tab.isWeb, let window = tab.web.window ?? self.window else { return }
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.pdf]
+        panel.allowedContentTypes = [type]
         panel.canCreateDirectories = true
         let title = tab.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let stem = (title.isEmpty ? tab.pageAddress?.host() ?? "Page" : title)
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
-        panel.nameFieldStringValue = stem.lowercased().hasSuffix(".pdf") ? stem : stem + ".pdf"
+        panel.nameFieldStringValue = stem.lowercased().hasSuffix(".\(ending)") ? stem : stem + ".\(ending)"
         panel.directoryURL = downloadsFolder
-        panel.beginSheetModal(for: window) { [weak self] answer in
+        panel.beginSheetModal(for: window) { answer in
             guard answer == .OK, let file = panel.url else { return }
-            self?.exportPDF(tab, to: file)
+            save(tab, file)
         }
     }
 
@@ -4919,6 +4937,25 @@ final class Browser: NSObject, ObservableObject {
                 finished?(true)
             } catch {
                 self?.announce("Couldn't export page")
+                finished?(false)
+            }
+        }
+    }
+
+    /// As exportPDF(_:to:finished:), for Save Page As….
+    func savePage(_ tab: Tab, to file: URL, finished: ((Bool) -> Void)? = nil) {
+        guard tab.isWeb else {
+            finished?(false)
+            return
+        }
+        tab.web.createWebArchiveData { [weak self] result in
+            do {
+                let data = try result.get()
+                try data.write(to: file, options: .atomic)
+                self?.announce("Saved \(file.lastPathComponent)", file: file)
+                finished?(true)
+            } catch {
+                self?.announce("Couldn't save page")
                 finished?(false)
             }
         }
