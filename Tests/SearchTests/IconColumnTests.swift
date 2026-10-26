@@ -99,7 +99,64 @@ final class IconColumnTests: XCTestCase {
         XCTAssertEqual(IconTiles.tips[right], "three")
     }
 
+    func testHoveredActiveTileClosesWithoutOpeningAddressField() async throws {
+        let browser = makeBrowser(count: 3)
+        let tab = try XCTUnwrap(browser.active)
+        let window = makeWindow(browser)
+        try await settle()
+        let frame = try XCTUnwrap(IconTiles.frames[tab.id])
+        Bench.hoverRows[tab.id]?(true)
+        try await settle()
+        XCTAssertEqual(IconTiles.frames[tab.id], frame)
+        try await click(frame, in: window)
+        XCTAssertFalse(browser.tabs.contains { $0.id == tab.id })
+        XCTAssertEqual(browser.tabs.count, 2)
+        XCTAssertEqual(browser.ghosts.last?.url, tab.address)
+        XCTAssertNil(browser.editingTab)
+    }
+
+    func testHoveredBackgroundTileSelectsBeforeItCanClose() async throws {
+        let browser = makeBrowser(count: 3)
+        let tab = browser.tabs[1]
+        let window = makeWindow(browser)
+        try await settle()
+        let frame = try XCTUnwrap(IconTiles.frames[tab.id])
+        Bench.hoverRows[tab.id]?(true)
+        try await settle()
+        try await click(frame, in: window)
+        XCTAssertEqual(browser.activeID, tab.id)
+        XCTAssertEqual(browser.tabs.count, 3, "The selecting click must not also close the tab")
+        XCTAssertTrue(browser.ghosts.isEmpty)
+        XCTAssertNil(browser.editingTab)
+        try await click(frame, in: window)
+        XCTAssertFalse(browser.tabs.contains { $0.id == tab.id })
+    }
+
+    func testHoveredSplitHalfClosesOnlyFocusedPage() async throws {
+        let browser = makeBrowser(count: 3, split: true)
+        let left = browser.tabs[1], right = browser.tabs[2]
+        browser.pair(right, with: left, onLeft: false)
+        let window = makeWindow(browser)
+        try await settle()
+        browser.focusPane(right)
+        Bench.hoverRows[right.id]?(true)
+        try await settle()
+        try await click(try XCTUnwrap(IconTiles.frames[right.id]), in: window)
+        XCTAssertEqual(browser.tabs.count, 2)
+        XCTAssertTrue(browser.tabs.contains { $0.id == left.id })
+        XCTAssertFalse(browser.tabs.contains { $0.id == right.id })
+        XCTAssertNil(browser.split(for: left))
+        XCTAssertNil(browser.editingTab)
+    }
+
     // MARK: -
+
+    private func click(_ frame: CGRect, in window: NSWindow) async throws {
+        let centre = point(frame.midX, frame.midY, window)
+        try await send(.leftMouseDown, at: centre, in: window)
+        try await send(.leftMouseUp, at: centre, in: window)
+        try await settle()
+    }
 
     private func makeBrowser(count: Int, split: Bool = false) -> Browser {
         _ = NSApplication.shared
@@ -162,7 +219,10 @@ final class IconColumnTests: XCTestCase {
             windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
             pressure: type == .leftMouseUp ? 0 : 1
         ))
-        window.sendEvent(event)
+        // CloseClick checks the current event, as it does in the app's loop.
+        NSApp.postEvent(event, atStart: true)
+        let queued = try XCTUnwrap(NSApp.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true))
+        NSApp.sendEvent(queued)
         try await Task.sleep(for: .milliseconds(30))
     }
 }

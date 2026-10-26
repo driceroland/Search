@@ -84,6 +84,7 @@ struct SettingsPanel: View {
     }
 
     private static let rail: CGFloat = 196
+    private static let column: CGFloat = 600
     private static let width: CGFloat = 720
     private static let height: CGFloat = 540
     /// Where a row's words start, past its icon: a hairline starts there too.
@@ -106,7 +107,6 @@ struct SettingsPanel: View {
             Rectangle().fill(Palette.hairline).frame(width: 1)
             content
                 .padding(.top, 26)
-                .frame(maxWidth: 600)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -283,6 +283,9 @@ struct SettingsPanel: View {
                 }
             }
             .padding(.bottom, 18)
+            .padding(.horizontal, 24)
+            .frame(maxWidth: asTab ? SettingsPanel.column : .infinity)
+            .frame(maxWidth: .infinity)
 
             ScrollViewReader { reader in
                 ScrollView(showsIndicators: false) {
@@ -290,6 +293,11 @@ struct SettingsPanel: View {
                         if searching { results } else { section(page) }
                     }
                     .padding(.bottom, 24)
+                    // Keep the rows narrow, not the scroll view: the empty
+                    // space beside them must receive scrolling too.
+                    .padding(.horizontal, 24)
+                    .frame(maxWidth: asTab ? SettingsPanel.column : .infinity)
+                    .frame(maxWidth: .infinity)
                 }
                 .onAppear { if let lit { reader.scrollTo(lit, anchor: .center) } }
             }
@@ -297,7 +305,6 @@ struct SettingsPanel: View {
             // them all opened Tabs as far down as General had been read.
             .id(searching ? "found" : page.rawValue)
         }
-        .padding(.horizontal, 24)
         .padding(.top, 18)
         .padding(.bottom, 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

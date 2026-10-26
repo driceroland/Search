@@ -465,6 +465,27 @@ enum ExtensionShims {
       // On a web page this is a content script: only Chrome's behaviour is
       // mended there, no API that Chrome doesn't give content scripts either.
       const inContent = typeof location !== "undefined" && !/^(chrome|webkit)-extension:$/.test(location.protocol);
+      const runtime = chrome.runtime;
+      // WebKit fills Chrome's enums on a worker but leaves them out of a
+      // content script, where extensions read them as their code starts.
+      // GPTZero's copy tracker, LMS bridge and recorder stopped on a missing
+      // OnInstalledReason before either did anything. These members are
+      // constants, so content scripts get them as well as the worker.
+      if (runtime && inContent) {
+        const missing = (key, value) => {
+          let there;
+          try { there = runtime[key]; } catch (e) {}
+          if (there === undefined) Object.defineProperty(runtime, key, { value, configurable: true, writable: true, enumerable: true });
+        };
+        for (const [key, value] of Object.entries({
+          OnInstalledReason: { INSTALL: "install", UPDATE: "update", CHROME_UPDATE: "chrome_update", SHARED_MODULE_UPDATE: "shared_module_update" },
+          OnRestartRequiredReason: { APP_UPDATE: "app_update", OS_UPDATE: "os_update", PERIODIC: "periodic" },
+          PlatformArch: { ARM: "arm", ARM64: "arm64", X86_32: "x86-32", X86_64: "x86-64", MIPS: "mips", MIPS64: "mips64" },
+          PlatformNaclArch: { ARM: "arm", X86_32: "x86-32", X86_64: "x86-64", MIPS: "mips", MIPS64: "mips64" },
+          PlatformOs: { MAC: "mac", WIN: "win", ANDROID: "android", CROS: "cros", LINUX: "linux", OPENBSD: "openbsd", FUCHSIA: "fuchsia" },
+          RequestUpdateCheckStatus: { THROTTLED: "throttled", NO_UPDATE: "no_update", UPDATE_AVAILABLE: "update_available" },
+        })) missing(key, value);
+      }
       // One of the extension's pages in a frame of a website — Vimium's bar,
       // the list iCloud Passwords opens under a field. WebKit runs it in the
       // website's process, which it trusts with no more than a content
@@ -477,7 +498,6 @@ enum ExtensionShims {
         try { const a = location.ancestorOrigins; if (a && a.length) return [...a].some((o) => o !== location.origin); } catch (e) {}
         try { return window.top.location.origin !== location.origin; } catch (e) { return true; }
       })();
-      const runtime = chrome.runtime;
 
       // WebKit's objects are kept — WebKit finds an extension's listeners
       // through them, and a replacement would hide them. Members are set on
@@ -2810,6 +2830,37 @@ enum ExtensionShims {
         mendArgs(chrome.contextMenus && chrome.contextMenus.onClicked, [1], null, null, true);
         mendArgs(chrome.menus && chrome.menus.onClicked, [1], null, null, true);
         mendArgs(chrome.commands && chrome.commands.onCommand, [1], null, null, true);
+      }
+
+      // WebKit posts cookie changes from a worker with no cookie on some
+      // notifications. Chrome never does: every onChanged event has a
+      // cookie and a cause. GPTZero reads event.cookie at the top of its
+      // listener, and an empty one stopped its worker. A valid change is
+      // passed on untouched; an incomplete notification is not Chrome's
+      // event and is ignored rather than handed to listeners that assume it.
+      if (chrome.cookies && chrome.cookies.onChanged && typeof chrome.cookies.onChanged.addListener === "function") {
+        const changed = chrome.cookies.onChanged;
+        const add = changed.addListener.bind(changed), remove = changed.removeListener.bind(changed);
+        const has = changed.hasListener.bind(changed), wrapped = new WeakMap();
+        put(changed, "addListener", (listener, ...rest) => {
+          if (typeof listener !== "function") return add(listener, ...rest);
+          let filtered = wrapped.get(listener);
+          if (!filtered) {
+            filtered = function (change, ...args) {
+              if (!change || typeof change !== "object" || !change.cookie || typeof change.cookie !== "object") return;
+              return listener.apply(this, [change, ...args]);
+            };
+          }
+          // Chrome keeps one registration per listener, however often the
+          // extension adds it. The same wrapper is what WebKit hears; keep it
+          // only once WebKit has taken it, so a refused add can be tried again.
+          if (!has(filtered)) {
+            add(filtered, ...rest);
+            wrapped.set(listener, filtered);
+          }
+        });
+        put(changed, "removeListener", (listener) => remove(wrapped.get(listener) || listener));
+        put(changed, "hasListener", (listener) => has(wrapped.get(listener) || listener));
       }
 
       // Permissions. WebKit knows its own and throws on any other name,

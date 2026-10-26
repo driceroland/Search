@@ -104,11 +104,18 @@ struct IconTile: View {
     private var rest: AtRest? { live ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
     private var tip: String { IconTiles.tip(tab, address: rest) }
     private var speaker: Bool { !tab.loading && (tab.noisy || tab.muted) }
+    private var closable: Bool { interactive && live && tab.pin == nil }
 
     var body: some View {
         let _ = Bench.count("row")
         ZStack {
-            if interactive, let number = shortcutNumbers[tab.id] {
+            if closable && hovering {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 15, height: 15)
+                    .background(Palette.ink.opacity(0.07), in: Circle())
+            } else if interactive, let number = shortcutNumbers[tab.id] {
                 TabShortcutNumber(number: number)
             } else if tab.loading {
                 Ring()
@@ -122,6 +129,14 @@ struct IconTile: View {
             }
         }
         .frame(width: Metrics.iconTile, height: Metrics.iconTile)
+        // Only the tab already on screen wears a cross, so picking another
+        // tile cannot close it with that same press.
+        .overlay {
+            if closable {
+                CloseClick(armed: hovering, act: close)
+                    .frame(width: 22, height: 22)
+            }
+        }
         .overlay(alignment: .topTrailing) {
             if tab.recording {
                 Circle()
@@ -189,6 +204,7 @@ struct IconTile: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(tip)
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Close tab") { if interactive { close() } }
         .animation(Motion.quick, value: hovering)
         .animation(Motion.quick, value: tab.loading)
         .animation(Motion.quick, value: speaker)

@@ -1967,6 +1967,10 @@ final class Browser: NSObject, ObservableObject {
     /// named as it was and where it was among the others.
     private var closedGroups: [UUID: (group: TabGroup, at: Int)] = [:]
 
+    enum CloseKind {
+        case clear, group, tabs
+    }
+
     struct Ghost: Identifiable, Equatable {
         let id = UUID()
         let url: URL
@@ -1982,17 +1986,18 @@ final class Browser: NSObject, ObservableObject {
         /// The tab it was, so a pair closed together finds its other half
         /// again when both come back (see reopen(batch:)).
         var was: Tab.ID? = nil
-        /// The Clear it went with: one ⇧⌘T brings back the whole of it.
+        /// The bulk close it went with: one ⇧⌘T brings back the whole of it.
         var batch: UUID? = nil
-        /// Of a Clear's tabs, the one you were on, which comes back in front.
+        var kind: CloseKind = .clear
+        /// The tab you were on, which comes back in front.
         var front = false
 
         var label: String { title.isEmpty ? Address.pretty(url) : title }
     }
 
-    /// The Clear or Close Group under way, whose tabs are remembered
+    /// The bulk close under way, whose tabs are remembered
     /// together (see closingTogether).
-    private var batching: UUID?
+    private var batching: (id: UUID, kind: CloseKind)?
     /// The last Clear, and the empty tab it left in front: an undo takes
     /// that tab away again while it is still empty.
     private var lastClear: (batch: UUID, blank: Tab.ID?)?
@@ -3687,6 +3692,36 @@ final class Browser: NSObject, ObservableObject {
         select(keep)
     }
 
+    /// The row already follows the groups' order, including folded members.
+    /// Both pages of the clicked split stay; pins keep their places too.
+    func tabsBelow(_ tab: Tab) -> [Tab] {
+        guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return [] }
+        let partner = split(for: tab).flatMap { $0.partner(of: tab.id) }
+        let end = max(index, tabs.firstIndex(where: { $0.id == partner }) ?? index)
+        return tabs.dropFirst(end + 1).filter { $0.pin == nil }
+    }
+
+    func closeTabsBelow(_ tab: Tab) {
+        let going = tabsBelow(tab)
+        guard !going.isEmpty else { return }
+        closingTogether(.tabs) { _ in
+            // Move off a page being closed before walking the row, so its
+            // neighbours do not wake only to be closed in turn.
+            if going.contains(where: { $0.id == activeID }) { select(tab) }
+            // Undo inserts in reverse closing order. Closing from the bottom
+            // brings them back in order even if tabs above have since gone.
+            for page in going.reversed() {
+                // A whole group below goes too. Remember it just before its
+                // last member leaves, at its place among the groups still here.
+                if let id = group(of: page), tabs(in: id).count == 1,
+                   let at = tabGroups.firstIndex(where: { $0.id == id }) {
+                    closedGroups[id] = (tabGroups[at], at)
+                }
+                close(page)
+            }
+        }
+    }
+
     /// Arc's Clear, on the line above the tabs that come and go: each of
     /// them closed as ⌘W closes it, and all of it remembered as one, so a
     /// single ⇧⌘T puts every tab back. Pins stay, and so does a tab group:
@@ -3699,12 +3734,12 @@ final class Browser: NSObject, ObservableObject {
         closingTogether { batch in clear(going, batch: batch) }
     }
 
-    /// Tabs closed as one act, Clear or Close Group: remembered together, so
+    /// Tabs closed as one act: remembered together, so
     /// that one ⇧⌘T brings every one of them back (see reopen(batch:)), and
     /// the one you were on, if it went too, in front.
-    private func closingTogether(_ close: (UUID) -> Void) {
+    private func closingTogether(_ kind: CloseKind = .clear, _ close: (UUID) -> Void) {
         let batch = UUID(), was = activeID
-        batching = batch
+        batching = (batch, kind)
         defer {
             batching = nil
             if let at = ghosts.lastIndex(where: { $0.batch == batch && $0.was == was }) { ghosts[at].front = true }
@@ -3760,24 +3795,36 @@ final class Browser: NSObject, ObservableObject {
         // in Safari and Chrome (see Windows.swift).
         if let window = Browsers.lastClosedAt, window > (ghosts.last?.at ?? .distantPast), Browsers.reopenWindow() { return }
         guard let ghost = ghosts.last else { return }
-        if let batch = ghost.batch { reopen(batch: batch) } else { reopen(ghost) }
+        reopen(ghost)
     }
 
-    /// What ⇧⌘T brings back, for its menu items: a closed group, a Clear's
-    /// tabs by how many, or the one tab (or the window) it always did.
-    var reopenTitle: String {
-        guard let last = ghosts.last, let batch = last.batch,
-              (Browsers.lastClosedAt ?? .distantPast) <= last.at else { return "Reopen Closed Tab" }
-        // Clear never takes a tab in a group, so a batch with one is Close
-        // Group's, its group still closed or brought back from History.
-        if let id = last.groupID, closedGroups[id] != nil || tabGroups.contains(where: { $0.id == id }) {
-            return "Reopen Closed Group"
+    /// Each bulk close has one place in History, however many tabs it held.
+    var recentlyClosed: [Ghost] {
+        var batches = Set<UUID>()
+        return ghosts.reversed().filter { ghost in
+            guard let batch = ghost.batch else { return true }
+            return batches.insert(batch).inserted
         }
-        let count = ghosts.filter { $0.batch == batch }.count
-        return count == 1 ? "Reopen Cleared Tab" : "Reopen \(count) Cleared Tabs"
     }
 
-    /// Everything one Clear or Close Group closed, back as it was: each tab
+    func closedTitle(for ghost: Ghost) -> String {
+        guard let batch = ghost.batch else { return ghost.label }
+        let count = ghosts.filter { $0.batch == batch }.count
+        switch ghost.kind {
+        case .group: return "Closed Group"
+        case .clear: return count == 1 ? "Cleared Tab" : "\(count) Cleared Tabs"
+        case .tabs: return count == 1 ? "Closed Tab" : "\(count) Closed Tabs"
+        }
+    }
+
+    /// What ⇧⌘T brings back: one bulk close, or the last tab or window.
+    var reopenTitle: String {
+        guard let last = ghosts.last, last.batch != nil,
+              (Browsers.lastClosedAt ?? .distantPast) <= last.at else { return "Reopen Closed Tab" }
+        return "Reopen \(closedTitle(for: last))"
+    }
+
+    /// Everything one bulk close closed, back as it was: each tab
     /// at its place, the newest closed first, so each goes into the row as
     /// it stood just before that tab left it; a closed group comes back
     /// with its first tab, named as it was. They come back asleep, as last
@@ -3821,8 +3868,12 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
-    /// One of them by name, from the History menu.
+    /// One tab or bulk close, from the History menu.
     func reopen(_ ghost: Ghost) {
+        if let batch = ghost.batch {
+            reopen(batch: batch)
+            return
+        }
         ghosts.removeAll { $0.id == ghost.id }
         let tab = Tab(configuration: Web.configuration(space: spaceID))
         prepare(tab)
@@ -3862,7 +3913,8 @@ final class Browser: NSObject, ObservableObject {
     private func remember(_ tab: Tab, at index: Int, partner: Tab.ID? = nil, onLeft: Bool = false) {
         guard !tab.shy, let url = tab.address else { return }
         ghosts.append(Ghost(url: url, title: tab.title, index: index, groupID: tab.groupID,
-                            partner: partner, onLeft: onLeft, was: tab.id, batch: batching))
+                            partner: partner, onLeft: onLeft, was: tab.id, batch: batching?.id,
+                            kind: batching?.kind ?? .clear))
         // Twelve steps back, a Clear counting as one: its tabs come back
         // together or not at all, however many there were.
         var steps = Set<UUID>()
@@ -4179,7 +4231,7 @@ final class Browser: NSObject, ObservableObject {
         guard let at = tabGroups.firstIndex(where: { $0.id == id }) else { return }
         closedGroups[id] = (tabGroups[at], at)
         let going = tabs.filter { $0.groupID == id }
-        closingTogether { _ in
+        closingTogether(.group) { _ in
             for tab in going where !visibleTabIDs.contains(tab.id) { close(tab) }
             for tab in going where visibleTabIDs.contains(tab.id) { close(tab) }
         }

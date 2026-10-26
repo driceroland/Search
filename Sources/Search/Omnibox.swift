@@ -22,54 +22,62 @@ struct Omnibox: View {
     var fitted = false
 
     var body: some View {
-        if fitted {
-            GeometryReader { geometry in
-                content(width: min(Metrics.fieldWidth, max(0, geometry.size.width - 28)))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Group {
+            if fitted {
+                GeometryReader { geometry in
+                    content(width: min(Metrics.fieldWidth, max(0, geometry.size.width - 28)))
+                }
+            } else {
+                content(width: Metrics.fieldWidth)
             }
-        } else {
-            content(width: Metrics.fieldWidth)
         }
+        .allowsHitTesting(browser.fieldShowing)
     }
 
     private func content(width: CGFloat) -> some View {
         ZStack {
-            if over {
-                // The page is still there, just out of the way.
-                Rectangle()
-                    .fill(Palette.ground.opacity(0.74))
-                    .ignoresSafeArea(.all, edges: fitted ? [] : .all)
-                    .onTapGesture { browser.dismiss() }
-                    .transition(.opacity)
-            }
-
-            field
-                .frame(width: width)
-            // The list hangs below the field rather than stacking with it,
-            // so a list that grows never lifts the field out from under
-            // what is being typed.
-            .overlay(alignment: .top) {
-                // Present or gone, not always-on-and-hidden: the list keeps
-                // the appear and disappear it had, and the overlay is what
-                // keeps that from moving the field.
-                if !browser.offers.isEmpty || browser.siteOffer != nil {
-                    list
-                        .frame(width: width)
-                        .offset(y: Self.fieldHeight + 8)
+            // Keep the container mounted: only the field scales, while the
+            // page's cover fades without pulling its edges into view.
+            if browser.fieldShowing {
+                if over {
+                    // The page is still there, just out of the way.
+                    Rectangle()
+                        .fill(Palette.ground.opacity(0.74))
+                        .ignoresSafeArea(.all, edges: fitted ? [] : .all)
+                        .onTapGesture { browser.dismiss() }
+                        .transition(.opacity)
                 }
+
+                field
+                    .frame(width: width)
+                // The list hangs below the field rather than stacking with it,
+                // so a list that grows never lifts the field out from under
+                // what is being typed.
+                .overlay(alignment: .top) {
+                    // Present or gone, not always-on-and-hidden: the list keeps
+                    // the appear and disappear it had, and the overlay is what
+                    // keeps that from moving the field.
+                    if !browser.offers.isEmpty || browser.siteOffer != nil {
+                        list
+                            .frame(width: width)
+                            .offset(y: Self.fieldHeight + 8)
+                    }
+                }
+                // Lifted a little above centre: dead centre reads as low,
+                // because the strip at the top isn't part of what the eye is
+                // measuring.
+                .padding(.bottom, 60)
+                .transition(.scale(scale: 0.97).combined(with: .opacity))
+                // The list's arrival and its leaving are animated from here,
+                // briefly: nothing that changes the suggestions does it inside
+                // an animation of its own. Its rows follow what was typed or
+                // pasted at once — sliding into place on a spring between
+                // keystrokes, they trailed behind the field.
+                .animation(Motion.quick, value: browser.offers.isEmpty && browser.siteOffer == nil)
+                .animation(Motion.settle, value: refused)
             }
-            // Lifted a little above centre: dead centre reads as low,
-            // because the strip at the top isn't part of what the eye is
-            // measuring.
-            .padding(.bottom, 60)
-            // The list's arrival and its leaving are animated from here,
-            // briefly: nothing that changes the suggestions does it inside
-            // an animation of its own. Its rows follow what was typed or
-            // pasted at once — sliding into place on a spring between
-            // keystrokes, they trailed behind the field.
-            .animation(Motion.quick, value: browser.offers.isEmpty && browser.siteOffer == nil)
-            .animation(Motion.settle, value: refused)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var field: some View {
@@ -106,6 +114,10 @@ struct Omnibox: View {
             )
             .shadow(color: .black.opacity(0.06), radius: 24, y: 8)
             .modifier(Shake(travel: shake))
+            .onAppear {
+                shake = 0
+                refused = false
+            }
             .onChange(of: browser.refusals) { _, _ in
                 shake = 0
                 refused = true
