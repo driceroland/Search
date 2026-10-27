@@ -2125,10 +2125,13 @@ enum ExtensionShims {
         // worker a message for every frame the extension opens.
         if (!embedded && chrome.tabs && typeof chrome.tabs.getCurrent === "function") {
           const getCurrent = chrome.tabs.getCurrent.bind(chrome.tabs);
+          // Undefined outside a tab, as Chrome answers: WebKit answers null
+          // in the side panel, and Claude's panel, reading `.id` of what
+          // isn't undefined, said "Claude isn't available on this page".
           const current = () => Promise.resolve(getCurrent()).then((t) => {
             if (t && !(t.index >= 0 && t.index < 1e6)) { popup = true; return undefined; }
             if (t) popup = false;
-            return t;
+            return t || undefined;
           });
           current().catch(() => {});
           put(chrome.tabs, "getCurrent", (callback) => {
@@ -3216,6 +3219,43 @@ enum ExtensionShims {
           set(event, "hasListeners", () => listeners.size > 0);
           return port;
         };
+        // Every port, the extension's own or a website's content script's:
+        // its onMessage and onDisconnect listeners are handed the port its
+        // end was given (by onConnect, or by connect), as in Chrome. WebKit
+        // hands them another object for the same port, without what the
+        // extension kept on it: Vimium C keeps its state for each tab on the
+        // port onConnect gave ('port.s') and reads it back off the one its
+        // listener gets, so every key a page sent its worker threw there
+        // (`n.b` of undefined) and no key did anything (Sridhar, 1.0.7).
+        // Only the extension's own ports were handed theirs before, through
+        // `number`.
+        const pinned = new WeakSet();
+        const pin = (port, view) => {
+          if (!port || typeof port !== "object" || pinned.has(port)) return;
+          pinned.add(port);
+          for (const name of ["onMessage", "onDisconnect"]) {
+            const event = port[name];
+            if (!event || typeof event.addListener !== "function") continue;
+            const add = event.addListener, remove = event.removeListener;
+            const given = new Map();
+            const at = name === "onMessage" ? 1 : 0;
+            set(port, name, event);
+            set(event, "addListener", (f) => {
+              if (typeof f !== "function") return add.call(event, f);
+              if (given.has(f)) return;
+              const w = (...args) => { args[at] = view; return f(...args); };
+              given.set(f, w);
+              add.call(event, w);
+            });
+            set(event, "removeListener", (f) => {
+              const w = given.get(f);
+              given.delete(f);
+              try { remove.call(event, w || f); } catch (e) {}
+            });
+            set(event, "hasListener", (f) => given.has(f));
+            set(event, "hasListeners", () => given.size > 0);
+          }
+        };
         const connect = runtime.connect;
         // Only a port to the extension itself, and never a content script's:
         // another extension would hear the numbered wrapper, not the message,
@@ -3224,7 +3264,9 @@ enum ExtensionShims {
         // its messages from the extension.
         put(runtime, "connect", (...args) => {
           const port = connect.apply(runtime, args);
-          return inContent || (typeof args[0] === "string" && args[0] !== runtime.id) ? port : number(port);
+          const kept = inContent || (typeof args[0] === "string" && args[0] !== runtime.id) ? port : number(port);
+          pin(kept, kept);
+          return kept;
         });
         const onConnect = runtime.onConnect;
         const add = onConnect.addListener, remove = onConnect.removeListener, has = onConnect.hasListener;
@@ -3240,6 +3282,7 @@ enum ExtensionShims {
               port = fromOwn(port) ? number(port) : port;
               // WebKit makes a port's sender afresh at each look, over
               // anything set on the port: the port is seen through a proxy.
+              const target = port;
               if (sender !== given) {
                 port = new Proxy(port, { get: (target, key) => {
                   if (key === "sender") return sender;
@@ -3247,6 +3290,7 @@ enum ExtensionShims {
                   return typeof value === "function" ? value.bind(target) : value;
                 } });
               }
+              pin(target, port);
               return listener(port);
             };
             wrapped.set(listener, w);
@@ -4243,6 +4287,14 @@ enum ExtensionShims {
                 add("BACKGROUND", script.map { context.baseURL.appendingPathComponent($0) })
             }
             if ExtensionPopup.shared.extensionID == id { add("POPUP", ExtensionPopup.shared.view?.url) }
+            // Its panel, in each window that has it up. Not bound to one tab
+            // in what is said here (-1), which Chrome's panel opened for the
+            // whole window says too.
+            for browser in Browsers.all {
+                guard case .page(let owner, _, _) = browser.sidePanel, owner == id,
+                      let url = SidePanelPages.shared.web(in: browser)?.url else { continue }
+                add("SIDE_PANEL", url)
+            }
             found += ExtensionOffscreen.contexts(for: id, matching: filter)
             return found
 

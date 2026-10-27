@@ -26,7 +26,11 @@ extension written here does the same. What is checked:
   C's worker waited on it forever and turned every connection away, so its
   options stayed blank and its keys did nothing);
 - a port's onMessage listener is handed the port onConnect gave, not
-  another object for it (Vimium C reads its own state off it).
+  another object for it (Vimium C reads its own state off it);
+- the same for a website's content script's port, and for onDisconnect:
+  Vimium C's worker keeps each tab's state on the port its content script
+  opened ('port.s'), and every key a page sent it threw on the object WebKit
+  handed its listener instead, so no key did anything (Sridhar, 1.0.7).
 """
 import json
 import shutil
@@ -48,16 +52,39 @@ FILES = {
         "manifest_version": 3, "name": "Awaiting", "version": "1.0",
         "options_ui": {"page": "pages/options.html", "open_in_tab": True},
         "background": {"service_worker": "sw.js"},
+        "content_scripts": [{"matches": ["http://127.0.0.1/*"], "js": ["content.js"], "run_at": "document_idle"}],
     }),
+    # A website's content script: a port to the worker, a message on it, and
+    # a second port it closes. What comes back is written on the page.
+    "content.js": """
+const note = (k, v) => { document.documentElement.dataset[k] = JSON.stringify(v); };
+const port = chrome.runtime.connect({ name: 'tab' });
+port.onMessage.addListener((m, from) => { note(m.kind, { ...m, sameHere: from === port }); });
+port.postMessage('hello');
+const bye = chrome.runtime.connect({ name: 'bye' });
+bye.postMessage('first');
+setTimeout(() => { bye.disconnect(); setTimeout(() => port.postMessage('after-bye'), 500); }, 500);
+""",
     # Vimium C's worker: the platform asked for as getPlatformInfo.apply(0,
     # [callback]), and nothing answered on a port before it came back; what
     # it learns of a port is kept on the one onConnect handed it.
     "sw.js": """
 let platform = null;
 chrome.runtime.getPlatformInfo.apply(0, [(info) => { platform = info && info.os; }]);
+let leftWith = null;
 chrome.runtime.onConnect.addListener((port) => {
   port.mine = 'kept';
+  if (port.name === 'bye') {
+    port.onDisconnect.addListener((gone) => { leftWith = { same: gone === port, mine: gone && gone.mine }; });
+    return;
+  }
   port.onMessage.addListener((message, from) => {
+    if (port.name === 'tab') {
+      port.postMessage(message === 'after-bye'
+        ? { kind: 'bye', ...leftWith }
+        : { kind: 'tab', same: from === port, mine: from && from.mine });
+      return;
+    }
     port.postMessage({ platform, same: from === port, mine: from && from.mine });
   });
 });
@@ -161,6 +188,16 @@ def main():
         t.ok("the worker's getPlatformInfo applied to nothing calls back", got and got.get("platform") == "mac", got)
         t.ok("its port listener is handed the port onConnect gave it",
              got and got.get("same") is True and got.get("mine") == "kept", got)
+
+        site = sv.page("content-port")
+        got = value(site, "document.documentElement.dataset.tab || null")
+        got = json.loads(got) if isinstance(got, str) else got
+        t.ok("a content script's port: the worker's listener is handed the port onConnect gave",
+             got and got.get("same") is True and got.get("mine") == "kept", got)
+        t.ok("and the content script's own listener is handed its port", got and got.get("sameHere") is True, got)
+        got = value(site, "document.documentElement.dataset.bye || null", within=8)
+        got = json.loads(got) if isinstance(got, str) else got
+        t.ok("onDisconnect is handed that port too", got and got.get("same") is True and got.get("mine") == "kept", got)
 
         installed = Path(sv.SUPPORT, "Extensions", ext["id"], "pages")
         html = (installed / "single.html").read_text() + (installed / "classic.html").read_text()

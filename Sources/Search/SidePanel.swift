@@ -581,13 +581,17 @@ struct SidePanelView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 Rectangle().fill(Palette.hairline).frame(height: 1)
-                PanelPage(browser: browser)
+                PanelPage(web: SidePanelPages.shared.web(in: browser))
             }
         case .site:
             VStack(spacing: 0) {
-                if let delegate = SidePanelPages.shared.siteDelegate(in: browser) { SiteLine(browser: browser, delegate: delegate) }
+                // Its own line for each page made: a new site's line
+                // watches the new page, not the one let go.
+                if let delegate = SidePanelPages.shared.siteDelegate(in: browser) {
+                    SiteLine(browser: browser, delegate: delegate).id(ObjectIdentifier(delegate))
+                }
                 Rectangle().fill(Palette.hairline).frame(height: 1)
-                PanelPage(browser: browser)
+                PanelPage(web: SidePanelPages.shared.web(in: browser))
             }
         case nil:
             Color.clear
@@ -638,9 +642,13 @@ private struct SiteLine: View {
     }
 }
 
-/// The extension's page, in the panel.
+/// The page in the panel. It is handed the page itself, not the window:
+/// SwiftUI only updates a representable whose values changed, and the window
+/// stays the same object when another site (or the same one again, from
+/// View › Side Panel) replaces the page. Holding the window, the holder kept
+/// the page just let go, taken out of it, and the panel stayed white.
 private struct PanelPage: NSViewRepresentable {
-    let browser: Browser
+    let web: WKWebView?
 
     func makeNSView(context: Context) -> NSView {
         let holder = NSView()
@@ -651,7 +659,7 @@ private struct PanelPage: NSViewRepresentable {
     func updateNSView(_ holder: NSView, context: Context) { place(in: holder) }
 
     private func place(in holder: NSView) {
-        guard let web = SidePanelPages.shared.web(in: browser) else {
+        guard let web else {
             holder.subviews.forEach { $0.removeFromSuperview() }
             return
         }

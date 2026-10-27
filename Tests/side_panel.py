@@ -189,6 +189,16 @@ def main():
             wait(lambda: panel()["title"] == "The panel")
             t.ok(f"{kind}: its page is the extension's", panel()["title"] == "The panel" and panel()["page"].startswith(ext["base"].rstrip("/")), panel())
             t.ok(f"{kind}: no window without a gesture", st["opensWindows"] is False, st)
+            # Claude's panel asks where it is before anything else: no tab
+            # (undefined, as Chrome answers, not null) and listed as a
+            # SIDE_PANEL context, or it says "Claude isn't available on this page".
+            peval("window.__where = null; (async () => { const t = await chrome.tabs.getCurrent();"
+                  " const c = await chrome.runtime.getContexts({documentUrls: [location.href]});"
+                  " window.__where = JSON.stringify({tab: t === undefined ? 'undefined' : t, types: c.map(x => x.contextType)}) })(); 1")
+            wait(lambda: peval("window.__where"), within=3)
+            where = json.loads(peval("window.__where") or "{}")
+            t.ok(f"{kind}: in the panel, tabs.getCurrent() is undefined, as in Chrome", where.get("tab") == "undefined", where)
+            t.ok(f"{kind}: and runtime.getContexts lists it as a SIDE_PANEL", where.get("types") == ["SIDE_PANEL"], where)
 
             # With the page as a card: a card of its own on the right.
             r = box()

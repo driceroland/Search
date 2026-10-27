@@ -813,6 +813,39 @@ final class Extensions: NSObject, ObservableObject {
         return true
     }
 
+    struct RecordedError {
+        let domain: String
+        let code: Int
+        let text: String
+        let userInfo: [String: Any]
+    }
+
+    /// A context's errors, read as plain Objective-C objects. WebKit hands
+    /// them out as WKNSError, an NSProxy that forwards to an NSError it makes
+    /// on demand, not an NSError subclass. Bridging one through Swift's
+    /// `Error` (`context.errors`, then `as NSError`) went through
+    /// `_convertErrorToNSError`, which on macOS 15 returned a bad pointer
+    /// (0x8): 1.0.7 quit when 1Password's button recorded an error. Messages
+    /// sent through the proxy reach the real error, so nothing here casts.
+    nonisolated static func errors(of context: WKWebExtensionContext) -> [RecordedError] {
+        errors(in: context.value(forKey: "errors"))
+    }
+
+    nonisolated static func errors(in value: Any?) -> [RecordedError] {
+        guard let array = value as? NSArray else { return [] }
+        return (0..<array.count).compactMap { index in
+            let item = array.object(at: index) as AnyObject
+            guard item.responds(to: NSSelectorFromString("domain")),
+                  let domain = item.value(forKey: "domain") as? String else { return nil }
+            return RecordedError(
+                domain: domain,
+                code: (item.value(forKey: "code") as? NSNumber)?.intValue ?? 0,
+                text: (item.value(forKey: "localizedDescription") as? String) ?? "",
+                userInfo: (item.value(forKey: "userInfo") as? [String: Any]) ?? [:]
+            )
+        }
+    }
+
     /// WebKit records a worker that failed to start as an error on its
     /// context, and then doesn't try again: the extension would be dead
     /// until someone noticed. It is taken up afresh as soon as that shows.
@@ -823,9 +856,8 @@ final class Extensions: NSObject, ObservableObject {
         errorWatchers[id] = NotificationCenter.default.addObserver(forName: WKWebExtensionContext.errorsDidUpdateNotification, object: context, queue: .main) { [weak self, weak context] _ in
             MainActor.assumeIsolated {
                 guard let self, let context, self.contexts[id] === context else { return }
-                let failed = context.errors.contains { error in
-                    let e = error as NSError
-                    return e.domain == WKWebExtensionContext.errorDomain && e.code == WKWebExtensionContext.Error.backgroundContentFailedToLoad.rawValue
+                let failed = Extensions.errors(of: context).contains {
+                    $0.domain == WKWebExtensionContext.errorDomain && $0.code == WKWebExtensionContext.Error.backgroundContentFailedToLoad.rawValue
                 }
                 guard failed else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
