@@ -1417,6 +1417,16 @@ final class Browser: NSObject, ObservableObject {
     }
     @Published var recallHunt = ""
 
+    /// History › Clear Browsing Data…, from the menu, its shortcut, or
+    /// ⇧⌘Delete with a page editor focused. The clearing controls are part
+    /// of History, so the page comes out first; History opening afresh puts
+    /// the mode back to its list (see show), so the mode is set after it is
+    /// out, not before (#749).
+    func clearBrowsingData() {
+        recalling = true
+        recallMode = .clearing
+    }
+
     /// Cookies, caches, local storage — everything a site left on this Mac,
     /// in every space. Clearing it signs you out of everything, which is
     /// the point.
