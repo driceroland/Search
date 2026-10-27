@@ -130,7 +130,7 @@ enum SettingsIndex {
 
     // MARK: - rows
 
-    static let items: [SettingsItem] = [
+    static let items: [SettingsItem] = ([
         // General
         .init(id: "general.default", group: "browser", icon: "link.badge.plus",
               title: "Open links from other apps", detail: "Make Search the browser Mail, Slack and the rest send links to",
@@ -329,6 +329,14 @@ enum SettingsIndex {
               title: "Prevent cross-site tracking", detail: "As in Safari. Private tabs keep it on",
               more: "Off, sites you rarely open keep their sign-ins, and trackers inside other sites can follow you across them again, as in Chrome.",
               keys: ["sites.keep"], words: ["itp", "cookies", "tracking"]),
+        .init(id: "privacy.clickIDs", group: "blocking", icon: "scissors",
+              title: "Remove click trackers from links", detail: "gclid, fbclid and the like go before the page loads. Private tabs always",
+              more: "The IDs an ad network adds to a link so the site can tell whose click it was. Campaign tags (utm_) stay, as in Safari.",
+              keys: ["privacy.clickIDs"], words: ["gclid", "fbclid", "click id", "link tracking", "tracking parameters"]),
+        .init(id: "privacy.gpc", group: "blocking", icon: "hand.raised",
+              title: "Tell sites not to sell or share your data", detail: "Global Privacy Control, with every request. Private tabs always",
+              more: "Sends Sec-GPC: 1, which some laws make a site honour.",
+              keys: ["privacy.gpc"], words: ["gpc", "do not sell", "do not track", "dnt", "global privacy control"]),
         .init(id: "notifications.ask", group: "permissions", icon: "bell.badge",
               title: "Let sites ask to send notifications", detail: "Only a site you allow reaches your Mac's notifications",
               keys: ["notifications.ask"], words: ["notifications", "alerts", "push"]),
@@ -407,7 +415,17 @@ enum SettingsIndex {
         .init(id: "note.flick", group: "video", icon: "hand.raised.fingers.spread",
               title: "Flick the floating video to a corner", detail: "Always there: two fingers send it to the corner they point at",
               keys: ["float.flicks"], words: ["flick", "corner"], kind: .note, findOnly: true),
-    ]
+    ] as [SettingsItem]).filter(offered)
+
+    /// Rows for a feature this Mac's WebKit doesn't have aren't listed at
+    /// all, on the page or in the find field (see Privacy.swift).
+    private static func offered(_ item: SettingsItem) -> Bool {
+        switch item.id {
+        case "privacy.clickIDs": return ClickIDs.possible
+        case "privacy.gpc": return PrivacySignal.possible
+        default: return true
+        }
+    }
 
     static func item(_ id: String) -> SettingsItem? { items.first { $0.id == id } }
 

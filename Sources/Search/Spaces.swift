@@ -562,6 +562,11 @@ enum SpaceMenu {
     }
 
     static func show(for browser: Browser) {
+        menu(for: browser).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    /// The menu itself, for show() to pop up, and for the bench to read.
+    static func menu(for browser: Browser) -> NSMenu {
         actions = []
         let menu = NSMenu()
         for (index, space) in browser.spaces.enumerated() {
@@ -601,6 +606,18 @@ enum SpaceMenu {
             if at > 0 { menu.addItem(item("Move Left") { browser.moveSpace(here.id, to: at - 1) }) }
             if at < browser.spaces.count - 1 { menu.addItem(item("Move Right") { browser.moveSpace(here.id, to: at + 1) }) }
         }
+        // Every group of this space, folded or opened at once, as in Arc.
+        if browser.prefs.usesTabGroups, !browser.tabGroups.isEmpty {
+            menu.addItem(.separator())
+            let fold = item("Fold All Groups") { browser.foldAllGroups(true) }
+            fold.isEnabled = browser.canFoldAllGroups
+            let unfold = item("Unfold All Groups") { browser.foldAllGroups(false) }
+            unfold.isEnabled = browser.canUnfoldAllGroups
+            menu.autoenablesItems = false
+            menu.addItem(fold)
+            menu.addItem(unfold)
+            menu.addItem(.separator())
+        }
         let folder = here.downloads.map { URL(fileURLWithPath: $0).lastPathComponent }
         menu.addItem(item(folder.map { "Downloads to “\($0)”…" } ?? "Downloads Folder…") {
             Ask.folder { browser.setSpaceDownloads(here.id, to: $0) }
@@ -616,7 +633,7 @@ enum SpaceMenu {
                 }
             })
         }
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        return menu
     }
 }
 

@@ -274,6 +274,22 @@ final class Preferences: ObservableObject {
             Store.keepsSignIns = keepsSignIns
         }
     }
+    /// Global Privacy Control sent with every request (see Privacy.swift).
+    /// On unless turned off.
+    @Published var sendsPrivacySignal: Bool {
+        didSet {
+            store.set(sendsPrivacySignal, forKey: "privacy.gpc")
+            PrivacySignal.on = sendsPrivacySignal
+        }
+    }
+    /// Ad-click IDs taken off links before the page loads (see
+    /// Privacy.swift). On unless turned off.
+    @Published var removesClickIDs: Bool {
+        didSet {
+            store.set(removesClickIDs, forKey: "privacy.clickIDs")
+            ClickIDs.on = removesClickIDs
+        }
+    }
     /// Whether sites may ask for a passkey here. Off sends them to the
     /// password instead — the only thing that works in a build without
     /// Apple's browser entitlement.
@@ -656,6 +672,12 @@ final class Preferences: ObservableObject {
         // Before the first page is loaded into the store.
         Store.keepsSignIns = keeps
         Spaces.everyStore.forEach(Store.followCookies)
+        let signals = store.object(forKey: "privacy.gpc") as? Bool ?? true
+        sendsPrivacySignal = signals
+        PrivacySignal.on = signals
+        let removes = store.object(forKey: "privacy.clickIDs") as? Bool ?? true
+        removesClickIDs = removes
+        ClickIDs.on = removes
         // Offered by default only in a build that can actually do them —
         // one with Apple's browser entitlement and its profile embedded. A
         // choice made under the other kind of build is not a choice about

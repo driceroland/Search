@@ -153,6 +153,13 @@ struct SearchApp: App {
                         Text(glyph.title).tag(glyph)
                     }
                 }
+                // Every group of the space on screen, folded or opened at once.
+                Button("Fold All Groups") { browser.foldAllGroups(true) }
+                    .shortcut("view.foldGroups")
+                    .disabled(!browser.canFoldAllGroups)
+                Button("Unfold All Groups") { browser.foldAllGroups(false) }
+                    .shortcut("view.unfoldGroups")
+                    .disabled(!browser.canUnfoldAllGroups)
                 Divider()
                 Button("Reload Page") { browser.reload() }
                     .shortcut("view.reload")
@@ -1386,6 +1393,18 @@ struct ContentView: View {
             // One step at a time: the list first, then the field.
             if browser.picked != nil {
                 browser.picked = nil
+                return true
+            }
+            // Something typed into a new tab: Escape clears it first, the
+            // tab staying where it is, as in Arc and Safari; the next Escape
+            // finds the tab unused and takes it away (below). Before, a typed
+            // word left Escape with nothing to do on a new tab.
+            if let blank = browser.active, blank.isBlank, browser.editingTab == nil,
+               !browser.typed.isEmpty || browser.siteChip != nil {
+                browser.siteChip = nil
+                browser.picked = nil
+                browser.typed = ""
+                blank.draft = ""
                 return true
             }
             // A new tab never sent anywhere is itself what is open: Escape
