@@ -1704,7 +1704,25 @@ enum ExtensionShims {
           pending.then((id) => callback(id), (error) => withLastError(error, callback));
         });
       }
+      const ownPanel = !chrome.sidePanel;
       define("sidePanel", ["open", "close", "setOptions", "getOptions", "setPanelBehavior", "getPanelBehavior"]);
+      // A tab's own panel options, and which of Search's tabs that is: the
+      // button asks the tab in front, which has no number on Search's side.
+      // Told after the options themselves, so a sidePanel.open right after
+      // setOptions still finds them.
+      if (ownPanel && chrome.sidePanel && chrome.tabs && typeof chrome.tabs.get === "function") {
+        const setOptions = chrome.sidePanel.setOptions;
+        put(chrome.sidePanel, "setOptions", (options, ...rest) => {
+          const answer = setOptions(options, ...rest);
+          const tabId = options && options.tabId;
+          if (typeof tabId === "number") {
+            Promise.all([chrome.tabs.get(tabId), frames()])
+              .then(([tab, known]) => tab && native("sidePanel.placed", [tabId, placeOf(tab, known)]))
+              .catch(() => {});
+          }
+          return answer;
+        });
+      }
       define("offscreen", ["createDocument", "closeDocument", "hasDocument"], [],
         { Reason: new Proxy({}, { get: (_, key) => String(key) }) });
       define("tabGroups", ["get", "query", "update", "move"],
@@ -3773,6 +3791,9 @@ enum ExtensionShims {
     static var panelOff: Set<String> = []
     /// What setOptions said for one tab, by the extension's tab id.
     static var panelTabs: [String: [Int: (path: String?, enabled: Bool?)]] = [:]
+    /// Which of Search's tabs each of those tab ids is, as the extension's
+    /// shim found it (sidePanel.placed).
+    static var panelTabIDs: [String: [Int: Tab.ID]] = [:]
     /// One voice for every extension that reads aloud.
     static let speaker = NSSpeechSynthesizer()
 
@@ -4113,6 +4134,11 @@ enum ExtensionShims {
             return nil
         case "sidePanel.getPanelBehavior":
             return ["openPanelOnActionClick": panelOnClick.contains(id)]
+        case "sidePanel.placed":
+            if let number = first as? Int, let tab = located(args.dropFirst().first, context: context, owner: owner) {
+                panelTabIDs[id, default: [:]][number] = tab.id
+            }
+            return nil
         case "sidePanel.open":
             // For a tab, its own page when it was given one, and the panel
             // goes with that tab; otherwise the window's.
@@ -4885,22 +4911,39 @@ enum ExtensionShims {
         return url
     }
 
-    /// The extension's button, for one that asked for its panel on a
-    /// press (openPanelOnActionClick): its panel up, or down again.
-    static func openPanel(_ context: WKWebExtensionContext, owner: Extensions) {
+    /// The panel the extension's button opens over `tab`, as Chrome decides
+    /// it: the tab's own options over the extension's, and none where the
+    /// panel is turned off. `own`: the tab's own page, which goes with it.
+    static func actionPanel(_ context: WKWebExtensionContext, over tab: Tab.ID?) -> (url: URL, own: Bool)? {
         let id = context.uniqueIdentifier
-        guard !panelOff.contains(id), let path = panelPath[id] ?? defaultPanel(context) else { return }
-        // Resolved, not appended: a path can carry a query — Claude's names
-        // the tab its panel is for, sidepanel.html?tabId=… — which appended
-        // would be escaped into the file's name.
-        guard let url = ExtensionShims.page(path, in: context) else { return }
+        let number = tab.flatMap { tab in panelTabIDs[id]?.filter { $0.value == tab }.map(\.key).max() }
+        let own = number.flatMap { panelTabs[id]?[$0] }
+        guard own?.enabled ?? !panelOff.contains(id),
+              let path = own?.path ?? panelPath[id] ?? defaultPanel(context),
+              // Resolved, not appended: a path can carry a query — Claude's
+              // names the tab its panel is for, sidepanel.html?tabId=… —
+              // which appended would be escaped into the file's name.
+              let url = ExtensionShims.page(path, in: context)
+        else { return nil }
+        return (url, own?.path != nil)
+    }
+
+    /// The extension's button, for one that asked for its panel on a
+    /// press (openPanelOnActionClick): its panel up, or down again. False
+    /// when it has no panel turned on over the tab in front: then, as in
+    /// Chrome, the press is the extension's (action.onClicked). ChatGPT's
+    /// keeps its panel off on every tab and turns it on for the one its
+    /// button was pressed on.
+    @discardableResult
+    static func openPanel(_ context: WKWebExtensionContext, owner: Extensions) -> Bool {
+        guard let browser = owner.browser, let panel = actionPanel(context, over: browser.activeID) else { return false }
         // In the side panel; a tab of its own if the panel can't be made,
         // as before there was a panel to put it in. Beside a private tab
         // this extension may not see, the button does nothing.
-        guard let browser = owner.browser else { return }
-        if browser.toggleSidePanel(context, url: url) == .noPanel {
-            browser.open(url, foreground: true)
+        if browser.toggleSidePanel(context, url: panel.url, for: panel.own ? browser.activeID : nil) == .noPanel {
+            browser.open(panel.url, foreground: true)
         }
+        return true
     }
 
     // MARK: - bookmarks, as Chrome shapes them

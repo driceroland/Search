@@ -351,7 +351,7 @@ struct SearchApp: App {
                 Button("Downloads…") { browser.hoarding = true }
                     .shortcut("history.downloads")
                 Divider()
-                Button("Clear Browsing Data…") { browser.recallMode = .clearing }
+                Button("Clear Browsing Data…") { browser.clearBrowsingData() }
                     .shortcut("history.clearData")
                 Button("Clear History") { browser.clearHistory() }
                     .shortcut("history.clear")
@@ -1559,7 +1559,7 @@ struct ContentView: View {
 
         // Keep the clearing controls reachable from a focused page editor.
         if shifted, event.keyCode == 51 {
-            browser.recallMode = .clearing
+            browser.clearBrowsingData()
             return true
         }
 

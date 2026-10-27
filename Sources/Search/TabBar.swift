@@ -352,7 +352,7 @@ struct TabBar: View {
         } else {
             TabPill(browser: browser, prefs: browser.prefs, tab: tab,
                     live: tab.id == activeID, width: width, room: room, pill: pill,
-                    close: interactive ? { browser.close(tab) } : {})
+                    close: interactive ? { browser.closeTab(tab) } : {})
         }
     }
 

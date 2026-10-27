@@ -620,6 +620,34 @@ final class Bench {
             answer(["quitting": true])
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
 
+        case "alive":
+            // What is still in memory: tabs, their page views, and the web
+            // processes those views run in, against what the rows hold. A
+            // closed tab or window should leave nothing behind here
+            // (Tests/memory_close.py). Read a turn later, once whatever the
+            // close let go of has been released. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "alive only works on a --test run"]); return }
+            DispatchQueue.main.async {
+                let pages = Web.pages.allObjects
+                let pids = Set(pages.compactMap { $0.value(forKey: "_webProcessIdentifier") as? Int }.filter { $0 > 0 })
+                // The shared helpers too, where this WebKit names them.
+                let ask: (NSObject?, String) -> Int = { object, name in
+                    guard let object, object.responds(to: NSSelectorFromString(name)) else { return 0 }
+                    return object.value(forKey: name) as? Int ?? 0
+                }
+                answer([
+                    "tabs": Tab.live.allObjects.count,
+                    "pages": pages.count,
+                    "processes": pids.sorted(),
+                    "inRows": Browsers.all.reduce(0) { $0 + $1.tabs.count + $1.parkedTabs.count },
+                    "built": Browsers.all.reduce(0) { $0 + ($1.tabs + $1.parkedTabs).filter { $0.built != nil }.count },
+                    "windows": Browsers.all.count,
+                    "urls": pages.map { $0.url?.absoluteString ?? "" },
+                    "gpu": pages.map { ask($0, "_gpuProcessIdentifier") }.first { $0 > 0 } ?? 0,
+                    "network": pages.map { ask($0.configuration.websiteDataStore, "_networkProcessIdentifier") }.first { $0 > 0 } ?? 0,
+                ])
+            }
+
         case "windows":
             // The windows, oldest first, and what the tests do to them. Only
             // on a SEARCH_PROBE run: it opens and closes windows.
@@ -2289,6 +2317,77 @@ final class Bench {
                 answer(["ok": true])
             }
 
+        case "columnscroll":
+            // The column's rows and their scroll (Side.swift, idea 443): the
+            // room under the pins, what the rows add up to and measure,
+            // whether they scroll, and where. "wheel": DY points of a mouse
+            // wheel, handed to whatever lies under the middle of the column
+            // ("y" from the window's top) as AppKit would hand it, so a row
+            // that swallowed the wheel would show. Positive goes down the
+            // list. Nothing is shown or brought forward. Test runs only.
+            guard Store.testing else { answer(["error": "columnscroll only works on a --test run"]); return }
+            guard let window = browser.window ?? Links.window, let frame = window.contentView?.superview,
+                  browser.prefs.sidebar
+            else { answer(["error": "columnscroll needs the tabs down the side"]); return }
+            let width = Double(browser.prefs.columnWidth), whole = Double(window.frame.width)
+            let onRight = browser.prefs.sidePosition == .right
+            func scrolls(in view: NSView) -> [NSScrollView] {
+                (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrolls)
+            }
+            func column() -> NSScrollView? {
+                scrolls(in: frame).first { view in
+                    let rect = view.convert(view.bounds, to: nil)
+                    return rect.height > 60 && Double(rect.width) <= width + 1
+                        && (onRight ? Double(rect.minX) >= whole - width - 1 : Double(rect.maxX) <= width + 1)
+                }
+            }
+            func report() {
+                var out: [String: Any] = ["measured": SideBar.measured.mapValues(Double.init),
+                                          "height": Double(window.frame.height), "scrolls": false,
+                                          "lines": KeepLine.drawn]
+                out["all"] = scrolls(in: frame).map { view in
+                    let rect = view.convert(view.bounds, to: nil)
+                    return [Double(rect.minX), Double(rect.minY), Double(rect.width), Double(rect.height)]
+                }
+                if let scroll = column(), let document = scroll.documentView {
+                    out["scrolls"] = true
+                    out["offset"] = Double(scroll.contentView.bounds.minY)
+                    out["visible"] = Double(scroll.contentView.bounds.height)
+                    out["content"] = Double(document.frame.height)
+                }
+                answer(out)
+            }
+            // "peek": the column folded away (⌘S) and out over the page, as
+            // the pointer at the edge brings it, or back in and unfolded.
+            if let out = request["peek"] as? Bool {
+                if out != browser.folded { browser.toggleFold() }
+                browser.peek(out)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { report() }
+                return
+            }
+            guard let dy = request["wheel"] as? Double else { report(); return }
+            let x = onRight ? whole - width / 2 : width / 2
+            let y = request["y"] as? Double ?? Double(window.frame.height) / 2
+            let point = NSPoint(x: x, y: Double(window.frame.height) - y)
+            guard let under = frame.hitTest(frame.convert(point, from: nil)) else { answer(["error": "nothing under the column there"]); return }
+            // Notches of 10 points, as a wheel sends them: down the list is
+            // the wheel turned towards you, a negative delta.
+            var left = dy
+            func turn() {
+                guard abs(left) > 0.5 else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { report() }
+                    return
+                }
+                let step = left > 0 ? min(left, 10) : max(left, -10)
+                left -= step
+                if let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: Int32(-step), wheel2: 0, wheel3: 0) {
+                    cg.location = CGPoint(x: window.frame.minX + point.x, y: (NSScreen.screens.first?.frame.height ?? 0) - (window.frame.minY + point.y))
+                    if let event = NSEvent(cgEvent: cg) { under.scrollWheel(with: event) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { turn() }
+            }
+            turn()
+
         case "place":
             // A tab put at another place in the row, as a drag would.
             guard let id = request["id"] as? String, let to = request["to"] as? Int,
@@ -3512,7 +3611,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }
@@ -3702,6 +3801,13 @@ final class Bench {
         case "close":
             guard let page = tab() else { answer(["error": "split close needs id"]); return }
             browser.close(page)
+            reply()
+
+        case "closeTab":
+            // Close Tab as a hand asks for it — ⌘W, the row's cross, its
+            // menu — where a tab in a group is put away (Browser.closeTab).
+            guard let page = tab() else { answer(["error": "split closeTab needs id"]); return }
+            browser.closeTab(page)
             reply()
 
         case "newTab":

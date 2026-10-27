@@ -20,6 +20,10 @@ import WebKit
 // notifications, which a page asleep couldn't (#569). Five spaces of five
 // pins was twenty-five pages that never let go.
 //
+// With the last window closed and the app still running, there is nothing
+// on screen to wait for: the tabs the same rules let go sleep at once (see
+// sleepShut), and the ones on screen wake when the window comes back.
+//
 // Half an hour is Normal. Settings › Tabs › How soon tabs sleep makes it
 // two hours (Later) or ten minutes (Sooner).
 //
@@ -114,10 +118,36 @@ extension Browser {
         for tab in idle { self.sleep(tab) }
     }
 
+    /// The last window closed with the app running (Browsers.closing):
+    /// nothing is on screen any more, so every tab the rules here let go
+    /// sleeps now rather than half an hour on, as Safari and Chrome close
+    /// theirs. The tabs stay, with their history, place and picture, for
+    /// the window that comes back (see `shut`). One playing sound, on a
+    /// call, downloading, with its video out or holding something typed
+    /// stays awake, as it would at any other time. A page still loading is
+    /// looked at once more a little later.
+    func sleepShut(again: Bool = true) {
+        guard prefs.sleepsTabs, shut else { return }
+        var loading = false
+        for tab in tabs + parkedTabs {
+            if awake(because: tab) == "still loading" { loading = true }
+            sleep(tab)
+        }
+        guard again, loading else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.sleepShut(again: false) }
+    }
+
+    /// The window back after `sleepShut`: the tabs it shows wake, the others
+    /// wait to be looked at, as after a launch.
+    func wakeShown() {
+        for tab in tabs where visibleTabIDs.contains(tab.id) { _ = tab.wake() }
+    }
+
     /// Why a tab has to stay awake — nil when nothing keeps it. The clock is
     /// the caller's business; this is everything else.
     func awake(because tab: Tab) -> String? {
-        if visibleTabIDs.contains(tab.id) { return "on screen" }
+        // With the last window closed (`shut`) nothing is on screen.
+        if !shut, visibleTabIDs.contains(tab.id) { return "on screen" }
         if tab.pin != nil, let kept = pinKept(tab) { return kept }
         if tab.bench { return "a bench tab" }
         if tab.isBlank { return "blank" }
@@ -142,9 +172,10 @@ extension Browser {
     }
 
     /// Why a pin stays awake: always in the space on screen; in one you
-    /// aren't in, only while its site may send notifications.
+    /// aren't in, or with the last window closed, only while its site may
+    /// send notifications.
     private func pinKept(_ tab: Tab) -> String? {
-        guard parked.values.contains(where: { $0.tabs.contains { $0 === tab } }) else { return "pinned" }
+        guard shut || parked.values.contains(where: { $0.tabs.contains { $0 === tab } }) else { return "pinned" }
         return mayNotify(tab) ? "pinned, and its site may send notifications" : nil
     }
 

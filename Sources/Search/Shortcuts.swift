@@ -261,7 +261,7 @@ struct Command: Identifiable {
 
         Command("history.show", "Show History…", .history, KeyCombo("y")) { $0.recalling = true },
         Command("history.downloads", "Downloads…", .history, KeyCombo("j", shift: true)) { $0.hoarding = true },
-        Command("history.clearData", "Clear Browsing Data…", .history, KeyCombo("delete", shift: true)) { $0.recallMode = .clearing },
+        Command("history.clearData", "Clear Browsing Data…", .history, KeyCombo("delete", shift: true)) { $0.clearBrowsingData() },
         Command("history.clear", "Clear History", .history, nil) { $0.clearHistory() },
     ] + (1...9).map { number in
         Command("spaces.\(number)", "Space \(number)", .spaces,

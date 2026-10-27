@@ -110,7 +110,8 @@ struct IconTile: View {
         let _ = Bench.count("row")
         ZStack {
             if closable && hovering {
-                Image(systemName: "xmark")
+                // Put away rather than closed, in a group (Browser.closeTab).
+                Image(systemName: browser.putsAway(tab) ? "minus" : "xmark")
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(Palette.muted)
                     .frame(width: 15, height: 15)
@@ -287,7 +288,7 @@ struct IconPair: View {
 
     private func half(_ tab: Tab) -> some View {
         IconTile(browser: browser, prefs: prefs, tab: tab, live: focused == tab.id, pill: pill,
-                 close: { browser.close(tab) }, interactive: interactive, half: true)
+                 close: { browser.closeTab(tab) }, interactive: interactive, half: true)
             .background {
                 if focused == tab.id {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)

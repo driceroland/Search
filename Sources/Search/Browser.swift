@@ -1417,6 +1417,16 @@ final class Browser: NSObject, ObservableObject {
     }
     @Published var recallHunt = ""
 
+    /// History › Clear Browsing Data…, from the menu, its shortcut, or
+    /// ⇧⌘Delete with a page editor focused. The clearing controls are part
+    /// of History, so the page comes out first; History opening afresh puts
+    /// the mode back to its list (see show), so the mode is set after it is
+    /// out, not before (#749).
+    func clearBrowsingData() {
+        recalling = true
+        recallMode = .clearing
+    }
+
     /// Cookies, caches, local storage — everything a site left on this Mac,
     /// in every space. Clearing it signs you out of everything, which is
     /// the point.
@@ -2070,7 +2080,10 @@ final class Browser: NSObject, ObservableObject {
         didSet { if window != nil { shut = false } }
     }
     /// Its window closed and kept: the last one, closed with the app running.
-    var shut = false
+    /// Its tabs sleep meanwhile (see sleepShut); back, the ones it shows wake.
+    var shut = false {
+        didSet { if oldValue, !shut { wakeShown() } }
+    }
     /// Its window is there to be seen — on screen, or behind a hidden app.
     var isOpen: Bool { window != nil && !shut }
     /// Its window fills the screen. macOS takes the window's buttons away
@@ -3572,7 +3585,58 @@ final class Browser: NSObject, ObservableObject {
         if launching { dismiss(); return }
         if peekTab != nil { closePeek() }
         else if closePanel() { return }
-        else if let tab = active { close(tab) }
+        else if let tab = active { closeTab(tab) }
+    }
+
+    /// Close Tab as a hand asks for it: ⌘W, the cross or a middle click on
+    /// the row, the tab's menu. A tab in a group is put away rather than
+    /// closed, as Arc keeps a folder's tabs (idea 398): its page is let go,
+    /// its row stays in the group, and a click opens it again at the page it
+    /// was on. Asked again of a row already put away, it goes for good,
+    /// remembered for ⇧⌘T, as Arc's cross on a folder tab that isn't open
+    /// deletes it. Everything that closes many at once (Close Other Tabs,
+    /// Close Tabs Below, Clear, Close Group) and every close the browser
+    /// makes on its own still closes with close(_:).
+    func closeTab(_ tab: Tab) {
+        if putsAway(tab) { putAway(tab) } else { close(tab) }
+    }
+
+    /// Whether Close Tab puts this tab away rather than closing it: a page
+    /// open in a group, with groups on. Not an empty tab, which has nothing
+    /// to come back to, nor one already put away or asleep: that one goes.
+    func putsAway(_ tab: Tab) -> Bool {
+        prefs.usesTabGroups && group(of: tab) != nil && !tab.asleep && !tab.isBlank && !tab.bench
+            && tab.address != nil
+    }
+
+    /// A grouped tab's page let go where it stands, as a pin is put down:
+    /// out of its pair, if it was in one, the row left in the group, and you
+    /// on whatever you were looking at before. It comes back at the address
+    /// it had: a tab in a group keeps no page of its own to go home to, as a
+    /// pin does, so this is where it was, not where it was when grouped.
+    func putAway(_ tab: Tab) {
+        guard tabs.contains(where: { $0.id == tab.id }) else { return }
+        detachSplit(tab)
+        heldDialogs.removeValue(forKey: tab.id)?.forEach { $0.dismiss() }
+        dropQuestions(for: tab.id)
+        if floating == tab.id { land(covering: false) }
+        tab.rest()
+        if activeID == tab.id { leave(tab) }
+        writeSession(now: true)
+    }
+
+    /// Off a pin or a grouped tab just put away, onto the tab looked at last.
+    /// Ordinary tabs first. Falling back to the most recent tab of any kind
+    /// meant closing one pin landed you on another pin, and ⌘W bounced
+    /// between the two instead of getting you out of them.
+    private func leave(_ tab: Tab) {
+        let others = tabs.filter { $0.id != tab.id && !$0.asleep }
+        let loose = others.filter { $0.pin == nil }
+        if let back = (loose.isEmpty ? others : loose).max(by: { $0.touched < $1.touched }) {
+            select(back)
+        } else {
+            newTab()
+        }
     }
 
     /// ⇧⌘W: the whole window, its tabs with it, as the red button closes it.
@@ -3613,16 +3677,7 @@ final class Browser: NSObject, ObservableObject {
             // their site, as Arc's pins are: the pin wakes on the page it was
             // pinned at, not wherever its links had taken it.
             tab.rest(at: prefs.pinsGoHome || prefs.pinsPeek ? tab.home : nil)
-            // Ordinary tabs first. Falling back to the most recent tab of any
-            // kind meant closing one pin landed you on another pin, and ⌘W
-            // bounced between the two instead of getting you out of them.
-            let others = tabs.filter { $0.id != tab.id && !$0.asleep }
-            let loose = others.filter { $0.pin == nil }
-            if let back = (loose.isEmpty ? others : loose).max(by: { $0.touched < $1.touched }) {
-                select(back)
-            } else {
-                newTab()
-            }
+            leave(tab)
             writeSession(now: true)
             return
         }
@@ -4555,8 +4610,9 @@ final class Browser: NSObject, ObservableObject {
         switch action {
         case .close:
             // A pin not on screen is put down where it is and keeps its
-            // card, as ⌘W puts one down, without taking you anywhere.
-            if tab.pin != nil, id != activeID, partner == nil {
+            // card, as ⌘W puts one down, without taking you anywhere; a tab
+            // in a group is put away the same way (closeTab).
+            if tab.pin != nil || putsAway(tab), id != activeID, partner == nil {
                 tab.rest()
                 writeSession(now: true)
                 return switcher.redraw()

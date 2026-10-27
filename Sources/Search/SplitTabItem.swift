@@ -117,7 +117,7 @@ struct SplitTabItem: View {
                 .frame(width: 15, height: 15)
                 .background(Palette.ink.opacity(0.07), in: Circle())
                 .overlay {
-                    CloseClick(armed: true) { browser.close(tab) }
+                    CloseClick(armed: true) { browser.closeTab(tab) }
                         .frame(width: 30, height: 28)
                 }
                 .padding(.trailing, 7)
@@ -187,13 +187,13 @@ private struct SplitTabHalf: View {
                 }
             }
             .overlay {
-                if interactive { MiddleClick { browser.close(tab) } }
+                if interactive { MiddleClick { browser.closeTab(tab) } }
             }
             .onHover { over in
                 if over { hovered = tab.id } else if hovered == tab.id { hovered = nil }
             }
             .contextMenu {
-                if interactive { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
+                if interactive { TabMenu(browser: browser, tab: tab, close: { browser.closeTab(tab) }) }
             }
             .background {
                 if interactive && browser.prefs.splitView {
@@ -209,7 +209,7 @@ private struct SplitTabHalf: View {
             .accessibilityValue(focused ? "Focused page" : "")
             .accessibilityHint(interactive ? "Click to focus this page; right-click for tab actions" : "")
             .accessibilityAction(named: "Focus page") { browser.focusPane(tab) }
-            .accessibilityAction(named: "Close tab") { if interactive { browser.close(tab) } }
+            .accessibilityAction(named: "Close tab") { if interactive { browser.closeTab(tab) } }
             .help(title)
     }
 
@@ -327,7 +327,7 @@ private struct SplitTabHalf: View {
             .background(hovering ? Palette.ink.opacity(0.07) : .clear, in: Circle())
             .opacity(hovering ? 1 : 0)
             .overlay {
-                CloseClick(armed: hovering) { browser.close(tab) }
+                CloseClick(armed: hovering) { browser.closeTab(tab) }
                     .frame(width: 26, height: height)
             }
     }

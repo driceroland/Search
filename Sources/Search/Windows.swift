@@ -305,10 +305,11 @@ enum Browsers {
 
     // MARK: - closing
 
-    /// A window is closing. The last one on screen stays as it is, its
-    /// browser kept, as the one window always was: opened again, it has its
-    /// tabs. One closed while others stay open goes, tabs and all, and ⇧⌘T
-    /// can bring it back.
+    /// A window is closing. The last one on screen stays, its browser kept,
+    /// as the one window always was: opened again, it has its tabs, their
+    /// pages asleep meanwhile but for what can't be (see sleepShut). One
+    /// closed while others stay open goes, tabs and all, and ⇧⌘T can bring
+    /// it back.
     /// The app is quitting: windows closing are not windows closed.
     static var quitting = false
 
@@ -323,10 +324,13 @@ enum Browsers {
         }
         let others = all.filter { $0 !== browser && $0.isOpen && !$0.isPopup }
         guard !others.isEmpty else {
-            // The last one: kept, tabs and all, and written down now.
+            // The last one: kept, tabs and all, and written down now. Its
+            // pages sleep, as Safari and Chrome close theirs: the tabs are
+            // there when it comes back, the one in front woken.
             browser.shut = true
             browser.flushSession()
             save(now: true)
+            browser.sleepShut()
             return
         }
         retire(browser)
