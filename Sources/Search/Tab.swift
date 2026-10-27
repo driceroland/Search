@@ -1431,7 +1431,6 @@ final class Tab: ObservableObject, Identifiable {
         picture = nil
         reading = 0
         noisy = false
-        stilled = false
         stale = false
         pull = nil
         // Loading about:blank here looked like letting the page go, and
@@ -1930,6 +1929,8 @@ final class Tab: ObservableObject, Identifiable {
         quiet?.invalidate()
         quiet = nil
         media.forget()
+        // What the player paused went with the page: nothing to play again.
+        stilled = false
         guard let web = built else { return }
         (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
