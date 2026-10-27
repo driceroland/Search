@@ -58,6 +58,33 @@ PANEL = f"""<!doctype html><title>The panel</title>
 """
 
 
+def make_later():
+    """An extension whose panel is off on every tab, as ChatGPT's is, until
+    its button's onClicked turns it on for the tab and opens it."""
+    folder = work / "PanelLater"
+    folder.mkdir(exist_ok=True)
+    (folder / "manifest.json").write_text(json.dumps({
+        "manifest_version": 3, "name": "Panel Later", "version": "1.0",
+        "permissions": ["sidePanel", "tabs"],
+        "action": {"default_title": "Panel Later"},
+        "side_panel": {"default_path": "waiting.html"},
+        "background": {"service_worker": "worker.js"},
+    }))
+    (folder / "waiting.html").write_text("<!doctype html><title>waiting</title>")
+    (folder / "work.html").write_text("<!doctype html><title>work</title>")
+    (folder / "worker.js").write_text("""
+chrome.sidePanel.setOptions({ enabled: false });
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+chrome.tabs.query({}).then((tabs) => tabs.forEach((tab) =>
+  chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false, path: "work.html" })));
+chrome.action.onClicked.addListener((tab) => {
+  chrome.sidePanel.setOptions({ tabId: tab.id, enabled: true, path: "work.html" });
+  chrome.sidePanel.open({ tabId: tab.id });
+});
+""")
+    return str(folder)
+
+
 def installed(): return sv.cmd({"do": "extensions"})["extensions"]
 
 
@@ -297,6 +324,26 @@ def main():
             sv.cmd({"do": "eval", "id": page2, "js": "chrome.sidePanel.setPanelBehavior({openPanelOnActionClick: true}); 1"}); time.sleep(0.6)
             press(gone); time.sleep(1.5)
             t.ok("fallback: a panel that can't load opens as a tab", not up() and opened("/missing.html") == 1, (panel(), urls()))
+
+            # ChatGPT's way: the button asked to open the panel, but the panel
+            # is off everywhere until the extension's onClicked turns it on
+            # for the tab pressed on. As in Chrome, a press over a tab with no
+            # panel turned on is the extension's, and the panel then opens.
+            sv.cmd({"do": "ext-remove", "id": gone["id"]}); time.sleep(0.6)
+            sv.sp("select", id=a); time.sleep(0.5)
+            later = add(make_later(), "Panel Later")
+            time.sleep(2.0)
+            press(later); time.sleep(1.0)
+            st = panel()
+            t.ok("off until clicked: the press reaches the extension, which opens its panel",
+                 st["shown"] and st["content"]["kind"] == "page" and st["content"]["url"].endswith("/work.html")
+                 and st["content"]["tab"] != "" and opened("/work.html") == 0, (st, urls()))
+            press(later)
+            t.ok("off until clicked: turned on for this tab, the button again closes it", not up(), panel())
+            press(later)
+            t.ok("off until clicked: and opens it again", up() and panel()["content"]["url"].endswith("/work.html"), panel())
+            panel("close"); time.sleep(0.4)
+            sv.cmd({"do": "ext-remove", "id": later["id"]}); time.sleep(0.6)
 
             # The width, as left: kept within 300–640.
             sv.quit()

@@ -89,6 +89,9 @@ struct SearchApp: App {
                 Button("Share…") { browser.share() }
                     .shortcut("file.share")
                     .disabled(!(browser.active?.isWeb ?? false))
+                Button("Save Page As…") { browser.savePage() }
+                    .shortcut("file.savePage")
+                    .disabled(!(browser.active?.isWeb ?? false))
                 Button("Export as PDF…") { browser.exportPDF() }
                     .shortcut("file.exportPDF")
                     .disabled(!(browser.active?.isWeb ?? false))
@@ -153,6 +156,13 @@ struct SearchApp: App {
                         Text(glyph.title).tag(glyph)
                     }
                 }
+                // Every group of the space on screen, folded or opened at once.
+                Button("Fold All Groups") { browser.foldAllGroups(true) }
+                    .shortcut("view.foldGroups")
+                    .disabled(!browser.canFoldAllGroups)
+                Button("Unfold All Groups") { browser.foldAllGroups(false) }
+                    .shortcut("view.unfoldGroups")
+                    .disabled(!browser.canUnfoldAllGroups)
                 Divider()
                 Button("Reload Page") { browser.reload() }
                     .shortcut("view.reload")
@@ -326,11 +336,11 @@ struct SearchApp: App {
                 }
                 if !browser.ghosts.isEmpty {
                     Section("Recently Closed") {
-                        ForEach(browser.ghosts.reversed().prefix(10)) { ghost in
+                        ForEach(browser.recentlyClosed.prefix(10)) { ghost in
                             Button {
                                 browser.reopen(ghost)
                             } label: {
-                                MenuLine(title: ghost.label, url: ghost.url)
+                                MenuLine(title: browser.closedTitle(for: ghost), url: ghost.url)
                             }
                         }
                     }
@@ -341,7 +351,7 @@ struct SearchApp: App {
                 Button("Downloads…") { browser.hoarding = true }
                     .shortcut("history.downloads")
                 Divider()
-                Button("Clear Browsing Data…") { browser.recallMode = .clearing }
+                Button("Clear Browsing Data…") { browser.clearBrowsingData() }
                     .shortcut("history.clearData")
                 Button("Clear History") { browser.clearHistory() }
                     .shortcut("history.clear")
@@ -580,10 +590,10 @@ struct ContentView: View {
     private var chrome: CGSize {
         let bar = barShown ? BookmarksBar.height : 0
         if cards {
-            return CGSize(width: sidebar ? browser.prefs.sideWidth : Metrics.cardGap,
+            return CGSize(width: sidebar ? browser.prefs.columnWidth : Metrics.cardGap,
                           height: barShown ? bar : Metrics.cardGap)
         }
-        return CGSize(width: sidebar ? browser.prefs.sideWidth : 0, height: band + bar)
+        return CGSize(width: sidebar ? browser.prefs.columnWidth : 0, height: band + bar)
     }
 
     /// The page as a card on the window's ground: with the tabs down the
@@ -708,14 +718,13 @@ struct ContentView: View {
         // SplitStage owns the field whenever Split View is enabled, including
         // an ordinary tab that is not currently paired. Drawing it here too
         // leaves two offset address fields on a blank tab.
-        if browser.fieldShowing, !browser.prefs.splitView {
+        if !browser.prefs.splitView {
             Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
                 // with the page says otherwise.
-                .padding(.leading, sidebar && !sideOnRight ? browser.prefs.sideWidth : 0)
-                .padding(.trailing, sidebar && sideOnRight ? browser.prefs.sideWidth : 0)
-                .transition(.scale(scale: 0.97).combined(with: .opacity))
+                .padding(.leading, sidebar && !sideOnRight ? browser.prefs.columnWidth : 0)
+                .padding(.trailing, sidebar && sideOnRight ? browser.prefs.columnWidth : 0)
         }
     }
 
@@ -817,7 +826,7 @@ struct ContentView: View {
             .onChange(of: browser.prefs.sidePosition) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
-            .onChange(of: browser.prefs.sideWidth) { _, _ in
+            .onChange(of: browser.prefs.columnWidth) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             // Stepping away to another app: macOS draws its own resting
@@ -1084,9 +1093,9 @@ struct ContentView: View {
         // its three doors sit on the lights' line.
         Lights.keep(window, centreX: { window in
             browser.prefs.sidebar && browser.prefs.sidePosition == .right
-                ? window.frame.width - browser.prefs.sideWidth + Lights.centre.x
+                ? window.frame.width - browser.prefs.columnWidth + Lights.centre.x
                 : Lights.centre.x
-        }) { measureLights() }
+        }, vertical: { _ in browser.prefs.iconColumn }) { measureLights() }
         DispatchQueue.main.async { measureLights() }
 
         // The traffic lights are drawn — measured, they paint themselves — but
@@ -1388,6 +1397,18 @@ struct ContentView: View {
                 browser.picked = nil
                 return true
             }
+            // Something typed into a new tab: Escape clears it first, the
+            // tab staying where it is, as in Arc and Safari; the next Escape
+            // finds the tab unused and takes it away (below). Before, a typed
+            // word left Escape with nothing to do on a new tab.
+            if let blank = browser.active, blank.isBlank, browser.editingTab == nil,
+               !browser.typed.isEmpty || browser.siteChip != nil {
+                browser.siteChip = nil
+                browser.picked = nil
+                browser.typed = ""
+                blank.draft = ""
+                return true
+            }
             // A new tab never sent anywhere is itself what is open: Escape
             // takes it away, back to the tab you were on, which is the one
             // touched last. Chosen before closing, so close() doesn't wake a
@@ -1538,7 +1559,7 @@ struct ContentView: View {
 
         // Keep the clearing controls reachable from a focused page editor.
         if shifted, event.keyCode == 51 {
-            browser.recallMode = .clearing
+            browser.clearBrowsingData()
             return true
         }
 

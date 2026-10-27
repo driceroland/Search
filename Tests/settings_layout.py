@@ -134,6 +134,12 @@ def case_merged(t):
     def put(id, value): return settings(set=id, value=value)["values"]
     v = put("tabs.layout", "right")
     t.ok("Tabs: Right writes sidebar and its position", (read("sidebar"), read("sidebar.position")) == ("1", "right"), (read("sidebar"), read("sidebar.position")))
+    v = put("tabs.layout", "icons")
+    t.ok("Tabs: Icons only writes sidebar and sidebar.icons, keeps the side",
+         (read("sidebar"), read("sidebar.icons"), read("sidebar.position")) == ("1", "1", "right") and v["tabs.layout"] == "icons",
+         (read("sidebar"), read("sidebar.icons"), read("sidebar.position"), v["tabs.layout"]))
+    v = put("tabs.layout", "right")
+    t.ok("Tabs: Right after Icons only turns the icons off", read("sidebar.icons") == "0" and v["tabs.layout"] == "right", read("sidebar.icons"))
     v = put("tabs.layout", "top")
     t.ok("Tabs: Top writes sidebar off, keeps the position", read("sidebar") == "0" and v["tabs.layout"] == "top")
     put("tabs.sleep", "never")

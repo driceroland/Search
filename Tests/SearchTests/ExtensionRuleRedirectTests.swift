@@ -66,4 +66,75 @@ final class ExtensionRuleRedirectTests: XCTestCase {
             XCTAssertFalse(ExtensionRedirectPolicy.allows(target: URL(string: odd)!, sourceOrigin: https, manifest: exposed("<all_urls>"), fromRule: true), odd)
         }
     }
+
+    /// A file exposed with a dynamic URL (uBlock Origin Lite's
+    /// strictblock.html): a site's own return never reaches it, the
+    /// extension's own rule does, as in Chrome (#709).
+    func testDynamicURLFilesOnlyByARule() {
+        let page = URL(string: base + "/strictblock.html")!
+        let https = URL(string: "https://example.com/")!
+        let dynamic: [String: Any] = [
+            "manifest_version": 3,
+            "web_accessible_resources": [["resources": ["/strictblock.html"], "matches": ["<all_urls>"], "use_dynamic_url": true]],
+        ]
+        XCTAssertFalse(ExtensionRedirectPolicy.allows(target: page, sourceOrigin: https, manifest: dynamic))
+        XCTAssertTrue(ExtensionRedirectPolicy.allows(target: page, sourceOrigin: https, manifest: dynamic, fromRule: true))
+        // Still only the file it names, and never an odd value.
+        XCTAssertFalse(ExtensionRedirectPolicy.allows(target: URL(string: base + "/options.html")!, sourceOrigin: https, manifest: dynamic, fromRule: true))
+        let odd: [String: Any] = [
+            "manifest_version": 3,
+            "web_accessible_resources": [["resources": ["/strictblock.html"], "matches": ["<all_urls>"], "use_dynamic_url": "yes"]],
+        ]
+        XCTAssertFalse(ExtensionRedirectPolicy.allows(target: page, sourceOrigin: https, manifest: odd, fromRule: true))
+    }
+}
+
+/// Request rules WebKit would carry out beyond the sites they name
+/// (ExtensionShims.misreadByWebKit, #709).
+@available(macOS 15.4, *)
+final class ExtensionMisreadRulesTests: XCTestCase {
+    private func rule(_ type: String, _ condition: [String: Any]) -> [String: Any] {
+        ["id": 1, "action": ["type": type], "condition": condition]
+    }
+
+    func testPatternBesideSitesIsMisreadOnlyForRedirectsAndHeaders() {
+        let strict: [String: Any] = ["regexFilter": "^https?://.*", "requestDomains": ["bad.example"], "resourceTypes": ["main_frame"]]
+        XCTAssertTrue(ExtensionShims.misreadByWebKit(rule("redirect", strict)))
+        XCTAssertTrue(ExtensionShims.misreadByWebKit(rule("modifyHeaders", strict)))
+        // Blocks and allows: left as WebKit reads them, as before.
+        XCTAssertFalse(ExtensionShims.misreadByWebKit(rule("block", strict)))
+        XCTAssertFalse(ExtensionShims.misreadByWebKit(rule("allow", strict)))
+        // Norma's shape (sites, no pattern) and a precise pattern: kept.
+        XCTAssertFalse(ExtensionShims.misreadByWebKit(rule("redirect", ["requestDomains": ["instagram.com"], "resourceTypes": ["main_frame"]])))
+        XCTAssertFalse(ExtensionShims.misreadByWebKit(rule("redirect", ["regexFilter": "^https?://bad\\.example/", "resourceTypes": ["main_frame"]])))
+        XCTAssertFalse(ExtensionShims.misreadByWebKit(rule("redirect", ["urlFilter": "||bad.example^", "requestDomains": ["bad.example"]])))
+        XCTAssertFalse(ExtensionShims.misreadByWebKit(["id": 2]))
+    }
+
+    func testRulesetsLoseOnlyMisreadRules() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("search-misread-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rules: [[String: Any]] = [
+            ["id": 1, "action": ["type": "redirect", "redirect": ["extensionPath": "/strictblock.html"]],
+             "condition": ["regexFilter": "^https?://.*", "requestDomains": ["bad.example"], "resourceTypes": ["main_frame"]]],
+            ["id": 2, "action": ["type": "block"], "condition": ["urlFilter": "||ads.example^"]],
+        ]
+        let clean: [[String: Any]] = [["id": 3, "action": ["type": "block"], "condition": ["urlFilter": "/ad.js"]]]
+        try JSONSerialization.data(withJSONObject: rules).write(to: folder.appendingPathComponent("a.json"))
+        let untouched = try JSONSerialization.data(withJSONObject: clean)
+        try untouched.write(to: folder.appendingPathComponent("b.json"))
+        let manifest: [String: Any] = ["declarative_net_request": ["rule_resources": [
+            ["id": "a", "enabled": true, "path": "a.json"], ["id": "b", "enabled": true, "path": "/b.json"],
+            ["id": "c", "enabled": true, "path": "../outside.json"],
+        ]]]
+        ExtensionShims.dropMisreadRules(manifest, in: folder)
+        let a = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("a.json"))) as? [[String: Any]])
+        XCTAssertEqual(a.compactMap { $0["id"] as? Int }, [2])
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("b.json")), untouched)
+        // Again: nothing more to take out.
+        ExtensionShims.dropMisreadRules(manifest, in: folder)
+        let again = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("a.json"))) as? [[String: Any]])
+        XCTAssertEqual(again.count, 1)
+    }
 }

@@ -124,11 +124,28 @@ struct Card<Content: View>: View {
     }
 }
 
-/// The hairline between two lines of a card, inset like the text.
+/// The hairline between two lines of a card, inset like the text unless
+/// the card says otherwise (see EnvironmentValues.ruleInset).
 struct Rule: View {
-    var inset: CGFloat = 14
+    var inset: CGFloat? = nil
+    @Environment(\.ruleInset) private var standard
     var body: some View {
-        Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, inset)
+        Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, inset ?? standard)
+    }
+}
+
+private struct RuleInsetKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 14
+}
+
+extension EnvironmentValues {
+    /// Where a Rule without an inset of its own starts. Settings sets 0, so
+    /// every hairline in its cards runs from edge to edge, those drawn by
+    /// the lists it borrows from other panels too. A list drawn further in
+    /// sets minus its own indent, so its hairlines still reach the edge.
+    var ruleInset: CGFloat {
+        get { self[RuleInsetKey.self] }
+        set { self[RuleInsetKey.self] = newValue }
     }
 }
 

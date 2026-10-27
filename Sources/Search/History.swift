@@ -18,6 +18,8 @@ struct Suggestion: Identifiable, Equatable {
         case open
         /// Somewhere you have actually been.
         case visited
+        /// One of your bookmarks, the window's profile's.
+        case bookmark
         /// One of the well-known addresses the field knows from the start.
         case known
         /// Not a place at all — words, and an engine to ask.
@@ -37,6 +39,7 @@ struct Suggestion: Identifiable, Equatable {
         if kind.isCommand { return "command " + key }
         if case .suggested = kind { return "suggested " + key }
         if case .visited = kind { return History.identity(for: url) }
+        if case .bookmark = kind { return History.identity(for: url) }
         return key
     }
 
@@ -155,7 +158,7 @@ final class History: ObservableObject {
         )
     }
 
-    private static func stripped(_ address: String) -> String {
+    static func stripped(_ address: String) -> String {
         var text = address.trimmingCharacters(in: .whitespaces).lowercased()
         for scheme in ["https://", "http://"] where text.hasPrefix(scheme) {
             text = String(text.dropFirst(scheme.count))
@@ -384,6 +387,31 @@ final class History: ObservableObject {
         }
 
         return best.map(\.0)
+    }
+
+    /// How often each site has been visited, for site search to weigh one
+    /// against another (SiteSearch.match): every page on its host and the
+    /// host's subdomains, or under its path for one like google.com/maps —
+    /// so a site counts at least as often as any part of it.
+    func visits(to sites: [String]) -> [String: Int] {
+        let wanted = sites.map { site -> (site: String, host: String, path: String) in
+            let bare = site.lowercased().hasPrefix("www.") ? String(site.lowercased().dropFirst(4)) : site.lowercased()
+            let host = bare.split(separator: "/", maxSplits: 1).first.map(String.init) ?? bare
+            return (site, host, String(bare.dropFirst(host.count)))
+        }
+        var counts: [String: Int] = [:]
+        for visit in visits.values {
+            guard let text = pageText[visit.key] else { continue }
+            for one in wanted where text.host == one.host || text.host.hasSuffix("." + one.host) {
+                if !one.path.isEmpty {
+                    guard text.searchable.hasPrefix(one.host + one.path) else { continue }
+                    let rest = text.searchable.dropFirst(one.host.count + one.path.count)
+                    guard rest.first.map({ "/?#".contains($0) }) ?? true else { continue }
+                }
+                counts[one.site, default: 0] = min(History.mostVisits, counts[one.site, default: 0] + visit.count)
+            }
+        }
+        return counts
     }
 
     /// What the field should draw greyed out after the caret: the rest of the

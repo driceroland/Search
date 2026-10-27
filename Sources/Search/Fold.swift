@@ -52,6 +52,18 @@ extension Browser {
     func peek(_ out: Bool) {
         withAnimation(Motion.folding(out: out)) { peeking = out }
     }
+
+    /// Whether something of the window's lies over `page` at `point`, in the
+    /// window's own coordinates: a peek over the page in front (not over its
+    /// own), or the folded column or strip out over the page. The page then
+    /// hears nothing of the pointer there (see PageView.underCover).
+    func covers(_ page: NSView, at point: NSPoint) -> Bool {
+        guard let window, page.window === window else { return false }
+        if let peek = peekTab, peek.built !== page { return true }
+        guard folded, peeking, active?.immersed != true, let size = window.contentView?.bounds.size else { return false }
+        if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
+        return prefs.sidePosition == .right ? point.x >= size.width - prefs.columnWidth : point.x <= prefs.columnWidth
+    }
 }
 
 /// Over the window while the column or the strip is folded: the column or
@@ -146,7 +158,7 @@ struct Fold: View {
                     // own white where the page is no card.
                     SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true, strength: browser.peeking ? 1 : 0))
-                        .offset(x: browser.peeking ? 0 : (onRight ? prefs.sideWidth : -prefs.sideWidth))
+                        .offset(x: browser.peeking ? 0 : (onRight ? prefs.columnWidth : -prefs.columnWidth))
                         .allowsHitTesting(browser.peeking)
                 }
             }
@@ -197,7 +209,7 @@ struct Fold: View {
             browser.peeking = false
             if let bar = Fold.titlebar { Fold.reset(bar, hidden: lightsOff) }
         }
-        .onChange(of: prefs.sideWidth) { _, _ in
+        .onChange(of: prefs.columnWidth) { _, _ in
             if browser.folded { hideLights() }
         }
         .onChange(of: prefs.sideHides) { _, hides in
@@ -289,7 +301,7 @@ struct Fold: View {
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
             let onWindow = top == window.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
-            let reach = prefs.sidebar ? prefs.sideWidth : Metrics.strip
+            let reach = prefs.sidebar ? prefs.columnWidth : Metrics.strip
             // An extension's popup hangs from its button in the column: the
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).
@@ -374,7 +386,7 @@ struct Fold: View {
             return
         }
         if prefs.sidebar {
-            Fold.slide(bar, off: lightsOff, by: prefs.sideWidth, right: onRight)
+            Fold.slide(bar, off: lightsOff, by: prefs.columnWidth, right: onRight)
         } else {
             Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true)
         }

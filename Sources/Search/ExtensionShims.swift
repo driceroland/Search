@@ -18,7 +18,9 @@ import CryptoKit
 // are defined there, and every call becomes a native message to this app,
 // which answers from its own bookmarks, history and downloads. To the
 // extension it looks like Chrome. The files are changed after the store's
-// signature has been checked, and only by adding.
+// signature has been checked, and only by adding — but for request rules
+// WebKit would carry out beyond the sites they name, which are taken out
+// (see misreadByWebKit).
 
 @available(macOS 15.4, *)
 @MainActor
@@ -140,6 +142,8 @@ enum ExtensionShims {
         let data = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .withoutEscapingSlashes])
         try data.write(to: manifestURL, options: .atomic)
 
+        dropMisreadRules(manifest, in: folder)
+
         // Every page it ships — popup, options, background page, side panel —
         // and scripts a content script may insert into a website. WebKit
         // decodes those in the site's encoding unless the resource says
@@ -180,6 +184,50 @@ enum ExtensionShims {
                 html = tag + html
             }
             try? html.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    // MARK: - request rules WebKit would misread
+
+    /// A redirect or header rule with a pattern (`regexFilter`) beside a
+    /// list of sites (`requestDomains`). WebKit drops the list from such a
+    /// rule and carries it out on every address the pattern matches. Since
+    /// Search grants "declarativeNetRequestWithHostAccess" with
+    /// "declarativeNetRequest" (Norma's block page), WebKit carries out
+    /// redirects, and uBlock Origin Lite's strict blocking — `^https?://.*`
+    /// beside thousands of named sites, to its warning page — took every
+    /// page ~30 s after launch, leaving the tab blank (#709). Such a rule
+    /// is left out: nothing is rewritten into something the extension
+    /// didn't write, and nothing acts beyond what it named. A block or an
+    /// allow of that shape is left as WebKit reads it, as before. The shim
+    /// leaves out the same rules added while the extension runs (`misread`).
+    nonisolated static func misreadByWebKit(_ rule: [String: Any]) -> Bool {
+        guard let condition = rule["condition"] as? [String: Any],
+              condition["regexFilter"] is String, condition["requestDomains"] != nil,
+              let type = (rule["action"] as? [String: Any])?["type"] as? String
+        else { return false }
+        return type == "redirect" || type == "modifyHeaders"
+    }
+
+    /// The rulesets a manifest declares, without the rules WebKit would
+    /// misread. Only ever takes rules out; a ruleset with none is left as
+    /// it is, so preparing again changes nothing.
+    nonisolated static func dropMisreadRules(_ manifest: [String: Any], in folder: URL) {
+        guard let dnr = manifest["declarative_net_request"] as? [String: Any],
+              let resources = dnr["rule_resources"] as? [[String: Any]] else { return }
+        for resource in resources {
+            // Only a file with both words in it is read as rules: a blocker
+            // ships tens of megabytes of them.
+            guard let name = resource["path"] as? String, let url = inside(name, of: folder),
+                  let data = try? Data(contentsOf: url),
+                  data.range(of: Data("regexFilter".utf8)) != nil, data.range(of: Data("requestDomains".utf8)) != nil,
+                  let rules = (try? JSONSerialization.jsonObject(with: data)) as? [Any]
+            else { continue }
+            let kept = rules.filter { !(($0 as? [String: Any]).map(misreadByWebKit) ?? false) }
+            guard kept.count < rules.count,
+                  let written = try? JSONSerialization.data(withJSONObject: kept, options: [.withoutEscapingSlashes])
+            else { continue }
+            try? written.write(to: url, options: .atomic)
         }
     }
 
@@ -417,6 +465,27 @@ enum ExtensionShims {
       // On a web page this is a content script: only Chrome's behaviour is
       // mended there, no API that Chrome doesn't give content scripts either.
       const inContent = typeof location !== "undefined" && !/^(chrome|webkit)-extension:$/.test(location.protocol);
+      const runtime = chrome.runtime;
+      // WebKit fills Chrome's enums on a worker but leaves them out of a
+      // content script, where extensions read them as their code starts.
+      // GPTZero's copy tracker, LMS bridge and recorder stopped on a missing
+      // OnInstalledReason before either did anything. These members are
+      // constants, so content scripts get them as well as the worker.
+      if (runtime && inContent) {
+        const missing = (key, value) => {
+          let there;
+          try { there = runtime[key]; } catch (e) {}
+          if (there === undefined) Object.defineProperty(runtime, key, { value, configurable: true, writable: true, enumerable: true });
+        };
+        for (const [key, value] of Object.entries({
+          OnInstalledReason: { INSTALL: "install", UPDATE: "update", CHROME_UPDATE: "chrome_update", SHARED_MODULE_UPDATE: "shared_module_update" },
+          OnRestartRequiredReason: { APP_UPDATE: "app_update", OS_UPDATE: "os_update", PERIODIC: "periodic" },
+          PlatformArch: { ARM: "arm", ARM64: "arm64", X86_32: "x86-32", X86_64: "x86-64", MIPS: "mips", MIPS64: "mips64" },
+          PlatformNaclArch: { ARM: "arm", X86_32: "x86-32", X86_64: "x86-64", MIPS: "mips", MIPS64: "mips64" },
+          PlatformOs: { MAC: "mac", WIN: "win", ANDROID: "android", CROS: "cros", LINUX: "linux", OPENBSD: "openbsd", FUCHSIA: "fuchsia" },
+          RequestUpdateCheckStatus: { THROTTLED: "throttled", NO_UPDATE: "no_update", UPDATE_AVAILABLE: "update_available" },
+        })) missing(key, value);
+      }
       // One of the extension's pages in a frame of a website — Vimium's bar,
       // the list iCloud Passwords opens under a field. WebKit runs it in the
       // website's process, which it trusts with no more than a content
@@ -429,7 +498,6 @@ enum ExtensionShims {
         try { const a = location.ancestorOrigins; if (a && a.length) return [...a].some((o) => o !== location.origin); } catch (e) {}
         try { return window.top.location.origin !== location.origin; } catch (e) { return true; }
       })();
-      const runtime = chrome.runtime;
 
       // WebKit's objects are kept — WebKit finds an extension's listeners
       // through them, and a replacement would hide them. Members are set on
@@ -1636,7 +1704,25 @@ enum ExtensionShims {
           pending.then((id) => callback(id), (error) => withLastError(error, callback));
         });
       }
+      const ownPanel = !chrome.sidePanel;
       define("sidePanel", ["open", "close", "setOptions", "getOptions", "setPanelBehavior", "getPanelBehavior"]);
+      // A tab's own panel options, and which of Search's tabs that is: the
+      // button asks the tab in front, which has no number on Search's side.
+      // Told after the options themselves, so a sidePanel.open right after
+      // setOptions still finds them.
+      if (ownPanel && chrome.sidePanel && chrome.tabs && typeof chrome.tabs.get === "function") {
+        const setOptions = chrome.sidePanel.setOptions;
+        put(chrome.sidePanel, "setOptions", (options, ...rest) => {
+          const answer = setOptions(options, ...rest);
+          const tabId = options && options.tabId;
+          if (typeof tabId === "number") {
+            Promise.all([chrome.tabs.get(tabId), frames()])
+              .then(([tab, known]) => tab && native("sidePanel.placed", [tabId, placeOf(tab, known)]))
+              .catch(() => {});
+          }
+          return answer;
+        });
+      }
       define("offscreen", ["createDocument", "closeDocument", "hasDocument"], [],
         { Reason: new Proxy({}, { get: (_, key) => String(key) }) });
       define("tabGroups", ["get", "query", "update", "move"],
@@ -2299,6 +2385,11 @@ enum ExtensionShims {
       // address, and without the resource types it has no name for.
       const unknownTypes = new Set(["webtransport", "webbundle", "object"]);
       const base = (() => { try { return runtime.getURL(""); } catch (e) { return ""; } })();
+      const misread = (r) => {
+        const c = r && r.condition, type = r && r.action && r.action.type;
+        return !!(c && typeof c.regexFilter === "string" && c.requestDomains !== undefined
+          && (type === "redirect" || type === "modifyHeaders"));
+      };
       const mendRule = (rule) => {
         if (!rule || typeof rule !== "object") return rule;
         const r = { ...rule, action: rule.action && { ...rule.action }, condition: rule.condition && { ...rule.condition } };
@@ -2312,6 +2403,16 @@ enum ExtensionShims {
           if (!c.resourceTypes.length) return null;
         }
         if (c && Array.isArray(c.excludedResourceTypes)) c.excludedResourceTypes = c.excludedResourceTypes.filter((t) => !unknownTypes.has(t));
+        // A pattern beside a list of sites: WebKit drops the list and takes
+        // the rule for every address its pattern matches (see
+        // misreadByWebKit in ExtensionShims.swift). A redirect or a header
+        // change of that shape is left out rather than carried out
+        // everywhere: uBlock Origin Lite's strict blocking, `^https?://.*`
+        // for thousands of named sites, sent every page to its warning (#709).
+        if (misread(r)) {
+          try { native("debug.error", ["declarativeNetRequest: " + r.action.type + " rule " + r.id + " left out — WebKit would take its pattern for every site, not the ones it names"]).catch(() => {}); } catch (x) {}
+          return null;
+        }
         return r;
       };
       if (dnr && typeof dnr.isRegexSupported === "function") {
@@ -2747,6 +2848,37 @@ enum ExtensionShims {
         mendArgs(chrome.contextMenus && chrome.contextMenus.onClicked, [1], null, null, true);
         mendArgs(chrome.menus && chrome.menus.onClicked, [1], null, null, true);
         mendArgs(chrome.commands && chrome.commands.onCommand, [1], null, null, true);
+      }
+
+      // WebKit posts cookie changes from a worker with no cookie on some
+      // notifications. Chrome never does: every onChanged event has a
+      // cookie and a cause. GPTZero reads event.cookie at the top of its
+      // listener, and an empty one stopped its worker. A valid change is
+      // passed on untouched; an incomplete notification is not Chrome's
+      // event and is ignored rather than handed to listeners that assume it.
+      if (chrome.cookies && chrome.cookies.onChanged && typeof chrome.cookies.onChanged.addListener === "function") {
+        const changed = chrome.cookies.onChanged;
+        const add = changed.addListener.bind(changed), remove = changed.removeListener.bind(changed);
+        const has = changed.hasListener.bind(changed), wrapped = new WeakMap();
+        put(changed, "addListener", (listener, ...rest) => {
+          if (typeof listener !== "function") return add(listener, ...rest);
+          let filtered = wrapped.get(listener);
+          if (!filtered) {
+            filtered = function (change, ...args) {
+              if (!change || typeof change !== "object" || !change.cookie || typeof change.cookie !== "object") return;
+              return listener.apply(this, [change, ...args]);
+            };
+          }
+          // Chrome keeps one registration per listener, however often the
+          // extension adds it. The same wrapper is what WebKit hears; keep it
+          // only once WebKit has taken it, so a refused add can be tried again.
+          if (!has(filtered)) {
+            add(filtered, ...rest);
+            wrapped.set(listener, filtered);
+          }
+        });
+        put(changed, "removeListener", (listener) => remove(wrapped.get(listener) || listener));
+        put(changed, "hasListener", (listener) => has(wrapped.get(listener) || listener));
       }
 
       // Permissions. WebKit knows its own and throws on any other name,
@@ -3659,6 +3791,9 @@ enum ExtensionShims {
     static var panelOff: Set<String> = []
     /// What setOptions said for one tab, by the extension's tab id.
     static var panelTabs: [String: [Int: (path: String?, enabled: Bool?)]] = [:]
+    /// Which of Search's tabs each of those tab ids is, as the extension's
+    /// shim found it (sidePanel.placed).
+    static var panelTabIDs: [String: [Int: Tab.ID]] = [:]
     /// One voice for every extension that reads aloud.
     static let speaker = NSSpeechSynthesizer()
 
@@ -4002,6 +4137,11 @@ enum ExtensionShims {
             return nil
         case "sidePanel.getPanelBehavior":
             return ["openPanelOnActionClick": panelOnClick.contains(id)]
+        case "sidePanel.placed":
+            if let number = first as? Int, let tab = located(args.dropFirst().first, context: context, owner: owner) {
+                panelTabIDs[id, default: [:]][number] = tab.id
+            }
+            return nil
         case "sidePanel.open":
             // For a tab, its own page when it was given one, and the panel
             // goes with that tab; otherwise the window's.
@@ -4778,22 +4918,39 @@ enum ExtensionShims {
         return url
     }
 
-    /// The extension's button, for one that asked for its panel on a
-    /// press (openPanelOnActionClick): its panel up, or down again.
-    static func openPanel(_ context: WKWebExtensionContext, owner: Extensions) {
+    /// The panel the extension's button opens over `tab`, as Chrome decides
+    /// it: the tab's own options over the extension's, and none where the
+    /// panel is turned off. `own`: the tab's own page, which goes with it.
+    static func actionPanel(_ context: WKWebExtensionContext, over tab: Tab.ID?) -> (url: URL, own: Bool)? {
         let id = context.uniqueIdentifier
-        guard !panelOff.contains(id), let path = panelPath[id] ?? defaultPanel(context) else { return }
-        // Resolved, not appended: a path can carry a query — Claude's names
-        // the tab its panel is for, sidepanel.html?tabId=… — which appended
-        // would be escaped into the file's name.
-        guard let url = ExtensionShims.page(path, in: context) else { return }
+        let number = tab.flatMap { tab in panelTabIDs[id]?.filter { $0.value == tab }.map(\.key).max() }
+        let own = number.flatMap { panelTabs[id]?[$0] }
+        guard own?.enabled ?? !panelOff.contains(id),
+              let path = own?.path ?? panelPath[id] ?? defaultPanel(context),
+              // Resolved, not appended: a path can carry a query — Claude's
+              // names the tab its panel is for, sidepanel.html?tabId=… —
+              // which appended would be escaped into the file's name.
+              let url = ExtensionShims.page(path, in: context)
+        else { return nil }
+        return (url, own?.path != nil)
+    }
+
+    /// The extension's button, for one that asked for its panel on a
+    /// press (openPanelOnActionClick): its panel up, or down again. False
+    /// when it has no panel turned on over the tab in front: then, as in
+    /// Chrome, the press is the extension's (action.onClicked). ChatGPT's
+    /// keeps its panel off on every tab and turns it on for the one its
+    /// button was pressed on.
+    @discardableResult
+    static func openPanel(_ context: WKWebExtensionContext, owner: Extensions) -> Bool {
+        guard let browser = owner.browser, let panel = actionPanel(context, over: browser.activeID) else { return false }
         // In the side panel; a tab of its own if the panel can't be made,
         // as before there was a panel to put it in. Beside a private tab
         // this extension may not see, the button does nothing.
-        guard let browser = owner.browser else { return }
-        if browser.toggleSidePanel(context, url: url) == .noPanel {
-            browser.open(url, foreground: true)
+        if browser.toggleSidePanel(context, url: panel.url, for: panel.own ? browser.activeID : nil) == .noPanel {
+            browser.open(panel.url, foreground: true)
         }
+        return true
     }
 
     // MARK: - bookmarks, as Chrome shapes them

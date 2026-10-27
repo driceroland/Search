@@ -120,6 +120,8 @@ final class Shield: ObservableObject {
             "trigger": ["url-filter": ".*"],
             "action": ["type": "css-display-none", "selector": Shield.slots.joined(separator: ", ")],
         ])
+        // YouTube's ad reports and ad paths (see YouTubeAds.swift).
+        rules += YouTubeAds.rules
         rules += Shield.slotsBySite.map { entry in
             [
                 "trigger": ["url-filter": ".*", "if-domain": entry.sites],

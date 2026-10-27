@@ -313,7 +313,7 @@ struct HomePageLine: View {
             let askers = extensions.newTabAskers
             let current = extensions.newTabPageID
             if !askers.isEmpty {
-                Rule(inset: SettingsPanel.textInset)
+                Rule()
                 SettingRow(icon: "house", title: "Home page", detail: detail(askers, current)) {
                     Picker("", selection: Binding(
                         get: { current ?? "" },

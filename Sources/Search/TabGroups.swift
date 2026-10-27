@@ -51,6 +51,9 @@ struct GroupHeading: View {
     let group: TabGroup
     var horizontal = false
     var dragSpace: String? = nil
+    /// In the column of icons (SideIcons.swift): the name's first letter in
+    /// a short heading, the name itself in its tooltip.
+    var compact = false
 
     @State private var draft = ""
     @State private var hovering = false
@@ -61,6 +64,8 @@ struct GroupHeading: View {
 
     /// Its height in the column, a little under a tab's.
     static let height: CGFloat = 24
+    /// And in the column of icons.
+    static let compactHeight: CGFloat = 18
 
     static func width(for name: String, numbered: Bool = false) -> CGFloat {
         let font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
@@ -68,6 +73,48 @@ struct GroupHeading: View {
     }
 
     var body: some View {
+        if compact { short } else { long }
+    }
+
+    /// The column of icons' heading: the letter, a fold mark beside it.
+    private var short: some View {
+        HStack(spacing: 2) {
+            Text(group.name.first.map { String($0).uppercased() } ?? "•")
+                .font(.system(size: 9.5, weight: .semibold))
+            Image(systemName: "chevron.down")
+                .font(.system(size: 6.5, weight: .bold))
+                .rotationEffect(.degrees(group.collapsed ? -90 : 0))
+        }
+        .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.compactHeight)
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(dropping ? greys.wash : (hovering ? greys.hover : greys.tile)))
+        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .onTapGesture { browser.toggleTabGroup(group.id) }
+        .modifier(GroupHeadingShared(browser: browser, group: group, dragSpace: dragSpace, dropping: $dropping))
+        .onHover { hovering = $0 }
+        .help(group.collapsed ? "\(group.name) — folded" : group.name)
+        .accessibilityLabel(group.name)
+        // Rename Group: no room for the name here, so it is typed beside.
+        .popover(isPresented: Binding(get: { editing }, set: { if !$0 { browser.editingGroupID = nil } }),
+                 arrowEdge: browser.prefs.sidePosition == .right ? .leading : .trailing) {
+            TextField("Group name", text: $draft)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12.5, weight: .medium))
+                .frame(width: 160)
+                .padding(10)
+                .focused($focused)
+                .onSubmit(commit)
+                .onExitCommand { browser.editingGroupID = nil }
+                .onAppear {
+                    draft = group.name
+                    DispatchQueue.main.async { focused = true }
+                }
+        }
+    }
+
+    private var long: some View {
         HStack(spacing: 8) {
             if editing {
                 TextField("Group name", text: $draft)
@@ -107,14 +154,7 @@ struct GroupHeading: View {
             .fill(dropping ? greys.wash : (hovering ? greys.hover : .clear)))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onTapGesture { if !editing { browser.toggleTabGroup(group.id) } }
-        .background {
-            if let dragSpace {
-                GeometryReader { geometry in
-                    Color.clear.preference(key: GroupDropFrames.self,
-                                           value: [group.id: GroupDropFrame(group: group.id, rect: geometry.frame(in: .named(dragSpace)))])
-                }
-            }
-        }
+        .modifier(GroupHeadingShared(browser: browser, group: group, dragSpace: dragSpace, dropping: $dropping))
         .onHover { hovering = $0 }
         .onChange(of: editing) { _, now in
             if now {
@@ -128,45 +168,66 @@ struct GroupHeading: View {
                 DispatchQueue.main.async { focused = true }
             }
         }
-        .onDrop(of: [.text], isTargeted: $dropping) { providers in
-            guard let provider = providers.first(where: { $0.canLoadObject(ofClass: String.self) }) else { return false }
-            _ = provider.loadObject(ofClass: String.self) { value, _ in
-                guard let value else { return }
-                DispatchQueue.main.async {
-                    if value.hasPrefix("search-group:"),
-                       let id = UUID(uuidString: String(value.dropFirst("search-group:".count))),
-                       let index = browser.tabGroups.firstIndex(where: { $0.id == group.id }) {
-                        browser.moveTabGroup(id, to: index)
-                    }
-                }
-            }
-            return true
-        }
-        .onDrag { NSItemProvider(object: "search-group:\(group.id.uuidString)" as NSString) }
-        .contextMenu {
-            Button("Rename Group") { browser.editingGroupID = group.id }
-            Button(group.collapsed ? "Expand Group" : "Collapse Group") { browser.toggleTabGroup(group.id) }
-            // The whole group into another space, still a group there: Arc's
-            // folders came in wherever Arc had them.
-            if browser.prefs.usesSpaces, browser.spaces.count > 1 {
-                Menu("Move Group to Space") {
-                    ForEach(browser.spaces.filter { $0.id != browser.spaceID }) { space in
-                        Button {
-                            browser.move(group: group.id, toSpace: space.id)
-                        } label: {
-                            Label(space.name, systemImage: space.symbol)
-                        }
-                    }
-                }
-            }
-            Divider()
-            Button("Ungroup Tabs") { browser.removeTabGroup(group.id) }
-            Button("Close Group") { browser.closeTabGroup(group.id) }
-        }
     }
 
     private func commit() {
         browser.renameTabGroup(group.id, to: draft)
         browser.editingGroupID = nil
+    }
+}
+
+/// What both headings answer to: their place for a drop, a tab or a
+/// group let go on them, being picked up, and their menu.
+private struct GroupHeadingShared: ViewModifier {
+    @ObservedObject var browser: Browser
+    let group: TabGroup
+    let dragSpace: String?
+    @Binding var dropping: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                if let dragSpace {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: GroupDropFrames.self,
+                                               value: [group.id: GroupDropFrame(group: group.id, rect: geometry.frame(in: .named(dragSpace)))])
+                    }
+                }
+            }
+            .onDrop(of: [.text], isTargeted: $dropping) { providers in
+                guard let provider = providers.first(where: { $0.canLoadObject(ofClass: String.self) }) else { return false }
+                _ = provider.loadObject(ofClass: String.self) { value, _ in
+                    guard let value else { return }
+                    DispatchQueue.main.async {
+                        if value.hasPrefix("search-group:"),
+                           let id = UUID(uuidString: String(value.dropFirst("search-group:".count))),
+                           let index = browser.tabGroups.firstIndex(where: { $0.id == group.id }) {
+                            browser.moveTabGroup(id, to: index)
+                        }
+                    }
+                }
+                return true
+            }
+            .onDrag { NSItemProvider(object: "search-group:\(group.id.uuidString)" as NSString) }
+            .contextMenu {
+                Button("Rename Group") { browser.editingGroupID = group.id }
+                Button(group.collapsed ? "Expand Group" : "Collapse Group") { browser.toggleTabGroup(group.id) }
+                // The whole group into another space, still a group there: Arc's
+                // folders came in wherever Arc had them.
+                if browser.prefs.usesSpaces, browser.spaces.count > 1 {
+                    Menu("Move Group to Space") {
+                        ForEach(browser.spaces.filter { $0.id != browser.spaceID }) { space in
+                            Button {
+                                browser.move(group: group.id, toSpace: space.id)
+                            } label: {
+                                Label(space.name, systemImage: space.symbol)
+                            }
+                        }
+                    }
+                }
+                Divider()
+                Button("Ungroup Tabs") { browser.removeTabGroup(group.id) }
+                Button("Close Group") { browser.closeTabGroup(group.id) }
+            }
     }
 }

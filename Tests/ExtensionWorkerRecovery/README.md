@@ -29,7 +29,9 @@ On macOS 15.4+, also run `swift test --filter ExtensionWorkerPortTests` and
 deduplication and lastError, explicit disconnect, fresh/reentrant connections,
 second recovery, external extensions, missing bridge, delayed ping, rejected
 subscriptions and generation fanout. Swift additionally checks native generation
-isolation, late subscribers, and old-worker versus newly waking-port lifetime binding.
+isolation, late subscribers, old-worker versus newly waking-port lifetime binding,
+Chrome's runtime constants in content scripts, and filtering incomplete
+`cookies.onChanged` notifications while preserving listener registration.
 
 ## Live WebKit fixture
 

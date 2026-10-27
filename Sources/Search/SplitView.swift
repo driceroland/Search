@@ -113,9 +113,8 @@ private struct PaneLayers: View {
             // the stage's.
             Page(tab: tab, holdsPage: false, corner: corner, browser: browser)
 
-            if browser.fieldShowing && focused {
+            if focused {
                 Omnibox(browser: browser, over: !tab.isBlank, fitted: true)
-                    .transition(.scale(scale: 0.97).combined(with: .opacity))
             }
 
             // An empty page of a pair: the field, and the tabs already open,

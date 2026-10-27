@@ -1,0 +1,15 @@
+<!-- url: https://github.com/new expect: none -->
+<!doctype html><html><head><title>Create a New Repository</title></head><body>
+<header><qbsearch-input><button type="button" aria-label="Search or jump to…">Type / to search</button></qbsearch-input></header>
+<main><h1>Create a new repository</h1>
+<form id="new_repository" class="js-repo-form" action="/repositories" method="post">
+  <button type="button" aria-label="Choose an owner">someone</button> /
+  <label for="repository-name-input">Repository name *</label>
+  <input id="repository-name-input" type="text" aria-required="true" autocomplete="off" aria-label="Repository name" aria-describedby="RepoNameInput-message" data-probe>
+  <label for="repository-description">Description (optional)</label>
+  <input id="repository-description" type="text" name="repository[description]">
+  <label><input type="radio" name="repository[visibility]" value="public" checked> Public</label>
+  <label><input type="radio" name="repository[visibility]" value="private"> Private</label>
+  <label><input type="checkbox" name="repository[auto_init]"> Add a README file</label>
+  <button type="submit" class="btn-primary">Create repository</button>
+</form></main></body></html>

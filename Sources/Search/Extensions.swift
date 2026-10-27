@@ -267,7 +267,15 @@ final class Extensions: NSObject, ObservableObject {
 
     private func forgetWorkersIfChanged() async {
         guard Store.settings.string(forKey: Extensions.workersKey) != workers else { return }
-        await Store.websites.removeData(ofTypes: [WKWebsiteDataTypeServiceWorkerRegistrations], modifiedSince: .distantPast)
+        // With no extension there is no stale copy to clear, only the sites'
+        // own workers to lose. The list holds the shim's version, which
+        // changes with nearly every update, so every update cost everyone
+        // the workers of Google Docs, Gmail, X, YouTube…: each site started
+        // from the network again and registered and filled its worker anew,
+        // and the first days after an update felt slower (idea 446).
+        if !installed.isEmpty {
+            await Store.websites.removeData(ofTypes: [WKWebsiteDataTypeServiceWorkerRegistrations], modifiedSince: .distantPast)
+        }
         Store.settings.set(workers, forKey: Extensions.workersKey)
     }
 
@@ -581,6 +589,7 @@ final class Extensions: NSObject, ObservableObject {
         // Its side panel, and what it said about it.
         SidePanelPages.shared.forget(id)
         ExtensionShims.panelTabs[id] = nil
+        ExtensionShims.panelTabIDs[id] = nil
         ExtensionShims.panelOff.remove(id)
         if let held = ExtensionShims.awake.removeValue(forKey: id) { IOPMAssertionRelease(held) }
         // Its ports read as gone only once WebKit has had a turn.
@@ -969,6 +978,11 @@ final class Extensions: NSObject, ObservableObject {
         installed.filter { $0.enabled && contexts[$0.id]?.overrideNewTabPageURL != nil }
     }
 
+    /// The one to ask next, the one added last of those never answered.
+    var newTabUnaskedAsker: Installed? {
+        newTabAskers.last { Store.settings.object(forKey: "extensions.newtab.\($0.id)") == nil }
+    }
+
     /// Settings › General › Home page: one extension's page in new tabs, or
     /// nil for Search's own. Every other one that asks is answered no, so
     /// none of them puts its page back in by asking again.
@@ -985,7 +999,7 @@ final class Extensions: NSObject, ObservableObject {
     /// asks even while another extension's page has new tabs, naming that
     /// one, so the first to ask doesn't keep them for good.
     func offerNewTabPage(into tab: Tab) {
-        guard let item = newTabAskers.last(where: { Store.settings.object(forKey: "extensions.newtab.\($0.id)") == nil }),
+        guard let item = newTabUnaskedAsker,
               let url = contexts[item.id]?.overrideNewTabPageURL else { return }
         let holder = newTabPageID.flatMap { id in installed.first { $0.id == id } }
         let shown = newTabPage.flatMap(Browser.extensionHost(of:))
@@ -1477,9 +1491,10 @@ final class Extensions: NSObject, ObservableObject {
         Extensions.pressed[id] = Date()
         let tab = activeAdapter(for: context)
         if let tab { context.userGesturePerformed(in: tab) }
-        // An extension that asked for its button to open its side panel.
-        if ExtensionShims.panelOnClick.contains(id), context.action(for: tab)?.presentsPopup != true {
-            ExtensionShims.openPanel(context, owner: self)
+        // An extension that asked for its button to open its side panel,
+        // with one turned on over this tab.
+        if ExtensionShims.panelOnClick.contains(id), context.action(for: tab)?.presentsPopup != true,
+           ExtensionShims.openPanel(context, owner: self) {
             return
         }
         // A popup is opened here, straight away. Left to WebKit, it builds

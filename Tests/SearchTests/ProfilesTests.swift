@@ -58,6 +58,91 @@ final class ProfilesTests: XCTestCase {
         XCTAssertEqual(Profiles.read().map(\.id), [Profile.personalID])
     }
 
+    func testTheHomeSpaceCanBeMovedAndTheOrderSurvives() throws {
+        Store.settings.removeObject(forKey: "spaces.orderKept")
+        let work = Space(id: UUID(), name: "Work", colour: 0, sharesSignIns: false)
+        // A file from before the order was kept had the home first.
+        Spaces.write([Space.first(), work])
+        XCTAssertEqual(Spaces.read(profile: Profile.personalID).map(\.id), [Space.firstID, work.id])
+
+        // The user's first reorder is written in that order and marks the
+        // setting; a later read must not put the special first space back.
+        Store.settings.set(true, forKey: "spaces.orderKept")
+        Spaces.write([work, Space.first()])
+        XCTAssertEqual(Spaces.read(profile: Profile.personalID).map(\.id), [work.id, Space.firstID])
+    }
+
+    func testAFileWithoutTheFirstSpaceStillLeavesItsHomeReachable() throws {
+        Store.settings.removeObject(forKey: "spaces.orderKept")
+        let work = Space(id: UUID(), name: "Work", colour: 0, sharesSignIns: false)
+        Spaces.write([work])
+        let spaces = Spaces.read(profile: Profile.personalID)
+        XCTAssertEqual(spaces.map(\.id), [Space.firstID, work.id])
+        XCTAssertTrue(spaces.contains { $0.id == Space.firstID })
+    }
+
+    func testDuplicateHomeEntriesKeepOneHomeInItsChosenPlace() {
+        let home = Space(id: Space.firstID, name: "Personal renamed", colour: 1)
+        let duplicate = Space(id: Space.firstID, name: "Stray", colour: 2)
+        let work = Space(id: UUID(), name: "Work", colour: 0)
+        for marked in [false, true] {
+            Store.settings.set(marked, forKey: "spaces.orderKept")
+            for saved in [[home, work, duplicate], [work, home, duplicate]] {
+                Spaces.write(saved)
+                let loaded = Spaces.read(profile: Profile.personalID)
+                let expected = saved[0].isFirst ? [Space.firstID, work.id] : [work.id, Space.firstID]
+                XCTAssertEqual(loaded.map(\.id), expected)
+                XCTAssertEqual(loaded.filter(\.isFirst).count, 1)
+                XCTAssertEqual(loaded.first(where: \.isFirst)?.name, home.name)
+            }
+        }
+    }
+
+    func testAnExistingOrderedFileIsNotRewrittenByTheNewReader() throws {
+        Store.settings.removeObject(forKey: "spaces.orderKept")
+        let work = Space(id: UUID(), name: "Work", colour: 0, sharesSignIns: false)
+        let another = Profiles.shared.add(named: "Elsewhere")
+        defer { Profiles.shared.delete(another.id) }
+        let elsewhere = try XCTUnwrap(Spaces.read(profile: another.id).first)
+        // The old reader always put the home first. A second profile's home
+        // moved within its own block shows that the old writer had persisted
+        // a user's order, which this reader must keep.
+        let anotherSecond = Space(id: UUID(), name: "Elsewhere Two", colour: 0,
+                                  sharesSignIns: true, profile: another.id)
+        Spaces.write([Space.first(), work, anotherSecond, elsewhere])
+        XCTAssertEqual(Spaces.read(profile: Profile.personalID).map(\.id), [Space.firstID, work.id])
+        XCTAssertEqual(Spaces.read(profile: another.id).map(\.id), [anotherSecond.id, elsewhere.id])
+    }
+
+    func testAProfilesHomeSpaceIsHomeWhereverItSits() throws {
+        let made = Profiles.shared.add(named: "Ordered")
+        defer { Profiles.shared.delete(made.id) }
+        let second = Space(id: UUID(), name: "Second", colour: 0,
+                           sharesSignIns: true, profile: made.id)
+        Spaces.write(Spaces.read() + [second])
+        Store.settings.removeObject(forKey: "spaces.orderKept")
+        let home = try XCTUnwrap(Spaces.read(profile: made.id).first { $0.id == made.home })
+        var all = Spaces.read().filter { $0.profileID != made.id }
+        all += [second, home]
+        Spaces.write(all)
+        XCTAssertEqual(Spaces.read(profile: made.id).map(\.id), [second.id, made.home])
+    }
+
+    func testASpacesOffWindowOpensOnTheMovedHome() throws {
+        Store.settings.removeObject(forKey: "spaces.orderKept")
+        let work = Space(id: UUID(), name: "Work", colour: 0, sharesSignIns: false)
+        Spaces.write([work, Space.first()])
+        let prefs = Shared.prefs
+        let previous = prefs.usesSpaces
+        defer { prefs.usesSpaces = previous }
+        prefs.usesSpaces = false
+        let browser = Browser(record: nil)
+        defer { browser.closeAll() }
+        XCTAssertEqual(browser.spaces.map(\.id), [work.id, Space.firstID])
+        XCTAssertEqual(browser.spaceID, Space.firstID,
+                       "with spaces off, the window must use the profile home, not the leftmost space")
+    }
+
     func testANewProfileHasItsOwnSpacesHistoryAndBookmarks() throws {
         let made = Profiles.shared.add(named: "Raycast")
         defer { Profiles.shared.delete(made.id) }

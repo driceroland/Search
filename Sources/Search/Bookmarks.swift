@@ -54,6 +54,7 @@ final class Bookmarks: ObservableObject {
             revision &+= 1
             kept = preparedKept ?? Set(Bookmarks.urls(roots).map(\.absoluteString))
             preparedKept = nil
+            sites = nil
         }
     }
     private var revision = 0
@@ -120,6 +121,67 @@ final class Bookmarks: ObservableObject {
             }
         }
         return walk(roots, [])
+    }
+
+    // MARK: - in the address field
+
+    /// A site as the address field looks for it: its name and its address,
+    /// lowercased once, the address without its scheme or www, as the field
+    /// matches history (History.stripped).
+    private struct Site {
+        /// As it reads in the list.
+        let name: String
+        let title: String
+        let address: String
+        let url: URL
+    }
+
+    /// Every site, folders opened, made once after each change of the list
+    /// and kept: the field asks on every key, and walking a tree of a few
+    /// thousand imported bookmarks to lowercase each again was work thrown
+    /// away each time.
+    private var sites: [Site]?
+
+    /// The sites for what is typed in the address field, the best `limit`
+    /// first: every word, in any order, in the name or the address. Kept to
+    /// two letters and more: one letter is in nearly every name, and the
+    /// field finishes a single letter only towards a site you have been to.
+    func places(for typed: String, limit: Int) -> [Suggestion] {
+        let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        let words = needle.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard needle.count >= 2, let first = words.first else { return [] }
+        let bare = History.stripped(needle)
+        if sites == nil {
+            sites = Bookmarks.sites(roots)
+        }
+        // The address starting with what was typed first, then the name,
+        // then a word anywhere; among equals, the shorter address.
+        var best: [(site: Site, score: Int)] = []
+        for site in sites ?? [] {
+            guard words.allSatisfy({ site.title.contains($0) || site.address.contains($0) }) else { continue }
+            let score = site.address.hasPrefix(bare) ? 3
+                : site.title.hasPrefix(needle) || site.title.split(separator: " ").contains(where: { $0.hasPrefix(first) }) ? 2
+                : 1
+            let at = best.firstIndex {
+                score > $0.score || (score == $0.score && site.address.count < $0.site.address.count)
+            } ?? best.endIndex
+            guard at < limit else { continue }
+            best.insert((site, score), at: at)
+            if best.count > limit { best.removeLast() }
+        }
+        return best.map { found in
+            Suggestion(key: Address.editable(found.site.url), title: found.site.name, url: found.site.url, kind: .bookmark)
+        }
+    }
+
+    private static func sites(_ nodes: [Bookmark]) -> [Site] {
+        nodes.flatMap { node -> [Site] in
+            if node.isFolder { return sites(node.children ?? []) }
+            // Only places to go: a bookmarklet's javascript: is no address.
+            guard let url = node.address, ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else { return [] }
+            let title = node.unnamed ? "" : node.title
+            return [Site(name: title, title: title.lowercased(), address: History.stripped(url.absoluteString), url: url)]
+        }
     }
 
     /// The folders `id` sits in, outermost first; empty at the top level,

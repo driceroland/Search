@@ -34,6 +34,10 @@ struct AccountList: View {
                 Row(mark: .symbol("key.icloud"), name: "Connect Apple Passwords…",
                     detail: "Pair once with a code from your Mac") { browser.connectApplePasswords() }
             }
+            if asked.appleOffer != nil {
+                OfferRow(use: browser.useApplePasswords, never: browser.neverOfferApplePasswords)
+            }
+            if !offerOnly {
             HStack(spacing: 6) {
                 Image(systemName: "key")
                     .font(.system(size: 9, weight: .medium))
@@ -45,6 +49,7 @@ struct AccountList: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(Palette.wash.opacity(0.5))
+            }
         }
         .frame(width: max(240, min(360, asked.spot.width)), alignment: .leading)
         .background(Palette.ground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -61,6 +66,11 @@ struct AccountList: View {
         .offset(x: asked.spot.minX, y: asked.spot.maxY + 6)
     }
 
+    /// Nothing but the offer: no footer under it, the row says it all.
+    private var offerOnly: Bool {
+        asked.appleOffer != nil && asked.logins.isEmpty && asked.passkeys.isEmpty && asked.apple.isEmpty && !asked.appleConnect
+    }
+
     private var footer: String {
         if asked.logins.isEmpty && asked.apple.isEmpty && !asked.appleConnect { return "Passkeys on this Mac" }
         if asked.logins.isEmpty { return "From Apple Passwords" }
@@ -68,6 +78,55 @@ struct AccountList: View {
     }
 
     private enum Mark { case letter(String), symbol(String) }
+
+    /// "Use your Apple passwords?", at the bottom: smaller and greyer than
+    /// an account, so it never reads as one. A click turns Apple Passwords
+    /// on and pairs; the ✕ says don't offer again.
+    struct OfferRow: View {
+        let use: () -> Void
+        let never: () -> Void
+        @State private var hovering = false
+        @State private var onCross = false
+
+        var body: some View {
+            HStack(spacing: 8) {
+                Button(action: use) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "key")
+                            .font(.system(size: 9, weight: .medium))
+                            .frame(width: 22)
+                        Text("Use your Apple passwords?")
+                            .font(.system(size: 11.5))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(hovering && !onCross ? Palette.ink : Palette.muted)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Turns on Apple Passwords and pairs with a code from your Mac. Settings › Passwords turns it off.")
+                Button(action: never) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7.5, weight: .semibold))
+                        .foregroundStyle(Palette.faint)
+                        .frame(width: 16, height: 16)
+                        .background(Palette.ink.opacity(onCross ? 0.07 : 0), in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .onHover { onCross = $0 }
+                .help("Don't offer again")
+                .accessibilityLabel("Don't offer again")
+            }
+            .padding(.leading, 10)
+            .padding(.trailing, 8)
+            .padding(.vertical, 6)
+            .background(hovering ? Palette.hover : .clear)
+            .onHover { hovering = $0 }
+            .animation(Motion.quick, value: hovering)
+            .animation(Motion.quick, value: onCross)
+        }
+    }
 
     private struct Row: View {
         let mark: Mark

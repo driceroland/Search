@@ -71,9 +71,15 @@ enum ExtensionRedirectPolicy {
               let rules = manifest["web_accessible_resources"] as? [[String: Any]]
         else { return false }
         return rules.contains { rule in
-            // Dynamic extension origins need separate handling; refuse them here.
+            // Dynamic extension origins need separate handling; refuse them
+            // here, but for the extension's own rule's redirect. A dynamic
+            // URL keeps a site from probing for the file; a rule's redirect
+            // is the extension's doing (WebKit marks it, a page can't), the
+            // site's page is gone, and Chrome shows the file: uBlock Origin
+            // Lite's strictblock.html, its warning for a known-bad site,
+            // left the tab blank instead (#709).
             if let dynamic = rule["use_dynamic_url"] {
-                guard let enabled = dynamic as? Bool, !enabled else { return false }
+                guard let enabled = dynamic as? Bool, !enabled || fromRule else { return false }
             }
             guard let resources = rule["resources"] as? [String],
                   let origins = rule["matches"] as? [String],

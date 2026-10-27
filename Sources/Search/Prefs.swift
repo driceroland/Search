@@ -138,8 +138,19 @@ final class Preferences: ObservableObject {
     @Published var roomyTabs: Bool {
         didSet { store.set(roomyTabs, forKey: "sidebar.roomy") }
     }
+    /// The column as icons only: each tab its site's mark, no titles, a
+    /// fixed narrow width, and nothing that grows under the pointer (idea
+    /// 413). Off unless asked for; Settings › Appearance › Tabs, Icons only.
+    @Published var sideIcons: Bool {
+        didSet { store.set(sideIcons, forKey: "sidebar.icons") }
+    }
+    /// Whether the column is showing as icons now: down a side, and asked for.
+    var iconColumn: Bool { sidebar && sideIcons }
+    /// The column's width as drawn: fixed with icons only, pulled by its
+    /// edge otherwise (the width pulled is kept for when titles come back).
+    var columnWidth: CGFloat { iconColumn ? Metrics.iconColumn : sideWidth }
     /// One tab's line in the column, and the size its title is set in.
-    var sideRow: CGFloat { roomyTabs ? 36 : 28 }
+    var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 28 }
     var sideTitle: CGFloat { roomyTabs ? 14 : 12.5 }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
@@ -220,6 +231,11 @@ final class Preferences: ObservableObject {
     @Published var newTabAfterLast: Bool {
         didSet { store.set(newTabAfterLast, forKey: "tabs.newAfterLast") }
     }
+    /// Closing the tab on screen goes back to the one viewed before it
+    /// rather than the neighbour (see Browser.close). Off unless asked for.
+    @Published var closeGoesBack: Bool {
+        didSet { store.set(closeGoesBack, forKey: "tabs.closeGoesBack") }
+    }
     /// Where a new tab goes in the row. Next unless asked for.
     @Published var newTabPlace: NewTabPlace {
         didSet { store.set(newTabPlace.rawValue, forKey: "tabs.newPlace") }
@@ -272,6 +288,22 @@ final class Preferences: ObservableObject {
         didSet {
             store.set(keepsSignIns, forKey: "sites.keep")
             Store.keepsSignIns = keepsSignIns
+        }
+    }
+    /// Global Privacy Control sent with every request (see Privacy.swift).
+    /// On unless turned off.
+    @Published var sendsPrivacySignal: Bool {
+        didSet {
+            store.set(sendsPrivacySignal, forKey: "privacy.gpc")
+            PrivacySignal.on = sendsPrivacySignal
+        }
+    }
+    /// Ad-click IDs taken off links before the page loads (see
+    /// Privacy.swift). On unless turned off.
+    @Published var removesClickIDs: Bool {
+        didSet {
+            store.set(removesClickIDs, forKey: "privacy.clickIDs")
+            ClickIDs.on = removesClickIDs
         }
     }
     /// Whether sites may ask for a passkey here. Off sends them to the
@@ -623,6 +655,7 @@ final class Preferences: ObservableObject {
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
         roomyTabs = store.bool(forKey: "sidebar.roomy")
+        sideIcons = store.bool(forKey: "sidebar.icons")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
@@ -640,6 +673,7 @@ final class Preferences: ObservableObject {
         sleepPace = SleepPace.chosen
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
+        closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
         confirmsQuit = store.bool(forKey: Preferences.confirmQuitKey)
@@ -656,6 +690,12 @@ final class Preferences: ObservableObject {
         // Before the first page is loaded into the store.
         Store.keepsSignIns = keeps
         Spaces.everyStore.forEach(Store.followCookies)
+        let signals = store.object(forKey: "privacy.gpc") as? Bool ?? true
+        sendsPrivacySignal = signals
+        PrivacySignal.on = signals
+        let removes = store.object(forKey: "privacy.clickIDs") as? Bool ?? true
+        removesClickIDs = removes
+        ClickIDs.on = removes
         // Offered by default only in a build that can actually do them —
         // one with Apple's browser entitlement and its profile embedded. A
         // choice made under the other kind of build is not a choice about

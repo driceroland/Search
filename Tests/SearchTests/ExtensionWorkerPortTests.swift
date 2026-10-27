@@ -32,6 +32,61 @@ final class ExtensionWorkerPortTests: XCTestCase {
         }
     }
 
+    func testContentScriptsGetChromeReasonAndPlatformEnums() throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("ExtensionWorkerRecovery/shim-harness.js")
+        let harness = try String(contentsOf: fixture, encoding: .utf8)
+        let js = try XCTUnwrap(JSContext())
+        js.evaluateScript("const console = { log() {}, error() {} };\n" + harness)
+        js.evaluateScript("const fixture = recoveryFixture(true); Object.assign(globalThis, fixture.root); window = globalThis; top = globalThis;")
+        js.evaluateScript(ExtensionShims.script.replacingOccurrences(of: "__SEARCH_WORKER_GENERATION__", with: "0"))
+        XCTAssertNil(js.exception?.toString())
+        // A content script's own code runs after the early return, so read the
+        // constants then, not merely once the whole shim has finished.
+        js.evaluateScript("globalThis.reasonAtStartup = chrome.runtime.OnInstalledReason.INSTALL;")
+        XCTAssertEqual(js.evaluateScript("reasonAtStartup")?.toString(), "install")
+        XCTAssertEqual(js.evaluateScript("chrome.runtime.OnInstalledReason.INSTALL")?.toString(), "install")
+        XCTAssertEqual(js.evaluateScript("chrome.runtime.OnRestartRequiredReason.OS_UPDATE")?.toString(), "os_update")
+        XCTAssertEqual(js.evaluateScript("chrome.runtime.PlatformArch.ARM64")?.toString(), "arm64")
+        XCTAssertEqual(js.evaluateScript("chrome.runtime.PlatformOs.MAC")?.toString(), "mac")
+        XCTAssertEqual(js.evaluateScript("chrome.runtime.RequestUpdateCheckStatus.NO_UPDATE")?.toString(), "no_update")
+    }
+
+    func testCookieChangesWithoutACookieAreNotGivenToListeners() throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("ExtensionWorkerRecovery/shim-harness.js")
+        let harness = try String(contentsOf: fixture, encoding: .utf8)
+        let js = try XCTUnwrap(JSContext())
+        js.evaluateScript("const console = { log() {}, error() {} };\n" + harness)
+        js.evaluateScript("""
+        const fixture = recoveryFixture(false);
+        Object.assign(globalThis, fixture.root);
+        window = globalThis; top = globalThis;
+        const listeners = [];
+        chrome.cookies = { onChanged: { addListener: (f) => listeners.push(f), removeListener: (f) => { const i = listeners.indexOf(f); if (i >= 0) listeners.splice(i, 1); },
+                                   hasListener: (f) => listeners.includes(f), fire: (...args) => listeners.forEach((f) => f(...args)) } };
+        """)
+        js.evaluateScript(ExtensionShims.script.replacingOccurrences(of: "__SEARCH_WORKER_GENERATION__", with: "0"))
+        XCTAssertNil(js.exception?.toString())
+        js.evaluateScript("""
+        globalThis.seen = [];
+        const listener = (change) => seen.push(change.cookie.name);
+        chrome.cookies.onChanged.addListener(listener);
+        chrome.cookies.onChanged.addListener(listener);
+        chrome.cookies.onChanged.fire(undefined);
+        chrome.cookies.onChanged.fire({});
+        chrome.cookies.onChanged.fire({ cookie: { name: "session" }, cause: "explicit" });
+        """)
+        XCTAssertNil(js.exception?.toString())
+        XCTAssertEqual(js.evaluateScript("seen.length")?.toInt32(), 1)
+        XCTAssertEqual(js.evaluateScript("seen[0]")?.toString(), "session")
+        XCTAssertTrue(js.evaluateScript("chrome.cookies.onChanged.hasListener(listener)")?.toBool() == true)
+        js.evaluateScript("chrome.cookies.onChanged.removeListener(listener)")
+        XCTAssertFalse(js.evaluateScript("chrome.cookies.onChanged.hasListener(listener)")?.toBool() ?? true)
+        js.evaluateScript("chrome.cookies.onChanged.fire({ cookie: { name: 'after' }, cause: 'explicit' });")
+        XCTAssertEqual(js.evaluateScript("seen.length")?.toInt32(), 1)
+    }
+
     @MainActor
     func testNativeGenerationCatchesLateSubscribersAndIsolatesExtensions() async {
         let recovery = ExtensionWorkerRecovery()
