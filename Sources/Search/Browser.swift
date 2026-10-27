@@ -158,6 +158,10 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// The tabs making sound, or paused from the player at the foot of the
+    /// sidebar, the newest to start last (see Player.swift).
+    @Published var sounding: [Tab.ID] = []
+
     /// Everything there is to set. Held here so the whole window redraws when
     /// one of them changes.
     let prefs = Shared.prefs
@@ -5668,6 +5672,16 @@ final class Browser: NSObject, ObservableObject {
             zoomShown = percent
             announce("\(percent)%")
         }
+
+        // What plays, and what the player paused, for the player at the foot
+        // of the sidebar (Player.swift).
+        Publishers.CombineLatest(tab.$noisy.removeDuplicates(), tab.$stilled.removeDuplicates())
+            .dropFirst()
+            .sink { [weak self, weak tab] noisy, stilled in
+                guard let self, let tab else { return }
+                heard(tab, noisy: noisy, stilled: stilled)
+            }
+            .store(in: &bag)
 
         // A page's title lands a beat after the page itself, and a history
         // entry that only ever holds an address is half a memory.
