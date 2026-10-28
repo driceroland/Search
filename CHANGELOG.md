@@ -21,6 +21,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A playing video follows when you switch spaces, just as when you leave its tab, if automatic floating is on. Returning to its tab brings it back into the page ([#772](https://github.com/driceroland/Search/issues/772)).
 - History › Clear Browsing Data… brings History out on its clearing controls, from the menu, from ⇧⌘Delete and from a shortcut of your own. It set the controls' state without bringing History out, so asked for with History closed, which is how it is usually asked for, nothing happened at all and giving it another shortcut changed nothing. Asked for with History already open it worked, as it still does, and ⌘Y still opens History on its list. Thanks [@mickaphd](https://github.com/mickaphd) for reporting ([#749](https://github.com/driceroland/Search/issues/749))
 - Pressing 1Password's button no longer quits Search on macOS 15. WebKit hands out an extension's errors as stand-ins for real errors, and reading one the way Swift reads errors gave a bad pointer there; Search now asks each one for its domain and code directly
 - Claude's side panel opens on the page instead of saying "Claude isn't available on this page" once you are signed in. The panel asks which tab it is in, and Chrome answers "none" there while Search answered with an empty value, which the panel couldn't read. The panel is also listed among the extension's open pages, as in Chrome

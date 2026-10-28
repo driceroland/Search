@@ -193,7 +193,7 @@ extension Browser {
     func busy(_ tab: Tab) -> String? {
         if keepsAwake(tab) { return "kept awake for this site" }
         if tab.noisy { return "playing sound" }
-        if tab.floating || floating == tab.id { return "its video is out" }
+        if tab.floating || floating == tab.id || pictured == tab.id { return "its video is out" }
         if let web = tab.built {
             if web.cameraCaptureState != .none || web.microphoneCaptureState != .none { return "on a call" }
             if #available(macOS 15.4, *), ExtensionCapture.screen(web) { return "recording the screen" }
