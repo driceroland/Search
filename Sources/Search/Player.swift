@@ -13,8 +13,9 @@ import SwiftUI
 //
 // For the newest tab to make a sound that is out of sight: not the page on
 // screen, nor the other page of a pair on screen, nor one out in the
-// floating window, which has its own controls. A tab in another space is
-// paused as you leave it, and so has nothing to show.
+// floating window, which has its own controls. Of this space's row only:
+// a tab left playing in another space keeps playing (see Spaces.swift), and
+// shows here once you are back in its space, if it is still out of sight.
 //
 // The pause looks in the page and in each frame below it that played (the
 // frames MediaKeys keeps), pauses what plays and remembers it; then WebKit
