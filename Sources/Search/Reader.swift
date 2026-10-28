@@ -135,8 +135,20 @@ enum Reader {
         }
         if (letters < 400) return 0;
         // A rail of related links has plenty of text and nothing to read.
-        var links = el.querySelectorAll('a').length;
-        return letters / (1 + links * 14);
+        // What tells such a rail from an article is not how many links it
+        // holds but how much of it they are: a rail is almost all link, an
+        // article that cites its sources a tenth of itself at most. Counting
+        // them punished every article with citations, by 14 apiece, until a
+        // stray box of four link-free paragraphs outscored the article it sat
+        // beside (#757). The ratio is taken from textContent, which asks for
+        // no layout, and both halves of it are measured the same way.
+        var whole = (el.textContent || '').length;
+        if (!whole) return 0;
+        var inside = 0, links = el.querySelectorAll('a');
+        for (var j = 0; j < links.length; j++) {
+          inside += (links[j].textContent || '').length;
+        }
+        return letters * (1 - Math.min(inside / whole, 1));
       }
 
       function best() {

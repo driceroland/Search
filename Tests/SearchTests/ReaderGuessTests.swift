@@ -13,6 +13,17 @@ final class ReaderGuessTests: XCTestCase {
     private static let html = "text/html; charset=utf-8"
     private static let prose = String(repeating: "<p>" + String(repeating: "Words to read here. ", count: 20) + "</p>", count: 4)
     private static let photo = "<svg xmlns='http://www.w3.org/2000/svg' width='800' height='450'><rect width='800' height='450' fill='#888'/></svg>"
+    /// An article that cites its sources, as #757's does: a citation in every
+    /// paragraph. Its link text is a fifteenth of it, so it is prose.
+    private static let cited = String(repeating: "<p>" + String(repeating: "Words to read here. ", count: 15)
+        + "<a href=\"/source\">a source worth reading</a></p>", count: 36)
+    /// The box of plain paragraphs beside it, which held no link at all and
+    /// so won the guess while links were counted rather than weighed.
+    private static let beside = String(repeating: "<p>" + String(repeating: "A summary line. ", count: 15) + "</p>", count: 4)
+    /// A rail of related articles: paragraphs that are almost all link, which
+    /// is what the penalty is there for.
+    private static let rail = String(repeating: "<p><a href=\"/related\">"
+        + String(repeating: "Related article headline. ", count: 8) + "</a></p>", count: 3)
 
     override func setUp() async throws {
         try await super.setUp()
@@ -33,6 +44,14 @@ final class ReaderGuessTests: XCTestCase {
             <nav><a href="/a">A</a> <a href="/b">B</a></nav>
             </div>
             <footer><figure><img src="/photo.svg" width="800" height="450" alt="Footer"></figure></footer>
+            </body></html>
+            """),
+            "/cited": .init(type: Self.html, body: """
+            <!doctype html><html><head><title>Cited</title></head><body>
+            <h1>The headline</h1>
+            <div class="col-span-full">\(Self.beside)</div>
+            <article>\(Self.cited)<p>The last thing the article says.</p></article>
+            <div class="related">\(Self.rail)</div>
             </body></html>
             """),
             "/bloomberg": .init(type: Self.html, body: """
@@ -100,6 +119,27 @@ final class ReaderGuessTests: XCTestCase {
         XCTAssertEqual(found?["controls"] as? Bool, true)
         XCTAssertEqual(found?["bar"] as? Bool, false)
         XCTAssertEqual(found?["newsletter"] as? Bool, false)
+    }
+
+    /// The article, not a box of plain paragraphs beside it: a citation in
+    /// every paragraph used to divide the article's score by 505, so four
+    /// link-free paragraphs outscored it fourty times over and reading mode
+    /// showed a fourteenth of the page (#757).
+    func testAnArticleThatCitesItsSourcesBeatsAPlainBoxBesideIt() async throws {
+        let web = try await read("/cited")
+        let found = try await call(web, """
+        var reader = document.getElementById('office-reader');
+        var text = reader.innerText || '';
+        return {
+          paragraphs: reader.querySelectorAll('p').length,
+          ending: text.indexOf('The last thing the article says.') >= 0,
+          rail: text.indexOf('Related article headline.') >= 0,
+          letters: text.length
+        };
+        """) as? [String: Any]
+        XCTAssertEqual(found?["ending"] as? Bool, true, "the article comes whole, down to its last paragraph")
+        XCTAssertGreaterThanOrEqual(found?["paragraphs"] as? Int ?? 0, 36, "every paragraph of it, not the box beside it")
+        XCTAssertEqual(found?["rail"] as? Bool, false, "and the rail of related articles still stays out")
     }
 
     /// White unless reading mode follows the window: then dark when asked,
