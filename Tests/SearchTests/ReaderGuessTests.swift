@@ -20,6 +20,10 @@ final class ReaderGuessTests: XCTestCase {
     /// The box of plain paragraphs beside it, which held no link at all and
     /// so won the guess while links were counted rather than weighed.
     private static let beside = String(repeating: "<p>" + String(repeating: "A summary line. ", count: 15) + "</p>", count: 4)
+    /// A dozen short comments, each opened by the name of whoever left it.
+    private static let comments = (0..<12).map {
+        "<p><a href=\"/u/\($0)\">someone\($0)</a> " + String(repeating: "A short remark about it. ", count: 3) + "</p>"
+    }.joined()
     /// A rail of related articles: paragraphs that are almost all link, which
     /// is what the penalty is there for.
     private static let rail = String(repeating: "<p><a href=\"/related\">"
@@ -52,6 +56,15 @@ final class ReaderGuessTests: XCTestCase {
             <div class="col-span-full">\(Self.beside)</div>
             <article>\(Self.cited)<p>The last thing the article says.</p></article>
             <div class="related">\(Self.rail)</div>
+            </body></html>
+            """),
+            "/comments": .init(type: Self.html, body: """
+            <!doctype html><html><head><title>Comments</title></head><body>
+            <h1>The headline</h1>
+            <div class="wrap">
+              <article>\(Self.cited)<p>The last thing the article says.</p></article>
+              <section class="comments"><h2>Comments</h2>\(Self.comments)</section>
+            </div>
             </body></html>
             """),
             "/bloomberg": .init(type: Self.html, body: """
@@ -140,6 +153,28 @@ final class ReaderGuessTests: XCTestCase {
         XCTAssertEqual(found?["ending"] as? Bool, true, "the article comes whole, down to its last paragraph")
         XCTAssertGreaterThanOrEqual(found?["paragraphs"] as? Int ?? 0, 36, "every paragraph of it, not the box beside it")
         XCTAssertEqual(found?["rail"] as? Bool, false, "and the rail of related articles still stays out")
+    }
+
+    /// The article, not the box that holds it and its comments. Weighing the
+    /// links rather than counting them leaves that box a little ahead of the
+    /// article, a dozen comments being text too, so between a box and one it
+    /// holds the smaller is taken unless the larger is clearly better.
+    func testTheArticleComesWithoutTheCommentsBelowIt() async throws {
+        let web = try await read("/comments")
+        let found = try await call(web, """
+        var reader = document.getElementById('office-reader');
+        var text = reader.innerText || '';
+        return {
+          ending: text.indexOf('The last thing the article says.') >= 0,
+          comments: text.indexOf('A short remark about it.') >= 0,
+          names: text.indexOf('someone0') >= 0,
+          paragraphs: reader.querySelectorAll('p').length
+        };
+        """) as? [String: Any]
+        XCTAssertEqual(found?["ending"] as? Bool, true, "the article comes whole")
+        XCTAssertEqual(found?["comments"] as? Bool, false, "and the comments below it stay out")
+        XCTAssertEqual(found?["names"] as? Bool, false, "with the names of whoever left them")
+        XCTAssertGreaterThanOrEqual(found?["paragraphs"] as? Int ?? 0, 36)
     }
 
     /// White unless reading mode follows the window: then dark when asked,

@@ -157,8 +157,23 @@ enum Reader {
         );
         var top = null, mark = 0;
         for (var i = 0; i < candidates.length; i++) {
-          var score = prose(candidates[i]);
-          if (score > mark) { mark = score; top = candidates[i]; }
+          var el = candidates[i], score = prose(el);
+          if (!score) continue;
+          if (!top) { top = el; mark = score; continue; }
+          // Between a box and one it holds, the smaller is taken unless the
+          // larger is clearly better, not merely bigger. The box around an
+          // article and its comments scores a little above the article, a
+          // dozen short comments being text too, and reading mode would
+          // bring the comments in. The two sit within a sixth of each other
+          // there; a quarter is the margin, and any box further ahead than
+          // that is a better one rather than a wider one.
+          if (top.contains(el)) {
+            if (score * 1.25 > mark) { top = el; mark = score; }
+          } else if (el.contains(top)) {
+            if (score > mark * 1.25) { top = el; mark = score; }
+          } else if (score > mark) {
+            top = el; mark = score;
+          }
         }
         return top;
       }
