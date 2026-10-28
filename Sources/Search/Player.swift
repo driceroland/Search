@@ -1,13 +1,15 @@
 import SwiftUI
 
 // What plays in another tab, at the foot of the sidebar: the tab's icon
-// and title, its pause, and a click on it to go there. Paused from here, it stays, with its play and a cross to put it
-// away, until it plays again, its page goes or the tab sleeps.
+// and title, its pause, and a click on it to go there. Paused from here, it
+// stays, with its play and a cross to put it away, until it plays again,
+// its page goes or the tab sleeps.
 //
 // Off unless turned on in Settings › Appearance › Tabs, and only with the
 // tabs down the side, titles and all: a sidebar of icons alone has no room
-// for its title and buttons. Off, nothing of it reaches a page: the pause is two lines of script
-// run in Search's world when it is pressed, and never before.
+// for its title and buttons. Off, nothing of it reaches a page: the pause
+// is two lines of script run in Search's world when it is pressed, and
+// never before.
 //
 // For the newest tab to make a sound that is out of sight: not the page on
 // screen, nor the other page of a pair on screen, nor one out in the

@@ -159,8 +159,13 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// The tabs making sound, or paused from the player at the foot of the
-    /// sidebar, the newest to start last (see Player.swift).
-    @Published var sounding: [Tab.ID] = []
+    /// sidebar, the newest to start last (see Player.swift). Kept with the
+    /// player off too, so that turning it on shows what already plays, but
+    /// only redrawing the window while it is on: a tab starting or stopping
+    /// a sound is otherwise nothing the window shows beyond its own row.
+    var sounding: [Tab.ID] = [] {
+        willSet { if prefs.showsPlayer { objectWillChange.send() } }
+    }
 
     /// Everything there is to set. Held here so the whole window redraws when
     /// one of them changes.
