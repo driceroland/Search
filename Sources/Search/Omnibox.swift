@@ -398,8 +398,16 @@ struct AddressField: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 
+    /// The field each window made last: the one on show. SwiftUI can make a
+    /// new one while the one before is still fading out, in the window and
+    /// still told of every request for the keys (from the second ⌘T on a
+    /// page, since #718). That one answered after the new one, took the keys
+    /// back, and left the window with them: nothing had them.
+    private static let shown = NSMapTable<Browser, Field>.weakToWeakObjects()
+
     func makeNSView(context: Context) -> Field {
         let field = Field()
+        Self.shown.setObject(field, forKey: browser)
         field.delegate = context.coordinator
         field.isBordered = false
         field.drawsBackground = false
@@ -486,6 +494,8 @@ struct AddressField: NSViewRepresentable {
 
         /// The keys to the field, now if it is in a window, or the moment it is.
         @MainActor func focus(_ field: Field) {
+            // One on its way out has no keys to take.
+            guard AddressField.shown.object(forKey: browser) === field else { return }
             guard let window = field.window else {
                 field.arrived = { [weak self, weak field] in
                     DispatchQueue.main.async {
