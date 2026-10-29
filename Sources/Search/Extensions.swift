@@ -777,6 +777,13 @@ final class Extensions: NSObject, ObservableObject {
     private var loadsThisRun: Set<String> = []
     private(set) var loadedBefore: Set<String> = []
 
+    /// Just put in, and its worker not yet told so. WebKit may tell a fresh
+    /// install as a browser start (see the shim), so the worker asks here,
+    /// once, rather than trusting which event it was sent.
+    private var freshInstalls: Set<String> = []
+
+    func claimFreshInstall(_ id: String) -> Bool { freshInstalls.remove(id) != nil }
+
     @discardableResult
     func revive(_ id: String, because reason: String) -> Bool {
         guard let item = installed.first(where: { $0.id == id }), item.enabled,
@@ -896,6 +903,7 @@ final class Extensions: NSObject, ObservableObject {
         installed.removeAll { $0.id == id }
         installed.append(item)
         save()
+        freshInstalls.insert(id)
         if await load(item) {
             browser?.announce("\(name) is installed")
         } else {
@@ -911,6 +919,7 @@ final class Extensions: NSObject, ObservableObject {
         Store.settings.removeObject(forKey: "extensions.granted.\(id)")
         loadsThisRun.remove(id)
         loadedBefore.remove(id)
+        freshInstalls.remove(id)
         Store.settings.removeObject(forKey: "extensions.newtab.\(id)")
         Store.settings.removeObject(forKey: "extensions.private.\(id)")
         installed.removeAll { $0.id == id }
