@@ -841,7 +841,10 @@ struct ContentView: View {
                 browser.appLeft()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { Browsers.becameKey(browser) }
+                if let window, (note.object as? NSWindow) === window {
+                    Browsers.becameKey(browser)
+                    browser.appBack(in: window)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
                 if let window, (note.object as? NSWindow) === window {
@@ -865,7 +868,7 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 resting?.isHidden = true
-                browser.appBack()
+                browser.appBack(in: NSApp.keyWindow)
             }
             .onChange(of: browser.fieldShowing) { _, showing in
                 if showing {

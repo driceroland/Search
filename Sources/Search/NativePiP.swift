@@ -46,8 +46,9 @@ enum NativePiP {
     }
 
     /// The largest video playing, into picture in picture. `toggle`: one
-    /// already there comes back instead. Answers "in", "out", "none" (no
-    /// video playing) or "refused".
+    /// already there comes back instead. Answers "in", "still" (one was
+    /// there already, and stays), "out", "none" (no video playing) or
+    /// "refused".
     static func script(toggle: Bool) -> String {
         """
         (function () {
@@ -56,7 +57,7 @@ enum NativePiP {
           for (var i = 0; i < videos.length; i++) {
             var v = videos[i];
             if (v.webkitPresentationMode === 'picture-in-picture') {
-              if (!toggle) return 'in';
+              if (!toggle) return 'still';
               try { v.webkitSetPresentationMode('inline'); return 'out'; } catch (e) { return 'refused'; }
             }
           }

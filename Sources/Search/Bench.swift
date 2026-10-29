@@ -3029,7 +3029,7 @@ final class Bench {
                                     case "app":
                                         let away = browser.prefs.floatsAway
                                         browser.prefs.floatsAway = true
-                                        if out { browser.appLeft() } else { browser.appBack() }
+                                        if out { browser.appLeft() } else { browser.appBack(in: browser.window) }
                                         browser.prefs.floatsAway = away
                                     default: browser.toggleFloat()
                                     }
