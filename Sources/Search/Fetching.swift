@@ -605,30 +605,50 @@ final class Fetches: ObservableObject {
 }
 
 /// The circle in the chrome, beside the other doors: filling while files
-/// come, an arrow a moment once they are in. A click opens Downloads.
+/// come, an arrow a moment once they are in. A click opens Downloads,
+/// wherever Settings says (see Browser.showDownloads) — beside it, as the
+/// side panel's card floating there (DownloadsFloat), among them.
 struct FetchDoor: View {
     @ObservedObject var browser: Browser
     @ObservedObject var fetches: Fetches
     @ObservedObject var prefs: Preferences
+    /// Which side of it the floating card stands on: under it in the row,
+    /// beside it at the column's foot.
+    let arrowEdge: Edge
 
     @State private var hovering = false
+    /// Its view, for the card to stand beside. Held, not drawn from.
+    @State private var spot = Spot()
 
-    init(browser: Browser, fetches: Fetches) {
+    private final class Spot {
+        weak var view: NSView?
+    }
+
+    init(browser: Browser, fetches: Fetches, arrowEdge: Edge = .bottom) {
         self.browser = browser
         self.fetches = fetches
         self.prefs = browser.prefs
+        self.arrowEdge = arrowEdge
     }
 
-    /// Whether it is in the row, for those that make room for it.
-    static func shows(_ fetches: Fetches, _ prefs: Preferences) -> Bool {
-        fetches.showing || !fetches.entries.isEmpty || prefs.alwaysShowsDownloads
+    /// Whether it is in the row, for those that make room for it. Its list
+    /// hanging keeps it there: ⇧⌘J asks for the list with nothing coming in
+    /// and the button otherwise away, and the list needs it to hang from.
+    static func shows(_ fetches: Fetches, _ prefs: Preferences, hanging: Bool = false) -> Bool {
+        fetches.showing || !fetches.entries.isEmpty || prefs.alwaysShowsDownloads || hanging
+    }
+
+    private func float(_ on: Bool) {
+        guard on else { return DownloadsFloat.hide(for: browser, animated: true) }
+        guard let view = spot.view, view.window != nil else { return }
+        DownloadsFloat.show(browser, from: view, edge: arrowEdge)
     }
 
     var body: some View {
         // Always there with Settings › Downloads › Always show the downloads
         // button: an arrow at rest, the circle while a file comes in.
-        if Self.shows(fetches, prefs) {
-            Button { browser.hoarding = true } label: {
+        if Self.shows(fetches, prefs, hanging: browser.downloadsHanging) {
+            Button { browser.showDownloads(toggles: true) } label: {
                 ZStack {
                     if !fetches.showing {
                         Image(systemName: "arrow.down.circle")
@@ -664,6 +684,9 @@ struct FetchDoor: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .help("Downloads (⇧⌘J)")
+            .background(ButtonSpot { spot.view = $0; if browser.downloadsHanging { float(true) } })
+            .onChange(of: browser.downloadsHanging) { _, on in float(on) }
+            .onDisappear { DownloadsFloat.hide(for: browser) }
             .transition(.scale(scale: 0.6).combined(with: .opacity))
             .animation(Motion.quick, value: fetches.done)
             .animation(Motion.quick, value: fetches.showing)

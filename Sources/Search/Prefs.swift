@@ -69,6 +69,23 @@ enum NewTabPlace: String {
     case next, top, end
 }
 
+/// Where Downloads opens: a tab of its own, as it always has; the side
+/// panel's card floating by the downloads button; or the side panel,
+/// beside the page.
+enum DownloadsOpening: String, CaseIterable, Identifiable {
+    case tab, popover, panel
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .tab: return "In a tab"
+        case .popover: return "Floating by the button"
+        case .panel: return "In the side panel"
+        }
+    }
+}
+
 /// Which edge the tab column sits on when tabs are arranged in a sidebar.
 enum SidebarPosition: String, CaseIterable, Identifiable {
     case left, right
@@ -437,6 +454,11 @@ final class Preferences: ObservableObject {
     @Published var alwaysShowsDownloads: Bool {
         didSet { store.set(alwaysShowsDownloads, forKey: "downloads.button") }
     }
+    /// Where Downloads opens, from its button, ⇧⌘J or the menu (see
+    /// Browser.showDownloads). A tab unless asked for.
+    @Published var downloadsOpening: DownloadsOpening {
+        didSet { store.set(downloadsOpening.rawValue, forKey: "downloads.open") }
+    }
     /// The bookmarks bar above the page (see BookmarksBar.swift). Off
     /// unless asked for.
     @Published var bookmarksBar: Bool {
@@ -774,6 +796,7 @@ final class Preferences: ObservableObject {
         littleLinks = store.bool(forKey: "links.little")
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
+        downloadsOpening = store.string(forKey: "downloads.open").flatMap(DownloadsOpening.init(rawValue:)) ?? .tab
         let links = store.object(forKey: "links.show") as? Bool ?? true
         showsLinks = links
         HoveredLink.on = links

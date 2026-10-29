@@ -1415,6 +1415,23 @@ final class Browser: NSObject, ObservableObject {
         get { pageTab(.downloads) != nil }
         set { if newValue { show(InternalPage(.downloads)) } else { putAway(.downloads) } }
     }
+    /// Downloads as a card floating by its button (see DownloadsFloat).
+    @Published var downloadsHanging = false
+
+    /// Downloads, wherever Settings › Downloads › Open Downloads says.
+    /// `toggles`: the button, which closes the list or the panel it opened,
+    /// as a second press on an extension's button does; ⇧⌘J and the menu
+    /// only ever show, as they do the tab.
+    func showDownloads(toggles: Bool = false) {
+        switch prefs.downloadsOpening {
+        case .tab:
+            hoarding = true
+        case .popover:
+            downloadsHanging = toggles ? !downloadsHanging : true
+        case .panel:
+            toggleDownloadsPanel(closes: toggles)
+        }
+    }
     @Published var recallHunt = ""
 
     /// History › Clear Browsing Data…, from the menu, its shortcut, or

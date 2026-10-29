@@ -54,7 +54,7 @@ enum AddressCommand: CaseIterable, Equatable {
         case .newSpace: browser.makingSpace = true
         case .bookmarks: browser.bookmarking = true
         case .history: browser.recalling = true
-        case .downloads: browser.hoarding = true
+        case .downloads: browser.showDownloads()
         case .passwords: browser.managing = true
         case .toggleSidebar: browser.toggleSidebar()
         }

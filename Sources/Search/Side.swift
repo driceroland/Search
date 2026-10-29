@@ -846,7 +846,7 @@ struct SideBar: View {
     /// The foot's door and its margin beneath; with icons only, its doors
     /// one above the other.
     private var footHeight: CGFloat {
-        icons ? CGFloat(SideFoot.doors(prefs, browser.fetches)) * 28 + 8 : 26 + 10
+        icons ? CGFloat(SideFoot.doors(prefs, browser.fetches, hanging: browser.downloadsHanging)) * 28 + 8 : 26 + 10
     }
 
     @ViewBuilder
@@ -884,7 +884,7 @@ private struct SideFoot: View {
     var body: some View {
         if vertical {
             VStack(spacing: 2) {
-                FetchDoor(browser: browser, fetches: fetches)
+                FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 ExtensionSlot(edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
                 BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 if prefs.usesSpaces { SpaceDot(browser: browser) }
@@ -899,7 +899,7 @@ private struct SideFoot: View {
                 ExtensionSlot(edge: .trailing, room: room)
                 BookmarkDoor(browser: browser, arrowEdge: .trailing)
                 // Only while a download is running, and a moment after.
-                FetchDoor(browser: browser, fetches: fetches)
+                FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
@@ -908,11 +908,11 @@ private struct SideFoot: View {
     }
 
     /// How many doors the foot has, stacked: what the rows stop short of.
-    @MainActor static func doors(_ prefs: Preferences, _ fetches: Fetches) -> Int {
+    @MainActor static func doors(_ prefs: Preferences, _ fetches: Fetches, hanging: Bool = false) -> Int {
         var kept = 2  // the puzzle and bookmarks
         if prefs.usesSpaces { kept += 1 }
         if Profiles.shared.several { kept += 1 }
-        if FetchDoor.shows(fetches, prefs) { kept += 1 }
+        if FetchDoor.shows(fetches, prefs, hanging: hanging) { kept += 1 }
         return kept
     }
 
@@ -923,7 +923,7 @@ private struct SideFoot: View {
         var kept = 2  // the puzzle and bookmarks
         if prefs.usesSpaces { kept += 1 }
         if Profiles.shared.several { kept += 1 }
-        if FetchDoor.shows(fetches, prefs) { kept += 1 }
+        if FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
         let free = prefs.sideWidth - 2 * 10 + 2 - CGFloat(kept) * door
         return max(0, Int((free / door).rounded(.down)))
     }
