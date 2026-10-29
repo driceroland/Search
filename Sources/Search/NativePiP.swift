@@ -60,10 +60,13 @@ enum NativePiP {
               try { v.webkitSetPresentationMode('inline'); return 'out'; } catch (e) { return 'refused'; }
             }
           }
+          // Paused by WebKit as the page went out of sight counts as
+          // playing (see Isolate.watch).
+          var unseen = window.__officeFloatUnseen || function () { return false; };
           var best = null, area = 0;
           for (var j = 0; j < videos.length; j++) {
             var w = videos[j];
-            if (w.paused || w.ended || w.readyState < 2) continue;
+            if ((w.paused && !unseen(w)) || w.ended || w.readyState < 2) continue;
             var box = w.getBoundingClientRect();
             if (box.width * box.height >= area) { area = box.width * box.height; best = w; }
           }
