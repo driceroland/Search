@@ -1286,7 +1286,7 @@ final class Bench {
             }
             func state(_ extra: [String: Any] = [:]) -> [String: Any] {
                 var out: [String: Any] = [
-                    "typed": browser.typed, "editing": browser.editing,
+                    "typed": browser.typed, "editing": browser.editing, "picked": browser.picked ?? -1,
                     "offers": browser.offers.map { [$0.key, kind($0), $0.url.absoluteString] },
                     // The grey rest of an address the field would finish to.
                     "ending": browser.ending ?? "",

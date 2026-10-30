@@ -272,7 +272,7 @@ enum SettingsIndex {
               keys: ["pins.list"], words: ["arc", "pinned"], parent: "tabs.layout"),
         .init(id: "newtab.floating", group: "opening", icon: "rectangle.and.text.magnifyingglass",
               title: "New tab in a floating field", detail: "⌘T raises the address field over the page, as in Arc",
-              more: "Return opens what you typed in a new tab; Escape, ⌘W or a click outside puts it away.",
+              more: "Return opens what you typed in a new tab, or goes to the open tab it names, by name or address; New tab (⌘T or the button) again, Escape, ⌘W or a click outside puts it away.",
               keys: ["newtab.floating"], words: ["command bar", "cmd t", "spotlight"]),
         .init(id: "commandbar", group: "opening", icon: "chevron.right.square",
               title: "Address bar commands", detail: "\"settings\" or \"new tab\" alone in the address field goes there",
