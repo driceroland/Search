@@ -75,10 +75,13 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
     /// you there. Taken away, they go straight to the password. Signed with
     /// the entitlement, as releases are, this is on, and Search carries out
     /// the sites' requests itself (see Passkeys.swift).
-    static var passkeysOffered: Bool {
-        get { Store.settings.bool(forKey: "passkeys") }
-        set { Store.settings.set(newValue, forKey: "passkeys") }
-    }
+    ///
+    /// Held here, not read from the store: a build of your own running beside
+    /// a release shares the store, and its first run writes passkeys off into
+    /// it, which would take them from the release's new pages while its
+    /// switch still says on. Preferences sets it from the switch before the
+    /// first page, and so does every flip of the switch.
+    static var passkeysOffered = false
 
     /// Only the passkey object goes. navigator.credentials itself stays: sites
     /// use it for stored passwords too, and that half still works.

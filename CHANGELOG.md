@@ -48,6 +48,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Search a site from the address field picks the site you mean: "goo" then Tab is Google, not Google Maps, which "google m" or "maps" names. Google is among the built-in sites; the words name a site whole, or the shortest name they begin, before a longer one; and a site you have learned and go to far more often than the other can win. Reported on X
 - The column scrolls back up with more tabs than it holds: a space with many folded groups could come up with its rows running off the bottom and its top out of reach — after a relaunch, on going to that space, or with the column hidden and brought out at its edge — and nothing scrolled it back to the folders. The tab you go to is still scrolled into sight, with roomier rows, Icons only and the column on either side (idea 443). Reported by email
 - With pinned rows on and nothing pinned yet, the line over your tabs stays hidden: it comes with the first pin, or a group, which it keeps apart from the tabs Clear would close, in the column and with Icons only (idea 444). Reported by email
+- Passkeys follow the switch of the Search they run in: a build of your own started beside a release turned them off for the release's new tabs and passkey requests, while its switch still said on. Thanks [@oddharsh](https://github.com/oddharsh) ([#737](https://github.com/driceroland/Search/pull/737))
 
 ### Changed
 
