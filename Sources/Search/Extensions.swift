@@ -1305,7 +1305,16 @@ final class Extensions: NSObject, ObservableObject {
         let folder = Extensions.folder(for: context.uniqueIdentifier)
         let added = Set((try? JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent(".search-added")))) as? [String] ?? [])
         let required = context.webExtension.requestedPermissions.contains(.nativeMessaging) && !added.contains("nativeMessaging")
-        return required || context.webExtension.optionalPermissions.contains(.nativeMessaging)
+        // An optional one is read from the manifest, not from WebKit's
+        // optionalPermissions: a permission named in both lists is only
+        // required to WebKit, which leaves it out of the optional ones, and
+        // prepare writes nativeMessaging into permissions. So an extension
+        // that asked for it optionally looked, from there, like one that
+        // never asked at all, and was refused for good.
+        // optional_permissions is the extension's own, left as it ships, as
+        // permissions.request already reads it.
+        let optional = Set(((context.webExtension.manifest["optional_permissions"] as? [Any]) ?? []).compactMap { $0 as? String })
+        return required || optional.contains("nativeMessaging")
     }
 
     /// Whether this address is a page of an extension other than the one
