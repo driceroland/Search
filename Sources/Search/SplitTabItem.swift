@@ -218,6 +218,7 @@ private struct SplitTabHalf: View {
 
     var body: some View {
         handled
+            .modifier(TabHoverDetails(browser: browser, tab: tab))
             .accessibilityElement(children: editing ? .contain : .ignore)
             .accessibilityLabel(title)
             .accessibilityValue(focused ? "Focused page" : "")

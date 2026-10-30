@@ -14,13 +14,11 @@ struct SideBar: View {
     var onFrame = false
     /// The greys for that ground, handed down to every row, pin and door.
     private var greys: Greys { onFrame ? .frame : .white }
+    @ObservedObject private var footerPrefs = SidebarFooterPreferences.shared
 
     @Namespace private var pill
 
     @State private var landing = false
-    /// The width the column had when the edge was picked up.
-    @State private var grabbed: CGFloat?
-    @State private var onEdge = false
 
     /// A pin, picked up out of the grid — a separate state from the loose
     /// rows above, since the two gestures never happen at once but move on
@@ -56,7 +54,8 @@ struct SideBar: View {
 
     private var onRight: Bool { prefs.sidePosition == .right }
     /// Icons only (SideIcons.swift): tiles for rows, a fixed width, the
-    /// lights and the three doors stacked at the top.
+    /// lights and the three doors stacked at the top. The dynamic look of the
+    /// same mode is its own view (IconSide.swift, `iconDynamic`).
     private var icons: Bool { prefs.iconColumn }
     /// With icons only, the band the stacked lights take: gone in full
     /// screen, with them.
@@ -73,6 +72,24 @@ struct SideBar: View {
     }
 
     var body: some View {
+        Group {
+            if prefs.iconDynamic { IconSideBar(browser: browser, prefs: prefs) }
+            else { expanded }
+        }
+        // The still column of icons has nothing to pull; the titled column
+        // and the dynamic rail are pulled by their inner edge.
+        .overlay(alignment: prefs.sidePosition == .right ? .leading : .trailing) {
+            if prefs.iconDynamic || !prefs.iconColumn { SidebarResizeHandle(prefs: prefs) }
+        }
+        .contextMenu {
+            if !prefs.iconColumn {
+                SidebarFooterCustomizationMenu()
+                TopToolbarCustomizationMenu()
+            }
+        }
+    }
+
+    private var expanded: some View {
         ZStack(alignment: .top) {
             // Not under the card for a new space: it isn't made of views that
             // would take the click first.
@@ -151,8 +168,6 @@ struct SideBar: View {
         .overlay(alignment: innerEdge) {
             if !onFrame { Rectangle().fill(Palette.hairline).frame(width: 1) }
         }
-        // A fixed width with icons only: nothing to pull.
-        .overlay(alignment: innerEdge) { if !icons { edge } }
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
             browser.take(providers)
         }
@@ -166,41 +181,6 @@ struct SideBar: View {
         .animation(Motion.settle, value: browser.listedPins.count)
     }
 
-    /// The column's edge: pull it to make the column wider or narrower,
-    /// double-click it to put it back. The whole edge takes the pointer; on
-    /// it, a small pill shows in the middle (see Grip) so the edge says it
-    /// can be taken before it is. Edge to edge, the pill sits on the page's
-    /// hairline; as cards, in the gap before the page.
-    private var edge: some View {
-        EdgeGrip(lit: onEdge || grabbed != nil)
-            .offset(x: onFrame ? 0 : onRight ? -4 : 4)
-            .frame(width: 9)
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .onHover { over in
-                onEdge = over
-                if over { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        if grabbed == nil { grabbed = prefs.sideWidth }
-                        let delta = onRight ? -value.translation.width : value.translation.width
-                        let wanted = (grabbed ?? prefs.sideWidth) + delta
-                        prefs.sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, wanted))
-                    }
-                    .onEnded { _ in grabbed = nil }
-            )
-            .modifier(OneClick(double: true) {
-                withAnimation(Motion.settle) { prefs.sideWidth = Metrics.side }
-            })
-            .animation(Motion.quick, value: onEdge)
-    }
-
-    // MARK: - the spaces, as pages
-
-    /// Where the space on screen sits among them: one past the last while
-    /// the card for a new one is up.
     private var spaceAt: Int {
         browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
     }
@@ -843,10 +823,10 @@ struct SideBar: View {
         }
     }
 
-    /// The foot's door and its margin beneath; with icons only, its doors
+    /// The foot's doors and its margin beneath; with icons only, its doors
     /// one above the other.
     private var footHeight: CGFloat {
-        icons ? CGFloat(SideFoot.doors(prefs, browser.fetches)) * 28 + 8 : 26 + 10
+        SidebarFooter.height(count: footerPrefs.items.count, width: prefs.columnWidth)
     }
 
     @ViewBuilder
@@ -861,72 +841,12 @@ struct SideBar: View {
         }
     }
 
-    /// One small door at the bottom: the settings.
+    /// The doors at the bottom, the same configurable set in every look of
+    /// the column: a grid with titles, one above the other with icons only.
     private var foot: some View {
-        SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, vertical: icons)
+        SidebarFooter(browser: browser, prefs: prefs, compact: icons)
     }
 
-}
-
-/// The row at the bottom of the column. Never wider than the column: wider,
-/// the column took its width, and centred in its own frame it slid half the
-/// overflow off each side (#535). The space's door, the puzzle, bookmarks and
-/// downloads stay put; the pinned extensions that don't fit give way, from
-/// the last, and are still in the puzzle's list.
-private struct SideFoot: View {
-    @ObservedObject var browser: Browser
-    @ObservedObject var prefs: Preferences
-    @ObservedObject var fetches: Fetches
-    /// The column of icons: one above the other, centred, no pinned
-    /// extensions (their list is still the puzzle's).
-    var vertical = false
-
-    var body: some View {
-        if vertical {
-            VStack(spacing: 2) {
-                FetchDoor(browser: browser, fetches: fetches)
-                ExtensionSlot(edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
-                BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
-                if prefs.usesSpaces { SpaceDot(browser: browser) }
-                if Profiles.shared.several { ProfileBadge(browser: browser) }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.bottom, 8)
-        } else {
-            HStack(spacing: 2) {
-                if Profiles.shared.several { ProfileBadge(browser: browser) }
-                if prefs.usesSpaces { SpaceDot(browser: browser) }
-                ExtensionSlot(edge: .trailing, room: room)
-                BookmarkDoor(browser: browser, arrowEdge: .trailing)
-                // Only while a download is running, and a moment after.
-                FetchDoor(browser: browser, fetches: fetches)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 10)
-        }
-    }
-
-    /// How many doors the foot has, stacked: what the rows stop short of.
-    @MainActor static func doors(_ prefs: Preferences, _ fetches: Fetches) -> Int {
-        var kept = 2  // the puzzle and bookmarks
-        if prefs.usesSpaces { kept += 1 }
-        if Profiles.shared.several { kept += 1 }
-        if FetchDoor.shows(fetches, prefs) { kept += 1 }
-        return kept
-    }
-
-    /// How many pinned extensions fit beside the doors that stay. Every door
-    /// is 26 points, with 2 between them.
-    private var room: Int {
-        let door: CGFloat = 26 + 2
-        var kept = 2  // the puzzle and bookmarks
-        if prefs.usesSpaces { kept += 1 }
-        if Profiles.shared.several { kept += 1 }
-        if FetchDoor.shows(fetches, prefs) { kept += 1 }
-        let free = prefs.sideWidth - 2 * 10 + 2 - CGFloat(kept) * door
-        return max(0, Int((free / door).rounded(.down)))
-    }
 }
 
 /// The pinned squares' grid, every cell laid out at once. A lazy grid makes
@@ -1219,6 +1139,7 @@ private struct SideRow: View {
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })
         .modifier(ModifiedTabClick { if interactive && !editing { browser.extendTabSelection(to: tab, modifiers: $0) } })
+        .modifier(TabHoverDetails(browser: browser, tab: tab))
         .overlay { if interactive { MiddleClick(act: close) } }
         .onHover(perform: hover)
         .onAppear { if interactive { Bench.rowAppeared(tab.id, hover: hover) } }

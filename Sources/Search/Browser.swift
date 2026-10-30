@@ -147,6 +147,8 @@ final class Browser: NSObject, ObservableObject {
     }
 
     let tabSwitcher = TabSwitcher()
+    /// The top hover strip belongs to this window, not the shared preferences.
+    let topToolbar = TopToolbarController()
 
     /// The tab whose page is currently out in the little window. Nothing
     /// floating means no window: the two are checked against each other rather
@@ -189,6 +191,7 @@ final class Browser: NSObject, ObservableObject {
     }
     /// The dropdown off the button.
     @Published var bookmarksOpen = false
+    @Published var bookmarksPresenter: UUID?
     /// What hangs off the button instead of the list: the card for one
     /// bookmark, its name and folder, as ⇧⌘B opens it.
     @Published var bookmarkCard: Bookmark.ID?
@@ -212,13 +215,14 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         bookmarkCard = id
+        bookmarksPresenter = nil
         bookmarksOpen = true
     }
 
     /// The button: the list, never a card left from before.
-    func toggleBookmarks() {
-        if !bookmarksOpen { bookmarkCard = nil }
-        bookmarksOpen.toggle()
+    func toggleBookmarks(owner: UUID? = nil) {
+        if bookmarksOpen && bookmarksPresenter == owner { bookmarksOpen = false; bookmarksPresenter = nil }
+        else { bookmarkCard = nil; bookmarksPresenter = owner; bookmarksOpen = true }
     }
 
     /// Another browser's bookmarks, folders and all — one profile's, or
@@ -2040,6 +2044,15 @@ final class Browser: NSObject, ObservableObject {
     @Published var paneQuestions: [PaneQuestion] = []
     /// What handOff decided, in a test run, for the bench.
     static var handedOff: [String] = []
+    /// On-demand physical-footprint readings for the optional memory UI.
+    let tabMemory = TabMemoryMonitor.shared
+
+    func refreshMemory() {
+        Task { [weak self] in
+            guard let self else { return }
+            await tabMemory.refresh(tabs: Browsers.all.flatMap { $0.tabs + $0.parkedTabs })
+        }
+    }
     /// Downloads from private tabs, which the Downloads list never shows.
     var unlisted: Set<ObjectIdentifier> = []
     /// The Chrome Web Store's pages, told when installs come and go. See StoreRelay.swift.
