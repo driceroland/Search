@@ -20,6 +20,16 @@ sv.use("link-menu")
 LINK = ("document.body.innerHTML = '<a href=\"{}\" style=\"display:block;"
         "font-size:60px;line-height:120px;padding:0 20px\">a link</a>'; true")
 
+# A link whose whole face is a picture, as a grid of posts has: the picture
+# drawn here, so it is a real one, wrapped as such a grid wraps it.
+PICTURE = """(function () {{
+  var c = document.createElement('canvas'); c.width = 200; c.height = 200;
+  c.getContext('2d').fillRect(0, 0, 200, 200);
+  document.body.innerHTML = '<a href="{}"><div><picture><img style="display:block;width:200px;height:200px" src="'
+    + c.toDataURL() + '"></picture></div></a>';
+  return true;
+}})()"""
+
 
 def menu(tab, pick):
     sv.ev(tab, LINK.format(f"{sv.BASE}/{pick[1]}")); time.sleep(0.3)
@@ -83,6 +93,13 @@ def main():
         t.ok("with ⌥, Open Link in New Tab and Go to It: the new tab is in front",
              len(new) == 1 and r["active"] == new[0], r)
         t.ok("b is untouched", b in r["tabs"], r["tabs"])
+        # The picture's own menu stands in for WebKit's only where there is
+        # no link: on a link's picture, the link's items are there too.
+        sv.sp("select", id=a); time.sleep(0.4)
+        sv.ev(a, PICTURE.format(f"{sv.BASE}/pictured")); time.sleep(0.3)
+        r = sv.cmd({"do": "linkmenu", "id": a, "x": 60, "y": 60, "pick": "Open Link in New Tab"})
+        t.ok("a link's picture: Open Link in New Tab opens the link",
+             any(u.endswith("/pictured") for u in r["urls"]), r["urls"])
     finally:
         sv.finish()
     try:

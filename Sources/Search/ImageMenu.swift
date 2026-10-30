@@ -43,17 +43,36 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
         if (!e.isTrusted) return;
         var el = e.target;
         while (el && el.tagName !== 'IMG') el = el.parentElement;
-        if (!el || !el.currentSrc || el.naturalWidth < 2) return;
-        // Only an address this menu will act on takes WebKit's own menu
-        // away; any other scheme keeps it, rather than getting nothing.
-        if (!/^(https?|data|blob):/i.test(el.currentSrc)) return;
+        if (!el) return;
         // WebKit's own menu only steps aside when there is a way to ask for
         // this one — otherwise a right-click shows nothing at all.
         var relay = window.webkit && webkit.messageHandlers && webkit.messageHandlers.officeImages;
         if (!relay) return;
-        e.preventDefault();
-        relay.postMessage({ src: el.currentSrc });
+        // Only an address this menu will act on takes WebKit's own menu
+        // away; any other scheme keeps it, rather than getting nothing.
+        var src = el.currentSrc && el.naturalWidth >= 2 && /^(https?|data|blob):/i.test(el.currentSrc) ? el.currentSrc : '';
+        // A picture that is also a link keeps WebKit's own menu, which has
+        // the link's items as well as the picture's: a grid of posts is all
+        // pictures, and every one of them a link to open in a new tab. Its
+        // Copy Image and Download Image are told which picture they are for,
+        // to be this app's (PageView), or that there is none.
+        if (src && !linked(e)) {
+          e.preventDefault();
+          relay.postMessage({ src: src });
+        } else {
+          relay.postMessage({ src: src, kept: true });
+        }
       }, true);
+      // As the middle button finds a link (MiddleRelay): on the path, so one
+      // in a shadow root counts, and an <area> or an SVG <a> too.
+      function linked(e) {
+        var path = e.composedPath();
+        for (var i = 0; i < path.length; i++) {
+          var tag = path[i].tagName ? path[i].tagName.toLowerCase() : '';
+          if ((tag === 'a' || tag === 'area') && path[i].hasAttribute('href')) return true;
+        }
+        return false;
+      }
     })();
     """
 
@@ -61,6 +80,19 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
         _ controller: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
+        // WebKit's own menu, over a picture it keeps it for (see watch): the
+        // picture its Copy Image and Download Image are to act on, or none.
+        if let body = message.body as? [String: Any], body["kept"] as? Bool == true {
+            let url = (body["src"] as? String).flatMap(URL.init(string:)).flatMap {
+                ["http", "https", "data", "blob"].contains($0.scheme?.lowercased() ?? "") ? $0 : nil
+            }
+            MainActor.assumeIsolated { [weak self] in
+                guard let self, let tab else { return }
+                frame = message.frameInfo
+                tab.built?.keptImage = url
+            }
+            return
+        }
         guard let body = message.body as? [String: Any],
               let src = body["src"] as? String,
               let url = URL(string: src),

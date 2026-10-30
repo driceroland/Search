@@ -599,6 +599,9 @@ final class Tab: ObservableObject, Identifiable {
     /// download it and then, on at least some sites, does neither — see
     /// ImageMenu.swift for why this is built rather than patched.
     var onImageMenu: ((Tab, URL) -> Void)?
+    /// WebKit's Copy Image (true) or Download Image (false) chosen over a
+    /// picture that is also a link, done as the image menu does them.
+    var onImageItem: ((Tab, URL, Bool) -> Void)?
     /// Where the last image right-clicked came from (see ImageMenu.swift).
     var imageFrame: WKFrameInfo? { images.frame }
     var searchName: (() -> String?)?
@@ -881,6 +884,10 @@ final class Tab: ObservableObject, Identifiable {
         web.searchName = { [weak self] in self?.searchName?() }
         web.translating = { [weak self] in self.map { $0.translator != nil && $0.translation?.failed != true } ?? false }
         web.onTranslate = { [weak self] in self?.toggleTranslation() }
+        web.onImage = { [weak self] url, copy in
+            guard let self else { return }
+            self.onImageItem?(self, url, copy)
+        }
         web.onSearch = { [weak self] text in
             guard let self else { return }
             self.onSearch?(self, text)
@@ -1853,6 +1860,7 @@ final class Tab: ObservableObject, Identifiable {
         web.searchName = nil
         web.translating = nil
         web.onTranslate = nil
+        web.onImage = nil
         web.onSearch = nil
         web.stopLoading()
         // Detaching a view doesn't end capture while something still holds it.
@@ -2098,6 +2106,20 @@ final class PageView: WKWebView {
             clean.representedObject = url
             menu.insertItem(clean, at: index + 1)
         }
+        // A picture that is also a link keeps this menu (ImageRelay), and
+        // with it WebKit's Copy Image and Download Image, which on some sites
+        // do nothing: this app's own do them instead, as its picture menu
+        // does. Told of the picture just before this menu, for this menu only.
+        if let image = keptImage {
+            keptImage = nil
+            for (id, action) in [("WKMenuItemIdentifierCopyImage", #selector(copyImage(_:))),
+                                 ("WKMenuItemIdentifierDownloadImage", #selector(downloadImage(_:)))] {
+                guard let item = menu.items.first(where: { $0.identifier?.rawValue == id }) else { continue }
+                item.target = self
+                item.action = action
+                item.representedObject = image
+            }
+        }
         // The bench's linkmenu: the item it names is chosen as the menu
         // comes up, the way a hand would choose it, and the menu goes.
         if Store.testing, let title = PageView.picking {
@@ -2205,6 +2227,20 @@ final class PageView: WKWebView {
         CleanLink.copy(url)
     }
 
+    /// The picture under the right-click, when this menu is WebKit's over
+    /// one (see ImageRelay), or nil.
+    var keptImage: URL?
+    /// Copy Image (true) or Download Image (false), this app's own.
+    var onImage: ((URL, Bool) -> Void)?
+
+    @objc private func copyImage(_ item: NSMenuItem) {
+        if let url = item.representedObject as? URL { onImage?(url, true) }
+    }
+
+    @objc private func downloadImage(_ item: NSMenuItem) {
+        if let url = item.representedObject as? URL { onImage?(url, false) }
+    }
+
     /// Open Link in Split View: the same action, the tab it makes marked to
     /// go beside this page, for a second, as the one behind is.
     private var besideSince: Date?
@@ -2270,6 +2306,36 @@ final class PageView: WKWebView {
         }
         onTouch?()
         super.mouseDown(with: event)
+    }
+
+    // MARK: - a paused video filling the screen
+
+    /// A video filling the screen and paused gets VisionKit's view laid over
+    /// the whole page, a moment later: WebKit has looked into the frame on
+    /// screen for text and a subject to lift (VKCImageAnalysisOverlayView).
+    /// It has click recognizers of its own, and the one for a single click
+    /// took every click, text under it or not: AppKit held the press back
+    /// while it decided, the recognizer said yes, and the press never reached
+    /// the page. The click that paused a YouTube video was the last the page
+    /// heard: neither the video nor its play button played it again, only
+    /// the space bar did. Hidden, it is out of the way of the clicks, and
+    /// WebKit takes it away itself once the video plays. WebKit's switch
+    /// for it (TextRecognitionInVideosEnabled) can't be turned off instead:
+    /// the page's process asks all the same, and WebKit ends a process that
+    /// asks for what is switched off, so the video's page crashed.
+    private weak var hiddenAnalysis: NSView?
+
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        guard NSStringFromClass(type(of: subview)).hasPrefix("VKCImageAnalysisOverlayView") else { return }
+        if fullscreenState != .notInFullscreen {
+            subview.isHidden = true
+            hiddenAnalysis = subview
+        } else if subview === hiddenAnalysis {
+            // The same view, back over a picture in the page: as WebKit has it.
+            subview.isHidden = false
+            hiddenAnalysis = nil
+        }
     }
 
     // MARK: - under the column or a peek
