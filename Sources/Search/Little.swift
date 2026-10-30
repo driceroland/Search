@@ -25,8 +25,14 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     private weak var browser: Browser?
     private let window: NSWindow
     private var kept = false
+    /// Placed a step down from another one, not where anybody put it: the
+    /// place is not worth keeping until it is moved or resized. Closed in
+    /// any order, a stack of them walked the kept place across the screen.
+    private var cascaded = false
     /// What it says for a moment at its foot: "Address copied".
     private let note = LittleNote()
+    /// No smaller than this, by hand or from a kept place.
+    private static let smallest = NSSize(width: 420, height: 320)
 
     /// A link from another app, in a small window in front of it.
     /// `front: false` makes it without showing it — for the bench, which
@@ -41,8 +47,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         // on top of four.
         if let last = open.last(where: { $0.window.isVisible }) {
             little.window.cascadeTopLeft(from: last.window.cascadeTopLeft(from: .zero))
-        } else {
-            little.window.center()
+            little.cascaded = true
         }
         open.append(little)
         watchKeys()
@@ -157,7 +162,12 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 420, height: 320)
+        window.minSize = Self.smallest
+        if let frame = Self.remembered {
+            window.setFrame(frame, display: false)
+        } else {
+            window.center()
+        }
         window.delegate = self
         let id = tab.id
         window.contentView = NSHostingView(rootView: LittleView(tab: tab, note: note, keep: { [weak self] in self?.keep() })
@@ -325,7 +335,40 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         switcher.left(tab, alive: Set(LittleWindow.open.map(\.tab.id)))
     }
 
+    /// The last place used, given back only while a screen still shows most
+    /// of it, as the floating video's is: a screen removed since the last
+    /// visit must not strand the next link off screen.
+    private static var remembered: NSRect? {
+        guard let text = Store.settings.string(forKey: "little.frame") else { return nil }
+        let frame = NSRectFromString(text)
+        guard [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite),
+              frame.width >= smallest.width, frame.height >= smallest.height else { return nil }
+        return NSScreen.screens.contains {
+            let seen = $0.visibleFrame.intersection(frame)
+            return !seen.isNull && seen.width * seen.height > 0.6 * frame.width * frame.height
+        } ? frame : nil
+    }
+
+    /// Not in full screen: the screen's whole size, given back to a window
+    /// that is not in full screen, covered the menu bar.
+    private func rememberFrame() {
+        guard !window.styleMask.contains(.fullScreen) else { return }
+        Store.settings.set(NSStringFromRect(window.frame), forKey: "little.frame")
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard window.isVisible else { return }
+        cascaded = false
+        rememberFrame()
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        cascaded = false
+        rememberFrame()
+    }
+
     func windowWillClose(_ notification: Notification) {
+        if !cascaded { rememberFrame() }
         if LittleWindow.switcher.home == tab.id { LittleWindow.switcher.cancel() }
         tab.leave = nil
         if !kept { tab.close() }
