@@ -931,6 +931,10 @@ enum ExtensionShims {
           }
         } catch (e) {}
       }
+      // While a worker's importScripts runs, WebKit turns the run loop to
+      // fetch the file: timers fire, and events are handed over, before the
+      // listeners in that file are in (see `hold`).
+      let importing = 0;
       if (worker && typeof root.importScripts === "function") {
         const shipped = new Set(), empty = new Set();
         for (const p of __SEARCH_SCRIPTS__) p.startsWith("-") ? empty.add(p.slice(1)) : shipped.add(p);
@@ -946,7 +950,9 @@ enum ExtensionShims {
             }
             wanted.push(u);
           }
-          if (wanted.length) return load(...wanted);
+          if (!wanted.length) return;
+          importing++;
+          try { return load(...wanted); } finally { importing--; }
         };
       }
       // The tab an extension's framed page is in, asked once (see __searchToFrame).
@@ -2393,6 +2399,97 @@ enum ExtensionShims {
         return !!(c && typeof c.regexFilter === "string" && c.requestDomains !== undefined
           && (type === "redirect" || type === "modifyHeaders"));
       };
+      // WebKit's patterns lack some of what Chrome's (RE2's) have: `\d`,
+      // `\w` and counts are refused, measured on 27.2 with isRegexSupported.
+      // Each is written out the long way, as the same pattern: `\d` as
+      // `[0-9]`, `\w` as `[A-Za-z0-9_]` (in a class, its members), `x{3,}`
+      // as `xxx+`. 32 of BPC's rules were refused over these. A count on a
+      // group is written out only where no substitution reads the groups by
+      // number, which copies of the group would renumber; a count over 16
+      // is left as it was.
+      const widen = (re, numbered) => {
+        let out = "", i = 0, inClass = false, last = null, lastGroup = false, hyphen = false;
+        const opens = [];
+        while (i < re.length) {
+          const ch = re[i];
+          if (ch === "\\" && i + 1 < re.length) {
+            const n = re[i + 1];
+            const sub = n === "d" ? (inClass ? "0-9" : "[0-9]") : n === "w" ? (inClass ? "A-Za-z0-9_" : "[A-Za-z0-9_]") : "\\" + n;
+            if (!inClass) { last = out.length; lastGroup = false; }
+            out += sub; i += 2;
+            // `[\w-%]`: the hyphen after a class escape is a hyphen, but
+            // after its members written out it would make a range. It goes
+            // last in the class, where it is a hyphen again.
+            if (inClass && sub !== "\\" + n && re[i] === "-" && re[i + 1] !== "]") { hyphen = true; i++; }
+            continue;
+          }
+          if (inClass) {
+            if (ch === "]") { if (hyphen) out += "-"; hyphen = false; inClass = false; }
+            out += ch; i++; continue;
+          }
+          if (ch === "[") {
+            last = out.length; lastGroup = false; inClass = true; out += ch; i++;
+            if (re[i] === "^") { out += "^"; i++; }
+            if (re[i] === "]") { out += "]"; i++; }
+            continue;
+          }
+          if (ch === "(") { opens.push(out.length); out += ch; i++; last = null; continue; }
+          if (ch === ")") { const start = opens.pop(); out += ch; i++; last = start === undefined ? null : start; lastGroup = true; continue; }
+          if (ch === "{") {
+            const m = /^\{(\d+)(,(\d*))?\}/.exec(re.slice(i));
+            const least = m ? Number(m[1]) : 0;
+            const most = !m ? 0 : m[2] === undefined ? least : m[3] === "" ? Infinity : Number(m[3]);
+            if (m && last !== null && !(lastGroup && numbered) && least <= 16 && most >= least && (most === Infinity || most - least <= 16)) {
+              const atom = out.slice(last);
+              out = out.slice(0, last) + (most === Infinity
+                ? (least ? atom.repeat(least - 1) + atom + "+" : atom + "*")
+                : atom.repeat(least) + (atom + "?").repeat(most - least));
+              i += m[0].length; last = null; continue;
+            }
+            out += ch; i++; last = null; continue;
+          }
+          if ("|^$*+?".includes(ch)) last = null; else { last = out.length; lastGroup = false; }
+          out += ch; i++;
+        }
+        return out;
+      };
+      // `\.site\.com\/rest` becomes `^[^:\/?#]+:\/\/[^\/?#]*\.site\.com\/rest`:
+      // the same text, now only where it ends the address's host. Only for a
+      // pattern that opens on a site it lists (bare, after `\.` or after
+      // `\/`), with no sites excluded beside it and no substitution whose
+      // groups would be renumbered. Bypass Paywalls Clean's rules against a
+      // site's inline scripts are of this shape: 11 of its 18.
+      const pinToSite = (r) => {
+        const c = r.condition, redirect = r.action && r.action.redirect;
+        if (!Array.isArray(c.requestDomains) || c.excludedRequestDomains || (redirect && redirect.regexSubstitution)) return null;
+        const re = c.regexFilter;
+        for (const site of c.requestDomains) {
+          if (typeof site !== "string" || !site) continue;
+          const name = site.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\/";
+          const host = re.startsWith("\\." + name) ? "[^\\/?#]*\\."
+            : re.startsWith("\\/" + name) ? ""
+            : re.startsWith(name) ? "([^\\/?#]*\\.)?" : null;
+          if (host === null) continue;
+          const { requestDomains, ...rest } = c;
+          return { ...r, condition: { ...rest, regexFilter: "^[^:\\/?#]+:\\/\\/" + host + (re.startsWith(name) ? re : re.slice(2)) } };
+        }
+        return null;
+      };
+      // Headers WebKit has refused in this extension's rules — Bypass
+      // Paywalls Clean's X-Forwarded-For beside the User-Agent and Referer
+      // it sends as Googlebot. Chrome sets any header; WebKit refuses the
+      // whole rule over one it doesn't know, and 61 of its rules went, each
+      // a site's whole disguise. The header is left out and the rest kept; a
+      // header rule with nothing left to set goes.
+      const unknownHeaders = new Set();
+      const dropUnknownHeaders = (r) => {
+        if (!r || !r.action || !unknownHeaders.size) return r;
+        for (const key of ["requestHeaders", "responseHeaders"]) {
+          if (Array.isArray(r.action[key])) r.action[key] = r.action[key].filter((h) => !(h && unknownHeaders.has(String(h.header).toLowerCase())));
+        }
+        const left = (r.action.requestHeaders || []).length + (r.action.responseHeaders || []).length;
+        return r.action.type === "modifyHeaders" && !left ? null : r;
+      };
       const mendRule = (rule) => {
         if (!rule || typeof rule !== "object") return rule;
         const r = { ...rule, action: rule.action && { ...rule.action }, condition: rule.condition && { ...rule.condition } };
@@ -2406,12 +2503,29 @@ enum ExtensionShims {
           if (!c.resourceTypes.length) return null;
         }
         if (c && Array.isArray(c.excludedResourceTypes)) c.excludedResourceTypes = c.excludedResourceTypes.filter((t) => !unknownTypes.has(t));
+        // An empty list of sites to leave out leaves out none, in Chrome. To
+        // the retry below it read as a rule for all but some, and Bypass
+        // Paywalls Clean writes `excludedInitiatorDomains: []` on its block
+        // rules: 18 of them were left out with Tampermonkey's kind.
+        if (c) for (const key of ["excludedRequestDomains", "excludedInitiatorDomains", "excludedDomains"]) {
+          if (Array.isArray(c[key]) && !c[key].length) delete c[key];
+        }
+        if (!dropUnknownHeaders(r)) return null;
+        if (c && typeof c.regexFilter === "string") c.regexFilter = widen(c.regexFilter, !!(redirect && redirect.regexSubstitution));
         // A pattern beside a list of sites: WebKit drops the list and takes
         // the rule for every address its pattern matches (see
-        // misreadByWebKit in ExtensionShims.swift). A redirect or a header
-        // change of that shape is left out rather than carried out
-        // everywhere: uBlock Origin Lite's strict blocking, `^https?://.*`
-        // for thousands of named sites, sent every page to its warning (#709).
+        // misreadByWebKit in ExtensionShims.swift). Where the pattern opens
+        // on one of the sites it lists — `\.site\.com\/…` — it is pinned to
+        // that site as the address's host, and the list let go: the rule
+        // then acts on no more than it named, if on a little less.
+        if (misread(r)) {
+          const pinned = pinToSite(r);
+          if (pinned) return pinned;
+        }
+        // Otherwise a redirect or a header change of that shape is left out
+        // rather than carried out everywhere: uBlock Origin Lite's strict
+        // blocking, `^https?://.*` for thousands of named sites, sent every
+        // page to its warning (#709).
         if (misread(r)) {
           try { native("debug.error", ["declarativeNetRequest: " + r.action.type + " rule " + r.id + " left out — WebKit would take its pattern for every site, not the ones it names"]).catch(() => {}); } catch (x) {}
           return null;
@@ -2421,6 +2535,8 @@ enum ExtensionShims {
       if (dnr && typeof dnr.isRegexSupported === "function") {
         const original = dnr.isRegexSupported.bind(dnr);
         put(dnr, "isRegexSupported", (options, callback) => {
+          // Asked of the pattern as a rule would carry it (see `widen`).
+          if (options && typeof options.regex === "string") options = { ...options, regex: widen(options.regex, false) };
           const p = Promise.resolve(original(options)).then((r) => r || { isSupported: false, reason: "syntaxError" },
             () => ({ isSupported: false, reason: "syntaxError" }));
           if (typeof callback !== "function") return p;
@@ -2595,6 +2711,16 @@ enum ExtensionShims {
                   }
                   return attempt({ ...opts, addRules: opts.addRules.filter((r) => !excluding(r)) }, left - 1);
                 }
+              }
+              // A header it doesn't know: out of every rule here at once, the
+              // rules kept (see dropUnknownHeaders).
+              const unknown = /The header `([^`]+)` is not recognized/.exec(String(e && e.message));
+              if (unknown && Array.isArray(opts.addRules) && left > 0 && !unknownHeaders.has(unknown[1].toLowerCase())) {
+                unknownHeaders.add(unknown[1].toLowerCase());
+                const addRules = opts.addRules.map((r) => dropUnknownHeaders(r && { ...r, action: r.action && { ...r.action } })).filter(Boolean);
+                const gone = opts.addRules.length - addRules.length;
+                try { native("debug.error", ["declarativeNetRequest: header " + unknown[1] + " left out of the rules that set it — WebKit doesn't know it" + (gone ? "; " + gone + " had nothing else to set" : "")]).catch(() => {}); } catch (x) {}
+                return attempt({ ...opts, addRules }, left - 1);
               }
               const at = /rule at index (\d+)/.exec(String(e && e.message));
               if (!at || !Array.isArray(opts.addRules) || left <= 0) throw e;
@@ -3114,22 +3240,52 @@ enum ExtensionShims {
       // Chrome says "update"; extensions open their welcome page on
       // "install". The first one of a session is marked, and any later one
       // told as the update it is.
+      //
+      // WebKit may also tell a fresh install as a browser start: onStartup,
+      // and no onInstalled at all. It did for the first extension installed
+      // in each launch, and for Bypass Paywalls Clean every time — which
+      // fills in its list of sites only on "install", so it built no rules
+      // and fixed no page. Search knows what it just installed: the worker
+      // asks once, and then hears "install" once, whatever WebKit sent or
+      // in whichever order, and no "startup", as in Chrome.
+      //
+      // And either event may come while the worker is still importing the
+      // file that listens for it (see `importing`): BPC adds its listener
+      // in background.js, which its worker imports, and the event had come
+      // and gone. So the shim listens from the start and holds each event
+      // until no import is running; the worker's listeners hear it then.
       if (background && runtime.onInstalled && typeof runtime.onInstalled.addListener === "function") {
-        let decided = null;
-        const seenBefore = () => decided || (decided = native("background.loadedBefore", []).then((v) => !!v, () => false));
-        const add = runtime.onInstalled.addListener.bind(runtime.onInstalled);
-        const remove = runtime.onInstalled.removeListener.bind(runtime.onInstalled);
-        const wrapped = new Map();
-        put(runtime.onInstalled, "addListener", (listener) => {
-          const w = (details) => {
-            if (!details || details.reason !== "install") return listener(details);
-            seenBefore().then((seen) => listener(seen ? { ...details, reason: "update", previousVersion: runtime.getManifest().version } : details));
+        const hold = (event, decide) => {
+          const listeners = [], queue = [];
+          let timer = null;
+          const flush = () => {
+            timer = null;
+            if (importing) { timer = setTimeout(flush, 5); return; }
+            for (const args of queue.splice(0)) {
+              for (const f of [...listeners]) { try { f(...args); } catch (e) { setTimeout(() => { throw e; }); } }
+            }
           };
-          wrapped.set(listener, w);
-          return add(w);
+          const tell = (args) => { queue.push(args); if (!timer) timer = setTimeout(flush); };
+          try { event.addListener((...args) => { Promise.resolve(decide(...args)).then((out) => { if (out) tell(out); }); }); } catch (e) {}
+          put(event, "addListener", (f) => { if (typeof f === "function" && !listeners.includes(f)) listeners.push(f); });
+          put(event, "removeListener", (f) => { const i = listeners.indexOf(f); if (i >= 0) listeners.splice(i, 1); });
+          put(event, "hasListener", (f) => listeners.includes(f));
+          put(event, "hasListeners", () => listeners.length > 0);
+          return tell;
+        };
+        let decided = null, toldInstall = false;
+        const seenBefore = () => decided || (decided = native("background.loadedBefore", []).then((v) => !!v, () => false));
+        const fresh = native("background.freshInstall", []).then((v) => !!v, () => false);
+        const install = () => { if (toldInstall) return null; toldInstall = true; return [{ reason: "install" }]; };
+        const installed = hold(runtime.onInstalled, (details) => {
+          if (!details || details.reason !== "install") return [details];
+          return Promise.all([fresh, seenBefore()]).then(([yes, seen]) => yes || !seen ? install()
+            : [{ ...details, reason: "update", previousVersion: runtime.getManifest().version }]);
         });
-        put(runtime.onInstalled, "removeListener", (listener) => { const w = wrapped.get(listener); wrapped.delete(listener); return remove(w || listener); });
-        put(runtime.onInstalled, "hasListener", (listener) => wrapped.has(listener));
+        fresh.then((yes) => { const out = yes && install(); if (out) installed(out); });
+        if (runtime.onStartup && typeof runtime.onStartup.addListener === "function") {
+          hold(runtime.onStartup, (...args) => fresh.then((yes) => yes ? null : args));
+        }
       }
 
       // A worker may add listeners only while it starts; WebKit throws for
@@ -4385,6 +4541,10 @@ enum ExtensionShims {
         // browser — an "install" then is really a restart (see the shim).
         case "background.loadedBefore":
             return owner.loadedBefore.contains(id)
+        // Whether it was just installed and its worker not yet told so —
+        // true once (see the shim's onInstalled).
+        case "background.freshInstall":
+            return owner.claimFreshInstall(id)
         // A page found the worker gone though WebKit believes it runs (see
         // the shim's ping).
         case "background.revive":
