@@ -203,7 +203,7 @@ struct TopToolbarLayer: View {
         _controller = ObservedObject(wrappedValue: browser.topToolbar)
     }
     private var eligible: Bool {
-        TopToolbarRevealPolicy.eligible(compact: browser.prefs.iconSidebar, fullscreen: browser.fullScreen,
+        TopToolbarRevealPolicy.eligible(compact: browser.prefs.iconDynamic, fullscreen: browser.fullScreen,
                                         immersed: immersed, enabled: prefs.enabled, hasItems: !prefs.items.isEmpty)
     }
     private var popup: Bool {

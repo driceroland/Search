@@ -503,10 +503,10 @@ struct SettingsPanel: View {
                         set: { layout in withAnimation(Motion.glide) { prefs.tabsLayout = layout } }
                      ))
         case "sidebar.hides": Switch(on: $prefs.sideHides)
-        case "sidebar.style":
-            Segmented(options: SidebarStyle.allCases.map { ($0, $0.title) }, selection: Binding(
-                get: { prefs.sidebarStyle },
-                set: { style in withAnimation(Motion.glide) { prefs.sidebarStyle = style } }
+        case "sidebar.icons.style":
+            Segmented(options: IconsStyle.allCases.map { ($0, $0.title) }, selection: Binding(
+                get: { prefs.iconsStyle },
+                set: { style in withAnimation(Motion.glide) { prefs.iconsStyle = style } }
             ))
         case "sidebar.footer": SidebarFooterSettingsButton()
         case "sidebar.topToolbar": TopToolbarSettingsButton()

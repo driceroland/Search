@@ -18,24 +18,31 @@ enum SidebarResize {
         start + (position == .right ? -translation : translation)
     }
 
-    /// Nil means an interrupted gesture must not commit its tentative state.
-    static func finish(start: CGFloat, proposed: CGFloat, position: SidebarPosition, interrupted: Bool = false) -> SidebarStyle? {
+    /// Nil means an interrupted gesture must not commit its tentative state;
+    /// otherwise, whether the edge snapped in to the rail.
+    static func finish(start: CGFloat, proposed: CGFloat, position: SidebarPosition, interrupted: Bool = false) -> Bool? {
         guard !interrupted else { return nil }
         _ = start
         _ = position
-        return isCollapsed(width: proposed) ? .icons : .titles
+        return isCollapsed(width: proposed)
     }
 
+    /// In, the edge snaps to the rail — the dynamic look, and its 42 points. Out,
+    /// the titled column comes back at the width it was pulled to.
     @MainActor
     static func apply(proposed: CGFloat, to prefs: Preferences) {
-        let style: SidebarStyle = isCollapsed(width: proposed) ? .icons : .titles
-        prefs.sidebarStyle = style
-        if style == .titles { prefs.sideWidth = savedWidth(current: prefs.sideWidth, proposed: proposed, style: style) }
+        if isCollapsed(width: proposed) {
+            if prefs.iconsStyle != .dynamic { prefs.iconsStyle = .dynamic }
+            prefs.sideIcons = true
+        } else {
+            prefs.sideIcons = false
+            prefs.sideWidth = savedWidth(current: prefs.sideWidth, proposed: proposed, collapsed: false)
+        }
     }
 
     /// Keep the remembered expanded width untouched while the rail is selected.
-    static func savedWidth(current: CGFloat, proposed: CGFloat, style: SidebarStyle) -> CGFloat {
-        style == .icons ? current : width(for: proposed, expanded: true)
+    static func savedWidth(current: CGFloat, proposed: CGFloat, collapsed: Bool) -> CGFloat {
+        collapsed ? current : width(for: proposed, expanded: true)
     }
 }
 
@@ -62,15 +69,15 @@ struct SidebarResizeHandle: View {
             .onChange(of: prefs.sidebar) { _, _ in start = nil }
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in
-                    if start == nil { start = prefs.iconSidebar ? SidebarResize.collapsedWidth : prefs.sideWidth }
+                    if start == nil { start = prefs.iconDynamic ? SidebarResize.collapsedWidth : prefs.sideWidth }
                     let base = start ?? prefs.sideWidth
                     let proposed = SidebarResize.proposedWidth(start: base, translation: value.translation.width, position: prefs.sidePosition)
                     SidebarResize.apply(proposed: proposed, to: prefs)
                 }
                 .onEnded { _ in start = nil })
             .modifier(OneClick(double: true) {
-                if prefs.iconSidebar {
-                    prefs.sidebarStyle = .titles
+                if prefs.iconDynamic {
+                    prefs.sideIcons = false
                     prefs.sideWidth = max(Metrics.side, SidebarResize.expandedMin)
                 } else { prefs.sideWidth = Metrics.side }
             })

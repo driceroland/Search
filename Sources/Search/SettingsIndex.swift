@@ -136,6 +136,12 @@ enum SettingsIndex {
               keys: ["sidebar", "sidebar.position", "sidebar.icons"],
               words: ["sidebar", "vertical tabs", "column", "left", "right", "top", "tab bar", "position",
                       "icons only", "compact", "collapsed", "narrow", "favicons"], kind: .wide),
+        .init(id: "sidebar.icons.style", group: "window", icon: "rectangle.split.1x2",
+              title: "Icons only style", detail: "Standard 52pt column with the lights in it, or a dynamic 42pt rail with the top bar",
+              more: "Dragging the column's inner edge in snaps to the dynamic rail; out, the titled column comes back at its width.",
+              keys: ["sidebar.icons.style"],
+              words: ["dynamic", "rail", "lights", "favicon", "icons only", "minimal", "column"],
+              kind: .wide, parent: "tabs.layout"),
         .init(id: "sidebar.hides", group: "window", icon: "sidebar.squares.left",
               title: "Hide the column until the pointer reaches the edge", detail: "The page takes the whole window; ⌘S keeps the tabs out",
               keys: ["sidebar.hides"], words: ["auto hide", "sidebar"], parent: "tabs.layout"),
@@ -152,11 +158,6 @@ enum SettingsIndex {
         .init(id: "glyph", group: "tablook", icon: "app",
               title: "Tabs show", detail: "Beside the title, and on a pinned square",
               keys: ["glyph"], words: ["favicon", "icons", "letters"]),
-        .init(id: "sidebar.style", group: "tablook", icon: "rectangle.split.1x2",
-              title: "Sidebar appearance", detail: "Titles, or a rail of favicons at Helium's size",
-              more: "Dragging the column's inner edge snaps between the two.",
-              keys: ["sidebar.style"], words: ["favicons only", "icons", "rail", "compact", "helium"],
-              kind: .wide, parent: "tabs.layout"),
         .init(id: "sidebar.footer", group: "tablook", icon: "square.grid.2x2",
               title: "Sidebar bottom buttons", detail: "Choose individual controls, everything, or nothing",
               keys: [SidebarFooterPreferences.key], words: ["footer", "bottom", "buttons", "sidebar"],
@@ -453,8 +454,11 @@ enum SettingsIndex {
         case "pages.dusk": return prefs.look != .light
         case "sidebar.roomy": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
-        case "sidebar.style", "sidebar.footer", "sidebar.topToolbar", "sidebar.previews", "sidebar.memory":
-            return prefs.sidebar
+        case "sidebar.icons.style": return prefs.iconColumn
+        // Previews, tab memory and the footer are the same in both looks of
+        // the icons-only column; the top bar is the dynamic rail's own.
+        case "sidebar.footer", "sidebar.previews", "sidebar.memory": return prefs.iconColumn
+        case "sidebar.topToolbar": return prefs.iconDynamic
         case "toolbar.left": return !prefs.sidebar
         default: return true
         }
@@ -466,6 +470,9 @@ enum SettingsIndex {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
+        case "sidebar.icons.style", "sidebar.footer", "sidebar.previews", "sidebar.memory":
+            return "Only with Icons only"
+        case "sidebar.topToolbar": return "Only with the dynamic rail"
         default: return "Only with the tabs down a side"
         }
     }
@@ -619,6 +626,7 @@ extension SettingsIndex {
     @MainActor static func values(_ prefs: Preferences) -> [String: Any] {
         [
             "tabs.layout": prefs.tabsLayout.rawValue,
+            "sidebar.icons.style": prefs.iconsStyle.rawValue,
             "tabs.sleep": prefs.sleepChoice.rawValue,
             "float.own": prefs.floatOwn.rawValue,
             "pins.keep": prefs.pinsKeepSite,
@@ -648,6 +656,9 @@ extension SettingsIndex {
         case "tabs.layout":
             guard let layout = (value as? String).flatMap(TabsLayout.init) else { return false }
             prefs.tabsLayout = layout
+        case "sidebar.icons.style":
+            guard let style = (value as? String).flatMap(IconsStyle.init) else { return false }
+            prefs.iconsStyle = style
         case "tabs.sleep":
             guard let choice = (value as? String).flatMap(SleepChoice.init) else { return false }
             prefs.sleepChoice = choice

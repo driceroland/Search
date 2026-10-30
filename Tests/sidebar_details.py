@@ -35,16 +35,17 @@ try:
     t.ok("bottom-menu preferences can be changed independently of layout", probe()["tabPreviews"] and probe()["memoryUsage"])
 
     ui(sidebarDrag=100)
-    t.ok("dragging below midpoint snaps to icons", probe()["sidebarStyle"] == "icons" and probe()["sidebarWidth"] == 42)
+    t.ok("dragging below midpoint snaps to the dynamic rail",
+         probe()["iconDynamic"] and probe()["columnWidth"] == 42)
     t.ok("collapse preserves wide width", probe()["sideWidth"] == 280)
     t.ok("native traffic lights are hidden in compact mode", lights_hidden(True), probe())
     ui(sidebarDrag=102)
-    t.ok("dragging outward above midpoint expands", probe()["sidebarStyle"] == "titles" and probe()["sidebarWidth"] == 160)
+    t.ok("dragging outward above midpoint expands", not probe()["iconDynamic"] and probe()["columnWidth"] == 160)
     t.ok("expanding restores native traffic lights", lights_hidden(False), probe())
     ui(side="right", sidebarDrag=250)
-    t.ok("right-side expansion preserves requested width", probe()["sidebarStyle"] == "titles" and probe()["sidebarWidth"] == 250)
+    t.ok("right-side expansion preserves requested width", not probe()["iconDynamic"] and probe()["columnWidth"] == 250)
     ui(sidebarDrag=90)
-    t.ok("right-side collapse also uses compact width", probe()["sidebarWidth"] == 42 and probe()["sideWidth"] == 250)
+    t.ok("right-side collapse also uses compact width", probe()["columnWidth"] == 42 and probe()["sideWidth"] == 250)
     ui(side="left")
 
     page = sv.page("memory-fixture")
@@ -72,7 +73,7 @@ try:
 
     artifacts = sv.ROOT / "build" / "sidebar-details"
     artifacts.mkdir(parents=True, exist_ok=True)
-    ui(sidebarStyle="icons", look="light")
+    ui(iconsStyle="dynamic", look="light")
     sv.cmd({"do": "column", "path": str(artifacts / "compact-memory.png"), "height": 500})
     t.ok("compact rail renders with RAM enabled for hover previews", (artifacts / "compact-memory.png").stat().st_size > 500)
     sv.page("restored-active")

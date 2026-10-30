@@ -1,10 +1,12 @@
 import SwiftUI
 
 // The column as icons only (idea 413, Settings › Appearance › Tabs, Icons
-// only; off unless chosen). Each tab is its site's mark in a small tile, the
-// pins as they always are, a fixed narrow width — and nothing that grows or
-// slides out under the pointer, which is the one thing asked for against
-// Chrome's (@eiyuuos on X, 25 Oct 2026): the title is a tooltip.
+// only; off unless chosen), in its standard look: each tab is its site's mark
+// in a small tile, the pins as they always are, a fixed narrow width — and
+// nothing that grows or slides out under the pointer, which is the one thing
+// asked for against Chrome's (@eiyuuos on X, 25 Oct 2026): the title is a
+// tooltip. Hover previews and RAM are the same opt-in as the dynamic rail's
+// (TabHoverDetails, off unless asked for); the tile itself never moves.
 //
 // What a row says beside its title, a tile says in a corner:
 // - loading: the ring, in the mark's place, as on a pin;
@@ -176,6 +178,9 @@ struct IconTile: View {
         })
         .modifier(ModifiedTabClick { if interactive { browser.extendTabSelection(to: tab, modifiers: $0) } })
         .overlay { if interactive { MiddleClick(act: close) } }
+        // Off unless asked for in Settings (sidebar.previews, sidebar.memory):
+        // the tile itself still never grows under the pointer.
+        .modifier(TabHoverDetails(browser: browser, tab: tab))
         .onHover { over in hovering = over }
         .onAppear {
             guard interactive else { return }

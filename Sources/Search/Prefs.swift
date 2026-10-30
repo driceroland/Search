@@ -83,11 +83,12 @@ enum SidebarPosition: String, CaseIterable, Identifiable {
     }
 }
 
-/// The normal titled column, or a fixed-width rail of site icons.
-enum SidebarStyle: String, CaseIterable, Identifiable {
-    case titles, icons
+/// How the icons-only column looks: the still 52pt column (SideIcons.swift),
+/// or the dynamic 42pt rail with the top bar and snap-resize (IconSide.swift).
+enum IconsStyle: String, CaseIterable, Identifiable {
+    case column, dynamic
     var id: String { rawValue }
-    var title: String { self == .titles ? "Titles" : "Favicons only" }
+    var title: String { self == .column ? "Standard column" : "Dynamic rail" }
 }
 
 @MainActor
@@ -131,14 +132,15 @@ final class Preferences: ObservableObject {
             store.set(Double(sidePanelWidth), forKey: "sidepanel.width")
         }
     }
-    /// The titled column, or the favicon rail: kept apart from the column's
-    /// saved width and from the icons-only column above (see TabsLayout).
-    @Published var sidebarStyle: SidebarStyle {
-        didSet { store.set(sidebarStyle.rawValue, forKey: "sidebar.style") }
+    /// Which look the icons-only column has: upstream's still column, or the
+    /// dynamic rail. Kept apart from the column's saved width, so either look
+    /// comes back to the titled width it was left at.
+    @Published var iconsStyle: IconsStyle {
+        didSet { store.set(iconsStyle.rawValue, forKey: "sidebar.icons.style") }
     }
-    var iconSidebar: Bool { sidebar && sidebarStyle == .icons }
-    /// The column's width as drawn, in either of its two looks.
-    var sidebarWidth: CGFloat { iconSidebar ? Metrics.iconSide : columnWidth }
+    /// Icons only in the dynamic look: the rail, the top bar, snap-resize.
+    /// Hover previews, tab memory and the footer are the same in both looks.
+    var iconDynamic: Bool { iconColumn && iconsStyle == .dynamic }
     /// Which side the column is on when it is shown vertically.
     @Published var sidePosition: SidebarPosition {
         didSet { store.set(sidePosition.rawValue, forKey: "sidebar.position") }
@@ -163,7 +165,7 @@ final class Preferences: ObservableObject {
     var iconColumn: Bool { sidebar && sideIcons }
     /// The column's width as drawn: fixed with icons only, pulled by its
     /// edge otherwise (the width pulled is kept for when titles come back).
-    var columnWidth: CGFloat { iconColumn ? Metrics.iconColumn : sideWidth }
+    var columnWidth: CGFloat { iconDynamic ? Metrics.iconSide : iconColumn ? Metrics.iconColumn : sideWidth }
     /// One tab's line in the column, and the size its title is set in.
     var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 28 }
     var sideTitle: CGFloat { roomyTabs ? 14 : 12.5 }
@@ -667,7 +669,7 @@ final class Preferences: ObservableObject {
                                  Preferences.sidePanelWidths.lowerBound), Preferences.sidePanelWidths.upperBound)
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
-        sidebarStyle = store.string(forKey: "sidebar.style").flatMap(SidebarStyle.init) ?? .titles
+        iconsStyle = store.string(forKey: "sidebar.icons.style").flatMap(IconsStyle.init) ?? .column
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
         roomyTabs = store.bool(forKey: "sidebar.roomy")

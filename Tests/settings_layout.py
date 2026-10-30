@@ -83,8 +83,13 @@ def case_reachable(t):
     t.ok("results carry section and group", found and all(i["page"] and i["groupTitle"] for i in found), found)
     t.ok("…in Browsing › Video", any(i["page"] == "browsing" and i["groupTitle"] == "Video" for i in found))
     shown = [i for i in items if not i["findOnly"]]
-    t.ok("about fifty rows in the sections", 45 <= len(shown) <= 80, len(shown))
+    # 75 rows are written down; Click IDs and Global Privacy Control are only
+    # offered on a macOS where they take effect, so 73 here and 75 there.
+    t.ok("seventy-three rows in the sections", 73 <= len(shown) <= 75, len(shown))
     t.ok("ten sections", len(every["pages"]) == 10, every["pages"])
+    # The icons-only look is its own row, found by what it is called.
+    hit = [i for i in settings(find="dynamic rail")["found"] if i["id"] == "sidebar.icons.style"]
+    t.ok("“dynamic rail” finds the icons-only style", bool(hit), hit)
     # Old addresses land in the new sections.
     sv.cmd({"do": "ui", "show": "search://settings/shortcuts"}); time.sleep(0.6)
     t.ok("search://settings/shortcuts opens Keyboard & Mouse", settings()["settingsPage"] == "keyboard",

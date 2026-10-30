@@ -16,10 +16,10 @@ final class SidebarResizeTests: XCTestCase {
     }
 
     func testInterruptedGestureAndSavedWideWidth() {
-        XCTAssertEqual(SidebarResize.finish(start: 200, proposed: 90, position: .left), .icons)
-        XCTAssertEqual(SidebarResize.finish(start: 200, proposed: 130, position: .left), .titles)
-        XCTAssertEqual(SidebarResize.savedWidth(current: 200, proposed: 90, style: .icons), 200)
-        XCTAssertEqual(SidebarResize.savedWidth(current: 200, proposed: 210, style: .titles), 210)
+        XCTAssertEqual(SidebarResize.finish(start: 200, proposed: 90, position: .left), true, "in, to the rail")
+        XCTAssertEqual(SidebarResize.finish(start: 200, proposed: 130, position: .left), false, "out, to titles")
+        XCTAssertEqual(SidebarResize.savedWidth(current: 200, proposed: 90, collapsed: true), 200)
+        XCTAssertEqual(SidebarResize.savedWidth(current: 200, proposed: 210, collapsed: false), 210)
         XCTAssertEqual(SidebarResize.finish(start: 200, proposed: 220, position: .right, interrupted: true), nil)
     }
 }

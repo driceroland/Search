@@ -37,22 +37,43 @@ try:
     subprocess.run(["defaults", "write", sv.SUITE, "sidebar.width", "-float", "300"], check=True)
     sv.launch()
     state = probe()
-    t.ok("existing users keep the titled sidebar by default", state["sidebarStyle"] == "titles", state)
-    t.ok("the saved normal width is used", state["sidebarWidth"] == 300, state)
+    t.ok("existing users keep the titled sidebar by default", state["iconsStyle"] == "column", state)
+    t.ok("the saved normal width is used", state["columnWidth"] == 300, state)
 
-    ui(sidebarStyle="icons")
+    # One entry point: Tabs › Icons only. Its look is a separate setting.
+    ui(layout="icons")
     state = probe()
-    t.ok("icon mode uses the fixed 42-point rail", state["sidebarStyle"] == "icons" and state["sidebarWidth"] == 42, state)
-    t.ok("icon mode does not overwrite the normal width", state["sideWidth"] == 300, state)
+    t.ok("icons only starts as the standard 52-point column",
+         state["iconsStyle"] == "column" and state["columnWidth"] == 52 and not state["iconDynamic"], state)
+    ui(iconsStyle="dynamic")
+    state = probe()
+    t.ok("the dynamic rail uses the fixed 42-point width",
+         state["iconsStyle"] == "dynamic" and state["iconDynamic"] and state["columnWidth"] == 42, state)
+    t.ok("the rail does not overwrite the normal width", state["sideWidth"] == 300, state)
     ui(sidebar=False)
-    t.ok("top tabs ignore the compact width", probe()["sidebarWidth"] == 300, probe())
+    t.ok("top tabs ignore the compact width", probe()["columnWidth"] == 300, probe())
     ui(sidebar=True)
-    t.ok("returning to the sidebar restores icon mode", probe()["sidebarWidth"] == 42)
+    t.ok("returning to the sidebar restores the rail", probe()["columnWidth"] == 42)
     try:
-        ui(sidebarStyle="invalid")
+        ui(iconsStyle="invalid")
         t.ok("invalid style is rejected", False)
     except RuntimeError:
-        t.ok("invalid style is rejected without changing mode", probe()["sidebarStyle"] == "icons")
+        t.ok("invalid style is rejected without changing mode", probe()["iconsStyle"] == "dynamic")
+
+    # The opt-in details are the same in both looks: hover previews, RAM in
+    # them, and the configurable footer. Only the rail's own chrome differs.
+    ui(iconsStyle="column", footer="all", previews=True, memory=True)
+    state = probe()
+    t.ok("the standard column keeps its 52-point width",
+         state["columnWidth"] == 52 and not state["iconDynamic"], state)
+    t.ok("previews and RAM are offered in both looks", state["tabPreviews"] and state["memoryUsage"], state)
+    t.ok("the footer is the configurable one in both looks",
+         len(state["sidebarFooterItems"]) == 10, state["sidebarFooterItems"])
+    standard = artifacts / "standard-column.png"
+    sv.cmd({"do": "column", "path": str(standard), "height": 680})
+    width_px, height_px = struct.unpack(">II", standard.read_bytes()[16:24])
+    t.ok("standard column: rendered at 52 points", abs(width_px / height_px - 52 / 680) < 0.001, (width_px, height_px))
+    ui(iconsStyle="dynamic", footer="none")
 
     a, b, c, d, e = [sv.page(name) for name in ["alpha", "bravo", "charlie", "delta", "echo"]]
     sv.cmd({"do": "pin", "id": a})
@@ -71,7 +92,7 @@ try:
     ui(look="light", side="left")
     image("light-left")
     ui(side="right")
-    t.ok("right-side rail uses the same compact width", probe()["sidePosition"] == "right" and probe()["sidebarWidth"] == 42)
+    t.ok("right-side rail uses the same compact width", probe()["sidePosition"] == "right" and probe()["columnWidth"] == 42)
     image("light-right")
     ui(look="dark")
     image("dark-right")
@@ -99,18 +120,19 @@ try:
     sv.quit()
     sv.launch()
     state = probe()
-    t.ok("the icon-only choice survives restart", state["sidebarStyle"] == "icons" and state["sidebarWidth"] == 42, state)
+    t.ok("the icons-only choice and its look survive restart",
+         state["iconsStyle"] == "dynamic" and state["columnWidth"] == 42, state)
     t.ok("the normal width survives restart too", state["sideWidth"] == 300, state)
-    ui(sidebarStyle="titles")
-    t.ok("switching back restores the saved normal width", probe()["sidebarWidth"] == 300)
+    ui(layout="left")
+    t.ok("switching back restores the saved normal width", probe()["columnWidth"] == 300)
     title_path = artifacts / "titled-left.png"
     sv.cmd({"do": "column", "path": str(title_path), "height": 680})
     t.ok("titled sidebar separator render remains available", title_path.stat().st_size > 500)
-    ui(sidebarStyle="icons")
+    ui(layout="icons", iconsStyle="dynamic")
     sv.quit()
-    subprocess.run(["defaults", "write", sv.SUITE, "sidebar.style", "-string", "future-style"], check=True)
+    subprocess.run(["defaults", "write", sv.SUITE, "sidebar.icons.style", "-string", "future-style"], check=True)
     sv.launch()
-    t.ok("unknown stored style falls back safely", probe()["sidebarStyle"] == "titles")
+    t.ok("unknown stored style falls back to the standard column", probe()["iconsStyle"] == "column")
 finally:
     t.done()
     sv.finish()

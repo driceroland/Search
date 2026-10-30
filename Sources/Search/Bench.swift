@@ -789,8 +789,8 @@ final class Bench {
                 // The column as drawn, and whether it is icons only.
                 "columnWidth": Double(browser.prefs.columnWidth),
                 "sideIcons": browser.prefs.sideIcons,
-                "sidebarStyle": browser.prefs.sidebarStyle.rawValue,
-                "sidebarWidth": Double(browser.prefs.sidebarWidth),
+                "iconsStyle": browser.prefs.iconsStyle.rawValue,
+                "iconDynamic": browser.prefs.iconDynamic,
                 "tabPreviews": SidebarDetailsPreferences.shared.showsPreviews,
                 "memoryUsage": SidebarDetailsPreferences.shared.showsMemory,
                 "topToolbarEnabled": TopToolbarPreferences.shared.enabled,
@@ -3333,7 +3333,7 @@ final class Bench {
             guard Store.testing else { answer(["error": "column only works on a --test run — it would picture your tabs"]); return }
             guard let path = request["path"] as? String else { answer(["error": "column needs a path"]); return }
             let height = request["height"] as? Double ?? 600
-            let width = Double(browser.prefs.sidebarWidth)
+            let width = Double(browser.prefs.columnWidth)
             var railFrames: [String: CGRect] = [:]
             let host = NSHostingView(rootView: SideBar(browser: browser, prefs: browser.prefs).frame(width: width, height: height)
                 .onPreferenceChange(SidebarRailFrames.self) { railFrames = $0 })
@@ -3513,12 +3513,19 @@ final class Bench {
             }
             if let mode = (request["pages120"] as? String).flatMap(FastPages.init) { browser.prefs.fastPages = mode }
             if let on = request["dusk"] as? Bool { browser.prefs.darkensPages = on }
-            if let style = request["sidebarStyle"] as? String {
-                guard let value = SidebarStyle(rawValue: style) else {
-                    answer(["error": "sidebarStyle needs titles or icons"])
+            if let style = request["iconsStyle"] as? String {
+                guard let value = IconsStyle(rawValue: style) else {
+                    answer(["error": "iconsStyle needs column or dynamic"])
                     return
                 }
-                browser.prefs.sidebarStyle = value
+                browser.prefs.iconsStyle = value
+            }
+            if let layout = request["layout"] as? String {
+                guard let value = TabsLayout(rawValue: layout) else {
+                    answer(["error": "layout needs top, left, right or icons"])
+                    return
+                }
+                browser.prefs.tabsLayout = value
             }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             if Store.testing, let width = request["sidebarDrag"] as? Double, width.isFinite {
@@ -3534,7 +3541,7 @@ final class Bench {
                     TopToolbarPreferences.shared.hideAll()
                     for item in items.compactMap(TopToolbarItem.init) { TopToolbarPreferences.shared.set(item, visible: true) }
                 }
-                browser.topToolbar.configure(eligible: TopToolbarRevealPolicy.eligible(compact: browser.prefs.iconSidebar,
+                browser.topToolbar.configure(eligible: TopToolbarRevealPolicy.eligible(compact: browser.prefs.iconDynamic,
                     fullscreen: browser.fullScreen, immersed: browser.active?.immersed == true,
                     enabled: TopToolbarPreferences.shared.enabled, hasItems: !TopToolbarPreferences.shared.items.isEmpty), popup: request["topPopup"] as? Bool ?? false)
                 if let edge = request["topEdge"] as? Bool { browser.topToolbar.pointer(inside: edge, atEdge: edge, outsideWindow: request["topOutsideWindow"] as? Bool ?? false) }

@@ -218,10 +218,10 @@ struct Fold: View {
                 Fold.reset(bar, hidden: lightsOff && !window.styleMask.contains(.fullScreen))
             }
         }
-        .onChange(of: prefs.sidebarWidth) { _, _ in
+        .onChange(of: prefs.columnWidth) { _, _ in
             if browser.folded { hideLights() }
         }
-        .onChange(of: prefs.sidebarStyle) { _, _ in
+        .onChange(of: prefs.iconsStyle) { _, _ in
             resetPending()
             if let bar = browser.window?.standardWindowButton(.closeButton)?.superview { Fold.reset(bar, hidden: lightsOff) }
             hideLights()
@@ -259,7 +259,7 @@ struct Fold: View {
     }
 
     private var lightsOff: Bool {
-        if prefs.iconSidebar { return !browser.topToolbar.showsWindowControls }
+        if prefs.iconDynamic { return !browser.topToolbar.showsWindowControls }
         return browser.folded && !browser.peeking
     }
 
@@ -316,7 +316,7 @@ struct Fold: View {
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
             let onWindow = top == window.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
-            let reach = prefs.sidebar ? prefs.sidebarWidth : Metrics.strip
+            let reach = prefs.sidebar ? prefs.columnWidth : Metrics.strip
             // An extension's popup hangs from its button in the column: the
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).
@@ -392,7 +392,7 @@ struct Fold: View {
     /// so hiding it hides both, and hidden buttons take no clicks.
     private func hideLights() {
         guard let bar = browser.window?.standardWindowButton(.closeButton)?.superview else { return }
-        if !prefs.iconSidebar || browser.window?.styleMask.contains(.fullScreen) == true { browser.topToolbar.restoreCaption(bar) }
+        if !prefs.iconDynamic || browser.window?.styleMask.contains(.fullScreen) == true { browser.topToolbar.restoreCaption(bar) }
         // In full screen the buttons are macOS's to show, in the bar that
         // comes down with the menu bar; hidden or slid away here, they were
         // missing from it, or out of reach behind the column (#241).
@@ -402,11 +402,11 @@ struct Fold: View {
             bar.alphaValue = 1
             return
         }
-        if prefs.iconSidebar {
+        if prefs.iconDynamic {
             browser.topToolbar.animateCaption(bar, visible: browser.topToolbar.showsWindowControls)
         } else if prefs.sidebar {
             bar.alphaValue = 1
-            Fold.slide(bar, off: lightsOff, by: prefs.sidebarWidth, right: onRight)
+            Fold.slide(bar, off: lightsOff, by: prefs.columnWidth, right: onRight)
         } else {
             bar.alphaValue = 1
             Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true)

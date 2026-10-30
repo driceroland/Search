@@ -1047,7 +1047,7 @@ struct BookmarkDoor: View {
     @State private var presenterID = UUID()
 
     private var presents: Bool {
-        let useTop = browser.prefs.iconSidebar && browser.topToolbar.revealed && TopToolbarPreferences.shared.contains(.bookmarks)
+        let useTop = browser.prefs.iconDynamic && browser.topToolbar.revealed && TopToolbarPreferences.shared.contains(.bookmarks)
         return browser.bookmarksOpen && ToolbarPopupOwnership.presents(owner: browser.bookmarksPresenter, candidate: presenterID,
                                                                        defaultOwner: isTopToolbar == useTop)
     }

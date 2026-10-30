@@ -35,7 +35,8 @@ def render(name, width=1100):
 
 try:
     sv.setup(sidebar=True)
-    subprocess.run(["defaults", "write", sv.SUITE, "sidebar.style", "-string", "icons"], check=True)
+    subprocess.run(["defaults", "write", sv.SUITE, "sidebar.icons", "-bool", "true"], check=True)
+    subprocess.run(["defaults", "write", sv.SUITE, "sidebar.icons.style", "-string", "dynamic"], check=True)
     sv.launch()
     page = sv.page("toolbar-page")
     sv.cmd({"do": "wait", "id": page, "seconds": 20})
@@ -146,9 +147,9 @@ try:
     t.ok("re-enabling restores reveal", wait_for("topToolbarRevealed", True))
     ui(fullscreen=True)
     t.ok("native fullscreen suppresses the custom strip", wait_for("topToolbarRevealed", False))
-    ui(fullscreen=False, sidebarStyle="titles")
+    ui(fullscreen=False, layout="left")
     t.ok("titled layout suppresses the strip", not probe()["topToolbarRevealed"])
-    ui(sidebarStyle="icons", topControls=["windowControls","address","tools"], topEdge=True)
+    ui(layout="icons", iconsStyle="dynamic", topControls=["windowControls","address","tools"], topEdge=True)
     t.ok("returning to compact mode restores reveal", wait_for("topToolbarRevealed", True))
     sv.sp("save");sv.quit();sv.launch()
     t.ok("custom selection and enabled state survive restart", set(probe()["topToolbarItems"])=={"windowControls","address","tools"} and probe()["topToolbarEnabled"])

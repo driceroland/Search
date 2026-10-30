@@ -26,7 +26,8 @@ def render(name, compact=True):
 
 try:
     sv.setup(sidebar=True)
-    subprocess.run(["defaults", "write", sv.SUITE, "sidebar.style", "-string", "icons"], check=True)
+    subprocess.run(["defaults", "write", sv.SUITE, "sidebar.icons", "-bool", "true"], check=True)
+    subprocess.run(["defaults", "write", sv.SUITE, "sidebar.icons.style", "-string", "dynamic"], check=True)
     sv.launch()
     pages = [sv.page(x) for x in ["one", "two", "three"]]
     ui(footer="none")
@@ -40,11 +41,11 @@ try:
     render("compact-custom")
     ui(side="right", look="dark")
     render("right-dark-custom")
-    ui(sidebarStyle="titles", footer="all")
+    ui(layout="left", footer="all")
     render("titles-all", compact=False)
     ui(footer="none")
     render("titles-none", compact=False)
-    ui(sidebarStyle="icons", look="light", side="left")
+    ui(layout="icons", iconsStyle="dynamic", look="light", side="left")
     sv.sp("save"); sv.quit(); sv.launch()
     t.ok("an explicitly empty footer stays empty after restart", probe()["sidebarFooterItems"] == [])
     render("restarted-none")

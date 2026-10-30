@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// A persistent, narrow alternative to the titled column. The page gets the
-/// saved wide column's space back without forgetting that column's width.
+/// The icons-only column in its dynamic look (IconsStyle.dynamic): a
+/// persistent, narrow rail instead of the titled column, with the lights in
+/// the top hover bar and an edge that snaps. The page gets the saved wide
+/// column's space back without forgetting that column's width.
 struct IconSideBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
@@ -64,7 +66,7 @@ struct IconSideBar: View {
             }
             SidebarFooter(browser: browser, prefs: prefs, compact: true)
         }
-        .frame(width: prefs.sidebarWidth)
+        .frame(width: prefs.columnWidth)
         .frame(maxHeight: .infinity)
         .background(landing ? Palette.hover : Palette.ground)
         .overlay(alignment: prefs.sidePosition == .left ? .trailing : .leading) {

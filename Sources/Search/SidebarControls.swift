@@ -191,8 +191,11 @@ struct SidebarFooter: View {
                 SidebarFooterCustomizationMenu()
                 TopToolbarCustomizationMenu()
                 Divider()
-                Button(prefs.iconSidebar ? "Show Tab Titles" : "Favicons Only") {
-                    withAnimation(IconRailInteraction.movement) { prefs.sidebarStyle = prefs.iconSidebar ? .titles : .icons }
+                Button(prefs.iconColumn ? "Show Tab Titles" : "Favicons Only") {
+                    withAnimation(IconRailInteraction.movement) {
+                        prefs.tabsLayout = prefs.iconColumn
+                            ? (prefs.sidePosition == .right ? .right : .left) : .icons
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 15, weight: .medium))
