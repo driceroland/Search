@@ -303,6 +303,12 @@ enum SettingsIndex {
               title: "Block ads and trackers", detail: "Third parties whose only job is to watch, and YouTube's ads",
               more: "On YouTube, the ads announced in the player's own data are taken out before the video starts. Turn it off for one site from the site's row.",
               keys: ["shield"], words: ["adblock", "ad blocker", "ads", "youtube"]),
+        .init(id: "shield.lists", group: "blocking", icon: "list.bullet.rectangle",
+              title: "Filter lists", detail: "EasyList, a hosts file or your own, added to the blocker and kept up to date",
+              more: "Each list is turned into WebKit's own rules and compiled once, a few seconds for a big one. What WebKit can't do, like scriptlets and redirects, is skipped and counted. WebKit takes up to 150,000 rules from one list.",
+              keys: [FilterLists.key],
+              words: ["easylist", "easyprivacy", "ublock", "filter list", "hosts file", "subscriptions", "custom filters"],
+              parent: "shield"),
         .init(id: "sites.keep", group: "blocking", icon: "eye.slash",
               title: "Prevent cross-site tracking", detail: "As in Safari. Private tabs keep it on",
               more: "Off, sites you rarely open keep their sign-ins, and trackers inside other sites can follow you across them again, as in Chrome.",
@@ -435,6 +441,7 @@ enum SettingsIndex {
         case "sidebar.roomy": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
         case "toolbar.left": return !prefs.sidebar
+        case "shield.lists": return prefs.shielded
         default: return true
         }
     }
@@ -445,6 +452,7 @@ enum SettingsIndex {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
+        case "shield.lists": return "Only while ads and trackers are blocked"
         default: return "Only with the tabs down a side"
         }
     }

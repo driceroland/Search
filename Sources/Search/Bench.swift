@@ -1695,6 +1695,54 @@ final class Bench {
             }
             answer(reply)
 
+        case "filterlists":
+            // The filter lists of Settings › Privacy (FilterLists.swift):
+            // add one as the field would, update, switch, remove, and read
+            // back each with its counts and trouble, and how many lists the
+            // blocker carries. Test runs only (Tests/filter_lists.py).
+            guard Store.testing else { answer(["error": "filterlists only works on a --test run"]); return }
+            let lists = FilterLists.shared
+            let id = (request["id"] as? String).flatMap(UUID.init(uuidString:))
+            switch request["action"] as? String ?? "state" {
+            case "add":
+                let typed = request["origin"] as? String ?? ""
+                if let problem = lists.problem(with: typed) { answer(["error": problem]); return }
+                lists.add(typed)
+            case "refresh": if let id { lists.refresh(id) }
+            case "turn": if let id { lists.turn(id, on: request["on"] as? Bool ?? true) }
+            case "remove": if let id { lists.remove(id) }
+            default: break
+            }
+            // picture: Settings › Privacy drawn offscreen as it is now, tall
+            // enough to need no scrolling, to a PNG.
+            if let path = request["picture"] as? String {
+                browser.settingsPage = .privacy
+                let host = NSHostingView(rootView: SettingsPanel(browser: browser, prefs: browser.prefs)
+                    .frame(width: 880, height: request["height"] as? Double ?? 1500)
+                    .background(Palette.ground))
+                host.frame = NSRect(origin: .zero, size: host.fittingSize)
+                let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+                window.appearance = NSApp.effectiveAppearance
+                window.contentView = host
+                host.layoutSubtreeIfNeeded()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    if let picture = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                        host.cacheDisplay(in: host.bounds, to: picture)
+                        try? picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                    }
+                    window.contentView = nil
+                }
+            }
+            answer([
+                "lists": lists.sources.map { source -> [String: Any] in
+                    ["id": source.id.uuidString, "origin": source.origin, "name": source.name, "on": source.on,
+                     "working": lists.working.contains(source.id), "rules": source.rules ?? -1,
+                     "used": source.used ?? -1, "dropped": source.dropped, "nearLimit": source.nearLimit,
+                     "trouble": source.trouble ?? "", "fetched": source.fetched?.timeIntervalSince1970 ?? 0]
+                },
+                "blocking": Shield.shared.added.count,
+            ])
+
         case "menus":
             // Every menu of the menu bar, by title, after SwiftUI has filled
             // it — and whether the AI add-on counts as on. Reads only.
@@ -3622,7 +3670,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings", "filterlists",
             ]])
         }
     }
