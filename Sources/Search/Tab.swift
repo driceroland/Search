@@ -557,6 +557,9 @@ final class Tab: ObservableObject, Identifiable {
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
     @Published var noisy = false
+    /// Paused from the player at the foot of the sidebar, to be played again
+    /// from there (see Player.swift).
+    @Published var stilled = false
     /// Darkened by Search, as its page last said (see Dusk.swift).
     @Published var dusked = false
     /// What the page measured: true, dark by itself; nil, not yet measured.
@@ -1800,6 +1803,8 @@ final class Tab: ObservableObject, Identifiable {
     private func heard(_ on: Bool) {
         let was = noisy
         noisy = on
+        // Playing again, from the player or from the page: nothing paused.
+        if on { stilled = false }
         quiet?.invalidate()
         quiet = nil
         guard was, !on else { return }
@@ -1808,11 +1813,39 @@ final class Tab: ObservableObject, Identifiable {
         }
     }
 
-    /// The page is going: its count and its frames with it.
+    /// The page is going: its count and its frames with it, and what the
+    /// player paused on it.
     func leaving() {
         quiet?.invalidate()
         quiet = nil
         media.forget()
+        stilled = false
+    }
+
+    /// The player's pause (Player.swift): what plays is paused and
+    /// remembered, in each frame that played and then in the page, and once
+    /// the page has done that, WebKit pauses what a script can't reach.
+    /// Nothing remembered anywhere, and the player has nothing to play again.
+    func still() {
+        guard noisy, let built else { return }
+        stilled = true
+        for frame in media.frames {
+            built.evaluateJavaScript(Player.still, in: frame, in: Web.world) { _ in }
+        }
+        let frames = !media.frames.isEmpty
+        built.evaluateJavaScript(Player.still, in: nil, in: Web.world) { [weak self] result in
+            if !frames, ((try? result.get()) as? Int ?? 0) == 0 { self?.stilled = false }
+            built.pauseAllMediaPlayback()
+        }
+    }
+
+    /// The player's play: what its pause stopped, playing again.
+    func playAgain() {
+        guard stilled, let built else { return }
+        for frame in media.frames {
+            built.evaluateJavaScript(Player.again, in: frame, in: Web.world) { _ in }
+        }
+        built.evaluateJavaScript(Player.again, in: nil, in: Web.world) { _ in }
     }
 
     /// Quiet long enough: the paused media muted, in the page and in each
@@ -1839,6 +1872,8 @@ final class Tab: ObservableObject, Identifiable {
         quiet?.invalidate()
         quiet = nil
         media.forget()
+        // What the player paused went with the page: nothing to play again.
+        stilled = false
         guard let web = built else { return }
         (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil

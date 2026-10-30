@@ -149,6 +149,11 @@ final class Preferences: ObservableObject {
     /// The column's width as drawn: fixed with icons only, pulled by its
     /// edge otherwise (the width pulled is kept for when titles come back).
     var columnWidth: CGFloat { iconColumn ? Metrics.iconColumn : sideWidth }
+    /// A tab playing sound out of sight shows at the foot of the sidebar,
+    /// with its pause (see Player.swift). Off unless asked for.
+    @Published var showsPlayer: Bool {
+        didSet { store.set(showsPlayer, forKey: "sidebar.player") }
+    }
     /// One tab's line in the column, and the size its title is set in.
     var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 28 }
     var sideTitle: CGFloat { roomyTabs ? 14 : 12.5 }
@@ -656,6 +661,7 @@ final class Preferences: ObservableObject {
         sideHides = store.bool(forKey: "sidebar.hides")
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         sideIcons = store.bool(forKey: "sidebar.icons")
+        showsPlayer = store.bool(forKey: "sidebar.player")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true

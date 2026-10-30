@@ -478,6 +478,27 @@ final class Bench {
             }
             unsafeBitCast(imp, to: Ask.self)(tab.web, ask, reply)
 
+        case "player":
+            // What plays in another tab, at the foot of the sidebar
+            // (Player.swift): the tab it is for, and whether it was paused
+            // from there. With "act", what its buttons do first — still,
+            // play or away — or "go", a click on it, which takes the window
+            // over: a test run only, as select is.
+            if let act = request["act"] as? String {
+                guard Store.testing else { answer(["error": "player's act only works on a --test run"]); return }
+                guard let tab = browser.player else { answer(["error": "nothing plays out of sight"]); return }
+                switch act {
+                case "still": tab.still()
+                case "play": tab.playAgain()
+                case "away": tab.stilled = false
+                case "go": browser.select(tab)
+                default: answer(["error": "act is still, play, away or go"]); return
+                }
+            }
+            let tab = browser.player
+            answer(["tab": tab.map { Bench.short($0) } ?? "", "stilled": tab?.stilled ?? false,
+                    "noisy": tab?.noisy ?? false, "sounding": browser.sounding.count])
+
         case "eval":
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             guard let js = request["js"] as? String else { answer(["error": "eval needs js"]); return }
@@ -3622,7 +3643,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }
@@ -4241,6 +4262,7 @@ final class Bench {
             "asleep": tab.asleep,
             "shy": tab.shy,
             "noisy": tab.noisy,
+            "stilled": tab.stilled,
             "muted": tab.muted,
             // Darkened by Search, as the page last said, and what the page
             // was seen to be: dark by itself, light, or not looked at (see
