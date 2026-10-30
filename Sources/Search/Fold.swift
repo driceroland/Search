@@ -184,6 +184,8 @@ struct Fold: View {
             watch()
         })
         .onChange(of: lightsOff) { _, _ in hideLights() }
+        .onReceive(browser.topToolbar.$revealed) { _ in DispatchQueue.main.async { hideLights() } }
+        .onReceive(TopToolbarPreferences.shared.objectWillChange) { _ in DispatchQueue.main.async { hideLights() } }
         // Into full screen, the buttons are given back to macOS; out of it,
         // they go the way the fold says again.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
@@ -216,8 +218,13 @@ struct Fold: View {
                 Fold.reset(bar, hidden: lightsOff && !window.styleMask.contains(.fullScreen))
             }
         }
-        .onChange(of: prefs.columnWidth) { _, _ in
+        .onChange(of: prefs.sidebarWidth) { _, _ in
             if browser.folded { hideLights() }
+        }
+        .onChange(of: prefs.sidebarStyle) { _, _ in
+            resetPending()
+            if let bar = browser.window?.standardWindowButton(.closeButton)?.superview { Fold.reset(bar, hidden: lightsOff) }
+            hideLights()
         }
         .onChange(of: prefs.sideHides) { _, hides in
             resetPending()
@@ -252,7 +259,8 @@ struct Fold: View {
     }
 
     private var lightsOff: Bool {
-        browser.folded && !browser.peeking
+        if prefs.iconSidebar { return !browser.topToolbar.showsWindowControls }
+        return browser.folded && !browser.peeking
     }
 
     private var onRight: Bool {
@@ -308,7 +316,7 @@ struct Fold: View {
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
             let onWindow = top == window.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
-            let reach = prefs.sidebar ? prefs.columnWidth : Metrics.strip
+            let reach = prefs.sidebar ? prefs.sidebarWidth : Metrics.strip
             // An extension's popup hangs from its button in the column: the
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).
@@ -384,17 +392,23 @@ struct Fold: View {
     /// so hiding it hides both, and hidden buttons take no clicks.
     private func hideLights() {
         guard let bar = browser.window?.standardWindowButton(.closeButton)?.superview else { return }
+        if !prefs.iconSidebar || browser.window?.styleMask.contains(.fullScreen) == true { browser.topToolbar.restoreCaption(bar) }
         // In full screen the buttons are macOS's to show, in the bar that
         // comes down with the menu bar; hidden or slid away here, they were
         // missing from it, or out of reach behind the column (#241).
         if browser.window?.styleMask.contains(.fullScreen) == true {
             bar.layer?.removeAnimation(forKey: "fold")
             bar.isHidden = false
+            bar.alphaValue = 1
             return
         }
-        if prefs.sidebar {
-            Fold.slide(bar, off: lightsOff, by: prefs.columnWidth, right: onRight)
+        if prefs.iconSidebar {
+            browser.topToolbar.animateCaption(bar, visible: browser.topToolbar.showsWindowControls)
+        } else if prefs.sidebar {
+            bar.alphaValue = 1
+            Fold.slide(bar, off: lightsOff, by: prefs.sidebarWidth, right: onRight)
         } else {
+            bar.alphaValue = 1
             Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true)
         }
     }
@@ -423,7 +437,7 @@ struct Fold: View {
     /// wherever they are, when the pointer turns back halfway. `up` sends
     /// the strip's lights off the top edge.
     static func slide(_ bar: NSView, off: Bool, by width: CGFloat, up: Bool = false,
-                      right: Bool = false) {
+                      right: Bool = false, response: TimeInterval = 0.34) {
         slides += 1
         let turn = slides
         guard let layer = bar.layer else {

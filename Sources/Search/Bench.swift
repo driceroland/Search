@@ -789,6 +789,17 @@ final class Bench {
                 // The column as drawn, and whether it is icons only.
                 "columnWidth": Double(browser.prefs.columnWidth),
                 "sideIcons": browser.prefs.sideIcons,
+                "sidebarStyle": browser.prefs.sidebarStyle.rawValue,
+                "sidebarWidth": Double(browser.prefs.sidebarWidth),
+                "tabPreviews": SidebarDetailsPreferences.shared.showsPreviews,
+                "memoryUsage": SidebarDetailsPreferences.shared.showsMemory,
+                "topToolbarEnabled": TopToolbarPreferences.shared.enabled,
+                "topToolbarItems": TopToolbarItem.allCases.filter { TopToolbarPreferences.shared.contains($0) }.map(\.rawValue),
+                "topToolbarRevealed": browser.topToolbar.revealed,
+                "topToolbarEditing": browser.topToolbar.editing,
+                "sidebarFooterItems": SidebarFooterItem.allCases.filter { SidebarFooterPreferences.shared.contains($0) }.map(\.rawValue),
+                "memoryBytes": TabMemoryMonitor.shared.totalBytes.map { $0 as Any } ?? NSNull(),
+                "sleepSavingsBytes": TabMemoryMonitor.shared.estimatedSavedBytes.map { $0 as Any } ?? NSNull(),
                 "appearance": NSApp.appearance?.name.rawValue ?? "system",
                 "key": NSApp.keyWindow.map { "\(type(of: $0)) “\($0.title)”" } ?? "",
                 // What the keyboard goes to in the key window, or the browser's: a find field,
@@ -3270,14 +3281,62 @@ final class Bench {
                 window.contentView = nil
             }
 
+        case "tab-details":
+            guard Store.testing else { answer(["error": "tab-details only works in a test world"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            Task { @MainActor in
+                await TabMemoryMonitor.shared.refresh(tabs: Browsers.all.flatMap { $0.tabs + $0.parkedTabs })
+                let reading = TabMemoryMonitor.shared.reading(for: tab)
+                var result: [String: Any] = ["asleep": tab.asleep, "built": tab.built != nil,
+                    "memoryBytes": reading.bytes.map { $0 as Any } ?? NSNull(),
+                    "estimatedSavingsBytes": reading.estimatedSavingsBytes.map { $0 as Any } ?? NSNull(),
+                    "sharedProcess": reading.isSharedProcess]
+                if request["preview"] as? Bool == true {
+                    tab.preview(width: 264) { image in
+                        result["previewAvailable"] = image != nil
+                        result["builtAfterPreview"] = tab.built != nil
+                        answer(result)
+                    }
+                } else { answer(result) }
+            }
+
+        case "top-address-submit":
+            guard Store.testing, let text = request["text"] as? String, let window = browser.window else { answer(["error": "top-address-submit needs a test world, text and window"]); return }
+            answer(["handled": TopToolbarNativeTestInput.submit(text, in: window)])
+
+        case "top-toolbar-shot":
+            guard Store.testing, let path = request["path"] as? String else { answer(["error": "top-toolbar-shot needs a test world and a path"]); return }
+            let width = request["width"] as? Double ?? 1100
+            var toolbarFrames: [String: CGRect] = [:]
+            let host = NSHostingView(rootView: TopToolbar(browser: browser).frame(width: width, height: TopToolbarRevealPolicy.height)
+                .onPreferenceChange(TopToolbarViewFrames.self) { toolbarFrames = $0 })
+            host.frame = NSRect(x: 0, y: 0, width: width, height: TopToolbarRevealPolicy.height)
+            let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.appearance = NSApp.effectiveAppearance
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                guard let picture = host.bitmapImageRepForCachingDisplay(in: host.bounds),
+                      let data = picture.representation(using: .png, properties: [:]) else { answer(["error": "nothing rendered"]); return }
+                do {
+                    try data.write(to: URL(fileURLWithPath: path))
+                    answer(["saved": path, "addressWidth": Double(toolbarFrames["address"]?.width ?? 0),
+                            "toolsWidth": Double(toolbarFrames["tools"]?.width ?? 0)])
+                }
+                catch { answer(["error": error.localizedDescription]) }
+                window.contentView = nil
+            }
+
         case "column":
             // The column of tabs, drawn off screen at its width, with what the
             // browser has now — the rows, the card for a new space, the dots.
             guard Store.testing else { answer(["error": "column only works on a --test run — it would picture your tabs"]); return }
             guard let path = request["path"] as? String else { answer(["error": "column needs a path"]); return }
             let height = request["height"] as? Double ?? 600
-            let width = Double(browser.prefs.columnWidth)
-            let host = NSHostingView(rootView: SideBar(browser: browser, prefs: browser.prefs).frame(width: width, height: height))
+            let width = Double(browser.prefs.sidebarWidth)
+            var railFrames: [String: CGRect] = [:]
+            let host = NSHostingView(rootView: SideBar(browser: browser, prefs: browser.prefs).frame(width: width, height: height)
+                .onPreferenceChange(SidebarRailFrames.self) { railFrames = $0 })
             host.frame = NSRect(x: 0, y: 0, width: width, height: height)
             let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.appearance = NSApp.effectiveAppearance
@@ -3288,7 +3347,14 @@ final class Bench {
                 host.cacheDisplay(in: host.bounds, to: picture)
                 do {
                     try picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
-                    answer(["saved": path])
+                    var result: [String: Any] = ["saved": path]
+                    if let plus = railFrames["new-tab"] {
+                        let bottom = railFrames.filter { $0.key.hasPrefix("tab-") }.values.map(\.maxY).max() ?? plus.minY
+                        result["newTabAfterTabs"] = plus.minY >= bottom - 1
+                        result["newTabY"] = Double(plus.minY)
+                        result["lastTabBottom"] = Double(bottom)
+                    }
+                    answer(result)
                 } catch { answer(["error": error.localizedDescription]) }
                 window.contentView = nil
             }
@@ -3447,6 +3513,44 @@ final class Bench {
             }
             if let mode = (request["pages120"] as? String).flatMap(FastPages.init) { browser.prefs.fastPages = mode }
             if let on = request["dusk"] as? Bool { browser.prefs.darkensPages = on }
+            if let style = request["sidebarStyle"] as? String {
+                guard let value = SidebarStyle(rawValue: style) else {
+                    answer(["error": "sidebarStyle needs titles or icons"])
+                    return
+                }
+                browser.prefs.sidebarStyle = value
+            }
+            if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
+            if Store.testing, let width = request["sidebarDrag"] as? Double, width.isFinite {
+                SidebarResize.apply(proposed: CGFloat(width), to: browser.prefs)
+            }
+            if Store.testing {
+                if let enabled = request["topEnabled"] as? Bool { TopToolbarPreferences.shared.enabled = enabled }
+                if let preset = request["topItems"] as? String {
+                    if preset == "all" { TopToolbarPreferences.shared.showAll() }
+                    else if preset == "none" { TopToolbarPreferences.shared.hideAll() }
+                }
+                if let items = request["topControls"] as? [String] {
+                    TopToolbarPreferences.shared.hideAll()
+                    for item in items.compactMap(TopToolbarItem.init) { TopToolbarPreferences.shared.set(item, visible: true) }
+                }
+                browser.topToolbar.configure(eligible: TopToolbarRevealPolicy.eligible(compact: browser.prefs.iconSidebar,
+                    fullscreen: browser.fullScreen, immersed: browser.active?.immersed == true,
+                    enabled: TopToolbarPreferences.shared.enabled, hasItems: !TopToolbarPreferences.shared.items.isEmpty), popup: request["topPopup"] as? Bool ?? false)
+                if let edge = request["topEdge"] as? Bool { browser.topToolbar.pointer(inside: edge, atEdge: edge, outsideWindow: request["topOutsideWindow"] as? Bool ?? false) }
+                if let edit = request["topEditing"] as? Bool { browser.topToolbar.setEditing(edit) }
+                if let menu = request["topMenu"] as? Bool { browser.topToolbar.setMenuTracking(menu) }
+            }
+            if Store.testing, let footer = request["footer"] as? String {
+                if footer == "all" { SidebarFooterPreferences.shared.showAll() }
+                else if footer == "none" { SidebarFooterPreferences.shared.hideAll() }
+            }
+            if Store.testing, let items = request["footerItems"] as? [String] {
+                SidebarFooterPreferences.shared.hideAll()
+                for item in items.compactMap(SidebarFooterItem.init) { SidebarFooterPreferences.shared.set(item, visible: true) }
+            }
+            if let on = request["previews"] as? Bool { SidebarDetailsPreferences.shared.showsPreviews = on }
+            if let on = request["memory"] as? Bool { SidebarDetailsPreferences.shared.showsMemory = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             // Swipe between pages, standing in for the Mac's own setting.
             if let on = request["swipepages"] as? Bool, Store.testing { Swipe.testing = on }

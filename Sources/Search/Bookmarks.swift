@@ -1043,16 +1043,26 @@ struct BookmarkOutline: View {
 struct BookmarkDoor: View {
     @ObservedObject var browser: Browser
     let arrowEdge: Edge
+    var isTopToolbar = false
+    @State private var presenterID = UUID()
+
+    private var presents: Bool {
+        let useTop = browser.prefs.iconSidebar && browser.topToolbar.revealed && TopToolbarPreferences.shared.contains(.bookmarks)
+        return browser.bookmarksOpen && ToolbarPopupOwnership.presents(owner: browser.bookmarksPresenter, candidate: presenterID,
+                                                                       defaultOwner: isTopToolbar == useTop)
+    }
 
     var body: some View {
         Group {
             if let tab = browser.active {
-                Kept(browser: browser, bookmarks: browser.bookmarks, tab: tab)
+                Kept(browser: browser, bookmarks: browser.bookmarks, tab: tab, owner: presenterID)
             } else {
-                BookmarkDoor.door(browser, kept: false)
+                BookmarkDoor.door(browser, kept: false, owner: presenterID)
             }
         }
-        .popover(isPresented: $browser.bookmarksOpen, arrowEdge: arrowEdge) {
+        .popover(isPresented: Binding(get: { presents }, set: { shown in
+            if !shown && presents { browser.bookmarksOpen = false; browser.bookmarksPresenter = nil }
+        }), arrowEdge: arrowEdge) {
             if let id = browser.bookmarkCard {
                 BookmarkCard(browser: browser, bookmarks: browser.bookmarks, id: id)
             } else {
@@ -1061,8 +1071,8 @@ struct BookmarkDoor: View {
         }
     }
 
-    fileprivate static func door(_ browser: Browser, kept: Bool) -> some View {
-        Door(icon: kept ? "bookmark.fill" : "bookmark", help: "Bookmarks") { browser.toggleBookmarks() }
+    fileprivate static func door(_ browser: Browser, kept: Bool, owner: UUID) -> some View {
+        Door(icon: kept ? "bookmark.fill" : "bookmark", help: "Bookmarks") { browser.toggleBookmarks(owner: owner) }
     }
 
     /// Watches the tab for where it goes and the bookmarks for what is
@@ -1071,9 +1081,10 @@ struct BookmarkDoor: View {
         let browser: Browser
         @ObservedObject var bookmarks: Bookmarks
         @ObservedObject var tab: Tab
+        let owner: UUID
 
         var body: some View {
-            BookmarkDoor.door(browser, kept: tab.address.map(bookmarks.contains) ?? false)
+            BookmarkDoor.door(browser, kept: tab.address.map(bookmarks.contains) ?? false, owner: owner)
         }
     }
 }

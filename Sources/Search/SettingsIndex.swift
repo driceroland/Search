@@ -152,6 +152,25 @@ enum SettingsIndex {
         .init(id: "glyph", group: "tablook", icon: "app",
               title: "Tabs show", detail: "Beside the title, and on a pinned square",
               keys: ["glyph"], words: ["favicon", "icons", "letters"]),
+        .init(id: "sidebar.style", group: "tablook", icon: "rectangle.split.1x2",
+              title: "Sidebar appearance", detail: "Titles, or a rail of favicons at Helium's size",
+              more: "Dragging the column's inner edge snaps between the two.",
+              keys: ["sidebar.style"], words: ["favicons only", "icons", "rail", "compact", "helium"],
+              kind: .wide, parent: "tabs.layout"),
+        .init(id: "sidebar.footer", group: "tablook", icon: "square.grid.2x2",
+              title: "Sidebar bottom buttons", detail: "Choose individual controls, everything, or nothing",
+              keys: [SidebarFooterPreferences.key], words: ["footer", "bottom", "buttons", "sidebar"],
+              parent: "tabs.layout"),
+        .init(id: "sidebar.topToolbar", group: "tablook", icon: "menubar.rectangle",
+              title: "Top hover toolbar", detail: "A strip slides down at the top edge in favicon-only mode",
+              keys: [TopToolbarPreferences.key, TopToolbarPreferences.enabledKey],
+              words: ["toolbar", "top", "hover", "zen", "strip"], parent: "tabs.layout"),
+        .init(id: "sidebar.previews", group: "tablook", icon: "rectangle.on.rectangle",
+              title: "Show tab previews", detail: "Hover a tab for a thumbnail and its title",
+              keys: ["sidebar.previews"], words: ["preview", "thumbnail", "hover"], parent: "tabs.layout"),
+        .init(id: "sidebar.memory", group: "tablook", icon: "memorychip",
+              title: "Show RAM in tab previews", detail: "RAM usage and estimated savings for sleeping tabs",
+              keys: ["sidebar.memory"], words: ["memory", "ram", "preview"], parent: "tabs.layout"),
         .init(id: "tabs.reading", group: "tablook", icon: "text.line.first.and.arrowtriangle.forward",
               title: "Show how far you've read", detail: "The tab you're on fills with grey as you scroll down",
               keys: ["tabs.reading"], words: ["progress", "scroll"]),
@@ -434,6 +453,8 @@ enum SettingsIndex {
         case "pages.dusk": return prefs.look != .light
         case "sidebar.roomy": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
+        case "sidebar.style", "sidebar.footer", "sidebar.topToolbar", "sidebar.previews", "sidebar.memory":
+            return prefs.sidebar
         case "toolbar.left": return !prefs.sidebar
         default: return true
         }

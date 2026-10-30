@@ -106,6 +106,7 @@ final class Extensions: NSObject, ObservableObject {
     }
     /// Where each extension's button is on screen, for its popup to hang from.
     var anchors: [String: WeakView] = [:]
+    fileprivate let anchorRegistry = ToolbarAnchorRegistry()
 
     static var folder: URL { Store.folder.appendingPathComponent("Extensions", isDirectory: true) }
 
@@ -1455,6 +1456,7 @@ final class Extensions: NSObject, ObservableObject {
 
     /// The list behind the puzzle button.
     @Published var menuOpen = false
+    @Published var menuPresenter: UUID?
     /// Where a popup hangs when its extension isn't pinned: the puzzle button.
     static let menuAnchor = "__menu"
 
@@ -1543,7 +1545,10 @@ final class Extensions: NSObject, ObservableObject {
     /// else the puzzle button — whichever is in the window now.
     func anchor(for id: String) -> NSView? {
         let own = anchors[id]?.view
-        return own?.window != nil ? own : anchors[Extensions.menuAnchor]?.view
+        if own?.window != nil { return own }
+        if let attached = anchorRegistry.attached(for: id) { return attached }
+        let menu = anchors[Extensions.menuAnchor]?.view
+        return menu?.window != nil ? menu : anchorRegistry.attached(for: Extensions.menuAnchor)
     }
 
     /// The page the button's popup is now: one the extension set for this
@@ -1998,10 +2003,13 @@ struct ExtensionSlot: View {
     /// How many pinned ones the row has room for; the rest are only in the
     /// list. Nil: all of them.
     var room: Int? = nil
+    /// The icon rail's narrower slot: pinned buttons only when asked for.
+    var compact = false
+    var alwaysShow = false
 
     var body: some View {
         if #available(macOS 15.4, *) {
-            ExtensionButtons(extensions: .shared, edge: edge, room: room)
+            ExtensionButtons(extensions: .shared, edge: edge, room: room, compact: compact, alwaysShow: alwaysShow)
         }
     }
 }
@@ -2011,20 +2019,31 @@ private struct ExtensionButtons: View {
     @ObservedObject var extensions: Extensions
     let edge: Edge
     var room: Int?
+    let compact: Bool
+    let alwaysShow: Bool
+    @StateObject private var surface = AnchorSurface()
+
+    private var presentsMenu: Bool {
+        let registered = extensions.anchors[Extensions.menuAnchor]?.view === surface.views[Extensions.menuAnchor]?.view
+        return extensions.menuOpen && ToolbarPopupOwnership.presents(owner: extensions.menuPresenter, candidate: surface.id, defaultOwner: registered)
+    }
 
     var body: some View {
-        if !extensions.installed.isEmpty {
+        if !extensions.installed.isEmpty || alwaysShow {
             HStack(spacing: 2) {
-                ForEach(extensions.buttons.filter(\.pinned).prefix(room ?? .max)) { button in
-                    ActionButton(button: button) { extensions.press(button.id) }
-                        .background(Anchor(id: button.id))
+                ForEach(extensions.buttons.filter { $0.pinned && !compact }.prefix(room ?? .max)) { button in
+                    ActionButton(button: button) { surface.activate(); extensions.press(button.id) }
+                        .background(Anchor(id: button.id, surface: surface))
                         .contextMenu { ExtensionActions(id: button.id, name: button.name, extensions: extensions) }
                 }
-                Door(icon: "puzzlepiece.extension", on: extensions.menuOpen, help: "Extensions") {
-                    extensions.menuOpen.toggle()
+                Door(icon: "puzzlepiece.extension", on: presentsMenu, help: "Extensions") {
+                    if presentsMenu { extensions.menuOpen = false; extensions.menuPresenter = nil }
+                    else { surface.activate(); extensions.menuPresenter = surface.id; extensions.menuOpen = true }
                 }
-                .background(Anchor(id: Extensions.menuAnchor))
-                .popover(isPresented: $extensions.menuOpen, arrowEdge: edge) {
+                .background(Anchor(id: Extensions.menuAnchor, surface: surface))
+                .popover(isPresented: Binding(get: { presentsMenu }, set: { shown in
+                    if !shown && presentsMenu { extensions.menuOpen = false; extensions.menuPresenter = nil }
+                }), arrowEdge: edge) {
                     ExtensionMenu(extensions: extensions)
                 }
             }
@@ -2052,17 +2071,42 @@ private struct ExtensionButtons: View {
         }
     }
 
+    /// Register the surface actually pressed, not whichever copy SwiftUI made
+    /// last. A compact footer and top toolbar can both be present at once.
+    @MainActor
+    private final class AnchorSurface: ObservableObject {
+        let id = UUID()
+        var views: [String: WeakView] = [:]
+        func activate() { Extensions.shared.anchors = views }
+    }
+
     /// A real view under the button, so the popup has something to hang from.
     private struct Anchor: NSViewRepresentable {
         let id: String
+        let surface: AnchorSurface
+        final class Coordinator {
+            let id: String
+            init(_ id: String) { self.id = id }
+        }
+        func makeCoordinator() -> Coordinator { Coordinator(id) }
         func makeNSView(context: Context) -> NSView {
             let view = NSView()
-            Extensions.shared.anchors[id] = WeakView(view)
+            let weak = WeakView(view)
+            surface.views[id] = weak
+            Extensions.shared.anchors[id] = weak
+            Extensions.shared.anchorRegistry.register(view, for: id)
             return view
         }
         // The outgoing layout can still update during a transition. It must
         // not replace the new layout's anchor with a view about to disappear.
         func updateNSView(_ view: NSView, context: Context) {}
+        static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+            let owner = Extensions.shared
+            owner.anchorRegistry.remove(view, for: coordinator.id)
+            if owner.anchors[coordinator.id]?.view === view {
+                owner.anchors[coordinator.id] = owner.anchorRegistry.latest(for: coordinator.id).map(WeakView.init)
+            }
+        }
     }
 }
 

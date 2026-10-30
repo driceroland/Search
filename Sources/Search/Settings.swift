@@ -18,6 +18,7 @@ struct SettingsPanel: View {
     var found: String? = nil
     @Environment(\.asTab) private var asTab
 
+    @ObservedObject private var details = SidebarDetailsPreferences.shared
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shield = Shield.shared
     @State private var isDefault = Links.isDefault
@@ -502,6 +503,15 @@ struct SettingsPanel: View {
                         set: { layout in withAnimation(Motion.glide) { prefs.tabsLayout = layout } }
                      ))
         case "sidebar.hides": Switch(on: $prefs.sideHides)
+        case "sidebar.style":
+            Segmented(options: SidebarStyle.allCases.map { ($0, $0.title) }, selection: Binding(
+                get: { prefs.sidebarStyle },
+                set: { style in withAnimation(Motion.glide) { prefs.sidebarStyle = style } }
+            ))
+        case "sidebar.footer": SidebarFooterSettingsButton()
+        case "sidebar.topToolbar": TopToolbarSettingsButton()
+        case "sidebar.previews": Switch(on: $details.showsPreviews)
+        case "sidebar.memory": Switch(on: $details.showsMemory)
         case "layout.cards":
             Pictures(options: [(true, "As a card", AnyView(CardPicture(card: true))),
                                (false, "Edge to edge", AnyView(CardPicture(card: false)))],

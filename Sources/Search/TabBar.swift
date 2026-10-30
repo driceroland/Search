@@ -724,6 +724,7 @@ private struct TabPill: View {
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
+        .modifier(TabHoverDetails(browser: browser, tab: tab))
         .help(pinned || compact ? tab.label : "")
         .animation(Motion.quick, value: hovering)
         .animation(Motion.glide, value: editing)

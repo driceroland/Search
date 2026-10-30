@@ -464,6 +464,8 @@ struct ContentView: View {
     @State private var immersionRevision = 0
     /// The window's width, for a side panel that leaves the page some room.
     @State private var across: CGFloat = 0
+    @State private var topToolbarRevealed = false
+    @ObservedObject private var topToolbarPrefs = TopToolbarPreferences.shared
 
 
     /// The window: room at the top, one stage for the page, and the row when
@@ -528,12 +530,16 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
+        .padding(.top, topToolbarInset)
         .ignoresSafeArea()
         .background { fullscreenWatch }
         .background { GeometryReader { geo in Color.clear.onAppear { across = geo.size.width }
             .onChange(of: geo.size.width) { _, width in across = width } } }
         .animation(Motion.glide, value: browser.prefs.sidebar)
         .animation(Motion.glide, value: browser.prefs.sidePosition)
+        .animation(IconRailInteraction.movement, value: browser.prefs.sidebarStyle)
+        .animation(.easeOut(duration: 0.12), value: fullscreenTab?.id)
+        .modifier(SidebarMemoryPolling())
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
     }
@@ -583,6 +589,12 @@ struct ContentView: View {
         }
     }
 
+    private var topToolbarInset: CGFloat {
+        let eligible = TopToolbarRevealPolicy.eligible(compact: browser.prefs.iconSidebar, fullscreen: browser.fullScreen,
+            immersed: fullscreenTab != nil, enabled: topToolbarPrefs.enabled, hasItems: !topToolbarPrefs.items.isEmpty)
+        return TopToolbarLayoutPolicy.contentInset(eligible: eligible, revealed: topToolbarRevealed)
+    }
+
     /// What the column and the strip take from the page right now: animated
     /// as they come and go. With the page as a card, the column folded away
     /// still leaves the card's gap, and so does the top, unless the bookmarks
@@ -590,10 +602,10 @@ struct ContentView: View {
     private var chrome: CGSize {
         let bar = barShown ? BookmarksBar.height : 0
         if cards {
-            return CGSize(width: sidebar ? browser.prefs.columnWidth : Metrics.cardGap,
+            return CGSize(width: sidebar ? browser.prefs.sidebarWidth : Metrics.cardGap,
                           height: barShown ? bar : Metrics.cardGap)
         }
-        return CGSize(width: sidebar ? browser.prefs.columnWidth : 0, height: band + bar)
+        return CGSize(width: sidebar ? browser.prefs.sidebarWidth : 0, height: band + bar)
     }
 
     /// The page as a card on the window's ground: with the tabs down the
@@ -723,8 +735,9 @@ struct ContentView: View {
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
                 // with the page says otherwise.
-                .padding(.leading, sidebar && !sideOnRight ? browser.prefs.columnWidth : 0)
-                .padding(.trailing, sidebar && sideOnRight ? browser.prefs.columnWidth : 0)
+                .padding(.leading, sidebar && !sideOnRight ? browser.prefs.sidebarWidth : 0)
+                .padding(.trailing, sidebar && sideOnRight ? browser.prefs.sidebarWidth : 0)
+                .transition(.scale(scale: 0.97).combined(with: .opacity))
         }
     }
 
@@ -790,7 +803,9 @@ struct ContentView: View {
         window_
             // The column folded away, and out again at the edge (see Fold.swift).
             .overlay(alignment: sideOnRight ? .trailing : .leading) {
-                if fullscreenTab == nil { Fold(browser: browser, prefs: browser.prefs) }
+                if fullscreenTab == nil {
+                    Fold(browser: browser, prefs: browser.prefs).padding(.top, topToolbarInset)
+                }
             }
             .overlay(alignment: .bottom) { bars }
             .overlay {
@@ -799,11 +814,12 @@ struct ContentView: View {
                 PeekLayer(browser: browser)
                     .padding(.leading, sideOnRight ? 0 : chrome.width)
                     .padding(.trailing, sideOnRight ? chrome.width : 0)
-                    .padding(.top, chrome.height)
+                    .padding(.top, chrome.height + topToolbarInset)
                     // From the window's own top edge, as the page is:
                     // the title bar's band is page too.
                     .ignoresSafeArea()
             }
+            .overlay { TopToolbarLayer(browser: browser, immersed: fullscreenTab != nil) }
             .overlay { field }
             .overlay { panels }
             .overlay { switcherOverlay }
@@ -826,8 +842,13 @@ struct ContentView: View {
             .onChange(of: browser.prefs.sidePosition) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
-            .onChange(of: browser.prefs.columnWidth) { _, _ in
+            .onChange(of: browser.prefs.sidebarWidth) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
+            }
+            .onReceive(browser.topToolbar.$revealed) { revealed in
+                withAnimation(TopToolbarRevealPolicy.animation(duration: browser.topToolbar.currentAnimationDuration)) {
+                    topToolbarRevealed = revealed
+                }
             }
             // Stepping away to another app: macOS draws its own resting
             // buttons, and on a light window they come out nearly white. Ours
@@ -836,7 +857,7 @@ struct ContentView: View {
                 browser.tabSwitcher.cancel()
                 if browser.commandHeld { browser.commandHeld = false }
                 measureLights()
-                resting?.isHidden = false
+                resting?.isHidden = browser.prefs.iconSidebar && !browser.topToolbar.showsWindowControls
                 // Only the window you were in, or every window's video would come.
                 browser.appLeft()
             }
@@ -980,6 +1001,9 @@ struct ContentView: View {
     private var band: CGFloat {
         guard fullscreenTab == nil else { return 0 }
         // Folded, the strip is out of the window and the page has its height.
+        if browser.prefs.iconSidebar {
+            return CompactSidebarChrome.topInset(compact: true, folded: browser.folded, fullscreen: browser.fullScreen, immersed: fullscreenTab != nil)
+        }
         return browser.prefs.sidebar || browser.folded ? 0 : Metrics.strip
     }
 
@@ -1051,7 +1075,7 @@ struct ContentView: View {
         view.spots = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
             .compactMap { window.standardWindowButton($0) }
             .map { $0.convert($0.bounds, to: titlebar) }
-        view.isHidden = NSApp.isActive
+        view.isHidden = NSApp.isActive || (browser.prefs.iconSidebar && !browser.topToolbar.showsWindowControls)
     }
 
     /// The window, once there is one: held, dressed, and named for the page
@@ -1092,9 +1116,9 @@ struct ContentView: View {
         // Lights.swift. The column's first row is the strip's height too, so
         // its three doors sit on the lights' line.
         Lights.keep(window, centreX: { window in
-            browser.prefs.sidebar && browser.prefs.sidePosition == .right
-                ? window.frame.width - browser.prefs.columnWidth + Lights.centre.x
-                : Lights.centre.x
+            CompactSidebarChrome.lightsX(windowWidth: window.frame.width,
+                                         right: browser.prefs.sidebar && !browser.prefs.iconSidebar && browser.prefs.sidePosition == .right,
+                                         compact: browser.prefs.iconSidebar, sidebarWidth: browser.prefs.sidebarWidth)
         }, vertical: { _ in browser.prefs.iconColumn }) { measureLights() }
         DispatchQueue.main.async { measureLights() }
 

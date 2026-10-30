@@ -14,13 +14,11 @@ struct SideBar: View {
     var onFrame = false
     /// The greys for that ground, handed down to every row, pin and door.
     private var greys: Greys { onFrame ? .frame : .white }
+    @ObservedObject private var footerPrefs = SidebarFooterPreferences.shared
 
     @Namespace private var pill
 
     @State private var landing = false
-    /// The width the column had when the edge was picked up.
-    @State private var grabbed: CGFloat?
-    @State private var onEdge = false
 
     /// A pin, picked up out of the grid — a separate state from the loose
     /// rows above, since the two gestures never happen at once but move on
@@ -73,6 +71,20 @@ struct SideBar: View {
     }
 
     var body: some View {
+        Group {
+            if prefs.iconSidebar { IconSideBar(browser: browser, prefs: prefs) }
+            else { expanded }
+        }
+        .overlay(alignment: prefs.sidePosition == .right ? .leading : .trailing) {
+            SidebarResizeHandle(prefs: prefs)
+        }
+        .contextMenu {
+            SidebarFooterCustomizationMenu()
+            TopToolbarCustomizationMenu()
+        }
+    }
+
+    private var expanded: some View {
         ZStack(alignment: .top) {
             // Not under the card for a new space: it isn't made of views that
             // would take the click first.
@@ -151,8 +163,6 @@ struct SideBar: View {
         .overlay(alignment: innerEdge) {
             if !onFrame { Rectangle().fill(Palette.hairline).frame(width: 1) }
         }
-        // A fixed width with icons only: nothing to pull.
-        .overlay(alignment: innerEdge) { if !icons { edge } }
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
             browser.take(providers)
         }
@@ -166,41 +176,6 @@ struct SideBar: View {
         .animation(Motion.settle, value: browser.listedPins.count)
     }
 
-    /// The column's edge: pull it to make the column wider or narrower,
-    /// double-click it to put it back. The whole edge takes the pointer; on
-    /// it, a small pill shows in the middle (see Grip) so the edge says it
-    /// can be taken before it is. Edge to edge, the pill sits on the page's
-    /// hairline; as cards, in the gap before the page.
-    private var edge: some View {
-        EdgeGrip(lit: onEdge || grabbed != nil)
-            .offset(x: onFrame ? 0 : onRight ? -4 : 4)
-            .frame(width: 9)
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .onHover { over in
-                onEdge = over
-                if over { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        if grabbed == nil { grabbed = prefs.sideWidth }
-                        let delta = onRight ? -value.translation.width : value.translation.width
-                        let wanted = (grabbed ?? prefs.sideWidth) + delta
-                        prefs.sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, wanted))
-                    }
-                    .onEnded { _ in grabbed = nil }
-            )
-            .modifier(OneClick(double: true) {
-                withAnimation(Motion.settle) { prefs.sideWidth = Metrics.side }
-            })
-            .animation(Motion.quick, value: onEdge)
-    }
-
-    // MARK: - the spaces, as pages
-
-    /// Where the space on screen sits among them: one past the last while
-    /// the card for a new one is up.
     private var spaceAt: Int {
         browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
     }
@@ -843,10 +818,11 @@ struct SideBar: View {
         }
     }
 
-    /// The foot's door and its margin beneath; with icons only, its doors
+    /// The foot's doors and its margin beneath; with icons only, its doors
     /// one above the other.
     private var footHeight: CGFloat {
-        icons ? CGFloat(SideFoot.doors(prefs, browser.fetches)) * 28 + 8 : 26 + 10
+        icons ? CGFloat(SideFoot.doors(prefs, browser.fetches)) * 28 + 8
+              : SidebarFooter.height(count: footerPrefs.items.count, width: prefs.sideWidth)
     }
 
     @ViewBuilder
@@ -862,8 +838,13 @@ struct SideBar: View {
     }
 
     /// One small door at the bottom: the settings.
+    @ViewBuilder
     private var foot: some View {
-        SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, vertical: icons)
+        if icons {
+            SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, vertical: true)
+        } else {
+            SidebarFooter(browser: browser, prefs: prefs)
+        }
     }
 
 }
@@ -1219,6 +1200,7 @@ private struct SideRow: View {
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })
         .modifier(ModifiedTabClick { if interactive && !editing { browser.extendTabSelection(to: tab, modifiers: $0) } })
+        .modifier(TabHoverDetails(browser: browser, tab: tab))
         .overlay { if interactive { MiddleClick(act: close) } }
         .onHover(perform: hover)
         .onAppear { if interactive { Bench.rowAppeared(tab.id, hover: hover) } }

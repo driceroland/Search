@@ -83,6 +83,13 @@ enum SidebarPosition: String, CaseIterable, Identifiable {
     }
 }
 
+/// The normal titled column, or a fixed-width rail of site icons.
+enum SidebarStyle: String, CaseIterable, Identifiable {
+    case titles, icons
+    var id: String { rawValue }
+    var title: String { self == .titles ? "Titles" : "Favicons only" }
+}
+
 @MainActor
 final class Preferences: ObservableObject {
     private let store = Store.settings
@@ -124,6 +131,14 @@ final class Preferences: ObservableObject {
             store.set(Double(sidePanelWidth), forKey: "sidepanel.width")
         }
     }
+    /// The titled column, or the favicon rail: kept apart from the column's
+    /// saved width and from the icons-only column above (see TabsLayout).
+    @Published var sidebarStyle: SidebarStyle {
+        didSet { store.set(sidebarStyle.rawValue, forKey: "sidebar.style") }
+    }
+    var iconSidebar: Bool { sidebar && sidebarStyle == .icons }
+    /// The column's width as drawn, in either of its two looks.
+    var sidebarWidth: CGFloat { iconSidebar ? Metrics.iconSide : columnWidth }
     /// Which side the column is on when it is shown vertically.
     @Published var sidePosition: SidebarPosition {
         didSet { store.set(sidePosition.rawValue, forKey: "sidebar.position") }
@@ -652,6 +667,7 @@ final class Preferences: ObservableObject {
                                  Preferences.sidePanelWidths.lowerBound), Preferences.sidePanelWidths.upperBound)
         sidebar = store.object(forKey: "sidebar") as? Bool
             ?? (store.string(forKey: "manner") == "side")
+        sidebarStyle = store.string(forKey: "sidebar.style").flatMap(SidebarStyle.init) ?? .titles
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
         roomyTabs = store.bool(forKey: "sidebar.roomy")
