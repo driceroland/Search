@@ -483,6 +483,13 @@ struct SettingsPanel: View {
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)
         case "downloads.button": Switch(on: $prefs.alwaysShowsDownloads)
+        case "downloads.open":
+            Picker("Open Downloads", selection: $prefs.downloadsOpening) {
+                ForEach(DownloadsOpening.allCases) { Text($0.title).tag($0) }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
         default: EmptyView()
         }
     }

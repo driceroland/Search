@@ -31,6 +31,9 @@ enum SidePanelContent: Equatable {
     case page(extensionID: String, url: URL, tab: Tab.ID?)
     /// A website, in the space the window was in when it opened.
     case site(url: URL, space: UUID)
+    /// Downloads, for whoever chose it in Settings › Downloads › Open
+    /// Downloads: the same list as its tab, beside every page.
+    case downloads
 }
 
 /// The sites offered in View › Side Panel, as they are typed: a short list,
@@ -143,6 +146,21 @@ extension Browser {
     /// doesn't list. Never another profile's, whatever Spaces.current is.
     func panelStore(_ space: UUID) -> WKWebsiteDataStore {
         spaces.contains(where: { $0.id == space }) ? Spaces.store(for: space) : Profiles.store(profileID)
+    }
+
+    /// Downloads in the side panel; again, and it goes. Whatever page was
+    /// there is let go, as another site replacing it would be. A popup
+    /// window has no panel, so there it opens as a tab.
+    func toggleDownloadsPanel(closes: Bool = true) {
+        if sidePanelShown, sidePanel == .downloads {
+            if closes { closeSidePanel() }
+            return
+        }
+        guard !isPopup else { hoarding = true; return }
+        if case .page(_, _, let tab?) = sidePanel { SidePanelPages.shared.unbind(tab, in: self) }
+        SidePanelPages.shared.drop(in: self)
+        sidePanel = .downloads
+        sidePanelShown = true
     }
 
     /// The tab's page into the side panel, from the tab's menu. Not a
@@ -593,6 +611,11 @@ struct SidePanelView: View {
                 Rectangle().fill(Palette.hairline).frame(height: 1)
                 PanelPage(web: SidePanelPages.shared.web(in: browser))
             }
+        case .downloads:
+            // As tall as the panel, as its list is in a tab.
+            DownloadsPanel(browser: browser, loot: browser.loot, compact: true,
+                           close: { browser.closeSidePanel() })
+                .environment(\.asTab, true)
         case nil:
             Color.clear
         }

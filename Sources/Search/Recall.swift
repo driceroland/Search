@@ -250,59 +250,58 @@ struct DownloadsPanel: View {
     @ObservedObject var browser: Browser
     @ObservedObject var loot: Loot
     @ObservedObject var fetches: Fetches
+    /// Under the downloads button or in the side panel (Settings ›
+    /// Downloads › Open Downloads): the same list in a narrower place, with
+    /// its own title line and cross instead of the plate's.
+    let compact: Bool
+    let close: (() -> Void)?
 
-    init(browser: Browser, loot: Loot) {
+    init(browser: Browser, loot: Loot, compact: Bool = false, close: (() -> Void)? = nil) {
         self.browser = browser
         self.loot = loot
         self.fetches = browser.fetches
+        self.compact = compact
+        self.close = close
     }
 
     var body: some View {
-        Plate("Downloads", width: 560, close: { browser.hoarding = false }) {
-            if fetches.entries.isEmpty && loot.kept.isEmpty {
-                Card { Nothing("Nothing downloaded yet.") }
-            } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        if !fetches.entries.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Caption("Current downloads")
-                                Card {
-                                    ForEach(Array(fetches.entries.enumerated()), id: \.element.id) { index, entry in
-                                        if index > 0 { Rule() }
-                                        FetchRow(
-                                            entry: entry,
-                                            pause: { browser.pauseDownload(entry) },
-                                            resume: { browser.resumeDownload(entry) },
-                                            retry: { browser.retryDownload(entry) },
-                                            cancel: { browser.cancelDownload(entry) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
+        if compact { small } else { plate }
+    }
 
-                        if !loot.kept.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Caption("Completed")
-                                Card {
-                                    ForEach(Array(loot.kept.enumerated()), id: \.element.id) { index, keep in
-                                        if index > 0 { Rule() }
-                                        KeptRow(
-                                            keep: keep,
-                                            open: { loot.open(keep) },
-                                            reveal: { loot.reveal(keep) },
-                                            forget: { loot.forget(keep) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(.bottom, 2)
+    private var small: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Text("Downloads")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                Spacer(minLength: 0)
+                Door(icon: "folder", help: "Open the Downloads Folder") {
+                    NSWorkspace.shared.open(browser.downloadsFolder)
                 }
-                .listHeight(420)
+                if let close { Door(icon: "xmark", help: "Close", act: close) }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            Rectangle().fill(Palette.hairline).frame(height: 1)
+            list
+                .padding(12)
+            if !loot.kept.isEmpty {
+                Spacer(minLength: 0)
+                Rectangle().fill(Palette.hairline).frame(height: 1)
+                HStack {
+                    Spacer()
+                    Pill("Clear list") { loot.forgetAll() }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var plate: some View {
+        Plate("Downloads", width: 560, close: close ?? { browser.hoarding = false }) {
+            list
         } foot: {
             HStack {
                 Text(loot.kept.isEmpty ? "Files land in \(browser.downloadsFolder.lastPathComponent)"
@@ -314,6 +313,54 @@ struct DownloadsPanel: View {
                     Pill("Clear list") { loot.forgetAll() }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var list: some View {
+        if fetches.entries.isEmpty && loot.kept.isEmpty {
+            Card { Nothing("Nothing downloaded yet.") }
+        } else {
+            ScrollView(showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    if !fetches.entries.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Caption("Current downloads")
+                            Card {
+                                ForEach(Array(fetches.entries.enumerated()), id: \.element.id) { index, entry in
+                                    if index > 0 { Rule() }
+                                    FetchRow(
+                                        entry: entry,
+                                        pause: { browser.pauseDownload(entry) },
+                                        resume: { browser.resumeDownload(entry) },
+                                        retry: { browser.retryDownload(entry) },
+                                        cancel: { browser.cancelDownload(entry) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if !loot.kept.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Caption("Completed")
+                            Card {
+                                ForEach(Array(loot.kept.enumerated()), id: \.element.id) { index, keep in
+                                    if index > 0 { Rule() }
+                                    KeptRow(
+                                        keep: keep,
+                                        open: { loot.open(keep) },
+                                        reveal: { loot.reveal(keep) },
+                                        forget: { loot.forget(keep) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.bottom, 2)
+            }
+            .listHeight(420)
         }
     }
 

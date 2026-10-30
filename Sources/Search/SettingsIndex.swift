@@ -121,6 +121,10 @@ enum SettingsIndex {
         .init(id: "downloads.button", group: "downloads", icon: "arrow.down.to.line",
               title: "Always show the downloads button", detail: "Off, it shows only while a file comes in",
               keys: ["downloads.button"]),
+        .init(id: "downloads.open", group: "downloads", icon: "tray.and.arrow.down",
+              title: "Open Downloads", detail: "From its button, ⇧⌘J and History › Downloads",
+              more: "In a tab, as the side panel's card floating by the downloads button, or in the side panel beside the page.",
+              keys: ["downloads.open"], words: ["downloads window", "popover", "side panel"]),
 
         // Appearance
         .init(id: "look", group: "theme", icon: "circle.lefthalf.filled",
