@@ -51,6 +51,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- Tab hover feedback is instant, without a fade, in the column, across the top and with Icons only, including pinned tabs and the title/address swap. Other tab animations are unchanged. Asked for by [@evannotfound](https://github.com/evannotfound) ([#803](https://github.com/driceroland/Search/issues/803))
 - Settings says less and sits flatter: no line of explanation under each group's heading, every row of a card at the same level (Darken pages that stay light, Hide the column and The page as a card no longer indented under the row they depend on), and the hairlines between rows run from one edge of the card to the other. Every setting is still there, and still found by its words.
 - ⌘W on a tab in a group puts it away rather than closing it, as Arc keeps a folder's tabs: its page is let go, its row stays in the group, and a click opens it again at the page it was on. Its cross shows a minus while the page is open; on a row already put away, the cross or Close Tab closes it for good, and ⇧⌘T brings it back into its group. A page of a Split View pair in a group is put away out of its pair. Close Other Tabs, Close Tabs Below, Clear and Close Group close as before (idea 398). Asked for by email
 
