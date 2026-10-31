@@ -22,6 +22,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A page you swipe back or forward to comes back where you left it. The glide that follows the fingers lifting reached the page coming back: it was left pulled sideways past its edge, with a blank strip down one side, and scrolled away from where it was being put back. ⌘[ and the Back button were never affected.
 - With the floating video set to Picture in picture (Settings › General), the button at the top right of the video's little window takes you back to it: Search comes forward on the video's tab and the video goes back into its page. It did nothing when that tab was behind another one or behind another app, which is how it nearly always got there, because macOS puts a video back only into a page that is on screen
 - A video filling the screen can be clicked again once paused: clicking it, or its play button, plays it again, as the space bar did. The view macOS lays over a paused video to pick out its text and subject took every click, and is now kept out of the way while the video fills the screen
 - A right-click on a picture that is also a link, as on a grid of posts, has the link's items again: Open Link in New Tab, Open Link in Split View, Copy Link. Only a picture with no link gets the picture's own menu; on a link's picture, Copy Image and Download Image are Search's own, as in that menu, rather than WebKit's, which on some sites do nothing.
