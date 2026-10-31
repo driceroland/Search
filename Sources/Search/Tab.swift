@@ -2550,6 +2550,13 @@ final class PageView: WKWebView {
     private var armedNow = false
     private var showing = false
     private var going = false
+    /// This gesture went back or forward. The glide that follows the fingers
+    /// lifting arrives after the page has gone, and WebKit hands it to the
+    /// page coming back: it pulled that page sideways past its edge, where it
+    /// stayed, and scrolled it away from where it was being put back (a
+    /// GitHub list came back 181 points to the side and 961 short of where it
+    /// was left). So the glide goes to no page at all.
+    private var went = false
     private var pulls = 0
     /// Armed and held there: in a moment the disc becomes the list of pages
     /// that way, and moving the fingers up or down picks one (as in Dia).
@@ -2660,6 +2667,8 @@ final class PageView: WKWebView {
 
     override func scrollWheel(with event: NSEvent) {
         onTouch?()
+        if event.phase == .mayBegin || event.phase == .began { went = false }
+        if went, event.momentumPhase != [] { return }
         // The page gets every event first and scrolls as it always did. The
         // swipe is only read, never taken — except while its list is open,
         // when up and down are picking a page, not scrolling this one. The
@@ -2851,6 +2860,7 @@ final class PageView: WKWebView {
             return
         }
         going = true
+        went = true
         settle(Pull(back: back, travel: travel, armed: true, going: true, stops: stops, picked: picked, leaves: leaves))
         if stops != nil, items.indices.contains(picked) {
             go(to: items[picked])
