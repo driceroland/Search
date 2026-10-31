@@ -36,9 +36,18 @@ enum Swipe {
     /// No rubber-banding. Pulling past the top of a page showed a band of
     /// blank ground above it, and nobody who came from Chrome read that as
     /// anything but a fault. WebKit lets a view turn off the bounce along
-    /// chosen edges natively through `_setRubberBandingEnabled:`. We keep
-    /// horizontal rubber-banding for two-finger swipe navigation gestures,
-    /// while turning off top and bottom bounce.
+    /// chosen edges natively through `_setRubberBandingEnabled:`, and here it
+    /// is off along all four.
+    ///
+    /// The sides used to keep theirs, for "two-finger swipe navigation" (#815)
+    /// — but that is WebKit's own swipe, which stays off (Tab.build); Search's
+    /// reads the trackpad in PageView whether the page stretches or not. A
+    /// swipe back is exactly a pull past the left edge, so the page was
+    /// stretched sideways when it went back, and going back within the same
+    /// page (a footnote, a #section, a site that only changes its address)
+    /// broke off the stretch springing back: the page stayed shifted 60 to
+    /// 120 points to the side, and wasn't put back where it was either (a
+    /// Wikipedia footnote and back left you at the footnote).
     ///
     /// Turning this off via CSS `overscroll-behavior-y: none` on `html, body`
     /// broke mouse-wheel scrolling entirely on any page that had a non-passive
@@ -48,10 +57,9 @@ enum Swipe {
         let set = NSSelectorFromString("_setRubberBandingEnabled:")
         guard web.responds(to: set) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, UInt) -> Void
-        // _WKRectEdge: one bit per CGRectEdge (_WKRectEdge.h) — the edges
-        // that keep their bounce. Left and right only.
-        let left: UInt = 1 << 0, right: UInt = 1 << 2   // CGRectMinXEdge, CGRectMaxXEdge
-        unsafeBitCast(web.method(for: set), to: Setter.self)(web, set, left | right)
+        // _WKRectEdge: one bit per CGRectEdge (_WKRectEdge.h), the edges
+        // that keep their bounce. None of them.
+        unsafeBitCast(web.method(for: set), to: Setter.self)(web, set, 0)
     }
 
     /// Whether a sideways swipe here would scroll something. Said once per
