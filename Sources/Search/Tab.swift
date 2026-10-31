@@ -1052,6 +1052,11 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: ScrollRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
+        // At the start, so its pageshow runs ahead of the page's own
+        // (see KeptScroll.swift).
+        controller.addUserScript(
+            WKUserScript(source: KeptScroll.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
+        )
         controller.addUserScript(
             WKUserScript(source: Veiling.picker, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
         )
