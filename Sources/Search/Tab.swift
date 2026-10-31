@@ -1787,6 +1787,8 @@ final class Tab: ObservableObject, Identifiable {
         onSignIn = nil
         onField = nil
         onCredentials = nil
+        // A peek or a small window put away: gone for the extensions too.
+        if #available(macOS 15.4, *) { Extensions.shared.closedAside(self) }
         discard()
         // The last private tab gone, in every window: what its pages wore
         // goes with it.
