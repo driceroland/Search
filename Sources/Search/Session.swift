@@ -11,6 +11,10 @@ enum Session {
         var pin: String?
         /// The name you gave the tab, when you gave it one.
         var name: String?
+        /// The bookmark name the sidebar keeps while this tab stays on its
+        /// opening origin. Nil in sessions written before bookmark labels.
+        var bookmarkLabel: String? = nil
+        var bookmarkOrigin: String? = nil
         /// A pin's own page, the one it was pinned at (see Browser.goHome).
         var home: String?
         /// The group this ordinary tab belongs to, if any.

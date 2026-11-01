@@ -901,7 +901,18 @@ private struct SideRow: View {
     /// Where the page is, said on the row you're on (Settings › Tabs › Show
     /// the address on the tab you're on).
     private var rest: AtRest? { live && !editing ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
-    private var atRest: Bool { rest != nil }
+    /// A name you chose, or the name of the bookmark that opened this tab,
+    /// is more useful than the current address. The address-at-rest setting
+    /// keeps its existing role for ordinary pages only.
+    private var atRest: Bool { rest != nil && tab.name?.isEmpty != false && tab.bookmarkLabel == nil }
+    /// A bookmark's name stays on this row while the tab remains at the
+    /// bookmark's origin. A name given directly to the tab stays first, and
+    /// the tab itself keeps its page title for every other use.
+    private var label: String {
+        guard tab.name?.isEmpty != false, let bookmarkLabel = tab.bookmarkLabel
+        else { return tab.label }
+        return bookmarkLabel
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -933,7 +944,7 @@ private struct SideRow: View {
                     }
                     // A window the page asked for was refused (BlockedPopups).
                     PopupSign(browser: browser, tab: tab, colour: colour)
-                    TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
+                    TitleAtRest(label: label, rest: rest, shown: atRest, hovering: hovering,
                                 size: prefs.sideTitle, colour: colour, roomy: true)
                 }
                 Spacer(minLength: 0)

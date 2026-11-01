@@ -667,6 +667,30 @@ final class Tab: ObservableObject, Identifiable {
         didSet { if name == nil, oldValue != nil { letGo = Date() } }
     }
 
+    /// The name of the bookmark that opened this tab, kept for the sidebar
+    /// while the page stays on that bookmark's origin. Unlike `name`, this is
+    /// presentation only: it doesn't make a tab one someone chose to keep.
+    @Published private(set) var bookmarkLabel: String?
+    private(set) var bookmarkOrigin: String?
+
+    func opened(fromBookmark label: String, at url: URL) {
+        guard !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let origin = Self.origin(of: url) else { return }
+        bookmarkLabel = label
+        bookmarkOrigin = origin
+    }
+
+    private func leaveBookmarkOrigin(for url: URL) {
+        guard let origin = bookmarkOrigin, Self.origin(of: url) != origin else { return }
+        bookmarkLabel = nil
+        bookmarkOrigin = nil
+    }
+
+    private static func origin(of url: URL) -> String? {
+        guard let scheme = url.scheme, let host = url.host() else { return nil }
+        return Browser.origin(scheme, host, url.port ?? 0)
+    }
+
     /// When you last looked at it. The summon lists pages by this, because
     /// what you were just reading is what you are most likely to want back.
     /// Written into the session, so a tab's time away counts across quits.
@@ -875,6 +899,7 @@ final class Tab: ObservableObject, Identifiable {
                     // is another project, with another icon.
                     let moved = Favicons.site(fresh) != self.address.flatMap(Favicons.site)
                     self.address = fresh
+                    self.leaveBookmarkOrigin(for: fresh)
                     // Within the same origin — history.pushState, a fragment —
                     // the page on screen is the one at the new address.
                     if let now = self.committed, now.scheme == fresh.scheme, now.host() == fresh.host(), now.port == fresh.port {
@@ -1256,6 +1281,7 @@ final class Tab: ObservableObject, Identifiable {
         // stop being blank in the same frame the field disappears, or the empty
         // state flashes back for an instant on its way out.
         address = url
+        leaveBookmarkOrigin(for: url)
         held = nil
         title = ""
         failure = nil
@@ -1278,7 +1304,8 @@ final class Tab: ObservableObject, Identifiable {
 
     /// Brought back from the last session: everything the row needs to draw it,
     /// and nothing fetched.
-    func restore(url: URL, title: String, name: String? = nil) {
+    func restore(url: URL, title: String, name: String? = nil,
+                 bookmarkLabel: String? = nil, bookmarkOrigin: String? = nil) {
         if let own = InternalPage(url: url) {
             self.name = name
             show(own)
@@ -1287,6 +1314,9 @@ final class Tab: ObservableObject, Identifiable {
         address = url
         self.title = title
         self.name = name
+        self.bookmarkLabel = bookmarkLabel
+        self.bookmarkOrigin = bookmarkOrigin
+        leaveBookmarkOrigin(for: url)
         pending = url
         adoptIcon()
     }

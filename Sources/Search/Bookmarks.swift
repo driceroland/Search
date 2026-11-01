@@ -131,6 +131,13 @@ final class Bookmarks: ObservableObject {
         first { $0.url == url.absoluteString }
     }
 
+    /// The explicit name for exactly this address, when it has one. A blank
+    /// bookmark title means its icon is the label, so it cannot name a tab.
+    func label(for url: URL) -> String? {
+        guard let bookmark = bookmark(for: url), !bookmark.unnamed else { return nil }
+        return bookmark.title
+    }
+
     func bookmark(_ id: Bookmark.ID) -> Bookmark? {
         first { $0.id == id }
     }

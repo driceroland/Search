@@ -3700,6 +3700,9 @@ final class Bench {
             "internal": tab.page?.url.absoluteString ?? "",
             "title": tab.title,
             "name": tab.name ?? "",
+            // The sidebar may keep the name of the bookmark that opened this
+            // tab while it stays on that server (see SideRow).
+            "sidebarLabel": tab.name?.isEmpty == false ? tab.label : (tab.bookmarkLabel ?? tab.label),
             // The group it is in, by name, whether or not groups are on.
             "group": browser?.group(of: tab).flatMap { id in browser?.tabGroups.first { $0.id == id }?.name } ?? "",
             "loading": tab.loading,

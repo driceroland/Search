@@ -2783,6 +2783,7 @@ final class Browser: NSObject, ObservableObject {
             indices[tab.id] = entries.count
             entries.append(Session.Entry(
                 url: url.absoluteString, title: tab.title, pin: tab.pin, name: tab.name,
+                bookmarkLabel: tab.bookmarkLabel, bookmarkOrigin: tab.bookmarkOrigin,
                 home: tab.pin == nil ? nil : tab.home?.absoluteString, groupID: tab.groupID,
                 pinID: tab.pin == nil ? nil : tab.pinID,
                 // A page on screen is being looked at now, not when it was
@@ -4342,12 +4343,15 @@ final class Browser: NSObject, ObservableObject {
     /// exception, since nothing is lost by using it. With ⌘ it opens behind.
     func openBookmark(_ url: URL) {
         let behind = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+        let label = bookmarks.label(for: url)
         if !behind, let active, active.isBlank || active.page?.kind == .bookmarks, active.pin == nil, !active.floating {
             active.go(to: url)
+            if let label { active.opened(fromBookmark: label, at: url) }
             editing = false
             typed = ""
         } else {
-            open(url, foreground: !behind, from: active, mayWait: behind)
+            let tab = open(url, foreground: !behind, from: active, mayWait: behind)
+            if let label { tab.opened(fromBookmark: label, at: url) }
         }
     }
 
@@ -4364,7 +4368,8 @@ final class Browser: NSObject, ObservableObject {
             bookmarksOpen = false
         }
         if inNewTab {
-            open(url, foreground: foreground, from: active, mayWait: true)
+            let tab = open(url, foreground: foreground, from: active, mayWait: true)
+            if let label = bookmarks.label(for: url) { tab.opened(fromBookmark: label, at: url) }
         } else {
             openBookmark(url)
         }
@@ -4567,7 +4572,8 @@ final class Browser: NSObject, ObservableObject {
             let url = prefs.pinsGoHome ? home ?? saved : saved
             let tab = Tab(configuration: Web.configuration(space: space))
             prepare(tab)
-            tab.restore(url: url, title: url == saved ? entry.title : url.host ?? "", name: entry.name)
+            tab.restore(url: url, title: url == saved ? entry.title : url.host ?? "", name: entry.name,
+                        bookmarkLabel: entry.bookmarkLabel, bookmarkOrigin: entry.bookmarkOrigin)
             // Never later than now: a clock set wrong once would keep the tab forever.
             if let touched = entry.touched { tab.touch(at: min(touched, Date())) }
             tab.letGo = entry.letGo.map { min($0, Date()) }
