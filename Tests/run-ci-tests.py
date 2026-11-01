@@ -13,8 +13,9 @@ failed = result.returncode != 0
 listing = subprocess.run(["swift", "test", "list"], check=True, capture_output=True, text=True)
 cases = [line.strip() for line in listing.stdout.splitlines()
          if re.fullmatch(r"ShyTests\.DownloadLifecycleTests/test\w+", line.strip())]
-if len(cases) != 7:
-    raise RuntimeError(f"Expected 7 WebKit download cases; discovered {cases}")
+# At least one: a listing that found none would pass by running nothing.
+if not cases:
+    raise RuntimeError("Expected WebKit download cases; discovered none")
 for index, case in enumerate(cases):
     print(f"Isolated WebKit case: {case}", flush=True)
     env = dict(os.environ, SHY_PROBE=f"ci-download-{os.getpid()}-{index}")

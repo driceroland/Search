@@ -1,8 +1,10 @@
 #!/bin/bash
 # The test suite, in one place:
 #
-#   Tests/run.sh unit       the Swift tests (swift test) and the registrable
-#                           domains the site locks stand on
+#   Tests/run.sh unit       the Swift tests (swift test), the registrable
+#                           domains the site locks stand on, Find on Page in a
+#                           real page (test-find) and an extension's files
+#                           swapped whole (run-extension-files-tests.sh)
 #   Tests/run.sh smoke      the everyday journeys, end to end (smoke.py)
 #   Tests/run.sh security   the boundaries a page must not cross (security.py),
 #                           the agent's (agent_mcp.py), an extension's
@@ -45,6 +47,8 @@ is() { [ "$what" = all ] || [ "$what" = "$1" ]; }
 if is unit; then
     step unit python3 Tests/run-ci-tests.py
     step registrable Tests/RegistrableRegression/run.sh
+    step "find on page" ./test-find
+    step "extension files" Tests/run-extension-files-tests.sh
 fi
 if is smoke || is security; then debug_build; fi
 if is smoke; then step smoke python3 Tests/smoke.py; fi

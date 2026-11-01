@@ -148,7 +148,8 @@ final class AtRestTests: XCTestCase {
     func testCachedAndSameAsMade() throws {
         let url = URL(string: "https://docs.github.com/en")!
         XCTAssertEqual(AtRest.of(url), AtRest.make(url))
-        XCTAssertEqual(AtRest.of(url), AtRest.of(url))
+        // Asked again, the cache answers as the first time did.
+        XCTAssertEqual(AtRest.of(url), AtRest.make(url))
     }
 
     /// Drice's middle ground: with the setting off, only a warning is said.

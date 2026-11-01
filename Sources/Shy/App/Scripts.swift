@@ -8,9 +8,10 @@ enum Scripts {
     nonisolated static func load(_ name: String) -> String {
         var url = Bundle.main.url(forResource: name, withExtension: "js", subdirectory: "Scripts")
         #if DEBUG
-        // `swift test` runs without an app bundle: the sources are beside it.
+        // `swift test` runs without an app bundle: the sources are a folder
+        // up from this one (Sources/Shy/App/Scripts.swift, Sources/Shy/Scripts).
         if url == nil {
-            url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
                 .appendingPathComponent("Scripts/\(name).js")
         }
         #endif

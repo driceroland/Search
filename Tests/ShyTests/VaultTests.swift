@@ -1,8 +1,8 @@
 import XCTest
 @testable import Shy
 
-/// The pure parts of the password vault and the updater: which host a login
-/// belongs to, how an export is read, and that an unsigned feed is refused.
+/// The pure parts of the password vault: which host a login belongs to, the
+/// site above it, and how an export is read.
 /// Nothing here touches the keychain: every CSV row below is one that is
 /// skipped, so nothing is ever saved.
 final class VaultTests: XCTestCase {

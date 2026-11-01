@@ -43,8 +43,10 @@ extension WKWebView {
     /// `asFunction`: the body of an async function, with `arguments`, as
     /// callAsyncJavaScript takes it.
     func quietly(_ js: String, asFunction: Bool = false, arguments: [String: Any] = [:],
-                 in frame: WKFrameInfo? = nil, in world: WKContentWorld = Web.world,
+                 in frame: WKFrameInfo? = nil, in world: WKContentWorld? = nil,
                  then: ((Result<Any?, Error>) -> Void)? = nil) {
+        // Shy's own world unless another is named.
+        let world = world ?? Web.world
         typealias Done = @convention(block) (Any?, NSError?) -> Void
         typealias Call = @convention(c) (AnyObject, Selector, NSString, ObjCBool, NSURL?, NSDictionary?, ObjCBool,
                                          WKFrameInfo?, WKContentWorld, Done) -> Void
@@ -73,7 +75,7 @@ extension WKWebView {
 
     /// The same, awaited.
     func quietly(_ js: String, asFunction: Bool = false, arguments: [String: Any] = [:],
-                 in frame: WKFrameInfo? = nil, in world: WKContentWorld = Web.world) async throws -> Any? {
+                 in frame: WKFrameInfo? = nil, in world: WKContentWorld? = nil) async throws -> Any? {
         try await withCheckedThrowingContinuation { continuation in
             quietly(js, asFunction: asFunction, arguments: arguments, in: frame, in: world) { continuation.resume(with: $0) }
         }

@@ -104,6 +104,8 @@ final class SidePanelPrivacyTests: XCTestCase {
         browser.receive(first)
         browser.receive(second)
         browser.pair(second, with: first, onLeft: false)
+        // The pair has to have been made, or there is nothing to say about it.
+        XCTAssertNotNil(browser.activeSplit, "two ordinary pages pair")
         XCTAssertFalse(browser.sidePanelHeld)
     }
 

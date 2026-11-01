@@ -5,8 +5,10 @@ repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 scratch_dir=$(mktemp -d "${TMPDIR:-/tmp}/shy-page-find.XXXXXX")
 trap 'rm -rf "$scratch_dir"' EXIT HUP INT TERM
 
-xcrun swiftc -swift-version 5 -parse-as-library \
+xcrun swiftc -swift-version 5 -parse-as-library -D DEBUG \
   "$repo_dir/Sources/Shy/Tab/PageFind.swift" \
+  "$repo_dir/Sources/Shy/Tab/WKWebView+Shy.swift" \
+  "$repo_dir/Sources/Shy/App/Scripts.swift" \
   "$repo_dir/Tests/PageFindHarness.swift" \
   -o "$scratch_dir/PageFindTests"
 "$scratch_dir/PageFindTests"

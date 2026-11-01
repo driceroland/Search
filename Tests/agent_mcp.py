@@ -181,6 +181,9 @@ def main():
         mcp.tool("shy_click", tab_id=form, selector="#get")
         time.sleep(1.5)
         downloads = list((Path(sv.SUPPORT) / "Downloads").glob("*")) if (Path(sv.SUPPORT) / "Downloads").exists() else []
+        # The control: the click went out and the site answered with a file;
+        # without it, "nothing downloaded" would pass for a click that never fired.
+        t.ok("the download was asked for", "/download" in seen, seen)
         t.ok("a download is refused", not downloads, downloads)
 
         mcp.tool("shy_click", tab_id=form, selector="#blank")
