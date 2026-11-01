@@ -51,6 +51,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- Pages in the address field's list and in ⌘K wear their site's icon, as in History and the bookmarks bar: an open tab in place of the grey dot, a page from history or a typed address in place of nothing, a bookmark with its mark moved to the end of the row. Only icons this Mac already keeps, nothing fetched while you type; a site without one wears its letter. Every row's words now start at the same place. ([#822](https://github.com/driceroland/Search/issues/822)) Thanks [@ubeann](https://github.com/ubeann) ([#823](https://github.com/driceroland/Search/pull/823))
 - Settings says less and sits flatter: no line of explanation under each group's heading, every row of a card at the same level (Darken pages that stay light, Hide the column and The page as a card no longer indented under the row they depend on), and the hairlines between rows run from one edge of the card to the other. Every setting is still there, and still found by its words.
 - ⌘W on a tab in a group puts it away rather than closing it, as Arc keeps a folder's tabs: its page is let go, its row stays in the group, and a click opens it again at the page it was on. Its cross shows a minus while the page is open; on a row already put away, the cross or Close Tab closes it for good, and ⇧⌘T brings it back into its group. A page of a Split View pair in a group is put away out of its pair. Close Other Tabs, Close Tabs Below, Clear and Close Group close as before (idea 398). Asked for by email
 
