@@ -802,6 +802,8 @@ final class Bench {
             } else {
                 out["responderIsAddress"] = false
             }
+            // What the address field shows, typed and offered ending alike.
+            out["fieldText"] = Bench.addressField(in: (browser.window ?? Links.window)?.contentView)?.stringValue ?? ""
             out["windows"] = NSApp.windows.map { window -> [String: Any] in
                 [
                     "kind": "\(type(of: window))",
