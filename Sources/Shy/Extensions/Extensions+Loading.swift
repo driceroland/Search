@@ -51,13 +51,14 @@ extension Extensions {
             // extension a tab's address only where it has access, where
             // Chrome's "tabs" is enough, and one watching its sign-in tab
             // for that address has to be able to see it.
-            if ExtensionShims.allowed(item.id, context: context).contains("identity"),
+            if ExtensionShims.allowed(item.id, context: context, profile: profile).contains("identity"),
                let own = try? WKWebExtension.MatchPattern(string: "https://\(item.id).chromiumapp.org/*") {
                 context.setPermissionStatus(.grantedExplicitly, for: own)
             }
             Extensions.fence(context)
             Extensions.watchTouches()
-            context.hasAccessToPrivateData = Extensions.mayGoPrivate(context)
+            // Not yet anyone's: the profile loading it is named (see grantKey).
+            context.hasAccessToPrivateData = Extensions.mayGoPrivate(context, profile: profile)
             let undoRecovery = ExtensionWorkerRecovery.shared.register(context)
             do { try controller.load(context) }
             catch { undoRecovery(); throw error }

@@ -93,8 +93,8 @@ extension Extensions {
     /// You let it into private tabs, by its id and off until you do, and its
     /// manifest doesn't refuse them ("incognito": "not_allowed"), which
     /// Chrome honours whatever was allowed. WebKit doesn't read that key.
-    static func mayGoPrivate(_ context: WKWebExtensionContext) -> Bool {
-        Store.settings.bool(forKey: grantKey("private", context))
+    static func mayGoPrivate(_ context: WKWebExtensionContext, profile: UUID? = nil) -> Bool {
+        Store.settings.bool(forKey: grantKey("private", context, profile: profile))
             && (context.webExtension.manifest["incognito"] as? String) != "not_allowed"
     }
 

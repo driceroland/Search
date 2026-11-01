@@ -93,9 +93,10 @@ final class Extensions: NSObject, ObservableObject {
         SiteMemory.key("extensions.\(kind).", id, profile)
     }
 
-    /// The same, for a running extension: no owner, no yes.
-    static func grantKey(_ kind: String, _ context: WKWebExtensionContext) -> String {
-        guard let profile = owner(of: context)?.profile else { return "extensions.\(kind).unowned" }
+    /// The same, for a running extension — or one being loaded, whose
+    /// profile is named since no profile holds it yet: no owner, no yes.
+    static func grantKey(_ kind: String, _ context: WKWebExtensionContext, profile: UUID? = nil) -> String {
+        guard let profile = profile ?? owner(of: context)?.profile else { return "extensions.\(kind).unowned" }
         return grantKey(kind, context.uniqueIdentifier, profile)
     }
     /// The first window, once extensions have started with it.

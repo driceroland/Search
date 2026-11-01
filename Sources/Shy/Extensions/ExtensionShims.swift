@@ -386,9 +386,9 @@ enum ExtensionShims {
     /// courtesy to honest code, the shim runs beside the extension's own,
     /// so the one that counts is here. The manifest is the one WebKit
     /// already holds, not the file read again on every call.
-    static func allowed(_ id: String, context: WKWebExtensionContext) -> Set<String> {
+    static func allowed(_ id: String, context: WKWebExtensionContext, profile: UUID? = nil) -> Set<String> {
         let asked = (context.webExtension.manifest["permissions"] as? [Any] ?? []).compactMap { $0 as? String }
-        return Set(asked + (Store.settings.stringArray(forKey: Extensions.grantKey("granted", context)) ?? []))
+        return Set(asked + (Store.settings.stringArray(forKey: Extensions.grantKey("granted", context, profile: profile)) ?? []))
     }
 
     private static func run(_ api: String, _ args: [Any], context: WKWebExtensionContext, owner: Extensions) async throws -> Any? {

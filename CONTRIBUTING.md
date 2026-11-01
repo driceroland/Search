@@ -17,6 +17,22 @@ looks or behaves — spaces, groups, a visible address bar, a new panel — is:
 
 Fixes and things every browser is expected to do (Tab moving between a form's fields, ⌘1–⌘9) don't need a switch. Before building a bigger feature, look at how other browsers do it and read what people asked for on its issue.
 
+## Where the code is
+
+`Sources/Shy` is sorted by what each part of the browser does:
+
+- **App**: the app itself, its windows, menus, keys, look, settings store and the scripts it puts into pages.
+- **Browser**: one window's model: `Browser.swift` holds what it knows, and each `Browser+…` file does one thing with it (opening, rows, find, the field, downloads…). Spaces, profiles, pins, folders and the session are here too.
+- **Tab**: one tab and its page: `Tab.swift` and its `Tab+…` files, the web view (`PageView`), and everything a page can ask for or be given: dialogs, forms, notifications, translation, reading mode, icons.
+- **Column** and **Stage**: what you see, the column of tabs, and the page area with split view, peeks and the side panel.
+- **Address**: the field and what it understands: addresses, keywords, engines, site search, clean links.
+- **Library**: history, bookmarks, downloads and imports.
+- **Privacy**: passwords, passkeys and the ad blocker.
+- **Settings**, **Agent** (the MCP side and its socket), **Bench** (test builds only) and **Extensions**.
+- **Scripts**: the JavaScript, as `.js` files.
+
+A type that grew past a few hundred lines keeps its state in its own file and its work in `Type+Concern.swift` extensions beside it. A delegate's methods stay in the extension that declares the conformance, since WebKit only finds them there.
+
 ## Where things are tracked
 
 - [Issues](https://github.com/nxcco/shy/issues): every idea and report, and what is being worked on.

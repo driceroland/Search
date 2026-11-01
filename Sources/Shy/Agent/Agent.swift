@@ -330,7 +330,15 @@ final class Agent: NSObject, ObservableObject {
                 page.web.load(URLRequest(url: url))
                 self.settle(page, within: 15, answer)
             }
-            if page.live?.asks == true { permit(page, what, verb: verb, at: nil, answer, act: go) } else { go() }
+            guard let handover = page.live else { return go() }
+            // Off the site, the agent's own going takes the sign-in back first
+            // and then goes; a page that sends itself off the site is stopped
+            // instead (see decidePolicyFor).
+            let host = url.host()?.lowercased() ?? ""
+            if Vault.registrable(host) != handover.site {
+                return end(page, "the agent left \(handover.site) for \(host)") { go() }
+            }
+            if handover.acts, handover.asks { permit(page, what, verb: verb, at: nil, answer, act: go) } else { go() }
 
         case "wait":
             let seconds = min(30, max(0, (request["seconds"] as? Double) ?? 10))
