@@ -1,6 +1,6 @@
 import Foundation
 
-// shy-mcp: an AI agent's way into Shy's pages (Sources/Shy/Agent.swift).
+// shy-mcp: an AI agent's way into Shy's pages (Sources/Shy/Agent/Agent.swift).
 //
 // An MCP server on its standard input and output — one JSON-RPC message a
 // line, as MCP's stdio transport has it — that hands each tool call to the
