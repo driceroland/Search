@@ -11,7 +11,6 @@ extension Browser {
         let changed: Bool
     }
 
-
     struct Suggesting: Equatable {
         let tab: Tab.ID
         var spot: CGRect
