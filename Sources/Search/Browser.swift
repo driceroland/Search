@@ -7023,6 +7023,26 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         tab.uncover(after: 0.45)
     }
 
+    /// Where the window is, for a page asking `window.outerWidth`,
+    /// `outerHeight`, `screenX` and `screenY`. Unanswered, WebKit tells it a
+    /// window of no size at the bottom of the screen, and Google Docs, on a
+    /// Safari before 26.4, takes `outerWidth / innerWidth` for the browser's
+    /// zoom: from 0 it took the smallest it knows, a quarter, and drew the
+    /// document at a quarter of the screen's sharpness (#666). Safari answers
+    /// with its window, and so does this, the tabs and all.
+    @objc(_webView:getWindowFrameWithCompletionHandler:)
+    func webView(_ webView: WKWebView, getWindowFrameWithCompletionHandler done: @escaping (CGRect) -> Void) {
+        done(windowFrame(for: webView))
+    }
+
+    /// The window a page reads as its own: the one it is in, or, a tab's page
+    /// kept out of it behind the tab in front, this browser's. A page that
+    /// loads there still has the width it was shown at, and Docs would take
+    /// that over nothing, and keep the quarter for as long as the page lives.
+    func windowFrame(for webView: WKWebView) -> CGRect {
+        webView.window?.frame ?? window?.frame ?? .zero
+    }
+
     /// The page has drawn something: a view kept out of sight until now, so
     /// as not to show the white it starts as, comes in. WebKit calls this only
     /// on a view asked to — see `PageView.holdForFirstFrame()`.
