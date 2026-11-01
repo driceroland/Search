@@ -1033,6 +1033,45 @@ final class Bench {
             }
             walk(0)
 
+        case "swipesweep":
+            // Two fingers sideways over the spaces, one move a frame, then
+            // let go short of the next one so they settle back: how many
+            // rows and pills were built again along the way, and how long
+            // each pass of the main run loop carrying a move took. The
+            // trackpad's own events can't reach a probe in the back, so
+            // each move goes to the swipe as its monitor would hand it on.
+            // Test runs only.
+            guard Store.testing else { answer(["error": "swipesweep is for test runs"]); return }
+            guard browser.prefs.usesSpaces else { answer(["error": "swipesweep needs spaces on"]); return }
+            let moves = request["moves"] as? Int ?? 40
+            let step = request["dx"] as? Double ?? -2
+            let interval = request["interval"] as? Double ?? 1.0 / 60
+            let swipe = SpaceSwipe.shared
+            swipe.start(for: browser)
+            swipe.began()
+            let clock = LoopClock()
+            Bench.bodies = [:]
+            clock.start()
+            func move(_ n: Int) {
+                guard n < moves else {
+                    swipe.ended(cancelled: true)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        clock.stop()
+                        answer([
+                            "moves": moves, "tabs": browser.tabs.count,
+                            "bodies": Bench.bodies,
+                            "moveMs": LoopClock.summary(clock.marked),
+                            "otherMs": LoopClock.summary(clock.unmarked),
+                        ])
+                    }
+                    return
+                }
+                clock.mark()
+                swipe.moved(along: step)
+                DispatchQueue.main.asyncAfter(deadline: .now() + interval) { move(n + 1) }
+            }
+            move(0)
+
         case "pointer":
             // What a page's own tracking area hands its view as the pointer
             // goes over it — a move, or the pointer leaving — and a press,
