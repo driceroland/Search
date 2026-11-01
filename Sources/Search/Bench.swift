@@ -1085,6 +1085,43 @@ final class Bench {
             }
             walk(0)
 
+        case "bookmarksweep":
+            // Bookmarks kept and then let go, one a frame, as the star or a
+            // folder's menu would: how many rows of the column and how many
+            // bookmarks bars were built again along the way, and how long
+            // each pass of the main run loop carrying an edit took. Test
+            // runs only: it writes the world's bookmarks.
+            guard Store.testing else { answer(["error": "bookmarksweep is for test runs"]); return }
+            let count = request["count"] as? Int ?? 10
+            let interval = request["interval"] as? Double ?? 1.0 / 60
+            let urls = (0..<count).compactMap { URL(string: "https://bookmarksweep.test/\($0)") }
+            var made: [Bookmark.ID] = []
+            let clock = LoopClock()
+            Bench.bodies = [:]
+            clock.start()
+            func edit(_ n: Int) {
+                guard n < urls.count * 2 else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        clock.stop()
+                        answer([
+                            "edits": urls.count * 2, "tabs": browser.tabs.count,
+                            "bodies": Bench.bodies, "left": browser.bookmarks.count,
+                            "editMs": LoopClock.summary(clock.marked),
+                            "otherMs": LoopClock.summary(clock.unmarked),
+                        ])
+                    }
+                    return
+                }
+                clock.mark()
+                if n < urls.count {
+                    if let kept = browser.bookmarks.add(urls[n], title: "Sweep \(n)") { made.append(kept.id) }
+                } else {
+                    if n - urls.count < made.count { browser.bookmarks.remove(made[n - urls.count]) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + interval) { edit(n + 1) }
+            }
+            edit(0)
+
         case "pointer":
             // What a page's own tracking areas hand their owners as the
             // pointer goes over it — a move, or the pointer coming in — and a

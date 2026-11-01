@@ -47,9 +47,13 @@ struct Bookmark: Codable, Identifiable, Hashable {
     }
 }
 
-@MainActor
-final class Bookmarks: ObservableObject {
-    @Published private(set) var roots: [Bookmark] = [] {
+/// Observable rather than an ObservableObject: a view hears of the list
+/// changing only if it reads the list. Before, the browser passed every
+/// change on, and each bookmark kept or let go built every row of the
+/// column again, 200 rows and 224 ms with 200 tabs (Tests/bookmark_redraws.py).
+@MainActor @Observable
+final class Bookmarks {
+    private(set) var roots: [Bookmark] = [] {
         didSet {
             revision &+= 1
             kept = preparedKept ?? Set(Bookmarks.urls(roots).map(\.absoluteString))
@@ -57,8 +61,9 @@ final class Bookmarks: ObservableObject {
             sites = nil
         }
     }
-    private var revision = 0
-    private var preparedKept: Set<String>?
+    // Kept for the list's own work, read by no view.
+    @ObservationIgnored private var revision = 0
+    @ObservationIgnored private var preparedKept: Set<String>?
 
     /// Every address kept, for `contains` — asked on every redraw of the
     /// button, which fills in on a page that is kept.
@@ -141,8 +146,9 @@ final class Bookmarks: ObservableObject {
     /// Every site, folders opened, made once after each change of the list
     /// and kept: the field asks on every key, and walking a tree of a few
     /// thousand imported bookmarks to lowercase each again was work thrown
-    /// away each time.
-    private var sites: [Site]?
+    /// away each time. No view reads it, so filling it is no change for
+    /// anything to hear of.
+    @ObservationIgnored private var sites: [Site]?
 
     /// The sites for what is typed in the address field, the best `limit`
     /// first: every word, in any order, in the name or the address, allowing
@@ -704,7 +710,7 @@ final class Bookmarks: ObservableObject {
 /// for a right-click too. Used both in the small dropdown off the button and
 /// in the full manager — the interaction is the same size either way.
 struct BookmarkOutline: View {
-    @ObservedObject var bookmarks: Bookmarks
+    let bookmarks: Bookmarks
     /// The folders open, kept by whoever shows the outline, so the manager
     /// can open the way down to one it was asked to show.
     @Binding var expanded: Set<Bookmark.ID>
@@ -1076,7 +1082,7 @@ struct BookmarkDoor: View {
     /// kept, so the button fills and empties with either.
     private struct Kept: View {
         let browser: Browser
-        @ObservedObject var bookmarks: Bookmarks
+        let bookmarks: Bookmarks
         @ObservedObject var tab: Tab
 
         var body: some View {
@@ -1090,7 +1096,7 @@ struct BookmarkDoor: View {
 /// is made, so Done, Return, Escape and a click elsewhere all only close it.
 struct BookmarkCard: View {
     @ObservedObject var browser: Browser
-    @ObservedObject var bookmarks: Bookmarks
+    let bookmarks: Bookmarks
     let id: Bookmark.ID
 
     @State private var title = ""
@@ -1215,7 +1221,7 @@ struct BookmarkCard: View {
 /// The button's dropdown: the tree, and the two things that aren't in it.
 struct BookmarksDropdown: View {
     @ObservedObject var browser: Browser
-    @ObservedObject var bookmarks: Bookmarks
+    let bookmarks: Bookmarks
 
     @State private var expanded: Set<Bookmark.ID>
 
@@ -1326,7 +1332,7 @@ struct BookmarksDropdown: View {
 /// The full list, for putting it in order, finding one, or bringing more in.
 struct BookmarksPanel: View {
     @ObservedObject var browser: Browser
-    @ObservedObject var bookmarks: Bookmarks
+    let bookmarks: Bookmarks
 
     @State private var expanded: Set<Bookmark.ID> = []
     @State private var query = ""
