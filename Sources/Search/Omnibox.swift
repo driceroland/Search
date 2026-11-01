@@ -20,6 +20,8 @@ struct Omnibox: View {
 
     /// Sized to a pane of a split rather than to the window.
     var fitted = false
+    /// The page whose pane this field stands on, with Split View on.
+    var tab: Tab.ID?
 
     var body: some View {
         Group {
@@ -86,7 +88,7 @@ struct Omnibox: View {
                 SiteChip(site: site)
                     .transition(.scale(scale: 0.9, anchor: .leading).combined(with: .opacity))
             }
-            AddressField(browser: browser)
+            AddressField(browser: browser, tab: tab)
         }
             .animation(Motion.quick, value: browser.siteChip)
             .frame(height: 22)
@@ -395,6 +397,8 @@ private struct Breath: NSViewRepresentable {
 /// needs a real text field and its delegate.
 struct AddressField: NSViewRepresentable {
     @ObservedObject var browser: Browser
+    /// The pane's page, for a field standing on one (see Coordinator.focus).
+    var tab: Tab.ID?
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 
@@ -427,6 +431,7 @@ struct AddressField: NSViewRepresentable {
     func updateNSView(_ field: Field, context: Context) {
         let coordinator = context.coordinator
         coordinator.browser = browser
+        coordinator.tab = tab
 
         // Only when something other than typing changed it — ⌘L arriving with
         // an address, a walk through the list, a submit clearing it.
@@ -470,6 +475,7 @@ struct AddressField: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var browser: Browser
+        var tab: Tab.ID?
         var answered = -1
         /// The last value pushed in from the browser side, so an update can
         /// tell a change worth applying from one it made itself.
@@ -486,6 +492,11 @@ struct AddressField: NSViewRepresentable {
 
         /// The keys to the field, now if it is in a window, or the moment it is.
         @MainActor func focus(_ field: Field) {
+            // Only the field of the page in front. With Split View on, ⌘T's
+            // request reaches the field over the page just left too, in the
+            // moment before it goes: answered there, the keys went with it
+            // and were left to the window, which beeps at every key.
+            guard tab == nil || tab == browser.activeID else { return }
             guard let window = field.window else {
                 field.arrived = { [weak self, weak field] in
                     DispatchQueue.main.async {
