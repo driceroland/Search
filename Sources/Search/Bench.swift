@@ -1122,6 +1122,29 @@ final class Bench {
             }
             edit(0)
 
+        case "keeppage":
+            // The page on screen kept, or let go ("keep": false), on the
+            // bookmarks alone, as the Bookmarks panel does it: nothing else
+            // of the browser changes. Then the Bookmarks menu's items as it
+            // would open, a moment later, and how many times the bookmarks
+            // bar was built meanwhile. Test runs only: it writes the world's
+            // bookmarks.
+            guard Store.testing else { answer(["error": "keeppage is for test runs"]); return }
+            guard let tab = browser.active, let url = tab.address else { answer(["error": "no page on screen"]); return }
+            Bench.bodies = [:]
+            if request["keep"] as? Bool == false {
+                if let kept = browser.bookmarks.bookmark(for: url) { browser.bookmarks.remove(kept.id) }
+            } else {
+                _ = browser.bookmarks.add(url, title: tab.title)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let menu = NSApp.mainMenu?.items.first { $0.title == "Bookmarks" }?.submenu
+                if let menu { menu.delegate?.menuNeedsUpdate?(menu) }
+                answer(["kept": browser.pageKept,
+                        "items": menu?.items.prefix(2).map(\.title) ?? [],
+                        "bar": Bench.bodies["bar"] ?? 0])
+            }
+
         case "pointer":
             // What a page's own tracking areas hand their owners as the
             // pointer goes over it — a move, or the pointer coming in — and a

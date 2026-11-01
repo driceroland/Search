@@ -47,10 +47,8 @@ struct Bookmark: Codable, Identifiable, Hashable {
     }
 }
 
-/// Observable rather than an ObservableObject: a view hears of the list
-/// changing only if it reads the list. Before, the browser passed every
-/// change on, and each bookmark kept or let go built every row of the
-/// column again, 200 rows and 224 ms with 200 tabs (Tests/bookmark_redraws.py).
+/// Observable: only what reads the list hears it change, the Bookmarks
+/// menu's first item included (Tests/bookmark_menu_title.py), not every row.
 @MainActor @Observable
 final class Bookmarks {
     private(set) var roots: [Bookmark] = [] {
@@ -146,8 +144,7 @@ final class Bookmarks {
     /// Every site, folders opened, made once after each change of the list
     /// and kept: the field asks on every key, and walking a tree of a few
     /// thousand imported bookmarks to lowercase each again was work thrown
-    /// away each time. No view reads it, so filling it is no change for
-    /// anything to hear of.
+    /// away each time.
     @ObservationIgnored private var sites: [Site]?
 
     /// The sites for what is typed in the address field, the best `limit`
