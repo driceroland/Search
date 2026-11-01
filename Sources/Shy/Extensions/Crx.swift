@@ -103,8 +103,14 @@ enum Crx {
             throw Refused.download(http.statusCode)
         }
         guard !data.isEmpty else { throw Refused.empty }
+        // The biggest extensions on the store are tens of megabytes; a reply
+        // far beyond that is nothing to unpack onto this Mac.
+        guard data.count <= largest else { throw Refused.notCrx }
         return data
     }
+
+    /// The most a package may weigh, downloaded or unpacked.
+    static let largest = 256 << 20
 
     /// The zip inside a CRX3, once its signature has been checked against
     /// `id`.
@@ -211,7 +217,10 @@ enum Crx {
             let field = key >> 3, wire = key & 7
             switch wire {
             case 2:
-                guard let length = varint(), i + length <= b.count else { return out }
+                // The length comes from the download, before any signature
+                // is checked: a ten-byte varint can make it negative or near
+                // Int.max, and `i + length` would trap.
+                guard let length = varint(), length >= 0, length <= b.count - i else { return out }
                 out.append((field, Array(b[i..<(i + length)])))
                 i += length
             case 0: _ = varint()

@@ -1,5 +1,5 @@
 (function () {
-  if (window.__officeForms) return;
+  if (Object.prototype.hasOwnProperty.call(window, '__officeForms')) return;
 
   // The password box, and the last box before it that could hold a name.
   function pair() {
@@ -153,15 +153,19 @@
     });
   }
 
-  document.addEventListener('submit', offer, true);
+  // A person's submit, Return or click only: a page that makes up its own
+  // (dispatchEvent) with a password it set itself would be offered for
+  // saving under whatever site the tab is on by the time it is asked.
+  document.addEventListener('submit', function (e) { if (e.isTrusted) offer(); }, true);
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Enter') return;
+    if (!e.isTrusted || e.key !== 'Enter') return;
     var both = pair();
     if (both && (document.activeElement === both.pass || document.activeElement === both.user)) offer();
     else if (!both && nameBox(document.activeElement)) offer();
   }, true);
   // Plenty of sign-in buttons aren't in a form and never fire submit.
   document.addEventListener('click', function (e) {
+    if (!e.isTrusted) return;
     var el = e.target;
     if (!el || !el.closest) return;
     if (el.closest('button, input[type="submit"], [role="button"]')) {

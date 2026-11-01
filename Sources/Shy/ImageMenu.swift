@@ -82,10 +82,15 @@ extension Browser {
         guard let webView = tab.built else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
-        menu.addItem(ImageMenuItem("Open Image in New Tab") { [weak self] in
-            self?.open(url, foreground: true, from: tab)
-        })
-        menu.addItem(.separator())
+        // Only a picture with an address of its own opens as a page: a data:
+        // or blob: one opened by Shy itself would load at the top as no
+        // page could load it, and an SVG among them runs its own script.
+        if ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            menu.addItem(ImageMenuItem("Open Image in New Tab") { [weak self] in
+                self?.open(url, foreground: true, from: tab)
+            })
+            menu.addItem(.separator())
+        }
         menu.addItem(ImageMenuItem("Copy Image") { [weak self] in
             self?.copyImage(at: url, in: tab)
         })

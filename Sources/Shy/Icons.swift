@@ -379,7 +379,10 @@ final class Favicons {
     /// with it from script (GitHub), rather than declaring both, would
     /// otherwise have one look's icon overwrite the other's (#423).
     func fetch(for tab: Tab, changed: Bool = false) {
-        guard let url = tab.address, let site = Favicons.site(url),
+        // The page on screen, never one only on its way: a page that starts
+        // loading another site and then changes its own icon would have
+        // its picture kept as that site's.
+        guard let url = tab.pageAddress, let site = Favicons.site(url),
               url.scheme?.hasPrefix("http") == true
         else { return }
         load()
@@ -396,7 +399,10 @@ final class Favicons {
         guard !busy.contains(busyKey), changed || !missing.contains(busyKey) else { return }
         busy.insert(busyKey)
 
-        tab.web.evaluateJavaScript(Favicons.probe) { [weak self, weak tab] answer, _ in
+        // In Shy's world and without a click: the page can't watch the probe
+        // run, and is never handed a user activation by it.
+        tab.web.quietly(Favicons.probe) { [weak self, weak tab] result in
+            let answer = try? result.get()
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let declared = (answer as? [[String: String]]) ?? []

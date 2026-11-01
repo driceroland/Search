@@ -61,6 +61,9 @@ case "${SHY_DEV:-}" in
   *) echo "SHY_DEV is 0 or 1, not “$SHY_DEV”" >&2; exit 1 ;;
 esac
 [ "$STEP" != "app" ] && [ "$DEV" = 1 ] && { echo "a dev build doesn't go in a DMG" >&2; exit 1; }
+# Nor does a debug one: it carries the bench (Bench.swift), a way in for any
+# script on the Mac that a release build never has.
+[ "$STEP" != "app" ] && [ "$CONFIG" != "release" ] && { echo "only a release build goes in a DMG or a ZIP" >&2; exit 1; }
 SHOWN="$NAME"
 if [ "$DEV" = 1 ]; then
   # The feature: SHY_FEATURE, or the branch's last part, without the

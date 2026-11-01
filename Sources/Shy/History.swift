@@ -415,6 +415,10 @@ final class History: ObservableObject {
                 let prefix = String(key.prefix(typed.count))
                 guard prefix.caseInsensitiveCompare(typed) == .orderedSame else { continue }
                 let rest = String(key.dropFirst(typed.count))
+                // A site typed out in full — paypal.com — is never carried on
+                // into a longer name: a page that once sent you, by script, to
+                // paypal.com.evil.io would otherwise be what Return opens.
+                if History.typedInFull(typed), rest.hasPrefix(".") { continue }
                 guard let completed = Address.url(from: typed + rest),
                       History.identity(for: completed) == target
                 else { continue }
@@ -422,6 +426,16 @@ final class History: ObservableObject {
             }
         }
         return nil
+    }
+
+    /// A host with nothing after it whose last label is a public suffix
+    /// (com, co.uk's uk): a whole name, not the start of one.
+    static func typedInFull(_ typed: String) -> Bool {
+        let host = typed.lowercased()
+        guard host.contains("."), !host.contains("/"), let last = host.split(separator: ".").last,
+              let isSuffix = Passkeys.publicSuffix
+        else { return false }
+        return isSuffix(String(last) as CFString)
     }
 
     /// What a row can be finished as, and the page that has to come of it.

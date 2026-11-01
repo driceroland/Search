@@ -1,5 +1,5 @@
 (function () {
-  if (window.__officeSwipe) return;
+  if (Object.prototype.hasOwnProperty.call(window, '__officeSwipe')) return;
   window.__officeSwipe = true;
 
   var was = null, said = 0;

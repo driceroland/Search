@@ -142,7 +142,7 @@ extension ExtensionShims {
 
         // MARK: permissions Shy grants itself
         case "permissions.granted":
-            return Store.settings.stringArray(forKey: "extensions.granted.\(id)") ?? []
+            return Store.settings.stringArray(forKey: Extensions.grantKey("granted", context)) ?? []
         case "permissions.request":
             let wanted = (first as? [String]) ?? []
             // As in Chrome: only what the manifest named, as a permission or
@@ -159,8 +159,8 @@ extension ExtensionShims {
             let names = wanted.map { $0.replacingOccurrences(of: ".", with: " ") }.joined(separator: ", ")
             let yes = wanted.allSatisfy(silent.contains) ? true : await owner.ask(more: names, context: context)
             guard yes else { return false }
-            let had = Store.settings.stringArray(forKey: "extensions.granted.\(id)") ?? []
-            Store.settings.set(Array(Set(had + wanted)).sorted(), forKey: "extensions.granted.\(id)")
+            let had = Store.settings.stringArray(forKey: Extensions.grantKey("granted", context)) ?? []
+            Store.settings.set(Array(Set(had + wanted)).sorted(), forKey: Extensions.grantKey("granted", context))
             return true
         case "permissions.afterClick":
             // permissions.request for WebKit's own permissions and sites,
@@ -222,8 +222,8 @@ extension ExtensionShims {
             return true
         case "permissions.remove":
             let gone = Set((first as? [String]) ?? [])
-            let had = Store.settings.stringArray(forKey: "extensions.granted.\(id)") ?? []
-            Store.settings.set(had.filter { !gone.contains($0) }, forKey: "extensions.granted.\(id)")
+            let had = Store.settings.stringArray(forKey: Extensions.grantKey("granted", context)) ?? []
+            Store.settings.set(had.filter { !gone.contains($0) }, forKey: Extensions.grantKey("granted", context))
             return true
 
         default:

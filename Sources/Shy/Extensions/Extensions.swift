@@ -83,6 +83,21 @@ final class Extensions: NSObject, ObservableObject {
     static func owner(of controller: WKWebExtensionController?) -> Extensions? {
         controller.flatMap { controller in made.values.first { $0.controller === controller } }
     }
+
+    /// Where a yes given to one extension is kept: "private" (let into
+    /// private tabs) or "granted" (permissions asked for later). Per
+    /// profile, as SiteMemory keeps sites: the same extension installed in
+    /// two profiles is asked in each, and a yes in one never answers for
+    /// the other. Personal's are the keys there always were.
+    static func grantKey(_ kind: String, _ id: String, _ profile: UUID) -> String {
+        SiteMemory.key("extensions.\(kind).", id, profile)
+    }
+
+    /// The same, for a running extension: no owner, no yes.
+    static func grantKey(_ kind: String, _ context: WKWebExtensionContext) -> String {
+        guard let profile = owner(of: context)?.profile else { return "extensions.\(kind).unowned" }
+        return grantKey(kind, context.uniqueIdentifier, profile)
+    }
     /// The first window, once extensions have started with it.
     private static weak var launchedWith: Browser?
 
@@ -121,10 +136,12 @@ final class Extensions: NSObject, ObservableObject {
 
     /// The browser to act in when an extension opens something or is told
     /// something: the window in front's (see Windows.swift), if it shows
-    /// this profile, or else one that does.
+    /// this profile, or else one that does. None when no window shows it:
+    /// a window of another profile would hand the extension that profile's
+    /// history, bookmarks, cookies and tabs.
     var browser: Browser? {
         if let front = Browsers.front ?? Browsers.primary, front.profileID == profile { return front }
-        return Browsers.all.first { $0.profileID == profile } ?? Browsers.front ?? Browsers.primary
+        return Browsers.all.first { $0.profileID == profile }
     }
     private var adapters: [Tab.ID: ExtensionTab] = [:]
     /// Each window's row as WebKit last heard it, by browser.
@@ -927,11 +944,11 @@ final class Extensions: NSObject, ObservableObject {
         ExtensionCapture.forget(id)
         errors[id] = nil
         Extensions.setSettings([:], for: id)
-        Store.settings.removeObject(forKey: "extensions.granted.\(id)")
+        Store.settings.removeObject(forKey: Extensions.grantKey("granted", id, profile))
         loadsThisRun.remove(id)
         loadedBefore.remove(id)
         Store.settings.removeObject(forKey: "extensions.newtab.\(id)")
-        Store.settings.removeObject(forKey: "extensions.private.\(id)")
+        Store.settings.removeObject(forKey: Extensions.grantKey("private", id, profile))
         installed.removeAll { $0.id == id }
         save()
         try? FileManager.default.removeItem(at: folder(for: id))
@@ -1142,7 +1159,7 @@ final class Extensions: NSObject, ObservableObject {
               check.contains("status=\"ok\""),
               let version = check.range(of: #"\bversion="([^"]+)""#, options: .regularExpression)
                 .map({ String(check[$0].dropFirst(9).dropLast()) }),
-              version != item.version
+              Extensions.newer(version, than: item.version)
         else { return }
         do {
             let zip = try Crx.verifiedZip(try await Crx.fetch(item.id), id: item.id)
@@ -1278,13 +1295,13 @@ final class Extensions: NSObject, ObservableObject {
     /// manifest doesn't refuse them ("incognito": "not_allowed"), which
     /// Chrome honours whatever was allowed. WebKit doesn't read that key.
     static func mayGoPrivate(_ context: WKWebExtensionContext) -> Bool {
-        Store.settings.bool(forKey: "extensions.private.\(context.uniqueIdentifier)")
+        Store.settings.bool(forKey: grantKey("private", context))
             && (context.webExtension.manifest["incognito"] as? String) != "not_allowed"
     }
 
     func setPrivate(_ id: String, _ on: Bool) {
         guard let context = contexts[id] else { return }
-        Store.settings.set(on, forKey: "extensions.private.\(id)")
+        Store.settings.set(on, forKey: Extensions.grantKey("private", id, profile))
         let allowed = Extensions.mayGoPrivate(context)
         guard context.hasAccessToPrivateData != allowed else { return }
         context.hasAccessToPrivateData = allowed
@@ -1342,6 +1359,12 @@ final class Extensions: NSObject, ObservableObject {
         ("readingList", "Read and change your reading list"), ("downloads.open", "Open files it downloads"),
         ("desktopCapture", "Record your screen or a window, when you choose what to share"),
         ("tabCapture", "Record a tab, when you ask it to"),
+        // Gated like the rest (ExtensionShims.gates), so named at install and
+        // asked about again when an update adds one: identity alone runs a
+        // sign-in out of sight with your cookies.
+        ("identity", "Sign in to sites with your accounts"), ("search", "Search with your search engine"),
+        ("idle", "See when you are away from your Mac"), ("power", "Keep your Mac awake"),
+        ("tts", "Speak text aloud"), ("tabGroups", "See and change your tab groups"),
     ]
 
     /// What an extension wants, in words.
@@ -1571,7 +1594,23 @@ final class Extensions: NSObject, ObservableObject {
         let path = activeAdapter(for: context)?.tab.flatMap { set[$0.id.uuidString] } ?? set["*"]
         guard let path else { return Extensions.popupURL(for: context) }
         guard !path.isEmpty else { return nil }
-        return URL(string: path, relativeTo: context.baseURL)?.absoluteURL
+        // Its own pages only: action.setPopup is handed any string, and a
+        // site or a file shown in the popup would wear the extension's chrome.
+        return ExtensionShims.page(path, in: context)
+    }
+
+    /// Chrome's versions, one to four dotted numbers: an update only ever
+    /// goes up, so a reply naming an older (signed, but perhaps vulnerable)
+    /// version never rolls an extension back.
+    static func newer(_ offered: String, than current: String) -> Bool {
+        func parts(_ v: String) -> [Int]? {
+            let p = v.split(separator: ".", omittingEmptySubsequences: false).map { Int($0) }
+            guard !p.isEmpty, p.count <= 4, p.allSatisfy({ ($0 ?? -1) >= 0 }) else { return nil }
+            return p.map { $0! } + Array(repeating: 0, count: 4 - p.count)
+        }
+        guard let a = parts(offered) else { return false }
+        guard let b = parts(current) else { return offered != current }
+        return a.lexicographicallyPrecedes(b) == false && a != b
     }
 
     /// A keystroke an extension registered for.

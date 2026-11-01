@@ -92,6 +92,9 @@ enum Browsers {
     /// Windows closed while others were open, newest last, for ⇧⌘T.
     private(set) static var closed: [(record: WindowRecord, at: Date)] = []
 
+    /// Clear History: windows closed are a list of where you were, too.
+    static func forgetClosed() { closed = [] }
+
     /// SwiftUI's window's id, which is also the name its frame is kept
     /// under (#204); a test run's own.
     static let sceneID = Store.world.map { "shy (\($0))" } ?? "shy"
@@ -427,7 +430,11 @@ enum Browsers {
 
     static func read() -> [WindowRecord] {
         guard let data = try? Data(contentsOf: file) else { return [] }
-        return (try? JSONDecoder().decode([WindowRecord].self, from: data)) ?? []
+        guard let records = try? JSONDecoder().decode([WindowRecord].self, from: data) else {
+            Store.quarantine(file)
+            return []
+        }
+        return records
     }
 
     /// Start with a fresh window (see Session.startFresh): one window, the

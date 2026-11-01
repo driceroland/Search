@@ -69,8 +69,20 @@ extension Browser: WKDownloadDelegate {
     ) {
         guard let data, let file = whereToSave(suggestedFilename ?? "") else { return }
         do {
-            try data.write(to: file)
-            saved(file, from: originatingURL)
+            // Written by Shy itself, not by WebKit's download, so nothing
+            // else marks it as come from the web: the Mac checks a marked
+            // file before it first opens, and a PDF is whatever the site
+            // made it.
+            try data.write(to: file, options: .withoutOverwriting)
+            Browser.quarantine(file, from: originatingURL)
+            // A private tab's file is yours, but it leaves no line in the
+            // list of what was kept, as its other downloads don't.
+            let shy = tab(for: webView)?.shy == true || !webView.configuration.websiteDataStore.isPersistent
+            if shy {
+                announce("Saved \(file.lastPathComponent)", file: file)
+            } else {
+                saved(file, from: originatingURL)
+            }
         } catch {
             announce("Download failed")
         }
@@ -123,9 +135,33 @@ extension Browser: WKDownloadDelegate {
         return panel.url
     }
 
-    private static func fileName(_ name: String) -> String {
+    /// A name a site or an extension suggested, made safe to save under: its
+    /// last part only, nothing that turns the writing around or can't be
+    /// seen (U+202E makes "invoice‮fdp.app" read as a PDF), and never a
+    /// hidden file.
+    static func fileName(_ name: String) -> String {
         let last = (name as NSString).lastPathComponent
-        return ["", ".", "..", "/"].contains(last) ? "download" : last
+        var plain = String(String.UnicodeScalarView(last.unicodeScalars.filter { scalar in
+            !(scalar.properties.generalCategory == .control || scalar.properties.generalCategory == .format)
+        })).trimmingCharacters(in: .whitespacesAndNewlines)
+        while plain.hasPrefix(".") { plain.removeFirst() }
+        return ["", "/"].contains(plain) ? "download" : plain
+    }
+
+    /// What WebKit's own downloads are given: the mark of a file from the
+    /// web, which has the Mac check it before it first opens.
+    static func quarantine(_ file: URL, from source: URL?) {
+        var properties: [String: Any] = [
+            kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload as String,
+            kLSQuarantineAgentNameKey as String: "Shy",
+        ]
+        if let source, ["http", "https"].contains(source.scheme?.lowercased() ?? "") {
+            properties[kLSQuarantineDataURLKey as String] = source
+        }
+        var values = URLResourceValues()
+        values.quarantineProperties = properties
+        var marked = file
+        try? marked.setResourceValues(values)
     }
 
     func saved(_ file: URL, from source: URL?) {

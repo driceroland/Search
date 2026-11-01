@@ -323,7 +323,11 @@ final class Tab: ObservableObject, Identifiable {
     /// skeleton (see PeekSkeleton). True from the start on a WebKit that
     /// doesn't say when.
     @Published private(set) var painted = false
-    var pageAddress: URL? { committed ?? address }
+    /// Like `restAddress`: once the tab has a view, only what arrived. A
+    /// window a page opened toward another site, stopped and wrote into
+    /// itself, would otherwise be shown, shared and offered passwords as
+    /// that site while nothing of it ever loaded.
+    var pageAddress: URL? { built == nil ? address : committed }
     /// What the tab says at rest about where its page is (AtRest.swift):
     /// the document that arrived, never one only on its way. A page that
     /// opened this tab can write into it while the address it asked for is
@@ -333,6 +337,9 @@ final class Tab: ObservableObject, Identifiable {
 
     func didCommit() {
         popupGesture.clear()
+        // A new page may ask its own questions again.
+        built?.questionsHushed = false
+        built?.questionsInARow = 0
         // What the old page was refused went with it.
         if !blockedPopups.isEmpty { blockedPopups = [] }
         // A translated page is gone; its frames with it.
@@ -405,7 +412,7 @@ final class Tab: ObservableObject, Identifiable {
     /// The page's own article, worked out from the page (see Reader.script).
     private func guess(_ done: @escaping (Bool) -> Void) {
         let arguments: [String: Any] = ["sheet": Reader.sheet, "readerLook": Reader.look.rawValue]
-        web.callAsyncJavaScript(Reader.script, arguments: arguments, in: nil, in: .page) { [weak self] result in
+        web.quietly(Reader.script, asFunction: true, arguments: arguments, in: nil, in: .page) { [weak self] result in
             let worked = (try? result.get()) as? String == "read"
             if worked { self?.reader = true }
             done(worked)
@@ -715,7 +722,10 @@ final class Tab: ObservableObject, Identifiable {
     private var behind: InternalPage?
 
     /// What the field shows for this tab, and what is copied.
-    var shownURL: URL? { page?.url ?? address }
+    /// For a tab a page opened, the page that arrived, as `pageAddress`: its
+    /// opener can stop the load it asked for and write into it, and the
+    /// address it asked for must not stand over what it wrote.
+    var shownURL: URL? { page?.url ?? (opener == nil ? address : pageAddress) }
 
     /// Go to one of Shy's own pages. `stepping`: whether the page it
     /// leaves is one Back comes back to — not for another section of the
@@ -1108,11 +1118,13 @@ final class Tab: ObservableObject, Identifiable {
     /// box refused it, and only the first is worth remembering.
     private var sent: (host: String, user: String, password: String, clear: Bool, at: Date)?
 
-    func sentSignIn(user: String, password: String) {
+    func sentSignIn(user: String, password: String, from origin: String) {
         // The host now, while the page is still the sign-in page: a moment
         // later it may be somewhere else entirely, and that is not where
-        // the password belongs.
-        guard let host = pageAddress?.host()?.lowercased() else { return }
+        // the password belongs. And only if the page that sent it is that
+        // page: an old document's word arriving after the next site
+        // arrived is not the next site's.
+        guard let host = pageAddress?.host()?.lowercased(), host == origin else { return }
         let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         // A password page with no name on it: the name is the one the step
         // before was sent with.
@@ -1180,9 +1192,15 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     /// A first step's name alone, picked from the accounts under its box.
-    func fillName(_ user: String, done: ((Bool) -> Void)? = nil) {
+    /// With `onlyOn`, checked by the page itself, as `fill` does.
+    func fillName(_ user: String, onlyOn page: URL? = nil, done: ((Bool) -> Void)? = nil) {
+        var still = ""
+        if let page {
+            guard let scheme = page.scheme?.lowercased(), let host = page.host()?.lowercased() else { done?(false); return }
+            still = "location.protocol === `\(escape(scheme)):` && location.hostname.toLowerCase() === `\(escape(host))` && "
+        }
         web.evaluateInShy(
-            "window.__officeForms && window.__officeForms.name(`\(escape(user))`)"
+            "\(still)window.__officeForms && window.__officeForms.name(`\(escape(user))`)"
         ) { result in
             done?((result as? Bool) ?? false)
         }
@@ -1496,7 +1514,8 @@ final class Tab: ObservableObject, Identifiable {
                 web.open(url)
                 return
             }
-            web.evaluateJavaScript("document.readyState") { [weak self] _, error in
+            web.quietly("document.readyState") { [weak self] result in
+                let error: Error? = if case .failure(let e) = result { e } else { nil }
                 MainActor.assumeIsolated {
                     guard let self, let error = error as NSError? else { return }
                     guard error.domain == WKErrorDomain,
@@ -1526,7 +1545,8 @@ final class Tab: ObservableObject, Identifiable {
             web.open(address)
             return
         }
-        web.evaluateJavaScript("document.readyState") { [weak self] _, error in
+        web.quietly("document.readyState") { [weak self] result in
+            let error: Error? = if case .failure(let e) = result { e } else { nil }
             MainActor.assumeIsolated {
                 guard let self, let error = error as NSError? else { return }
                 guard error.domain == WKErrorDomain,
@@ -1693,9 +1713,9 @@ final class Tab: ObservableObject, Identifiable {
     private func hush() {
         quiet = nil
         guard !noisy, let built else { return }
-        built.evaluateJavaScript(MediaKeys.hush, in: nil, in: Web.world) { _ in }
+        built.quietly(MediaKeys.hush)
         for frame in media.frames {
-            built.evaluateJavaScript(MediaKeys.hush, in: frame, in: Web.world) { _ in }
+            built.quietly(MediaKeys.hush, in: frame)
         }
     }
 
@@ -1742,9 +1762,9 @@ final class Tab: ObservableObject, Identifiable {
         // the sound runs on until it does: so the media is muted and paused in
         // the page and its playing frames first, which lands at once.
         let silence = "document.querySelectorAll('video,audio').forEach(m => { m.muted = true; m.pause() }); 0"
-        web.evaluateJavaScript(silence, in: nil, in: Web.world) { _ in }
+        web.quietly(silence)
         for frame in playing {
-            web.evaluateJavaScript(silence, in: frame, in: Web.world) { _ in }
+            web.quietly(silence, in: frame)
         }
         web.pauseAllMediaPlayback()
         web.setAllMediaPlaybackSuspended(true)
@@ -1862,6 +1882,16 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 /// A web view that reads the two-finger swipe for itself.
 final class PageView: WKWebView {
     var onMenuClosed: (() -> Void)?
+
+    /// A page's questions (Dialogs.show): how many came hard on each
+    /// other's heels, when the last one was answered, and whether you said
+    /// "no more" — until the next page arrives (Tab.didCommit).
+    var questionsInARow = 0
+    var lastAnswered = Date.distantPast
+    var questionsHushed = false
+    /// An "Open in another app?" question is up: one at a time, however
+    /// often the page asks (Browser.handOff).
+    var askingForApp = false
 
     override func didCloseMenu(_ menu: NSMenu, with event: NSEvent?) {
         super.didCloseMenu(menu, with: event)
@@ -2487,8 +2517,53 @@ extension WKWebView {
     /// scripts are, answered the way `evaluateJavaScript` answers: the value,
     /// or nil for none or an error.
     func evaluateInShy(_ js: String, then: ((Any?) -> Void)? = nil) {
-        evaluateJavaScript(js, in: nil, in: Web.world) { result in
-            then?(try? result.get())
+        quietly(js) { result in then?(try? result.get()) }
+    }
+
+    /// A script Shy runs on its own account, without a click. WebKit's
+    /// public calls run every script as though the page had just been
+    /// clicked, and a page that waits for that (navigator.userActivation)
+    /// could then write to the clipboard, go full screen, play sound or
+    /// open a file chooser whenever Shy looked at it — on every load, every
+    /// icon change, every switch back to the tab. WebKit's own variant
+    /// without the click is asked for by name (as the agent's is, see
+    /// Agent.run); only where it is missing does the public one run.
+    /// `asFunction`: the body of an async function, with `arguments`, as
+    /// callAsyncJavaScript takes it.
+    func quietly(_ js: String, asFunction: Bool = false, arguments: [String: Any] = [:],
+                 in frame: WKFrameInfo? = nil, in world: WKContentWorld = Web.world,
+                 then: ((Result<Any?, Error>) -> Void)? = nil) {
+        typealias Done = @convention(block) (Any?, NSError?) -> Void
+        typealias Call = @convention(c) (AnyObject, Selector, NSString, ObjCBool, NSURL?, NSDictionary?, ObjCBool,
+                                         WKFrameInfo?, WKContentWorld, Done) -> Void
+        let call = NSSelectorFromString(
+            "_evaluateJavaScript:asAsyncFunction:withSourceURL:withArguments:forceUserGesture:inFrame:inWorld:completionHandler:"
+        )
+        guard responds(to: call), let imp = method(for: call) else {
+            if asFunction {
+                callAsyncJavaScript(js, arguments: arguments, in: frame, in: world) { then?($0.map { $0 }) }
+            } else {
+                evaluateJavaScript(js, in: frame, in: world) { then?($0.map { $0 }) }
+            }
+            return
+        }
+        let done: Done = { value, error in
+            let result: Result<Any?, Error> = error.map { .failure($0) } ?? .success(value is NSNull ? nil : value)
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { then?(result) }
+            } else {
+                DispatchQueue.main.async { then?(result) }
+            }
+        }
+        unsafeBitCast(imp, to: Call.self)(self, call, js as NSString, ObjCBool(asFunction), nil,
+                                          asFunction ? arguments as NSDictionary : nil, false, frame, world, done)
+    }
+
+    /// The same, awaited.
+    func quietly(_ js: String, asFunction: Bool = false, arguments: [String: Any] = [:],
+                 in frame: WKFrameInfo? = nil, in world: WKContentWorld = Web.world) async throws -> Any? {
+        try await withCheckedThrowingContinuation { continuation in
+            quietly(js, asFunction: asFunction, arguments: arguments, in: frame, in: world) { continuation.resume(with: $0) }
         }
     }
 }

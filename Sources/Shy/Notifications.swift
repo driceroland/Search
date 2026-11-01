@@ -63,6 +63,13 @@ final class SiteNotifications: NSObject {
     }
 
     /// The profile a store's pages are in; Personal for one of none.
+    /// Which store a notification came from: its profile, or for one that
+    /// is no profile's (a private tab's), that store alone this run.
+    nonisolated static func whose(_ store: WKWebsiteDataStore) -> String {
+        MainActor.assumeIsolated { Profiles.owner(of: store)?.uuidString }
+            ?? "store-\(UInt(bitPattern: ObjectIdentifier(store).hashValue))"
+    }
+
     private static func profile(of store: WKWebsiteDataStore) -> UUID {
         MainActor.assumeIsolated { Profiles.owner(of: store) } ?? Profile.personalID
     }
@@ -113,7 +120,8 @@ final class SiteNotifications: NSObject {
             stores[id] = store
             post(id: id, title: text("title"), body: text("body"), origin: origin, tag: text("tag"),
                  info: ["search.kind": "worker", "search.id": id, "search.origin": origin,
-                        "search.data": dictionary ?? [:]], profile: SiteNotifications.profile(of: store))
+                        "search.data": dictionary ?? [:], "search.store": SiteNotifications.whose(store)],
+                 profile: SiteNotifications.profile(of: store))
         }
     }
 
@@ -122,10 +130,15 @@ final class SiteNotifications: NSObject {
     nonisolated func displayed(_ store: WKWebsiteDataStore, origin: WKSecurityOrigin, completionHandler: @escaping ([NSDictionary]) -> Void) {
         let site = MainActor.assumeIsolated { Store.testing ? nil : Browser.origin(origin.protocol, origin.host, origin.port) }
         guard let site else { return completionHandler([]) }
+        // Only what this store's own worker posted: the same site signed in
+        // under another profile, or in a private tab, is somebody else.
+        let mine = SiteNotifications.whose(store)
         UNUserNotificationCenter.current().getDeliveredNotifications { delivered in
             let found = delivered.compactMap { note -> NSDictionary? in
                 let info = note.request.content.userInfo
-                guard info["search.kind"] as? String == "worker", info["search.origin"] as? String == site else { return nil }
+                guard info["search.kind"] as? String == "worker", info["search.origin"] as? String == site,
+                      info["search.store"] as? String == mine
+                else { return nil }
                 return info["search.data"] as? NSDictionary
             }
             completionHandler(found)

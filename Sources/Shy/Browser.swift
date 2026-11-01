@@ -678,6 +678,12 @@ final class Browser: NSObject, ObservableObject {
     /// Every profile's: the button says every address you have been to.
     func clearHistory() {
         Profiles.shared.list.forEach { Profiles.history($0.id).forget() }
+        // And what reopens with ⇧⌘T, in every window, and the copies of a
+        // history that once didn't read (Store.quarantine): kept for a bad
+        // read, never past being told to forget.
+        Browsers.all.forEach { $0.ghosts = [] }
+        Browsers.forgetClosed()
+        Store.forgetUnreadable { $0.hasPrefix("history") }
         // The sites' icons are a list of where you have been, too, and so
         // are the searches learned from sites visited (SiteSearch.swift).
         Favicons.forgetEverything()

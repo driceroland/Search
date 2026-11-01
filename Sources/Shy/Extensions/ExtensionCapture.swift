@@ -61,7 +61,7 @@ final class ExtensionCapture: NSObject, WKScriptMessageHandlerWithReply, Observa
     static func declares(_ context: WKWebExtensionContext) -> Bool {
         let manifest = context.webExtension.manifest
         let required = manifest["permissions"] as? [String] ?? []
-        let granted = Store.settings.stringArray(forKey: "extensions.granted.\(context.uniqueIdentifier)") ?? []
+        let granted = Store.settings.stringArray(forKey: Extensions.grantKey("granted", context)) ?? []
         return required.contains("desktopCapture") || granted.contains("desktopCapture")
     }
 

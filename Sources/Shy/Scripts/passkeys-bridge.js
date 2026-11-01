@@ -1,6 +1,6 @@
 (function () {
   var handler = window.webkit && webkit.messageHandlers && webkit.messageHandlers.__SHY_NAME__;
-  if (!handler || window.__bridged) return;
+  if (!handler || Object.prototype.hasOwnProperty.call(window, '__bridged')) return;
   window.__bridged = true;
   window.addEventListener('__SHY_ASKED__', function (event) {
     var message;

@@ -1,5 +1,5 @@
 (function () {
-  if (window.__officeMedia) return;
+  if (Object.prototype.hasOwnProperty.call(window, '__officeMedia')) return;
   // Played here at some point: only these were ever the Now Playing one.
   // Held: muted here, to be unmuted when they play.
   var played = new WeakSet(), held = new WeakSet(), watched = new WeakSet(), told = false;

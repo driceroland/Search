@@ -123,9 +123,8 @@ final class PageFind {
 
     private func evaluate(on web: WKWebView, arguments: [String: Any]) async throws -> Any {
         try await withCheckedThrowingContinuation { continuation in
-            web.callAsyncJavaScript(Self.script, arguments: arguments, in: nil, in: Web.world) {
-                (result: Swift.Result<Any, Error>) in
-                continuation.resume(with: result)
+            web.quietly(Self.script, asFunction: true, arguments: arguments) { result in
+                continuation.resume(with: result.map { $0 ?? NSNull() })
             }
         }
     }

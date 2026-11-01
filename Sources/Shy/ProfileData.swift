@@ -115,7 +115,13 @@ struct ProfileData: View {
         store.removeData(ofTypes: site.record.dataTypes, for: [site.record]) { look() }
     }
 
+    /// Every site, signed out — in the spaces of this profile with sign-ins
+    /// of their own too, as the button says.
     private func removeAll() {
-        store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { look() }
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        for space in Spaces.read() where space.profileID == profile.id && space.sharesSignIns != true {
+            Spaces.store(for: space.id).removeData(ofTypes: types, modifiedSince: .distantPast) {}
+        }
+        store.removeData(ofTypes: types, modifiedSince: .distantPast) { look() }
     }
 }

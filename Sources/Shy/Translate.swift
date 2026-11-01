@@ -153,7 +153,7 @@ final class PageTranslator {
             let frames = self.frames
             Task { @MainActor in
                 for frame in [nil] + frames.map(Optional.some) {
-                    _ = try? await web.callAsyncJavaScript(PageTranslator.restoreCall, in: frame, contentWorld: Web.world)
+                    _ = try? await web.quietly(PageTranslator.restoreCall, asFunction: true, in: frame)
                 }
             }
         }
@@ -184,7 +184,7 @@ final class PageTranslator {
         do {
             let first = try await collect(nil, injecting: true)
             report["collectMs"] = ms()
-            let hint = try? await web.callAsyncJavaScript("return document.documentElement.lang || ''", contentWorld: Web.world) as? String
+            let hint = try? await web.quietly("return document.documentElement.lang || ''", asFunction: true) as? String
             let sample = String(first.prefix(400).map(\.plain).joined(separator: "\n").prefix(4000))
             guard let from = PageTranslator.detect(sample, hint: hint) else {
                 throw Failure("Shy couldn't tell which language this page is in")
@@ -265,7 +265,7 @@ final class PageTranslator {
     private func collect(_ frame: WKFrameInfo?, injecting: Bool = false) async throws -> [Unit] {
         guard let web else { return [] }
         let call = (injecting ? PageTranslator.script + ";\n" : "") + "return window.__shyTr ? __shyTr.collect() : []"
-        let raw = try await web.callAsyncJavaScript(call, in: frame, contentWorld: Web.world) as? [Any] ?? []
+        let raw = try await web.quietly(call, asFunction: true, in: frame) as? [Any] ?? []
         return raw.compactMap { item in
             guard let row = item as? [Any], row.count == 4, let id = (row[0] as? NSNumber)?.intValue,
                   let parts = row[1] as? [String], let gaps = row[2] as? [Any], let fixed = row[3] as? [Any],
@@ -317,8 +317,8 @@ final class PageTranslator {
             let pairs: [[Any]] = slice.map { unit in
                 [NSNumber(value: unit.id), (out[unit.id] ?? nil).map { $0 as Any } ?? NSNull()]
             }
-            let applied = try await web.callAsyncJavaScript("return window.__shyTr ? __shyTr.apply(pairs) : 0",
-                                                            arguments: ["pairs": pairs], in: frame, contentWorld: Web.world)
+            let applied = try await web.quietly("return window.__shyTr ? __shyTr.apply(pairs) : 0",
+                                              asFunction: true, arguments: ["pairs": pairs], in: frame)
             report["applied"] = (report["applied"] as? Int ?? 0) + ((applied as? NSNumber)?.intValue ?? 0)
             first?()
         }
@@ -697,9 +697,9 @@ extension Tab {
         }
         let wanted = shy ? Shared.prefs.translateAlways.union(translateLanguages) : Shared.prefs.translateAlways
         guard !wanted.isEmpty else { return }
-        web.callAsyncJavaScript(
+        web.quietly(
             "return [document.documentElement.lang || '', document.body ? document.body.innerText.slice(0, 3000) : '']",
-            in: nil, in: Web.world
+            asFunction: true
         ) { [weak self] result in
             MainActor.assumeIsolated {
                 guard let self, self.translator == nil, self.built === web,

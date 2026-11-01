@@ -1,5 +1,5 @@
 (function () {
-  if (window.__officeImages) return;
+  if (Object.prototype.hasOwnProperty.call(window, '__officeImages')) return;
   window.__officeImages = true;
   document.addEventListener('contextmenu', function (e) {
     // A right-click of yours only: a page can dispatch one itself, and

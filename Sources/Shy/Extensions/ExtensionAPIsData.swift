@@ -124,6 +124,11 @@ extension ExtensionShims {
         case "downloads.download":
             let spec = first as? [String: Any] ?? [:]
             guard let url = (spec["url"] as? String).flatMap(URL.init(string:)) else { throw Unsupported(what: "No url to download") }
+            // As Chrome without file access: a file: address would copy any
+            // file this user can read into Downloads.
+            guard ["http", "https", "data", "blob"].contains(url.scheme?.lowercased() ?? "") else {
+                throw Unsupported(what: "Only http, https, data and blob addresses can be downloaded")
+            }
             guard let web = ExtensionShims.downloadPage(active: browser.active, tabs: browser.tabs) else {
                 throw Unsupported(what: "No page to download through")
             }

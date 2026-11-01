@@ -1,4 +1,4 @@
-if (!window.__shyTr) (function () {
+if (!Object.prototype.hasOwnProperty.call(window, '__shyTr')) (function () {
   // Left as they are, with everything in them.
   var SKIP = { script:1, style:1, noscript:1, textarea:1, input:1, select:1, option:1, code:1, pre:1,
                kbd:1, samp:1, 'var':1, svg:1, math:1, canvas:1, template:1, iframe:1, frame:1,

@@ -198,14 +198,16 @@ enum SwitchMark {
          kSecAttrAccount as String: Store.world.map { "\(name) (\($0))" } ?? name]
     }
 
-    /// The mark is there — or there is nowhere to keep one: a copy built
-    /// without Shy's provisioning profile has no access group, and
-    /// keeps the switch as it always was.
+    /// The mark is there. A copy built without Shy's provisioning profile
+    /// has nowhere to keep one, and there the switch holds for the launch
+    /// it was turned on in only: counted as given, any program could turn
+    /// the bench on with a defaults write and drive your signed-in pages at
+    /// the next launch, without a word. Test runs hold nothing of yours.
     static func given(_ name: String) -> Bool {
         var asked = query(name)
         asked[kSecReturnAttributes as String] = true
         let status = SecItemCopyMatching(asked as CFDictionary, nil)
-        return status == errSecSuccess || status == errSecMissingEntitlement
+        return status == errSecSuccess || (status == errSecMissingEntitlement && Store.testing)
     }
 
     static func grant(_ name: String) {

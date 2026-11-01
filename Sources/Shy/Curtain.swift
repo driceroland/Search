@@ -160,7 +160,8 @@ enum Veiling {
             .replacingOccurrences(of: "$", with: "\\$")
         return """
         (function () {
-          var sheet = document.getElementById('office-veil');
+          // A real stylesheet only (see curtain-picker.js's sheet).
+          var sheet = document.querySelector('style#office-veil');
           if (!sheet) {
             sheet = document.createElement('style');
             sheet.id = 'office-veil';

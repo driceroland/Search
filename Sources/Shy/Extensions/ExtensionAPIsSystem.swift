@@ -189,7 +189,7 @@ extension ExtensionShims {
             // run out of sight, it either comes straight back or fails.
             if spec["interactive"] as? Bool != true {
                 let wait = (spec["timeoutMsForNonInteractive"] as? NSNumber).map { $0.doubleValue / 1000 }
-                return try await ExtensionAuth.quietly(url, extension: id,
+                return try await ExtensionAuth.quietly(url, extension: id, store: Spaces.store(for: browser.spaceID),
                                                        abortOnLoad: spec["abortOnLoadForNonInteractive"] as? Bool ?? true,
                                                        timeout: wait).absoluteString
             }

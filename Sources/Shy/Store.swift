@@ -17,6 +17,9 @@ enum Store {
     /// remember a flag is not a safeguard.
     static var testing: Bool {
         if ProcessInfo.processInfo.environment["SHY_PROBE"] != nil { return true }
+        // `swift test` runs inside Xcode's xctest, not out of .build: a test
+        // class that set no SHY_PROBE wrote to the real browser's settings.
+        if NSClassFromString("XCTestCase") != nil { return true }
         return Bundle.main.executablePath?.contains("/.build/") == true
     }
 
@@ -159,6 +162,15 @@ enum Store {
         let aside = file.deletingLastPathComponent()
             .appendingPathComponent("\(file.deletingPathExtension().lastPathComponent).unreadable-\(stamp).json")
         try? FileManager.default.moveItem(at: file, to: aside)
+    }
+
+    /// The copies `quarantine` set aside whose names pass `matching`, gone:
+    /// for Clear History, and for a profile deleted (its id in the name).
+    static func forgetUnreadable(_ matching: (String) -> Bool) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in names where name.contains(".unreadable-") && matching(name) {
+            try? FileManager.default.removeItem(at: file(name))
+        }
     }
 
     /// Settings live apart too: a test that changes what the tabs wear or

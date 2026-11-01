@@ -388,7 +388,7 @@ enum ExtensionShims {
     /// already holds, not the file read again on every call.
     static func allowed(_ id: String, context: WKWebExtensionContext) -> Set<String> {
         let asked = (context.webExtension.manifest["permissions"] as? [Any] ?? []).compactMap { $0 as? String }
-        return Set(asked + (Store.settings.stringArray(forKey: "extensions.granted.\(id)") ?? []))
+        return Set(asked + (Store.settings.stringArray(forKey: Extensions.grantKey("granted", context)) ?? []))
     }
 
     private static func run(_ api: String, _ args: [Any], context: WKWebExtensionContext, owner: Extensions) async throws -> Any? {

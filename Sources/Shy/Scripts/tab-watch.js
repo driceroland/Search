@@ -1,5 +1,5 @@
 (function () {
-  if (window.__officeMiddle) return;
+  if (Object.prototype.hasOwnProperty.call(window, '__officeMiddle')) return;
   window.__officeMiddle = true;
   // Heard on the way down, before the page's own handlers, since some
   // stop the event there — YouTube's links did, and a middle-click on

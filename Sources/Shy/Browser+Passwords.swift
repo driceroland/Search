@@ -137,7 +137,7 @@ extension Browser {
         pickedInto = tab.id
         // A first step: the name alone, the password waits for its page.
         if list.nameOnly {
-            tab.fillName(login.user) { [weak self] worked in
+            tab.fillName(login.user, onlyOn: tab.pageAddress) { [weak self] worked in
                 if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
             }
             return

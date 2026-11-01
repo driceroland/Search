@@ -1,9 +1,11 @@
 (function () {
-  if (window.__officeVeil) return;
+  if (Object.prototype.hasOwnProperty.call(window, '__officeVeil')) return;
   var frame = null, tag = null, target = null, live = false;
 
   function sheet(id) {
-    var s = document.getElementById(id);
+    // A real stylesheet only: an element of the page's own under the same
+    // id would take the rules in as text, and hide nothing.
+    var s = document.querySelector('style#' + id);
     if (!s) {
       s = document.createElement('style');
       s.id = id;

@@ -94,6 +94,10 @@ final class Links: NSObject, NSApplicationDelegate {
             let line = "\(Date()) — \(exception.name.rawValue): \(exception.reason ?? "?")\n"
                 + exception.callStackSymbols.joined(separator: "\n") + "\n\n"
             let file = Store.file("crash.log")
+            // Kept small: it is only ever read by a person, and what it holds
+            // can name pages. Past a megabyte it starts again.
+            let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int) ?? 0
+            if size > 1 << 20 { try? FileManager.default.removeItem(at: file) }
             if let handle = FileHandle(forWritingAtPath: file.path) {
                 handle.seekToEndOfFile()
                 handle.write(line.data(using: .utf8) ?? Data())
@@ -163,7 +167,7 @@ final class Links: NSObject, NSApplicationDelegate {
         // app would bring a window forward. The bench hands links in itself.
         guard !Store.testing else { return }
         guard let text = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
-              let url = URL(string: text), url.scheme?.lowercased().hasPrefix("http") == true
+              let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? "")
         else { return }
         Links.take(url)
     }

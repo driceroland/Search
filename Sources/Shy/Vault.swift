@@ -276,8 +276,9 @@ enum Vault {
         var trouble: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &trouble) else {
             // No way to ask at all — a Mac with no password set. Then there is
-            // nothing to prove.
-            done(true)
+            // nothing to prove. Anything else that stops the question is a no:
+            // a password is never shown because the asking broke.
+            done(trouble?.code == LAError.passcodeNotSet.rawValue)
             return
         }
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { ok, _ in

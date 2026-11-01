@@ -18,20 +18,26 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         _ controller: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
-        guard let body = message.body as? [String: Any],
+        // The forms script runs in the top page only; anything else is not it.
+        guard message.frameInfo.isMainFrame,
+              let body = message.body as? [String: Any],
               let kind = body["kind"] as? String
         else { return }
+        // Where the message came from, as WebKit knows it: the tab's address
+        // may already be the next site's by the time it is read.
+        let from = message.frameInfo.securityOrigin.host.lowercased()
+        // A name or password longer than any real one is not a sign-in.
+        let user = String((body["user"] as? String ?? "").prefix(512))
+        let password = body["password"] as? String ?? ""
         MainActor.assumeIsolated {
             switch kind {
             case "form":
                 tab?.foundSignIn()
             case "submit":
-                tab?.sentSignIn(
-                    user: body["user"] as? String ?? "",
-                    password: body["password"] as? String ?? ""
-                )
+                guard password.utf8.count <= 1024 else { return }
+                tab?.sentSignIn(user: user, password: password, from: from)
             case "name":
-                tab?.gaveName(body["user"] as? String ?? "")
+                tab?.gaveName(user)
             case "settled":
                 tab?.settleSignIn(navigated: false)
             case "focus":

@@ -52,12 +52,13 @@ enum ExtensionAuth {
     ///
     /// What it allows, no more than a tab opened behind would (which any
     /// extension may do, with no permission): an extension with "identity"
-    /// has an http(s) page load out of sight, with the cookies of the space
-    /// in front, for at most a minute. It learns only the address it is sent
+    /// has an http(s) page load out of sight, with the cookies of the
+    /// extension's own profile, for at most a minute. It learns only the address it is sent
     /// to on its own chromiumapp.org, never the page. The page gets no other
     /// extension, no popup, dialog, download or app launch, and no other
     /// scheme. One flow per extension at a time; a new one ends the last.
-    static func quietly(_ url: URL, extension id: String, abortOnLoad: Bool, timeout: TimeInterval?) async throws -> URL {
+    static func quietly(_ url: URL, extension id: String, store: WKWebsiteDataStore,
+                        abortOnLoad: Bool, timeout: TimeInterval?) async throws -> URL {
         guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
             throw Quiet.failure("Authorization page could not be loaded.")
         }
@@ -69,7 +70,7 @@ enum ExtensionAuth {
                 continuation.resume(with: result)
             }
             quiet[id] = flow
-            flow.start(url, limit: limit)
+            flow.start(url, limit: limit, store: store)
         }
     }
 
@@ -97,12 +98,13 @@ enum ExtensionAuth {
             self.finish = finish
         }
 
-        func start(_ url: URL, limit: TimeInterval) {
+        func start(_ url: URL, limit: TimeInterval, store: WKWebsiteDataStore) {
             let config = WKWebViewConfiguration()
-            // The front space's sign-ins, as the tab an interactive flow
-            // opens would have; no extension's scripts, and the same user
-            // agent as every other view (see Web.userAgentName).
-            config.websiteDataStore = Spaces.store(for: Spaces.current)
+            // The sign-ins of the extension's own profile, as the tab an
+            // interactive flow opens would have — never the space in front,
+            // which may be another profile's; no extension's scripts, and the
+            // same user agent as every other view (see Web.userAgentName).
+            config.websiteDataStore = store
             config.processPool = Web.pool
             config.applicationNameForUserAgent = Web.userAgentName
             config.preferences.javaScriptCanOpenWindowsAutomatically = false

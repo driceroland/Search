@@ -596,6 +596,15 @@ extension Browser {
         for tab in going { close(tab) }
     }
 
+    /// What a link dropped on the tabs may open: a website, or a file
+    /// from the Finder. A page decides what a link dragged out of it
+    /// carries — script, a data: page, an extension's page with that
+    /// extension's powers, Shy's own pages, another app's address — and none
+    /// of that is what a person dragging a link means.
+    nonisolated static func mayDrop(_ url: URL) -> Bool {
+        ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "")
+    }
+
     /// A link let go of over the tabs becomes a tab among them.
     func take(_ providers: [NSItemProvider]) -> Bool {
         var took = false
@@ -606,16 +615,13 @@ extension Browser {
                     // A page decides what a link dragged out of it carries: never
                     // script, nor an extension's page, which would open with
                     // that extension's own powers.
-                    guard let url, !["javascript", "chrome-extension", "webkit-extension"].contains(url.scheme?.lowercased() ?? "")
-                    else { return }
+                    guard let url, Browser.mayDrop(url) else { return }
                     DispatchQueue.main.async { self.open(url, foreground: true) }
                 }
             } else if provider.canLoadObject(ofClass: String.self) {
                 took = true
                 _ = provider.loadObject(ofClass: String.self) { text, _ in
-                    guard let text, let url = Address.url(from: text),
-                          !["javascript", "chrome-extension", "webkit-extension"].contains(url.scheme?.lowercased() ?? "")
-                    else { return }
+                    guard let text, let url = Address.url(from: text), Browser.mayDrop(url) else { return }
                     DispatchQueue.main.async { self.open(url, foreground: true) }
                 }
             }

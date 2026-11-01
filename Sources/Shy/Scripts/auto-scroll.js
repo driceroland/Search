@@ -1,6 +1,6 @@
 (() => {
   window.__shyAutoScrollOff = false;
-  if (window.__shyAutoScroll) return;
+  if (Object.prototype.hasOwnProperty.call(window, '__shyAutoScroll')) return;
   window.__shyAutoScroll = true;
   let active = null;
   // The button whose press just stopped the scrolling. Its click is part

@@ -1,7 +1,7 @@
 (() => {
     // Turned back on over a page that already has it: the same listener
     // speaks again rather than a second one beside it.
-    if (window.__shyLinks) { window.__shyLinks.on = true; return; }
+    if (Object.prototype.hasOwnProperty.call(window, '__shyLinks')) { window.__shyLinks.on = true; return; }
     const state = { on: true };
     window.__shyLinks = state;
     let shown = '';

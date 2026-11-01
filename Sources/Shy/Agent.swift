@@ -306,6 +306,10 @@ final class Agent: NSObject, ObservableObject {
         guard let page = page(request["id"] as? String) else {
             return answer(["error": "no page “\(request["id"] as? String ?? "")” — open one, or list them"])
         }
+        // A handover's time is checked on every call, not only by the timer:
+        // a timer waits out a sleeping Mac and App Nap, and the sign-in
+        // would outlive the time you gave it until it fired.
+        expire(page)
         page.used = Date()
         drawn(page)
         if let words = Agent.doing[verb] {
@@ -315,9 +319,18 @@ final class Agent: NSObject, ObservableObject {
         switch verb {
         case "go":
             guard let url = Agent.web(request["url"]) else { return answer(["error": "go needs an http or https address"]) }
-            page.note("Went to \(url.host() ?? "")\(url.path())")
-            page.web.load(URLRequest(url: url))
-            settle(page, within: 15, answer)
+            // On a handover that asks before each click, going somewhere is
+            // asked about too: an address on the site can act as much as a
+            // click can (sign out, confirm, unsubscribe). Read-only goes,
+            // since reading a site means going through it; off the site the
+            // sign-in is taken back first (see decidePolicyFor).
+            let what = "Go to \(url.host() ?? "")\(url.path())"
+            let go = {
+                page.note("Went to \(url.host() ?? "")\(url.path())")
+                page.web.load(URLRequest(url: url))
+                self.settle(page, within: 15, answer)
+            }
+            if page.live?.asks == true { permit(page, what, verb: verb, at: nil, answer, act: go) } else { go() }
 
         case "wait":
             let seconds = min(30, max(0, (request["seconds"] as? Double) ?? 10))
@@ -603,6 +616,11 @@ final class Agent: NSObject, ObservableObject {
     /// Clicks and typing on a page with your sign-in in it: only what you
     /// allowed, and asked about first unless you said not to — with a look
     /// at the spot, for one at a point.
+    /// The sign-in's time is up: taken back now, whatever the timer says.
+    private func expire(_ page: Page) {
+        if let handover = page.live, handover.ends <= Date() { end(page, "its time was up") }
+    }
+
     private func permit(_ page: Page, _ what: String, verb: String, at point: CGPoint?,
                         _ answer: @escaping ([String: Any]) -> Void, act: @escaping () -> Void) {
         guard let handover = page.live else { return act() }
@@ -613,12 +631,21 @@ final class Agent: NSObject, ObservableObject {
         guard handover.asks else { return act() }
         page.acting = "waiting for you"
         let doing = Agent.doing[verb] ?? "acting"
+        // The page you were asked about: a yes is for that page, not one
+        // the agent sent the tab on to while you read the question.
+        let asked = page.web.url
         let asking = { (picture: NSImage?) in
             if let point { page.cursor = point }
             self.ask(page, handover, what, picture: picture) { yes in
                 guard yes else {
                     page.note("You refused: \(what)")
                     return answer(["error": "the person said no to this"])
+                }
+                self.expire(page)
+                guard page.live != nil else { return answer(["error": "the sign-in was taken back while you were asked"]) }
+                guard page.web.url == asked else {
+                    page.note("Not done: the page changed while you were asked")
+                    return answer(["error": "the page changed while the person was asked; ask again"])
                 }
                 page.acting = doing
                 act()
@@ -922,6 +949,7 @@ extension Agent: WKNavigationDelegate, WKUIDelegate {
             webView.load(URLRequest(url: url))
             return
         }
+        if let page = pages.first(where: { $0.web === webView }) { expire(page) }
         guard let page = pages.first(where: { $0.web === webView }), let handover = page.live,
               ["http", "https"].contains(scheme)
         else { return decisionHandler(.allow) }
@@ -930,8 +958,12 @@ extension Agent: WKNavigationDelegate, WKUIDelegate {
         // and the sign-in stays: the copy is only ever sent to its site. A
         // form sent from a frame is a form all the same, and below it is
         // held to the same rules as the page's own.
+        // Leaving the site, the page stays where it was: the address it was
+        // sent to may carry what the sign-in just got (a sign-in code a
+        // redirect hands another site), and the copy is taken back first.
+        // The agent can go there itself afterwards, signed out.
         guard !main || Vault.registrable(host) == handover.site else {
-            return end(page, "the page left \(handover.site) for \(host)") { decisionHandler(.allow) }
+            return end(page, "the page tried to leave \(handover.site) for \(host)") { decisionHandler(.cancel) }
         }
         // A form sent with your sign-in: never on a read-only handover, and
         // asked about first unless you said not to.

@@ -75,7 +75,13 @@ enum Spaces {
     /// Every space, the first one first — made on the spot if there is no
     /// list yet.
     static func read() -> [Space] {
-        let saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Space].self, from: $0) } ?? []
+        let data = try? Data(contentsOf: file)
+        let decoded = data.flatMap { try? JSONDecoder().decode([Space].self, from: $0) }
+        // A list that doesn't read is set aside, not written over at the
+        // next change: the spaces' stores would be left with no line to
+        // delete them from.
+        if data != nil, decoded == nil { Store.quarantine(file) }
+        let saved = decoded ?? []
         let first = saved.first(where: \.isFirst) ?? Space(id: Space.firstID, name: "Personal", colour: 0)
         return [first] + saved.filter { !$0.isFirst }
     }

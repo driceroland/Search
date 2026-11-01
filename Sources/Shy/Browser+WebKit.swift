@@ -118,7 +118,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // The chosen modified click: a peek at the link, over this
         // page (see Peek.swift). Only from a tab in the row — within a peek,
         // a link just goes.
-        if action.navigationType == .linkActivated,
+        if action.navigationType == .linkActivated, action.byPerson,
            ["http", "https"].contains(scheme),
            action.modifierFlags.intersection([.shift, .command, .option, .control]) == prefs.peekClick.flags,
            let from = tab(for: webView), peekTab == nil {
@@ -145,7 +145,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             decisionHandler(.cancel)
             return
         }
-        if action.navigationType == .linkActivated,
+        // A ⌘-click a person made. WebKit reports a click a script made up
+        // (dispatchEvent with metaKey) as a link activated with ⌘ too, and
+        // a page looping one would open tab after tab behind your back.
+        if action.navigationType == .linkActivated, action.byPerson,
            ["http", "https"].contains(scheme),
            action.modifierFlags.contains(.command) {
             openClicked(url, foreground: action.modifierFlags.contains(.shift), from: tab(for: webView), view: webView)
@@ -155,7 +158,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
         // The next document gets this site's stylesheet of hidden things,
         // decided here because here is the last moment before it loads.
-        if action.targetFrame?.isMainFrame ?? true, let tab = tab(for: webView) {
+        // The tab's own main frame only: a nil target is a new window, and a
+        // window.open (even a refused one) must not retune the opener.
+        if action.targetFrame?.isMainFrame == true, let tab = tab(for: webView) {
             let host = curtain.host(of: url)
             tab.arm(hiding: Profiles.curtain(tab.profile).css(on: host), to: url)
             // And the blocker, on or off for where it is going.
@@ -244,9 +249,13 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// opens only once you have said so, as in Safari — except a mail or
     /// phone link you just clicked on, which is exactly what it says.
     private func handOff(_ url: URL, scheme: String, action: WKNavigationAction, from webView: WKWebView) {
-        let clicked = action.navigationType == .linkActivated
+        // A click a person made: a script's made-up click is the page asking.
+        let clicked = action.navigationType == .linkActivated && action.byPerson
         let source: WKFrameInfo? = action.sourceFrame
-        let top = webView.url?.host()?.lowercased() ?? ""
+        // The page on screen, not one only on its way: a page that starts
+        // loading another site and then asks would be named as that site.
+        let onScreen = tab(for: webView)?.pageAddress ?? webView.url
+        let top = onScreen?.host()?.lowercased() ?? ""
         let asker = source?.securityOrigin.host.lowercased() ?? ""
         let ownSite = source?.isMainFrame == true
             || (!top.isEmpty && !asker.isEmpty && Vault.registrable(asker) == Vault.registrable(top))
@@ -270,18 +279,24 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             return
         }
         let name = FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "")
+        // One question at a time: a page asking in a loop would otherwise
+        // queue a sheet for every time it asked.
+        let page = webView as? PageView
+        guard page?.askingForApp != true else { return }
+        page?.askingForApp = true
         // Over its own tab only, as a page's own questions are (see ask).
         ask(from: webView, show: {
             let alert = NSAlert()
             alert.messageText = "Open \u{201C}\(name)\u{201D}?"
-            alert.informativeText = "\(webView.url?.host() ?? "This page") wants to open \(name)."
+            alert.informativeText = "\(top.isEmpty ? "This page" : top) wants to open \(name)."
             alert.addButton(withTitle: "Open")
             alert.addButton(withTitle: "Cancel")
             Dialogs.show(alert, over: webView) { answer in
+                page?.askingForApp = false
                 guard answer == .alertFirstButtonReturn else { return }
                 NSWorkspace.shared.open(url)
             }
-        }, drop: {})
+        }, drop: { page?.askingForApp = false })
     }
 
     /// A link that asks for a new window gets a new tab. The configuration
@@ -660,7 +675,11 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             host = origin.host.isEmpty ? (tab(for: webView)?.address?.host() ?? "This page") : origin.host
             site = origin.host.isEmpty ? host : "\(origin.protocol)://\(origin.host)" + (origin.port == 0 ? "" : ":\(origin.port)")
         }
-        let key = scoped("\(site)|\(type.rawValue)", for: webView)
+        // A page with no host of its own — a file, a data: page — is never
+        // remembered: every one of them would share the one answer, and a
+        // yes for one local page would hand the camera to the next.
+        let key = !Browser.extensionScheme(asker.protocol) && origin.host.isEmpty
+            ? nil : scoped("\(site)|\(type.rawValue)", for: webView)
 
         if let key, let remembered = Store.settings.object(forKey: "capture." + key) as? Bool {
             decisionHandler(remembered ? .grant : .deny)
@@ -1007,5 +1026,15 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// still goes into History with its icon.
     func anyTab(for webView: WKWebView) -> Tab? {
         tab(for: webView) ?? parkedTabs.first { $0.built === webView }
+    }
+}
+
+extension WKNavigationAction {
+    /// Whether a person's click or key is behind this navigation, as WebKit
+    /// knows it, rather than a script's made-up event. Where WebKit doesn't
+    /// say, as before: taken as a person's.
+    var byPerson: Bool {
+        guard responds(to: NSSelectorFromString("_isUserInitiated")) else { return true }
+        return (value(forKey: "_isUserInitiated") as? Bool) ?? true
     }
 }

@@ -267,7 +267,8 @@ extension Browser {
             return
         }
         let host = challenge.protectionSpace.host.lowercased()
-        if Dialogs.isLoopback(host) || Dialogs.excused.contains(host) {
+        let excuse = Dialogs.excuse(host, in: webView)
+        if Dialogs.isLoopback(host) || Dialogs.excused.contains(excuse) {
             completionHandler(.useCredential, URLCredential(trust: trust))
             return
         }
@@ -292,7 +293,7 @@ extension Browser {
                     completionHandler(.cancelAuthenticationChallenge, nil)
                     return
                 }
-                Dialogs.excused.insert(host)
+                Dialogs.excused.insert(excuse)
                 completionHandler(.useCredential, URLCredential(trust: trust))
             }
         }, drop: { completionHandler(.cancelAuthenticationChallenge, nil) })
@@ -306,6 +307,16 @@ extension Browser {
         _ completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
         guard challenge.previousFailureCount < 2 else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        // Only the page itself may ask, as with a certificate (see trust): a
+        // picture or a frame from another site would put its own question,
+        // with a realm it words as it likes, over the page you came to.
+        let host = challenge.protectionSpace.host.lowercased()
+        guard let tab = tab(for: webView),
+              (tab.address?.host() ?? tab.pending?.host())?.lowercased() == host
+        else {
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
@@ -379,6 +390,14 @@ enum Dialogs {
     /// Sites with bad certificates that were accepted, for this launch only.
     static var excused = Set<String>()
 
+    /// A certificate let through counts for the store it was let through in
+    /// only: a yes in a private tab or another profile is not one here.
+    @MainActor static func excuse(_ host: String, in webView: WKWebView) -> String {
+        let store = webView.configuration.websiteDataStore
+        let whose = Profiles.owner(of: store)?.uuidString ?? "store-\(UInt(bitPattern: ObjectIdentifier(store).hashValue))"
+        return whose + "|" + host
+    }
+
     static func alert(from frame: WKFrameInfo, saying message: String) -> NSAlert {
         let alert = NSAlert()
         // The site's name as the title, so a page can't dress its message up
@@ -408,15 +427,38 @@ enum Dialogs {
         // page without one, would be on the screen of whoever is working
         // beside it. What it would have asked is written down (bench probe),
         // and it is answered as if cancelled.
-        if Store.testing {
-            askedInTest.append(alert.messageText)
+        let page = webView as? PageView
+        // A page you told to stop asking is answered as if each question
+        // were dismissed, without a sheet: a loop of alert() or of links to
+        // another app would otherwise hold the whole window behind one sheet
+        // after another, as long as the page likes.
+        if page?.questionsHushed == true {
             finish(.cancel)
             return
         }
+        if let page {
+            page.questionsInARow = Date().timeIntervalSince(page.lastAnswered) < 3 ? page.questionsInARow + 1 : 1
+            if page.questionsInARow >= 2 {
+                alert.showsSuppressionButton = true
+                alert.suppressionButton?.title = "Don't let this page ask anything else"
+            }
+        }
+        let answered: (NSApplication.ModalResponse) -> Void = { response in
+            if let page {
+                page.lastAnswered = Date()
+                if alert.suppressionButton?.state == .on { page.questionsHushed = true }
+            }
+            finish(response)
+        }
+        if Store.testing {
+            askedInTest.append(alert.messageText)
+            answered(.cancel)
+            return
+        }
         if let window = window(for: webView) {
-            alert.beginSheetModal(for: window, completionHandler: finish)
+            alert.beginSheetModal(for: window, completionHandler: answered)
         } else {
-            finish(alert.runModal())
+            answered(alert.runModal())
         }
     }
 

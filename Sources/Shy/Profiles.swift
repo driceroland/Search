@@ -85,8 +85,11 @@ final class Profiles: ObservableObject {
         // One by one: an entry that doesn't read loses itself, not every
         // profile — whose spaces would be left in none, their data beyond
         // the reach of Delete.
-        let saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Lenient].self, from: $0) }?
-            .compactMap(\.profile) ?? []
+        let data = try? Data(contentsOf: file)
+        let decoded = data.flatMap { try? JSONDecoder().decode([Lenient].self, from: $0) }
+        // A file that doesn't read at all is set aside (see Spaces.read).
+        if data != nil, decoded == nil { Store.quarantine(file) }
+        let saved = decoded?.compactMap(\.profile) ?? []
         let personal = saved.first(where: \.isPersonal) ?? .personal
         return [personal] + saved.filter { !$0.isPersonal }
     }
@@ -245,6 +248,8 @@ final class Profiles: ObservableObject {
         for name in ["history-\(id.uuidString).json", "bookmarks-\(id.uuidString).json", "hidden-\(id.uuidString).json"] {
             Disk.remove(Store.file(name))
         }
+        // And any copy of them once set aside as unreadable.
+        Store.forgetUnreadable { $0.contains(id.uuidString) }
         Vault.forgetAll(in: id)
         // What it remembered about sites, its camera, microphone, screen,
         // location and notification answers among them.
