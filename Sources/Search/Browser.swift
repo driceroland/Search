@@ -3753,8 +3753,12 @@ final class Browser: NSObject, ObservableObject {
             // a tab, so one that was never built yet actually wakes up
             // instead of sitting there blank until a manual reload. Asked
             // for, the tab viewed before this one comes first, as ⌃Tab
-            // would take you there.
-            let before = prefs.closeGoesBack ? tabBefore(tab) : nil
+            // would take you there. Search's own pages go back whatever the
+            // switch says: History or Settings is called up over what you
+            // were doing, as their cards were before 1.0.7. Closing one
+            // shouldn't leave you on its neighbour, or on the last tab when
+            // ⌘Y brought forward a History tab kept at the end of the row.
+            let before = prefs.closeGoesBack || tab.page != nil ? tabBefore(tab) : nil
             select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
         }
         rememberSession()

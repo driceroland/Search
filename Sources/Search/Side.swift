@@ -1042,7 +1042,7 @@ private struct PinSquare: View {
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
         .help(tab.label)
-        .animation(Motion.quick, value: hovering)
+        .animation(nil, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))
     }
 }
@@ -1229,7 +1229,7 @@ private struct SideRow: View {
                 SplitDropZone(browser: browser, tab: tab, kind: .strip)
             }
         }
-        .animation(Motion.quick, value: hovering)
+        .animation(nil, value: hovering)
         .animation(Motion.glide, value: editing)
         .onChange(of: browser.refusals) { _, _ in
             guard editing else { return }

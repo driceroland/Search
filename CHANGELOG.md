@@ -11,6 +11,32 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Reload Page (⌘R) and Reload Page From Origin (⌥⌘R) reload the page in a peek while it is open, leaving the page underneath alone.
+- An extension's worker waits on one round trip fewer when it lists its open pages, reads its permissions, or (in a user-script manager) puts its scripts back as it starts. Each asked two questions one after the other; both now go out at once. Translate Page asks for the page's language while it reads the page's words, not after.
+- Spaces brought over from Arc with one of Arc's own icons rather than an emoji keep a matching icon (a bulb, a leaf, a star…) instead of all coming in as a briefcase. Thanks [@introbseso](https://github.com/introbseso) for the report and the table ([#832](https://github.com/driceroland/Search/issues/832))
+- Copy Image copies at once: a picture of a few megabytes took up to a minute, since its bytes were read one at a time; a 3 MB picture now takes a fraction of a second
+- A swipe back no longer leaves the page shifted to the side, with a blank strip down its left: the page's sides no longer stretch at its own size, only once pinched in, where panning on to an edge needs them. Thanks [@ubeann](https://github.com/ubeann), whose [#816](https://github.com/driceroland/Search/pull/816) found it ([#810](https://github.com/driceroland/Search/issues/810), [#815](https://github.com/driceroland/Search/issues/815))
+- ⌘T from a page puts the keys in the new tab's address field every time again, not only the first: the field leaving from the last one took them back.
+- Extensions work in a peek and in the small window for a link from another app: Stylus styles the page there, and an extension whose script on the page asks it for something gets its answer. They were refused ("Tab not found"), since neither page is in a window's row; they still aren't listed among the window's tabs, and a peek kept as a tab arrives there as a new one. Thanks [@ubeann](https://github.com/ubeann) ([#818](https://github.com/driceroland/Search/pull/818))
+- Closing History, Settings, Downloads, Bookmarks or Passwords takes you back to the tab you were on, as closing their cards did before 1.0.7. It took you to the tab beside it, or to the last tab when ⌘Y brought forward a History tab kept at the end of the row. Other tabs still go to their neighbour unless Settings › Tabs › Closing a tab goes back to the one before is on. Thanks [@ubeann](https://github.com/ubeann) ([#825](https://github.com/driceroland/Search/pull/825), [#824](https://github.com/driceroland/Search/issues/824))
+- Going back to a page that keeps its own scroll position, such as a GitHub issue, comes back where you left it, as in Chrome, instead of at the top. WebKit brings such a page back from its cache at the very top, in Safari too; it now goes back to where it was, unless the page scrolls somewhere itself. Thanks [@ubeann](https://github.com/ubeann) ([#814](https://github.com/driceroland/Search/pull/814))
+- A page you swipe back or forward to comes back where you left it. The glide that follows the fingers lifting reached the page coming back: it was left pulled sideways past its edge, with a blank strip down one side, and scrolled away from where it was being put back. ⌘[ and the Back button were never affected. Thanks [@ubeann](https://github.com/ubeann) ([#811](https://github.com/driceroland/Search/pull/811))
+
+### Changed
+
+- Pages in the address field's list and in ⌘K wear their site's icon, as in History and the bookmarks bar: an open tab in place of the grey dot, a page from history or a typed address in place of nothing, a bookmark with its mark moved to the end of the row. Only icons this Mac already keeps, nothing fetched while you type; a site without one wears its letter. Every row's words now start at the same place. ([#822](https://github.com/driceroland/Search/issues/822)) Thanks [@ubeann](https://github.com/ubeann) ([#823](https://github.com/driceroland/Search/pull/823))
+- Tab hover feedback is instant, without a fade, in the column, across the top and with Icons only, including pinned tabs and the title/address swap. Other tab animations are unchanged. Asked for by [@evannotfound](https://github.com/evannotfound) ([#803](https://github.com/driceroland/Search/issues/803))
+
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+## 1.0.8 — 2 November 2026
+
 ### Added
 
 - Open Link in Split View in a link's right-click menu: the link opens beside the page you are on, the two as a pair, and its page has the keys. A page already in a pair takes the link in place of its other page, which stays open as a tab of its own; a pin keeps its place, and its page goes into the pair, as when a pin is dragged onto a page in Settings › Tabs. Thanks [@Tom-Boscher](https://github.com/Tom-Boscher) ([#765](https://github.com/driceroland/Search/pull/765))
@@ -22,7 +48,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- Reload Page (⌘R) and Reload Page From Origin (⌥⌘R) reload the page in a peek while it is open, leaving the page underneath alone.
+- Typing in a new tab carries on with Split View on: after ⌘T from a page, the first letter or two went into the field and every key after them made the Mac's error sound and typed nothing, which looked like the grey ending stopping the typing. The field over the page being left took the keys back as it went, and left them with the window
 - With the floating video set to Picture in picture (Settings › General), the button at the top right of the video's little window takes you back to it: Search comes forward on the video's tab and the video goes back into its page. It did nothing when that tab was behind another one or behind another app, which is how it nearly always got there, because macOS puts a video back only into a page that is on screen
 - A video filling the screen can be clicked again once paused: clicking it, or its play button, plays it again, as the space bar did. The view macOS lays over a paused video to pick out its text and subject took every click, and is now kept out of the way while the video fills the screen
 - A right-click on a picture that is also a link, as on a grid of posts, has the link's items again: Open Link in New Tab, Open Link in Split View, Copy Link. Only a picture with no link gets the picture's own menu; on a link's picture, Copy Image and Download Image are Search's own, as in that menu, rather than WebKit's, which on some sites do nothing.
@@ -54,12 +80,6 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Settings says less and sits flatter: no line of explanation under each group's heading, every row of a card at the same level (Darken pages that stay light, Hide the column and The page as a card no longer indented under the row they depend on), and the hairlines between rows run from one edge of the card to the other. Every setting is still there, and still found by its words.
 - ⌘W on a tab in a group puts it away rather than closing it, as Arc keeps a folder's tabs: its page is let go, its row stays in the group, and a click opens it again at the page it was on. Its cross shows a minus while the page is open; on a row already put away, the cross or Close Tab closes it for good, and ⇧⌘T brings it back into its group. A page of a Split View pair in a group is put away out of its pair. Close Other Tabs, Close Tabs Below, Clear and Close Group close as before (idea 398). Asked for by email
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
 
 ## 1.0.7 — 25 October 2026
 

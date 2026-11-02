@@ -20,6 +20,8 @@ struct Omnibox: View {
 
     /// Sized to a pane of a split rather than to the window.
     var fitted = false
+    /// The page whose pane this field stands on, with Split View on.
+    var tab: Tab.ID?
 
     var body: some View {
         Group {
@@ -86,7 +88,7 @@ struct Omnibox: View {
                 SiteChip(site: site)
                     .transition(.scale(scale: 0.9, anchor: .leading).combined(with: .opacity))
             }
-            AddressField(browser: browser)
+            AddressField(browser: browser, tab: tab)
         }
             .animation(Motion.quick, value: browser.siteChip)
             .frame(height: 22)
@@ -169,50 +171,37 @@ struct Omnibox: View {
 
         var body: some View {
             HStack(spacing: 10) {
-                switch offer.kind {
-                case .search:
-                    // The engine's own icon when this Mac already has it: a
-                    // search sent to a site you have been to says so with the
-                    // site rather than a magnifying glass. Nothing is fetched
-                    // for one that isn't known; the glass is what the row
-                    // wears until then.
-                    if let icon = Favicons.shared.cached(for: offer.url) {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .interpolation(.high)
-                            .frame(width: 14, height: 14)
-                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                    } else {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Palette.muted)
+                // Every row has the same column before its words, so the
+                // words line up whatever stands in it.
+                Group {
+                    switch offer.kind {
+                    case .search:
+                        // The engine's own icon when this Mac already has it: a
+                        // search sent to a site you have been to says so with the
+                        // site rather than a magnifying glass. Nothing is fetched
+                        // for one that isn't known; the glass is what the row
+                        // wears until then.
+                        if let icon = Favicons.shared.cached(for: offer.url) {
+                            Mark(icon: icon, letter: "", size: 14)
+                        } else {
+                            symbol("magnifyingglass")
+                        }
+                    case .suggested:
+                        // The engine's own words: always the glass, so they read
+                        // as searches rather than places.
+                        symbol("magnifyingglass")
+                    case .command:
+                        symbol("command")
+                    default:
+                        // A place — open, kept or visited — wears its site's
+                        // icon, as it does in History and the bookmarks bar:
+                        // from what this Mac already keeps, nothing fetched
+                        // while typing, and the site's letter until a visit
+                        // brings one.
+                        Mark(icon: Favicons.shared.cached(for: offer.url), letter: letter, size: 14)
                     }
-                case .suggested:
-                    // The engine's own words: always the glass, so they read
-                    // as searches rather than places.
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Palette.muted)
-                case .open:
-                    // Already open: naming it takes you back to it rather than
-                    // opening a second copy.
-                    Circle()
-                        .fill(Palette.ink.opacity(0.55))
-                        .frame(width: 5, height: 5)
-                        .padding(.horizontal, 2)
-                case .bookmark:
-                    // Kept by you, not only visited: the bookmark's mark,
-                    // as quiet as the command's.
-                    Image(systemName: "bookmark")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Palette.muted)
-                case .command:
-                    Image(systemName: "command")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Palette.muted)
-                default:
-                    EmptyView()
                 }
+                .frame(width: 14, height: 14)
                 // The row reads as 1.0.4's did, without the www; the key
                 // itself keeps it, for completing and going there.
                 Text(offer.kind == .suggested ? offer.key : Address.withoutWWW(offer.key))
@@ -228,6 +217,11 @@ struct Omnibox: View {
                         .truncationMode(.tail)
                 }
                 Spacer(minLength: 0)
+                if offer.kind == .bookmark {
+                    // Kept by you, not only visited: the bookmark's mark,
+                    // at the end now that the site's icon leads the row.
+                    symbol("bookmark")
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -242,6 +236,19 @@ struct Omnibox: View {
             }
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
+        }
+
+        private func symbol(_ name: String) -> some View {
+            Image(systemName: name)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Palette.muted)
+        }
+
+        /// The site's first letter, as History's lines wear it: an open
+        /// tab's row leads with its title, so the address is asked instead.
+        private var letter: String {
+            let host = offer.url.host().map(Address.withoutWWW) ?? ""
+            return host.first.map { String($0).uppercased() } ?? "•"
         }
     }
 }
@@ -395,11 +402,21 @@ private struct Breath: NSViewRepresentable {
 /// needs a real text field and its delegate.
 struct AddressField: NSViewRepresentable {
     @ObservedObject var browser: Browser
+    /// The pane's page, for a field standing on one (see Coordinator.focus).
+    var tab: Tab.ID?
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 
+    /// The field each window made last: the one on show. SwiftUI can make a
+    /// new one while the one before is still fading out, in the window and
+    /// still told of every request for the keys (from the second ⌘T on a
+    /// page, since #718). That one answered after the new one, took the keys
+    /// back, and left the window with them: nothing had them.
+    private static let shown = NSMapTable<Browser, Field>.weakToWeakObjects()
+
     func makeNSView(context: Context) -> Field {
         let field = Field()
+        Self.shown.setObject(field, forKey: browser)
         field.delegate = context.coordinator
         field.isBordered = false
         field.drawsBackground = false
@@ -427,6 +444,7 @@ struct AddressField: NSViewRepresentable {
     func updateNSView(_ field: Field, context: Context) {
         let coordinator = context.coordinator
         coordinator.browser = browser
+        coordinator.tab = tab
 
         // Only when something other than typing changed it — ⌘L arriving with
         // an address, a walk through the list, a submit clearing it.
@@ -470,6 +488,7 @@ struct AddressField: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var browser: Browser
+        var tab: Tab.ID?
         var answered = -1
         /// The last value pushed in from the browser side, so an update can
         /// tell a change worth applying from one it made itself.
@@ -486,6 +505,13 @@ struct AddressField: NSViewRepresentable {
 
         /// The keys to the field, now if it is in a window, or the moment it is.
         @MainActor func focus(_ field: Field) {
+            // Only the field of the page in front. With Split View on, ⌘T's
+            // request reaches the field over the page just left too, in the
+            // moment before it goes: answered there, the keys went with it
+            // and were left to the window, which beeps at every key.
+            guard tab == nil || tab == browser.activeID else { return }
+            // One on its way out has no keys to take.
+            guard AddressField.shown.object(forKey: browser) === field else { return }
             guard let window = field.window else {
                 field.arrived = { [weak self, weak field] in
                     DispatchQueue.main.async {

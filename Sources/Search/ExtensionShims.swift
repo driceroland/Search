@@ -647,14 +647,15 @@ enum ExtensionShims {
           focus() { return Promise.resolve(this); },
           navigate: () => Promise.resolve(null),
         });
+        const pages = async () => { try { return (await native("clients.pages", [])) || []; } catch (e) { return []; } };
         put(root.clients, "matchAll", async (options) => {
-          const found = [...await matchAll(options)];
           const type = (options && options.type) || "window";
-          if (type !== "window" && type !== "all") return found;
-          let pages = [];
-          try { pages = (await native("clients.pages", [])) || []; } catch (e) {}
+          const windows = type === "window" || type === "all";
+          const [own, open] = await Promise.all([matchAll(options), windows ? pages() : []]);
+          const found = [...own];
+          if (!windows) return found;
           const listed = new Set(found.map((c) => c.url));
-          return found.concat(pages.filter((p) => p && typeof p.url === "string" && !listed.has(p.url)).map(client));
+          return found.concat(open.filter((p) => p && typeof p.url === "string" && !listed.has(p.url)).map(client));
         });
         clientsChannel.onmessage = ({ data }) => {
           if (!data || answered(data) || typeof data.from !== "string") return;
@@ -2952,8 +2953,7 @@ enum ExtensionShims {
         }));
         put(p, "getAll", (callback) => {
           const pr = (async () => {
-            const all = await getAll();
-            const have = await granted();
+            const [all, have] = await Promise.all([getAll(), granted()]);
             return { ...all, permissions: [...new Set([...(all.permissions || []), ...[...have].filter((m) => ours.has(m))])] };
           })();
           if (typeof callback !== "function") return pr;
@@ -3018,8 +3018,7 @@ enum ExtensionShims {
         const list = () => native("userScripts.list", []).then((l) => l || []);
         const save = (l) => native("userScripts.save", [l]);
         const sync = async () => {
-          const want = await list();
-          const have = new Set((await registered()).map((s) => s.id));
+          const [want, have] = await Promise.all([list(), registered().then((l) => new Set(l.map((s) => s.id)))]);
           const missing = want.filter((s) => !have.has(tag + s.id));
           if (!missing.length) return;
           const scripts = await Promise.all(missing.map(content));

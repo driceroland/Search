@@ -145,6 +145,41 @@ final class TabCloseTests: XCTestCase {
         XCTAssertEqual(browser.spaceID, firstID)
     }
 
+    /// ⌘Y from a tab in the middle of the row: History opens beside it, and
+    /// closing History goes back to that tab, switch or no switch.
+    func testOwnPageGoesBackWithSwitchOff() {
+        browser.prefs.closeGoesBack = false
+        let (a, b, c, d) = (tab("A"), tab("B"), tab("C"), tab("D"))
+        browser.showRow([a, b, c, d], active: b.id)
+        let history = browser.show(InternalPage(.history))
+        XCTAssertEqual(browser.tabs.map(\.id), [a.id, b.id, history.id, c.id, d.id])
+        browser.close(history)
+        XCTAssertEqual(browser.activeID, b.id)
+    }
+
+    /// History already open at the end of the row, brought forward from a
+    /// tab in the middle: closing it went to the last tab.
+    func testOwnPageAlreadyOpenGoesBack() {
+        browser.prefs.closeGoesBack = false
+        let (a, b, c) = (tab("A"), tab("B"), tab("C"))
+        browser.showRow([a, b, c], active: c.id)
+        let history = browser.show(InternalPage(.history))
+        browser.select(b)
+        XCTAssertTrue(browser.show(InternalPage(.history)) === history)
+        browser.close(history)
+        XCTAssertEqual(browser.activeID, b.id)
+    }
+
+    /// A web page still goes to its neighbour with the switch off.
+    func testWebPageKeepsNeighbourWithSwitchOff() {
+        browser.prefs.closeGoesBack = false
+        let (a, b, c) = (tab("A"), tab("B"), tab("C"))
+        browser.showRow([a, b, c], active: a.id)
+        browser.select(b)
+        browser.close(b)
+        XCTAssertEqual(browser.activeID, c.id)
+    }
+
     func testTabMovedToAnotherWindowIsNotGoneBackTo() {
         let other = Browser(record: WindowRecord(space: browser.spaceID))
         defer { other.closeAll() }
