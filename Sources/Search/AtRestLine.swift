@@ -55,7 +55,7 @@ struct AtRestLine: View {
 
 /// A tab's title — or, on the tab you're on with the setting on, where its
 /// page is, in the title's place. The title comes back under the pointer:
-/// the two crossfade in the same place, so the row doesn't move and nothing
+/// the two swap in the same place, so the row doesn't move and nothing
 /// beside it does. The page's own title is on the page; what it can't say
 /// about itself is where it came from.
 struct TitleAtRest: View {
@@ -87,6 +87,6 @@ struct TitleAtRest: View {
             }
         }
         .animation(Motion.reduced ? nil : .easeInOut(duration: 0.22), value: on)
-        .animation(Motion.reduced ? nil : .easeInOut(duration: 0.22), value: hovering)
+        .animation(nil, value: hovering)
     }
 }

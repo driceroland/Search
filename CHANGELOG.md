@@ -20,6 +20,10 @@ in [ROADMAP.md](ROADMAP.md).
 - A swipe back within the same page, from a footnote, a #section link or a site that only changes its address, comes back where you were. The page used to stay shifted sideways, with a blank strip down one side, and at the place you had gone to. The sides of a page no longer bounce, as the top and bottom already didn't. Thanks [@ubeann](https://github.com/ubeann) ([#816](https://github.com/driceroland/Search/pull/816))
 - A page you swipe back or forward to comes back where you left it. The glide that follows the fingers lifting reached the page coming back: it was left pulled sideways past its edge, with a blank strip down one side, and scrolled away from where it was being put back. ⌘[ and the Back button were never affected. Thanks [@ubeann](https://github.com/ubeann) ([#811](https://github.com/driceroland/Search/pull/811))
 
+### Changed
+
+- Tab hover feedback is instant, without a fade, in the column, across the top and with Icons only, including pinned tabs and the title/address swap. Other tab animations are unchanged. Asked for by [@evannotfound](https://github.com/evannotfound) ([#803](https://github.com/driceroland/Search/issues/803))
+
 ### Held back
 
 Not in this version, kept on main for a later one:

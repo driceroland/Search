@@ -206,7 +206,7 @@ struct IconTile: View {
         .accessibilityLabel(tip)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Close tab") { if interactive { close() } }
-        .animation(Motion.quick, value: hovering)
+        .animation(nil, value: hovering)
         .animation(Motion.quick, value: tab.loading)
         .animation(Motion.quick, value: speaker)
         .animation(Motion.quick, value: tab.recording)
