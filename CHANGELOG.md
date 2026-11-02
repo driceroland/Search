@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Going back to a page that keeps its own scroll position, such as a GitHub issue, comes back where you left it, as in Chrome, instead of at the top. WebKit brings such a page back from its cache at the very top, in Safari too; it now goes back to where it was, unless the page scrolls somewhere itself. Thanks [@ubeann](https://github.com/ubeann) ([#814](https://github.com/driceroland/Search/pull/814))
+- A swipe back within the same page, from a footnote, a #section link or a site that only changes its address, comes back where you were. The page used to stay shifted sideways, with a blank strip down one side, and at the place you had gone to. The sides of a page no longer bounce, as the top and bottom already didn't. Thanks [@ubeann](https://github.com/ubeann) ([#816](https://github.com/driceroland/Search/pull/816))
 - A page you swipe back or forward to comes back where you left it. The glide that follows the fingers lifting reached the page coming back: it was left pulled sideways past its edge, with a blank strip down one side, and scrolled away from where it was being put back. ⌘[ and the Back button were never affected. Thanks [@ubeann](https://github.com/ubeann) ([#811](https://github.com/driceroland/Search/pull/811))
 
 ### Held back
