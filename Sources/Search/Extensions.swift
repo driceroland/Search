@@ -83,6 +83,8 @@ final class Extensions: NSObject, ObservableObject {
     /// Each window's row as WebKit last heard it, by browser.
     private var orders: [ObjectIdentifier: [Tab.ID]] = [:]
     private var watching: [Tab.ID: [AnyCancellable]] = [:]
+    /// Pages you see that are in no window's row (see openedAside).
+    private var aside: Set<Tab.ID> = []
     private var bag = Set<AnyCancellable>()
     /// Each window's adapter, by browser.
     private var windows: [ObjectIdentifier: ExtensionWindow] = [:]
@@ -430,6 +432,16 @@ final class Extensions: NSObject, ObservableObject {
             watching[id] = nil
         }
         for tab in now where !order.contains(tab.id) {
+            // Kept from a peek or a small window: extensions hear of it as a
+            // new tab in this window, as of any link opened into the row. The
+            // windowless one they had goes without a word, as an offscreen
+            // document does (the shim drops a window -1 onRemoved).
+            if aside.remove(tab.id) != nil, let was = adapters.removeValue(forKey: tab.id) {
+                for context in contexts.values where context.openTabs.contains(was) {
+                    context.didCloseTab(was, windowIsClosing: false)
+                }
+                watching[tab.id] = nil
+            }
             let from = inTransit.removeValue(forKey: tab.id)
                 ?? orders.first(where: { $0.key != key && $0.value.contains(tab.id) })
                     .map { ($0.key, visibleOrders($0.value)) }
@@ -463,6 +475,46 @@ final class Extensions: NSObject, ObservableObject {
             }
         }
         orders[key] = ids
+    }
+
+    /// A page you see that is in no window's row: a peek (Peek.swift), or
+    /// the small window for a link from another app (Little.swift). An
+    /// extension is told of it as a tab with no window, as an offscreen
+    /// document is: WebKit refuses a content script there anything from
+    /// its extension ("Tab not found") on a page it was never told of, so
+    /// Stylus styled nothing in a peek, and nothing that asks its worker
+    /// first worked there. chrome.tabs.query still lists only the row.
+    func openedAside(_ tab: Tab) {
+        guard seen(tab), aside.insert(tab.id).inserted else { return }
+        let adapter = adapter(for: tab)
+        adapter.aside = true
+        for context in contexts.values where seen(tab, for: context) {
+            context.didOpenTab(adapter)
+        }
+        watch(tab)
+    }
+
+    /// Closed without being kept (Tab.close); nothing for a tab in a row,
+    /// which follow() takes care of.
+    func closedAside(_ tab: Tab) {
+        guard aside.remove(tab.id) != nil else { return }
+        if let adapter = adapters[tab.id] {
+            for context in contexts.values where context.openTabs.contains(adapter) {
+                context.didCloseTab(adapter, windowIsClosing: false)
+            }
+        }
+        adapters[tab.id] = nil
+        watching[tab.id] = nil
+    }
+
+    /// An extension loaded while a peek was open learns of it as it does of
+    /// the row, which WebKit reads from the windows.
+    private func openAside(in context: WKWebExtensionContext) {
+        for id in aside {
+            guard let adapter = adapters[id], let tab = adapter.tab, seen(tab, for: context),
+                  !context.openTabs.contains(adapter) else { continue }
+            context.didOpenTab(adapter)
+        }
     }
 
     private func watch(_ tab: Tab) {
@@ -553,6 +605,7 @@ final class Extensions: NSObject, ObservableObject {
             if contexts[item.id] == nil, loadsThisRun.contains(item.id) { loadedBefore.insert(item.id) }
             loadsThisRun.insert(item.id)
             contexts[item.id] = context
+            openAside(in: context)
             // Keys you gave its commands in Settings › Shortcuts (#189).
             ShortcutStore.shared.adopt(context, id: item.id)
             actionsChanged += 1
@@ -795,6 +848,7 @@ final class Extensions: NSObject, ObservableObject {
             loadedBefore.insert(id)
             try controller.load(context)
             contexts[id] = context
+            openAside(in: context)
             watch(context)
             ShortcutStore.shared.adopt(context, id: id)
             actionsChanged += 1
@@ -1814,6 +1868,8 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
     weak var tab: Tab?
     unowned let owner: Extensions
     private weak var lastWindow: ExtensionWindow?
+    /// Made for a page outside the row (Extensions.openedAside).
+    var aside = false
 
     init(tab: Tab, owner: Extensions) {
         self.tab = tab
@@ -1824,6 +1880,9 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
     private var browser: Browser? { tab.flatMap(owner.browser(of:)) }
 
     func window(for context: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
+        // A peek's or a small window's: in no window, even once kept into
+        // one, when this adapter is closed and another one opened.
+        if aside { return nil }
         // WebKit asks a closed tab for its window after it has left the row,
         // and with none, onRemoved said window -1 and the shim dropped it.
         if let browser { lastWindow = owner.window(of: browser) }
@@ -1831,7 +1890,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
     }
 
     func indexInWindow(for context: WKWebExtensionContext) -> Int {
-        guard let tab, let browser else { return NSNotFound }
+        guard !aside, let tab, let browser else { return NSNotFound }
         return owner.visibleTabs(of: browser, for: context).firstIndex { $0.id == tab.id } ?? NSNotFound
     }
 
