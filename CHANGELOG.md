@@ -22,6 +22,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Darken light pages gets more of a page right: links, headings, prices and dates coloured like the text around them no longer stay dark grey, buttons a site marks as important no longer stay light, pages that set their colours on the page as a whole are darkened, and dark boxes with a light layer over them no longer turn grey
 - Typing in a new tab carries on with Split View on: after ⌘T from a page, the first letter or two went into the field and every key after them made the Mac's error sound and typed nothing, which looked like the grey ending stopping the typing. The field over the page being left took the keys back as it went, and left them with the window
 - With the floating video set to Picture in picture (Settings › General), the button at the top right of the video's little window takes you back to it: Search comes forward on the video's tab and the video goes back into its page. It did nothing when that tab was behind another one or behind another app, which is how it nearly always got there, because macOS puts a video back only into a page that is on screen
 - A video filling the screen can be clicked again once paused: clicking it, or its play button, plays it again, as the space bar did. The view macOS lays over a paused video to pick out its text and subject took every click, and is now kept out of the way while the video fills the screen
