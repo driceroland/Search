@@ -2,8 +2,9 @@ import Foundation
 
 // The address field doubles as the most basic kind of command line: a
 // handful of words that mean "go here in the app" rather than "go here on
-// the web". Only ever the whole of what was typed, so a search that merely
-// starts with one of these words still searches. Off by default (Settings ›
+// the web". Only the whole word runs on Return, so a search that starts
+// with one still searches; part of a word is just offered lower in the
+// list. Off by default (Settings ›
 // General › Address bar commands): nobody typing "settings" into a browser
 // expects the app to open its own panel instead of asking Google.
 //
@@ -61,10 +62,29 @@ enum AddressCommand: CaseIterable, Equatable {
     }
 
     /// The command whose words are all that was typed, if any. Only the
-    /// whole thing, never a prefix or a near miss: a command must not take a
-    /// search from anyone, so "settings for gmail" or "sett" still searches.
+    /// whole thing: a command must not take a search from anyone, so
+    /// "settings for gmail" or "sett" still searches.
     static func matching(_ typed: String, in browser: Browser) -> AddressCommand? {
         let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
         return allCases.first { $0.available(in: browser) && $0.aliases.contains(needle) }
+    }
+
+    /// A command that partly matches: "down", "dwn" or "downlaods" for
+    /// Downloads. From three letters, and only offered, never run on Return.
+    static func near(_ typed: String, in browser: Browser) -> AddressCommand? {
+        let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        guard needle.count >= 3, matching(needle, in: browser) == nil else { return nil }
+        let letters = Array(needle.utf8)
+        let available = allCases.filter { $0.available(in: browser) }
+        // Closest match first, then the order above.
+        let tests: [(String) -> Bool] = [
+            { $0.hasPrefix(needle) || $0.split(separator: " ").contains { $0.hasPrefix(needle) } },
+            { $0.split(separator: " ").contains { Fuzzy.abbreviates(needle, $0) } },
+            { Fuzzy.nearly(letters, in: $0) },
+        ]
+        for test in tests {
+            if let found = available.first(where: { $0.aliases.contains(where: test) }) { return found }
+        }
+        return nil
     }
 }

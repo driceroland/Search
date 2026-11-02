@@ -5818,6 +5818,8 @@ final class Browser: NSObject, ObservableObject {
         // point, and it would otherwise sit under a search for the word.
         let command = prefs.commandBar ? AddressCommand.matching(typed, in: self) : nil
         if let command { list.insert(.command(command), at: 0) }
+        // A partial command goes last, so Return still does what it did.
+        if prefs.commandBar, let near = AddressCommand.near(typed, in: self) { list.append(.command(near)) }
         // Neither a page already open nor a command has an address to
         // complete towards. And with a command on top, Return runs it: a
         // grey ending in the field ("history" finishing as history.com)
