@@ -182,19 +182,7 @@ extension Browser {
     /// the frame it was right-clicked in (idea 179).
     func imageData(at url: URL, in tab: Tab) async -> Data? {
         guard url.scheme?.lowercased() == "blob" else {
-            // Read as it comes, and let go past the limit.
-            guard let (bytes, response) = try? await Browser.fetcher.bytes(from: url),
-                  (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
-                  response.expectedContentLength <= Int64(Browser.largestImage)
-            else { return nil }
-            var data = Data()
-            do {
-                for try await byte in bytes {
-                    data.append(byte)
-                    if data.count > Browser.largestImage { return nil }
-                }
-            } catch { return nil }
-            return data
+            return await ImageFetch(url, limit: Browser.largestImage).data(over: Browser.fetcher)
         }
         guard let web = tab.built else { return nil }
         let read = """
@@ -253,4 +241,50 @@ private final class ImageMenuItem: NSMenuItem {
     required init(coder: NSCoder) { fatalError() }
 
     @objc private func run() { act() }
+}
+
+/// One picture's bytes, read as they come in and let go of past the limit.
+/// Taken in the pieces the network hands over: reading them a byte at a time
+/// (URLSession's `bytes`) took twenty seconds for a 3 MB picture, which is
+/// what Copy Image waited on.
+private final class ImageFetch: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let url: URL
+    private let limit: Int
+    private var received = Data()
+    private var done: CheckedContinuation<Data?, Never>?
+
+    init(_ url: URL, limit: Int) {
+        self.url = url
+        self.limit = limit
+    }
+
+    func data(over session: URLSession) async -> Data? {
+        await withCheckedContinuation { continuation in
+            done = continuation
+            let task = session.dataTask(with: url)
+            task.delegate = self
+            task.resume()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        let fine = (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? true
+        completionHandler(fine && response.expectedContentLength <= Int64(limit) ? .allow : .cancel)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        received.append(data)
+        if received.count > limit {
+            received = Data()
+            dataTask.cancel()
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        done?.resume(returning: error == nil && !received.isEmpty ? received : nil)
+        done = nil
+    }
 }
