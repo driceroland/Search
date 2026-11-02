@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Copy Image copies at once: a picture of a few megabytes took up to a minute, since its bytes were read one at a time; a 3 MB picture now takes a fraction of a second
 - A swipe back no longer leaves the page shifted to the side, with a blank strip down its left: the page's sides no longer stretch at its own size, only once pinched in, where panning on to an edge needs them. Thanks [@ubeann](https://github.com/ubeann), whose [#816](https://github.com/driceroland/Search/pull/816) found it ([#810](https://github.com/driceroland/Search/issues/810), [#815](https://github.com/driceroland/Search/issues/815))
 - ⌘T from a page puts the keys in the new tab's address field every time again, not only the first: the field leaving from the last one took them back.
 - Extensions work in a peek and in the small window for a link from another app: Stylus styles the page there, and an extension whose script on the page asks it for something gets its answer. They were refused ("Tab not found"), since neither page is in a window's row; they still aren't listed among the window's tabs, and a peek kept as a tab arrives there as a new one. Thanks [@ubeann](https://github.com/ubeann) ([#818](https://github.com/driceroland/Search/pull/818))
