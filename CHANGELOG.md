@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- An extension's worker waits on one round trip fewer when it lists its open pages, reads its permissions, or (in a user-script manager) puts its scripts back as it starts. Each asked two questions one after the other; both now go out at once. Translate Page asks for the page's language while it reads the page's words, not after.
 - Spaces brought over from Arc with one of Arc's own icons rather than an emoji keep a matching icon (a bulb, a leaf, a star…) instead of all coming in as a briefcase. Thanks [@introbseso](https://github.com/introbseso) for the report and the table ([#832](https://github.com/driceroland/Search/issues/832))
 - Copy Image copies at once: a picture of a few megabytes took up to a minute, since its bytes were read one at a time; a 3 MB picture now takes a fraction of a second
 - A swipe back no longer leaves the page shifted to the side, with a blank strip down its left: the page's sides no longer stretch at its own size, only once pinched in, where panning on to an edge needs them. Thanks [@ubeann](https://github.com/ubeann), whose [#816](https://github.com/driceroland/Search/pull/816) found it ([#810](https://github.com/driceroland/Search/issues/810), [#815](https://github.com/driceroland/Search/issues/815))
