@@ -36,9 +36,12 @@ enum Swipe {
     /// No rubber-banding. Pulling past the top of a page showed a band of
     /// blank ground above it, and nobody who came from Chrome read that as
     /// anything but a fault. WebKit lets a view turn off the bounce along
-    /// chosen edges natively through `_setRubberBandingEnabled:`. We keep
-    /// horizontal rubber-banding for two-finger swipe navigation gestures,
-    /// while turning off top and bottom bounce.
+    /// chosen edges natively through `_setRubberBandingEnabled:`. Top and
+    /// bottom never bounce. The sides bounce only on a page pinched in, where
+    /// panning on to its edge needs them; at its own size a swipe back is a
+    /// pull past the left edge, and the stretch it left behind kept the page
+    /// shifted 60 to 120 points to the side (#810, #815). Asked again as each
+    /// gesture starts, since a pinch changes the answer (PageView.scrollWheel).
     ///
     /// Turning this off via CSS `overscroll-behavior-y: none` on `html, body`
     /// broke mouse-wheel scrolling entirely on any page that had a non-passive
@@ -49,9 +52,10 @@ enum Swipe {
         guard web.responds(to: set) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, UInt) -> Void
         // _WKRectEdge: one bit per CGRectEdge (_WKRectEdge.h) — the edges
-        // that keep their bounce. Left and right only.
+        // that keep their bounce. Left and right, and only pinched in.
         let left: UInt = 1 << 0, right: UInt = 1 << 2   // CGRectMinXEdge, CGRectMaxXEdge
-        unsafeBitCast(web.method(for: set), to: Setter.self)(web, set, left | right)
+        let sides: UInt = web.magnification > 1 ? left | right : 0
+        unsafeBitCast(web.method(for: set), to: Setter.self)(web, set, sides)
     }
 
     /// Whether a sideways swipe here would scroll something. Said once per

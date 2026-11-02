@@ -2674,7 +2674,10 @@ final class PageView: WKWebView {
 
     override func scrollWheel(with event: NSEvent) {
         onTouch?()
-        if event.phase == .mayBegin || event.phase == .began { went = false }
+        if event.phase == .mayBegin || event.phase == .began {
+            went = false
+            Swipe.calm(self)
+        }
         if went, event.momentumPhase != [] { return }
         // The page gets every event first and scrolls as it always did. The
         // swipe is only read, never taken — except while its list is open,
