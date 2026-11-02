@@ -26,6 +26,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Pages in the address field's list and in ⌘K wear their site's icon, as in History and the bookmarks bar: an open tab in place of the grey dot, a page from history or a typed address in place of nothing, a bookmark with its mark moved to the end of the row. Only icons this Mac already keeps, nothing fetched while you type; a site without one wears its letter. Every row's words now start at the same place. ([#822](https://github.com/driceroland/Search/issues/822)) Thanks [@ubeann](https://github.com/ubeann) ([#823](https://github.com/driceroland/Search/pull/823))
 - Tab hover feedback is instant, without a fade, in the column, across the top and with Icons only, including pinned tabs and the title/address swap. Other tab animations are unchanged. Asked for by [@evannotfound](https://github.com/evannotfound) ([#803](https://github.com/driceroland/Search/issues/803))
+- An extension's worker waits on one round trip fewer when it lists its open pages, reads its permissions, or (in a user-script manager) puts its scripts back as it starts. Each asked two questions one after the other; both now go out at once. Translate Page asks for the page's language while it reads the page's words, not after.
 
 ### Held back
 
