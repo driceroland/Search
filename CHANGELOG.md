@@ -11,6 +11,14 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+## 1.0.8 — 2 November 2026
+
 ### Added
 
 - Open Link in Split View in a link's right-click menu: the link opens beside the page you are on, the two as a pair, and its page has the keys. A page already in a pair takes the link in place of its other page, which stays open as a tab of its own; a pin keeps its place, and its page goes into the pair, as when a pin is dragged onto a page in Settings › Tabs. Thanks [@Tom-Boscher](https://github.com/Tom-Boscher) ([#765](https://github.com/driceroland/Search/pull/765))
@@ -54,12 +62,6 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Settings says less and sits flatter: no line of explanation under each group's heading, every row of a card at the same level (Darken pages that stay light, Hide the column and The page as a card no longer indented under the row they depend on), and the hairlines between rows run from one edge of the card to the other. Every setting is still there, and still found by its words.
 - ⌘W on a tab in a group puts it away rather than closing it, as Arc keeps a folder's tabs: its page is let go, its row stays in the group, and a click opens it again at the page it was on. Its cross shows a minus while the page is open; on a row already put away, the cross or Close Tab closes it for good, and ⇧⌘T brings it back into its group. A page of a Split View pair in a group is put away out of its pair. Close Other Tabs, Close Tabs Below, Clear and Close Group close as before (idea 398). Asked for by email
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
 
 ## 1.0.7 — 25 October 2026
 
