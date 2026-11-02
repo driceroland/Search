@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- A page you swipe back or forward to comes back where you left it. The glide that follows the fingers lifting reached the page coming back: it was left pulled sideways past its edge, with a blank strip down one side, and scrolled away from where it was being put back. ⌘[ and the Back button were never affected. Thanks [@ubeann](https://github.com/ubeann) ([#811](https://github.com/driceroland/Search/pull/811))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
