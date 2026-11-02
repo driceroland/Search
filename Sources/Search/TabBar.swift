@@ -164,7 +164,7 @@ struct TabBar: View {
                     HStack(spacing: Metrics.tabGap) {
                         // Only while a download is running, and a moment after.
                         FetchDoor(browser: browser, fetches: browser.fetches)
-                        ExtensionSlot()
+                        ExtensionSlot(browser: browser)
                         if !browser.prefs.navigationLeft {
                             Helm(browser: browser).padding(.trailing, 8)
                         }
