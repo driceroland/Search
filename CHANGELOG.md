@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A site's SVG icon with a dark look of its own, like ChatGPT's, wears that look when Search is dark. It was drawn in its light look, black on the dark tab bar and column. An icon kept before this update keeps its light look until it is a week old. Thanks [@dhruvkb](https://github.com/dhruvkb) for reporting ([#807](https://github.com/driceroland/Search/issues/807))
 - Claude in Chrome can act in Search: the window it opens to work in gives back its own tab first, not the space's pins, so its tab group is made, and a group made in one window is found from any other, as in Chrome. Before, every action failed with "No tabs to group". Thanks [@introbseso](https://github.com/introbseso) for working out why ([#872](https://github.com/driceroland/Search/issues/872))
 - Clicking a notification sent by a page opens the tab that sent it, in whichever window it is now, not the first tab on that site. A tab that has closed, gone to another site or sits in a space not on screen falls back to the first tab on the site as before, and so does a notification from a service worker, which no tab sent. Thanks [@pasteley](https://github.com/pasteley) for the report ([#776](https://github.com/driceroland/Search/issues/776))
 - A PDF saved from a private tab with the download button on the PDF no longer leaves its name and site in the Downloads list, which is kept on disk. It says "Saved …" and is listed nowhere, like any other private download.

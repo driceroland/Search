@@ -85,7 +85,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **New tab field keeps the cursor while a page loads** *([#796](https://github.com/driceroland/Search/issues/796))*
 - [ ] **Address suggestions match inside the address** Typing a word from the middle of an address, like a page's name, suggests it. *([#796](https://github.com/driceroland/Search/issues/796))*
 - [ ] **1Password sign-in unstable** *([#802](https://github.com/driceroland/Search/issues/802))*
-- [ ] **Dark SVG icons vanish in dark mode** *([#807](https://github.com/driceroland/Search/issues/807))*
 - [ ] **Best Buy sign-in** *(email)*
 - [ ] **OpenAI sign-in page** *(email)*
 - [ ] **Bitwarden asks for WebAssembly** *(email)*
