@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A link's right-click menu starts with Open Link in New Tab. WebKit's Open Link, above it, only did what a click on the link does, and taken for Open Link in New Tab it replaced the page you were on; Chrome, Firefox and Arc have no such item. Thanks [@ubeann](https://github.com/ubeann) ([#844](https://github.com/driceroland/Search/pull/844), [#843](https://github.com/driceroland/Search/issues/843))
 - An extension's worker waits on one round trip fewer when it lists its open pages, reads its permissions, or (in a user-script manager) puts its scripts back as it starts. Each asked two questions one after the other; both now go out at once. Translate Page asks for the page's language while it reads the page's words, not after.
 - Spaces brought over from Arc with one of Arc's own icons rather than an emoji keep a matching icon (a bulb, a leaf, a star…) instead of all coming in as a briefcase. Thanks [@introbseso](https://github.com/introbseso) for the report and the table ([#832](https://github.com/driceroland/Search/issues/832))
 - Copy Image copies at once: a picture of a few megabytes took up to a minute, since its bytes were read one at a time; a 3 MB picture now takes a fraction of a second
