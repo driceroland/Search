@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- This profile as one offline file for the other Mac: File › Export Search Profile… packs its spaces, tabs, pins, bookmarks, history and settings into a `.searchprofile` file, and Bring Things Over › File… takes it in beside what's here, as new spaces. Sign-ins, passwords and cookies aren't carried over. Send it with AirDrop, Mail or Messages. ([#763](https://github.com/driceroland/Search/issues/763))
 - Bringing things over from Chrome, Brave, Edge, Arc or Dia can now bring the open tabs too: each profile's open tabs come in asleep at the end of the space, its pinned tabs as pins, and its tab groups as groups of the same names, folded as they were. Tabs already here aren't added again. Saved tab groups and recently closed tabs are left behind: saved groups live in the sync store, which needs LevelDB to read.
 
 ### Fixed

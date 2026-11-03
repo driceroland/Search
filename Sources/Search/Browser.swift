@@ -1269,11 +1269,13 @@ final class Browser: NSObject, ObservableObject {
     func importFile() {
         guard fileImport == nil else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.html, .commaSeparatedText, .plainText, .zip, .json]
+        panel.allowedContentTypes = [.html, .commaSeparatedText, .plainText, .zip, .json, ImportFile.searchProfileType]
+        // A .searchprofile answers to no system type: without this it stays greyed out.
+        panel.allowsOtherFileTypes = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Bring In"
-        panel.message = "A file another browser exported: bookmarks (.html), passwords (.csv), or Safari's File › Export Browsing Data (.zip)."
+        panel.message = "A file another browser exported: bookmarks (.html), passwords (.csv), Safari's File › Export Browsing Data (.zip) — or a Search profile (.searchprofile)."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { announce((await takeFile(url)).said) }
     }
@@ -1316,6 +1318,21 @@ final class Browser: NSObject, ObservableObject {
         var failed = false
         var mergedBookmarks = false
         do {
+            // A Search profile of its own: by extension, or a ZIP carrying
+            // one's manifest (part A writes those as .zip). Same job UI,
+            // its own reader below.
+            if ImportFile.isSearchProfile(url) {
+                return await takeSearchProfile(url, control: control)
+            }
+            if url.pathExtension.lowercased() == "zip" {
+                // Peeking unpacks the ZIP once more; only .zip picks pay it.
+                let profile = await withCheckedContinuation { continuation in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        continuation.resume(returning: ImportFile.isProfileZip(url))
+                    }
+                }
+                if profile { return await takeSearchProfile(url, control: control) }
+            }
             let found: ImportFile.Found = try await withCheckedThrowingContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
                     do { continuation.resume(returning: try ImportFile.read(url, control: control)) }
@@ -1395,6 +1412,333 @@ final class Browser: NSObject, ObservableObject {
             said += " — the exported file holds your passwords in the clear: delete it now"
         }
         return FileTake(said: said, bookmarks: added, already: already, places: places, kept: kept, skipped: skipped, cancelled: control.isCancelled)
+    }
+
+    // MARK: - a Search profile, out and back in
+
+    /// This window's profile as one offline file for the other Mac: staged by
+    /// part A (see SearchProfile — nothing secret goes in), packed here, then
+    /// offered wherever the Mac would send it. Local only; nothing reaches
+    /// the network unless AirDrop or a share destination does.
+    func exportProfile() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [ImportFile.searchProfileType]
+        // The extension is Search's own: without this the panel takes it off.
+        panel.allowsOtherFileTypes = true
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = "Search-profile-\(Browser.exportDay).searchprofile"
+        panel.message = "This profile's spaces, tabs, pins, bookmarks, history and settings — without sign-ins, passwords or cookies."
+        func start(_ url: URL) {
+            Task { @MainActor in
+                // Packed off the main thread: ditto waits for itself.
+                let ok = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let staging = SearchProfile.collectCurrentProfile()
+                        defer { try? FileManager.default.removeItem(at: staging) }
+                        do {
+                            try SearchProfile.zip(staging: staging, to: url)
+                            continuation.resume(returning: true)
+                        } catch {
+                            continuation.resume(returning: false)
+                        }
+                    }
+                }
+                guard ok else {
+                    announce("Couldn't export the profile")
+                    return
+                }
+                announce("Saved \(url.lastPathComponent)", file: url)
+                share(url)
+            }
+        }
+        if let window = self.window ?? Links.window {
+            panel.beginSheetModal(for: window) { answer in
+                if answer == .OK, let url = panel.url { start(url) }
+            }
+        } else if panel.runModal() == .OK, let url = panel.url {
+            start(url)
+        }
+    }
+
+    /// The export's default name carries the day, so two exports don't collide.
+    private nonisolated static var exportDay: String {
+        let day = DateFormatter()
+        day.locale = Locale(identifier: "en_US_POSIX")
+        day.dateFormat = "yyyy-MM-dd"
+        return day.string(from: Date())
+    }
+
+    /// The export, offered wherever the Mac would send it — AirDrop, Mail,
+    /// Messages. The file is already written; this only hands it on.
+    private func share(_ url: URL) {
+        guard let window = self.window ?? Links.window,
+              let view = active?.built.flatMap({ $0.window === window ? $0 : nil }) ?? window.contentView
+        else { return }
+        // A few points in from the corner, so the arrow points at the page
+        // rather than at its edge. Flipped or not, the picker hangs below.
+        let inset: CGFloat = 12
+        let y = view.isFlipped ? inset : view.bounds.maxY - inset
+        let anchor = NSRect(x: view.bounds.maxX - inset, y: y, width: 1, height: 1)
+        NSSharingServicePicker(items: [url]).show(relativeTo: anchor, of: view, preferredEdge: view.isFlipped ? .maxY : .minY)
+    }
+
+    /// A Search profile export beside what's here — by .searchprofile
+    /// extension, or a .zip carrying one's manifest: its spaces
+    /// as new spaces in their profiles — profiles made as takeArc makes them,
+    /// same-named ones reused — their sessions written whole, pins, bookmarks
+    /// and history merged without doubles, allowlisted settings set, and store
+    /// extensions offered as one list to confirm. Says what came in; the file
+    /// never holds sign-ins, passwords or cookies, so those never come over.
+    private func takeSearchProfile(_ url: URL, control: ImportFile.Control) async -> FileTake {
+        func count(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? "1 \(one)" : "\(n) \(many)" }
+        func fail(_ said: String) -> FileTake {
+            FileTake(said: said, bookmarks: 0, already: 0, places: 0, kept: 0, skipped: 0, cancelled: control.isCancelled)
+        }
+        func oldProfile(_ key: String) -> UUID? { key == "personal" ? Profile.personalID : UUID(uuidString: key) }
+        fileImport?.message = "Reading Search profile…"
+        // Unpacked and read off the main thread, like any other file's reading.
+        let payload = await withCheckedContinuation { (continuation: CheckedContinuation<ImportFile.IncomingProfile?, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let folder = try? SearchProfile.unzip(url) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                defer { try? FileManager.default.removeItem(at: folder) }
+                continuation.resume(returning: ImportFile.readIncomingProfile(in: folder))
+            }
+        }
+        guard let payload else {
+            return fail(control.isCancelled ? "Import cancelled; nothing was changed" : "That file couldn't be read")
+        }
+        guard let manifest = payload.manifest, manifest.scope == "profile" else { return fail("That file couldn't be read") }
+        guard manifest.format == SearchProfile.format else {
+            return fail("That Search profile needs a \(manifest.format > SearchProfile.format ? "newer" : "older") Search (version \(manifest.format))")
+        }
+        // Every incoming space and profile gets a fresh identity — Personal
+        // aside — so nothing here is ever overwritten: a profile brought back
+        // lands beside the one it was, never on top of it. Sessions are
+        // written whole per space, which is why spaces always come as copies:
+        // two sessions in one row have no shape to merge into.
+        var spaceMap: [UUID: UUID] = [:]
+        for space in payload.spaces { spaceMap[space.id] = UUID() }
+        var profileMap: [UUID: UUID] = [Profile.personalID: Profile.personalID]
+        for profile in payload.profiles where profileMap[profile.id] == nil {
+            if profile.isPersonal {
+                profileMap[profile.id] = Profile.personalID
+            } else if let same = Profiles.shared.list.first(where: {
+                $0.id != Profile.personalID && $0.name.localizedCaseInsensitiveCompare(profile.name) == .orderedSame
+            }) {
+                profileMap[profile.id] = same.id
+            }
+        }
+        var newProfiles = 0
+        var homeIDs = Set<UUID>()
+        for profile in payload.profiles where !profile.isPersonal && profileMap[profile.id] == nil {
+            guard let first = payload.spaces.first(where: { $0.profileID == profile.id }),
+                  let fresh = spaceMap[first.id] else { continue }
+            var home = first
+            home.id = fresh
+            profileMap[profile.id] = Profiles.shared.add(named: profile.name, home: home).id
+            homeIDs.insert(fresh)
+            newProfiles += 1
+            if control.isCancelled { break }
+        }
+        var rest: [Space] = []
+        for space in payload.spaces {
+            guard let fresh = spaceMap[space.id], !homeIDs.contains(fresh) else { continue }
+            // A space whose profile the file doesn't describe lands in
+            // Personal rather than nowhere.
+            let target = profileMap[space.profileID] ?? Profile.personalID
+            profileMap[space.profileID] = target
+            var made = space
+            made.id = fresh
+            made.profile = target == Profile.personalID ? nil : target
+            rest.append(made)
+        }
+        if !rest.isEmpty {
+            fileImport?.message = "Adding spaces…"
+            Spaces.write(Spaces.read() + rest)
+        }
+        let spacesMade = homeIDs.count + rest.count
+        if spacesMade > 0 {
+            spaces = Spaces.read(profile: profileID)
+            // Brought spaces show, as imported ones do.
+            if !prefs.usesSpaces { prefs.usesSpaces = true }
+        }
+        if !payload.sessions.isEmpty {
+            fileImport?.message = "Restoring tabs…"
+            for (key, shape) in payload.sessions {
+                if control.isCancelled { break }
+                guard let old = UUID(uuidString: key), let fresh = spaceMap[old],
+                      payload.spaces.contains(where: { $0.id == old }) else { continue }
+                Session.write(space: fresh, shape)
+            }
+        }
+        var pinsAdded = 0
+        var touchedSpaces = Set<UUID>()
+        var sharedCurrent = false
+        if !payload.pinsBySpace.isEmpty || !payload.pinsShared.isEmpty {
+            fileImport?.message = "Pinning…"
+            for (key, defs) in payload.pinsBySpace {
+                if control.isCancelled { break }
+                guard let old = UUID(uuidString: key), let fresh = spaceMap[old],
+                      payload.spaces.contains(where: { $0.id == old }) else { continue }
+                var merged = Pins.defs(fresh)
+                let have = Set(merged.map(\.id))
+                let coming = defs.filter { !have.contains($0.id) }
+                guard !coming.isEmpty else { continue }
+                merged += coming
+                Pins.set(fresh, merged, from: self)
+                touchedSpaces.insert(fresh)
+                pinsAdded += coming.count
+            }
+            for (key, defs) in payload.pinsShared {
+                if control.isCancelled { break }
+                guard let old = oldProfile(key) else { continue }
+                let target = profileMap[old] ?? Profile.personalID
+                profileMap[old] = target
+                let owner: Browser? = target == profileID ? self : Browsers.all.first { $0.profileID == target && $0.usesFiles }
+                if let owner {
+                    // A window of that profile takes its shared pins live.
+                    var merged = Pins.shared(target)
+                    let have = Set(merged.map(\.id))
+                    let coming = defs.filter { !have.contains($0.id) }
+                    if !coming.isEmpty {
+                        merged += coming
+                        Pins.setShared(merged, from: owner)
+                        pinsAdded += coming.count
+                        if target == profileID { sharedCurrent = true }
+                    }
+                } else {
+                    // No window in that profile: its shared pins ride with its
+                    // home space's own, where they still show, rather than
+                    // sitting in a file the run's pins would later overwrite.
+                    let home = Profiles.shared.profile(target).home
+                    var merged = Pins.defs(home)
+                    let have = Set(merged.map(\.id))
+                    let coming = defs.filter { !have.contains($0.id) }
+                    if !coming.isEmpty {
+                        merged += coming
+                        Pins.set(home, merged, from: self)
+                        touchedSpaces.insert(home)
+                        pinsAdded += coming.count
+                    }
+                }
+            }
+        }
+        if touchedSpaces.contains(spaceID) || sharedCurrent { pinsChanged(in: spaceID) }
+        var added = 0, already = 0
+        if !payload.bookmarks.isEmpty {
+            var jobs: [(profile: UUID, nodes: [Bookmark])] = []
+            for (key, nodes) in payload.bookmarks {
+                guard !nodes.isEmpty, let old = oldProfile(key) else { continue }
+                let target = profileMap[old] ?? Profile.personalID
+                profileMap[old] = target
+                jobs.append((target, nodes))
+            }
+            if let mine = jobs.first(where: { $0.profile == profileID }), !control.isCancelled {
+                fileImport?.message = "Merging bookmarks…"
+                fileImport?.completed = 0
+                fileImport?.total = nil
+                if let result = try? await bookmarks.takeFile(mine.nodes, from: "Search profile", control: control) {
+                    added += result.added
+                    already += result.already
+                }
+            }
+            for job in jobs where job.profile != profileID {
+                if control.isCancelled { break }
+                let result = Profiles.bookmarks(job.profile).takeNoting(job.nodes, from: "Search profile")
+                added += result.added
+                already += result.already
+            }
+        }
+        var places = 0
+        if !payload.histories.isEmpty {
+            var jobs: [(profile: UUID, entries: [(url: URL, title: String, count: Int, last: Date)])] = []
+            for (key, rows) in payload.histories {
+                guard let old = oldProfile(key) else { continue }
+                let target = profileMap[old] ?? Profile.personalID
+                profileMap[old] = target
+                var entries: [(url: URL, title: String, count: Int, last: Date)] = []
+                for row in rows {
+                    guard let url = URL(string: row.url),
+                          url.scheme == "http" || url.scheme == "https" else { continue }
+                    entries.append((url, row.title, max(0, row.count), row.last))
+                }
+                if !entries.isEmpty { jobs.append((target, entries)) }
+            }
+            if !jobs.isEmpty, !control.isCancelled {
+                fileImport?.message = "Adding history…"
+                let total = jobs.reduce(0) { $0 + $1.entries.count }
+                fileImport?.completed = 0
+                fileImport?.total = total
+                for job in jobs {
+                    let list = job.profile == profileID ? history : Profiles.history(job.profile)
+                    for batch in stride(from: 0, to: job.entries.count, by: 200) {
+                        if control.isCancelled { break }
+                        let end = min(batch + 200, job.entries.count)
+                        for entry in job.entries[batch..<end] {
+                            list.take(entry.url, title: entry.title, count: entry.count, last: entry.last)
+                            places += 1
+                        }
+                        fileImport?.completed = places
+                        fileImport?.total = total
+                        await Task.yield()
+                    }
+                    if control.isCancelled { break }
+                    list.settle()
+                }
+            }
+        }
+        var settings = 0
+        if !payload.prefs.isEmpty, !control.isCancelled {
+            // Allowlisted again on the way in: a file never sets what it has
+            // no business setting.
+            let allow = ImportFile.profilePrefAllowlist()
+            for (key, wrapped) in payload.prefs where allow.contains(key) {
+                guard !(wrapped.value is NSNull) else { continue }
+                Store.settings.set(wrapped.value, forKey: key)
+                settings += 1
+            }
+        }
+        var extensionsToConfirm = 0
+        if #available(macOS 15.4, *), !payload.extensions.isEmpty, !control.isCancelled {
+            let have = Set(Extensions.shared.installed.map(\.id))
+            let fresh = payload.extensions.filter {
+                $0.count == 32 && $0.allSatisfy({ ("a"..."p").contains($0) }) && !have.contains($0)
+            }
+            if !fresh.isEmpty {
+                extensionsToConfirm = fresh.count
+                Ask.sure(
+                    "Install \(count(fresh.count, "extension", "extensions")) from the profile?",
+                    detail: "Installed fresh from the Chrome Web Store — you confirm each one, and nothing installs without asking.",
+                    confirm: "Install"
+                ) {
+                    Task { for id in fresh { await Extensions.shared.install(id: id) } }
+                }
+            }
+        }
+        var parts: [String] = []
+        if newProfiles > 0 { parts.append(count(newProfiles, "profile", "profiles")) }
+        if spacesMade > 0 { parts.append(count(spacesMade, "space", "spaces")) }
+        if pinsAdded > 0 { parts.append(count(pinsAdded, "pin", "pins")) }
+        if added > 0 || already > 0 {
+            parts.append(already == 0 ? count(added, "bookmark", "bookmarks")
+                : "\(count(added, "new bookmark", "new bookmarks")), \(already) already here")
+        }
+        if places > 0 { parts.append(count(places, "place", "places")) }
+        if settings > 0 { parts.append(count(settings, "setting", "settings")) }
+        if extensionsToConfirm > 0 { parts.append(count(extensionsToConfirm, "extension", "extensions") + " to confirm") }
+        var said = parts.isEmpty ? "Nothing to bring in from that file"
+            : parts.joined(separator: ", ") + " from the Search profile"
+        if control.isCancelled {
+            said = parts.isEmpty ? "Import cancelled; nothing was changed" : "Import cancelled after " + said
+        } else if !parts.isEmpty {
+            // The file's explicit non-goals: none of these were in it to come over.
+            said += " · Sign-ins, passwords and cookies aren't carried over"
+        }
+        return FileTake(said: said, bookmarks: added, already: already, places: places, kept: 0, skipped: 0, cancelled: control.isCancelled)
     }
 
     // MARK: - what is kept, and getting rid of it
