@@ -93,6 +93,12 @@ def main():
         t.ok("with ⌥, Open Link in New Tab and Go to It: the new tab is in front",
              len(new) == 1 and r["active"] == new[0], r)
         t.ok("b is untouched", b in r["tabs"], r["tabs"])
+        # No Open Link: a click does that. Picking it chooses nothing, so the
+        # page stays where it is.
+        sv.sp("select", id=a); time.sleep(0.4)
+        r = menu(a, ("Open Link", "here"))
+        t.ok("no Open Link: the page stays, and no tab opens for the link",
+             not any(u.endswith("/here") for u in r["urls"]), r["urls"])
         # The picture's own menu stands in for WebKit's only where there is
         # no link: on a link's picture, the link's items are there too.
         sv.sp("select", id=a); time.sleep(0.4)
