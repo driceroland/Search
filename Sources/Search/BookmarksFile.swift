@@ -52,8 +52,6 @@ enum BookmarksFile {
         // One pass over the tags that matter. A folder's heading is kept
         // until its list opens; a list that closes hands its pages to the
         // folder that holds it.
-        let pattern = #"<(H3|A)\b([^>]*)>(.*?)</\1\s*>|<(/?)DL\b[^>]*>"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else { return [] }
         let ns = text as NSString
 
         var stack: [(title: String?, nodes: [Bookmark])] = []
@@ -69,7 +67,7 @@ enum BookmarksFile {
 
         var parsedThrough = 0
         var failure: Error?
-        regex.enumerateMatches(in: text, options: [.reportProgress], range: NSRange(location: 0, length: ns.length)) { match, flags, stop in
+        tagExpression.enumerateMatches(in: text, options: [.reportProgress], range: NSRange(location: 0, length: ns.length)) { match, flags, stop in
             do {
                 try control.checkCancellation()
             } catch {
@@ -88,8 +86,8 @@ enum BookmarksFile {
                 let title = clean(ns.substring(with: match.range(at: 3)))
                 if tag == "H3" {
                     heading = title
-                    bar = attribute("PERSONAL_TOOLBAR_FOLDER", in: attributes)?.lowercased() == "true"
-                } else if let href = attribute("HREF", in: attributes), let url = URL(string: href),
+                    bar = attribute(toolbarExpression, in: attributes)?.lowercased() == "true"
+                } else if let href = attribute(hrefExpression, in: attributes), let url = URL(string: href),
                           url.scheme == "http" || url.scheme == "https" {
                     append(.site(title.isEmpty ? (url.host() ?? href) : title, url))
                 }
@@ -126,11 +124,19 @@ enum BookmarksFile {
         return root
     }
 
-    private static func attribute(_ name: String, in text: String) -> String? {
-        let pattern = name + #"\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
+    private static let tagExpression = try! NSRegularExpression(
+        pattern: #"<(H3|A)\b([^>]*)>(.*?)</\1\s*>|<(/?)DL\b[^>]*>"#, options: [.caseInsensitive, .dotMatchesLineSeparators])
+    private static let hrefExpression = attributeExpression("HREF")
+    private static let toolbarExpression = attributeExpression("PERSONAL_TOOLBAR_FOLDER")
+    private static let numberedEntityExpression = try! NSRegularExpression(pattern: #"&#(x?)([0-9a-fA-F]+);"#)
+
+    private static func attributeExpression(_ name: String) -> NSRegularExpression {
+        try! NSRegularExpression(pattern: name + #"\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))"#, options: .caseInsensitive)
+    }
+
+    private static func attribute(_ expression: NSRegularExpression, in text: String) -> String? {
         let ns = text as NSString
-        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        guard let match = expression.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
         for group in 2...4 where match.range(at: group).location != NSNotFound {
             return decode(ns.substring(with: match.range(at: group)))
         }
@@ -150,14 +156,12 @@ enum BookmarksFile {
             out = out.replacingOccurrences(of: entity, with: character, options: .caseInsensitive)
         }
         // Numbered ones, then the ampersand itself last, so "&amp;lt;" stays "&lt;".
-        if let regex = try? NSRegularExpression(pattern: #"&#(x?)([0-9a-fA-F]+);"#) {
-            let ns = out as NSString
-            for match in regex.matches(in: out, range: NSRange(location: 0, length: ns.length)).reversed() {
-                let hex = ns.substring(with: match.range(at: 1)) == "x"
-                let digits = ns.substring(with: match.range(at: 2))
-                if let code = UInt32(digits, radix: hex ? 16 : 10), let scalar = Unicode.Scalar(code) {
-                    out = (out as NSString).replacingCharacters(in: match.range, with: String(Character(scalar)))
-                }
+        let ns = out as NSString
+        for match in numberedEntityExpression.matches(in: out, range: NSRange(location: 0, length: ns.length)).reversed() {
+            let hex = ns.substring(with: match.range(at: 1)) == "x"
+            let digits = ns.substring(with: match.range(at: 2))
+            if let code = UInt32(digits, radix: hex ? 16 : 10), let scalar = Unicode.Scalar(code) {
+                out = (out as NSString).replacingCharacters(in: match.range, with: String(Character(scalar)))
             }
         }
         return out.replacingOccurrences(of: "&amp;", with: "&", options: .caseInsensitive)

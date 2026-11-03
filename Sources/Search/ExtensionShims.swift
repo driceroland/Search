@@ -231,6 +231,11 @@ enum ExtensionShims {
         }
     }
 
+    nonisolated private static let scriptTagExpression = try! NSRegularExpression(pattern: #"<script\b([^>]*)>\s*</script>"#, options: [.caseInsensitive])
+    nonisolated private static let moduleTypeExpression = try! NSRegularExpression(pattern: #"\btype\s*=\s*["']?module\b"#, options: [.caseInsensitive])
+    nonisolated private static let srcExpression = try! NSRegularExpression(pattern: #"\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#, options: [.caseInsensitive])
+    nonisolated private static let asyncExpression = try! NSRegularExpression(pattern: #"(^|\s)async(\s|=|$)"#, options: [.caseInsensitive])
+
     /// A page's module scripts, two or more of them with one that awaits,
     /// made one module that imports them in their order: nil when there is
     /// nothing to do. Chrome waits for a module still at a top-level await
@@ -244,19 +249,15 @@ enum ExtensionShims {
     /// plain tags: one marked async, or a src that isn't the package's own
     /// file, leaves the page as it is.
     nonisolated static func chainModules(_ html: String, page: URL, folder: URL) -> String? {
-        let tags = try! NSRegularExpression(pattern: #"<script\b([^>]*)>\s*</script>"#, options: [.caseInsensitive])
-        let module = try! NSRegularExpression(pattern: #"\btype\s*=\s*["']?module\b"#, options: [.caseInsensitive])
-        let source = try! NSRegularExpression(pattern: #"\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#, options: [.caseInsensitive])
-        let async = try! NSRegularExpression(pattern: #"(^|\s)async(\s|=|$)"#, options: [.caseInsensitive])
         let whole = NSRange(html.startIndex..., in: html)
         var found: [(range: Range<String.Index>, attributes: String, src: String)] = []
-        for match in tags.matches(in: html, range: whole) {
+        for match in scriptTagExpression.matches(in: html, range: whole) {
             guard let range = Range(match.range, in: html), let inner = Range(match.range(at: 1), in: html) else { continue }
             let attributes = String(html[inner])
             let span = NSRange(attributes.startIndex..., in: attributes)
-            guard module.firstMatch(in: attributes, range: span) != nil else { continue }
-            guard async.firstMatch(in: attributes, range: span) == nil,
-                  let named = source.firstMatch(in: attributes, range: span),
+            guard moduleTypeExpression.firstMatch(in: attributes, range: span) != nil else { continue }
+            guard asyncExpression.firstMatch(in: attributes, range: span) == nil,
+                  let named = srcExpression.firstMatch(in: attributes, range: span),
                   let src = (1...3).lazy.compactMap({ Range(named.range(at: $0), in: attributes) }).first.map({ String(attributes[$0]) }),
                   !src.isEmpty, !src.contains(":"), !src.hasPrefix("//"), !src.contains(where: \.isNewline)
             else { return nil }
@@ -290,7 +291,7 @@ enum ExtensionShims {
         for (index, entry) in found.enumerated().reversed() {
             if index == 0 {
                 let span = NSRange(entry.attributes.startIndex..., in: entry.attributes)
-                let attributes = source.stringByReplacingMatches(in: entry.attributes, range: span, withTemplate: NSRegularExpression.escapedTemplate(for: "src=\"\(name)\""))
+                let attributes = srcExpression.stringByReplacingMatches(in: entry.attributes, range: span, withTemplate: NSRegularExpression.escapedTemplate(for: "src=\"\(name)\""))
                 html.replaceSubrange(entry.range, with: "<script\(attributes)></script>")
             } else {
                 html.removeSubrange(entry.range)
@@ -335,12 +336,13 @@ enum ExtensionShims {
         return path
     }
 
+    nonisolated private static let eventExpression = try! NSRegularExpression(pattern: #"\.([a-zA-Z]+)\.(on[A-Z][A-Za-z]+)\b"#)
+
     /// The shim as this extension gets it: with the events its code mentions
     /// — `chrome.tabs.onUpdated`, `e.runtime.onInstalled` — so its worker
     /// can take their listeners late (see the end of the script).
     nonisolated static func shim(for folder: URL) -> String {
         var found = Set<String>()
-        let pattern = try! NSRegularExpression(pattern: #"\.([a-zA-Z]+)\.(on[A-Z][A-Za-z]+)\b"#)
         let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil)
         while let url = walker?.nextObject() as? URL {
             guard url.pathExtension == "js", url.lastPathComponent != file,
@@ -348,7 +350,7 @@ enum ExtensionShims {
             // Not the shim's own words, in a worker that already carries it.
             if text.hasPrefix(marker), let end = text.range(of: ender) { text = String(text[end.upperBound...]) }
             let range = NSRange(text.startIndex..., in: text)
-            for match in pattern.matches(in: text, range: range) {
+            for match in eventExpression.matches(in: text, range: range) {
                 guard let a = Range(match.range(at: 1), in: text), let b = Range(match.range(at: 2), in: text) else { continue }
                 found.insert("\(text[a]).\(text[b])")
             }

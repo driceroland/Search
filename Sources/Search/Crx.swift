@@ -54,12 +54,15 @@ enum Crx {
         realpath(folder.path, nil).map { real in defer { free(real) }; return String(cString: real) } ?? folder.standardizedFileURL.path
     }
 
+    private static let idExpression = try! NSRegularExpression(pattern: "(?<![a-z])([a-p]{32})(?![a-z])")
+    private static let storeDetailExpression = try! NSRegularExpression(pattern: #"^/detail/(?:[^/]+/)?([a-p]{32})(?:/.*)?$"#)
+    private static let webstoreDetailExpression = try! NSRegularExpression(pattern: #"^/webstore/detail/(?:[^/]+/)?([a-p]{32})(?:/.*)?$"#)
+
     /// Thirty-two letters from a to p, wherever they are — a bare id, a store
     /// link, an old chrome.google.com/webstore link.
     static func id(in text: String) -> String? {
-        let pattern = try! NSRegularExpression(pattern: "(?<![a-z])([a-p]{32})(?![a-z])")
         let range = NSRange(text.startIndex..., in: text)
-        guard let match = pattern.firstMatch(in: text.lowercased(), range: range),
+        guard let match = idExpression.firstMatch(in: text.lowercased(), range: range),
               let found = Range(match.range(at: 1), in: text)
         else { return nil }
         return text[found].lowercased()
@@ -71,14 +74,14 @@ enum Crx {
     static func storeID(of url: URL) -> String? {
         guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil else { return nil }
         let host = url.host()?.lowercased() ?? ""
-        let pattern: String
+        let expression: NSRegularExpression
         switch host {
-        case "chromewebstore.google.com": pattern = #"^/detail/(?:[^/]+/)?([a-p]{32})(?:/.*)?$"#
-        case "chrome.google.com": pattern = #"^/webstore/detail/(?:[^/]+/)?([a-p]{32})(?:/.*)?$"#
+        case "chromewebstore.google.com": expression = storeDetailExpression
+        case "chrome.google.com": expression = webstoreDetailExpression
         default: return nil
         }
         let path = url.path
-        guard let match = try? NSRegularExpression(pattern: pattern).firstMatch(in: path, range: NSRange(path.startIndex..., in: path)),
+        guard let match = expression.firstMatch(in: path, range: NSRange(path.startIndex..., in: path)),
               let found = Range(match.range(at: 1), in: path)
         else { return nil }
         return String(path[found])
