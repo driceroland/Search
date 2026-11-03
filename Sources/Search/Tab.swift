@@ -378,8 +378,11 @@ final class Tab: ObservableObject, Identifiable {
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
     /// Set when the page never arrived — no host, no network, a refused
-    /// connection. Shown in place of the page rather than in a dialog.
-    @Published var failure: String?
+    /// connection, a process that kept dying. Shown in place of the page
+    /// rather than in a dialog.
+    @Published var failure: String? {
+        didSet { if failure == nil { dead = false } }
+    }
     /// How far down the page you are, nought to one. The tab's own pill fills
     /// with it. Kept apart from the rest of the tab (see Reading): it changes
     /// all the way down a page, and only the fill has any use for it.
@@ -1574,6 +1577,14 @@ final class Tab: ObservableObject, Identifiable {
     /// than showing the white that is left.
     var stale = false
 
+    /// How often this page's process has died lately (see CrashCount).
+    private var crashes = CrashCount()
+
+    /// Set while the failure up is the one recoverFromCrash gave up with:
+    /// there is no process behind the page, so Try again asks for the
+    /// address back rather than reloading what isn't there (see reload).
+    private var dead = false
+
     /// The process behind this page just died while it was the one on
     /// screen. `reload()`/`reloadFromOrigin()` lean on state the dead
     /// process was keeping — asking for the address back instead is the
@@ -1582,10 +1593,24 @@ final class Tab: ObservableObject, Identifiable {
     /// it. Tried twice: right after a process dies, WebKit doesn't always
     /// accept the very next load, which is what a reload that looks like it
     /// did nothing actually was.
-    func recoverFromCrash() {
-        guard let address else { return }
+    ///
+    /// Not for ever, though. A page that takes its process down as it loads
+    /// — too much memory, a WebKit crash, a call WebKit ends the process for
+    /// (see ExtensionShims' `__searchCall`) — came straight back to die
+    /// again, and the tab reloaded itself until Search was quit. Past the
+    /// side panel's rule, the page says so and waits for Try again.
+    /// Answers whether the page was asked for again.
+    @discardableResult
+    func recoverFromCrash(_ end: PageEnd = .unknown, at now: Date = Date()) -> Bool {
+        guard let address else { return false }
+        guard crashes.another(at: now) else {
+            failure = end.message
+            dead = true
+            return false
+        }
         failure = nil
         loadAndVerify(address)
+        return true
     }
 
     /// `web.load`, checked a moment later rather than trusted outright: a
@@ -1622,14 +1647,16 @@ final class Tab: ObservableObject, Identifiable {
             view.open(url)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self else { return }
+            // A page that has said why it isn't there (recoverFromCrash gave
+            // up, or it never arrived) isn't asked for again behind that.
+            guard let self, failure == nil else { return }
             guard built?.url?.absoluteString != "about:blank" else {
                 web.open(url)
                 return
             }
             web.evaluateJavaScript("document.readyState") { [weak self] _, error in
                 MainActor.assumeIsolated {
-                    guard let self, let error = error as NSError? else { return }
+                    guard let self, self.failure == nil, let error = error as NSError? else { return }
                     guard error.domain == WKErrorDomain,
                           error.code == WKError.webContentProcessTerminated.rawValue
                     else { return }
@@ -1730,6 +1757,13 @@ final class Tab: ObservableObject, Identifiable {
         // the reload.
         guard !wake() else { return }
         reader = false
+        // Try again on a page that kept crashing: its process is gone, so
+        // the address, checked as recoverFromCrash checks it.
+        if dead, let address {
+            failure = nil
+            loadAndVerify(address)
+            return
+        }
         // A file is read again with the folder it may read (see open).
         if let address, hollow || address.isFileURL {
             web.open(address)
@@ -3007,6 +3041,55 @@ extension WKWebView {
     func evaluateInSearch(_ js: String, then: ((Any?) -> Void)? = nil) {
         evaluateJavaScript(js, in: nil, in: Web.world) { result in
             then?(try? result.get())
+        }
+    }
+}
+
+/// A page's process dying again and again: made again twice a minute at
+/// most, then left as it is. Without a limit, a page that takes its process
+/// down as it loads reloads for ever. Tabs and the side panel's website go
+/// by the same rule.
+struct CrashCount {
+    private var times: [Date] = []
+
+    /// One more death. Answers whether making the page again is still worth it.
+    mutating func another(at now: Date = Date()) -> Bool {
+        times = times.filter { now.timeIntervalSince($0) < 60 } + [now]
+        return times.count <= 2
+    }
+
+    var gaveUp: Bool { times.count > 2 }
+}
+
+/// Why WebKit says a page's process went away: its private
+/// `_WKProcessTerminationReason`, given to
+/// `_webView:webContentProcessDidTerminateWithReason:` (see Dialogs.swift).
+/// `unknown` is a WebKit that gives no reason, through the public callback.
+enum PageEnd: Int {
+    case unknown = -1
+    case memory = 0
+    case processor = 1
+    case asked = 2
+    case crash = 3
+
+    init(webKit reason: Int) { self = PageEnd(rawValue: reason) ?? .crash }
+
+    /// For the log: what to look for there the next time a page gives up.
+    var name: String {
+        switch self {
+        case .unknown: return "no reason given"
+        case .memory: return "memory limit"
+        case .processor: return "CPU limit"
+        case .asked: return "on request"
+        case .crash: return "crash"
+        }
+    }
+
+    /// Over the page, once it has stopped being made again.
+    var message: String {
+        switch self {
+        case .memory: return "This page kept running out of memory."
+        default: return "This page kept crashing."
         }
     }
 }

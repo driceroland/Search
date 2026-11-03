@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A page whose process dies as it loads no longer reloads itself over and over, or ends on a white page, until Search is quit. It is loaded again twice a minute at most, as the side panel's website already was; after that it says it kept crashing (or kept running out of memory), and Try again loads it fresh. Why each page's process ended, and what was done, goes to the Mac's own log: `log show --last 1h --predicate 'subsystem == "com.officecommun.search" AND category == "Pages"'`
 - An extension's worker waits on one round trip fewer when it lists its open pages, reads its permissions, or (in a user-script manager) puts its scripts back as it starts. Each asked two questions one after the other; both now go out at once. Translate Page asks for the page's language while it reads the page's words, not after.
 - Spaces brought over from Arc with one of Arc's own icons rather than an emoji keep a matching icon (a bulb, a leaf, a star…) instead of all coming in as a briefcase. Thanks [@introbseso](https://github.com/introbseso) for the report and the table ([#832](https://github.com/driceroland/Search/issues/832))
 - Copy Image copies at once: a picture of a few megabytes took up to a minute, since its bytes were read one at a time; a 3 MB picture now takes a fraction of a second

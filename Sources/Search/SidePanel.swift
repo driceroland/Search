@@ -400,7 +400,7 @@ private final class SitePanelDelegate: NSObject, ObservableObject, WKNavigationD
 
     /// Crashes in a row: the page is made again twice a minute at most, then
     /// left as it is (the panel's line still closes it or opens it in a tab).
-    private var crashes: [Date] = []
+    private var crashes = CrashCount()
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -436,16 +436,14 @@ private final class SitePanelDelegate: NSObject, ObservableObject, WKNavigationD
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        let now = Date()
-        crashes = crashes.filter { now.timeIntervalSince($0) < 60 } + [now]
-        guard crashes.count <= 2 else { return }
+        guard crashes.another() else { return }
         reloads += 1
         webView.reload()
     }
 
     /// How many times the page was made again, for the bench.
     private(set) var reloads = 0
-    var gaveUp: Bool { crashes.count > 2 }
+    var gaveUp: Bool { crashes.gaveUp }
 }
 
 /// The panel page's own delegate: a link it opens elsewhere goes to a tab,
