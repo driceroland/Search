@@ -29,6 +29,7 @@ struct ImportPanel: View {
     @State private var wantsPasswords = true
     @State private var wantsBookmarks = true
     @State private var wantsHistory = true
+    @State private var wantsTabs = true
     @State private var wantsExtensions = false
     /// What came from this browser before goes, and its bookmarks come
     /// fresh. Off unless asked for; passwords are never taken out.
@@ -132,7 +133,8 @@ struct ImportPanel: View {
                     } else if let source = pick {
                         Pill(bringing ? "Bringing…" : "Bring them in", filled: true) { bring(from: source) }
                             .disabled(bringing || !(wantsPasswords || wantsBookmarks || wantsHistory || (wantsExtensions && !fresh(source).isEmpty)
-                                                     || (wantsArc && arcCounts[key(source, profile(of: source))] != nil)))
+                                                     || (wantsArc && arcCounts[key(source, profile(of: source))] != nil)
+                                                     || (wantsTabs && previews[key(source, profile(of: source))]?.tabs != 0)))
                         if bringing { Ring(size: 10) }
                     }
                     Spacer(minLength: 8)
@@ -177,6 +179,16 @@ struct ImportPanel: View {
         return browser.prefs.listsPins
             ? head + ", its pinned pages as rows under them, and the ones it filed in a folder as tabs in a group of that name"
             : head + ", its pinned tabs asleep in it"
+    }
+
+    /// What the tabs side of the import will do: the open tabs asleep at the
+    /// end of this space, the pinned ones as pins, the grouped ones in
+    /// groups of the same names.
+    private func tabsDetail(_ preview: ImportSource.Preview?, _ source: ImportSource) -> String {
+        guard let preview, preview.tabs > 0 else { return "None open in \(source.name)" }
+        func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
+        let groups = preview.groups > 0 ? " in \(count(preview.groups, "group"))" : ""
+        return "\(count(preview.tabs, "tab"))\(groups) — asleep at the end of this space, pinned tabs as pins"
     }
 
     /// Safari, and browsers on this Mac with nothing where their data should
@@ -309,6 +321,13 @@ struct ImportPanel: View {
             Line("History", preview?.places == 0 ? "None in \(source.name)" : "The last \((preview.map { $0.places } ?? 3000).formatted()) places") {
                 option($wantsHistory, none: preview?.places == 0)
             }
+            // Its open tabs and tab groups, asleep at the end of this space.
+            if case .chromium = source {
+                Rule()
+                Line("Tabs & tab groups", tabsDetail(preview, source)) {
+                    option($wantsTabs, none: preview?.tabs == 0)
+                }
+            }
             // Arc's own: its spaces, what is pinned in them, its favourites.
             if let arc = arcCounts[key(source, profile(of: source))], arc.spaces + arc.pinned > 0 {
                 Rule()
@@ -362,6 +381,7 @@ struct ImportPanel: View {
         for (n, one) in [(preview.bookmarks, "bookmark"), (preview.places, "place"), (preview.passwords, "password")] where n > 0 {
             parts.append(count(n, one))
         }
+        if preview.tabs > 0 { parts.append(count(preview.tabs, "tab")) }
         if let arc = arcCounts[key(source, profile(of: source))], arc.spaces > 0 {
             parts.append(count(arc.spaces, "space"))
         }
@@ -496,6 +516,12 @@ struct ImportPanel: View {
                 said[2] = Said(ok: true, text: "\(count.formatted()) places")
                 group.leave()
             }
+        }
+        if wantsTabs, previews[key(source, profile)]?.tabs != 0 {
+            let got = browser.takeSession(from: source, profile: profile)
+            func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
+            said[5] = Said(ok: true, text: got.pins + got.tabs == 0 ? "\(source.name)'s open tabs were all here already"
+                               : "\(count(got.tabs, "tab"))\(got.groups > 0 ? " in \(count(got.groups, "group"))" : "")\(got.pins > 0 ? ", \(count(got.pins, "pin"))" : "")")
         }
         if #available(macOS 15.4, *), !extensions.isEmpty {
             // Each from the store, fresh and checked, one question at a time.

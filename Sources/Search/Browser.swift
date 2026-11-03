@@ -2838,6 +2838,85 @@ final class Browser: NSObject, ObservableObject {
         return (made, pins, added)
     }
 
+    /// The other Chromium browser's open tabs and tab groups, into this
+    /// space: its pinned tabs as pins, its grouped tabs asleep in groups of
+    /// the same names, folded as they were, the rest asleep after them.
+    /// Nothing twice: a page already in the row, or a pin already there,
+    /// isn't added again. The groups are kept whether or not tab groups are
+    /// turned on, as the session keeps them — turning groups on later finds
+    /// them waiting rather than gone.
+    @discardableResult
+    func takeSession(from source: ImportSource, profile: String? = nil) -> (pins: Int, tabs: Int, groups: Int) {
+        let snapshot = source.sessions(profile: profile)
+        var pins = 0
+        var brought: [URL] = []
+        var pinned: [(title: String, url: URL)] = []
+        var pages: [(title: String, url: URL, group: SessionImport.Token?)] = []
+        var seenPins = Set<String>()
+        var seenTabs = Set<String>()
+        for window in snapshot.windows {
+            for tab in window {
+                let key = tab.url.absoluteString
+                if tab.pinned {
+                    guard seenPins.insert(key).inserted else { continue }
+                    pinned.append((tab.title, tab.url))
+                } else {
+                    guard seenTabs.insert(key).inserted else { continue }
+                    pages.append((tab.title, tab.url, tab.group))
+                }
+            }
+        }
+        // Its pinned tabs, as this space's pins, as Arc's pinned pages are.
+        var defs = Pins.defs(spaceID)
+        let had = defs
+        for page in pinned where !had.contains(where: { Browser.samePin($0, page.url) })
+            && !defs.contains(where: { $0.home == page.url.absoluteString }) {
+            let host = page.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+            defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
+                               home: page.url.absoluteString, title: page.title, name: nil))
+            pins += 1
+            brought.append(page.url)
+        }
+        Pins.set(spaceID, defs, from: self)
+        pinsChanged(in: spaceID)
+        // The rest, asleep at the end of the row, each group under its name.
+        // A pin is never in a group, so a tab both pinned and grouped in the
+        // file comes in as a pin alone.
+        func asleep(_ page: (title: String, url: URL, group: SessionImport.Token?)) -> Tab {
+            let tab = Tab(configuration: Web.configuration(space: spaceID))
+            prepare(tab)
+            tab.restore(url: page.url, title: page.title)
+            return tab
+        }
+        var ids: [SessionImport.Token: UUID] = [:]
+        func group(_ token: SessionImport.Token?, in list: inout [TabGroup]) -> UUID? {
+            guard let token else { return nil }
+            if let id = ids[token] { return id }
+            let meta = snapshot.groups[token]
+            let made = TabGroup(id: UUID(), name: meta?.title ?? "Group", collapsed: meta?.collapsed ?? false)
+            list.append(made)
+            ids[token] = made.id
+            return made.id
+        }
+        var seen = Set(tabs.compactMap { ($0.pending ?? $0.address)?.absoluteString })
+        let new = pages.filter { seen.insert($0.url.absoluteString).inserted }
+        var made = tabGroups
+        tabs += new.map { page in
+            let tab = asleep(page)
+            tab.groupID = group(page.group, in: &made)
+            return tab
+        }
+        let groups = made.count - tabGroups.count
+        if made != tabGroups {
+            tabGroups = made
+            arrangeGroupedTabs()
+        }
+        writeRow(spaceID, session(tabs, active: activeID, groups: tabGroups, splits: splits), now: true)
+        brought += new.map(\.url)
+        adoptIcons(for: brought, from: source, profile: profile)
+        return (pins, new.count, groups)
+    }
+
     /// The icons for what Arc's side of the import brought in, from Arc's own
     /// cache, as the bookmarks take theirs (see takeBookmarks). A pin and a
     /// tab read the icon cache as they are made, and these were made a moment

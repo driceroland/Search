@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Bringing things over from Chrome, Brave, Edge, Arc or Dia can now bring the open tabs too: each profile's open tabs come in asleep at the end of the space, its pinned tabs as pins, and its tab groups as groups of the same names, folded as they were. Tabs already here aren't added again. Saved tab groups and recently closed tabs are left behind: saved groups live in the sync store, which needs LevelDB to read.
+
 ### Fixed
 
 - An extension's worker waits on one round trip fewer when it lists its open pages, reads its permissions, or (in a user-script manager) puts its scripts back as it starts. Each asked two questions one after the other; both now go out at once. Translate Page asks for the page's language while it reads the page's words, not after.
