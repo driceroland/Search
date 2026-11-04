@@ -6128,7 +6128,8 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
-    func reload(fromOrigin: Bool = false) { active?.reload(fromOrigin: fromOrigin) }
+    // A peek has the page in front; the tab underneath stays where it was.
+    func reload(fromOrigin: Bool = false) { (peekTab ?? active)?.reload(fromOrigin: fromOrigin) }
     func back() { active?.back() }
     func forward() { active?.forward() }
 }
