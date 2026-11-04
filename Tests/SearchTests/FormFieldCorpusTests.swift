@@ -59,7 +59,7 @@ final class FormFieldCorpusTests: XCTestCase {
         let files = Set(all.map(\.file))
         for needed in ["code-keycloak", "code-github", "code-google", "code-microsoft", "code-aws", "code-cells",
                        "code-french", "code-plain-signin", "notcode-promo", "notcode-postal", "notcode-recovery",
-                       "notcode-card", "notcode-dial", "notcode-product", "notcode-footprint"] {
+                       "notcode-card", "notcode-dial", "notcode-product", "notcode-footprint", "notcode-passkey-row"] {
             XCTAssertTrue(files.contains(needed), "\(needed).html is in the corpus")
         }
         for fixture in all where fixture.file.hasPrefix("code-") { XCTAssertTrue(fixture.code, fixture.file) }
@@ -83,12 +83,24 @@ final class FormFieldCorpusTests: XCTestCase {
         XCTAssertEqual(code?["code"] as? Bool, true)
         XCTAssertEqual(code?["passwords"] as? Bool, false, "no account goes in it")
         XCTAssertNotNil(code?["rect"] as? [String: Any])
+        XCTAssertEqual(code?["wide"] as? Bool, false, "a guess: this host's codes alone")
+        let sure = try await said("code-github")
+        XCTAssertEqual(sure?["code"] as? Bool, true)
+        XCTAssertEqual(sure?["wide"] as? Bool, true, "it says so: the site's other hosts' codes too")
+        let row = try await said("code-cells")
+        XCTAssertEqual(row?["code"] as? Bool, true)
+        XCTAssertEqual(row?["wide"] as? Bool, false, "a row of boxes is a guess too")
         let signIn = try await said("urssaf-login")
         XCTAssertEqual(signIn?["code"] as? Bool, false)
         XCTAssertEqual(signIn?["passwords"] as? Bool, true)
         let promo = try await said("notcode-promo")
         XCTAssertEqual(promo?["code"] as? Bool, false)
         XCTAssertTrue(promo?["rect"] is NSNull, "nothing hangs from it")
+        // A box marked for passkeys stays theirs: its list hangs from it.
+        let passkey = try await said("notcode-passkey-row")
+        XCTAssertEqual(passkey?["code"] as? Bool, false)
+        XCTAssertEqual(passkey?["passwords"] as? Bool, false)
+        XCTAssertNotNil(passkey?["rect"] as? [String: Any])
     }
 
     /// A code goes in as a keystroke would put it: through the field's own

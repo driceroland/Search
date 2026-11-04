@@ -49,7 +49,8 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
                     // `wide`: a box that is clearly a sign-in's, offered the
                     // accounts of the site's other hosts too; otherwise only
                     // those kept for this very host.
-                    // `code`: a box for a verification code, not a sign-in's.
+                    // `code`: a box for a verification code, not a sign-in's;
+                    // `wide` then means it says so, rather than a guess.
                     tab?.fieldFocused(CGRect(x: x, y: y, width: w, height: h), passwords: body["passwords"] as? Bool ?? true,
                                       name: body["name"] as? Bool ?? false, wide: body["wide"] as? Bool ?? true,
                                       code: body["code"] as? Bool ?? false)
@@ -308,6 +309,8 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // whose words say so. A wrong guess costs little, since nothing comes
       // up on a site with no code kept for it; the words that rule a box out
       // still keep a discount, a card's or a postal code from asking at all.
+      // Only a box that says so gets the codes of the site's other hosts: a
+      // guess gets this host's alone. A box marked for passkeys stays theirs.
       //
       // The box's row: the nearest few boxes around it, all of one character.
       function cells(el) {
@@ -328,9 +331,10 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return kind === 'tel' || kind === 'number' || mode === 'numeric' || mode === 'decimal'
           || /\\\\d|0-9/.test(el.getAttribute('pattern') || '') || (el.maxLength >= 4 && el.maxLength <= 10);
       }
+      function saysCode(el) { return tokens(el).indexOf('one-time-code') >= 0; }
       function codeBox(el) {
-        if (!texty(el)) return false;
-        if (tokens(el).indexOf('one-time-code') >= 0 || cells(el)) return true;
+        if (!texty(el) || forPasskeys(el)) return false;
+        if (saysCode(el) || cells(el)) return true;
         if (elsewhere(el) || vouched(el) || (el.type || '').toLowerCase() === 'email') return false;
         var said = words(el);
         if (otherCode.test(said)) return false;
@@ -538,15 +542,16 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       }
       // What the box the caret is in was judged to be: judged again when the
       // caret moves, not on every frame of a scroll, which only moves it.
-      var judged = { el: null, verdict: null, code: false };
+      var judged = { el: null, verdict: null, code: false, sure: false };
       function caret(scrolled) {
         var el = document.activeElement;
         // The boxes are only looked for with the caret in one: this runs on
         // every frame of every scroll, and looking goes through the whole page.
         if (scrolled !== true || judged.el !== el) {
           var seen = judge(el);
-          judged = { el: el, verdict: seen, code: !seen && codeBox(el) };
-          if (judged.code) codeAt = el;
+          var coded = !seen && codeBox(el);
+          judged = { el: el, verdict: seen, code: coded, sure: coded && saysCode(el) };
+          if (coded) codeAt = el;
         }
         var verdict = judged.verdict;
         var code = judged.code;
@@ -555,7 +560,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         // name box beside a password, and a pick puts in the name alone.
         var passwords = !!verdict;
         var name = !!(verdict && verdict.name);
-        var wide = !verdict || verdict.wide;
+        var wide = code ? judged.sure : !verdict || verdict.wide;
         if (passwords || code || forPasskeys(el)) {
           var r = el.getBoundingClientRect();
           if (r.width > 0 && r.height > 0) rect = { x: r.left, y: r.top, w: r.width, h: r.height };

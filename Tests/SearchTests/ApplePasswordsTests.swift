@@ -607,6 +607,7 @@ final class ApplePairingTests: XCTestCase {
         let list = try XCTUnwrap(browser.suggesting)
         XCTAssertEqual(list.codes.map(\.user), ["ada@example.test"])
         XCTAssertEqual(list.logins, [])
+        XCTAssertTrue(list.wide, "a box that says so: the site's other hosts' codes come too")
         XCTAssertEqual(list.spot, spot)
         XCTAssertEqual(fake.commands, [16])
 
@@ -622,6 +623,42 @@ final class ApplePairingTests: XCTestCase {
         // Picked: the list stays down until the caret leaves the box.
         tab.onField?(tab, spot, false, false, true, true)
         XCTAssertNil(browser.suggesting)
+    }
+
+    /// A box only guessed to take a code: no row of its own, and only codes
+    /// kept for this very host. The helper's account here is example.test's.
+    func testAGuessedCodeBoxGetsThisHostsCodesAloneAndNoConnectRow() async throws {
+        let fake = FakeHelper(code: "246810")
+        let browser = Browser(record: WindowRecord())
+        defer { browser.closeAll(); browser.prefs.applePasswords = false }
+        browser.applePasswords = ApplePasswords(makeLink: { fake })
+        browser.prefs.applePasswords = true
+        let (sub, spot) = try page(in: browser, "https://sso.example.test/otp")
+
+        // Not paired: nothing up, and the helper not run.
+        sub.onField?(sub, spot, false, false, false, true)
+        XCTAssertNil(browser.suggesting)
+        XCTAssertEqual(fake.handshakes, 0)
+
+        await browser.applePasswords.connect()
+        await browser.applePasswords.enter("246810")
+
+        // Another host of the site: asked, and not offered.
+        sub.onField?(sub, nil, false, false, false, false)
+        sub.onField?(sub, spot, false, false, false, true)
+        try await settle { fake.commands == [16] }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertNil(browser.suggesting)
+
+        // This very host: offered, and a pick asks for the code.
+        let (own, _) = try page(in: browser, "https://example.test/otp")
+        own.onField?(own, spot, false, false, false, true)
+        try await settle { browser.suggesting?.codes.isEmpty == false }
+        let list = try XCTUnwrap(browser.suggesting)
+        XCTAssertFalse(list.wide)
+        try await Task.sleep(nanoseconds: 550_000_000)
+        browser.choose(list.codes[0])
+        try await settle { fake.commands == [16, 16, 17] }
     }
 
     func testAnotherSitesCodeIsNotOfferedAndNotInAPrivateTabOrPlainHttp() async throws {
