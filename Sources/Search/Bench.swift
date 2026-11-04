@@ -3659,7 +3659,7 @@ final class Bench {
                 answer(["error": "popups state|open|allow|remove|sites"])
             }
 
-        case "extensions", "ext-add", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "capture", "capture-stop":
+        case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "capture", "capture-stop":
             guard #available(macOS 15.4, *) else {
                 answer(["error": "extensions need macOS 15.4"])
                 return
@@ -4158,6 +4158,20 @@ final class Bench {
             guard let text = request["id"] as? String else { answer(["error": "ext-add needs an id or link"]); return }
             extensions.install(from: text, confirm: !skip)
             answer(["started": true])
+        case "ext-crx":
+            // Test runs only: a store package on disk, verified against its id.
+            guard Store.testing else { answer(["error": "ext-crx only works on a --test run"]); return }
+            guard let path = request["path"] as? String, let id = request["id"] as? String,
+                  let data = FileManager.default.contents(atPath: path)
+            else { answer(["error": "ext-crx needs a path and an id"]); return }
+            Task { await extensions.installForTests(crx: data, id: id) }
+            answer(["started": true])
+        case "ext-fetches":
+            // Test runs only: what went through ExtensionFetch — addresses,
+            // statuses, cookie names, never a value.
+            guard Store.testing else { answer(["error": "ext-fetches only works on a --test run"]); return }
+            answer(["trace": ExtensionFetch.trace, "on": ExtensionFetch.on])
+            if request["clear"] as? Bool == true { ExtensionFetch.trace.removeAll() }
         case "ext-folder":
             guard let path = request["path"] as? String else { answer(["error": "ext-folder needs a path"]); return }
             extensions.installFolder(at: URL(fileURLWithPath: path), confirm: !skip)

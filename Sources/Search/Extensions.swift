@@ -678,6 +678,23 @@ final class Extensions: NSObject, ObservableObject {
         Task { await install(id: id, confirm: confirm) }
     }
 
+    /// Test runs only: a store package already on disk (Tests/panel_lax.py),
+    /// checked against its id exactly as one fetched from the store is.
+    func installForTests(crx: Data, id: String) async {
+        guard Store.testing, id.count == 32, id.allSatisfy({ ("a"..."p").contains($0) }),
+              !installed.contains(where: { $0.id == id }) else { return }
+        let staged = Extensions.stagingFolder(for: id)
+        defer { try? FileManager.default.removeItem(at: staged) }
+        do {
+            let zip = try Crx.verifiedZip(crx, id: id)
+            try Crx.unpack(zip, into: staged)
+            try ExtensionShims.prepare(staged, fresh: true)
+            try await admit(staged, as: id, fromStore: true, finalFolder: Extensions.folder(for: id), confirm: false)
+        } catch {
+            browser?.announce(error.localizedDescription)
+        }
+    }
+
     /// One from the store by its id, done — asked about, and installed or
     /// not — before it returns, so several brought over from another
     /// browser go one after another.
@@ -1840,6 +1857,10 @@ extension Extensions: WKWebExtensionControllerDelegate {
         let ports = nativePorts[id] ?? NSHashTable<WKWebExtension.MessagePort>.weakObjects()
         ports.add(port)
         nativePorts[id] = ports
+        if port.applicationIdentifier == ExtensionFetch.name {
+            ExtensionFetch.connect(port, from: extensionContext)
+            return
+        }
         if port.applicationIdentifier == ExtensionSocket.name {
             ExtensionSocket.connect(port, from: extensionContext.uniqueIdentifier)
             return

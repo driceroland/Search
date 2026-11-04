@@ -812,6 +812,112 @@ enum ExtensionShims {
         for (const [k, v] of Object.entries(states)) { Object.defineProperty(WebSocket, k, { value: v }); Object.defineProperty(WebSocket.prototype, k, { value: v }); }
         Object.defineProperty(root, "WebSocket", { value: WebSocket, configurable: true, writable: true });
       }
+      // A fetch with credentials from the extension's own page or worker to
+      // another site goes through the browser (ExtensionFetch.swift), which
+      // sends it as Chrome does for a host the extension has been granted:
+      // with the site's SameSite=Lax cookies, which WebKit withholds from an
+      // extension's requests. For anything else the browser says "pass", and
+      // WebKit's fetch runs.
+      if (runtime && typeof runtime.connectNative === "function" && typeof root.fetch === "function"
+          && typeof runtime.getURL === "function" && root.location && root.location.origin + "/" === runtime.getURL("/")) {
+        const original = root.fetch;
+        const connect = runtime.connectNative.bind(runtime);
+        const encode = (bytes) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); };
+        const decode = (text) => { const s = atob(text), bytes = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i); return bytes; };
+        let sequence = 0;
+        // What may wait unread in a response's stream before it fails.
+        const unreadLimit = 64 * 1024 * 1024;
+        const fetch = function fetch(input, init) {
+          const self = this, args = arguments;
+          // Read cheaply first: only credentials "include" is the browser's;
+          // any other fetch goes on untouched, its body unread.
+          let credentials;
+          try {
+            credentials = init && init.credentials !== undefined ? String(init.credentials)
+              : (input instanceof Request ? input.credentials : "same-origin");
+          } catch (e) { return original.apply(self, args); }
+          if (credentials !== "include") return original.apply(self, args);
+          // A copy to read, so the page's own Request keeps its body for
+          // WebKit's fetch if the browser passes.
+          let request, url;
+          try { request = new Request(input instanceof Request ? input.clone() : input, init); url = new URL(request.url); }
+          catch (e) { return original.apply(self, args); }
+          if (!/^https?:$/.test(url.protocol) || url.origin === root.location.origin) return original.apply(self, args);
+          return (async () => {
+            let body = null;
+            if (request.method !== "GET" && request.method !== "HEAD") {
+              try { body = encode(new Uint8Array(await request.arrayBuffer())); } catch (e) { return original.apply(self, args); }
+            }
+            const id = ++sequence + "-" + Math.random().toString(36).slice(2);
+            const hello = { fetch: id, url: request.url, method: request.method, headers: [...request.headers], body,
+                            redirect: request.redirect, userAgent: navigator.userAgent };
+            return await new Promise((resolve, reject) => {
+              let port;
+              try { port = connect("search.fetch"); } catch (e) { resolve(original.apply(self, args)); return; }
+              let accepted = false, tries = 0, controller = null, done = false;
+              const close = () => { try { port.disconnect(); } catch (e) {} };
+              // The browser never took it: WebKit's fetch, as without it. Not
+              // for a request that changes something, which may already have
+              // gone out unanswered: sent twice, a POST would be done twice.
+              const safe = ["GET", "HEAD", "OPTIONS"].includes(request.method);
+              const fallback = () => {
+                if (done) return;
+                if (!safe) return fail(false);
+                done = true; close(); resolve(original.apply(self, args));
+              };
+              const fail = (abort) => {
+                if (done) return; done = true; close();
+                const error = abort ? new DOMException("The operation was aborted.", "AbortError") : new TypeError("Load failed");
+                if (controller) { try { controller.error(error); } catch (e) {} } else reject(error);
+              };
+              const signal = request.signal;
+              if (signal) { if (signal.aborted) return fail(true); signal.addEventListener("abort", () => fail(true)); }
+              const again = () => {
+                if (accepted || done) return;
+                if (tries++ >= 20) return fallback();
+                try { port.postMessage(hello); } catch (e) {}
+                setTimeout(again, 100 * Math.min(tries, 5));
+              };
+              port.onMessage.addListener((m) => {
+                if (!m || done) return;
+                if (m.accepted === id) { accepted = true; return; }
+                if (m.pass) { done = true; close(); resolve(original.apply(self, args)); return; }
+                if (m.head && m.head.opaqueRedirect) {
+                  // redirect: "manual", as Chrome answers it: a response of
+                  // type opaqueredirect, status 0, nothing readable.
+                  done = true; close();
+                  const response = Response.error();
+                  try { Object.defineProperty(response, "type", { value: "opaqueredirect" }); Object.defineProperty(response, "url", { value: m.head.url }); } catch (e) {}
+                  resolve(response);
+                  return;
+                }
+                if (m.head) {
+                  accepted = true;
+                  const stream = new ReadableStream({ start(c) { controller = c; }, cancel() { done = true; close(); } },
+                                                    { highWaterMark: 0, size: (chunk) => chunk.byteLength });
+                  const empty = [101, 204, 205, 304].includes(m.head.status) || request.method === "HEAD";
+                  let response;
+                  try { response = new Response(empty ? null : stream, { status: m.head.status, statusText: m.head.statusText || "", headers: m.head.headers }); }
+                  catch (e) { return fail(false); }
+                  try { Object.defineProperty(response, "url", { value: m.head.url }); Object.defineProperty(response, "redirected", { value: !!m.head.redirected }); } catch (e) {}
+                  resolve(response);
+                  return;
+                }
+                if (m.chunk) {
+                  if (!controller) return;
+                  controller.enqueue(decode(m.chunk));
+                  if (controller.desiredSize !== null && -controller.desiredSize > unreadLimit) fail(false);
+                }
+                else if (m.end) { done = true; if (controller) { try { controller.close(); } catch (e) {} } close(); }
+                else if (m.failed) fail(false);
+              });
+              port.onDisconnect.addListener(() => { if (done) return; if (accepted) fail(false); else fallback(); });
+              again();
+            });
+          })();
+        };
+        Object.defineProperty(root, "fetch", { value: fetch, configurable: true, writable: true });
+      }
       // The same loss meets a worker's port to an app on the Mac: what it
       // posts in its first moments never reaches the app, and comes back to
       // the worker's own listeners instead. iCloud Passwords says hello to
