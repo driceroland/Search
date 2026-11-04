@@ -1,0 +1,8 @@
+<!-- url: https://github.com/sessions/two-factor/app expect: none code: true -->
+<!doctype html><html><head><title>Two-factor authentication</title></head><body>
+<form action="/sessions/two-factor" accept-charset="UTF-8" method="post">
+<label for="app_totp">Authentication code</label>
+<input type="text" name="app_otp" id="app_totp" class="form-control" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" data-probe>
+<button type="submit">Verify</button>
+</form>
+</body></html>
