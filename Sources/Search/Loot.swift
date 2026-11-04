@@ -8,12 +8,17 @@ import AppKit
 struct Keep: Codable, Identifiable, Equatable {
     var name: String
     var from: String
+    var address: String?
     var path: String
     var date: Date
 
     var id: String { path }
 
     var url: URL { URL(fileURLWithPath: path) }
+    /// Where the file came from, for handing it to another download app.
+    /// Missing from rows kept before Copy Address, and from a file whose
+    /// page never said.
+    var source: URL? { address.flatMap(URL.init(string:)) }
     var stillThere: Bool { FileManager.default.fileExists(atPath: path) }
 }
 

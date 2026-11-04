@@ -441,6 +441,12 @@ struct DownloadsPanel: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .contextMenu {
+                if let address = entry.address {
+                    Button("Copy Address") { DownloadsPanel.copyAddress(address) }
+                }
+            }
         }
 
         @ViewBuilder
@@ -524,6 +530,21 @@ struct DownloadsPanel: View {
             .onTapGesture { if keep.stillThere { open() } }
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
+            .contextMenu {
+                if let source = keep.source {
+                    Button("Copy Address") { DownloadsPanel.copyAddress(source) }
+                }
+            }
         }
+    }
+}
+
+extension DownloadsPanel {
+    /// The address onto a clipboard, as Browser.copyAddress puts a page's
+    /// there: plain, with WebKit's tracking parameters kept, since another
+    /// download app has to ask for the very file this one did.
+    static func copyAddress(_ url: URL, to board: NSPasteboard = .general) {
+        board.clearContents()
+        board.setString(url.absoluteString, forType: .string)
     }
 }

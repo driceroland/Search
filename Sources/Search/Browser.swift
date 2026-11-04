@@ -7367,7 +7367,8 @@ extension Browser: WKDownloadDelegate {
     }
 
     private func saved(_ file: URL, from source: URL?) {
-        loot.add(Keep(name: file.lastPathComponent, from: source?.host() ?? "", path: file.path, date: Date()))
+        loot.add(Keep(name: file.lastPathComponent, from: source?.host() ?? "",
+                      address: source?.absoluteString, path: file.path, date: Date()))
         announce("Saved \(file.lastPathComponent)", file: file)
     }
 

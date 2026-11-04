@@ -54,6 +54,10 @@ final class FetchEntry: ObservableObject, Identifiable {
     // ones: a private tab's never reach the others, nor theirs a private one.
     var resumeData: Data?
     var request: URLRequest?
+    /// The address the file came from, for Copy Address: handed to a
+    /// download app of your own, the same bytes come down again. Nil for a
+    /// download resumed from data alone, whose request was never known.
+    var address: URL? { request?.url }
     /// The page's own view while it is there; the row never keeps it, nor
     /// its web process, alive once its tab has closed.
     weak var webView: WKWebView?
