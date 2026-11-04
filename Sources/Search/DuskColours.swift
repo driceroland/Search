@@ -75,23 +75,45 @@ enum DuskColours {
       // Values that aren't a colour of the rule's own to move.
       var leave = /^(inherit|initial|unset|revert|revert-layer|currentcolor|transparent|none|auto|context-fill|context-stroke)$/i;
 
-      // The top-level words of a value, a function whole.
-      var words = function (v) {
-        var out = [], depth = 0, word = '';
+      // A value cut outside any brackets, a function whole: into its words,
+      // or a background into its layers.
+      var split = function (v, cut) {
+        var out = [], depth = 0, part = '';
         for (var i = 0; i < v.length; i++) {
           var ch = v[i];
           if (ch === '(') depth++;
           if (ch === ')') depth--;
-          if (depth === 0 && /\s/.test(ch)) { if (word) out.push(word); word = ''; } else word += ch;
+          if (depth === 0 && cut(ch)) { out.push(part); part = ''; } else part += ch;
         }
-        if (word) out.push(word);
+        out.push(part);
         return out;
       };
+      var words = function (v) { return split(v, function (ch) { return ch === ' ' || ch === '\t' || ch === '\n'; }).filter(Boolean); };
+      var layers = function (v) { return split(v, function (ch) { return ch === ','; }); };
       var colourish = /^(var\(|#|rgba?\(|hsla?\(|hwb\(|lab\(|lch\(|oklab\(|oklch\(|color\(|light-dark\()/i;
       // Every colour in a gradient, as a ground. A var() that turns out to
       // be a length makes the twin invalid, and the site's gradient stays.
       var stops = /#[0-9a-f]{3,8}\b|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\)|var\([^()]*(?:\([^()]*\)[^()]*)*\)|\b(?:white|black)\b/gi;
-      var gradient = function (v) { return v.replace(stops, function (c) { return BG(c); }); };
+      var called = function (layer) { return layer.slice(0, layer.indexOf('(')).trim().toLowerCase(); };
+      var isGradient = function (layer) { return called(layer).slice(-'gradient'.length) === 'gradient'; };
+      // A picture's address, made whole against its sheet: the twin's sheet
+      // is the page's, where a relative one would be looked for instead.
+      var whole = function (layer, base) {
+        var address = layer.trim().slice(4, -1).trim(), quote = address[0];
+        if ((quote === '"' || quote === "'") && address[address.length - 1] === quote) address = address.slice(1, -1);
+        try { return 'url("' + new URL(address, base || doc.baseURI).href + '")'; } catch (e) { return null; }
+      };
+      // Each gradient taken dark, a picture's layer kept: a white veil over
+      // a picture, its blend undone (see twin), would grey the whole box.
+      // Null where a layer can't be carried over (image-set()).
+      var gradient = function (v, base) {
+        var out = layers(v).map(function (layer) {
+          if (isGradient(layer)) return layer.replace(stops, function (c) { return BG(c); });
+          if (called(layer) === 'url') return whole(layer, base);
+          return layer.trim() === 'none' ? layer : null;
+        });
+        return out.indexOf(null) < 0 ? out.join(',') : null;
+      };
       var inShorthand = function (v) {
         var found = null;
         words(v).forEach(function (w) { if (colourish.test(w)) found = w; });
@@ -99,8 +121,9 @@ enum DuskColours {
       };
 
       // One rule's colours, twinned. `always`: important whatever the
-      // original was, for a style attribute, which beats any sheet.
-      var twin = function (style, always) {
+      // original was, for a style attribute, which beats any sheet. `base`:
+      // the address of the sheet it was written in.
+      var twin = function (style, always, base) {
         var out = '', pending = false;
         var mask = (style.getPropertyValue('-webkit-mask-image') || style.getPropertyValue('mask-image') || '').trim();
         if (mask && !/^none$/i.test(mask)) out += '--office-dusk-mask:1;';
@@ -109,9 +132,8 @@ enum DuskColours {
           var v;
           if (p === 'background-image') {
             v = style.getPropertyValue(p).trim();
-            if (v.indexOf('gradient(') >= 0 && v.indexOf('url(') < 0) {
-              out += p + ':' + gradient(v) + (always || style.getPropertyPriority(p) ? ' !important;' : ';');
-            }
+            var dark = v.indexOf('gradient(') >= 0 && gradient(v, base);
+            if (dark) out += p + ':' + dark + (always || style.getPropertyPriority(p) ? ' !important;' : ';');
             continue;
           }
           if (p === 'mix-blend-mode' || p === 'background-blend-mode') {
@@ -147,14 +169,16 @@ enum DuskColours {
         for (var i = 0; i < list.length; i++) {
           var r = list[i], inner;
           if (r instanceof CSSStyleRule) {
-            var own = twin(r.style, false);
+            var own = twin(r.style, false, base);
             inner = r.cssRules && r.cssRules.length ? rules(r.cssRules, base) : '';
             if (own || inner) out += r.selectorText + '{' + own + inner + '}';
           } else if (r instanceof CSSImportRule) {
-            var from = null;
+            // Made whole against its sheet: the base for the addresses in it.
+            var address = null, from = null;
+            try { address = new URL(r.href, base || doc.baseURI).href; } catch (e) {}
             try { from = r.styleSheet && r.styleSheet.cssRules; } catch (e) {}
             if (from) {
-              inner = rules(from, r.href);
+              inner = rules(from, address);
               var media = r.media && r.media.mediaText;
               if (inner) out += media && media !== 'all' ? '@media ' + media + '{' + inner + '}' : inner;
             } else {
@@ -260,13 +284,18 @@ enum DuskColours {
                    ['borderBottomColor', 'border-bottom-color', LINE, 'borderBottomWidth', 'bb'],
                    ['borderLeftColor', 'border-left-color', LINE, 'borderLeftWidth', 'bl'],
                    ['fill', 'fill', FG, null, 'fill'], ['stroke', 'stroke', FG, null, 'stroke']];
+      // fill and stroke are an SVG's: an HTML element reports the black
+      // they start as, which is no colour of its own.
+      var htmlSides = sides.filter(function (side) { return side[0] !== 'fill' && side[0] !== 'stroke'; });
+      var inherited = { color: true, fill: true, stroke: true };
       var base = ':root { color-scheme: dark !important; }'
         + '[data-office-dusk-over] { --office-dusk-keep: 1; }'
         + 'img[data-office-dusk-icon] { filter: invert(1) hue-rotate(180deg) !important; }'
         // What paint finds, one rule a part, written once: the colour itself
-        // sits on the element (see paint).
+        // sits on the element (see paint). Two ids nobody has, so a rule of
+        // the unread sheet's with !important and a longer selector can't win.
         + sides.map(function (side) {
-          return '[' + PAINT + '~="' + side[4] + '"]{' + side[1] + ':var(--office-dusk-' + side[4] + ') !important}';
+          return '[' + PAINT + '~="' + side[4] + '"]:not(#office-dusk):not(#office-dusk){' + side[1] + ':var(--office-dusk-' + side[4] + ') !important}';
         }).join('');
       var given = {};
       var legacy = [['bgcolor', 'background-color', BG], ['text', 'color', FG], ['color', 'color', FG],
@@ -345,46 +374,61 @@ enum DuskColours {
       };
       var paint = function (tops) {
         if (!unreadable) return;
-        var t = performance.now();
+        var t = performance.now(), writing = 0;
         var all = [];
         tops.forEach(function (top) {
           if (!top || top.nodeType !== 1 && top.nodeType !== 11) return;
           // Inside another of the batch, it is read with that one.
           if (tops.some(function (other) { return other !== top && other.contains && other.contains(top); })) return;
+          // The root too: a site colours it as often as the body.
+          if (top === doc.body) all.push(doc.documentElement);
           if (top.nodeType === 1) all.push(top);
           all.push.apply(all, top.querySelectorAll('*'));
         });
-        var found = [];
-        for (var i = 0; i < all.length; i++) {
-          var el = all[i];
-          if (skip[el.tagName] || el.hasAttribute('data-office-dusk-style')) continue;
-          var cs = getComputedStyle(el), parent = el.parentElement ? getComputedStyle(el.parentElement) : null, parts = [];
-          // fill and stroke are an SVG's: an HTML element reports the black
-          // they start as, which is no colour of its own.
-          var svg = el instanceof SVGElement;
-          for (var j = 0; j < sides.length; j++) {
-            var side = sides[j];
-            if (side[3] && parseFloat(cs[side[3]]) === 0) continue;
-            if ((side[0] === 'fill' || side[0] === 'stroke') && !svg) continue;
-            var v = cs[side[0]];
-            // Inherited, it is the parent's to change.
-            if ((side[0] === 'color' || side[0] === 'fill' || side[0] === 'stroke') && parent && parent[side[0]] === v) continue;
-            if (untwinned(v)) parts.push([side[4], side[2](v)]);
-          }
-          if (parts.length) found.push([el, parts]);
-        }
-        var w = performance.now();
-        took.paintRead += w - t;
-        found.forEach(function (f) {
-          var keys = (f[0].getAttribute(PAINT) || '').split(' ').filter(Boolean);
-          f[1].forEach(function (part) {
-            f[0].style.setProperty('--office-dusk-' + part[0], part[1]);
-            if (keys.indexOf(part[0]) < 0) keys.push(part[0]);
+        // A colour the same as the parent's may be inherited, or a rule's of
+        // its own, as a link coloured like the writing around it. It's read
+        // again once the parent is written, and taken if it hasn't followed.
+        var read = function (el, list, found, unsure) {
+          var mine = getComputedStyle(el), parent = el.parentElement && getComputedStyle(el.parentElement);
+          var parts = [], later = [];
+          list.forEach(function (side) {
+            if (side[3] && parseFloat(mine[side[3]]) === 0) return;
+            var v = mine[side[0]];
+            if (!untwinned(v)) return;
+            if (inherited[side[0]] && parent && parent[side[0]] === v) later.push(side);
+            else parts.push([side[4], side[2](v)]);
           });
-          f[0].setAttribute(PAINT, keys.join(' '));
+          if (parts.length) found.push([el, parts]);
+          if (later.length) unsure.push([el, later]);
+        };
+        var write = function (found) {
+          var w = performance.now();
+          found.forEach(function (f) {
+            var keys = (f[0].getAttribute(PAINT) || '').split(' ').filter(Boolean);
+            f[1].forEach(function (part) {
+              f[0].style.setProperty('--office-dusk-' + part[0], part[1]);
+              if (keys.indexOf(part[0]) < 0) keys.push(part[0]);
+            });
+            f[0].setAttribute(PAINT, keys.join(' '));
+          });
+          writing += performance.now() - w;
+        };
+        var todo = [], painted = 0;
+        all.forEach(function (el) {
+          if (!skip[el.tagName] && !el.hasAttribute('data-office-dusk-style')) todo.push([el, el instanceof SVGElement ? sides : htmlSides]);
         });
-        took.paintWrite += performance.now() - w;
-        took.painted += found.length;
+        for (var round = 0; todo.length && round < 8; round++) {
+          var found = [], unsure = [];
+          todo.forEach(function (item) { read(item[0], item[1], found, unsure); });
+          // Nothing changed: what was unsure is inherited after all.
+          if (!found.length) break;
+          write(found);
+          painted += found.length;
+          todo = unsure;
+        }
+        took.paintRead += performance.now() - t - writing;
+        took.paintWrite += writing;
+        took.painted += painted;
         spent += performance.now() - t;
         took.paint += performance.now() - t;
         took.paints++;
