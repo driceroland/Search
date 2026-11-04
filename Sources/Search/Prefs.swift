@@ -432,6 +432,11 @@ final class Preferences: ObservableObject {
     @Published var littleLinks: Bool {
         didSet { store.set(littleLinks, forKey: "links.little") }
     }
+    /// With those small windows on: a link to a page already open in a tab
+    /// goes to that tab instead (see Links.little). Off unless asked for.
+    @Published var littleFindsTabs: Bool {
+        didSet { store.set(littleFindsTabs, forKey: "links.little.tabs") }
+    }
     /// The downloads button always in the chrome, not only while something
     /// downloads (see Fetching.swift). Off unless asked for.
     @Published var alwaysShowsDownloads: Bool {
@@ -772,6 +777,7 @@ final class Preferences: ObservableObject {
         readsTwins = store.bool(forKey: "reader.twins")
         readerFollowsLook = store.bool(forKey: "reader.follows")
         littleLinks = store.bool(forKey: "links.little")
+        littleFindsTabs = store.bool(forKey: "links.little.tabs")
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
         let links = store.object(forKey: "links.show") as? Bool ?? true

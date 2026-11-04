@@ -216,6 +216,9 @@ enum SettingsIndex {
         .init(id: "links.little", group: "links", icon: "rectangle.on.rectangle",
               title: "Open links from other apps in a small window", detail: "To read and close, or keep with Open in Search (⌘O)",
               keys: ["links.little"], words: ["little arc", "mini window"]),
+        .init(id: "links.little.tabs", group: "links", icon: "arrow.right.square",
+              title: "Go to a tab that has the page", detail: "A link to a page already open in a tab goes to that tab, not a small window",
+              keys: ["links.little.tabs"], words: ["switch to tab", "already open", "duplicate"], parent: "links.little"),
         .init(id: "reader.twins", group: "reading", icon: "doc.text",
               title: "Read the site's own Markdown", detail: "When a page has a Markdown copy, reading mode shows that",
               more: "⇧⌘R shows a page's article alone, in clean type. Most docs sites publish a Markdown copy; nothing in it can run, its text is escaped.",
@@ -435,6 +438,7 @@ enum SettingsIndex {
         case "sidebar.roomy": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
         case "toolbar.left": return !prefs.sidebar
+        case "links.little.tabs": return prefs.littleLinks
         default: return true
         }
     }
@@ -445,6 +449,7 @@ enum SettingsIndex {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
+        case "links.little.tabs": return "Only with links from other apps in a small window"
         default: return "Only with the tabs down a side"
         }
     }

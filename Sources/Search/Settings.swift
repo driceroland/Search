@@ -594,6 +594,7 @@ struct SettingsPanel: View {
                 }
             }
         case "links.little": Switch(on: $prefs.littleLinks)
+        case "links.little.tabs": Switch(on: $prefs.littleFindsTabs)
         case "reader.twins": Switch(on: $prefs.readsTwins)
         case "reader.follows": Switch(on: $prefs.readerFollowsLook)
         case "float.style": Segmented(options: FloatStyle.allCases.map { ($0, $0.title) }, selection: $prefs.floatStyle)
