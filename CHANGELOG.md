@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Clicking a notification sent by a page opens the tab that sent it, in whichever window it is now, not the first tab on that site. A tab that has closed, gone to another site or sits in a space not on screen falls back to the first tab on the site as before, and so does a notification from a service worker, which no tab sent. Thanks [@pasteley](https://github.com/pasteley) for the report ([#776](https://github.com/driceroland/Search/issues/776))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
