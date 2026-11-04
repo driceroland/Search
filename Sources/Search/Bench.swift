@@ -493,6 +493,16 @@ final class Bench {
                     "reasonable": data.map(Browser.reasonable) ?? false,
                 ])
             }
+
+        case "agent":
+            // A tab's whole user agent, as another browser's would read, until
+            // it is set back with none. Only on a SEARCH_PROBE run: a page
+            // answers to it.
+            guard Store.testing else { answer(["error": "agent only works on a --test run"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            tab.web.customUserAgent = request["ua"] as? String
+            answer(["ua": tab.web.customUserAgent ?? ""])
+
         case "eval":
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             guard let js = request["js"] as? String else { answer(["error": "eval needs js"]); return }
@@ -3639,7 +3649,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }

@@ -373,6 +373,13 @@ private final class SitePanelDelegate: NSObject, ObservableObject, WKNavigationD
     weak var browser: Browser?
     init(browser: Browser) { self.browser = browser }
 
+    /// The window, for a page that asks its size: a site in the panel reads
+    /// it as a tab's page does (see Browser.windowFrame, #666).
+    @objc(_webView:getWindowFrameWithCompletionHandler:)
+    func webView(_ webView: WKWebView, getWindowFrameWithCompletionHandler done: @escaping (CGRect) -> Void) {
+        done(browser?.windowFrame(for: webView) ?? webView.window?.frame ?? .zero)
+    }
+
     /// The page that arrived: set when a main-frame navigation commits, and
     /// as the address moves inside the same site (a link the page handles
     /// itself, history.pushState). A page only asked for, or on its way,

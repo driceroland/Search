@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Google Docs and Sheets are sharp on a Retina screen on macOS 26.3 and earlier. A page asking how big the window is was told it had no size, and Docs, on a Safari before 26.4, takes the window's width over the page's for the browser's zoom: from nothing it took the smallest zoom it knows, and drew the document at a quarter of the screen's sharpness. A page now reads the window's size and place, as in Safari. Thanks [@2cristo7](https://github.com/2cristo7) for reporting and for the numbers that found it ([#666](https://github.com/driceroland/Search/issues/666), [#827](https://github.com/driceroland/Search/pull/827))
 - An extension's worker waits on one round trip fewer when it lists its open pages, reads its permissions, or (in a user-script manager) puts its scripts back as it starts. Each asked two questions one after the other; both now go out at once. Translate Page asks for the page's language while it reads the page's words, not after.
 - Spaces brought over from Arc with one of Arc's own icons rather than an emoji keep a matching icon (a bulb, a leaf, a star…) instead of all coming in as a briefcase. Thanks [@introbseso](https://github.com/introbseso) for the report and the table ([#832](https://github.com/driceroland/Search/issues/832))
 - Copy Image copies at once: a picture of a few megabytes took up to a minute, since its bytes were read one at a time; a 3 MB picture now takes a fraction of a second
