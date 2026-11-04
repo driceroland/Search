@@ -254,6 +254,10 @@ final class Fetches: ObservableObject {
     @Published private(set) var fraction: Double?
     /// Everything finished, and the circle says so for a moment before it goes.
     @Published private(set) var done = false
+    /// How many downloads have begun, for the button's pulse. A resume or a
+    /// retry is the same download going on, asked for from its own row, and
+    /// isn't counted. A private one is: it puts up the same circle.
+    @Published private(set) var started = 0
 
     /// How long the circle stays once the last download is in.
     static let linger: TimeInterval = 5
@@ -334,6 +338,7 @@ final class Fetches: ObservableObject {
             made.download = download
             if listed { entries.append(made) }
             entry = made
+            started += 1
         }
 
         let item = Running(download, entry: entry, owner: owner, helper: helper, listed: listed || continuing != nil)
@@ -609,6 +614,15 @@ final class Fetches: ObservableObject {
 /// wherever Settings says (see Browser.showDownloads) — beside it, as the
 /// side panel's card floating there (DownloadsFloat), among them.
 struct FetchDoor: View {
+    /// How far the icon swells when a download starts, and how long it takes
+    /// each way. Under Reduce Motion it goes nowhere, for the same length: a
+    /// keyframe of no length comes out as not a number, and AppKit stops the
+    /// whole app over a transform like that.
+    static func pulse(reduced: Bool, light: Bool) -> (peak: CGFloat, up: Double, down: Double) {
+        let seconds = light ? 0.16 : 0.3
+        return (reduced ? 1 : 1.35, seconds * 0.4, seconds * 0.6)
+    }
+
     @ObservedObject var browser: Browser
     @ObservedObject var fetches: Fetches
     @ObservedObject var prefs: Preferences
@@ -674,6 +688,19 @@ struct FetchDoor: View {
                     }
                 }
                 .frame(width: 12, height: 12)
+                // A quick file's ring is gone before anyone looks, and people
+                // click again. A timeline rather than a state set and set back:
+                // it rests at 1 however it ends, a second download only takes
+                // over from where the first has got to, and nothing runs after.
+                // Only the count changing starts it, and the button that a
+                // download brings in sees no change: it has its scale-in alone.
+                .keyframeAnimator(initialValue: CGFloat(1), trigger: fetches.started) { icon, scale in
+                    icon.scaleEffect(scale)
+                } keyframes: { _ in
+                    let pulse = Self.pulse(reduced: Motion.reduced, light: Motion.light)
+                    CubicKeyframe(pulse.peak, duration: pulse.up)
+                    CubicKeyframe(1, duration: pulse.down)
+                }
                 .frame(width: 26, height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)

@@ -220,6 +220,63 @@ final class DownloadLifecycleTests: XCTestCase {
         XCTAssertTrue(browser.loot.kept.isEmpty)
     }
 
+    func testANewDownloadIsCountedOnceAndItsResumeIsNot() async throws {
+        let tab = try await openFixturePage()
+        // Every window shares one Fetches, so earlier tests have counted too.
+        let before = browser.fetches.started
+        let entry = try await startDownload("/range.bin", in: tab)
+        XCTAssertEqual(browser.fetches.started, before + 1, "a new download should be counted once")
+
+        try await waitUntil { entry.completedBytes >= 64 * 1024 && entry.destination != nil }
+        browser.pauseDownload(entry)
+        try await waitUntil { entry.state == .paused }
+        browser.resumeDownload(entry)
+        try await waitUntil { entry.state == .downloading }
+        XCTAssertEqual(browser.fetches.started, before + 1, "a resume is the same download going on")
+    }
+
+    func testARetryIsNotCountedAsANewDownload() async throws {
+        let tab = try await openFixturePage()
+        let before = browser.fetches.started
+        let entry = try await startDownload("/retry.bin", in: tab)
+        try await waitUntil { entry.state == .failed }
+        XCTAssertEqual(browser.fetches.started, before + 1)
+
+        browser.retryDownload(entry)
+        try await waitUntil { entry.state == .downloading && fixture.count("/retry.bin") == 2 }
+        XCTAssertEqual(browser.fetches.started, before + 1, "a retry is the same download going on")
+    }
+
+    func testAPrivateDownloadIsCountedThoughItHasNoRow() async throws {
+        let privateSource = Tab(shy: true)
+        let tab = browser.open(URL(string: "about:blank")!, foreground: true, from: privateSource)
+        page = tab
+        window.contentView = tab.web
+        tab.go(to: fixture.url("/page"))
+        try await waitUntil { tab.committed == fixture.url("/page") && !tab.loading }
+        try await waitUntil { fixture.completed("/page") == 1 }
+
+        let before = browser.fetches.started
+        _ = try await requestDownload("/private.bin", from: tab.web)
+        XCTAssertEqual(browser.fetches.started, before + 1, "a private download puts up the ring, so it pulses too")
+        XCTAssertTrue(browser.fetches.entries.isEmpty)
+        try await waitUntil { fixture.completed("/private.bin") == 1 && browser.downloading.isEmpty }
+    }
+
+    func testThePulseHoldsStillUnderReduceMotionAndNeverHasNoLength() {
+        for light in [false, true] {
+            let still = FetchDoor.pulse(reduced: true, light: light)
+            let moving = FetchDoor.pulse(reduced: false, light: light)
+            XCTAssertEqual(still.peak, 1, "Reduce Motion should leave the icon at its size (light: \(light))")
+            XCTAssertGreaterThan(moving.peak, 1, "without Reduce Motion the icon should swell (light: \(light))")
+            // A keyframe of no length makes a scale that is not a number, and AppKit stops the app.
+            for pulse in [still, moving] {
+                XCTAssertGreaterThan(pulse.up, 0, "light: \(light)")
+                XCTAssertGreaterThan(pulse.down, 0, "light: \(light)")
+            }
+        }
+    }
+
     func testRemovingPausedDownloadPreservesAReplacementFile() async throws {
         let tab = try await openFixturePage()
         let entry = try await startDownload("/range.bin", in: tab)

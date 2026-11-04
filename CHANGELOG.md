@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Changed
+
+- The downloads button gives one quick pulse each time a new download starts, so a file that comes in fast still shows it began. A button just coming in has its usual scale-in instead, a resume or a retry doesn't pulse, and with Reduce Motion it holds still. Asked for by [@pasteley](https://github.com/pasteley) ([#830](https://github.com/driceroland/Search/issues/830))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
