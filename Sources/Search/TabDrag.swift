@@ -215,6 +215,13 @@ final class TabDrag: ObservableObject {
         }
     }
 
+    /// The gesture carrying `tab` was taken away mid-drag (see CarryGuard):
+    /// what it showed goes, and its Escape with it.
+    func callOff(_ tab: Tab) {
+        guard gestureTab === tab else { return }
+        clear()
+    }
+
     private func cancel() {
         // The monitor goes first: a drag whose tab has gone has nothing to
         // cancel, and kept, its monitor would go on asking.

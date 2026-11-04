@@ -1476,6 +1476,11 @@ struct PinCarried: ViewModifier {
     @State private var held = false
     @State private var from = 0
     @State private var travel: CGSize = .zero
+    /// Put back by SwiftUI when the drag is called off as well as when it
+    /// ends: the square's look changing under the hand calls it off, and the
+    /// square stayed floating (see CarryGuard).
+    @GestureState private var carrying = false
+    @State private var ticket = UUID()
 
     func body(content: Content) -> some View {
         content
@@ -1489,10 +1494,12 @@ struct PinCarried: ViewModifier {
             // the drag from where it now is, and shuttle between two cells.
             .gesture(
                 DragGesture(minimumDistance: 5, coordinateSpace: .named("pins"))
+                    .updating($carrying) { _, carrying, _ in carrying = true }
                     .onChanged { value in
                         if !held {
                             held = true
                             from = index
+                            CarryGuard.open(ticket, end: callOff)
                         }
                         travel = value.translation
                         if cross?(value.location) == true { return }
@@ -1502,6 +1509,7 @@ struct PinCarried: ViewModifier {
                         }
                     }
                     .onEnded { value in
+                        guard CarryGuard.close(ticket) else { return }
                         _ = land?(value.location)
                         withAnimation(Motion.settle) {
                             held = false
@@ -1509,6 +1517,19 @@ struct PinCarried: ViewModifier {
                         }
                     }
             )
+            .onChange(of: carrying) { _, now in if !now { callOff() } }
+    }
+
+    /// Called off rather than let go: it stays in the cell it was last
+    /// moved to, and nothing is dropped across.
+    private func callOff() {
+        CarryGuard.close(ticket)
+        guard held else { return }
+        _ = land?(nil)
+        withAnimation(Motion.settle) {
+            held = false
+            travel = .zero
+        }
     }
 
     /// The held square stays glued to the fingers; every other square is
