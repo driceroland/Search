@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Downloads can open somewhere other than a tab: as the side panel's card floating by the downloads button, a quarter of the window's height, growing in from the button and gone with a click elsewhere or Escape; or in the side panel beside the page. The button, ⇧⌘J and History › Downloads… all follow the choice; the button closes the card or the panel it opened, and ⇧⌘J only ever shows it. A tab, as before, unless you choose otherwise in Settings › General › Open Downloads.
 - Address field suggestions match words anywhere in a page's title or address, and forgive typos like "githb". They show below exact matches, from three letters. Address bar commands also show from part of their name: "down" or "dwn" offers Downloads, while Return still searches. Thanks [@pasteley](https://github.com/pasteley) ([#762](https://github.com/driceroland/Search/issues/762), [#835](https://github.com/driceroland/Search/pull/835))
 - A playing video follows when you switch spaces, just as when you leave its tab, if automatic floating is on. Returning to its tab brings it back into the page. Thanks [@2470046](https://github.com/2470046) ([#772](https://github.com/driceroland/Search/issues/772), [#773](https://github.com/driceroland/Search/pull/773))
 - Reload Page (⌘R) and Reload Page From Origin (⌥⌘R) reload the page in a peek while it is open, leaving the page underneath alone. Thanks [@BeNDYGo](https://github.com/BeNDYGo) ([#819](https://github.com/driceroland/Search/pull/819))
