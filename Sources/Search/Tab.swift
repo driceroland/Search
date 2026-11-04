@@ -2915,13 +2915,14 @@ final class PageView: WKWebView {
         went = true
         settle(Pull(back: back, travel: travel, armed: true, going: true, stops: stops, picked: picked, leaves: leaves))
         if stops != nil, items.indices.contains(picked) {
-            go(to: items[picked])
+            let item = items[picked]
+            afterTheBounce { [weak self] in self?.go(to: item) }
         } else if leaves {
             leaveSoon()
         } else if back {
-            goBack()
+            afterTheBounce { [weak self] in self?.goBack() }
         } else {
-            goForward()
+            afterTheBounce { [weak self] in self?.goForward() }
         }
         pulls += 1
         let mine = pulls
@@ -2931,6 +2932,40 @@ final class PageView: WKWebView {
             settle(nil)
         }
     }
+
+    /// Pinched in, the sides still bounce (Swipe.calm), and a swipe back
+    /// from the left edge is a pull past it. A step within the same page —
+    /// a #footnote, a #section, an address the page changed — taken while
+    /// that stretch is still out, or on its way back, has WebKit drop the
+    /// scroll position it would restore and leave the stretch where it was:
+    /// the page sat 50 to 60 points past its edge, with a blank strip down
+    /// that side, and at the footnote rather than where you were (#842). So
+    /// the step waits until the page is back inside its edges, which a
+    /// stretch let go of takes about a quarter of a second, and a beat
+    /// more; never longer than a second. At its own size nothing bounces,
+    /// and it goes at once.
+    private func afterTheBounce(_ step: @escaping () -> Void, waited: Int = 0, inside: Bool = false) {
+        guard magnification > 1, waited < 20 else { step(); return }
+        evaluateJavaScript(PageView.inside, in: nil, in: .defaultClient) { [weak self] result in
+            guard let self else { return }
+            // A page that can't answer is not held up.
+            let now = (try? result.get()) as? Bool ?? true
+            if now, inside { step(); return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.afterTheBounce(step, waited: waited + 1, inside: now)
+            }
+        }
+    }
+
+    /// Whether what is on screen is inside the page's edges, sideways.
+    private static let inside = """
+    (function () {
+      var v = window.visualViewport, d = document.documentElement;
+      if (!v || !d) return true;
+      var wide = Math.max(d.scrollWidth, d.clientWidth);
+      return v.pageLeft > -0.5 && v.pageLeft + v.width < wide + 0.5;
+    })()
+    """
 
     private func settle(_ pull: Pull?) {
         if pull == nil {
