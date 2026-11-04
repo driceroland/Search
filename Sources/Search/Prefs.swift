@@ -616,7 +616,8 @@ final class Preferences: ObservableObject {
     @Published var switcherKeys = true
     /// "settings", "new tab" and the like, typed alone in the address field,
     /// reach that part of the app instead of asking a search engine for the
-    /// word (see AddressCommands.swift). Off unless asked for.
+    /// word; part of one is offered (see AddressCommands.swift). Off unless
+    /// asked for.
     @Published var commandBar: Bool {
         didSet { store.set(commandBar, forKey: "commandbar") }
     }

@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Address field suggestions match words anywhere in a page's title or address, and forgive typos like "githb". They show below exact matches, from three letters. Address bar commands also show from part of their name: "down" or "dwn" offers Downloads, while Return still searches ([#762](https://github.com/driceroland/Search/issues/762))
 - A playing video follows when you switch spaces, just as when you leave its tab, if automatic floating is on. Returning to its tab brings it back into the page ([#772](https://github.com/driceroland/Search/issues/772)).
 - Reload Page (⌘R) and Reload Page From Origin (⌥⌘R) reload the page in a peek while it is open, leaving the page underneath alone.
 - A pin square carried across the grid no longer stays floating mid-drag. Picking up a square that isn't the one on screen selects it, and when its page started loading under the hand, or its icon came in, macOS called the drag off without saying so: the square stayed up, shadowed, and the place it had opened among the rows stayed open, so a click there landed on the wrong tab. A drag called off now puts the square (or a row) down where it is, and the next click puts down any drag still left open. Thanks [@introbseso](https://github.com/introbseso) for the clear report ([#846](https://github.com/driceroland/Search/issues/846))
