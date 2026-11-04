@@ -29,6 +29,10 @@ in [ROADMAP.md](ROADMAP.md).
 - Pages in the address field's list and in ⌘K wear their site's icon, as in History and the bookmarks bar: an open tab in place of the grey dot, a page from history or a typed address in place of nothing, a bookmark with its mark moved to the end of the row. Only icons this Mac already keeps, nothing fetched while you type; a site without one wears its letter. Every row's words now start at the same place. ([#822](https://github.com/driceroland/Search/issues/822)) Thanks [@ubeann](https://github.com/ubeann) ([#823](https://github.com/driceroland/Search/pull/823))
 - Tab hover feedback is instant, without a fade, in the column, across the top and with Icons only, including pinned tabs and the title/address swap. Other tab animations are unchanged. Asked for by [@evannotfound](https://github.com/evannotfound) ([#803](https://github.com/driceroland/Search/issues/803))
 
+### Added
+
+- AppleScript can read which space and profile a window is in, by name: `space of front window` and `profile of front window`, so a time tracker or a Raycast action can tell which space the page in front belongs to. Read-only, as the rest is. With a private tab in front, both are missing value, as `current tab` is. Inside `tell application "Search"`, `space` now means the window's space, not a blank, as `tab` does in Safari ([#836](https://github.com/driceroland/Search/issues/836))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
