@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A playing video follows when you switch spaces, just as when you leave its tab, if automatic floating is on. Returning to its tab brings it back into the page ([#772](https://github.com/driceroland/Search/issues/772)).
 - Reload Page (⌘R) and Reload Page From Origin (⌥⌘R) reload the page in a peek while it is open, leaving the page underneath alone.
 - A pin square carried across the grid no longer stays floating mid-drag. Picking up a square that isn't the one on screen selects it, and when its page started loading under the hand, or its icon came in, macOS called the drag off without saying so: the square stayed up, shadowed, and the place it had opened among the rows stayed open, so a click there landed on the wrong tab. A drag called off now puts the square (or a row) down where it is, and the next click puts down any drag still left open. Thanks [@introbseso](https://github.com/introbseso) for the clear report ([#846](https://github.com/driceroland/Search/issues/846))
 - A page whose process dies as it loads no longer reloads itself over and over, or ends on a white page, until Search is quit. It is loaded again twice a minute at most, as the side panel's website already was; after that it says it kept crashing (or kept running out of memory), and Try again loads it fresh. Why each page's process ended, and what was done, goes to the Mac's own log: `log show --last 1h --predicate 'subsystem == "com.officecommun.search" AND category == "Pages"'`

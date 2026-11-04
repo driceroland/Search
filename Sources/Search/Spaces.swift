@@ -13,7 +13,7 @@ import WebKit
 // made by identifier; history and bookmarks are its profile's (see
 // Profiles.swift); the passwords in the keychain, settings and extensions
 // are shared by every space. Switching swaps the row of tabs:
-// the ones left behind are parked, their sound paused, and they sleep
+// the ones left behind are parked, still playing, and they sleep
 // after half an hour as any tab does, pins included unless their site may
 // send notifications (Sleep.swift). ⌃1–⌃9 switch, as in Arc.
 
@@ -325,7 +325,12 @@ extension Browser {
         // Which way the icon at the foot turns over: the way the spaces lie.
         if !makingSpace { spaceStep = to > (spaces.firstIndex { $0.id == spaceID } ?? 0) ? 1 : -1 }
         cancelTabEdit()
-        if floater.showing { land() }
+        let returningVideo = parked[id].map { row in
+            guard let active = row.active else { return false }
+            let visible = prefs.splitView ? row.splits.first { $0.contains(active) }?.tabs ?? [active] : [active]
+            return visible.contains { $0 == floating || $0 == pictured }
+        } ?? false
+        if !returningVideo { leavingSpace() }
         writeSession(now: true)
         for tab in tabs where visibleTabIDs.contains(tab.id) { tab.touch() }
 
@@ -361,6 +366,7 @@ extension Browser {
             showRow([], active: nil)
             restoreSession()
         }
+        returnSpaceVideo()
         editing = active?.isBlank ?? true
         typed = ""
         // A row read from its file just now may hold tabs whose time ran out
@@ -469,7 +475,7 @@ extension Browser {
     func deleteSpace(_ id: UUID) {
         guard id != Space.firstID, id != homeSpaceID, let at = spaces.firstIndex(where: { $0.id == id }) else { return }
         if spaceID == id { switchSpace(to: homeSpaceID) }
-        for tab in parked.removeValue(forKey: id)?.tabs ?? [] { tab.close() }
+        closeParkedSpace(id)
         let shared = spaces[at].sharesSignIns == true
         spaces.remove(at: at)
         Spaces.write(spaces, profile: profileID)
@@ -786,9 +792,35 @@ enum Ask {
 }
 
 extension Browser {
+    /// Close a parked row, bringing any video it owns back first.
+    private func closeParkedSpace(_ id: UUID) {
+        guard let row = parked[id] else { return }
+        if let floating, row.tabs.contains(where: { $0.id == floating }) { land(covering: false) }
+        if let pictured, row.tabs.contains(where: { $0.id == pictured }) { unpicture() }
+        for tab in parked.removeValue(forKey: id)?.tabs ?? [] { tab.close() }
+    }
+
     /// A space deleted in another window: this window's row there goes.
     func forget(space id: UUID) {
-        for tab in parked.removeValue(forKey: id)?.tabs ?? [] { tab.close() }
+        closeParkedSpace(id)
         record.rows[id.uuidString] = nil
+    }
+}
+
+/// One space-triggered lift can be in flight while WebKit answers.
+struct SpaceFloatRequest {
+    private(set) var pending: UUID?
+
+    mutating func begin() -> UUID? {
+        guard pending == nil else { return nil }
+        let id = UUID()
+        pending = id
+        return id
+    }
+
+    @discardableResult mutating func finish(_ id: UUID) -> Bool {
+        guard pending == id else { return false }
+        pending = nil
+        return true
     }
 }
