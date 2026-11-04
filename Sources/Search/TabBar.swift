@@ -1344,6 +1344,12 @@ struct TabMenu: View {
                 }
             }
             Button("Unpin") { browser.unpin(tab) }
+            // Away for good in one go, where Unpin, finding the row and its
+            // × took three (#834); ⇧⌘T brings it back as a tab.
+            Button("Delete") {
+                browser.unpin(tab)
+                browser.close(tab)
+            }
         }
         // A shared pin is in every space already: nowhere to move it.
         if browser.prefs.usesSpaces, !tab.bench, !tab.everywhere,
