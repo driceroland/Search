@@ -14,7 +14,7 @@ final class SettingsIndexTests: XCTestCase {
     private let touched = ["sidebar", "sidebar.position", "tabs.sleep", SleepPace.key, "float.leave", "float.away",
                            "pins.home", "pins.peek", "links.peek", "links.peekClick", "pages.120", "pages.120.mode",
                            "swipe.history", "tabs.address", "links.show", "float.flicks", "spaces", "pins.list",
-                           "newtab.floating"]
+                           "newtab.floating", "search.shift", "search.shiftCustom"]
 
     private func fresh(_ body: () -> Void) {
         let saved = touched.map { ($0, Store.settings.object(forKey: $0)) }
@@ -121,12 +121,36 @@ final class SettingsIndexTests: XCTestCase {
         }
     }
 
+    /// Shift-Return's engine (#848): off until picked, kept when picked,
+    /// and Off takes the key away again rather than writing an empty one.
+    func testShiftEngineOffUntilPicked() {
+        fresh {
+            XCTAssertNil(Preferences().shiftEngine)
+            XCTAssertNil(Store.settings.object(forKey: "search.shift"), "nothing written just for reading it")
+            let prefs = Preferences()
+            prefs.shiftEngine = .google
+            XCTAssertEqual(Store.settings.string(forKey: "search.shift"), "google")
+            XCTAssertEqual(Preferences().shiftEngine, .google)
+            prefs.shiftEngine = .custom
+            prefs.shiftCustom = "https://example.com/?q=%s"
+            let again = Preferences()
+            XCTAssertEqual(again.shiftEngine, .custom)
+            XCTAssertEqual(again.shiftCustom, "https://example.com/?q=%s")
+            prefs.shiftEngine = nil
+            XCTAssertNil(Store.settings.object(forKey: "search.shift"))
+            XCTAssertNil(Preferences().shiftEngine)
+            Store.settings.set("not-an-engine", forKey: "search.shift")
+            XCTAssertNil(Preferences().shiftEngine, "an unknown name reads as off")
+        }
+    }
+
     func testFindByWords() {
         XCTAssertTrue(SettingsIndex.find("vertical tabs").contains { $0.id == "tabs.layout" })
         XCTAssertTrue(SettingsIndex.find("pip").contains { $0.id == "float.own" })
         XCTAssertTrue(SettingsIndex.find("autoplay").contains { $0.id == "media.click" })
         XCTAssertTrue(SettingsIndex.find("spelling").contains { $0.id == "autocorrect" })
         XCTAssertTrue(SettingsIndex.find("split").contains { $0.id == "note.split" })
+        XCTAssertTrue(SettingsIndex.find("shift enter").contains { $0.id == "search.shift" })
         XCTAssertTrue(SettingsIndex.find("").isEmpty)
         XCTAssertTrue(SettingsIndex.find("zzzz nothing").isEmpty)
     }

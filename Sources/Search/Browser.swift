@@ -6039,6 +6039,33 @@ final class Browser: NSObject, ObservableObject {
         typed = ""
     }
 
+    /// Shift-Return, once Settings › Browsing › Shift-Return searches with
+    /// has an engine (#848): exactly what was typed, searched there. The
+    /// row picked, the ending offered, a site in the field and a site
+    /// shortcut are all passed over — the words go as they are, the way a
+    /// search for an address someone typed would. False, with none chosen,
+    /// leaves the key to Return.
+    @discardableResult
+    func submitToShiftEngine() -> Bool {
+        guard let engine = prefs.shiftEngine else { return false }
+        guard let url = Engine.url(for: typed, template: engine.template(custom: prefs.shiftCustom)) else {
+            refusals += 1
+            return true
+        }
+        summoning = false
+        siteChip = nil
+        picked = nil
+        if launching {
+            // The floating new tab, as Return: a tab of its own.
+            open(url, foreground: true, from: active)
+        } else {
+            (active ?? tabs.first)?.go(to: url)
+        }
+        editing = false
+        typed = ""
+        return true
+    }
+
     /// Return. A row picked from the list wins; otherwise what the field was
     /// finishing for you wins; otherwise what you actually typed. If none of
     /// those is a place, nothing happens and the field says so.
