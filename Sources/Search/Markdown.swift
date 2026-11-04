@@ -955,12 +955,12 @@ private struct Inline {
         return html + ">"
     }
 
+    private static let attributeExpression = try! NSRegularExpression(pattern: #"([^\s=>/"']+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>`{}]+))"#)
+
     private static func attributes(_ source: String) -> [String: String] {
         var found: [String: String] = [:]
-        let pattern = #"([^\s=>/"']+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>`{}]+))"#
-        guard let expression = try? NSRegularExpression(pattern: pattern) else { return found }
         let range = NSRange(source.startIndex..., in: source)
-        for match in expression.matches(in: source, range: range) {
+        for match in attributeExpression.matches(in: source, range: range) {
             guard let key = Range(match.range(at: 1), in: source) else { continue }
             let value = [3, 4, 5].lazy.compactMap { Range(match.range(at: $0), in: source) }.first
             found[source[key].lowercased()] = value.map { Markdown.unescape(String(source[$0])) } ?? ""

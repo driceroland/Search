@@ -356,6 +356,39 @@ private func testOneLetterCompletesOnlyTheTopVisitedSite() {
     Checks.expect(history.completion(for: "x.", among: options) == "com", "two letters still complete as before")
 }
 
+@MainActor
+private func testTitlesPathsAndSlipsFillWhatTheAddressLeaves() {
+    Store.use("loose")
+    let history = History()
+    history.record(url("https://news.example-test.org/"), title: "Hacker Daily")
+    history.record(url("https://docs.example-test.org/guide/concurrency"), title: "Swift Guide")
+    for _ in 0..<3 { history.record(url("https://hackerspace.example/"), title: "Space") }
+
+    let byTitle = history.suggestions(for: "daily", limit: 5)
+    Checks.expect(byTitle.contains { $0.url.host() == "news.example-test.org" }, "a word of the title should find its page, got \(byTitle.map(\.key))")
+    let byPath = history.suggestions(for: "concurrency", limit: 5)
+    Checks.expect(byPath.contains { $0.url.path() == "/guide/concurrency" }, "a word of the path should find its page, got \(byPath.map(\.key))")
+    let bySlip = history.suggestions(for: "concurency", limit: 5)
+    Checks.expect(bySlip.contains { $0.url.path() == "/guide/concurrency" }, "a word with a slip should still find it, got \(bySlip.map(\.key))")
+    let words = history.suggestions(for: "guide swift", limit: 5)
+    Checks.expect(words.contains { $0.url.path() == "/guide/concurrency" }, "every word, in any order, got \(words.map(\.key))")
+    Checks.expect(history.suggestions(for: "guide kotlin", limit: 5).allSatisfy { $0.url.path() != "/guide/concurrency" }, "a word found nowhere finds nothing")
+
+    // The address as typed always comes first, whatever the title says.
+    let hacker = history.suggestions(for: "hacker", limit: 5)
+    Checks.expect(hacker.first?.url.host() == "hackerspace.example", "the address as typed should lead, got \(hacker.map(\.key))")
+    Checks.expect(hacker.contains { $0.url.host() == "news.example-test.org" }, "the title's match should still be offered under it")
+    Checks.expect(history.completion(for: "daily", among: byTitle) == nil, "a title's match has no ending to finish")
+
+    Checks.expect(history.suggestions(for: "da", limit: 5).allSatisfy { !$0.title.contains("Daily") }, "two letters match no title")
+    Checks.expect(history.suggestions(for: "dai", limit: 5).contains { $0.title.contains("Daily") }, "three letters do")
+
+    // A name the app knows, typed with a slip, while nothing visited is near.
+    Store.use("loose-known")
+    let github = History().suggestions(for: "githb", limit: 5)
+    Checks.expect(github.contains { $0.key == "github.com" }, "a known site with a slip should be offered, got \(github.map(\.key))")
+}
+
 @main
 private struct HistoryRegression {
     @MainActor
@@ -369,6 +402,7 @@ private struct HistoryRegression {
         testCredentialsNeverReachTheFile()
         testLegacyCreditsMoveToTheOriginTheirPagesUsed()
         testCompletionFinishesWWWSitesWithoutTheirWWW()
+        testTitlesPathsAndSlipsFillWhatTheAddressLeaves()
 
         guard Checks.failures.isEmpty else {
             fputs("\(Checks.failures.count) History regression assertion(s) failed.\n", stderr)

@@ -207,7 +207,14 @@ struct Fold: View {
         .onChange(of: prefs.sidePosition) { _, _ in
             resetPending()
             browser.peeking = false
-            if let bar = Fold.titlebar { Fold.reset(bar, hidden: lightsOff) }
+            // This window's own bar: every window hears the change, and each
+            // had set the front window's by its own fold, the last one
+            // deciding. In full screen the buttons are macOS's to show (see
+            // hideLights); hidden here, they were missing from the bar that
+            // comes down with the menu bar until the column next came out.
+            if let window = browser.window, let bar = window.standardWindowButton(.closeButton)?.superview {
+                Fold.reset(bar, hidden: lightsOff && !window.styleMask.contains(.fullScreen))
+            }
         }
         .onChange(of: prefs.columnWidth) { _, _ in
             if browser.folded { hideLights() }

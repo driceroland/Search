@@ -9,9 +9,10 @@ A click over the column or a peek's dimming goes to what is on top: the
 window asks what is there (`hit`). But the page's own tracking area hears
 every move under them, AppKit tracking by rectangle and not by what is in
 front, and WebKit lit up links, opened hover menus and changed the pointer
-there. A hidden probe's window gets no pointer, so the bench hands the page's
-view what its tracking area would (`pointer`) and says whether the view took
-it as under cover. WebKit lights nothing up in a window that isn't the
+there. Those areas belong to an object of WebKit's, not the page's view, so
+a hidden probe's window, which gets no pointer, has the bench hand each
+area's owner what AppKit would (`pointer`) and say whether the page took it
+as under cover. WebKit lights nothing up in a window that isn't the
 active one, so what it does with a move is seen by hand; a press reaching
 the page is counted by the page.
 """
@@ -63,6 +64,10 @@ def main():
         def downs(): return sv.ev(page, "downs")
         def pointer(x, y, what="move"): return sv.cmd({"do": "pointer", "id": page, "x": x, "y": y, "what": what})
         def heard(x, y): return pointer(x, y)["covered"] is False
+
+        # WebKit's tracking areas hand moves to an object of its own, past
+        # the page's view: each must be behind a gate of ours.
+        t.ok("every tracking area of WebKit's is gated", pointer(600, 400)["ungated"] == 0)
 
         # Uncovered, the page hears the pointer, as ever.
         t.ok("uncovered: the page hears a move", heard(600, 400))

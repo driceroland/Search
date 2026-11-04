@@ -64,6 +64,7 @@ private struct PageText {
     let searchable: String
     let host: String
     let homepage: Bool
+    let findable: String
 }
 
 @MainActor
@@ -139,7 +140,7 @@ final class History: ObservableObject {
         ["http", "https"].contains(url.scheme?.lowercased() ?? "")
     }
 
-    private static func pageText(for url: URL) -> PageText {
+    private static func pageText(for url: URL, title: String = "") -> PageText {
         var shownURL = url
         if var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) {
             parts.fragment = nil
@@ -154,7 +155,8 @@ final class History: ObservableObject {
             address: address,
             searchable: searchable,
             host: bareHost,
-            homepage: path.isEmpty || path == "/"
+            homepage: path.isEmpty || path == "/",
+            findable: title.lowercased() + " " + searchable
         )
     }
 
@@ -169,7 +171,7 @@ final class History: ObservableObject {
 
     private func remember(_ visit: Visit, url: URL? = nil) {
         guard let page = url ?? URL(string: visit.url) else { return }
-        let text = History.pageText(for: page)
+        let text = History.pageText(for: page, title: visit.title)
         pageText[visit.key] = text
         if !text.host.isEmpty { visitedHosts.insert(text.host) }
     }
@@ -248,6 +250,7 @@ final class History: ObservableObject {
             if last > seen.last { seen.last = last }
             if seen.title.isEmpty { seen.title = title }
             visits[key] = seen
+            remember(seen, url: url)
         } else {
             let visit = Visit(url: url.absoluteString, key: key, title: title, count: min(max(count, 0), History.mostVisits), last: last)
             visits[key] = visit
@@ -264,6 +267,7 @@ final class History: ObservableObject {
         guard !title.isEmpty, var seen = visits[key], seen.title != title else { return }
         seen.title = title
         visits[key] = seen
+        remember(seen)
         save()
     }
 
@@ -383,6 +387,30 @@ final class History: ObservableObject {
             guard let rank = rank(known.0, against: needle, ascii: ascii) else { continue }
             offer(known.0, rank) {
                 URL(string: "https://" + known.0).map { Suggestion(key: known.0, title: known.1, url: $0, kind: .known) }
+            }
+        }
+
+        // Room left: look in titles and whole addresses, allowing typos
+        // (#762). Always below exact matches, and only from three letters,
+        // since "ui" is in "build", "guide" and nearly every page.
+        guard best.count < limit, needle.count >= 3 else { return best.map(\.0) }
+        let words = needle.split(whereSeparator: \.isWhitespace).map { Array($0.utf8) }
+        for visit in visits.values {
+            guard let text = pageText[visit.key],
+                  rank(text.searchable, against: needle, ascii: ascii) == nil,
+                  let loose = Fuzzy.match(words, in: text.findable)
+            else { continue }
+            let often = frecency(visit, now: now)
+            offer(text.address, Double(loose) - 6 + often / (often + 1)) {
+                URL(string: visit.url).map { Suggestion(key: text.address, title: visit.title, url: $0, kind: .visited) }
+            }
+        }
+        for known in History.knownText where !visitedHosts.contains(known.host) {
+            guard rank(known.host, against: needle, ascii: ascii) == nil,
+                  let loose = Fuzzy.match(words, in: known.findable)
+            else { continue }
+            offer(known.host, Double(loose) - 8) {
+                URL(string: "https://" + known.host).map { Suggestion(key: known.host, title: known.title, url: $0, kind: .known) }
             }
         }
 
@@ -636,4 +664,9 @@ final class History: ObservableObject {
         ("wikipedia.org", "Wikipedia"), ("deepl.com", "DeepL"), ("loom.com", "Loom"),
         ("amazon.fr", "Amazon"), ("leboncoin.fr", "leboncoin"), ("lemonde.fr", "Le Monde"),
     ]
+
+    /// The same, prepared once for the looser search.
+    private static let knownText = known.map { host, title in
+        (host: host, title: title, findable: title.lowercased() + " " + host)
+    }
 }

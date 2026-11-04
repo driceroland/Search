@@ -67,7 +67,10 @@ P2 = top.server_port
 t = sv.T()
 try:
     sv.setup()
+    # Passkeys turned on under a build without the entitlement: an ad-hoc build
+    # keeps them, an entitled one turns them on anyway (Preferences.init).
     subprocess.run(["defaults", "write", sv.SUITE, "passkeys", "-bool", "true"])
+    subprocess.run(["defaults", "write", sv.SUITE, "passkeys.for", "-bool", "false"])
     sv.launch()
     before = sv.cmd({"do": "probe"}).get("passkeyAsks", 0)
     tid = sv.cmd({"do": "open", "url": f"http://localhost:{P2}/top?f=localhost"})["id"]

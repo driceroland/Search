@@ -228,7 +228,7 @@ struct ExtensionsPage: View {
                 parts.append("shows in new tabs")
             }
             if context?.hasAccessToPrivateData == true { parts.append("allowed in private tabs") }
-            if let errors = context?.errors, !errors.isEmpty { parts.append("\(errors.count) warning\(errors.count == 1 ? "" : "s")") }
+            if let errors = context.map(Extensions.errors(of:)), !errors.isEmpty { parts.append("\(errors.count) warning\(errors.count == 1 ? "" : "s")") }
             return parts.joined(separator: " · ")
         }
     }

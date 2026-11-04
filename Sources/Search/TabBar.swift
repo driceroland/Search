@@ -125,7 +125,7 @@ struct TabBar: View {
                             page(spaceAt - 1, in: geo.size.width, pill: above)
                                 .offset(y: browser.spaceSwipe - Metrics.strip)
                         }
-                        if browser.spaceSwipe < 0, spaceAt < browser.spaces.count {
+                        if browser.spaceSwipe < 0, browser.drawsPage(after: spaceAt) {
                             page(spaceAt + 1, in: geo.size.width, pill: below)
                                 .offset(y: browser.spaceSwipe + Metrics.strip)
                         }
@@ -352,7 +352,7 @@ struct TabBar: View {
         } else {
             TabPill(browser: browser, prefs: browser.prefs, tab: tab,
                     live: tab.id == activeID, width: width, room: room, pill: pill,
-                    close: interactive ? { browser.close(tab) } : {})
+                    close: interactive ? { browser.closeTab(tab) } : {})
         }
     }
 
@@ -725,7 +725,7 @@ private struct TabPill: View {
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
         .help(pinned || compact ? tab.label : "")
-        .animation(Motion.quick, value: hovering)
+        .animation(nil, value: hovering)
         .animation(Motion.glide, value: editing)
         .animation(Motion.glide, value: tab.pin)
         .onChange(of: browser.refusals) { _, _ in
@@ -853,7 +853,7 @@ private struct TabPill: View {
                             .frame(width: 30, height: 28)
                     }
                 }
-                .animation(Motion.quick, value: hovering)
+                .animation(nil, value: hovering)
                 .animation(Motion.quick, value: tab.loading)
             }
         }
@@ -957,6 +957,10 @@ struct Carried: ViewModifier {
     @State private var from = 0
     @State private var travel: CGFloat = 0
     @State private var reordered = false
+    /// True while the drag lasts, and put back by SwiftUI when it is called
+    /// off as well as when it ends (see CarryGuard).
+    @GestureState private var carrying = false
+    @State private var ticket = UUID()
 
     func body(content: Content) -> some View {
         // What it has travelled, less the ground its new place has already
@@ -984,10 +988,12 @@ struct Carried: ViewModifier {
             .opacity(held && faded ? 0.4 : 1)
             .gesture(
                 DragGesture(minimumDistance: 5, coordinateSpace: .named(space))
+                    .updating($carrying) { _, carrying, _ in carrying = true }
                     .onChanged { value in
                         if !held {
                             held = true
                             from = index
+                            CarryGuard.open(ticket, end: callOff)
                         }
                         travel = vertical ? value.translation.height : value.translation.width
                         // Asked every move, so the block it left lets go
@@ -1009,6 +1015,9 @@ struct Carried: ViewModifier {
                         }
                     }
                     .onEnded { value in
+                        // Already put down (see callOff): a press that
+                        // came after can't be where it was let go.
+                        guard CarryGuard.close(ticket) else { return }
                         if let browser, let tab, browser.prefs.splitView {
                             let finished = TabDrag.shared.finish(browser: browser, tab: tab)
                             let source = finished.source
@@ -1047,6 +1056,7 @@ struct Carried: ViewModifier {
                         }
                     }
             )
+            .onChange(of: carrying) { _, now in if !now { callOff() } }
             .onReceive(TabDrag.shared.$cancelledID) { id in
                 guard id == tab?.id, held else { return }
                 _ = land?(nil)
@@ -1055,6 +1065,72 @@ struct Carried: ViewModifier {
                 travel = 0
                 reordered = false
             }
+    }
+
+    /// The drag taken away without onEnded (see CarryGuard): put down where
+    /// it is, nothing dropped across, the split it may have been showing
+    /// let go of. After a real end, held is already false and this is nothing.
+    private func callOff() {
+        CarryGuard.close(ticket)
+        guard held else { return }
+        if let browser, let tab, browser.prefs.splitView { TabDrag.shared.callOff(tab) }
+        _ = land?(nil)
+        withAnimation(Motion.settle) {
+            held = false
+            travel = 0
+            reordered = false
+        }
+    }
+}
+
+/// A tab or pin carried by hand (Carried, PinCarried) that never hears the
+/// drag end (#846). SwiftUI calls a drag off, without a word to onEnded,
+/// when what is drawn in the carried view changes under the hand: a square
+/// whose page starts loading as the press that picks it up selects it (the
+/// ring in place of its icon, a second or so in), or whose icon arrives.
+/// The square kept its held state and stayed floating mid-drag, shadowed,
+/// the block it was over still showing where it would land. Each carry now
+/// ends twice over: when SwiftUI puts its @GestureState back, which it does
+/// on a call-off too, and, should even that not come, at the next press of
+/// the button anywhere in Search, which can't go down again before the
+/// carry it was holding is over. A row is carried the same way and guarded
+/// the same way.
+@MainActor
+enum CarryGuard {
+    private static var carries: [UUID: () -> Void] = [:]
+    private static var monitor: Any?
+
+    /// Carries under way, for the tests.
+    static var count: Int { carries.count }
+
+    static func open(_ id: UUID, end: @escaping () -> Void) {
+        carries[id] = end
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            MainActor.assumeIsolated { CarryGuard.endAll() }
+            return event
+        }
+    }
+
+    /// True when it was still open: not already ended here.
+    @discardableResult
+    static func close(_ id: UUID) -> Bool {
+        guard carries.removeValue(forKey: id) != nil else { return false }
+        if carries.isEmpty { stop() }
+        return true
+    }
+
+    /// Every carry still open, ended where it is.
+    static func endAll() {
+        let stale = carries.values
+        carries = [:]
+        stop()
+        for end in stale { end() }
+    }
+
+    private static func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
     }
 }
 
@@ -1268,6 +1344,12 @@ struct TabMenu: View {
                 }
             }
             Button("Unpin") { browser.unpin(tab) }
+            // Away for good in one go, where Unpin, finding the row and its
+            // × took three (#834); ⇧⌘T brings it back as a tab.
+            Button("Delete") {
+                browser.unpin(tab)
+                browser.close(tab)
+            }
         }
         // A shared pin is in every space already: nowhere to move it.
         if browser.prefs.usesSpaces, !tab.bench, !tab.everywhere,
@@ -1376,7 +1458,14 @@ struct TabMenu: View {
         }
         .disabled(browser.awake(because: tab) != nil)
         Divider()
-        Button("Close Tab", action: close)
+        // Right-clicked among tabs picked in the column: all of them, as ⌘W
+        // closes them.
+        let picked = browser.selectedTabIDs.contains(tab.id) ? browser.visibleSelectedTabCount : 1
+        if picked > 1 {
+            Button("Close \(picked) Tabs") { browser.closePickedTabs() }
+        } else {
+            Button("Close Tab", action: close)
+        }
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }
             .disabled(browser.tabs.count < 2)
         Button(browser.prefs.sidebar ? "Close Tabs Below" : "Close Tabs to the Right") { browser.closeTabsBelow(tab) }
