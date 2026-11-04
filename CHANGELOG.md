@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- AppleScript can read which space and profile a window is in, by name: `space of front window` and `profile of front window`, so a time tracker or a Raycast action can tell which space the page in front belongs to. Read-only, as the rest is. With a private tab in front, both are missing value, as `current tab` is. Inside `tell application "Search"`, `space` now means the window's space, not a blank, as `tab` does in Safari ([#836](https://github.com/driceroland/Search/issues/836))
+
 ### Fixed
 
 - An extension's worker waits on one round trip fewer when it lists its open pages, reads its permissions, or (in a user-script manager) puts its scripts back as it starts. Each asked two questions one after the other; both now go out at once. Translate Page asks for the page's language while it reads the page's words, not after.
