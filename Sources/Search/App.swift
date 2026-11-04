@@ -348,7 +348,7 @@ struct SearchApp: App {
                 Divider()
                 Button("Show History…") { browser.recalling = true }
                     .shortcut("history.show")
-                Button("Downloads…") { browser.hoarding = true }
+                Button("Downloads…") { browser.showDownloads() }
                     .shortcut("history.downloads")
                 Divider()
                 Button("Clear Browsing Data…") { browser.clearBrowsingData() }
@@ -1595,7 +1595,7 @@ struct ContentView: View {
         case "y" where !shifted:
             browser.recalling = true
         case "j" where shifted:
-            browser.hoarding = true
+            browser.showDownloads()
         case "v" where shifted:
             // In a text field this key is paste without formatting — a Google
             // Doc, a form, the address field. It only means Paste and Go when

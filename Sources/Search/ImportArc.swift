@@ -24,7 +24,7 @@ struct ArcSidebar: Equatable {
         var name: String
         /// Arc's own, kept for the day it is wanted as it was.
         var emoji: String?
-        /// One of Spaces.icons, from Arc.symbol(emoji:name:).
+        /// One of Spaces.icons, from Arc.symbol(emoji:arcIcon:name:).
         var symbol: String
         /// The Chromium profile folder the space signs in with: "Default",
         /// or another's ("Profile 1"), which is a space with sign-ins of
@@ -128,10 +128,12 @@ enum Arc {
             let profile = profileName(space["profile"])
             guard inProfile(profile) else { continue }
             let name = named(space["title"] as? String) ?? "Space"
-            let emoji = ((space["customInfo"] as? [String: Any])?["iconType"] as? [String: Any])?["emoji_v2"] as? String
+            let iconType = (space["customInfo"] as? [String: Any])?["iconType"] as? [String: Any]
+            let emoji = iconType?["emoji_v2"] as? String
+            let arcIcon = iconType?["icon"] as? String
             let pinned = container("pinned", in: space["newContainerIDs"] as? [Any])
                 ?? container("pinned", in: space["containerIDs"] as? [Any])
-            spaces.append(.init(name: name, emoji: emoji, symbol: symbol(emoji: emoji, name: name), profile: profile,
+            spaces.append(.init(name: name, emoji: emoji, symbol: symbol(emoji: emoji, arcIcon: arcIcon, name: name), profile: profile,
                                 pinned: pinned.map { nodes(under: $0, depth: 0) } ?? []))
         }
 
@@ -199,7 +201,9 @@ enum Arc {
 
     /// Arc's emoji as the nearest of Search's space pictures (Spaces.icons),
     /// then the space's name, then a briefcase. The one table for both.
-    static func symbol(emoji: String?, name: String) -> String {
+    static func symbol(emoji: String?, arcIcon: String? = nil, name: String) -> String {
+        // One of Arc's own icons, {"icon": "bulb"}, in place of an emoji.
+        if let arcIcon, let symbol = byArcIcon[arcIcon.lowercased()] { return symbol }
         if let emoji {
             // The same emoji with or without the mark asking for its
             // coloured form (U+FE0F), which Arc writes on some.
@@ -215,6 +219,17 @@ enum Arc {
         }
         return "briefcase"
     }
+
+    /// Arc's built-in space icons, by the name its sidebar file gives them
+    /// (#832). Those not here fall back to the space's name.
+    private static let byArcIcon: [String: String] = [
+        "construction": "chevron.left.forwardslash.chevron.right",
+        "people": "heart",
+        "star": "sparkles",
+        "bulb": "lightbulb",
+        "leaf": "leaf",
+        "pizza": "cup.and.saucer",
+    ]
 
     private static let byEmoji: [(String, [String])] = [
         ("briefcase", ["💼", "👔", "📊", "📈", "🗂"]),

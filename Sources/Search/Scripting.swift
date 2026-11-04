@@ -1,14 +1,15 @@
 import AppKit
 
 // AppleScript, read-only, in Safari's words (#232): a window's `tabs` and
-// its `current tab`, and each tab's `URL` and `name`. Search.sdef says so,
-// and build.sh puts it in the app. Nothing here changes anything, runs
-// anything in a page, or opens or closes a tab.
+// its `current tab`, and each tab's `URL` and `name`; and the names of the
+// window's `space` and `profile` (#836). Search.sdef says so, and build.sh
+// puts it in the app. Nothing here changes anything, runs anything in a
+// page, or opens or closes a tab.
 //
 // Only an app allowed in System Settings › Privacy & Security › Automation
 // gets this far. Private tabs are never shown to it: they are left out of
-// the list, and a window whose tab in front is private has no current tab
-// (missing value).
+// the list, and a window whose tab in front is private has no current tab,
+// space or profile (missing value).
 
 /// A tab as a script sees it: where its page is and what it's called.
 @MainActor
@@ -63,10 +64,21 @@ extension NSWindow {
 
     /// The tab in front, unless it is private.
     @MainActor @objc var scriptCurrentTab: ScriptTab? {
-        guard let active = Browsers.browser(for: self)?.active, !active.shy,
-              let index = Scripting.shown(in: self).firstIndex(where: { $0 === active })
-        else { return nil }
-        return ScriptTab(active, index: index, in: self)
+        Scripting.front(of: self).map { ScriptTab($0.tab, index: $0.index, in: self) }
+    }
+
+    /// The name of the space the window shows. With spaces off, that is its
+    /// profile's first space, whose tabs and sign-ins the window has. Read
+    /// from `Spaces.known`: a popup window never refreshes its own list, so
+    /// it would keep a space's old name after a rename.
+    @MainActor @objc var scriptSpace: String? {
+        Scripting.front(of: self).map { Spaces.known[$0.browser.spaceID]?.name ?? $0.browser.space.name }
+    }
+
+    /// The name of the profile the window is in: Personal's, while it is the
+    /// only one.
+    @MainActor @objc var scriptProfile: String? {
+        Scripting.front(of: self).map { Profiles.shared.profile($0.browser.profileID).name }
     }
 }
 
@@ -76,5 +88,15 @@ enum Scripting {
     /// private ones.
     static func shown(in window: NSWindow) -> [Tab] {
         Browsers.browser(for: window)?.tabs.filter { !$0.shy } ?? []
+    }
+
+    /// A window's browser and its tab in front, with that tab's place among
+    /// the ones shown; nil for a window that isn't a browser's, or whose tab
+    /// in front is private, so `space` and `profile` never reveal one (#836).
+    static func front(of window: NSWindow) -> (browser: Browser, tab: Tab, index: Int)? {
+        guard let browser = Browsers.browser(for: window), let active = browser.active, !active.shy,
+              let index = shown(in: window).firstIndex(where: { $0 === active })
+        else { return nil }
+        return (browser, active, index)
     }
 }

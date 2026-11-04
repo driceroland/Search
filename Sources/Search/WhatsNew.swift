@@ -35,6 +35,9 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Close goes back", detail: "Closing the tab you're on takes you to the one you were on before it, as ⌃Tab would.",
+               since: "1.0.8", get: { $0.closeGoesBack }, set: { $0.closeGoesBack = $1 }),
+
         Toggle(title: "Your Apple passwords", detail: "Accounts from Apple's Passwords app under the sign-in field, with a code from your Mac.",
                since: "1.0.7", get: { $0.applePasswords }, set: { $0.applePasswords = $1 }),
         Toggle(title: "Ask before quitting", detail: "⌘Q asks first, so a slip doesn't close every window.",
@@ -92,6 +95,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.8"),
         Release(version: "1.0.7"),
         Release(version: "1.0.6"),
         Release(version: "1.0.5"),
@@ -144,6 +148,29 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.8", date: "2 November 2026",
+            headline: "Your fixes, by the dozen, and a few small things.",
+            new: [
+                "Open Link in Split View, in a link's right-click menu.",
+                "Close Tabs Below, beside Close Other Tabs.",
+                "File › Save Page As… keeps a page as one web archive.",
+                "Closing a tab can take you back to the one you were on before, if you turn it on.",
+            ],
+            better: [
+                "Bookmarks in the address field as you type, by name or address.",
+                "Links opened behind a page go after it in the order you clicked them.",
+                "⌘W closes every tab picked in the column; a tab in a group is put away rather than closed.",
+                "Closing the last window lets its pages sleep, as Safari and Chrome do.",
+            ],
+            fixed: [
+                "Typing in a new tab no longer stops with a beep after the first letters.",
+                "The page under a peek no longer reacts to the pointer.",
+                "1Password no longer quits Search on macOS 15; Claude's and ChatGPT's side panels and Vimium C work again.",
+                "Picture in picture's button takes you back to the video, and a paused full-screen video takes clicks.",
+                "And many more, most from your messages and pull requests.",
+            ]
+        ),
         Notes(
             version: "1.0.7", date: "25 October 2026",
             headline: "Settings as a page, profiles, page translation, Apple Passwords and YouTube without ads.",

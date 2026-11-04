@@ -189,11 +189,11 @@ final class PageTranslator {
         report = ["target": PageTranslator.code(target), "units": 0, "parts": 0, "requests": 0, "sent": 0,
                   "cached": 0, "applied": 0, "kept": 0, "chars": 0, "frames": 0, "rounds": 0, "languages": [String: Int]()]
         do {
+            async let hint = try? web.callAsyncJavaScript("return document.documentElement.lang || ''", contentWorld: Web.world) as? String
             let first = try await collect(nil, injecting: true)
             report["collectMs"] = ms()
-            let hint = try? await web.callAsyncJavaScript("return document.documentElement.lang || ''", contentWorld: Web.world) as? String
             let sample = String(first.prefix(400).map(\.plain).joined(separator: "\n").prefix(4000))
-            guard let from = PageTranslator.detect(sample, hint: hint) else {
+            guard let from = PageTranslator.detect(sample, hint: await hint) else {
                 throw Failure("Search couldn't tell which language this page is in")
             }
             source = from
@@ -495,8 +495,13 @@ final class PageTranslator {
         // SDK 26.4 and later default to Apple Intelligence's higher-fidelity
         // model. Keep page translation responsive as it was with older SDKs,
         // while retaining the newer model for pairs the fast one cannot do.
+        #if compiler(>=6.3)
         var fast = false
+        #else
+        let fast = false
+        #endif
         let status: LanguageAvailability.Status
+        #if compiler(>=6.3)
         if #available(macOS 26.4, *) {
             let quick = await LanguageAvailability(preferredStrategy: .lowLatency).status(from: from, to: target)
             fast = quick != .unsupported
@@ -504,6 +509,9 @@ final class PageTranslator {
         } else {
             status = await LanguageAvailability().status(from: from, to: target)
         }
+        #else
+        status = await LanguageAvailability().status(from: from, to: target)
+        #endif
         if main { report["availability"] = "\(status)" }
         switch status {
         case .unsupported:
@@ -512,11 +520,13 @@ final class PageTranslator {
             }
             return nil
         case .installed:
+            #if compiler(>=6.3)
             if #available(macOS 26.4, *) {
                 let session = TranslationSession(installedSource: from, target: target,
                                                  preferredStrategy: fast ? .lowLatency : .highFidelity)
                 return { strings in try await PageTranslator.translate(strings, with: session) }
             }
+            #endif
             if #available(macOS 26, *) {
                 let session = TranslationSession(installedSource: from, target: target)
                 return { strings in try await PageTranslator.translate(strings, with: session) }
@@ -830,11 +840,15 @@ private final class SessionLease: Closable {
     static func open(from: Locale.Language, to: Locale.Language, fast: Bool, in content: NSView) async throws -> SessionLease {
         let lease = SessionLease()
         let configuration: TranslationSession.Configuration
+        #if compiler(>=6.3)
         if #available(macOS 26.4, *) {
             configuration = .init(source: from, target: to, preferredStrategy: fast ? .lowLatency : .highFidelity)
         } else {
             configuration = .init(source: from, target: to)
         }
+        #else
+        configuration = .init(source: from, target: to)
+        #endif
         let session: TranslationSession = await withCheckedContinuation { got in
             var given = false
             let view = NSHostingView(rootView: SessionHost(configuration: configuration) { session in

@@ -1415,6 +1415,23 @@ final class Browser: NSObject, ObservableObject {
         get { pageTab(.downloads) != nil }
         set { if newValue { show(InternalPage(.downloads)) } else { putAway(.downloads) } }
     }
+    /// Downloads as a card floating by its button (see DownloadsFloat).
+    @Published var downloadsHanging = false
+
+    /// Downloads, wherever Settings › Downloads › Open Downloads says.
+    /// `toggles`: the button, which closes the list or the panel it opened,
+    /// as a second press on an extension's button does; ⇧⌘J and the menu
+    /// only ever show, as they do the tab.
+    func showDownloads(toggles: Bool = false) {
+        switch prefs.downloadsOpening {
+        case .tab:
+            hoarding = true
+        case .popover:
+            downloadsHanging = toggles ? !downloadsHanging : true
+        case .panel:
+            toggleDownloadsPanel(closes: toggles)
+        }
+    }
     @Published var recallHunt = ""
 
     /// History › Clear Browsing Data…, from the menu, its shortcut, or
@@ -2084,8 +2101,16 @@ final class Browser: NSObject, ObservableObject {
     var shut = false {
         didSet { if oldValue, !shut { wakeShown() } }
     }
+    /// Out of sight behind another profile's window that has taken its
+    /// place, with profiles in one window (see OneWindow.swift): kept as it
+    /// is, its pages loaded, until a space of its profile is chosen again.
+    var tucked = false
+    /// The merged window it is one of, with profiles in one window: the
+    /// windows of different profiles that take turns in one place.
+    var mergeID: UUID?
     /// Its window is there to be seen — on screen, or behind a hidden app.
-    var isOpen: Bool { window != nil && !shut }
+    /// Not one tucked behind another profile's.
+    var isOpen: Bool { window != nil && !shut && !tucked }
     /// Its window fills the screen. macOS takes the window's buttons away
     /// then, so the room kept for them at the top goes too (idea 184).
     @Published var fullScreen = false
@@ -2275,8 +2300,11 @@ final class Browser: NSObject, ObservableObject {
             // meant to dismiss it.
             let came = self.floating
             self.land()
-            if let came, let tab = self.tabs.first(where: { $0.id == came }) {
-                self.select(tab)
+            if let came {
+                if let space = self.parked.first(where: { $0.value.tabs.contains { $0.id == came } })?.key {
+                    self.switchSpace(to: space)
+                }
+                if let tab = self.tabs.first(where: { $0.id == came }) { self.select(tab) }
             }
             // Never a test run's: a probe started hidden stays off every screen.
             guard !Store.testing else { return }
@@ -2285,13 +2313,13 @@ final class Browser: NSObject, ObservableObject {
         }
         floater.onSkip = { [weak self] seconds in
             guard let self, let id = self.floating,
-                  let tab = self.tabs.first(where: { $0.id == id })
+                  let tab = (self.tabs + self.parkedTabs).first(where: { $0.id == id })
             else { return }
             tab.web.evaluateInSearch(Isolate.skip(seconds))
         }
         floater.onProgress = { [weak self] answer in
             guard let self, let id = self.floating,
-                  let tab = self.tabs.first(where: { $0.id == id })
+                  let tab = (self.tabs + self.parkedTabs).first(where: { $0.id == id })
             else { return }
             tab.web.evaluateInSearch(Isolate.where_) { found in
                 MainActor.assumeIsolated {
@@ -2305,7 +2333,7 @@ final class Browser: NSObject, ObservableObject {
         }
         floater.onPlayPause = { [weak self] answer in
             guard let self, let id = self.floating,
-                  let tab = self.tabs.first(where: { $0.id == id })
+                  let tab = (self.tabs + self.parkedTabs).first(where: { $0.id == id })
             else { return }
             tab.web.evaluateInSearch(Isolate.toggle) { playing in
                 MainActor.assumeIsolated { answer((playing as? Bool) ?? true) }
@@ -3055,6 +3083,7 @@ final class Browser: NSObject, ObservableObject {
         heldDialogs = [:]
         dropQuestions()
         if floating != nil { land(covering: false) }
+        if pictured != nil { unpicture() }
         if peekTab != nil { closePeek() }
         for tab in tabs + parkedTabs { tab.close() }
         parked = [:]
@@ -3753,8 +3782,12 @@ final class Browser: NSObject, ObservableObject {
             // a tab, so one that was never built yet actually wakes up
             // instead of sitting there blank until a manual reload. Asked
             // for, the tab viewed before this one comes first, as ⌃Tab
-            // would take you there.
-            let before = prefs.closeGoesBack ? tabBefore(tab) : nil
+            // would take you there. Search's own pages go back whatever the
+            // switch says: History or Settings is called up over what you
+            // were doing, as their cards were before 1.0.7. Closing one
+            // shouldn't leave you on its neighbour, or on the last tab when
+            // ⌘Y brought forward a History tab kept at the end of the row.
+            let before = prefs.closeGoesBack || tab.page != nil ? tabBefore(tab) : nil
             select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
         }
         rememberSession()
@@ -5244,9 +5277,35 @@ final class Browser: NSObject, ObservableObject {
 
     /// Stepping away from a tab. A video you were watching does not stop
     /// existing because you went to look something up.
-    private func leaving() {
-        guard prefs.floatsOnLeave else { return }
-        lift(active, quietly: true, otherwise: otherPane)
+    private func leaving(spaceRequest: UUID? = nil) {
+        guard prefs.floatsOnLeave, spaceFloat.pending == nil || spaceFloat.pending == spaceRequest else { return }
+        lift(active, quietly: true, otherwise: otherPane, spaceRequest: spaceRequest)
+    }
+
+    /// A space changes its whole row at once, so remember the asynchronous
+    /// request until WebKit answers, even if the row has since come back.
+    var spaceFloat = SpaceFloatRequest()
+
+    func leavingSpace() {
+        guard prefs.floatsOnLeave, !floater.showing, pictured == nil,
+              let request = spaceFloat.begin() else { return }
+        leaving(spaceRequest: request)
+    }
+
+    func returnSpaceVideo() {
+        if let id = floating, visibleTabIDs.contains(id) { land() }
+        if let id = pictured, visibleTabIDs.contains(id) { unpicture() }
+    }
+
+    private func finishSpaceFloat(_ request: UUID?, tab: Tab, system: Bool) -> Bool {
+        guard let request else { return true }
+        let current = spaceFloat.finish(request)
+        guard current, (tabs + parkedTabs).contains(where: { $0 === tab }),
+              !visibleTabIDs.contains(tab.id), !floater.showing, pictured == nil else {
+            tab.built?.evaluateInSearch(system ? NativePiP.off : Isolate.off)
+            return false
+        }
+        return true
     }
 
     /// With a pair on screen, its other page: what floats when the focused
@@ -5262,7 +5321,7 @@ final class Browser: NSObject, ObservableObject {
     private var liftedAway = false
 
     func appLeft() {
-        guard prefs.floatsAway, Browsers.front == nil || Browsers.front === self else { return }
+        guard prefs.floatsAway, spaceFloat.pending == nil, Browsers.front == nil || Browsers.front === self else { return }
         liftedAway = !floater.showing && pictured == nil
         lift(active, quietly: true, otherwise: otherPane)
     }
@@ -5276,6 +5335,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘⇧P, for lifting one out by hand.
     func toggleFloat() {
+        guard spaceFloat.pending == nil else { return }
         if floater.showing {
             land()
             return
@@ -5294,24 +5354,36 @@ final class Browser: NSObject, ObservableObject {
 
     /// The video playing in `tab` into picture in picture (NativePiP).
     /// `toggle`: ⇧⌘P, which also brings one back.
-    private func picture(_ tab: Tab?, quietly: Bool, toggle: Bool = false, otherwise: Tab? = nil) {
+    private func picture(_ tab: Tab?, quietly: Bool, toggle: Bool = false, otherwise: Tab? = nil, spaceRequest: UUID? = nil) {
         guard let tab, !tab.isBlank, !tab.asleep, tab.web.fullscreenState == .notInFullscreen else {
-            if let otherwise { picture(otherwise, quietly: quietly, toggle: toggle) }
+            if let otherwise { picture(otherwise, quietly: quietly, toggle: toggle, spaceRequest: spaceRequest) }
+            else if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             return
         }
         if quietly, !Players.knows(tab.address) || tab.pageAddress?.host().map(Grounded.holds) == true {
-            if let otherwise { picture(otherwise, quietly: quietly, toggle: toggle) }
+            if let otherwise { picture(otherwise, quietly: quietly, toggle: toggle, spaceRequest: spaceRequest) }
+            else if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             return
         }
         tab.web.evaluateInSearch(NativePiP.script(toggle: toggle)) { [weak self, weak tab] answer in
             MainActor.assumeIsolated {
-                guard let self, let tab else { return }
+                guard let self else { return }
+                guard let tab else {
+                    if let spaceRequest { _ = self.spaceFloat.finish(spaceRequest) }
+                    return
+                }
                 switch answer as? String {
-                case "in": self.pictured = tab.id
-                case "out": if self.pictured == tab.id { self.pictured = nil }
-                case "refused": if !quietly { self.announce("This page keeps its video to itself") }
+                case "in":
+                    if self.finishSpaceFloat(spaceRequest, tab: tab, system: true) { self.pictured = tab.id }
+                case "out":
+                    if let spaceRequest { _ = self.spaceFloat.finish(spaceRequest) }
+                    if self.pictured == tab.id { self.pictured = nil }
+                case "refused":
+                    if let spaceRequest { _ = self.spaceFloat.finish(spaceRequest) }
+                    if !quietly { self.announce("This page keeps its video to itself") }
                 default:
-                    if let otherwise { return self.picture(otherwise, quietly: quietly, toggle: toggle) }
+                    if let otherwise { return self.picture(otherwise, quietly: quietly, toggle: toggle, spaceRequest: spaceRequest) }
+                    if let spaceRequest { _ = self.spaceFloat.finish(spaceRequest) }
                     if !quietly { self.announce("Nothing is playing here") }
                 }
             }
@@ -5322,7 +5394,7 @@ final class Browser: NSObject, ObservableObject {
     func unpicture() {
         guard let id = pictured else { return }
         pictured = nil
-        tabs.first { $0.id == id }?.web.evaluateInSearch(NativePiP.off)
+        (tabs + parkedTabs).first { $0.id == id }?.web.evaluateInSearch(NativePiP.off)
     }
 
     /// The button at the top right of macOS's picture in picture, back to the
@@ -5344,25 +5416,30 @@ final class Browser: NSObject, ObservableObject {
     /// moves house — into a small window that stays above everything.
     /// `otherwise`: the other page of a pair, tried when this one has
     /// nothing playing.
-    private func lift(_ tab: Tab?, quietly: Bool, otherwise: Tab? = nil) {
-        if prefs.floatStyle == .system { return picture(tab, quietly: quietly, otherwise: otherwise) }
+    private func lift(_ tab: Tab?, quietly: Bool, otherwise: Tab? = nil, spaceRequest: UUID? = nil) {
+        if prefs.floatStyle == .system { return picture(tab, quietly: quietly, otherwise: otherwise, spaceRequest: spaceRequest) }
         // A tab just put down with ⌘W has no page to lift a video out of, and
         // asking it would only build an empty view to ask.
         guard let tab, tab.isWeb, !tab.asleep, !floater.showing else {
-            if let otherwise { lift(otherwise, quietly: quietly) }
+            if let otherwise { lift(otherwise, quietly: quietly, spaceRequest: spaceRequest) }
+            else if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             return
         }
         // A video filling the screen stays in its own space, as in Safari.
         // Its page is lent to WebKit's full-screen window, and moving it out
         // into the floating one left that window up, empty and black, to
         // come back to.
-        guard tab.web.fullscreenState == .notInFullscreen else { return }
+        guard tab.web.fullscreenState == .notInFullscreen else {
+            if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
+            return
+        }
         // On its own, only from a site whose video is the point of the site.
         // A hero background on a studio's home page is a video too, and it
         // followed people around the desktop. Nor from one you grounded in
         // its site card. ⌘⇧P still lifts from anywhere.
         if quietly, !Players.knows(tab.address) || tab.pageAddress?.host().map(Grounded.holds) == true {
-            if let otherwise { lift(otherwise, quietly: quietly) }
+            if let otherwise { lift(otherwise, quietly: quietly, spaceRequest: spaceRequest) }
+            else if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             return
         }
         // A picture of the page as it is, asked for in the same breath as the
@@ -5394,7 +5471,7 @@ final class Browser: NSObject, ObservableObject {
         stage?.keep(tab.web)
         func both() {
             guard let shot, let found else { return }
-            lifted(tab, shot: shot, found: found, quietly: quietly, otherwise: otherwise)
+            lifted(tab, shot: shot, found: found, quietly: quietly, otherwise: otherwise, spaceRequest: spaceRequest)
             stage?.letGo(tab.web)
         }
         tab.web.takeSnapshot(with: picture) { image, _ in
@@ -5413,12 +5490,14 @@ final class Browser: NSObject, ObservableObject {
 
     /// The page isolated, or not, and pictured as it was before: into the
     /// little window, or on to the other page of a pair.
-    private func lifted(_ tab: Tab, shot: NSImage?, found answer: Any?, quietly: Bool, otherwise: Tab?) {
+    private func lifted(_ tab: Tab, shot: NSImage?, found answer: Any?, quietly: Bool, otherwise: Tab?, spaceRequest: UUID? = nil) {
         guard let found = answer as? [String: Any], found["floating"] as? Bool == true else {
-            if let otherwise { return lift(otherwise, quietly: quietly) }
+            if let otherwise { return lift(otherwise, quietly: quietly, spaceRequest: spaceRequest) }
+            if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             if !quietly { announce("Nothing is playing here") }
             return
         }
+        guard finishSpaceFloat(spaceRequest, tab: tab, system: false) else { return }
         // Out again before it had settled in its tab: the page isn't as it
         // was left yet, and the picture from the first time still is.
         var left = shot
@@ -5465,7 +5544,7 @@ final class Browser: NSObject, ObservableObject {
         if floater.showing { floater.drop() }
         let left = leftAs
         leftAs = nil
-        guard let id = floating, let tab = tabs.first(where: { $0.id == id }) else { return }
+        guard let id = floating, let tab = (tabs + parkedTabs).first(where: { $0.id == id }) else { return }
         floating = nil
         // One landing at a time: one still settling elsewhere is uncovered now.
         landing.end()
@@ -5818,6 +5897,8 @@ final class Browser: NSObject, ObservableObject {
         // point, and it would otherwise sit under a search for the word.
         let command = prefs.commandBar ? AddressCommand.matching(typed, in: self) : nil
         if let command { list.insert(.command(command), at: 0) }
+        // A partial command goes last, so Return still does what it did.
+        if prefs.commandBar, let near = AddressCommand.near(typed, in: self) { list.append(.command(near)) }
         // Neither a page already open nor a command has an address to
         // complete towards. And with a command on top, Return runs it: a
         // grey ending in the field ("history" finishing as history.com)
@@ -6124,7 +6205,8 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
-    func reload(fromOrigin: Bool = false) { active?.reload(fromOrigin: fromOrigin) }
+    // A peek has the page in front; the tab underneath stays where it was.
+    func reload(fromOrigin: Bool = false) { (peekTab ?? active)?.reload(fromOrigin: fromOrigin) }
     func back() { active?.back() }
     func forward() { active?.forward() }
 }
@@ -7021,6 +7103,26 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // A tab waking from sleep: the new document is in, and a moment
         // after it is on screen the picture of the old one can go.
         tab.uncover(after: 0.45)
+    }
+
+    /// Where the window is, for a page asking `window.outerWidth`,
+    /// `outerHeight`, `screenX` and `screenY`. Unanswered, WebKit tells it a
+    /// window of no size at the bottom of the screen, and Google Docs, on a
+    /// Safari before 26.4, takes `outerWidth / innerWidth` for the browser's
+    /// zoom: from 0 it took the smallest it knows, a quarter, and drew the
+    /// document at a quarter of the screen's sharpness (#666). Safari answers
+    /// with its window, and so does this, the tabs and all.
+    @objc(_webView:getWindowFrameWithCompletionHandler:)
+    func webView(_ webView: WKWebView, getWindowFrameWithCompletionHandler done: @escaping (CGRect) -> Void) {
+        done(windowFrame(for: webView))
+    }
+
+    /// The window a page reads as its own: the one it is in, or, a tab's page
+    /// kept out of it behind the tab in front, this browser's. A page that
+    /// loads there still has the width it was shown at, and Docs would take
+    /// that over nothing, and keep the quarter for as long as the page lives.
+    func windowFrame(for webView: WKWebView) -> CGRect {
+        webView.window?.frame ?? window?.frame ?? .zero
     }
 
     /// The page has drawn something: a view kept out of sight until now, so

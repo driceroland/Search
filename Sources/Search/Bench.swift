@@ -478,6 +478,31 @@ final class Bench {
             }
             unsafeBitCast(imp, to: Ask.self)(tab.web, ask, reply)
 
+        case "imageData":
+            // What Copy Image fetches, timed, without touching the pasteboard:
+            // a test run must never take the person's clipboard.
+            guard let tab = find(request, in: browser),
+                  let url = (request["url"] as? String).flatMap(URL.init(string:))
+            else { answer(["error": "imageData needs id and url"]); return }
+            let started = CACurrentMediaTime()
+            Task { @MainActor in
+                let data = await browser.imageData(at: url, in: tab)
+                answer([
+                    "bytes": data?.count ?? -1,
+                    "ms": Int((CACurrentMediaTime() - started) * 1000),
+                    "reasonable": data.map(Browser.reasonable) ?? false,
+                ])
+            }
+
+        case "agent":
+            // A tab's whole user agent, as another browser's would read, until
+            // it is set back with none. Only on a SEARCH_PROBE run: a page
+            // answers to it.
+            guard Store.testing else { answer(["error": "agent only works on a --test run"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            tab.web.customUserAgent = request["ua"] as? String
+            answer(["ua": tab.web.customUserAgent ?? ""])
+
         case "eval":
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             guard let js = request["js"] as? String else { answer(["error": "eval needs js"]); return }
@@ -685,6 +710,11 @@ final class Bench {
                         "stores": b.tabs.map { $0.store.identifier?.uuidString ?? "default" },
                         "pins": b.tabs.filter { $0.pin != nil }.map { $0.pin ?? "" },
                         "frame": b.window.map { NSStringFromRect($0.frame) } ?? "",
+                        // Profiles in one window (OneWindow.swift): tucked
+                        // behind another profile's, and in the Window menu or not.
+                        "tucked": b.tucked, "merge": b.mergeID?.uuidString ?? "",
+                        "inWindowMenu": !(b.window?.isExcludedFromWindowsMenu ?? true),
+                        "folded": b.folded, "open": b.isOpen, "shut": b.shut,
                     ]
                 }, "closedWindows": Browsers.lastClosedAt != nil, "keptAway": Browsers.keptAway,
                    "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" }])
@@ -802,6 +832,8 @@ final class Bench {
             } else {
                 out["responderIsAddress"] = false
             }
+            // What the address field shows, typed and offered ending alike.
+            out["fieldText"] = Bench.addressField(in: (browser.window ?? Links.window)?.contentView)?.stringValue ?? ""
             out["windows"] = NSApp.windows.map { window -> [String: Any] in
                 [
                     "kind": "\(type(of: window))",
@@ -3363,9 +3395,22 @@ final class Bench {
                 SpaceSwipe.shared.ended()
             case "move":
                 if let index = request["index"] as? Int { browser.moveSpace(browser.spaceID, to: index - 1) }
+            case "menu":
+                // A space chosen from the space's menu, by its title, as a click would.
+                let menu = SpaceMenu.menu(for: browser)
+                guard let at = menu.items.firstIndex(where: { $0.title == request["title"] as? String && $0.action != nil }) else {
+                    answer(["error": "no such space in the menu"]); return
+                }
+                menu.performActionForItem(at: at)
             default: break
             }
             let out: [String: Any] = [
+                // The space's menu as it would open: section headers and spaces,
+                // with their ⌃ keys and the one ticked.
+                "menu": SpaceMenu.menu(for: browser).items.map { item -> [String: Any] in
+                    ["title": item.title, "header": item.isSectionHeader, "key": item.keyEquivalent, "on": item.state == .on]
+                },
+                "every": browser.everySpace.map(\.name),
                 "on": browser.prefs.usesSpaces,
                 "current": browser.space.name,
                 "spaces": browser.spaces.map { ["name": $0.name, "id": $0.id.uuidString, "downloads": $0.downloads ?? "", "shared": $0.sharesSignIns == true] },
@@ -3501,6 +3546,7 @@ final class Bench {
                                                        "inspectable": web.map { if #available(macOS 13.3, *) { return $0.isInspectable } else { return false } } ?? false,
                                                        "developerExtras": web.flatMap { $0.configuration.preferences.value(forKey: "developerExtrasEnabled") as? Bool } ?? false]
                 .merging(SidePanelPages.shared.siteReport(in: browser)) { a, _ in a }
+            case .downloads: content = ["kind": "downloads"]
             case nil: break
             }
             // Where the panel's page and every page sit in the window, from
@@ -3622,7 +3668,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }
