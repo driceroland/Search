@@ -2101,8 +2101,16 @@ final class Browser: NSObject, ObservableObject {
     var shut = false {
         didSet { if oldValue, !shut { wakeShown() } }
     }
+    /// Out of sight behind another profile's window that has taken its
+    /// place, with profiles in one window (see OneWindow.swift): kept as it
+    /// is, its pages loaded, until a space of its profile is chosen again.
+    var tucked = false
+    /// The merged window it is one of, with profiles in one window: the
+    /// windows of different profiles that take turns in one place.
+    var mergeID: UUID?
     /// Its window is there to be seen — on screen, or behind a hidden app.
-    var isOpen: Bool { window != nil && !shut }
+    /// Not one tucked behind another profile's.
+    var isOpen: Bool { window != nil && !shut && !tucked }
     /// Its window fills the screen. macOS takes the window's buttons away
     /// then, so the room kept for them at the top goes too (idea 184).
     @Published var fullScreen = false

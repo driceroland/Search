@@ -710,6 +710,11 @@ final class Bench {
                         "stores": b.tabs.map { $0.store.identifier?.uuidString ?? "default" },
                         "pins": b.tabs.filter { $0.pin != nil }.map { $0.pin ?? "" },
                         "frame": b.window.map { NSStringFromRect($0.frame) } ?? "",
+                        // Profiles in one window (OneWindow.swift): tucked
+                        // behind another profile's, and in the Window menu or not.
+                        "tucked": b.tucked, "merge": b.mergeID?.uuidString ?? "",
+                        "inWindowMenu": !(b.window?.isExcludedFromWindowsMenu ?? true),
+                        "folded": b.folded, "open": b.isOpen, "shut": b.shut,
                     ]
                 }, "closedWindows": Browsers.lastClosedAt != nil, "keptAway": Browsers.keptAway,
                    "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" }])
@@ -3390,9 +3395,22 @@ final class Bench {
                 SpaceSwipe.shared.ended()
             case "move":
                 if let index = request["index"] as? Int { browser.moveSpace(browser.spaceID, to: index - 1) }
+            case "menu":
+                // A space chosen from the space's menu, by its title, as a click would.
+                let menu = SpaceMenu.menu(for: browser)
+                guard let at = menu.items.firstIndex(where: { $0.title == request["title"] as? String && $0.action != nil }) else {
+                    answer(["error": "no such space in the menu"]); return
+                }
+                menu.performActionForItem(at: at)
             default: break
             }
             let out: [String: Any] = [
+                // The space's menu as it would open: section headers and spaces,
+                // with their ⌃ keys and the one ticked.
+                "menu": SpaceMenu.menu(for: browser).items.map { item -> [String: Any] in
+                    ["title": item.title, "header": item.isSectionHeader, "key": item.keyEquivalent, "on": item.state == .on]
+                },
+                "every": browser.everySpace.map(\.name),
                 "on": browser.prefs.usesSpaces,
                 "current": browser.space.name,
                 "spaces": browser.spaces.map { ["name": $0.name, "id": $0.id.uuidString, "downloads": $0.downloads ?? "", "shared": $0.sharesSignIns == true] },

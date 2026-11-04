@@ -314,9 +314,15 @@ extension Browser {
         return URL(fileURLWithPath: path)
     }
 
-    /// ⌃1–⌃9, and the menu on the space's dot.
+    /// ⌃1–⌃9, and the menu on the space's dot. With profiles in one window,
+    /// a space of another profile brings that profile's window into this
+    /// one's place (see OneWindow.swift).
     func switchSpace(to id: UUID) {
         guard prefs.usesSpaces else { return }
+        if merges, !spaces.contains(where: { $0.id == id }), Spaces.known[id] != nil {
+            Browsers.join(space: id, from: self)
+            return
+        }
         enter(id)
     }
 
@@ -386,9 +392,12 @@ extension Browser {
         }
     }
 
+    /// The Nth space: of this window's profile, or with profiles in one
+    /// window of every profile's, counted through in the menu's order.
     func switchSpace(index: Int) {
-        guard spaces.indices.contains(index) else { return }
-        switchSpace(to: spaces[index].id)
+        let list = everySpace
+        guard list.indices.contains(index) else { return }
+        switchSpace(to: list[index].id)
     }
 
     /// The icon a new space gets unless told: the first no space wears yet.
@@ -619,12 +628,24 @@ enum SpaceMenu {
     static func menu(for browser: Browser) -> NSMenu {
         actions = []
         let menu = NSMenu()
-        for (index, space) in browser.spaces.enumerated() {
-            let entry = item(space.name, key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
-                browser.switchSpace(to: space.id)
+        // With profiles in one window, every profile's spaces under its name,
+        // ⌃1–⌃9 counting through them all (see OneWindow.swift).
+        let lists: [(name: String?, spaces: [Space])] = browser.merges
+            ? Profiles.shared.list.map { profile in
+                (profile.name, profile.id == browser.profileID ? browser.spaces : Spaces.read(profile: profile.id))
             }
-            entry.image = NSImage(systemSymbolName: space.symbol, accessibilityDescription: nil)
-            menu.addItem(entry)
+            : [(nil, browser.spaces)]
+        var index = 0
+        for list in lists where !list.spaces.isEmpty {
+            if let name = list.name { menu.addItem(.sectionHeader(title: name)) }
+            for space in list.spaces {
+                let entry = item(space.name, key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
+                    browser.switchSpace(to: space.id)
+                }
+                entry.image = NSImage(systemSymbolName: space.symbol, accessibilityDescription: nil)
+                menu.addItem(entry)
+                index += 1
+            }
         }
         menu.addItem(.separator())
         menu.addItem(item("New Space…") { browser.askForSpace() })

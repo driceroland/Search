@@ -264,8 +264,12 @@ enum SettingsIndex {
               keys: ["spaces"], words: ["workspaces", "profiles"]),
         .init(id: "profiles", group: "spaces", icon: "person.2",
               title: "Profiles", detail: "Spaces with their own sign-ins, history and bookmarks",
-              more: "In windows of their own. Extensions, passwords and settings are shared.",
+              more: "In windows of their own, unless Profiles in one window is on. Extensions, passwords and settings are shared.",
               words: ["profile", "accounts", "work", "personal"]),
+        .init(id: "profiles.oneWindow", group: "spaces", icon: "macwindow",
+              title: "Profiles in one window", detail: "Every profile's spaces in one window, switched in place",
+              more: "Choosing a space of another profile brings that profile's window into this one's place, so each keeps its own sign-ins. Closing it closes them all.",
+              keys: ["profiles.oneWindow"], words: ["arc", "profiles", "single window", "merge"], parent: "profiles"),
         .init(id: "pins.keep", group: "pins", icon: "pin.circle",
               title: "Pins keep their site", detail: "Links elsewhere open over the pin, and ⌘W takes it back home",
               more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at.",
@@ -440,6 +444,7 @@ enum SettingsIndex {
         case "sidebar.roomy": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
         case "toolbar.left": return !prefs.sidebar
+        case "profiles.oneWindow": return Profiles.shared.several
         default: return true
         }
     }
@@ -450,6 +455,7 @@ enum SettingsIndex {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
+        case "profiles.oneWindow": return "Only with more than one profile"
         default: return "Only with the tabs down a side"
         }
     }
@@ -615,6 +621,7 @@ extension SettingsIndex {
             "links.show": prefs.showsLinks,
             "float.flicks": prefs.floatFlicks,
             "arc": prefs.looksLikeArc,
+            "profiles.oneWindow": prefs.profilesInOneWindow,
             "always": [
                 "splitView": prefs.splitView, "tabs.groups": prefs.usesTabGroups,
                 "panel.sites": prefs.sitesInPanel, "translate": PageTranslator.enabled,
@@ -641,6 +648,9 @@ extension SettingsIndex {
         case "pins.keep":
             guard let on = value as? Bool else { return false }
             prefs.pinsKeepSite = on
+        case "profiles.oneWindow":
+            guard let on = value as? Bool else { return false }
+            prefs.profilesInOneWindow = on
         case "links.peek":
             guard let choice = (value as? String).flatMap(PeekChoice.init) else { return false }
             prefs.peekChoice = choice

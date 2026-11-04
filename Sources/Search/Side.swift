@@ -218,7 +218,7 @@ struct SideBar: View {
                 page(at - 1, pill: before)
                     .offset(x: swipe - width)
             }
-            if swipe < 0, at < browser.spaces.count {
+            if swipe < 0, browser.drawsPage(after: at) {
                 page(at + 1, pill: after)
                     .offset(x: swipe + width)
             }

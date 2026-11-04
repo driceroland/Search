@@ -125,7 +125,7 @@ struct TabBar: View {
                             page(spaceAt - 1, in: geo.size.width, pill: above)
                                 .offset(y: browser.spaceSwipe - Metrics.strip)
                         }
-                        if browser.spaceSwipe < 0, spaceAt < browser.spaces.count {
+                        if browser.spaceSwipe < 0, browser.drawsPage(after: spaceAt) {
                             page(spaceAt + 1, in: geo.size.width, pill: below)
                                 .offset(y: browser.spaceSwipe + Metrics.strip)
                         }
