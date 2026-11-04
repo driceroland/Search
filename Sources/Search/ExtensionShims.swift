@@ -43,7 +43,7 @@ enum ExtensionShims {
     nonisolated static let stamp = ".search-shim"
     /// Raised when `prepare` changes what it does to a package, so that
     /// extensions prepared before are prepared again.
-    nonisolated private static let preparation = "4"
+    nonisolated private static let preparation = "5"
     nonisolated static let version: String = {
         SHA256.hash(data: Data((script + PasskeyRelay.page + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
@@ -201,9 +201,17 @@ enum ExtensionShims {
     /// didn't write, and nothing acts beyond what it named. A block or an
     /// allow of that shape is left as WebKit reads it, as before. The shim
     /// leaves out the same rules added while the extension runs (`misread`).
+    ///
+    /// A rule that hangs on a response's headers (`responseHeaders`,
+    /// `excludedResponseHeaders`), whatever it does. WebKit has no such
+    /// condition, drops it, and carries out the rest on every request it
+    /// matches: uBlock Origin Lite's block of a site's own `.bundle.js`
+    /// when the server answers with an anti-adblock header took every
+    /// webpack bundle GitLab serves, and its pages stayed empty.
     nonisolated static func misreadByWebKit(_ rule: [String: Any]) -> Bool {
-        guard let condition = rule["condition"] as? [String: Any],
-              condition["regexFilter"] is String, condition["requestDomains"] != nil,
+        guard let condition = rule["condition"] as? [String: Any] else { return false }
+        if condition["responseHeaders"] != nil || condition["excludedResponseHeaders"] != nil { return true }
+        guard condition["regexFilter"] is String, condition["requestDomains"] != nil,
               let type = (rule["action"] as? [String: Any])?["type"] as? String
         else { return false }
         return type == "redirect" || type == "modifyHeaders"
@@ -216,11 +224,12 @@ enum ExtensionShims {
         guard let dnr = manifest["declarative_net_request"] as? [String: Any],
               let resources = dnr["rule_resources"] as? [[String: Any]] else { return }
         for resource in resources {
-            // Only a file with both words in it is read as rules: a blocker
+            // Only a file with the words in it is read as rules: a blocker
             // ships tens of megabytes of them.
             guard let name = resource["path"] as? String, let url = inside(name, of: folder),
                   let data = try? Data(contentsOf: url),
-                  data.range(of: Data("regexFilter".utf8)) != nil, data.range(of: Data("requestDomains".utf8)) != nil,
+                  data.range(of: Data("ResponseHeaders".utf8)) != nil || data.range(of: Data("responseHeaders".utf8)) != nil
+                    || (data.range(of: Data("regexFilter".utf8)) != nil && data.range(of: Data("requestDomains".utf8)) != nil),
                   let rules = (try? JSONSerialization.jsonObject(with: data)) as? [Any]
             else { continue }
             let kept = rules.filter { !(($0 as? [String: Any]).map(misreadByWebKit) ?? false) }
@@ -2502,6 +2511,7 @@ enum ExtensionShims {
       const base = (() => { try { return runtime.getURL(""); } catch (e) { return ""; } })();
       const misread = (r) => {
         const c = r && r.condition, type = r && r.action && r.action.type;
+        if (c && (c.responseHeaders !== undefined || c.excludedResponseHeaders !== undefined)) return true;
         return !!(c && typeof c.regexFilter === "string" && c.requestDomains !== undefined
           && (type === "redirect" || type === "modifyHeaders"));
       };
@@ -2524,8 +2534,10 @@ enum ExtensionShims {
         // change of that shape is left out rather than carried out
         // everywhere: uBlock Origin Lite's strict blocking, `^https?://.*`
         // for thousands of named sites, sent every page to its warning (#709).
+        // So is a rule on a response's headers, which WebKit has no word for
+        // and would carry out on every request it otherwise matches.
         if (misread(r)) {
-          try { native("debug.error", ["declarativeNetRequest: " + r.action.type + " rule " + r.id + " left out — WebKit would take its pattern for every site, not the ones it names"]).catch(() => {}); } catch (x) {}
+          try { native("debug.error", ["declarativeNetRequest: " + (r.action && r.action.type) + " rule " + r.id + " left out — WebKit would carry it out beyond what it names"]).catch(() => {}); } catch (x) {}
           return null;
         }
         return r;
