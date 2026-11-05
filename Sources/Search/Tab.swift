@@ -1899,6 +1899,11 @@ final class Tab: ObservableObject, Identifiable {
         guard let web = built else { return }
         (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
+        // Back and Forward said what the view let go of could do. The next
+        // view starts with nothing to go back to, and its observers only hear
+        // a change: left as it was, a pin put down showed Back lit, and Back
+        // did nothing. A tab that slept says it again as its history returns.
+        steps()
         Passkeys.shared.forget(web)
         let controller = web.configuration.userContentController
         Web.release(controller)
