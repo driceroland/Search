@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Going back to a tab whose video is still full screen in its own Space no longer leaves the window stuck without its column, on the last tab's page with an empty band beside it, until Search was quit. The video leaves full screen and the tab comes back in the window, with the column
 - A tab carried along the column or across the top stays under the pointer as it passes a Split View pair, and changes places with the pair at its middle. It used to run a row ahead of the pointer for each pair it passed, and land a place or more from where it was let go. Thanks [@ubeann](https://github.com/ubeann) ([#884](https://github.com/driceroland/Search/pull/884))
 - The page under the address field, ⌘T's floating field, the ⌃Tab switcher, the hidden elements' list, Welcome, What's New or the Find bar hears nothing of the pointer, as under a peek or the column since 1.0.8. Links under them lit up, hover menus opened and the pointer turned into a hand or a text cursor, though a click there never reached the page. Thanks [@ubeann](https://github.com/ubeann) ([#878](https://github.com/driceroland/Search/pull/878), [#877](https://github.com/driceroland/Search/issues/877))
 - With a site put in the address field with Tab, the empty field says "Search Reddit" (the site's name) instead of "Enter a web address", and says that again once the site is taken out. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#888](https://github.com/driceroland/Search/pull/888))
