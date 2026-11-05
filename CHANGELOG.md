@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Your search engine's suggestions in the address field wear its icon, as the search for what you typed above them already did, instead of a magnifying glass: every row that searches Google shows Google's. Until this Mac has the engine's icon from a visit, every search row keeps the glass. A site put in the field with Tab wears the same icon as its rows, where Wikipedia's showed a glass. Thanks [@ubeann](https://github.com/ubeann) ([#879](https://github.com/driceroland/Search/issues/879), [#881](https://github.com/driceroland/Search/pull/881))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
