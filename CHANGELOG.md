@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Going back to a tab whose video is still full screen in its own Space no longer leaves the window stuck without its column, on the last tab's page with an empty band beside it, until Search was quit. The video leaves full screen and the tab comes back in the window, with the column
+
 ### Held back
 
 Not in this version, kept on main for a later one:
