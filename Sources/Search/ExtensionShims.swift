@@ -562,7 +562,10 @@ enum ExtensionShims {
           ? await Promise.resolve(chrome.windows.getAll()).catch(() => []) : [];
         return new Map((all || []).map((w) => [w.id, { left: w.left, top: w.top, width: w.width, height: w.height }]));
       };
-      const placeOf = (t, known) => ({ i: t.index, w: known.get(t.windowId) });
+      // The tab's address too: two windows can have one frame (a window
+      // made over another, profiles in one window), and the tab at that
+      // place tells them apart.
+      const placeOf = (t, known) => ({ i: t.index, w: known.get(t.windowId), u: t.url || t.pendingUrl || "" });
       const event = () => {
         const listeners = new Set();
         return {
@@ -2876,6 +2879,42 @@ enum ExtensionShims {
           });
         }
         for (const name of ["get", "getAll", "getCurrent", "getLastFocused", "create"]) mendResult(chrome.windows, name);
+        // A new window in Chrome holds only the tabs it was made with. Here
+        // it holds the space's pins too, and they come first in its row, so
+        // the tabs it was made with are put first in the answer, their
+        // indexes left true: an extension takes tabs[0] for the one it made
+        // (Claude in Chrome groups it, and a pin can't be grouped, #872).
+        if (chrome.windows && typeof chrome.windows.create === "function") {
+          const ns = chrome.windows;
+          const create = ns.create.bind(ns);
+          const ours = (...args) => {
+            const callback = typeof args[args.length - 1] === "function" ? args.pop() : null;
+            const p = Promise.resolve(create(...args)).then(async (w) => {
+              await mend(tabsIn(w));
+              if (w && Array.isArray(w.tabs)) {
+                const own = w.tabs.filter((t) => !t.pinned), pins = w.tabs.filter((t) => t.pinned);
+                try { w.tabs = own.concat(pins); } catch (e) {}
+              }
+              return w;
+            });
+            if (!callback) return p;
+            p.then((r) => callback(r), (e) => withLastError(e, callback));
+          };
+          put(ns, "create", ours);
+          // WebKit answers windows.create from its own object, ahead of
+          // anything set on it (see the stand-in for a website's frame):
+          // ours is then given through a stand-in `chrome`, WebKit's own
+          // objects for everything else.
+          if (ns.create !== ours) {
+            const windows = new Proxy(ns, { get: (target, key) => {
+              if (key === "create") return ours;
+              const value = Reflect.get(target, key);
+              return typeof value === "function" ? value.bind(target) : value;
+            } });
+            const current = root.chrome;
+            try { root.chrome = new Proxy(current, { get: (target, key) => key === "windows" ? windows : Reflect.get(target, key) }); } catch (e) {}
+          }
+        }
         // WebKit's windows.getCurrent ignores which extension page called
         // it and returns the frontmost window. In a top-level extension page
         // opened in a tab — a popup window's page among them (Bitwarden's
@@ -3967,6 +4006,14 @@ enum ExtensionShims {
         browser.tabGroups.filter { !browser.tabs(in: $0.id).isEmpty }
     }
 
+    /// A group by its number in whichever window has it.
+    private static func listedGroup(_ number: Any?) throws -> (group: TabGroup, browser: Browser) {
+        for browser in Browsers.all {
+            if let group = try? listedGroup(number, in: browser) { return (group, browser) }
+        }
+        throw Unsupported(what: "No group with id: \((number as? Int).map { "\($0)" } ?? "none").")
+    }
+
     private static func listedGroup(_ number: Any?, in browser: Browser) throws -> TabGroup {
         guard let number = number as? Int,
               let group = listedGroups(browser).first(where: { TabGroup.number($0.id) == number })
@@ -4026,7 +4073,8 @@ enum ExtensionShims {
         let number = { (value: Any?) in (value as? NSNumber)?.doubleValue }
         if let w = spec?["w"] as? [String: Any], let left = number(w["left"]), let top = number(w["top"]),
            let width = number(w["width"]), let height = number(w["height"]) {
-            return owner.tab(windowFrame: CGRect(x: left, y: top, width: width, height: height), index: index, for: context)
+            return owner.tab(windowFrame: CGRect(x: left, y: top, width: width, height: height), index: index,
+                             address: spec?["u"] as? String, for: context)
         }
         guard Browsers.all.count <= 1 else { return nil }
         let visible = owner.visibleTabs(for: context)
@@ -4821,17 +4869,20 @@ enum ExtensionShims {
                       let home = owner.browser(of: tab), let group = home.group(of: tab) else { return -1 }
                 return TabGroup.number(group)
             }
+        // A group's number is the extension's in every window, as in
+        // Chrome: one made in a window it opened is found from the window in
+        // front too (#872).
         case "tabGroups.query":
             let spec = first as? [String: Any] ?? [:]
-            return listedGroups(browser).filter { group in
+            return Browsers.all.flatMap(listedGroups).filter { group in
                 (spec["title"] as? String).map { $0 == group.name } ?? true
                     && (spec["collapsed"] as? Bool).map { $0 == group.collapsed } ?? true
                     && (spec["color"] as? String).map { $0 == "grey" } ?? true
             }.map(chromeGroup)
         case "tabGroups.get":
-            return chromeGroup(try listedGroup(first, in: browser))
+            return chromeGroup(try listedGroup(first).group)
         case "tabGroups.update":
-            let group = try listedGroup(first, in: browser)
+            let (group, browser) = try listedGroup(first)
             let props = args.dropFirst().first as? [String: Any] ?? [:]
             if let title = props["title"] as? String { browser.renameTabGroup(group.id, to: title) }
             if let collapsed = props["collapsed"] as? Bool, collapsed != group.collapsed { browser.toggleTabGroup(group.id) }
