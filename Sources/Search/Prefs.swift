@@ -659,6 +659,11 @@ final class Preferences: ObservableObject {
     @Published var floatingNewTab: Bool {
         didSet { store.set(floatingNewTab, forKey: "newtab.floating") }
     }
+    /// The floating field lists the last few places from History before
+    /// anything is typed (Browser.recentPlaces). Off unless asked for.
+    @Published var recentInNewTab: Bool {
+        didSet { store.set(recentInNewTab, forKey: "newtab.recent") }
+    }
 
     init() {
         navigationLeft = store.bool(forKey: "toolbar.left")
@@ -782,6 +787,7 @@ final class Preferences: ObservableObject {
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
         commandBar = store.bool(forKey: "commandbar")
         floatingNewTab = store.bool(forKey: "newtab.floating")
+        recentInNewTab = store.bool(forKey: "newtab.recent")
         // On for everyone who never touched it (24 Oct 2026).
         let history = store.object(forKey: "swipe.history") as? Bool ?? true
         holdsHistory = history
