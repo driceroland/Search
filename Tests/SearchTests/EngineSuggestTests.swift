@@ -193,6 +193,11 @@ final class EngineSuggestTests: XCTestCase {
         XCTAssertEqual(SiteSearch.pastSearches(on: reddit, in: traces),
                        ["naruto ending", "naruto vs one piece", "boruto", "naruto"],
                        "Reddit's own search only, each once, newest first; a subreddit's or another site's isn't")
+        XCTAssertEqual(SiteSearch.words(in: URL(string: "https://www.google.com/search?q=naruto+shippuden&sca_esv=1")!,
+                                        searchedOn: SearchSite(name: "Google", host: "google.com",
+                                                               template: "https://www.google.com/search?q=%s")),
+                       "naruto shippuden", "a page's other parameters don't matter")
+        XCTAssertNil(SiteSearch.words(in: URL(string: "https://www.reddit.com/r/Naruto/")!, searchedOn: reddit))
         let spotify = SearchSite(name: "Spotify", host: "open.spotify.com", template: "https://open.spotify.com/search/%s")
         XCTAssertEqual(SiteSearch.pastSearches(on: spotify, in: [trace("https://open.spotify.com/search/daft%20punk"),
                                                                    trace("https://open.spotify.com/search/daft%20punk/albums")]),

@@ -141,6 +141,14 @@ enum SiteSearch {
 
     // MARK: - what was searched there before
 
+    /// The words a search page of this site was asked, read back out of its
+    /// address, or nil when the address isn't one of the site's searches.
+    static func words(in url: URL, searchedOn site: SearchSite) -> String? {
+        guard let words = Shape(site.template)?.words(in: url)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !words.isEmpty, words.count <= 200, !words.contains(where: \.isNewline) else { return nil }
+        return words
+    }
+
     /// The words this site was searched for before, newest first and each
     /// once, read back out of the search pages in the history: where the
     /// site's template puts them, a query's value ("?q=%s") or the end of

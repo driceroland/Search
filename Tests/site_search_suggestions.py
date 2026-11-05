@@ -100,7 +100,8 @@ def main():
         for address in ["https://www.reddit.com/search/?q=naruto%20ending%20explained",
                         "https://www.reddit.com/search/?q=naruto+vs+one+piece",
                         "https://www.reddit.com/r/Naruto/search/?q=naruto%20art",
-                        "https://www.reddit.com/search/?q=coffee"]:
+                        "https://www.reddit.com/search/?q=coffee",
+                        "https://www.google.com/search?q=naruto&sca_esv=1"]:
             sv.cmd({"do": "history", "take": address})
             time.sleep(0.2)
 
@@ -154,6 +155,33 @@ def main():
             site("delete")
         s = site("delete")
         t.ok("⌫ takes Google out of the field", s["chip"] == "", s)
+
+        # No site in the field: a search page from history reads as the
+        # search it was, and still goes to that page.
+        sug("esc")
+        sug("esc")
+        field("naruto", typed=True)
+        time.sleep(0.9)
+        s = sug()
+        searched = [o for o in s["offers"] if o[1] == "searched"]
+        # (Taking a row above really opened Reddit, which may have sent the
+        # page through its check first, ?js_challenge=1&…&q=…: that visit
+        # is in history too, and reads the same.)
+        t.ok("plain field: Reddit search pages read as their words",
+             "naruto vs one piece" in [o[0] for o in searched]
+             and set(o[0] for o in searched) <= {"naruto vs one piece", "naruto ending explained"}, s["offers"])
+        t.ok("plain field: such a row goes to the page it was",
+             all(o[2].startswith("https://www.reddit.com/search/?") for o in searched), searched)
+        t.ok("plain field: no raw search addresses left", not any("/search" in o[0] for o in s["offers"]), rows(s))
+        t.ok("plain field: your engine's page for exactly what was typed isn't a second row",
+             [r for r in rows(s) if r[0] == "naruto"] == [("naruto", "search")], rows(s))
+        # An address being typed still finishes as one.
+        sug("esc")
+        sug("esc")
+        field("reddit.com/se", typed=True)
+        time.sleep(0.5)
+        s = sug()
+        t.ok("an address still gets its grey ending", s["ending"].startswith("arch/"), (s["ending"], rows(s)))
 
         # Off is off.
         sug(on=False)

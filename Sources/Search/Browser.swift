@@ -5964,7 +5964,40 @@ final class Browser: NSObject, ObservableObject {
         let places = list.filter { $0.kind != .open && !$0.kind.isCommand }
         let ending = command != nil ? nil
             : history.completion(for: typed, among: places.filter { $0.kind != .bookmark } + places.filter { $0.kind == .bookmark })
-        return (list, ending)
+        // Worked out from the addresses, before a search page's row is read
+        // as the words it searched: the grey ending still finishes an address.
+        return (readAsSearches(list, typed: typed), ending)
+    }
+
+    /// A page from history that is a search's results reads as the search
+    /// it was, "naruto vs one piece" on Reddit, instead of its address
+    /// (reddit.com/search/?q=naruto%20vs%20one%20piece): the words, the
+    /// site's name, and the mark of a past search. It still goes to that
+    /// page. One that is the search the field is already offering, your
+    /// engine for exactly what was typed, isn't shown twice.
+    private func readAsSearches(_ list: [Suggestion], typed: String) -> [Suggestion] {
+        guard list.contains(where: { $0.kind == .visited }) else { return list }
+        let engine = prefs.engine.template(custom: prefs.customEngine)
+        let sites = [SearchSite(name: prefs.engine.name(custom: prefs.customEngine),
+                                host: Engine.bareHost(of: engine) ?? "", template: engine)]
+            + prefs.keywords.filter { Keyword.accepts($0.template) }.map {
+                SearchSite(name: $0.name, host: $0.name, template: $0.template)
+            }
+            + SiteSearch.builtIn
+            + (profileID == Profile.personalID ? SiteSearch.learned : [])
+        let asked = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        var seen = Set<String>()
+        return list.compactMap { place in
+            guard place.kind == .visited,
+                  let (site, words) = sites.lazy.compactMap({ site in
+                      SiteSearch.words(in: place.url, searchedOn: site).map { (site, $0) }
+                  }).first
+            else { return place }
+            if site.template == engine, words.lowercased() == asked { return nil }
+            // "naruto+vs" and "naruto%20vs" are two pages but one search.
+            guard seen.insert(site.host + " " + words.lowercased()).inserted else { return nil }
+            return Suggestion(key: words, title: site.name, url: place.url, kind: .searched)
+        }
     }
 
     /// What is open, most recently looked at first, filtered by what has been
