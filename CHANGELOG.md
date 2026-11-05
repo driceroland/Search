@@ -13,7 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- A tab waking from sleep shows the page as you left it, at its size, while it loads. The picture kept of it is taken at the screen's pixels, two to a point on a Retina screen, and was read back as twice the page: for a moment as the tab woke it could show at twice its size, cropped to its top left. It now says how many pixels make a point. Thanks [@pasteley](https://github.com/pasteley) for reporting, with a recording that showed it ([#781](https://github.com/driceroland/Search/issues/781))
+- A tab waking from sleep shows the page as you left it, at its size, while it loads. The picture kept of it is taken at the screen's pixels, two to a point on a Retina screen, and was read back as twice the page: for a moment as the tab woke it could show at twice its size, cropped to its top left. It now says how many pixels make a point. Thanks [@pasteley](https://github.com/pasteley) for reporting, with a recording that showed it ([#781](https://github.com/driceroland/Search/issues/781), [#871](https://github.com/driceroland/Search/pull/871))
 
 ### Held back
 
