@@ -503,6 +503,21 @@ final class Bench {
             tab.web.customUserAgent = request["ua"] as? String
             answer(["ua": tab.web.customUserAgent ?? ""])
 
+        case "kept":
+            // A sleeping tab's picture, as kept for its waking, written to a
+            // file: its size in pixels, what NSImage makes of it, and the
+            // page's own size. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "kept only works on a --test run"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            var out: [String: Any] = ["asleep": tab.asleep, "page": tab.built.map { NSStringFromSize($0.bounds.size) } ?? "none"]
+            if let data = tab.keptPicture {
+                if let path = request["path"] as? String { try? data.write(to: URL(fileURLWithPath: path)) }
+                if let rep = NSBitmapImageRep(data: data) { out["pixels"] = "\(rep.pixelsWide)x\(rep.pixelsHigh)" }
+                if let image = NSImage(data: data) { out["image"] = NSStringFromSize(image.size) }
+            }
+            if let cover = tab.cover { out["cover"] = NSStringFromSize(cover.size) }
+            answer(out)
+
         case "eval":
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             guard let js = request["js"] as? String else { answer(["error": "eval needs js"]); return }
@@ -3668,7 +3683,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }

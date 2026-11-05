@@ -766,6 +766,8 @@ final class Tab: ObservableObject, Identifiable {
     private var memory: Any?
     /// The last picture of that page, compressed, for the moment it wakes.
     private var picture: Data?
+    /// For the bench.
+    var keptPicture: Data? { picture }
     /// That picture, over the stage while the page is rebuilt underneath it:
     /// coming back to a tab that slept starts from what you left, not white.
     @Published private(set) var cover: NSImage?
@@ -1491,14 +1493,21 @@ final class Tab: ObservableObject, Identifiable {
     /// The page as it looks right now, compressed. Drawn by the page's own
     /// process, so a view that is off screen — every tab but the one you are
     /// on — can still be pictured. Nil when there is nothing to draw.
+    ///
+    /// Kept at the screen's pixels, and saying so: two to a point on a
+    /// Retina screen. A JPEG that didn't was read back as twice the page in
+    /// points, and a layout that asked the picture for its own size drew it
+    /// at twice the page, cropped to its top left, while the tab woke (#781).
     func snapshot(_ done: @escaping (Data?) -> Void) {
         guard let built else { return done(nil) }
         built.takeSnapshot(with: nil) { image, _ in
-            guard let image, let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            guard let image, image.size.width > 0,
+                  let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
                 return done(nil)
             }
+            let scale = CGFloat(cg.width) / image.size.width
             DispatchQueue.global(qos: .utility).async {
-                let data = Tab.jpeg(cg)
+                let data = Tab.jpeg(cg, scale: scale)
                 DispatchQueue.main.async { done(data) }
             }
         }
@@ -1529,10 +1538,17 @@ final class Tab: ObservableObject, Identifiable {
         built.takeSnapshot(with: configuration) { image, _ in done(image) }
     }
 
-    nonisolated private static func jpeg(_ image: CGImage) -> Data? {
+    /// `scale`: pixels to a point, written as the picture's density (72 a
+    /// point), which is what NSImage reads its size from.
+    nonisolated private static func jpeg(_ image: CGImage, scale: CGFloat) -> Data? {
         let data = NSMutableData()
         guard let out = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(out, image, [kCGImageDestinationLossyCompressionQuality: 0.55] as CFDictionary)
+        let dpi = 72 * (scale > 0 ? scale : 1)
+        CGImageDestinationAddImage(out, image, [
+            kCGImageDestinationLossyCompressionQuality: 0.55,
+            kCGImagePropertyDPIWidth: dpi,
+            kCGImagePropertyDPIHeight: dpi,
+        ] as CFDictionary)
         return CGImageDestinationFinalize(out) ? data as Data : nil
     }
 
