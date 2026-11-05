@@ -345,6 +345,77 @@ final class DownloadLifecycleTests: XCTestCase {
         XCTAssertTrue(browser.loot.kept.isEmpty, "a PDF from a store that isn't kept was listed")
     }
 
+    func testRowAndFinishedFileHaveTheirAddressUntilHistoryIsCleared() async throws {
+        let tab = try await openFixturePage()
+        let source = fixture.url("/address.bin").absoluteString
+        let entry = try await startDownload("/address.bin", in: tab)
+        XCTAssertEqual(entry.address, source)
+
+        try await waitUntil { browser.loot.kept.contains { $0.address == source } }
+
+        browser.clearHistory()
+        XCTAssertEqual(browser.loot.kept.count, 1, "the file stays listed")
+        XCTAssertNil(browser.loot.kept.first?.address)
+
+        // Gone from the file too, or the next launch would offer it again.
+        Disk.drain()
+        let written = try JSONDecoder().decode([Keep].self, from: Data(contentsOf: Store.file("downloads.json")))
+        XCTAssertEqual(written.count, 1)
+        XCTAssertNil(written.first?.address)
+    }
+
+    func testADownloadPausedAcrossClearHistoryKeepsNoAddress() async throws {
+        let tab = try await openFixturePage()
+        let entry = try await startDownload("/range.bin", in: tab)
+        try await waitUntil { entry.completedBytes >= 64 * 1024 && entry.destination != nil }
+        let destination = try XCTUnwrap(entry.destination)
+        browser.pauseDownload(entry)
+        try await waitUntil { entry.state == .paused }
+
+        browser.clearHistory()
+        XCTAssertNil(entry.address)
+
+        browser.resumeDownload(entry)
+        try await waitUntil { browser.loot.kept.contains { $0.path == destination.path } }
+        XCTAssertNil(browser.loot.kept.first { $0.path == destination.path }?.address)
+    }
+
+    func testRightClickOnARowOffersItsAddressWhenItHasOne() async throws {
+        let tab = try await openFixturePage()
+        let host = NSHostingView(rootView: DownloadsPanel(browser: browser, loot: browser.loot))
+        host.frame = NSRect(x: 0, y: 0, width: 560, height: 680)
+        let offscreen = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 560, height: 680),
+                                 styleMask: [.borderless], backing: .buffered, defer: false)
+        offscreen.isReleasedWhenClosed = false
+        offscreen.contentView = host
+        defer { offscreen.close() }
+
+        let old = Keep(name: "old.zip", from: "example.test", path: "/tmp/old.zip", date: Date())
+        let done = Keep(name: "done.zip", from: "example.test", path: "/tmp/done.zip", date: Date(),
+                        address: "https://example.test/done.zip")
+        browser.loot.add(old)
+        browser.loot.add(done)
+        try await waitUntil { rowMenus(in: host) == [["Copy Address"]] }
+
+        // Only the file listed before addresses were noted is left: no menu.
+        browser.loot.forget(done)
+        try await waitUntil { rowMenus(in: host).isEmpty }
+
+        let running = try await startDownload("/cancel.bin", in: tab)
+        try await waitUntil { rowMenus(in: host) == [["Copy Address"]] }
+        browser.cancelDownload(running)
+    }
+
+    /// A private tab's PDF isn't listed at all (see the test above), so
+    /// its address can't be either.
+    func testSavedPDFKeepsItsAddress() async throws {
+        let address = URL(string: "https://example.test/paper.pdf")
+        let tab = try await openFixturePage()
+        browser.webView(tab.web, saveDataToFile: Data("%PDF".utf8), suggestedFilename: "paper.pdf",
+                        mimeType: "application/pdf", originatingURL: address)
+        XCTAssertEqual(browser.loot.kept.first?.address, address?.absoluteString)
+    }
+
     private func openFixturePage() async throws -> BrowserTab {
         let tab = browser.open(URL(string: "about:blank")!, foreground: true)
         page = tab
@@ -371,6 +442,18 @@ final class DownloadLifecycleTests: XCTestCase {
                 continuation.resume(returning: download)
             }
         }
+    }
+
+    /// What a right-click offers anywhere down the panel: the question AppKit
+    /// asks when the button goes down, without a menu coming up.
+    private func rowMenus(in host: NSView) -> Set<[String]> {
+        host.layoutSubtreeIfNeeded()
+        return Set(stride(from: 0, to: host.bounds.height, by: 10).compactMap { y -> [String]? in
+            let event = NSEvent.mouseEvent(
+                with: .rightMouseDown, location: NSPoint(x: host.bounds.midX, y: y), modifierFlags: [], timestamp: 0,
+                windowNumber: host.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+            return event.flatMap { host.menu(for: $0) }?.items.map(\.title)
+        })
     }
 
     private func writePanelSnapshot(to destination: URL) throws {

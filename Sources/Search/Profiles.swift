@@ -167,6 +167,7 @@ final class Profiles: ObservableObject {
         for name in ["history-\(id.uuidString).json", "bookmarks-\(id.uuidString).json"] {
             Disk.remove(Store.file(name))
         }
+        Shared.forgetDownloadAddresses()
         Store.settings.removeObject(forKey: "space.current.\(id.uuidString)")
         list.removeAll { $0.id == id }
         write()
