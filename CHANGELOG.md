@@ -15,6 +15,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - With a site put in the address field with Tab, the list offers what you searched that site for before, newest first, read from your history on this Mac and sent nowhere; the last few show before you type, and none in a private tab. A site shortcut ("yt naruto") offers the same. With Google in the field and Google your search engine, Suggestions from your search engine shows its suggestions there too; words typed to any other site never go to your engine. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#882](https://github.com/driceroland/Search/pull/882))
 
+### Changed
+
+- A search's results page you have been to reads as the search it was in the address field's list, "naruto vs one piece" with Reddit beside it and the mark of a past search, instead of its address (reddit.com/search/?q=naruto%20vs%20one%20piece). It still opens that page, and an address being typed still finishes in grey as before. Your engine's page for exactly what you typed isn't shown twice. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#889](https://github.com/driceroland/Search/pull/889))
+
 ### Held back
 
 Not in this version, kept on main for a later one:

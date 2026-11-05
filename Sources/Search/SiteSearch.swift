@@ -147,6 +147,14 @@ enum SiteSearch {
     /// the path ("/search/%s"). Nothing is asked of anyone: a site with no
     /// suggestions of its own (Reddit, GitHub) still has what you searched
     /// it for.
+    /// The words a search page of this site was asked, read back out of its
+    /// address, or nil when the address isn't one of the site's searches.
+    static func words(in url: URL, searchedOn site: SearchSite) -> String? {
+        guard let words = Shape(site.template)?.words(in: url)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !words.isEmpty, words.count <= 200, !words.contains(where: \.isNewline) else { return nil }
+        return words
+    }
+
     static func pastSearches(on site: SearchSite, in traces: [History.Trace], most: Int = 50) -> [String] {
         guard let shape = Shape(site.template) else { return [] }
         var seen: Set<String> = []

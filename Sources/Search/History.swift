@@ -41,7 +41,8 @@ struct Suggestion: Identifiable, Equatable {
     var id: String {
         if kind.isCommand { return "command " + key }
         if case .suggested = kind { return "suggested " + key }
-        if case .searched = kind { return "searched " + key }
+        // By the page: the same words searched on two sites are two rows.
+        if case .searched = kind { return "searched " + History.identity(for: url) }
         if case .visited = kind { return History.identity(for: url) }
         if case .bookmark = kind { return History.identity(for: url) }
         return key
