@@ -610,12 +610,13 @@ final class Bench {
         case "news":
             // The card after an update (see WhatsNew.swift), drawn off screen
             // to a PNG — the newest release's, whatever this build's version —
-            // or every version's notes; "on" shows the card in the window.
+            // or every version's notes; "on" shows the card in the window, and
+            // false puts it away.
             guard Store.testing else { answer(["error": "news only works on a --test run"]); return }
             guard let release = WhatsNew.releases.first else { answer(["error": "no release has a card"]); return }
-            if request["on"] as? Bool == true {
-                browser.newsShowing = true
-                answer(["showing": true])
+            if let on = request["on"] as? Bool {
+                browser.newsShowing = on
+                answer(["showing": on])
                 return
             }
             guard let path = request["path"] as? String else { answer(["error": "news needs a path"]); return }
