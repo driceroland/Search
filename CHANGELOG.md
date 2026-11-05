@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- A PDF saved from a private tab with the download button on the PDF no longer leaves its name and site in the Downloads list, which is kept on disk. It says "Saved …" and is listed nowhere, like any other private download.
+
 ### Held back
 
 Not in this version, kept on main for a later one:
