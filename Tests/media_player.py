@@ -112,7 +112,7 @@ try:
     t.ok("paused from the player: the page's tone is paused", tone(a, "a.paused") is True)
 
     # Its play: the same tone, from where it was, with its sound.
-    player(act="play"); time.sleep(1.5)
+    player(act="play"); until(lambda: player()["noisy"], within=10)
     p = player()
     t.ok("played from the player: playing, nothing paused", p["tab"] == a and p["noisy"] and not p["stilled"], p)
     t.ok("played from the player: the page's tone plays", tone(a, "!a.paused && !a.muted") is True)
@@ -128,7 +128,7 @@ try:
     # heard again.
     player(act="still"); time.sleep(12)
     t.ok("paused a while: still in the row", player()["stilled"] is True)
-    player(act="play"); time.sleep(1.5)
+    player(act="play"); until(lambda: player()["noisy"], within=10)
     t.ok("paused a while, played from the player: with its sound", tone(a, "!a.paused && !a.muted") is True)
 
     # Two playing out of sight: the newest to start.
@@ -166,7 +166,7 @@ try:
     player(act="still"); time.sleep(1.5)
     t.ok("in a frame: paused there, and the row stays",
          tone(f, "a.paused", inner=True) is True and player()["stilled"] is True)
-    player(act="play"); time.sleep(1.5)
+    player(act="play"); until(lambda: player()["noisy"], within=10)
     t.ok("in a frame: played again there", tone(f, "!a.paused && !a.muted", inner=True) is True)
     tone(f, "a.pause(), 1", inner=True); time.sleep(1)
 
