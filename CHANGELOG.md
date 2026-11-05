@@ -30,6 +30,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- The address field says where Return goes. ⌘T's floating field reads "New tab: enter a web address" with a new tab's mark, ⌘L's "This tab" with the page's own icon, and ⌘K's "Switch to an open tab" with a stack of tabs; a blank tab's still reads "Enter a web address". The mark stays while you type, after the placeholder has gone, and VoiceOver hears the same. All three said "Enter a web address", though ⌘K only finds open tabs. Thanks [@ubeann](https://github.com/ubeann) ([#913](https://github.com/driceroland/Search/pull/913))
 - The downloads button gives one quick pulse each time a new download starts, so a file that comes in fast still shows it began. A button just coming in has its usual scale-in instead, a resume or a retry doesn't pulse, and with Reduce Motion it holds still. Asked for by [@pasteley](https://github.com/pasteley) ([#830](https://github.com/driceroland/Search/issues/830))
 - A search's results page you have been to reads as the search it was in the address field's list, "naruto vs one piece" with Reddit beside it and the mark of a past search, instead of its address (reddit.com/search/?q=naruto%20vs%20one%20piece). It still opens that page, and an address being typed still finishes in grey as before. Your engine's page for exactly what you typed isn't shown twice. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#889](https://github.com/driceroland/Search/pull/889))
 

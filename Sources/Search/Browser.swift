@@ -389,6 +389,27 @@ final class Browser: NSObject, ObservableObject {
     var active: Tab? { tabs.first { $0.id == activeID } }
     var fieldShowing: Bool { editing || active?.isBlank ?? true }
 
+    /// What Return in the field will do, which the field says with its
+    /// placeholder and a mark before the words: ⌘T, ⌘L and ⌘K raise one field
+    /// that looked the same for all three.
+    enum FieldMode: Equatable {
+        /// A blank tab's own field: there is no other page to keep.
+        case blank
+        /// ⌘T's floating field: a tab that doesn't exist yet.
+        case newTab
+        /// ⌘L over a page: that page goes somewhere else.
+        case thisTab
+        /// ⌘K: a page already open.
+        case switcher
+    }
+
+    var fieldMode: FieldMode {
+        if summoning { return .switcher }
+        if launching { return .newTab }
+        if editing, active?.isBlank == false { return .thisTab }
+        return .blank
+    }
+
     /// Typed plus whatever the field is quietly finishing for you.
     var completed: String {
         if let picked, offers.indices.contains(picked) { return offers[picked].key }
