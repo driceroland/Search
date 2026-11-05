@@ -345,7 +345,15 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var siteOffer: SearchSite?
     /// The site Tab put in the field: what is typed next searches it.
     @Published var siteChip: SearchSite? {
-        didSet { if siteChip != oldValue { guess() } }
+        didSet {
+            guard siteChip != oldValue else { return }
+            // What one place suggested, or was searched for, is no answer
+            // for another.
+            suggester.stop()
+            engineWords = ("", [])
+            pastSearches = nil
+            guess()
+        }
     }
     /// What is in the field. Every change re-reads the history, because the
     /// list under the field and the grey ending inside it are both just
@@ -1475,6 +1483,7 @@ final class Browser: NSObject, ObservableObject {
         // are the searches learned from sites visited (SiteSearch.swift).
         Favicons.shared.forgetAll()
         SiteSearch.forget()
+        Shared.forgetDownloadAddresses()
         announce("History cleared")
     }
 
@@ -5754,10 +5763,12 @@ final class Browser: NSObject, ObservableObject {
     }
 
     private func guess() {
-        // Only a plain field asks the engine (see askEngine, at the end).
-        if summoning || siteChip != nil || typed.trimmingCharacters(in: .whitespaces).isEmpty {
+        // ⌘K asks nobody (see askEngine, at the end).
+        if summoning || typed.trimmingCharacters(in: .whitespaces).isEmpty {
             suggester.stop()
             engineWords = ("", [])
+            // A field emptied starts again from the history as it is now.
+            if siteChip == nil { pastSearches = nil }
         }
         guard !summoning else {
             offers = openPages(matching: typed)
@@ -5768,15 +5779,17 @@ final class Browser: NSObject, ObservableObject {
             return
         }
 
-        // A site in the field: only its search, for what is typed after it.
+        // A site in the field: its search for what is typed after it, what
+        // you searched it for before, and your engine's suggestions when the
+        // site is your engine (see engineQuestion).
         if let site = siteChip {
             siteOffer = nil
             ending = nil
             picked = nil
             let words = typed.trimmingCharacters(in: .whitespaces)
-            offers = words.isEmpty ? [] : site.url(for: words).map {
-                [Suggestion(key: words, title: site.name, url: $0, kind: .search)]
-            } ?? []
+            let search = site.url(for: words).map { [Suggestion(key: words, title: site.name, url: $0, kind: .search)] } ?? []
+            offers = search + searchedOffers(for: words, on: site)
+            if !words.isEmpty { askEngine() }
             return
         }
 
@@ -5816,13 +5829,52 @@ final class Browser: NSObject, ObservableObject {
     /// the switch off, a private tab, ⌘K, a site or a shortcut in charge,
     /// or words that look like anything but a search.
     func engineQuestion(for typed: String) -> URL? {
-        guard prefs.engineSuggests, !summoning, siteChip == nil, active?.shy != true,
-              EngineSuggest.sendable(typed),
-              Keyword.match(typed, in: prefs.keywords) == nil
+        guard prefs.engineSuggests, !summoning, active?.shy != true,
+              EngineSuggest.sendable(typed)
         else { return nil }
         let words = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let site = siteChip {
+            // A site in the field is asked only when it is your engine: the
+            // switch says your engine, so words typed to Reddit never go to
+            // Google, nor words typed to Google when DuckDuckGo is yours.
+            guard Engine.bareHost(of: prefs.engine.template(custom: prefs.customEngine)) == site.host else { return nil }
+        } else if Keyword.match(typed, in: prefs.keywords) != nil {
+            return nil
+        }
         return EngineSuggest.url(for: words, engine: prefs.engine, test: EngineSuggest.testEndpoint)
     }
+
+    /// Where a suggestion taken from the list goes: the site in the field,
+    /// or the engine.
+    private func suggestionURL(for words: String) -> URL? {
+        if let site = siteChip { return site.url(for: words) }
+        return searchURL(for: words)
+    }
+
+    /// Rows for what a site was searched for before: the last few before a
+    /// word is typed, then those the words begin. `typedBefore` is what
+    /// stands before the words in the field ("yt " for a shortcut), so a row
+    /// walked to puts back the whole of what would be typed.
+    private func searchedOffers(for words: String, on site: SearchSite, typedBefore: String = "") -> [Suggestion] {
+        let needle = words.lowercased()
+        let past = searchedBefore(on: site).filter { $0.lowercased().hasPrefix(needle) && $0.lowercased() != needle }
+        return past.prefix(words.isEmpty ? 5 : 3).compactMap { word in
+            site.url(for: word).map { Suggestion(key: typedBefore + word, title: "", url: $0, kind: .searched) }
+        }
+    }
+
+    /// What the site in the field was searched for before, newest first:
+    /// read from the history once when the site goes in, not at every key.
+    /// Never in a private tab, whose field says nothing of where you have been.
+    private func searchedBefore(on site: SearchSite) -> [String] {
+        guard active?.shy != true else { return [] }
+        if let pastSearches, pastSearches.site == site.id { return pastSearches.words }
+        let host = site.host.split(separator: "/").first.map(String.init) ?? site.host
+        let words = SiteSearch.pastSearches(on: site, in: history.everything(matching: host))
+        pastSearches = (site.id, words)
+        return words
+    }
+    private var pastSearches: (site: SearchSite.ID, words: [String])?
 
     private func askEngine() {
         guard let question = engineQuestion(for: typed) else {
@@ -5855,7 +5907,7 @@ final class Browser: NSObject, ObservableObject {
 
     private func engineOffers(_ words: [String]) -> [Suggestion] {
         words.prefix(EngineSuggest.most).compactMap { word in
-            searchURL(for: word).map { Suggestion(key: word, title: "", url: $0, kind: .suggested) }
+            suggestionURL(for: word).map { Suggestion(key: word, title: "", url: $0, kind: .suggested) }
         }
     }
 
@@ -5888,6 +5940,11 @@ final class Browser: NSObject, ObservableObject {
             if let (keyword, rest) = Keyword.match(typed, in: prefs.keywords),
                let asked = Engine.url(for: rest, template: keyword.template) {
                 list.append(Suggestion(key: typed, title: keyword.name, url: asked, kind: .search))
+                // A shortcut is a site put in the field, typed out: what you
+                // searched it for before, as under the site's chip.
+                let site = SearchSite(name: keyword.name, host: keyword.name, template: keyword.template)
+                let before = String(typed.prefix(while: { !$0.isWhitespace })) + " "
+                list += searchedOffers(for: rest, on: site, typedBefore: before)
             } else if let asked = searchURL(for: typed) {
                 list.append(
                     Suggestion(key: typed, title: prefs.engine.name(custom: prefs.customEngine), url: asked, kind: .search)
@@ -5909,7 +5966,40 @@ final class Browser: NSObject, ObservableObject {
         let places = list.filter { $0.kind != .open && !$0.kind.isCommand }
         let ending = command != nil ? nil
             : history.completion(for: typed, among: places.filter { $0.kind != .bookmark } + places.filter { $0.kind == .bookmark })
-        return (list, ending)
+        // Worked out from the addresses, before a search page's row is read
+        // as the words it searched: the grey ending still finishes an address.
+        return (readAsSearches(list, typed: typed), ending)
+    }
+
+    /// A page from history that is a search's results reads as the search
+    /// it was, "naruto vs one piece" on Reddit, instead of its address
+    /// (reddit.com/search/?q=naruto%20vs%20one%20piece): the words, the
+    /// site's name, and the mark of a past search. It still goes to that
+    /// page. One that is the search the field is already offering, your
+    /// engine for exactly what was typed, isn't shown twice.
+    private func readAsSearches(_ list: [Suggestion], typed: String) -> [Suggestion] {
+        guard list.contains(where: { $0.kind == .visited }) else { return list }
+        let engine = prefs.engine.template(custom: prefs.customEngine)
+        let sites = [SearchSite(name: prefs.engine.name(custom: prefs.customEngine),
+                                host: Engine.bareHost(of: engine) ?? "", template: engine)]
+            + prefs.keywords.filter { Keyword.accepts($0.template) }.map {
+                SearchSite(name: $0.name, host: $0.name, template: $0.template)
+            }
+            + SiteSearch.builtIn
+            + (profileID == Profile.personalID ? SiteSearch.learned : [])
+        let asked = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        var seen = Set<String>()
+        return list.compactMap { place in
+            guard place.kind == .visited,
+                  let (site, words) = sites.lazy.compactMap({ site in
+                      SiteSearch.words(in: place.url, searchedOn: site).map { (site, $0) }
+                  }).first
+            else { return place }
+            if site.template == engine, words.lowercased() == asked { return nil }
+            // "naruto+vs" and "naruto%20vs" are two pages but one search.
+            guard seen.insert(site.host + " " + words.lowercased()).inserted else { return nil }
+            return Suggestion(key: words, title: site.name, url: place.url, kind: .searched)
+        }
     }
 
     /// What is open, most recently looked at first, filtered by what has been
@@ -7291,7 +7381,7 @@ extension Browser: WKDownloadDelegate {
            let id = ExtensionShims.askedDownloads.removeValue(forKey: asked) {
             ExtensionShims.ownDownloads[id, default: []].insert(file.path)
         }
-        saved(file, from: source)
+        saved(file, from: source, keepsAddress: entry?.addressForgotten != true)
     }
 
     /// The download button in the bar WebKit draws over a PDF. WebKit has the
@@ -7309,7 +7399,13 @@ extension Browser: WKDownloadDelegate {
         guard let data, let file = whereToSave(suggestedFilename ?? "") else { return }
         do {
             try data.write(to: file)
-            saved(file, from: originatingURL)
+            // A private page's file is named once and listed nowhere, as in
+            // `downloadDidFinish`: the list is written to disk and outlives it.
+            if webView.configuration.websiteDataStore.isPersistent, anyTab(for: webView)?.shy != true {
+                saved(file, from: originatingURL)
+            } else {
+                announce("Saved \(file.lastPathComponent)")
+            }
         } catch {
             announce("Download failed")
         }
@@ -7367,8 +7463,9 @@ extension Browser: WKDownloadDelegate {
         return ["", ".", "..", "/"].contains(last) ? "download" : last
     }
 
-    private func saved(_ file: URL, from source: URL?) {
-        loot.add(Keep(name: file.lastPathComponent, from: source?.host() ?? "", path: file.path, date: Date()))
+    private func saved(_ file: URL, from source: URL?, keepsAddress: Bool = true) {
+        loot.add(Keep(name: file.lastPathComponent, from: source?.host() ?? "", path: file.path, date: Date(),
+                      address: keepsAddress ? Keep.address(of: source) : nil))
         announce("Saved \(file.lastPathComponent)", file: file)
     }
 

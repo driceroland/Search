@@ -139,6 +139,77 @@ enum SiteSearch {
         return first.site
     }
 
+    // MARK: - what was searched there before
+
+    /// The words a search page of this site was asked, read back out of its
+    /// address, or nil when the address isn't one of the site's searches.
+    static func words(in url: URL, searchedOn site: SearchSite) -> String? {
+        guard let words = Shape(site.template)?.words(in: url)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !words.isEmpty, words.count <= 200, !words.contains(where: \.isNewline) else { return nil }
+        return words
+    }
+
+    /// The words this site was searched for before, newest first and each
+    /// once, read back out of the search pages in the history: where the
+    /// site's template puts them, a query's value ("?q=%s") or the end of
+    /// the path ("/search/%s"). Nothing is asked of anyone: a site with no
+    /// suggestions of its own (Reddit, GitHub) still has what you searched
+    /// it for.
+    static func pastSearches(on site: SearchSite, in traces: [History.Trace], most: Int = 50) -> [String] {
+        guard let shape = Shape(site.template) else { return [] }
+        var seen: Set<String> = []
+        var out: [String] = []
+        for trace in traces {
+            guard let words = shape.words(in: trace.url) else { continue }
+            let clean = words.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !clean.isEmpty, clean.count <= 200, !clean.contains(where: \.isNewline),
+                  seen.insert(clean.lowercased()).inserted else { continue }
+            out.append(clean)
+            if out.count == most { break }
+        }
+        return out
+    }
+
+    /// Where a template puts the words, to find them again in an address.
+    private struct Shape {
+        let host: String
+        let path: String
+        /// The query item that holds them, or nil when the path ends with them.
+        let item: String?
+
+        init?(_ template: String) {
+            guard let parts = URLComponents(string: template.replacingOccurrences(of: "%s", with: "SEARCHWORDS")),
+                  let host = parts.host?.lowercased() else { return nil }
+            self.host = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            if let item = parts.queryItems?.first(where: { $0.value == "SEARCHWORDS" }) {
+                path = parts.path
+                self.item = item.name
+            } else if parts.path.hasSuffix("SEARCHWORDS") {
+                path = String(parts.path.dropLast("SEARCHWORDS".count))
+                item = nil
+            } else {
+                return nil
+            }
+        }
+
+        func words(in url: URL) -> String? {
+            guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  var host = parts.host?.lowercased() else { return nil }
+            if host.hasPrefix("www.") { host = String(host.dropFirst(4)) }
+            guard host == self.host else { return nil }
+            if let item {
+                guard parts.path == path || parts.path == path + "/" || path == parts.path + "/" else { return nil }
+                // A form's own submit writes spaces as +.
+                return parts.percentEncodedQueryItems?.first(where: { $0.name == item })?.value?
+                    .replacingOccurrences(of: "+", with: " ").removingPercentEncoding
+            }
+            guard parts.path.hasPrefix(path) else { return nil }
+            let rest = String(parts.path.dropFirst(path.count))
+            guard !rest.isEmpty, !rest.contains("/") else { return nil }
+            return rest
+        }
+    }
+
     // MARK: - learned from sites you visit (OpenSearch)
 
     private static var file: URL { Store.file("search-sites.json") }

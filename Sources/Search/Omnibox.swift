@@ -175,23 +175,23 @@ struct Omnibox: View {
                 // words line up whatever stands in it.
                 Group {
                     switch offer.kind {
-                    case .search:
-                        // The engine's own icon when this Mac already has it: a
-                        // search sent to a site you have been to says so with the
-                        // site rather than a magnifying glass. Nothing is fetched
-                        // for one that isn't known; the glass is what the row
-                        // wears until then.
+                    case .search, .suggested:
+                        // The icon of where the words go, when this Mac already
+                        // has it: what you typed and what the engine suggests
+                        // are both searches sent there, and wear the same mark.
+                        // Nothing is fetched for one that isn't known; the
+                        // glass is what every search row wears until then.
                         if let icon = Favicons.shared.cached(for: offer.url) {
                             Mark(icon: icon, letter: "", size: 14)
                         } else {
                             symbol("magnifyingglass")
                         }
-                    case .suggested:
-                        // The engine's own words: always the glass, so they read
-                        // as searches rather than places.
-                        symbol("magnifyingglass")
                     case .command:
                         symbol("command")
+                    case .searched:
+                        // Words you searched this site for before: yours, not
+                        // the site's, so a mark of their own.
+                        symbol("clock.arrow.circlepath")
                     default:
                         // A place — open, kept or visited — wears its site's
                         // icon, as it does in History and the bookmarks bar:
@@ -204,7 +204,7 @@ struct Omnibox: View {
                 .frame(width: 14, height: 14)
                 // The row reads as 1.0.4's did, without the www; the key
                 // itself keeps it, for completing and going there.
-                Text(offer.kind == .suggested ? offer.key : Address.withoutWWW(offer.key))
+                Text(offer.kind == .suggested || offer.kind == .searched ? offer.key : Address.withoutWWW(offer.key))
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.ink)
                     .lineLimit(1)
@@ -258,7 +258,11 @@ private struct SiteIcon: View {
     let site: SearchSite
     var body: some View {
         let host = site.host.split(separator: "/").first.map(String.init) ?? site.host
-        if let icon = Favicons.shared.cached(host) ?? Favicons.shared.cached("www." + host) {
+        // By where its search goes first, as the rows below it are, so the
+        // chip and its rows wear one mark: Wikipedia's icon is kept under
+        // en.wikipedia.org, not the wikipedia.org the site is named by.
+        if let icon = Favicons.shared.cached(for: site.url(for: "x"))
+            ?? Favicons.shared.cached(host) ?? Favicons.shared.cached("www." + host) {
             Image(nsImage: icon)
                 .resizable()
                 .interpolation(.high)
@@ -431,14 +435,21 @@ struct AddressField: NSViewRepresentable {
         field.cell?.isScrollable = true
         // SwiftUI picks its own colour for a placeholder, and on a pale ground
         // that colour was near-white.
-        field.placeholderAttributedString = NSAttributedString(
-            string: "Enter a web address",
+        field.placeholderAttributedString = Self.placeholder(for: browser.siteChip)
+        context.coordinator.placeheld = browser.siteChip?.name
+        return field
+    }
+
+    /// What the empty field asks for: an address, or with a site put in it
+    /// with Tab, the words to search that site for.
+    private static func placeholder(for site: SearchSite?) -> NSAttributedString {
+        NSAttributedString(
+            string: site.map { "Search \($0.name)" } ?? "Enter a web address",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 15.5),
                 .foregroundColor: NSColor(Palette.ink.opacity(0.3)),
             ]
         )
-        return field
     }
 
     func updateNSView(_ field: Field, context: Context) {
@@ -459,6 +470,12 @@ struct AddressField: NSViewRepresentable {
             coordinator.synced = want
             field.stringValue = want
             coordinator.select(from: browser.typed.count, in: field)
+        }
+
+        if coordinator.placeheld != browser.siteChip?.name {
+            coordinator.placeheld = browser.siteChip?.name
+            field.placeholderAttributedString = Self.placeholder(for: browser.siteChip)
+            DispatchQueue.main.async { coordinator.showPlaceholder(in: field) }
         }
 
         if coordinator.answered != browser.focusRequest {
@@ -490,6 +507,9 @@ struct AddressField: NSViewRepresentable {
         var browser: Browser
         var tab: Tab.ID?
         var answered = -1
+        /// The site the placeholder last named, so it is set again only
+        /// when a site goes in or comes out.
+        var placeheld: String?
         /// The last value pushed in from the browser side, so an update can
         /// tell a change worth applying from one it made itself.
         var synced = ""
@@ -539,6 +559,22 @@ struct AddressField: NSViewRepresentable {
             } else {
                 editor.selectAll(nil)
             }
+        }
+
+        /// A field being typed in shows the placeholder its editor was given
+        /// when the typing began, and AppKit has no way to hand that editor
+        /// a new one: the field begins editing again, with the caret and
+        /// whatever was selected put back where they were.
+        @MainActor func showPlaceholder(in field: Field) {
+            guard let window = field.window, let editor = field.currentEditor() as? NSTextView,
+                  window.firstResponder === editor else { return }
+            let selected = editor.selectedRange()
+            window.makeFirstResponder(field)
+            guard let again = field.currentEditor() as? NSTextView else { return }
+            again.selectedTextAttributes = editor.selectedTextAttributes
+            let length = (again.string as NSString).length
+            let start = min(selected.location, length)
+            again.selectedRange = NSRange(location: start, length: min(selected.length, length - start))
         }
 
         func controlTextDidChange(_ note: Notification) {

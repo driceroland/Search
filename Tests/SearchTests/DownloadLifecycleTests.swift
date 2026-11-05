@@ -220,6 +220,63 @@ final class DownloadLifecycleTests: XCTestCase {
         XCTAssertTrue(browser.loot.kept.isEmpty)
     }
 
+    func testANewDownloadIsCountedOnceAndItsResumeIsNot() async throws {
+        let tab = try await openFixturePage()
+        // Every window shares one Fetches, so earlier tests have counted too.
+        let before = browser.fetches.started
+        let entry = try await startDownload("/range.bin", in: tab)
+        XCTAssertEqual(browser.fetches.started, before + 1, "a new download should be counted once")
+
+        try await waitUntil { entry.completedBytes >= 64 * 1024 && entry.destination != nil }
+        browser.pauseDownload(entry)
+        try await waitUntil { entry.state == .paused }
+        browser.resumeDownload(entry)
+        try await waitUntil { entry.state == .downloading }
+        XCTAssertEqual(browser.fetches.started, before + 1, "a resume is the same download going on")
+    }
+
+    func testARetryIsNotCountedAsANewDownload() async throws {
+        let tab = try await openFixturePage()
+        let before = browser.fetches.started
+        let entry = try await startDownload("/retry.bin", in: tab)
+        try await waitUntil { entry.state == .failed }
+        XCTAssertEqual(browser.fetches.started, before + 1)
+
+        browser.retryDownload(entry)
+        try await waitUntil { entry.state == .downloading && fixture.count("/retry.bin") == 2 }
+        XCTAssertEqual(browser.fetches.started, before + 1, "a retry is the same download going on")
+    }
+
+    func testAPrivateDownloadIsCountedThoughItHasNoRow() async throws {
+        let privateSource = Tab(shy: true)
+        let tab = browser.open(URL(string: "about:blank")!, foreground: true, from: privateSource)
+        page = tab
+        window.contentView = tab.web
+        tab.go(to: fixture.url("/page"))
+        try await waitUntil { tab.committed == fixture.url("/page") && !tab.loading }
+        try await waitUntil { fixture.completed("/page") == 1 }
+
+        let before = browser.fetches.started
+        _ = try await requestDownload("/private.bin", from: tab.web)
+        XCTAssertEqual(browser.fetches.started, before + 1, "a private download puts up the ring, so it pulses too")
+        XCTAssertTrue(browser.fetches.entries.isEmpty)
+        try await waitUntil { fixture.completed("/private.bin") == 1 && browser.downloading.isEmpty }
+    }
+
+    func testThePulseHoldsStillUnderReduceMotionAndNeverHasNoLength() {
+        for light in [false, true] {
+            let still = FetchDoor.pulse(reduced: true, light: light)
+            let moving = FetchDoor.pulse(reduced: false, light: light)
+            XCTAssertEqual(still.peak, 1, "Reduce Motion should leave the icon at its size (light: \(light))")
+            XCTAssertGreaterThan(moving.peak, 1, "without Reduce Motion the icon should swell (light: \(light))")
+            // A keyframe of no length makes a scale that is not a number, and AppKit stops the app.
+            for pulse in [still, moving] {
+                XCTAssertGreaterThan(pulse.up, 0, "light: \(light)")
+                XCTAssertGreaterThan(pulse.down, 0, "light: \(light)")
+            }
+        }
+    }
+
     func testRemovingPausedDownloadPreservesAReplacementFile() async throws {
         let tab = try await openFixturePage()
         let entry = try await startDownload("/range.bin", in: tab)
@@ -259,6 +316,106 @@ final class DownloadLifecycleTests: XCTestCase {
         XCTAssertTrue(fixture.cookies("/private.bin").contains { $0?.contains("download-session=fixture-cookie") == true })
     }
 
+    func testPDFSavedFromPrivatePageIsAnnouncedButNeverListed() async throws {
+        let address = URL(string: "https://example.test/paper.pdf")
+        let pdf = Data("%PDF".utf8)
+
+        // The list is what these two stay out of, so an ordinary tab must still reach it.
+        let ordinary = try await openFixturePage()
+        browser.webView(ordinary.web, saveDataToFile: pdf, suggestedFilename: "kept.pdf",
+                        mimeType: "application/pdf", originatingURL: address)
+        XCTAssertEqual(browser.loot.kept.map(\.name), ["kept.pdf"])
+        browser.loot.forgetAll()
+
+        let shy = browser.open(URL(string: "about:blank")!, foreground: true, from: Tab(shy: true))
+        browser.webView(shy.web, saveDataToFile: pdf, suggestedFilename: "shy.pdf",
+                        mimeType: "application/pdf", originatingURL: address)
+        XCTAssertEqual(browser.announcement, "Saved shy.pdf")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: downloadFolder.appendingPathComponent("shy.pdf").path))
+        XCTAssertTrue(browser.loot.kept.isEmpty, "a private tab's PDF left its name and host in downloads.json")
+        browser.close(shy)
+        browser.loot.forgetAll()
+
+        // A page in a store that isn't kept, though no private tab holds it.
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        browser.webView(WKWebView(frame: .zero, configuration: configuration), saveDataToFile: pdf,
+                        suggestedFilename: "unkept.pdf", mimeType: "application/pdf", originatingURL: address)
+        XCTAssertEqual(browser.announcement, "Saved unkept.pdf")
+        XCTAssertTrue(browser.loot.kept.isEmpty, "a PDF from a store that isn't kept was listed")
+    }
+
+    func testRowAndFinishedFileHaveTheirAddressUntilHistoryIsCleared() async throws {
+        let tab = try await openFixturePage()
+        let source = fixture.url("/address.bin").absoluteString
+        let entry = try await startDownload("/address.bin", in: tab)
+        XCTAssertEqual(entry.address, source)
+
+        try await waitUntil { browser.loot.kept.contains { $0.address == source } }
+
+        browser.clearHistory()
+        XCTAssertEqual(browser.loot.kept.count, 1, "the file stays listed")
+        XCTAssertNil(browser.loot.kept.first?.address)
+
+        // Gone from the file too, or the next launch would offer it again.
+        Disk.drain()
+        let written = try JSONDecoder().decode([Keep].self, from: Data(contentsOf: Store.file("downloads.json")))
+        XCTAssertEqual(written.count, 1)
+        XCTAssertNil(written.first?.address)
+    }
+
+    func testADownloadPausedAcrossClearHistoryKeepsNoAddress() async throws {
+        let tab = try await openFixturePage()
+        let entry = try await startDownload("/range.bin", in: tab)
+        try await waitUntil { entry.completedBytes >= 64 * 1024 && entry.destination != nil }
+        let destination = try XCTUnwrap(entry.destination)
+        browser.pauseDownload(entry)
+        try await waitUntil { entry.state == .paused }
+
+        browser.clearHistory()
+        XCTAssertNil(entry.address)
+
+        browser.resumeDownload(entry)
+        try await waitUntil { browser.loot.kept.contains { $0.path == destination.path } }
+        XCTAssertNil(browser.loot.kept.first { $0.path == destination.path }?.address)
+    }
+
+    func testRightClickOnARowOffersItsAddressWhenItHasOne() async throws {
+        let tab = try await openFixturePage()
+        let host = NSHostingView(rootView: DownloadsPanel(browser: browser, loot: browser.loot))
+        host.frame = NSRect(x: 0, y: 0, width: 560, height: 680)
+        let offscreen = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 560, height: 680),
+                                 styleMask: [.borderless], backing: .buffered, defer: false)
+        offscreen.isReleasedWhenClosed = false
+        offscreen.contentView = host
+        defer { offscreen.close() }
+
+        let old = Keep(name: "old.zip", from: "example.test", path: "/tmp/old.zip", date: Date())
+        let done = Keep(name: "done.zip", from: "example.test", path: "/tmp/done.zip", date: Date(),
+                        address: "https://example.test/done.zip")
+        browser.loot.add(old)
+        browser.loot.add(done)
+        try await waitUntil { rowMenus(in: host) == [["Copy Address"]] }
+
+        // Only the file listed before addresses were noted is left: no menu.
+        browser.loot.forget(done)
+        try await waitUntil { rowMenus(in: host).isEmpty }
+
+        let running = try await startDownload("/cancel.bin", in: tab)
+        try await waitUntil { rowMenus(in: host) == [["Copy Address"]] }
+        browser.cancelDownload(running)
+    }
+
+    /// A private tab's PDF isn't listed at all (see the test above), so
+    /// its address can't be either.
+    func testSavedPDFKeepsItsAddress() async throws {
+        let address = URL(string: "https://example.test/paper.pdf")
+        let tab = try await openFixturePage()
+        browser.webView(tab.web, saveDataToFile: Data("%PDF".utf8), suggestedFilename: "paper.pdf",
+                        mimeType: "application/pdf", originatingURL: address)
+        XCTAssertEqual(browser.loot.kept.first?.address, address?.absoluteString)
+    }
+
     private func openFixturePage() async throws -> BrowserTab {
         let tab = browser.open(URL(string: "about:blank")!, foreground: true)
         page = tab
@@ -285,6 +442,18 @@ final class DownloadLifecycleTests: XCTestCase {
                 continuation.resume(returning: download)
             }
         }
+    }
+
+    /// What a right-click offers anywhere down the panel: the question AppKit
+    /// asks when the button goes down, without a menu coming up.
+    private func rowMenus(in host: NSView) -> Set<[String]> {
+        host.layoutSubtreeIfNeeded()
+        return Set(stride(from: 0, to: host.bounds.height, by: 10).compactMap { y -> [String]? in
+            let event = NSEvent.mouseEvent(
+                with: .rightMouseDown, location: NSPoint(x: host.bounds.midX, y: y), modifierFlags: [], timestamp: 0,
+                windowNumber: host.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+            return event.flatMap { host.menu(for: $0) }?.items.map(\.title)
+        })
     }
 
     private func writePanelSnapshot(to destination: URL) throws {

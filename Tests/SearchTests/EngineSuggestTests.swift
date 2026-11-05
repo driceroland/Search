@@ -148,4 +148,59 @@ final class EngineSuggestTests: XCTestCase {
         XCTAssertNil(browser.engineQuestion(for: "yt cats"), "a shortcut's words go to its site, not the engine")
         XCTAssertNotNil(browser.engineQuestion(for: "cats"))
     }
+
+    // MARK: - a site in the field
+
+    func testAChipIsAskedOnlyWhenItIsYourEngine() throws {
+        _ = NSApplication.shared
+        let browser = Browser(record: WindowRecord())
+        defer {
+            browser.siteChip = nil
+            browser.prefs.engineSuggests = false
+            browser.closeAll()
+        }
+        let google = SearchSite(name: "Google", host: "google.com", template: "https://www.google.com/search?q=%s")
+        browser.prefs.engine = .google
+        browser.prefs.engineSuggests = true
+        browser.siteChip = google
+        XCTAssertEqual(try XCTUnwrap(browser.engineQuestion(for: "coffee")).host(), "suggestqueries.google.com",
+                       "Google in the field, and Google is yours: asked")
+        XCTAssertNotNil(browser.engineQuestion(for: "yt cats"), "after a chip, a shortcut's word is only words")
+        browser.siteChip = SearchSite(name: "Reddit", host: "reddit.com", template: "https://www.reddit.com/search/?q=%s")
+        XCTAssertNil(browser.engineQuestion(for: "coffee"), "words typed to Reddit never go to the engine")
+        browser.prefs.engine = .duckduckgo
+        browser.siteChip = google
+        XCTAssertNil(browser.engineQuestion(for: "coffee"), "Google in the field isn't your engine: nothing asked")
+        browser.prefs.engine = .google
+        browser.prefs.engineSuggests = false
+        XCTAssertNil(browser.engineQuestion(for: "coffee"), "off is off, chip or not")
+    }
+
+    func testPastSearchesAreReadBackFromHistory() {
+        func trace(_ address: String) -> History.Trace {
+            History.Trace(key: address, address: address, title: "", url: URL(string: address)!, last: Date(), count: 1)
+        }
+        let reddit = SearchSite(name: "Reddit", host: "reddit.com", template: "https://www.reddit.com/search/?q=%s")
+        let traces = [
+            trace("https://www.reddit.com/search/?q=naruto%20ending&type=link"),
+            trace("https://reddit.com/search?q=naruto+vs+one+piece"),
+            trace("https://www.reddit.com/r/Naruto/search/?q=naruto%20art"),
+            trace("https://www.reddit.com/search/?q=Naruto%20ending"),
+            trace("https://www.reddit.com/search/?q=boruto"),
+            trace("https://evil.example/search/?q=naruto%20elsewhere"),
+            trace("https://www.reddit.com/search/?q=naruto"),
+        ]
+        XCTAssertEqual(SiteSearch.pastSearches(on: reddit, in: traces),
+                       ["naruto ending", "naruto vs one piece", "boruto", "naruto"],
+                       "Reddit's own search only, each once, newest first; a subreddit's or another site's isn't")
+        XCTAssertEqual(SiteSearch.words(in: URL(string: "https://www.google.com/search?q=naruto+shippuden&sca_esv=1")!,
+                                        searchedOn: SearchSite(name: "Google", host: "google.com",
+                                                               template: "https://www.google.com/search?q=%s")),
+                       "naruto shippuden", "a page's other parameters don't matter")
+        XCTAssertNil(SiteSearch.words(in: URL(string: "https://www.reddit.com/r/Naruto/")!, searchedOn: reddit))
+        let spotify = SearchSite(name: "Spotify", host: "open.spotify.com", template: "https://open.spotify.com/search/%s")
+        XCTAssertEqual(SiteSearch.pastSearches(on: spotify, in: [trace("https://open.spotify.com/search/daft%20punk"),
+                                                                   trace("https://open.spotify.com/search/daft%20punk/albums")]),
+                       ["daft punk"], "words at the end of the path, and only there")
+    }
 }

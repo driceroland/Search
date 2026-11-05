@@ -29,13 +29,15 @@ addSameSiteInfoToRequestIfNeeded, Document::isSameSiteForCookies compare the
 top document's site, here the extension's), where Chrome counts a host the
 extension has access to as same-site. claude.ai's sessionKey, sessionKeyV3
 and routingHint are all SameSite=Lax (read from the cookie store's attribute
-bits, never the values), so the panel looks signed out. WebKit's own fix
+bits, never the values), so the panel looks signed out. Since 4 Nov the
+extension's own fetch goes through ExtensionFetch.swift and carries them, as
+Chrome sends it; the frame is still WebKit's. WebKit's own fix
 landed on its main branch on 5 Oct 2026 (322707@main, "Give extension page
 subframes unpartitioned cookie access", then storage access on 7 Oct); no
 shipping macOS has it yet, and Search has no switch that reaches it. The
-"Lax withheld" checks below hold that line: once a macOS carries the fix
-the frame's fail (the fetch's may stay: the fix is for frames), and the
-panel's frame should be signed in as in Chrome.
+"Lax withheld" checks below hold that line for the frame: once a macOS
+carries the fix they fail, and the panel's frame should be signed in as in
+Chrome.
 """
 import json
 import shutil
@@ -155,10 +157,12 @@ def main():
         for c in ("none=1", "plain=1"):
             t.ok(f"with access: the panel's fetch sends {c}", c in (api or ""), (got, api))
             t.ok(f"with access: the panel's frame is sent {c}", c in (frame or ""), (got, frame))
-        t.ok("with access: the fetch's answer reads (no CORS needed)", got.get("fetch", "").startswith("none=1"), got)
+        t.ok("with access: the fetch's answer reads (no CORS needed)", "none=1" in got.get("fetch", ""), got)
         t.ok("with access: the frame's script reads its cookies", "plain=1" in got.get("frame", ""), got)
         # WebKit's limit, not Search's: see the top of this file.
-        t.ok("with access: Lax withheld from the fetch (WebKit: cross-site)", "lax=1" not in (api or ""), api)
+        # The extension's own fetch goes through ExtensionFetch, as Chrome
+        # sends it (Tests/panel_lax.py); the frame is still WebKit's.
+        t.ok("with access: the fetch sends Lax (ExtensionFetch)", "lax=1" in (api or ""), api)
         t.ok("with access: Lax withheld from the frame (WebKit: cross-site)", "lax=1" not in (frame or ""), frame)
 
         # Relaunched: the same, from WebKit's store on disk. Nothing an earlier
@@ -169,8 +173,8 @@ def main():
         for c in ("none=1", "plain=1"):
             t.ok(f"after a relaunch: the panel's fetch sends {c}", c in (api or ""), (got, api))
             t.ok(f"after a relaunch: the panel's frame is sent {c}", c in (frame or ""), (got, frame))
-        t.ok("after a relaunch: Lax still withheld (WebKit: cross-site)",
-             "lax=1" not in (api or "") and "lax=1" not in (frame or ""), (api, frame))
+        t.ok("after a relaunch: the fetch sends Lax (ExtensionFetch)", "lax=1" in (api or ""), api)
+        t.ok("after a relaunch: Lax still withheld from the frame (WebKit: cross-site)", "lax=1" not in (frame or ""), frame)
 
         sv.cmd({"do": "ext-remove", "id": ext["id"]}); time.sleep(0.8)
         other = add(without, "Panel Without")
