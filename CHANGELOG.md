@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- The page under the address field, ⌘T's floating field, the ⌃Tab switcher, the hidden elements' list, Welcome, What's New or the Find bar hears nothing of the pointer, as under a peek or the column since 1.0.8. Links under them lit up, hover menus opened and the pointer turned into a hand or a text cursor, though a click there never reached the page. Thanks [@ubeann](https://github.com/ubeann) ([#878](https://github.com/driceroland/Search/pull/878), [#877](https://github.com/driceroland/Search/issues/877))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
