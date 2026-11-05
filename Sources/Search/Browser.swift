@@ -3623,6 +3623,17 @@ final class Browser: NSObject, ObservableObject {
         // The floating new tab is the thing in front: ⌘W takes it away and
         // leaves the page under it.
         if launching { dismiss(); return }
+        // So is the field ⌘L or ⌘K raised over a page. It looks the same
+        // whichever key raised it, and ⌘W closed the page under it unless
+        // ⌘T had: a hand that learned ⌘W on one lost a tab to the other two.
+        // A blank tab's field is the tab itself, and goes with it as before.
+        if editing, let tab = active, !tab.isBlank {
+            summoning = false
+            cycling = false
+            editing = false
+            typed = ""
+            return
+        }
         if peekTab != nil { closePeek() }
         else if closePanel() { return }
         else if !pickedTabs.isEmpty { closePickedTabs() }
