@@ -27,6 +27,9 @@ struct Suggestion: Identifiable, Equatable {
         /// Words the engine itself suggested, from what was typed so far
         /// (Settings › General › Suggestions from your search engine).
         case suggested
+        /// Words you searched a site in the field for before, read from
+        /// this window's history (SiteSearch.pastSearches).
+        case searched
         /// Not a place either: something the app itself does.
         case command(AddressCommand)
 
@@ -38,6 +41,7 @@ struct Suggestion: Identifiable, Equatable {
     var id: String {
         if kind.isCommand { return "command " + key }
         if case .suggested = kind { return "suggested " + key }
+        if case .searched = kind { return "searched " + key }
         if case .visited = kind { return History.identity(for: url) }
         if case .bookmark = kind { return History.identity(for: url) }
         return key

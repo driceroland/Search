@@ -192,6 +192,10 @@ struct Omnibox: View {
                         symbol("magnifyingglass")
                     case .command:
                         symbol("command")
+                    case .searched:
+                        // Words you searched this site for before: yours, not
+                        // the site's, so a mark of their own.
+                        symbol("clock.arrow.circlepath")
                     default:
                         // A place — open, kept or visited — wears its site's
                         // icon, as it does in History and the bookmarks bar:
@@ -204,7 +208,7 @@ struct Omnibox: View {
                 .frame(width: 14, height: 14)
                 // The row reads as 1.0.4's did, without the www; the key
                 // itself keeps it, for completing and going there.
-                Text(offer.kind == .suggested ? offer.key : Address.withoutWWW(offer.key))
+                Text(offer.kind == .suggested || offer.kind == .searched ? offer.key : Address.withoutWWW(offer.key))
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.ink)
                     .lineLimit(1)

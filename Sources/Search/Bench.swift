@@ -1308,6 +1308,7 @@ final class Bench {
             func kind(_ offer: Suggestion) -> String {
                 switch offer.kind {
                 case .suggested: "suggested"
+                case .searched: "searched"
                 case .search: "search"
                 case .open: "open"
                 case .visited: "visited"

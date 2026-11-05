@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- With a site put in the address field with Tab, the list offers what you searched that site for before, newest first, read from your history on this Mac and sent nowhere; the last few show before you type, and none in a private tab. With Google in the field and Google your search engine, Suggestions from your search engine shows its suggestions there too; words typed to any other site never go to your engine. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#882](https://github.com/driceroland/Search/pull/882))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
