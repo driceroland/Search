@@ -175,21 +175,17 @@ struct Omnibox: View {
                 // words line up whatever stands in it.
                 Group {
                     switch offer.kind {
-                    case .search:
-                        // The engine's own icon when this Mac already has it: a
-                        // search sent to a site you have been to says so with the
-                        // site rather than a magnifying glass. Nothing is fetched
-                        // for one that isn't known; the glass is what the row
-                        // wears until then.
+                    case .search, .suggested:
+                        // The icon of where the words go, when this Mac already
+                        // has it: what you typed and what the engine suggests
+                        // are both searches sent there, and wear the same mark.
+                        // Nothing is fetched for one that isn't known; the
+                        // glass is what every search row wears until then.
                         if let icon = Favicons.shared.cached(for: offer.url) {
                             Mark(icon: icon, letter: "", size: 14)
                         } else {
                             symbol("magnifyingglass")
                         }
-                    case .suggested:
-                        // The engine's own words: always the glass, so they read
-                        // as searches rather than places.
-                        symbol("magnifyingglass")
                     case .command:
                         symbol("command")
                     default:
@@ -258,7 +254,11 @@ private struct SiteIcon: View {
     let site: SearchSite
     var body: some View {
         let host = site.host.split(separator: "/").first.map(String.init) ?? site.host
-        if let icon = Favicons.shared.cached(host) ?? Favicons.shared.cached("www." + host) {
+        // By where its search goes first, as the rows below it are, so the
+        // chip and its rows wear one mark: Wikipedia's icon is kept under
+        // en.wikipedia.org, not the wikipedia.org the site is named by.
+        if let icon = Favicons.shared.cached(for: site.url(for: "x"))
+            ?? Favicons.shared.cached(host) ?? Favicons.shared.cached("www." + host) {
             Image(nsImage: icon)
                 .resizable()
                 .interpolation(.high)
