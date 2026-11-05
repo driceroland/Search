@@ -1623,12 +1623,8 @@ struct ContentView: View {
             browser.toggleFloat()
         case "k" where !shifted:
             // Held down, ⌘K walks the list a step at a time; letting go of ⌘
-            // takes wherever it stopped.
-            if browser.editing, !browser.offers.isEmpty {
-                browser.stepSummon()
-            } else {
-                browser.summon()
-            }
+            // takes wherever it stopped. Pressed afresh, it puts it away.
+            browser.searchTabsKey()
         case "s" where shifted:
             browser.toggleSidebar()
         case "s" where !shifted:

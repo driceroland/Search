@@ -3481,6 +3481,10 @@ final class Browser: NSObject, ObservableObject {
     /// still comes up for one to be asked about: a private new tab never
     /// asks.
     func launch() {
+        // Again while it is up: put away, as the key that raised it, the way
+        // Spotlight's does. What was typed waits for the next ⌘T (see
+        // dismiss()). It used to stay up with what was typed cleared.
+        if launching { putAway(); return }
         guard prefs.floatingNewTab, let tab = active, !tab.isBlank, peekTab == nil else {
             newTab()
             return
@@ -3489,15 +3493,57 @@ final class Browser: NSObject, ObservableObject {
             newTab()
             return
         }
-        // Again while it is up: it stays, with what was typed cleared.
+        // From ⌘K or ⌘L the words already typed come along, only where they
+        // go changes; or else the words a ⌘T put away was left with, selected
+        // whole when the field takes the keys, so typing over them costs nothing.
+        let words = wordsToCarry ?? launchDraft
+        launchDraft = ""
         reviewing = false
         cancelTabEdit()
         summoning = false
         siteChip = nil
-        typed = ""
         editing = true
         launching = true
+        typed = words
         focusRequest += 1
+    }
+
+    /// What was typed into ⌘T's field when it was put away without opening
+    /// anything: Escape, a click outside, ⌘W or ⌘T again.
+    private var launchDraft = ""
+
+    /// The words in the field now up, for another of its keys to carry on
+    /// with: ⌘T, ⌘L and ⌘K change where Return goes, not what was typed.
+    /// Never the page's own address, which ⌘L put there and nobody typed.
+    private var wordsToCarry: String? {
+        guard fieldShowing, !typed.trimmingCharacters(in: .whitespaces).isEmpty,
+              summoning || launching || typed != shownAddress
+        else { return nil }
+        return typed
+    }
+
+    /// The address ⌘L brings up. Never a name and password written into it:
+    /// they would be on screen, and in whatever you copy from there.
+    private var shownAddress: String {
+        active?.shownURL.map { url -> String in
+            guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false), parts.user != nil || parts.password != nil
+            else { return url.absoluteString }
+            parts.user = nil
+            parts.password = nil
+            return parts.string ?? ""
+        } ?? ""
+    }
+
+    /// The field raised over a page put away whole, whichever key raised
+    /// it, by that key pressed again. A blank tab's field is the tab, and
+    /// stays.
+    private func putAway() {
+        if launching { dismiss(); return }
+        summoning = false
+        cycling = false
+        guard active?.isBlank == false else { return }
+        editing = false
+        typed = ""
     }
 
     func newTab() {
@@ -5744,6 +5790,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘ let go of: take whatever the walk landed on.
     func landSummon() {
+        summonHeld = false
         guard cycling else { return }
         cycling = false
         guard picked != nil else { return }
@@ -5752,13 +5799,34 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘K. Only what is open, nothing else.
     func summon() {
+        let words = wordsToCarry ?? ""
         reviewing = false
         cancelTabEdit()
         launching = false
         summoning = true
-        typed = ""
+        summonHeld = true
+        typed = words
         editing = true
         focusRequest += 1
+    }
+
+    /// True from ⌘K raising the switcher until ⌘ is let go of.
+    private var summonHeld = false
+
+    /// ⌘K pressed, by its key or its menu item. With ⌘ still down from the
+    /// press that raised the switcher, a step down its list, as ⌘Tab walks;
+    /// pressed afresh while it is up, it is put away, as ⌘T and ⌘L put theirs.
+    /// It used to walk on a fresh press too, so ⌘K, let go, ⌘K switched to
+    /// the second page in the list with no list left to say so.
+    func searchTabsKey() {
+        if summoning, editing, summonHeld, !offers.isEmpty {
+            stepSummon()
+        } else if summoning, editing {
+            // Back to the blank tab's own field, or the page as it was.
+            if active?.isBlank == false { putAway() } else { dismiss() }
+        } else {
+            summon()
+        }
     }
 
     private func guess() {
@@ -6085,17 +6153,16 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘L. The current address comes up selected, so typing over it replaces it
     /// and Escape puts it back.
     func edit() {
+        // Again while it is up over the page: put away, as Escape would.
+        if editing, !summoning, !launching, active?.isBlank == false {
+            putAway()
+            return
+        }
+        // From ⌘T or ⌘K, what was typed stays, for this page now.
+        let words = wordsToCarry
         summoning = false
         launching = false
-        // Never a name and password written into the address: they would be
-        // on screen, and in whatever you copy from here.
-        typed = active?.shownURL.map { url -> String in
-            guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false), parts.user != nil || parts.password != nil
-            else { return url.absoluteString }
-            parts.user = nil
-            parts.password = nil
-            return parts.string ?? ""
-        } ?? ""
+        typed = words ?? shownAddress
         editing = true
         focusRequest += 1
     }
@@ -6103,8 +6170,10 @@ final class Browser: NSObject, ObservableObject {
     func dismiss() {
         summoning = false
         cycling = false
-        // The floating new tab was never a tab: nothing is left behind.
+        // The floating new tab was never a tab: nothing is left behind but
+        // what was typed, for the next ⌘T to carry on with.
         if launching {
+            launchDraft = typed
             launching = false
             siteChip = nil
             editing = false
