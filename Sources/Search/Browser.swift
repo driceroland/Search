@@ -2040,8 +2040,18 @@ final class Browser: NSObject, ObservableObject {
         var front = false
         /// Silenced by hand when it closed, so it comes back the same way.
         var muted = false
+        /// The page's own history when it closed (Tab.keepsake): ⇧⌘T puts
+        /// it back with Back, Forward and where it was scrolled to, as Safari
+        /// and Chrome do. Held only here, gone with the ghost.
+        var keepsake: Keepsake? = nil
 
         var label: String { title.isEmpty ? Address.pretty(url) : title }
+    }
+
+    /// WebKit's interactionState is opaque; boxed so a Ghost still compares.
+    struct Keepsake: Equatable {
+        let state: Any
+        static func == (a: Keepsake, b: Keepsake) -> Bool { (a.state as AnyObject) === (b.state as AnyObject) }
     }
 
     /// The bulk close under way, whose tabs are remembered
@@ -3037,16 +3047,19 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Every row this window has, by space: the one on screen, the parked
-    /// ones, and those saved but not brought up this time.
-    func allRows() -> [String: Session.Shape] {
+    /// ones, and those saved but not brought up this time. `keeping`, for
+    /// a window going away (Windows.retire): each open tab's history too, so
+    /// ⇧⌘T brings the window back with Back and Forward where they were.
+    func allRows(keeping: Bool = false) -> [String: Session.Shape] {
         var rows: [String: Session.Shape] = [:]
         for space in spaces {
             let saved = readRow(space.id)
             if !saved.tabs.isEmpty { rows[space.id.uuidString] = saved }
         }
-        rows[spaceID.uuidString] = session(tabs, active: activeID, groups: tabGroups, splits: splits)
+        rows[spaceID.uuidString] = session(tabs, active: activeID, groups: tabGroups, splits: splits, keeping: keeping)
         for (space, row) in parked {
-            rows[space.uuidString] = session(row.tabs, active: row.active, groups: row.groups ?? readRow(space).groups, splits: row.splits)
+            rows[space.uuidString] = session(row.tabs, active: row.active, groups: row.groups ?? readRow(space).groups,
+                                             splits: row.splits, keeping: keeping)
         }
         return rows
     }
@@ -3100,7 +3113,8 @@ final class Browser: NSObject, ObservableObject {
         tabs = []
     }
 
-    private func session(_ tabs: [Tab], active id: Tab.ID?, groups: [TabGroup]? = nil, splits: [TabSplit] = []) -> Session.Shape {
+    private func session(_ tabs: [Tab], active id: Tab.ID?, groups: [TabGroup]? = nil, splits: [TabSplit] = [],
+                         keeping: Bool = false) -> Session.Shape {
         var entries: [Session.Entry] = []
         // A row with nothing in front — a space not yet gone to since a fresh
         // start — stays that way in its file, rather than its first tab (a
@@ -3120,7 +3134,10 @@ final class Browser: NSObject, ObservableObject {
                 touched: visibleTabIDs.contains(tab.id) ? Date() : tab.touched,
                 letGo: tab.pin == nil ? tab.letGo : nil,
                 listed: tab.pin != nil && tab.listed ? true : nil,
-                muted: tab.muted
+                muted: tab.muted,
+                // Asked for only when the window goes: reading it for every
+                // tab at every save would be work for nothing.
+                keepsake: keeping ? tab.keepsake.map(Keepsake.init) : nil
             ))
         }
         // The tab you were on isn't kept — a private one: the one kept just
@@ -3981,7 +3998,7 @@ final class Browser: NSObject, ObservableObject {
             tab.groupID = group.id
             regrouped = regrouped || group.back
             tab.muted = ghost.muted
-            tab.restore(url: ghost.url, title: ghost.title)
+            tab.restore(url: ghost.url, title: ghost.title, state: ghost.keepsake?.state)
             tabs.insert(tab, at: safeInsertionIndex(ghost.index))
             if let was = ghost.was { back[was] = tab }
             if ghost.front { front = tab }
@@ -4024,7 +4041,15 @@ final class Browser: NSObject, ObservableObject {
         activeID = tab.id
         editing = false
         typed = ""
-        tab.go(to: ghost.url)
+        // With its history, the tab wakes as one that slept: the page it
+        // was on, Back and Forward, its place on the page. Without (a page
+        // still arriving when it closed), from its address.
+        if let keepsake = ghost.keepsake {
+            tab.restore(url: ghost.url, title: ghost.title, state: keepsake.state)
+            _ = tab.wake()
+        } else {
+            tab.go(to: ghost.url)
+        }
         // Back into its pair, if the page it was beside is still alone.
         if let id = ghost.partner, let partner = tabs.first(where: { $0.id == id }),
            split(for: partner) == nil, canSplit(tab, with: partner) {
@@ -4053,7 +4078,8 @@ final class Browser: NSObject, ObservableObject {
         guard !tab.shy, let url = tab.address else { return }
         ghosts.append(Ghost(url: url, title: tab.title, index: index, groupID: tab.groupID,
                             partner: partner, onLeft: onLeft, was: tab.id, batch: batching?.id,
-                            kind: batching?.kind ?? .clear, muted: tab.muted))
+                            kind: batching?.kind ?? .clear, muted: tab.muted,
+                            keepsake: tab.keepsake.map(Keepsake.init)))
         // Twelve steps back, a Clear counting as one: its tabs come back
         // together or not at all, however many there were.
         var steps = Set<UUID>()
@@ -5162,7 +5188,8 @@ final class Browser: NSObject, ObservableObject {
             let url = prefs.pinsGoHome ? home ?? saved : saved
             let tab = Tab(configuration: Web.configuration(space: space))
             prepare(tab)
-            tab.restore(url: url, title: url == saved ? entry.title : url.host ?? "", name: entry.name)
+            tab.restore(url: url, title: url == saved ? entry.title : url.host ?? "", name: entry.name,
+                        state: url == saved ? entry.keepsake?.state : nil)
             // Never later than now: a clock set wrong once would keep the tab forever.
             if let touched = entry.touched { tab.touch(at: min(touched, Date())) }
             tab.letGo = entry.letGo.map { min($0, Date()) }
