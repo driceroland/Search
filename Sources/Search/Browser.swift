@@ -345,7 +345,15 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var siteOffer: SearchSite?
     /// The site Tab put in the field: what is typed next searches it.
     @Published var siteChip: SearchSite? {
-        didSet { if siteChip != oldValue { guess() } }
+        didSet {
+            guard siteChip != oldValue else { return }
+            // What one place suggested, or was searched for, is no answer
+            // for another.
+            suggester.stop()
+            engineWords = ("", [])
+            pastSearches = nil
+            guess()
+        }
     }
     /// What is in the field. Every change re-reads the history, because the
     /// list under the field and the grey ending inside it are both just
@@ -5753,10 +5761,12 @@ final class Browser: NSObject, ObservableObject {
     }
 
     private func guess() {
-        // Only a plain field asks the engine (see askEngine, at the end).
-        if summoning || siteChip != nil || typed.trimmingCharacters(in: .whitespaces).isEmpty {
+        // ⌘K asks nobody (see askEngine, at the end).
+        if summoning || typed.trimmingCharacters(in: .whitespaces).isEmpty {
             suggester.stop()
             engineWords = ("", [])
+            // A field emptied starts again from the history as it is now.
+            if siteChip == nil { pastSearches = nil }
         }
         guard !summoning else {
             offers = openPages(matching: typed)
@@ -5767,15 +5777,17 @@ final class Browser: NSObject, ObservableObject {
             return
         }
 
-        // A site in the field: only its search, for what is typed after it.
+        // A site in the field: its search for what is typed after it, what
+        // you searched it for before, and your engine's suggestions when the
+        // site is your engine (see engineQuestion).
         if let site = siteChip {
             siteOffer = nil
             ending = nil
             picked = nil
             let words = typed.trimmingCharacters(in: .whitespaces)
-            offers = words.isEmpty ? [] : site.url(for: words).map {
-                [Suggestion(key: words, title: site.name, url: $0, kind: .search)]
-            } ?? []
+            let search = site.url(for: words).map { [Suggestion(key: words, title: site.name, url: $0, kind: .search)] } ?? []
+            offers = search + searchedOffers(for: words, on: site)
+            if !words.isEmpty { askEngine() }
             return
         }
 
@@ -5815,13 +5827,52 @@ final class Browser: NSObject, ObservableObject {
     /// the switch off, a private tab, ⌘K, a site or a shortcut in charge,
     /// or words that look like anything but a search.
     func engineQuestion(for typed: String) -> URL? {
-        guard prefs.engineSuggests, !summoning, siteChip == nil, active?.shy != true,
-              EngineSuggest.sendable(typed),
-              Keyword.match(typed, in: prefs.keywords) == nil
+        guard prefs.engineSuggests, !summoning, active?.shy != true,
+              EngineSuggest.sendable(typed)
         else { return nil }
         let words = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let site = siteChip {
+            // A site in the field is asked only when it is your engine: the
+            // switch says your engine, so words typed to Reddit never go to
+            // Google, nor words typed to Google when DuckDuckGo is yours.
+            guard Engine.bareHost(of: prefs.engine.template(custom: prefs.customEngine)) == site.host else { return nil }
+        } else if Keyword.match(typed, in: prefs.keywords) != nil {
+            return nil
+        }
         return EngineSuggest.url(for: words, engine: prefs.engine, test: EngineSuggest.testEndpoint)
     }
+
+    /// Where a suggestion taken from the list goes: the site in the field,
+    /// or the engine.
+    private func suggestionURL(for words: String) -> URL? {
+        if let site = siteChip { return site.url(for: words) }
+        return searchURL(for: words)
+    }
+
+    /// Rows for what a site was searched for before: the last few before a
+    /// word is typed, then those the words begin. `typedBefore` is what
+    /// stands before the words in the field ("yt " for a shortcut), so a row
+    /// walked to puts back the whole of what would be typed.
+    private func searchedOffers(for words: String, on site: SearchSite, typedBefore: String = "") -> [Suggestion] {
+        let needle = words.lowercased()
+        let past = searchedBefore(on: site).filter { $0.lowercased().hasPrefix(needle) && $0.lowercased() != needle }
+        return past.prefix(words.isEmpty ? 5 : 3).compactMap { word in
+            site.url(for: word).map { Suggestion(key: typedBefore + word, title: "", url: $0, kind: .searched) }
+        }
+    }
+
+    /// What the site in the field was searched for before, newest first:
+    /// read from the history once when the site goes in, not at every key.
+    /// Never in a private tab, whose field says nothing of where you have been.
+    private func searchedBefore(on site: SearchSite) -> [String] {
+        guard active?.shy != true else { return [] }
+        if let pastSearches, pastSearches.site == site.id { return pastSearches.words }
+        let host = site.host.split(separator: "/").first.map(String.init) ?? site.host
+        let words = SiteSearch.pastSearches(on: site, in: history.everything(matching: host))
+        pastSearches = (site.id, words)
+        return words
+    }
+    private var pastSearches: (site: SearchSite.ID, words: [String])?
 
     private func askEngine() {
         guard let question = engineQuestion(for: typed) else {
@@ -5854,7 +5905,7 @@ final class Browser: NSObject, ObservableObject {
 
     private func engineOffers(_ words: [String]) -> [Suggestion] {
         words.prefix(EngineSuggest.most).compactMap { word in
-            searchURL(for: word).map { Suggestion(key: word, title: "", url: $0, kind: .suggested) }
+            suggestionURL(for: word).map { Suggestion(key: word, title: "", url: $0, kind: .suggested) }
         }
     }
 
@@ -5887,6 +5938,11 @@ final class Browser: NSObject, ObservableObject {
             if let (keyword, rest) = Keyword.match(typed, in: prefs.keywords),
                let asked = Engine.url(for: rest, template: keyword.template) {
                 list.append(Suggestion(key: typed, title: keyword.name, url: asked, kind: .search))
+                // A shortcut is a site put in the field, typed out: what you
+                // searched it for before, as under the site's chip.
+                let site = SearchSite(name: keyword.name, host: keyword.name, template: keyword.template)
+                let before = String(typed.prefix(while: { !$0.isWhitespace })) + " "
+                list += searchedOffers(for: rest, on: site, typedBefore: before)
             } else if let asked = searchURL(for: typed) {
                 list.append(
                     Suggestion(key: typed, title: prefs.engine.name(custom: prefs.customEngine), url: asked, kind: .search)

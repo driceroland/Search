@@ -17,6 +17,10 @@ in [ROADMAP.md](ROADMAP.md).
 - With a site put in the address field with Tab, the empty field says "Search Reddit" (the site's name) instead of "Enter a web address", and says that again once the site is taken out. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#888](https://github.com/driceroland/Search/pull/888))
 - Your search engine's suggestions in the address field wear its icon, as the search for what you typed above them already did, instead of a magnifying glass: every row that searches Google shows Google's. Until this Mac has the engine's icon from a visit, every search row keeps the glass. A site put in the field with Tab wears the same icon as its rows, where Wikipedia's showed a glass. Thanks [@ubeann](https://github.com/ubeann) ([#879](https://github.com/driceroland/Search/issues/879), [#881](https://github.com/driceroland/Search/pull/881))
 
+### Added
+
+- With a site put in the address field with Tab, the list offers what you searched that site for before, newest first, read from your history on this Mac and sent nowhere; the last few show before you type, and none in a private tab. A site shortcut ("yt naruto") offers the same. With Google in the field and Google your search engine, Suggestions from your search engine shows its suggestions there too; words typed to any other site never go to your engine. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#882](https://github.com/driceroland/Search/pull/882))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
