@@ -91,6 +91,10 @@ def main():
         sv.setup()
         for k, v in [("suggest.testURL", FAKE), ("search.engine", "google")]:
             subprocess.run(["defaults", "write", sv.SUITE, k, "-string", v])
+        # A site shortcut, "rd words", to the same Reddit search.
+        shortcut = json.dumps([{"id": "6F1C2D3E-0000-4000-8000-000000000001", "keyword": "rd",
+                                "template": "https://www.reddit.com/search/?q=%s"}]).encode().hex()
+        subprocess.run(["defaults", "write", sv.SUITE, "search.keywords", "-data", shortcut])
         sv.launch()
         sv.page("start")
         for address in ["https://www.reddit.com/search/?q=naruto%20ending%20explained",
@@ -122,6 +126,19 @@ def main():
         s = sug("take", index=index)
         where = s["address"] + " " + s["pending"]
         t.ok("taking a past search searches Reddit for it", "reddit.com/search/" in where and "naruto" in where, where)
+
+        # A shortcut is the chip typed out: the same past searches, the
+        # shortcut kept in front so a row walked to reads as typed.
+        sug("esc")
+        sug("esc")
+        field("rd naruto", typed=True)
+        time.sleep(0.9)
+        s = sug()
+        t.ok("shortcut: Reddit's search, then what you searched it for",
+             rows(s)[-2:] == [("rd naruto vs one piece", "searched"), ("rd naruto ending explained", "searched")], rows(s))
+        t.ok("shortcut: a past search goes to Reddit's search for its words",
+             any(o[1] == "searched" and o[2] == "https://www.reddit.com/search/?q=naruto%20vs%20one%20piece" for o in s["offers"]),
+             s["offers"])
 
         # Google in the field, and Google is your engine: its suggestions.
         took, s = chip("google", "naruto")

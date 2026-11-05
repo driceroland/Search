@@ -5765,6 +5765,8 @@ final class Browser: NSObject, ObservableObject {
         if summoning || typed.trimmingCharacters(in: .whitespaces).isEmpty {
             suggester.stop()
             engineWords = ("", [])
+            // A field emptied starts again from the history as it is now.
+            if siteChip == nil { pastSearches = nil }
         }
         guard !summoning else {
             offers = openPages(matching: typed)
@@ -5783,14 +5785,8 @@ final class Browser: NSObject, ObservableObject {
             ending = nil
             picked = nil
             let words = typed.trimmingCharacters(in: .whitespaces)
-            var list = site.url(for: words).map { [Suggestion(key: words, title: site.name, url: $0, kind: .search)] } ?? []
-            // Before a word is typed, the last few; after, those it begins.
-            let needle = words.lowercased()
-            let past = searchedBefore(on: site).filter { $0.lowercased().hasPrefix(needle) && $0.lowercased() != needle }
-            list += past.prefix(words.isEmpty ? 5 : 3).compactMap { word in
-                site.url(for: word).map { Suggestion(key: word, title: "", url: $0, kind: .searched) }
-            }
-            offers = list
+            let search = site.url(for: words).map { [Suggestion(key: words, title: site.name, url: $0, kind: .search)] } ?? []
+            offers = search + searchedOffers(for: words, on: site)
             if !words.isEmpty { askEngine() }
             return
         }
@@ -5851,6 +5847,18 @@ final class Browser: NSObject, ObservableObject {
     private func suggestionURL(for words: String) -> URL? {
         if let site = siteChip { return site.url(for: words) }
         return searchURL(for: words)
+    }
+
+    /// Rows for what a site was searched for before: the last few before a
+    /// word is typed, then those the words begin. `typedBefore` is what
+    /// stands before the words in the field ("yt " for a shortcut), so a row
+    /// walked to puts back the whole of what would be typed.
+    private func searchedOffers(for words: String, on site: SearchSite, typedBefore: String = "") -> [Suggestion] {
+        let needle = words.lowercased()
+        let past = searchedBefore(on: site).filter { $0.lowercased().hasPrefix(needle) && $0.lowercased() != needle }
+        return past.prefix(words.isEmpty ? 5 : 3).compactMap { word in
+            site.url(for: word).map { Suggestion(key: typedBefore + word, title: "", url: $0, kind: .searched) }
+        }
     }
 
     /// What the site in the field was searched for before, newest first:
@@ -5930,6 +5938,11 @@ final class Browser: NSObject, ObservableObject {
             if let (keyword, rest) = Keyword.match(typed, in: prefs.keywords),
                let asked = Engine.url(for: rest, template: keyword.template) {
                 list.append(Suggestion(key: typed, title: keyword.name, url: asked, kind: .search))
+                // A shortcut is a site put in the field, typed out: what you
+                // searched it for before, as under the site's chip.
+                let site = SearchSite(name: keyword.name, host: keyword.name, template: keyword.template)
+                let before = String(typed.prefix(while: { !$0.isWhitespace })) + " "
+                list += searchedOffers(for: rest, on: site, typedBefore: before)
             } else if let asked = searchURL(for: typed) {
                 list.append(
                     Suggestion(key: typed, title: prefs.engine.name(custom: prefs.customEngine), url: asked, kind: .search)
