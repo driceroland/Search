@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A PDF saved from a private tab with the download button on the PDF no longer leaves its name and site in the Downloads list, which is kept on disk. It says "Saved …" and is listed nowhere, like any other private download.
 - A tab waking from sleep shows the page as you left it, at its size, while it loads. The picture kept of it is taken at the screen's pixels, two to a point on a Retina screen, and was read back as twice the page: for a moment as the tab woke it could show at twice its size, cropped to its top left. It now says how many pixels make a point. Thanks [@pasteley](https://github.com/pasteley) for reporting, with a recording that showed it ([#781](https://github.com/driceroland/Search/issues/781), [#871](https://github.com/driceroland/Search/pull/871))
 - Going back to a tab whose video is still full screen in its own Space no longer leaves the window stuck without its column, on the last tab's page with an empty band beside it, until Search was quit. The video leaves full screen and the tab comes back in the window, with the column
 - A tab carried along the column or across the top stays under the pointer as it passes a Split View pair, and changes places with the pair at its middle. It used to run a row ahead of the pointer for each pair it passed, and land a place or more from where it was let go. Thanks [@ubeann](https://github.com/ubeann) ([#884](https://github.com/driceroland/Search/pull/884))

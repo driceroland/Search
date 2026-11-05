@@ -259,6 +259,35 @@ final class DownloadLifecycleTests: XCTestCase {
         XCTAssertTrue(fixture.cookies("/private.bin").contains { $0?.contains("download-session=fixture-cookie") == true })
     }
 
+    func testPDFSavedFromPrivatePageIsAnnouncedButNeverListed() async throws {
+        let address = URL(string: "https://example.test/paper.pdf")
+        let pdf = Data("%PDF".utf8)
+
+        // The list is what these two stay out of, so an ordinary tab must still reach it.
+        let ordinary = try await openFixturePage()
+        browser.webView(ordinary.web, saveDataToFile: pdf, suggestedFilename: "kept.pdf",
+                        mimeType: "application/pdf", originatingURL: address)
+        XCTAssertEqual(browser.loot.kept.map(\.name), ["kept.pdf"])
+        browser.loot.forgetAll()
+
+        let shy = browser.open(URL(string: "about:blank")!, foreground: true, from: Tab(shy: true))
+        browser.webView(shy.web, saveDataToFile: pdf, suggestedFilename: "shy.pdf",
+                        mimeType: "application/pdf", originatingURL: address)
+        XCTAssertEqual(browser.announcement, "Saved shy.pdf")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: downloadFolder.appendingPathComponent("shy.pdf").path))
+        XCTAssertTrue(browser.loot.kept.isEmpty, "a private tab's PDF left its name and host in downloads.json")
+        browser.close(shy)
+        browser.loot.forgetAll()
+
+        // A page in a store that isn't kept, though no private tab holds it.
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        browser.webView(WKWebView(frame: .zero, configuration: configuration), saveDataToFile: pdf,
+                        suggestedFilename: "unkept.pdf", mimeType: "application/pdf", originatingURL: address)
+        XCTAssertEqual(browser.announcement, "Saved unkept.pdf")
+        XCTAssertTrue(browser.loot.kept.isEmpty, "a PDF from a store that isn't kept was listed")
+    }
+
     private func openFixturePage() async throws -> BrowserTab {
         let tab = browser.open(URL(string: "about:blank")!, foreground: true)
         page = tab
