@@ -431,14 +431,21 @@ struct AddressField: NSViewRepresentable {
         field.cell?.isScrollable = true
         // SwiftUI picks its own colour for a placeholder, and on a pale ground
         // that colour was near-white.
-        field.placeholderAttributedString = NSAttributedString(
-            string: "Enter a web address",
+        field.placeholderAttributedString = Self.placeholder(for: browser.siteChip)
+        context.coordinator.placeheld = browser.siteChip?.name
+        return field
+    }
+
+    /// What the empty field asks for: an address, or with a site put in it
+    /// with Tab, the words to search that site for.
+    private static func placeholder(for site: SearchSite?) -> NSAttributedString {
+        NSAttributedString(
+            string: site.map { "Search \($0.name)" } ?? "Enter a web address",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 15.5),
                 .foregroundColor: NSColor(Palette.ink.opacity(0.3)),
             ]
         )
-        return field
     }
 
     func updateNSView(_ field: Field, context: Context) {
@@ -459,6 +466,12 @@ struct AddressField: NSViewRepresentable {
             coordinator.synced = want
             field.stringValue = want
             coordinator.select(from: browser.typed.count, in: field)
+        }
+
+        if coordinator.placeheld != browser.siteChip?.name {
+            coordinator.placeheld = browser.siteChip?.name
+            field.placeholderAttributedString = Self.placeholder(for: browser.siteChip)
+            DispatchQueue.main.async { coordinator.showPlaceholder(in: field) }
         }
 
         if coordinator.answered != browser.focusRequest {
@@ -490,6 +503,9 @@ struct AddressField: NSViewRepresentable {
         var browser: Browser
         var tab: Tab.ID?
         var answered = -1
+        /// The site the placeholder last named, so it is set again only
+        /// when a site goes in or comes out.
+        var placeheld: String?
         /// The last value pushed in from the browser side, so an update can
         /// tell a change worth applying from one it made itself.
         var synced = ""
@@ -539,6 +555,22 @@ struct AddressField: NSViewRepresentable {
             } else {
                 editor.selectAll(nil)
             }
+        }
+
+        /// A field being typed in shows the placeholder its editor was given
+        /// when the typing began, and AppKit has no way to hand that editor
+        /// a new one: the field begins editing again, with the caret and
+        /// whatever was selected put back where they were.
+        @MainActor func showPlaceholder(in field: Field) {
+            guard let window = field.window, let editor = field.currentEditor() as? NSTextView,
+                  window.firstResponder === editor else { return }
+            let selected = editor.selectedRange()
+            window.makeFirstResponder(field)
+            guard let again = field.currentEditor() as? NSTextView else { return }
+            again.selectedTextAttributes = editor.selectedTextAttributes
+            let length = (again.string as NSString).length
+            let start = min(selected.location, length)
+            again.selectedRange = NSRange(location: start, length: min(selected.length, length - start))
         }
 
         func controlTextDidChange(_ note: Notification) {
