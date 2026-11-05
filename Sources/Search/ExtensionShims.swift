@@ -4199,6 +4199,7 @@ enum ExtensionShims {
             browser.history.forget()
             // As Clear History does: the pages icons were kept for go too.
             Favicons.shared.forgetAll()
+            Shared.forgetDownloadAddresses()
             return nil
 
         // MARK: downloads
@@ -5050,6 +5051,7 @@ enum ExtensionShims {
         }
         if what["history"] == true, origins == nil {
             for trace in browser.history.everything() where trace.last >= since { browser.history.forget(trace.key) }
+            Shared.forgetDownloadAddresses()
         }
     }
 

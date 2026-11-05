@@ -441,6 +441,8 @@ struct DownloadsPanel: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .contextMenu { if let address = entry.address { CopyAddress(address: address) } }
         }
 
         @ViewBuilder
@@ -521,9 +523,22 @@ struct DownloadsPanel: View {
             .padding(.vertical, 9)
             .background(hovering ? Palette.hover : .clear)
             .contentShape(Rectangle())
+            .contextMenu { if let address = keep.address { CopyAddress(address: address) } }
             .onTapGesture { if keep.stillThere { open() } }
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
+        }
+    }
+
+    /// A row's right-click, for handing the download to another app.
+    private struct CopyAddress: View {
+        let address: String
+
+        var body: some View {
+            Button("Copy Address") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(address, forType: .string)
+            }
         }
     }
 }

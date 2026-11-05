@@ -54,6 +54,11 @@ final class FetchEntry: ObservableObject, Identifiable {
     // ones: a private tab's never reach the others, nor theirs a private one.
     var resumeData: Data?
     var request: URLRequest?
+    /// History cleared while it was under way. `request` stays, for Resume
+    /// and Retry, but its address is no longer offered or kept.
+    @Published var addressForgotten = false
+    /// For Copy Address on the row.
+    var address: String? { addressForgotten ? nil : Keep.address(of: request?.url) }
     /// The page's own view while it is there; the row never keeps it, nor
     /// its web process, alive once its tab has closed.
     weak var webView: WKWebView?

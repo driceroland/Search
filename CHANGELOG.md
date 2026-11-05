@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Copy Address in a download's right-click menu, while it runs and once it is done, for files downloaded from now on, to hand it to another download app. Clearing history takes these addresses with it; the files stay listed. Asked for by [@ejzpan](https://github.com/ejzpan) ([#853](https://github.com/driceroland/Search/issues/853))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
