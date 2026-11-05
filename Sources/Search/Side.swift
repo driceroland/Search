@@ -477,6 +477,13 @@ struct SideBar: View {
         }
     }
 
+    /// Each row's place down the column, the gap under it included: a pair
+    /// stands as two lines (see Carried). Worked out once for the list.
+    private func steps(_ rows: [Tab]) -> [CGFloat] {
+        let pairs = prefs.splitView ? Set(browser.splits.filter { $0.left != $0.right }.map(\.left)) : []
+        return rows.map { (pairs.contains($0.id) ? rowHeight * 2 : rowHeight) + SideBar.gap }
+    }
+
     // MARK: - the pinned squares
 
     private var pinnedTabs: [Tab] { browser.squarePins }
@@ -587,6 +594,7 @@ struct SideBar: View {
         let pins = browser.listedPins
         let squares = browser.squarePins.count
         let ghost: Int? = if case .listed(let at)? = crossing?.target { at } else { nil }
+        let pinSteps = steps(pins)
         return VStack(spacing: SideBar.gap) {
             ForEach(Array(pins.enumerated()), id: \.element.id) { index, tab in
                 if ghost == index, let carried = crossingTab {
@@ -603,8 +611,7 @@ struct SideBar: View {
                                 close: { browser.close(tab) })
                     }
                 }
-                    .modifier(Carried(index: index, count: pins.count,
-                                      step: rowHeight + SideBar.gap, vertical: true,
+                    .modifier(Carried(index: index, steps: pinSteps, vertical: true,
                                       space: "listed",
                                       cross: { cross(tab, $0, from: .listed) },
                                       land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
@@ -642,9 +649,9 @@ struct SideBar: View {
             // In a stack of their own, measured, for where a pin carried
             // among them would land.
             if !loose.isEmpty || ghost != nil {
+                let looseSteps = steps(loose)
                 VStack(spacing: SideBar.gap) {
                     ForEach(Array(loose.enumerated()), id: \.element.id) { index, tab in
-                        let step = rowHeight + SideBar.gap
                         if ghost == index, let carried = crossingTab {
                             RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
                         }
@@ -653,7 +660,7 @@ struct SideBar: View {
                                 close: { browser.closeTab(tab) })
                         // Positions here are among the loose rows; the pinned block
                         // sits in front of them in the real list.
-                        .modifier(Carried(index: index, count: loose.count, step: step, vertical: true,
+                        .modifier(Carried(index: index, steps: looseSteps, vertical: true,
                                           space: "rows", onDropTab: { source, point in drop(source, at: point) },
                                           groupDestination: { source, point in destination(source, at: point) },
                                           outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
@@ -690,14 +697,14 @@ struct SideBar: View {
 
     private func groupRows(_ group: TabGroup) -> some View {
         let members = browser.visibleTabs(in: group)
+        let memberSteps = steps(members)
         return VStack(spacing: SideBar.gap) {
             ForEach(Array(members.enumerated()), id: \.element.id) { index, tab in
                 rowItem(tab, tabs: browser.tabs, splits: browser.splits,
                         activeID: browser.activeID, interactive: true, pill: pill,
                         close: { browser.closeTab(tab) })
                     .padding(.leading, icons ? 0 : 14)
-                    .modifier(Carried(index: index, count: members.count,
-                                      step: rowHeight + SideBar.gap, vertical: true,
+                    .modifier(Carried(index: index, steps: memberSteps, vertical: true,
                                       space: "rows", onDropTab: { source, point in drop(source, at: point) },
                                       groupDestination: { source, point in destination(source, at: point) },
                                       outside: { browser.dragOut(tab) }, browser: browser, tab: tab,

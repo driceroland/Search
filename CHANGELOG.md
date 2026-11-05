@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- A tab carried along the column or across the top stays under the pointer as it passes a Split View pair, and changes places with the pair at its middle. It used to run a row ahead of the pointer for each pair it passed, and land a place or more from where it was let go. Thanks [@ubeann](https://github.com/ubeann) ([#884](https://github.com/driceroland/Search/pull/884))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
