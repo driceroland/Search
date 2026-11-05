@@ -3975,6 +3975,8 @@ final class Browser: NSObject, ObservableObject {
         var front: Tab?
         var regrouped = false
         for ghost in members.reversed() {
+            // One of Search's own pages opened again since: it stays the one.
+            if let own = InternalPage(url: ghost.url), pageTab(own.kind) != nil { continue }
             let tab = Tab(configuration: Web.configuration(space: spaceID))
             prepare(tab)
             let group = regroup(ghost)
@@ -4013,6 +4015,12 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         ghosts.removeAll { $0.id == ghost.id }
+        // One of Search's own pages: through show(_:), as ⌘, or ⌘Y opens it,
+        // which keeps it one tab of its kind and readies what it lists.
+        if let own = InternalPage(url: ghost.url) {
+            show(own)
+            return
+        }
         let tab = Tab(configuration: Web.configuration(space: spaceID))
         prepare(tab)
         let group = regroup(ghost)
@@ -4050,7 +4058,10 @@ final class Browser: NSObject, ObservableObject {
     }
 
     private func remember(_ tab: Tab, at index: Int, partner: Tab.ID? = nil, onLeft: Bool = false) {
-        guard !tab.shy, let url = tab.address else { return }
+        // Search's own pages have no address, only their search:// one: kept
+        // by that, so ⇧⌘T after closing History brings History back rather
+        // than the tab closed before it.
+        guard !tab.shy, let url = tab.address ?? tab.page?.url else { return }
         ghosts.append(Ghost(url: url, title: tab.title, index: index, groupID: tab.groupID,
                             partner: partner, onLeft: onLeft, was: tab.id, batch: batching?.id,
                             kind: batching?.kind ?? .clear, muted: tab.muted))
