@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- With a site put in the address field with Tab, the empty field says "Search Reddit" (the site's name) instead of "Enter a web address", and says that again once the site is taken out. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#888](https://github.com/driceroland/Search/pull/888))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
