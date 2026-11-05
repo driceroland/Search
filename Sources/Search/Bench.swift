@@ -1339,6 +1339,8 @@ final class Bench {
                     "offers": browser.offers.map { [$0.key, kind($0), $0.url.absoluteString] },
                     // The grey rest of an address the field would finish to.
                     "ending": browser.ending ?? "",
+                    // ⌘K's line when it has no page to offer.
+                    "note": browser.switcherNote ?? "",
                     "asked": browser.suggester.asked, "cancelled": browser.suggester.cancelled,
                     "tooSlow": browser.suggester.tooSlow,
                     "on": browser.prefs.engineSuggests, "shy": browser.active?.shy ?? false,

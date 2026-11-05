@@ -5771,6 +5771,11 @@ final class Browser: NSObject, ObservableObject {
         }
         guard !summoning else {
             offers = openPages(matching: typed)
+            // What Return does with words no open page answers to, as a row of
+            // its own after the pages that do: a new tab, so the page ⌘K was
+            // pressed over stays as it was (⌘L is the key for changing it).
+            // Unsaid, Return took the address to that page.
+            if let row = switcherFallback() { offers.append(row) }
             ending = nil
             // The most recent page is already chosen, so ⌘K then Return is the
             // whole gesture.
@@ -6001,6 +6006,26 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// ⌘K's last row: where what was typed goes when it isn't an open page.
+    /// On a blank tab that tab takes it, as before; over a page, a new tab.
+    private func switcherFallback() -> Suggestion? {
+        let words = typed.trimmingCharacters(in: .whitespaces)
+        guard !words.isEmpty, let url = destination(for: words) else { return nil }
+        let isAddress = Address.file(from: words) ?? Address.url(from: words) != nil
+        let here = active?.isBlank ?? true
+        let title = isAddress
+            ? (here ? "Open in this tab" : "Open in a new tab")
+            : (here ? "Search in this tab" : "Search in a new tab")
+        return Suggestion(key: words, title: title, url: url, kind: isAddress ? .known : .search)
+    }
+
+    /// A quiet line in ⌘K's list when it has no page to offer, so an empty
+    /// switcher reads as an answer rather than as one still working.
+    var switcherNote: String? {
+        guard summoning, offers.isEmpty else { return nil }
+        return typed.trimmingCharacters(in: .whitespaces).isEmpty ? "No other tabs open" : "No open tab matches"
+    }
+
     /// What is open, most recently looked at first, filtered by what has been
     /// typed. On an empty field this is the whole point of the summon: it is
     /// the tab strip, except you read it only when you ask for it.
@@ -6032,12 +6057,14 @@ final class Browser: NSObject, ObservableObject {
     /// same question but must not share an answer: a list that appears under a
     /// resting cursor would otherwise rewrite the field before you had moved.
     func take(_ offer: Suggestion) {
+        // ⌘K's own last row, chosen with the pointer: a new tab, as Return.
+        let aside = summoning && active?.isBlank == false
         summoning = false
         if case .command(let command) = offer.kind {
             command.run(on: self)
         } else if let id = offer.tab, let tab = tabs.first(where: { $0.id == id }) {
             select(tab)
-        } else if launching {
+        } else if launching || aside {
             open(offer.url, foreground: true, from: active)
         } else {
             (active ?? tabs.first)?.go(to: offer.url)
@@ -6137,6 +6164,8 @@ final class Browser: NSObject, ObservableObject {
     /// tab you were on is left as it was, behind it unless `front` (⇧⌘Return)
     /// asks to go there.
     func submit(aside: Bool = false, front: Bool = false) {
+        // Words given to ⌘K over a page go to a new tab (see switcherFallback).
+        let fromSwitcher = summoning && active?.isBlank == false
         // A page already open is switched to, not opened again.
         if let picked, offers.indices.contains(picked),
            let id = offers[picked].tab,
@@ -6197,9 +6226,10 @@ final class Browser: NSObject, ObservableObject {
             picked = nil
             return
         }
-        if launching, !aside {
+        if launching || fromSwitcher, !aside {
             // The floating new tab: what was typed gets a tab of its own, and
-            // the page the field was raised over stays as it was.
+            // the page the field was raised over stays as it was. The same for
+            // ⌘K, whose field looks no different.
             open(url, foreground: true, from: active)
         } else if aside {
             // Opened behind the page by hand, as a ⌘-clicked link is: it may

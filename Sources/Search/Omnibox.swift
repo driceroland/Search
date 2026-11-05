@@ -59,7 +59,7 @@ struct Omnibox: View {
                     // Present or gone, not always-on-and-hidden: the list keeps
                     // the appear and disappear it had, and the overlay is what
                     // keeps that from moving the field.
-                    if !browser.offers.isEmpty || browser.siteOffer != nil {
+                    if !browser.offers.isEmpty || browser.siteOffer != nil || browser.switcherNote != nil {
                         list
                             .frame(width: width)
                             .offset(y: Self.fieldHeight + 8)
@@ -75,7 +75,7 @@ struct Omnibox: View {
                 // an animation of its own. Its rows follow what was typed or
                 // pasted at once — sliding into place on a spring between
                 // keystrokes, they trailed behind the field.
-                .animation(Motion.quick, value: browser.offers.isEmpty && browser.siteOffer == nil)
+                .animation(Motion.quick, value: browser.offers.isEmpty && browser.siteOffer == nil && browser.switcherNote == nil)
                 .animation(Motion.settle, value: refused)
             }
         }
@@ -148,6 +148,14 @@ struct Omnibox: View {
                 Row(offer: offer, picked: browser.picked == index)
                     .contentShape(Rectangle())
                     .onTapGesture { browser.take(offer) }
+            }
+            if let note = browser.switcherNote {
+                Text(note)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
             }
         }
         .padding(6)
