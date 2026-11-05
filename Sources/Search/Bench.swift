@@ -1345,6 +1345,8 @@ final class Bench {
                     "ending": browser.ending ?? "",
                     // ⌘K's line when it has no page to offer.
                     "note": browser.switcherNote ?? "",
+                    // The picked row's key cap: what Return does with it.
+                    "hint": browser.picked.flatMap { browser.offers.indices.contains($0) ? browser.returnWord(for: browser.offers[$0]) : nil } ?? "",
                     "asked": browser.suggester.asked, "cancelled": browser.suggester.cancelled,
                     "tooSlow": browser.suggester.tooSlow,
                     "on": browser.prefs.engineSuggests, "shy": browser.active?.shy ?? false,

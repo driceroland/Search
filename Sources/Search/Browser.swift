@@ -6164,6 +6164,14 @@ final class Browser: NSObject, ObservableObject {
         return typed.trimmingCharacters(in: .whitespaces).isEmpty ? "No other tabs open" : "No open tab matches"
     }
 
+    /// The word on the picked row's key cap: what Return will do with it.
+    func returnWord(for offer: Suggestion) -> String {
+        if offer.tab != nil { return "Switch" }
+        if offer.kind.isCommand { return "Run" }
+        // ⌘K over a page sends anything that isn't an open tab to a new one.
+        return launching || (summoning && active?.isBlank == false) ? "New tab" : "Open"
+    }
+
     /// What is open, most recently looked at first, filtered by what has been
     /// typed. On an empty field this is the whole point of the summon: it is
     /// the tab strip, except you read it only when you ask for it.

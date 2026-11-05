@@ -145,7 +145,8 @@ struct Omnibox: View {
                     .onTapGesture { _ = browser.lockSiteOffer() }
             }
             ForEach(Array(browser.offers.enumerated()), id: \.element.id) { index, offer in
-                Row(offer: offer, picked: browser.picked == index)
+                Row(offer: offer, picked: browser.picked == index,
+                    hint: browser.picked == index ? browser.returnWord(for: offer) : nil)
                     .contentShape(Rectangle())
                     .onTapGesture { browser.take(offer) }
             }
@@ -174,6 +175,9 @@ struct Omnibox: View {
         /// Where the arrow keys have walked to. The pointer gets its own,
         /// quieter mark, and changes nothing but the look of the row.
         let picked: Bool
+        /// What Return does with the picked row, on a key cap at its end, as
+        /// "Search Reddit" shows Tab: switch to a tab, open a new one, or go.
+        var hint: String? = nil
 
         @State private var hovering = false
 
@@ -229,6 +233,17 @@ struct Omnibox: View {
                     // Kept by you, not only visited: the bookmark's mark,
                     // at the end now that the site's icon leads the row.
                     symbol("bookmark")
+                }
+                if let hint {
+                    Text("↩ \(hint)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 6)
+                        .frame(height: 18)
+                        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                        .accessibilityLabel("Return: \(hint)")
                 }
             }
             .padding(.horizontal, 12)
