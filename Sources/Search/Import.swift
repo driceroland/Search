@@ -484,11 +484,16 @@ enum Chromium {
         let passwords = source.files(only: profile).reduce(0) { sum, file in
             sum + count("SELECT COUNT(*) FROM logins WHERE blacklisted_by_user = 0 AND length(password_value) > 0", in: file)
         }
+        // The open tabs and groups, read from the session file beside the
+        // databases. Counted here, off the main thread, never at bring time.
+        let open = sessions(in: source, profile: profile)
         return ImportSource.Preview(
             bookmarks: Bookmarks.count(bookmarks(in: source, profile: profile)),
             places: min(limit, places),
             passwords: passwords,
-            extensions: extensions(in: source, profile: profile)
+            extensions: extensions(in: source, profile: profile),
+            tabs: open.tabs,
+            groups: open.groups.count
         )
     }
 
@@ -1377,6 +1382,15 @@ enum ImportSource: Identifiable, Hashable {
         }
     }
 
+    /// The open tabs, windows and tab groups of one profile, or of all of
+    /// them when nil. Empty for a browser that keeps nothing open to read.
+    func sessions(profile: String? = nil) -> SessionImport.Snapshot {
+        switch self {
+        case .chromium(let s): return Chromium.sessions(in: s, profile: profile)
+        case .mozilla: return SessionImport.Snapshot()
+        }
+    }
+
     func read(profile: String? = nil) throws -> Chromium.Found {
         switch self {
         case .chromium(let s): return try Chromium.read(s, profile: profile)
@@ -1456,6 +1470,9 @@ enum ImportSource: Identifiable, Hashable {
         var passwords = 0
         /// Chrome Web Store ids, for a Chromium browser.
         var extensions: [String] = []
+        /// Open tabs and the tab groups holding them, for a Chromium browser.
+        var tabs = 0
+        var groups = 0
     }
 
     func preview(profile: String?) -> Preview {
@@ -1478,7 +1495,7 @@ enum ImportSource: Identifiable, Hashable {
 
 /// Import reads validate the opened descriptor, not just a path checked earlier.
 /// JSON has a byte limit both before and during reading, including file growth.
-private enum ImportRead {
+enum ImportRead {
     static let jsonLimit = 64 * 1024 * 1024
 
     static func openRegular(_ url: URL, inside root: URL? = nil, limit: Int? = nil) throws -> Int32 {
