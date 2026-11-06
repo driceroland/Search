@@ -595,13 +595,26 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return head && head.length <= max ? head : null;
       }
 
+      // The boxes a pick filled flash in the Mac's accent colour and fade
+      // back, box after box a beat apart, so it reads as running down the
+      // form, as Safari marks what it filled. An animation of the box (the
+      // Web Animations API), not a change to its style: nothing of it is
+      // left on the box once it ends, and it fades back to whatever the
+      // box's own colour is by then.
+      function flash(box, tint, delay) {
+        try {
+          box.animate([{ backgroundColor: tint }, { backgroundColor: tint, offset: 0.08 }],
+            { duration: 950, delay: delay, easing: 'ease-out' });
+        } catch (e) {}
+      }
+
       // A card's details into the boxes that go with the one the caret is
       // in. That one always; the others only if still empty, so nothing
       // typed is written over, only those of its own address (shipping or
       // billing), and only those you can see. `alone` (a shift-click): that
       // one only. `box`: the box the list was offered under, which has to be
-      // the one the caret is still in.
-      function fillContact(card, alone, box) {
+      // the one the caret is still in. `tint`: the colour they flash, if.
+      function fillContact(card, alone, box, tint) {
         var el = document.activeElement;
         if (box != null && (!el || boxId(el) !== box)) return 0;
         var kind = contactBox(el);
@@ -609,7 +622,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         var boxes = alone ? [{ box: el, kind: kind, group: '' }] : contactBoxes(contactScope(el), el);
         var mine = boxes.filter(function (b) { return b.box === el; })[0];
         var group = (mine && mine.group) || (boxes.filter(function (b) { return b.group; })[0] || {}).group || '';
-        var filled = 0;
+        var filled = 0, took = [];
         boxes.forEach(function (b) {
           var box = b.box, kind = b.kind, tag = (box.tagName || '').toLowerCase();
           if (box !== el) {
@@ -621,15 +634,17 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           if (kind === 'street-address' && tag !== 'textarea' && value) value = value.replace(/\\s*\\n\\s*/g, ', ');
           if (tag === 'select') {
             var wanted = kind === 'country' || kind === 'country-name' ? [card['country'], card['country-name']] : [value];
-            if (choose(box, wanted)) filled++;
+            if (choose(box, wanted)) { filled++; took.push(box); }
             return;
           }
           value = value && fits(value, kind, box.maxLength);
           if (!value) return;
           put(box, value);
           filled++;
+          took.push(box);
         });
         try { el.focus(); } catch (e) {}
+        if (tint) took.forEach(function (box, i) { flash(box, tint, i * 30); });
         return filled;
       }
 
@@ -698,7 +713,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         hasPassword: function () { return !!pair(); },
         // Your card's details, picked from under a box for one: how many
         // boxes took one.
-        contact: function (card, alone, box) { return fillContact(card || {}, !!alone, box); },
+        contact: function (card, alone, box, tint) { return fillContact(card || {}, !!alone, box, tint); },
         // What a box is offered from your card, for the tests: a kind
         // ("email", "postal-code"…) or null.
         contactVerdict: function (el) { return contactBox(el || document.activeElement); },
