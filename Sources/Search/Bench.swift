@@ -1085,6 +1085,39 @@ final class Bench {
             }
             walk(0)
 
+        case "foldtime":
+            // ⌘S, timed: each pass of the main run loop for the next 0.7 s,
+            // from waking to going back to sleep, with when it started after
+            // the press, the page's width at its end, and the rows built in
+            // it. The first pass is the press itself, whatever it costs
+            // before the slide can start. Test runs only.
+            guard Store.testing else { answer(["error": "foldtime is for test runs"]); return }
+            guard let web = browser.active?.built else { answer(["error": "foldtime needs a page on screen"]); return }
+            var passes: [[String: Any]] = []
+            var woke: CFAbsoluteTime = 0
+            var rows = 0
+            let pressed = CFAbsoluteTimeGetCurrent()
+            let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { _, _ in
+                woke = CFAbsoluteTimeGetCurrent()
+            }
+            let sleep = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
+                let now = CFAbsoluteTimeGetCurrent()
+                let start = woke > 0 ? woke : pressed
+                let built = Bench.bodies["row", default: 0]
+                passes.append(["at": ((start - pressed) * 1000).rounded(), "ms": ((now - start) * 10000).rounded() / 10,
+                               "page": Double(web.frame.width), "rows": built - rows])
+                rows = built
+                woke = 0
+            }
+            for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes) }
+            Bench.bodies = [:]
+            let before = Double(web.frame.width)
+            browser.toggleFold()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+                answer(["folded": browser.folded, "pageBefore": before, "passes": passes])
+            }
+
         case "pointer":
             // What a page's own tracking areas hand their owners as the
             // pointer goes over it — a move, or the pointer coming in — and a

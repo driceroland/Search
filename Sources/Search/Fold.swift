@@ -44,7 +44,9 @@ import SwiftUI
 extension Browser {
     /// ⌘S. The column, or the strip across the top, out of the way, or back.
     func toggleFold() {
-        peeking = false
+        // Only if it was out: set at all, every row of the column is built
+        // again, 30 of them with 30 tabs, before the slide starts.
+        if peeking { peeking = false }
         withAnimation(Motion.folding(out: folded)) { folded.toggle() }
     }
 
@@ -83,8 +85,8 @@ extension Browser {
     }
 }
 
-/// Over the window while the column or the strip is folded: the column or
-/// the strip itself while it is out, brought out by the pointer at the
+/// Over the window: the column, beside the page or folded away, and the
+/// strip while it is folded; out over the page once the pointer is at the
 /// window's chosen side, or its top edge.
 struct Fold: View {
     @ObservedObject var browser: Browser
@@ -152,7 +154,15 @@ struct Fold: View {
             }
             ZStack(alignment: onRight ? .trailing : .leading) {
                 Color.clear.frame(width: 0)
-                if folding, prefs.sidebar {
+                if prefs.sidebar {
+                    // The one column, beside the page or folded away: ⌘S
+                    // slides it rather than trading it for another. Two
+                    // columns, one beside the page and one here for the fold,
+                    // had every row built four times over on each ⌘S, 130 to
+                    // 165ms of the main thread with 30 tabs before the slide's
+                    // first frame, against a slide of 150ms (measured
+                    // 2026-11-06, bench foldtime).
+                    //
                     // Kept while folded, off the window's edge, and slid out
                     // and back rather than made anew each time. Made anew,
                     // every row was built again on every peek, about 60ms of
@@ -173,14 +183,21 @@ struct Fold: View {
                     // rectangle either way. It wears the window's ground, as
                     // it does beside the page's card (see CardEdge), or its
                     // own white where the page is no card.
+                    // Away exactly when the lights are, which ride with it.
                     SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards)
-                        .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true, strength: browser.peeking ? 1 : 0))
-                        .offset(x: browser.peeking ? 0 : (onRight ? prefs.columnWidth : -prefs.columnWidth))
-                        .allowsHitTesting(browser.peeking)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
+                                             strength: browser.folded && browser.peeking ? 1 : 0))
+                        .offset(x: lightsOff ? (onRight ? prefs.columnWidth : -prefs.columnWidth) : 0)
+                        .allowsHitTesting(!lightsOff)
+                        .transition(.move(edge: onRight ? .trailing : .leading))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity,
                    alignment: onRight ? .trailing : .leading)
+            // As the page beside it moves (see ContentView).
+            .animation(Motion.glide, value: prefs.sidebar)
+            .animation(Motion.glide, value: prefs.sidePosition)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: onRight ? .topTrailing : .topLeading)
