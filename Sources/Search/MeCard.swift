@@ -49,6 +49,14 @@ final class MeCard {
 
     static var allowed: Bool { CNContactStore.authorizationStatus(for: .contacts) == .authorized }
 
+    /// The colour the boxes it fills flash: the Mac's accent colour (System
+    /// Settings › Appearance), as CSS, faint enough to read the text through.
+    static var tint: String {
+        let color = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
+        func byte(_ part: CGFloat) -> Int { Int((part * 255).rounded()) }
+        return "rgba(\(byte(color.redComponent)), \(byte(color.greenComponent)), \(byte(color.blueComponent)), 0.32)"
+    }
+
     /// macOS's question, the first time; the answer it gave, after.
     func ask() async -> Bool {
         if Self.allowed { return true }

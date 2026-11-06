@@ -359,6 +359,10 @@ final class Preferences: ObservableObject {
     }
     /// Your card in Contacts under the boxes for your name, email, phone and
     /// address (MeCard). Off unless turned on, which is when macOS asks.
+    /// The boxes your card's details go into flash in the accent colour.
+    @Published var flashesContacts: Bool {
+        didSet { store.set(flashesContacts, forKey: "contacts.flash") }
+    }
     @Published var fillsContacts: Bool {
         didSet {
             store.set(fillsContacts, forKey: "contacts.fill")
@@ -771,6 +775,7 @@ final class Preferences: ObservableObject {
         savesPasswords = store.object(forKey: "passwords.save") as? Bool ?? true
         fillsPasswords = store.object(forKey: "passwords.fill") as? Bool ?? true
         applePasswords = store.bool(forKey: "passwords.apple")
+        flashesContacts = store.object(forKey: "contacts.flash") as? Bool ?? true
         let contacts = store.bool(forKey: "contacts.fill")
         fillsContacts = contacts
         FormRelay.contacts = contacts

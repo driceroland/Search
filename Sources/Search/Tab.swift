@@ -1331,9 +1331,10 @@ final class Tab: ObservableObject, Identifiable {
     /// `done` hears whether any box took one. `alone`: the box with the
     /// caret only, not the rest of its form. `box`: the page's number for
     /// the box the list hung from. `onlyOn`: the page the list was made
-    /// for, whose origin, port and all, the page has to still be.
+    /// for, whose origin, port and all, the page has to still be. `flash`:
+    /// the boxes it fills flash in the accent colour (MeCard.tint).
     func fillContact(_ fields: [String: String], alone: Bool = false, box: Int? = nil, onlyOn page: URL? = nil,
-                     done: ((Bool) -> Void)? = nil) {
+                     flash: Bool = false, done: ((Bool) -> Void)? = nil) {
         var still = ""
         if let page {
             guard let origin = Self.origin(of: page) else { done?(false); return }
@@ -1344,7 +1345,8 @@ final class Tab: ObservableObject, Identifiable {
             return
         }
         let at = box.map(String.init) ?? "null"
-        web.evaluateInSearch("\(still)window.__officeForms && window.__officeForms.contact(\(card), \(alone), \(at)) > 0") { result in
+        let tint = flash ? "`\(escape(MeCard.tint))`" : "null"
+        web.evaluateInSearch("\(still)window.__officeForms && window.__officeForms.contact(\(card), \(alone), \(at), \(tint)) > 0") { result in
             done?((result as? Bool) ?? false)
         }
     }

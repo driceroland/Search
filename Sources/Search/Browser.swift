@@ -958,7 +958,7 @@ final class Browser: NSObject, ObservableObject {
         suggesting = nil
         guard let page = list.page, let origin = Tab.origin(of: page), Tab.origin(of: tab.pageAddress) == origin else { return }
         pickedInto = tab.id
-        tab.fillContact(contact.fields, alone: alone, box: list.box, onlyOn: page) { [weak self] worked in
+        tab.fillContact(contact.fields, alone: alone, box: list.box, onlyOn: page, flash: prefs.flashesContacts) { [weak self] worked in
             if !worked { self?.announce("Couldn't find the form's boxes anymore") }
         }
     }

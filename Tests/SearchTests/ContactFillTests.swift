@@ -315,6 +315,32 @@ final class ContactFillTests: XCTestCase {
         }
     }
 
+    /// A flash is an animation of each box, a beat after the one before,
+    /// and writes nothing into the box's own style. Without a colour, none.
+    func testTheFlashRunsDownTheFormAndLeavesNoStyle() async throws {
+        let form = #"<form><input id="a" autocomplete="name" style="background-color: rgb(1, 2, 3)"><input id="b" type="email" autocomplete="email"></form>"#
+        let delays = """
+        return ['a', 'b'].map(function (id) {
+          var all = document.getElementById(id).getAnimations();
+          return all.length ? all[0].effect.getTiming().delay : -1;
+        });
+        """
+        let web = try await page(form)
+        _ = try await call(web, "document.getElementById('a').focus(); return true;")
+        _ = try await call(web, "return window.__officeForms.contact(\(Self.json(Self.card)), false, null, 'rgba(10, 20, 30, 0.5)');")
+        let flashed = try await call(web, delays) as? [Double]
+        XCTAssertEqual(flashed, [0, 30], "each box a beat after the one before")
+        let style = try await call(web, "return [document.getElementById('a').getAttribute('style'), document.getElementById('b').getAttribute('style')];") as? [Any]
+        XCTAssertEqual(style?.first as? String, "background-color: rgb(1, 2, 3)", "the box's own style untouched")
+        XCTAssertTrue(style?.last is NSNull, "nothing written into a box that had no style")
+
+        let plain = try await page(form)
+        _ = try await call(plain, "document.getElementById('a').focus(); return true;")
+        _ = try await call(plain, "return window.__officeForms.contact(\(Self.json(Self.card)));")
+        let still = try await call(plain, delays) as? [Double]
+        XCTAssertEqual(still, [-1, -1], "turned off, no flash")
+    }
+
     /// A pick is checked against the page's origin as the page gives it.
     func testAnOriginIsTheOneThePageGives() {
         XCTAssertEqual(Tab.origin(of: URL(string: "https://Shop.Example.test/checkout?x=1")), "https://shop.example.test")
