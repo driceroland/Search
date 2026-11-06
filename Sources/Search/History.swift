@@ -390,21 +390,24 @@ final class History: ObservableObject {
             }
         }
 
-        for visit in visits.values {
-            guard let text = pageText[visit.key],
-                  let fit = History.fit(bytes, words, address: text.searchable, findable: text.findable)
+        for (key, text) in pageText {
+            guard History.holds(words, text.findable),
+                  let fit = History.fit(bytes, words, address: text.searchable, findable: text.findable),
+                  let visit = visits[key]
             else { continue }
             visited(visit, text, fit)
         }
         for site in History.knownText where !visitedHosts.contains(site.host) {
-            guard let fit = History.fit(bytes, words, address: site.host, findable: site.findable) else { continue }
+            guard History.holds(words, site.findable),
+                  let fit = History.fit(bytes, words, address: site.host, findable: site.findable)
+            else { continue }
             known(site, fit)
         }
 
         // Room left: a typo (#762), fit 1. Slowest, so only then, from three letters.
         guard best.count < limit, needle.count >= 3 else { return best.map(\.0) }
-        for visit in visits.values {
-            guard let text = pageText[visit.key], Fuzzy.match(words, in: text.findable) == 0 else { continue }
+        for (key, text) in pageText {
+            guard Fuzzy.match(words, in: text.findable) == 0, let visit = visits[key] else { continue }
             visited(visit, text, 1)
         }
         for site in History.knownText where !visitedHosts.contains(site.host) {
@@ -413,6 +416,11 @@ final class History: ObservableObject {
         }
 
         return best.map(\.0)
+    }
+
+    nonisolated private static func holds(_ words: [[UInt8]], _ findable: String) -> Bool {
+        var findable = findable
+        return findable.withUTF8 { text in words.allSatisfy { Fuzzy.contains(text, $0) } }
     }
 
     /// 4 address starts with it, 3 a word of the host does, 2 every word
@@ -427,14 +435,7 @@ final class History: ObservableObject {
         }
         if let named { return named }
         guard needle.count >= 3 else { return nil }
-        return findable.withUTF8 { text -> Double? in
-            var fit = 2.0
-            for word in words where !Fuzzy.startsWord(word, in: text) {
-                guard Fuzzy.contains(text, word) else { return nil }
-                fit = 1
-            }
-            return fit
-        }
+        return findable.withUTF8 { text in words.allSatisfy { Fuzzy.startsWord($0, in: text) } ? 2 : 1 }
     }
 
     /// Addresses in order, so the pages under one sit together.
