@@ -42,10 +42,15 @@ class Site(BaseHTTPRequestHandler):
 def serve():
     s = ThreadingHTTPServer(("127.0.0.1", 0), Site); threading.Thread(target=s.serve_forever, daemon=True).start(); return s.server_port
 
-def icon(host, within=12):
+def kept():
+    return set(Path(f"{sv.SUPPORT}/icons").glob("*.png"))
+
+def icon(before, within=12):
+    """The PNG kept since `before`: files are named by a hash of the site
+    (Favicons.ident), not by its host, so a new one is the site's."""
     end = time.time() + within
     while time.time() < end:
-        found = sorted(Path(f"{sv.SUPPORT}/icons").glob(f"{host}*.png"))
+        found = sorted(kept() - before)
         if found: return found[0]
         time.sleep(0.3)
     return None
@@ -66,22 +71,23 @@ try:
     sv.setup(); sv.launch()
     p1, p2, p3 = serve(), serve(), serve()
     # Three sites: an icon each, by host and port.
-    sv.sp("open", url=f"http://127.0.0.1:{p1}/svg"); time.sleep(1)
-    got = icon(f"127.0.0.1:{p1}")
+    before = kept(); sv.sp("open", url=f"http://127.0.0.1:{p1}/svg"); time.sleep(1)
+    got = icon(before)
     t.ok("a site with only an SVG icon gets it", got is not None, got)
     if got:
         r, g, b = centre(got)
         t.ok("…drawn as the SVG is: red", r > 200 and g < 60 and b < 60, (r, g, b))
 
-    sv.sp("open", url=f"http://localhost:{p2}/data"); time.sleep(1)
-    got = icon(f"localhost:{p2}")
+    before = kept(); sv.sp("open", url=f"http://localhost:{p2}/data"); time.sleep(1)
+    got = icon(before)
     t.ok("an SVG icon written into the page as data: too", got is not None, got)
     if got:
         r, g, b = centre(got)
         t.ok("…blue, as it says", b > 200 and r < 60 and g < 60, (r, g, b))
 
-    sv.sp("open", url=f"http://127.0.0.1:{p3}/broken"); time.sleep(1)
-    t.ok("a broken SVG keeps the letter: nothing kept", icon(f"127.0.0.1:{p3}", within=6) is None)
+    before = kept(); sv.sp("open", url=f"http://127.0.0.1:{p3}/broken"); time.sleep(1)
+    left = icon(before, within=6)
+    t.ok("a broken SVG keeps the letter: nothing kept", left is None, left)
 finally:
     sv.finish()
 t.done()
