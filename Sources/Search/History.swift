@@ -100,6 +100,8 @@ final class History: ObservableObject {
     private let epoch = Date()
     /// Frecency's month, in seconds.
     private static let fading = 30.0 * 86_400
+    /// A name the app merely knows: under one fresh visit.
+    private static let knownWeight = log(1.5)
     private var visitedHosts: Set<String> = []
 
     /// Its file: history.json for Personal, one of its own for each other
@@ -387,8 +389,6 @@ final class History: ObservableObject {
         let bytes = Array(needle.utf8)
         let words = needle.split(whereSeparator: \.isWhitespace).map { Array($0.utf8) }
         let fade = exp(-Date().timeIntervalSince(epoch) / History.fading)
-        // A known name: under one fresh visit.
-        let knownWeight = log(1.5)
         // Only the best few are kept while scanning, in order, and only those
         // become suggestions. Making one for every match in a big history,
         // only to sort them all and keep five, was work thrown away each key.
@@ -411,7 +411,7 @@ final class History: ObservableObject {
             }
         }
         func known(_ site: (host: String, title: String, findable: String), _ fit: Double) {
-            offer(site.host, fit * knownWeight) {
+            offer(site.host, fit * History.knownWeight) {
                 URL(string: "https://" + site.host).map { Suggestion(key: site.host, title: site.title, url: $0, kind: .known) }
             }
         }
