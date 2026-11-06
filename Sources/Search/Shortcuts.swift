@@ -213,7 +213,7 @@ struct Command: Identifiable {
         },
         Command("tabs.previous", "Previous Tab", .tabs, KeyCombo("[", shift: true)) { $0.step(-1) },
         Command("tabs.search", "Search Tabs…", .tabs, KeyCombo("k")) { browser in
-            if browser.editing, !browser.offers.isEmpty { browser.stepSummon() } else { browser.summon() }
+            browser.searchTabsKey()
         },
         // ⌥⌘N, Chrome's on the Mac: ⌃⌘S is the Mac's own Show Sidebar, and
         // sits beside ⌘S, which folds the tabs away.
