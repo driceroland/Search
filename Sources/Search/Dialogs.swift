@@ -23,6 +23,8 @@ final class HeldQuestion {
     }
 
     func present() {
+        // A dismissed or already presented question must not be shown again.
+        guard drop != nil else { return }
         drop = nil
         show()
     }
