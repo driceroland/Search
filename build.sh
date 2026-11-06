@@ -3,12 +3,13 @@
 # asked, the disk image people install it from and the ZIP the updater
 # fetches.
 #
-#   ./build.sh                 debug-free release build, ad-hoc signed: runs here
-#   SEARCH_DEV=1 ./build.sh    the same as a dev build: yellow icon, named for
+#   ./build.sh                 debug-free release build, ad-hoc signed: runs here.
+#                              Off main, a dev build: yellow icon, named for
 #                              the branch (Search-split-view from
 #                              claude/split-view-4a6927)
+#   SEARCH_DEV=0 ./build.sh    a plain build on any branch
 #   SEARCH_DEV=1 SEARCH_FEATURE=name ./build.sh
-#                              the same, named Search-name
+#                              a dev build named Search-name, on main too
 #   ./build.sh release dmg     + build/Search.dmg, build/Search.zip and
 #                                build/appcast.json, signed with Developer ID
 #                                if there is one in the keychain
@@ -64,12 +65,20 @@ NAME="Search"
 # and ⌘Tab, so it's never taken for the installed app beside it, or for the
 # dev build from another worktree. Only the name people see changes. The
 # bundle id stays, so it shares the real app's settings, and so does the
-# folder, build/Search.app, which fresh.sh and the tests open. Not by
-# default: a plain ./build.sh is also the Search people here use every day
-# and the release candidates. What goes in a DMG or a ZIP is never one.
+# folder, build/Search.app, which fresh.sh and the tests open. The default
+# on any branch but main, since a plain build there opened beside the
+# installed Search took its own Dock icon under the same name and icon, and
+# read as an update that hadn't landed in place (6 Nov 2026). On main, a
+# plain ./build.sh is the release candidate. What goes in a DMG or a ZIP is
+# never one; SEARCH_DEV=0 asks for a plain build anywhere.
 case "${SEARCH_DEV:-}" in
   0|1) DEV="$SEARCH_DEV" ;;
-  "") DEV=0 ;;
+  "")
+    DEV=0
+    if [ "$STEP" = "app" ] && [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)" != "main" ]; then
+      DEV=1
+    fi
+    ;;
   *) echo "SEARCH_DEV is 0 or 1, not “$SEARCH_DEV”" >&2; exit 1 ;;
 esac
 [ "$STEP" != "app" ] && [ "$DEV" = 1 ] && { echo "a dev build doesn't go in a DMG" >&2; exit 1; }
