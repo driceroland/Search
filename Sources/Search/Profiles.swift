@@ -8,7 +8,10 @@ import WebKit
 // bookmarks. A window belongs to one profile for its whole life, as in
 // Chrome and Safari: its column shows that profile's spaces and nothing of
 // any other's — not their dots, not ⌃1–⌃9, not ⌃Tab, not Move to Space,
-// not the history the field offers.
+// not the history the field offers. With Settings › Profiles in one window
+// on, the windows of several profiles take turns in one place instead, and
+// the space's menu, ⌃1–⌃9 and the swipe reach every profile's spaces (see
+// OneWindow.swift); each window still holds its own profile's alone.
 //
 // There is always one, "Personal": everything there was before profiles,
 // left where it was — the same store, files and spaces — so nobody's data
@@ -146,6 +149,7 @@ final class Profiles: ObservableObject {
             Browsers.open(profile: Profile.personalID)
         }
         for browser in Browsers.all where browser.profileID == id { Browsers.discard(browser) }
+        OneWindow.tidy()
         let all = Spaces.read()
         let gone = all.filter { $0.profileID == id }
         Spaces.write(all.filter { $0.profileID != id })
@@ -163,6 +167,7 @@ final class Profiles: ObservableObject {
         for name in ["history-\(id.uuidString).json", "bookmarks-\(id.uuidString).json"] {
             Disk.remove(Store.file(name))
         }
+        Shared.forgetDownloadAddresses()
         Store.settings.removeObject(forKey: "space.current.\(id.uuidString)")
         list.removeAll { $0.id == id }
         write()
@@ -176,9 +181,14 @@ extension Browsers {
     /// A window of this profile: the one already open in front, or a new
     /// one at the space it was last in, its tabs read back from the
     /// profile's own files when no window of it is open.
+    /// With profiles in one window, the profile's window takes the place of
+    /// the one in front instead (see OneWindow.swift).
     @discardableResult
     static func open(profile id: UUID) -> Browser {
-        if let open = all.last(where: { $0.profileID == id && $0.isOpen && !$0.isPopup }) {
+        if OneWindow.on, let here = front, here.isOpen, !here.isPopup, here.profileID != id {
+            return join(profile: id, from: here)
+        }
+        if let open = all.last(where: { $0.profileID == id && ($0.isOpen || $0.tucked) && !$0.isPopup }) {
             show(open)
             return open
         }
@@ -266,7 +276,9 @@ enum ProfileMenu {
 
     /// Its name, then a window of its own.
     static func askNew() {
-        Ask.name("New Profile", detail: "A separate set of spaces with its own sign-ins, history and bookmarks, in a window of its own.",
+        Ask.name("New Profile", detail: OneWindow.on
+                    ? "A separate set of spaces with its own sign-ins, history and bookmarks."
+                    : "A separate set of spaces with its own sign-ins, history and bookmarks, in a window of its own.",
                  placeholder: "Work", confirm: "Create") { name in
             let made = Profiles.shared.add(named: name)
             Browsers.open(profile: made.id)

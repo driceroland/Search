@@ -483,6 +483,13 @@ struct SettingsPanel: View {
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)
         case "downloads.button": Switch(on: $prefs.alwaysShowsDownloads)
+        case "downloads.open":
+            Picker("Open Downloads", selection: $prefs.downloadsOpening) {
+                ForEach(DownloadsOpening.allCases) { Text($0.title).tag($0) }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
         default: EmptyView()
         }
     }
@@ -634,6 +641,7 @@ struct SettingsPanel: View {
                 .opacity(arcHere ? 1 : 0.4)
         case "spaces": Switch(on: $prefs.usesSpaces)
         case "profiles": Pill("New Profile…") { ProfileMenu.askNew() }
+        case "profiles.oneWindow": Switch(on: $prefs.profilesInOneWindow)
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
@@ -711,19 +719,6 @@ struct SettingsPanel: View {
                     Pill("Try again") { shield.compile() }
                 }
                 .under()
-            }
-            if !searched, let host = browser.hereHost, prefs.shielded, shield.trouble == nil {
-                Rule()
-                SettingRow(icon: "checkmark.shield", title: "Block on \(host)",
-                           detail: "Turn off here if the site breaks; the page reloads") {
-                    Switch(on: Binding(
-                        get: { !Shield.shared.isPaused(on: host) },
-                        set: { on in
-                            Shield.shared.pause(host, !on)
-                            browser.reload()
-                        }
-                    ))
-                }
             }
         case "privacy.forget":
             if !searched {

@@ -13,7 +13,7 @@ import WebKit
 // made by identifier; history and bookmarks are its profile's (see
 // Profiles.swift); the passwords in the keychain, settings and extensions
 // are shared by every space. Switching swaps the row of tabs:
-// the ones left behind are parked, their sound paused, and they sleep
+// the ones left behind are parked, still playing, and they sleep
 // after half an hour as any tab does, pins included unless their site may
 // send notifications (Sleep.swift). ⌃1–⌃9 switch, as in Arc.
 
@@ -314,9 +314,15 @@ extension Browser {
         return URL(fileURLWithPath: path)
     }
 
-    /// ⌃1–⌃9, and the menu on the space's dot.
+    /// ⌃1–⌃9, and the menu on the space's dot. With profiles in one window,
+    /// a space of another profile brings that profile's window into this
+    /// one's place (see OneWindow.swift).
     func switchSpace(to id: UUID) {
         guard prefs.usesSpaces else { return }
+        if merges, !spaces.contains(where: { $0.id == id }), Spaces.known[id] != nil {
+            Browsers.join(space: id, from: self)
+            return
+        }
         enter(id)
     }
 
@@ -325,7 +331,12 @@ extension Browser {
         // Which way the icon at the foot turns over: the way the spaces lie.
         if !makingSpace { spaceStep = to > (spaces.firstIndex { $0.id == spaceID } ?? 0) ? 1 : -1 }
         cancelTabEdit()
-        if floater.showing { land() }
+        let returningVideo = parked[id].map { row in
+            guard let active = row.active else { return false }
+            let visible = prefs.splitView ? row.splits.first { $0.contains(active) }?.tabs ?? [active] : [active]
+            return visible.contains { $0 == floating || $0 == pictured }
+        } ?? false
+        if !returningVideo { leavingSpace() }
         writeSession(now: true)
         for tab in tabs where visibleTabIDs.contains(tab.id) { tab.touch() }
 
@@ -361,6 +372,7 @@ extension Browser {
             showRow([], active: nil)
             restoreSession()
         }
+        returnSpaceVideo()
         editing = active?.isBlank ?? true
         typed = ""
         // A row read from its file just now may hold tabs whose time ran out
@@ -380,9 +392,12 @@ extension Browser {
         }
     }
 
+    /// The Nth space: of this window's profile, or with profiles in one
+    /// window of every profile's, counted through in the menu's order.
     func switchSpace(index: Int) {
-        guard spaces.indices.contains(index) else { return }
-        switchSpace(to: spaces[index].id)
+        let list = everySpace
+        guard list.indices.contains(index) else { return }
+        switchSpace(to: list[index].id)
     }
 
     /// The icon a new space gets unless told: the first no space wears yet.
@@ -469,7 +484,7 @@ extension Browser {
     func deleteSpace(_ id: UUID) {
         guard id != Space.firstID, id != homeSpaceID, let at = spaces.firstIndex(where: { $0.id == id }) else { return }
         if spaceID == id { switchSpace(to: homeSpaceID) }
-        for tab in parked.removeValue(forKey: id)?.tabs ?? [] { tab.close() }
+        closeParkedSpace(id)
         let shared = spaces[at].sharesSignIns == true
         spaces.remove(at: at)
         Spaces.write(spaces, profile: profileID)
@@ -541,7 +556,8 @@ struct SpaceDot: View {
         .onChange(of: key) { _, now in
             let symbol = symbol
             DispatchQueue.main.async {
-                withAnimation(.easeOut(duration: 0.22)) { shown = (now, symbol) }
+                // With Reduce Motion on, the new icon is simply there.
+                withAnimation(Motion.reduced ? nil : .easeOut(duration: 0.22)) { shown = (now, symbol) }
             }
         }
         .onChange(of: browser.spaceID) { _, _ in name() }
@@ -613,12 +629,24 @@ enum SpaceMenu {
     static func menu(for browser: Browser) -> NSMenu {
         actions = []
         let menu = NSMenu()
-        for (index, space) in browser.spaces.enumerated() {
-            let entry = item(space.name, key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
-                browser.switchSpace(to: space.id)
+        // With profiles in one window, every profile's spaces under its name,
+        // ⌃1–⌃9 counting through them all (see OneWindow.swift).
+        let lists: [(name: String?, spaces: [Space])] = browser.merges
+            ? Profiles.shared.list.map { profile in
+                (profile.name, profile.id == browser.profileID ? browser.spaces : Spaces.read(profile: profile.id))
             }
-            entry.image = NSImage(systemSymbolName: space.symbol, accessibilityDescription: nil)
-            menu.addItem(entry)
+            : [(nil, browser.spaces)]
+        var index = 0
+        for list in lists where !list.spaces.isEmpty {
+            if let name = list.name { menu.addItem(.sectionHeader(title: name)) }
+            for space in list.spaces {
+                let entry = item(space.name, key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
+                    browser.switchSpace(to: space.id)
+                }
+                entry.image = NSImage(systemSymbolName: space.symbol, accessibilityDescription: nil)
+                menu.addItem(entry)
+                index += 1
+            }
         }
         menu.addItem(.separator())
         menu.addItem(item("New Space…") { browser.askForSpace() })
@@ -786,9 +814,35 @@ enum Ask {
 }
 
 extension Browser {
+    /// Close a parked row, bringing any video it owns back first.
+    private func closeParkedSpace(_ id: UUID) {
+        guard let row = parked[id] else { return }
+        if let floating, row.tabs.contains(where: { $0.id == floating }) { land(covering: false) }
+        if let pictured, row.tabs.contains(where: { $0.id == pictured }) { unpicture() }
+        for tab in parked.removeValue(forKey: id)?.tabs ?? [] { tab.close() }
+    }
+
     /// A space deleted in another window: this window's row there goes.
     func forget(space id: UUID) {
-        for tab in parked.removeValue(forKey: id)?.tabs ?? [] { tab.close() }
+        closeParkedSpace(id)
         record.rows[id.uuidString] = nil
+    }
+}
+
+/// One space-triggered lift can be in flight while WebKit answers.
+struct SpaceFloatRequest {
+    private(set) var pending: UUID?
+
+    mutating func begin() -> UUID? {
+        guard pending == nil else { return nil }
+        let id = UUID()
+        pending = id
+        return id
+    }
+
+    @discardableResult mutating func finish(_ id: UUID) -> Bool {
+        guard pending == id else { return false }
+        pending = nil
+        return true
     }
 }

@@ -114,7 +114,7 @@ private struct PaneLayers: View {
             Page(tab: tab, holdsPage: false, corner: corner, browser: browser)
 
             if focused {
-                Omnibox(browser: browser, over: !tab.isBlank, fitted: true)
+                Omnibox(browser: browser, over: !tab.isBlank, fitted: true, tab: tab.id)
             }
 
             // An empty page of a pair: the field, and the tabs already open,

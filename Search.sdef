@@ -2,7 +2,8 @@
 <!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
 <dictionary title="Search Terminology">
     <!-- Read-only, in Safari's words and codes: a script can ask for the address
-         and title of the tabs, and nothing else. Private tabs are not listed.
+         and title of the tabs, and the names of a window's space and profile,
+         and nothing else. Private tabs are not listed.
          count is here because "repeat with t in tabs" asks for it. -->
     <suite name="Search Suite" code="Srch" description="Windows and their tabs, to read.">
         <command name="count" code="corecnte" description="Return the number of elements of a particular class within an object.">
@@ -31,6 +32,14 @@
             </element>
             <property name="current tab" code="cTab" type="tab" access="r" description="The tab showing in the window; missing value when it is a private tab.">
                 <cocoa key="scriptCurrentTab"/>
+            </property>
+            <!-- Safari has no word for these, so the codes are Search's own:
+                 Apple keeps the all-lowercase ones. -->
+            <property name="space" code="wSpc" type="text" access="r" description="The name of the space the window shows; missing value when its tab in front is private.">
+                <cocoa key="scriptSpace"/>
+            </property>
+            <property name="profile" code="wPrf" type="text" access="r" description="The name of the profile the window is in; missing value when its tab in front is private.">
+                <cocoa key="scriptProfile"/>
             </property>
         </class>
         <class name="tab" plural="tabs" code="bTab" description="A tab. Private tabs are never listed.">

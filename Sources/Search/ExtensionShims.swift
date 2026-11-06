@@ -231,6 +231,11 @@ enum ExtensionShims {
         }
     }
 
+    nonisolated private static let scriptTagExpression = try! NSRegularExpression(pattern: #"<script\b([^>]*)>\s*</script>"#, options: [.caseInsensitive])
+    nonisolated private static let moduleTypeExpression = try! NSRegularExpression(pattern: #"\btype\s*=\s*["']?module\b"#, options: [.caseInsensitive])
+    nonisolated private static let srcExpression = try! NSRegularExpression(pattern: #"\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#, options: [.caseInsensitive])
+    nonisolated private static let asyncExpression = try! NSRegularExpression(pattern: #"(^|\s)async(\s|=|$)"#, options: [.caseInsensitive])
+
     /// A page's module scripts, two or more of them with one that awaits,
     /// made one module that imports them in their order: nil when there is
     /// nothing to do. Chrome waits for a module still at a top-level await
@@ -244,19 +249,15 @@ enum ExtensionShims {
     /// plain tags: one marked async, or a src that isn't the package's own
     /// file, leaves the page as it is.
     nonisolated static func chainModules(_ html: String, page: URL, folder: URL) -> String? {
-        let tags = try! NSRegularExpression(pattern: #"<script\b([^>]*)>\s*</script>"#, options: [.caseInsensitive])
-        let module = try! NSRegularExpression(pattern: #"\btype\s*=\s*["']?module\b"#, options: [.caseInsensitive])
-        let source = try! NSRegularExpression(pattern: #"\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#, options: [.caseInsensitive])
-        let async = try! NSRegularExpression(pattern: #"(^|\s)async(\s|=|$)"#, options: [.caseInsensitive])
         let whole = NSRange(html.startIndex..., in: html)
         var found: [(range: Range<String.Index>, attributes: String, src: String)] = []
-        for match in tags.matches(in: html, range: whole) {
+        for match in scriptTagExpression.matches(in: html, range: whole) {
             guard let range = Range(match.range, in: html), let inner = Range(match.range(at: 1), in: html) else { continue }
             let attributes = String(html[inner])
             let span = NSRange(attributes.startIndex..., in: attributes)
-            guard module.firstMatch(in: attributes, range: span) != nil else { continue }
-            guard async.firstMatch(in: attributes, range: span) == nil,
-                  let named = source.firstMatch(in: attributes, range: span),
+            guard moduleTypeExpression.firstMatch(in: attributes, range: span) != nil else { continue }
+            guard asyncExpression.firstMatch(in: attributes, range: span) == nil,
+                  let named = srcExpression.firstMatch(in: attributes, range: span),
                   let src = (1...3).lazy.compactMap({ Range(named.range(at: $0), in: attributes) }).first.map({ String(attributes[$0]) }),
                   !src.isEmpty, !src.contains(":"), !src.hasPrefix("//"), !src.contains(where: \.isNewline)
             else { return nil }
@@ -290,7 +291,7 @@ enum ExtensionShims {
         for (index, entry) in found.enumerated().reversed() {
             if index == 0 {
                 let span = NSRange(entry.attributes.startIndex..., in: entry.attributes)
-                let attributes = source.stringByReplacingMatches(in: entry.attributes, range: span, withTemplate: NSRegularExpression.escapedTemplate(for: "src=\"\(name)\""))
+                let attributes = srcExpression.stringByReplacingMatches(in: entry.attributes, range: span, withTemplate: NSRegularExpression.escapedTemplate(for: "src=\"\(name)\""))
                 html.replaceSubrange(entry.range, with: "<script\(attributes)></script>")
             } else {
                 html.removeSubrange(entry.range)
@@ -335,12 +336,13 @@ enum ExtensionShims {
         return path
     }
 
+    nonisolated private static let eventExpression = try! NSRegularExpression(pattern: #"\.([a-zA-Z]+)\.(on[A-Z][A-Za-z]+)\b"#)
+
     /// The shim as this extension gets it: with the events its code mentions
     /// — `chrome.tabs.onUpdated`, `e.runtime.onInstalled` — so its worker
     /// can take their listeners late (see the end of the script).
     nonisolated static func shim(for folder: URL) -> String {
         var found = Set<String>()
-        let pattern = try! NSRegularExpression(pattern: #"\.([a-zA-Z]+)\.(on[A-Z][A-Za-z]+)\b"#)
         let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil)
         while let url = walker?.nextObject() as? URL {
             guard url.pathExtension == "js", url.lastPathComponent != file,
@@ -348,7 +350,7 @@ enum ExtensionShims {
             // Not the shim's own words, in a worker that already carries it.
             if text.hasPrefix(marker), let end = text.range(of: ender) { text = String(text[end.upperBound...]) }
             let range = NSRange(text.startIndex..., in: text)
-            for match in pattern.matches(in: text, range: range) {
+            for match in eventExpression.matches(in: text, range: range) {
                 guard let a = Range(match.range(at: 1), in: text), let b = Range(match.range(at: 2), in: text) else { continue }
                 found.insert("\(text[a]).\(text[b])")
             }
@@ -560,7 +562,10 @@ enum ExtensionShims {
           ? await Promise.resolve(chrome.windows.getAll()).catch(() => []) : [];
         return new Map((all || []).map((w) => [w.id, { left: w.left, top: w.top, width: w.width, height: w.height }]));
       };
-      const placeOf = (t, known) => ({ i: t.index, w: known.get(t.windowId) });
+      // The tab's address too: two windows can have one frame (a window
+      // made over another, profiles in one window), and the tab at that
+      // place tells them apart.
+      const placeOf = (t, known) => ({ i: t.index, w: known.get(t.windowId), u: t.url || t.pendingUrl || "" });
       const event = () => {
         const listeners = new Set();
         return {
@@ -647,14 +652,15 @@ enum ExtensionShims {
           focus() { return Promise.resolve(this); },
           navigate: () => Promise.resolve(null),
         });
+        const pages = async () => { try { return (await native("clients.pages", [])) || []; } catch (e) { return []; } };
         put(root.clients, "matchAll", async (options) => {
-          const found = [...await matchAll(options)];
           const type = (options && options.type) || "window";
-          if (type !== "window" && type !== "all") return found;
-          let pages = [];
-          try { pages = (await native("clients.pages", [])) || []; } catch (e) {}
+          const windows = type === "window" || type === "all";
+          const [own, open] = await Promise.all([matchAll(options), windows ? pages() : []]);
+          const found = [...own];
+          if (!windows) return found;
           const listed = new Set(found.map((c) => c.url));
-          return found.concat(pages.filter((p) => p && typeof p.url === "string" && !listed.has(p.url)).map(client));
+          return found.concat(open.filter((p) => p && typeof p.url === "string" && !listed.has(p.url)).map(client));
         });
         clientsChannel.onmessage = ({ data }) => {
           if (!data || answered(data) || typeof data.from !== "string") return;
@@ -808,6 +814,112 @@ enum ExtensionShims {
         }
         for (const [k, v] of Object.entries(states)) { Object.defineProperty(WebSocket, k, { value: v }); Object.defineProperty(WebSocket.prototype, k, { value: v }); }
         Object.defineProperty(root, "WebSocket", { value: WebSocket, configurable: true, writable: true });
+      }
+      // A fetch with credentials from the extension's own page or worker to
+      // another site goes through the browser (ExtensionFetch.swift), which
+      // sends it as Chrome does for a host the extension has been granted:
+      // with the site's SameSite=Lax cookies, which WebKit withholds from an
+      // extension's requests. For anything else the browser says "pass", and
+      // WebKit's fetch runs.
+      if (runtime && typeof runtime.connectNative === "function" && typeof root.fetch === "function"
+          && typeof runtime.getURL === "function" && root.location && root.location.origin + "/" === runtime.getURL("/")) {
+        const original = root.fetch;
+        const connect = runtime.connectNative.bind(runtime);
+        const encode = (bytes) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); };
+        const decode = (text) => { const s = atob(text), bytes = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i); return bytes; };
+        let sequence = 0;
+        // What may wait unread in a response's stream before it fails.
+        const unreadLimit = 64 * 1024 * 1024;
+        const fetch = function fetch(input, init) {
+          const self = this, args = arguments;
+          // Read cheaply first: only credentials "include" is the browser's;
+          // any other fetch goes on untouched, its body unread.
+          let credentials;
+          try {
+            credentials = init && init.credentials !== undefined ? String(init.credentials)
+              : (input instanceof Request ? input.credentials : "same-origin");
+          } catch (e) { return original.apply(self, args); }
+          if (credentials !== "include") return original.apply(self, args);
+          // A copy to read, so the page's own Request keeps its body for
+          // WebKit's fetch if the browser passes.
+          let request, url;
+          try { request = new Request(input instanceof Request ? input.clone() : input, init); url = new URL(request.url); }
+          catch (e) { return original.apply(self, args); }
+          if (!/^https?:$/.test(url.protocol) || url.origin === root.location.origin) return original.apply(self, args);
+          return (async () => {
+            let body = null;
+            if (request.method !== "GET" && request.method !== "HEAD") {
+              try { body = encode(new Uint8Array(await request.arrayBuffer())); } catch (e) { return original.apply(self, args); }
+            }
+            const id = ++sequence + "-" + Math.random().toString(36).slice(2);
+            const hello = { fetch: id, url: request.url, method: request.method, headers: [...request.headers], body,
+                            redirect: request.redirect, userAgent: navigator.userAgent };
+            return await new Promise((resolve, reject) => {
+              let port;
+              try { port = connect("search.fetch"); } catch (e) { resolve(original.apply(self, args)); return; }
+              let accepted = false, tries = 0, controller = null, done = false;
+              const close = () => { try { port.disconnect(); } catch (e) {} };
+              // The browser never took it: WebKit's fetch, as without it. Not
+              // for a request that changes something, which may already have
+              // gone out unanswered: sent twice, a POST would be done twice.
+              const safe = ["GET", "HEAD", "OPTIONS"].includes(request.method);
+              const fallback = () => {
+                if (done) return;
+                if (!safe) return fail(false);
+                done = true; close(); resolve(original.apply(self, args));
+              };
+              const fail = (abort) => {
+                if (done) return; done = true; close();
+                const error = abort ? new DOMException("The operation was aborted.", "AbortError") : new TypeError("Load failed");
+                if (controller) { try { controller.error(error); } catch (e) {} } else reject(error);
+              };
+              const signal = request.signal;
+              if (signal) { if (signal.aborted) return fail(true); signal.addEventListener("abort", () => fail(true)); }
+              const again = () => {
+                if (accepted || done) return;
+                if (tries++ >= 20) return fallback();
+                try { port.postMessage(hello); } catch (e) {}
+                setTimeout(again, 100 * Math.min(tries, 5));
+              };
+              port.onMessage.addListener((m) => {
+                if (!m || done) return;
+                if (m.accepted === id) { accepted = true; return; }
+                if (m.pass) { done = true; close(); resolve(original.apply(self, args)); return; }
+                if (m.head && m.head.opaqueRedirect) {
+                  // redirect: "manual", as Chrome answers it: a response of
+                  // type opaqueredirect, status 0, nothing readable.
+                  done = true; close();
+                  const response = Response.error();
+                  try { Object.defineProperty(response, "type", { value: "opaqueredirect" }); Object.defineProperty(response, "url", { value: m.head.url }); } catch (e) {}
+                  resolve(response);
+                  return;
+                }
+                if (m.head) {
+                  accepted = true;
+                  const stream = new ReadableStream({ start(c) { controller = c; }, cancel() { done = true; close(); } },
+                                                    { highWaterMark: 0, size: (chunk) => chunk.byteLength });
+                  const empty = [101, 204, 205, 304].includes(m.head.status) || request.method === "HEAD";
+                  let response;
+                  try { response = new Response(empty ? null : stream, { status: m.head.status, statusText: m.head.statusText || "", headers: m.head.headers }); }
+                  catch (e) { return fail(false); }
+                  try { Object.defineProperty(response, "url", { value: m.head.url }); Object.defineProperty(response, "redirected", { value: !!m.head.redirected }); } catch (e) {}
+                  resolve(response);
+                  return;
+                }
+                if (m.chunk) {
+                  if (!controller) return;
+                  controller.enqueue(decode(m.chunk));
+                  if (controller.desiredSize !== null && -controller.desiredSize > unreadLimit) fail(false);
+                }
+                else if (m.end) { done = true; if (controller) { try { controller.close(); } catch (e) {} } close(); }
+                else if (m.failed) fail(false);
+              });
+              port.onDisconnect.addListener(() => { if (done) return; if (accepted) fail(false); else fallback(); });
+              again();
+            });
+          })();
+        };
+        Object.defineProperty(root, "fetch", { value: fetch, configurable: true, writable: true });
       }
       // The same loss meets a worker's port to an app on the Mac: what it
       // posts in its first moments never reaches the app, and comes back to
@@ -1704,7 +1816,25 @@ enum ExtensionShims {
           pending.then((id) => callback(id), (error) => withLastError(error, callback));
         });
       }
+      const ownPanel = !chrome.sidePanel;
       define("sidePanel", ["open", "close", "setOptions", "getOptions", "setPanelBehavior", "getPanelBehavior"]);
+      // A tab's own panel options, and which of Search's tabs that is: the
+      // button asks the tab in front, which has no number on Search's side.
+      // Told after the options themselves, so a sidePanel.open right after
+      // setOptions still finds them.
+      if (ownPanel && chrome.sidePanel && chrome.tabs && typeof chrome.tabs.get === "function") {
+        const setOptions = chrome.sidePanel.setOptions;
+        put(chrome.sidePanel, "setOptions", (options, ...rest) => {
+          const answer = setOptions(options, ...rest);
+          const tabId = options && options.tabId;
+          if (typeof tabId === "number") {
+            Promise.all([chrome.tabs.get(tabId), frames()])
+              .then(([tab, known]) => tab && native("sidePanel.placed", [tabId, placeOf(tab, known)]))
+              .catch(() => {});
+          }
+          return answer;
+        });
+      }
       define("offscreen", ["createDocument", "closeDocument", "hasDocument"], [],
         { Reason: new Proxy({}, { get: (_, key) => String(key) }) });
       define("tabGroups", ["get", "query", "update", "move"],
@@ -2107,10 +2237,13 @@ enum ExtensionShims {
         // worker a message for every frame the extension opens.
         if (!embedded && chrome.tabs && typeof chrome.tabs.getCurrent === "function") {
           const getCurrent = chrome.tabs.getCurrent.bind(chrome.tabs);
+          // Undefined outside a tab, as Chrome answers: WebKit answers null
+          // in the side panel, and Claude's panel, reading `.id` of what
+          // isn't undefined, said "Claude isn't available on this page".
           const current = () => Promise.resolve(getCurrent()).then((t) => {
             if (t && !(t.index >= 0 && t.index < 1e6)) { popup = true; return undefined; }
             if (t) popup = false;
-            return t;
+            return t || undefined;
           });
           current().catch(() => {});
           put(chrome.tabs, "getCurrent", (callback) => {
@@ -2746,6 +2879,42 @@ enum ExtensionShims {
           });
         }
         for (const name of ["get", "getAll", "getCurrent", "getLastFocused", "create"]) mendResult(chrome.windows, name);
+        // A new window in Chrome holds only the tabs it was made with. Here
+        // it holds the space's pins too, and they come first in its row, so
+        // the tabs it was made with are put first in the answer, their
+        // indexes left true: an extension takes tabs[0] for the one it made
+        // (Claude in Chrome groups it, and a pin can't be grouped, #872).
+        if (chrome.windows && typeof chrome.windows.create === "function") {
+          const ns = chrome.windows;
+          const create = ns.create.bind(ns);
+          const ours = (...args) => {
+            const callback = typeof args[args.length - 1] === "function" ? args.pop() : null;
+            const p = Promise.resolve(create(...args)).then(async (w) => {
+              await mend(tabsIn(w));
+              if (w && Array.isArray(w.tabs)) {
+                const own = w.tabs.filter((t) => !t.pinned), pins = w.tabs.filter((t) => t.pinned);
+                try { w.tabs = own.concat(pins); } catch (e) {}
+              }
+              return w;
+            });
+            if (!callback) return p;
+            p.then((r) => callback(r), (e) => withLastError(e, callback));
+          };
+          put(ns, "create", ours);
+          // WebKit answers windows.create from its own object, ahead of
+          // anything set on it (see the stand-in for a website's frame):
+          // ours is then given through a stand-in `chrome`, WebKit's own
+          // objects for everything else.
+          if (ns.create !== ours) {
+            const windows = new Proxy(ns, { get: (target, key) => {
+              if (key === "create") return ours;
+              const value = Reflect.get(target, key);
+              return typeof value === "function" ? value.bind(target) : value;
+            } });
+            const current = root.chrome;
+            try { root.chrome = new Proxy(current, { get: (target, key) => key === "windows" ? windows : Reflect.get(target, key) }); } catch (e) {}
+          }
+        }
         // WebKit's windows.getCurrent ignores which extension page called
         // it and returns the frontmost window. In a top-level extension page
         // opened in a tab — a popup window's page among them (Bitwarden's
@@ -2931,8 +3100,7 @@ enum ExtensionShims {
         }));
         put(p, "getAll", (callback) => {
           const pr = (async () => {
-            const all = await getAll();
-            const have = await granted();
+            const [all, have] = await Promise.all([getAll(), granted()]);
             return { ...all, permissions: [...new Set([...(all.permissions || []), ...[...have].filter((m) => ours.has(m))])] };
           })();
           if (typeof callback !== "function") return pr;
@@ -2997,8 +3165,7 @@ enum ExtensionShims {
         const list = () => native("userScripts.list", []).then((l) => l || []);
         const save = (l) => native("userScripts.save", [l]);
         const sync = async () => {
-          const want = await list();
-          const have = new Set((await registered()).map((s) => s.id));
+          const [want, have] = await Promise.all([list(), registered().then((l) => new Set(l.map((s) => s.id)))]);
           const missing = want.filter((s) => !have.has(tag + s.id));
           if (!missing.length) return;
           const scripts = await Promise.all(missing.map(content));
@@ -3198,6 +3365,43 @@ enum ExtensionShims {
           set(event, "hasListeners", () => listeners.size > 0);
           return port;
         };
+        // Every port, the extension's own or a website's content script's:
+        // its onMessage and onDisconnect listeners are handed the port its
+        // end was given (by onConnect, or by connect), as in Chrome. WebKit
+        // hands them another object for the same port, without what the
+        // extension kept on it: Vimium C keeps its state for each tab on the
+        // port onConnect gave ('port.s') and reads it back off the one its
+        // listener gets, so every key a page sent its worker threw there
+        // (`n.b` of undefined) and no key did anything (Sridhar, 1.0.7).
+        // Only the extension's own ports were handed theirs before, through
+        // `number`.
+        const pinned = new WeakSet();
+        const pin = (port, view) => {
+          if (!port || typeof port !== "object" || pinned.has(port)) return;
+          pinned.add(port);
+          for (const name of ["onMessage", "onDisconnect"]) {
+            const event = port[name];
+            if (!event || typeof event.addListener !== "function") continue;
+            const add = event.addListener, remove = event.removeListener;
+            const given = new Map();
+            const at = name === "onMessage" ? 1 : 0;
+            set(port, name, event);
+            set(event, "addListener", (f) => {
+              if (typeof f !== "function") return add.call(event, f);
+              if (given.has(f)) return;
+              const w = (...args) => { args[at] = view; return f(...args); };
+              given.set(f, w);
+              add.call(event, w);
+            });
+            set(event, "removeListener", (f) => {
+              const w = given.get(f);
+              given.delete(f);
+              try { remove.call(event, w || f); } catch (e) {}
+            });
+            set(event, "hasListener", (f) => given.has(f));
+            set(event, "hasListeners", () => given.size > 0);
+          }
+        };
         const connect = runtime.connect;
         // Only a port to the extension itself, and never a content script's:
         // another extension would hear the numbered wrapper, not the message,
@@ -3206,7 +3410,9 @@ enum ExtensionShims {
         // its messages from the extension.
         put(runtime, "connect", (...args) => {
           const port = connect.apply(runtime, args);
-          return inContent || (typeof args[0] === "string" && args[0] !== runtime.id) ? port : number(port);
+          const kept = inContent || (typeof args[0] === "string" && args[0] !== runtime.id) ? port : number(port);
+          pin(kept, kept);
+          return kept;
         });
         const onConnect = runtime.onConnect;
         const add = onConnect.addListener, remove = onConnect.removeListener, has = onConnect.hasListener;
@@ -3222,6 +3428,7 @@ enum ExtensionShims {
               port = fromOwn(port) ? number(port) : port;
               // WebKit makes a port's sender afresh at each look, over
               // anything set on the port: the port is seen through a proxy.
+              const target = port;
               if (sender !== given) {
                 port = new Proxy(port, { get: (target, key) => {
                   if (key === "sender") return sender;
@@ -3229,6 +3436,7 @@ enum ExtensionShims {
                   return typeof value === "function" ? value.bind(target) : value;
                 } });
               }
+              pin(target, port);
               return listener(port);
             };
             wrapped.set(listener, w);
@@ -3773,6 +3981,9 @@ enum ExtensionShims {
     static var panelOff: Set<String> = []
     /// What setOptions said for one tab, by the extension's tab id.
     static var panelTabs: [String: [Int: (path: String?, enabled: Bool?)]] = [:]
+    /// Which of Search's tabs each of those tab ids is, as the extension's
+    /// shim found it (sidePanel.placed).
+    static var panelTabIDs: [String: [Int: Tab.ID]] = [:]
     /// One voice for every extension that reads aloud.
     static let speaker = NSSpeechSynthesizer()
 
@@ -3793,6 +4004,14 @@ enum ExtensionShims {
     /// in the column (see the tab groups cases in `run`).
     private static func listedGroups(_ browser: Browser) -> [TabGroup] {
         browser.tabGroups.filter { !browser.tabs(in: $0.id).isEmpty }
+    }
+
+    /// A group by its number in whichever window has it.
+    private static func listedGroup(_ number: Any?) throws -> (group: TabGroup, browser: Browser) {
+        for browser in Browsers.all {
+            if let group = try? listedGroup(number, in: browser) { return (group, browser) }
+        }
+        throw Unsupported(what: "No group with id: \((number as? Int).map { "\($0)" } ?? "none").")
     }
 
     private static func listedGroup(_ number: Any?, in browser: Browser) throws -> TabGroup {
@@ -3854,7 +4073,8 @@ enum ExtensionShims {
         let number = { (value: Any?) in (value as? NSNumber)?.doubleValue }
         if let w = spec?["w"] as? [String: Any], let left = number(w["left"]), let top = number(w["top"]),
            let width = number(w["width"]), let height = number(w["height"]) {
-            return owner.tab(windowFrame: CGRect(x: left, y: top, width: width, height: height), index: index, for: context)
+            return owner.tab(windowFrame: CGRect(x: left, y: top, width: width, height: height), index: index,
+                             address: spec?["u"] as? String, for: context)
         }
         guard Browsers.all.count <= 1 else { return nil }
         let visible = owner.visibleTabs(for: context)
@@ -4027,6 +4247,7 @@ enum ExtensionShims {
             browser.history.forget()
             // As Clear History does: the pages icons were kept for go too.
             Favicons.shared.forgetAll()
+            Shared.forgetDownloadAddresses()
             return nil
 
         // MARK: downloads
@@ -4113,6 +4334,11 @@ enum ExtensionShims {
             return nil
         case "sidePanel.getPanelBehavior":
             return ["openPanelOnActionClick": panelOnClick.contains(id)]
+        case "sidePanel.placed":
+            if let number = first as? Int, let tab = located(args.dropFirst().first, context: context, owner: owner) {
+                panelTabIDs[id, default: [:]][number] = tab.id
+            }
+            return nil
         case "sidePanel.open":
             // For a tab, its own page when it was given one, and the panel
             // goes with that tab; otherwise the window's.
@@ -4214,6 +4440,14 @@ enum ExtensionShims {
                 add("BACKGROUND", script.map { context.baseURL.appendingPathComponent($0) })
             }
             if ExtensionPopup.shared.extensionID == id { add("POPUP", ExtensionPopup.shared.view?.url) }
+            // Its panel, in each window that has it up. Not bound to one tab
+            // in what is said here (-1), which Chrome's panel opened for the
+            // whole window says too.
+            for browser in Browsers.all {
+                guard case .page(let owner, _, _) = browser.sidePanel, owner == id,
+                      let url = SidePanelPages.shared.web(in: browser)?.url else { continue }
+                add("SIDE_PANEL", url)
+            }
             found += ExtensionOffscreen.contexts(for: id, matching: filter)
             return found
 
@@ -4635,17 +4869,20 @@ enum ExtensionShims {
                       let home = owner.browser(of: tab), let group = home.group(of: tab) else { return -1 }
                 return TabGroup.number(group)
             }
+        // A group's number is the extension's in every window, as in
+        // Chrome: one made in a window it opened is found from the window in
+        // front too (#872).
         case "tabGroups.query":
             let spec = first as? [String: Any] ?? [:]
-            return listedGroups(browser).filter { group in
+            return Browsers.all.flatMap(listedGroups).filter { group in
                 (spec["title"] as? String).map { $0 == group.name } ?? true
                     && (spec["collapsed"] as? Bool).map { $0 == group.collapsed } ?? true
                     && (spec["color"] as? String).map { $0 == "grey" } ?? true
             }.map(chromeGroup)
         case "tabGroups.get":
-            return chromeGroup(try listedGroup(first, in: browser))
+            return chromeGroup(try listedGroup(first).group)
         case "tabGroups.update":
-            let group = try listedGroup(first, in: browser)
+            let (group, browser) = try listedGroup(first)
             let props = args.dropFirst().first as? [String: Any] ?? [:]
             if let title = props["title"] as? String { browser.renameTabGroup(group.id, to: title) }
             if let collapsed = props["collapsed"] as? Bool, collapsed != group.collapsed { browser.toggleTabGroup(group.id) }
@@ -4865,6 +5102,7 @@ enum ExtensionShims {
         }
         if what["history"] == true, origins == nil {
             for trace in browser.history.everything() where trace.last >= since { browser.history.forget(trace.key) }
+            Shared.forgetDownloadAddresses()
         }
     }
 
@@ -4885,22 +5123,39 @@ enum ExtensionShims {
         return url
     }
 
-    /// The extension's button, for one that asked for its panel on a
-    /// press (openPanelOnActionClick): its panel up, or down again.
-    static func openPanel(_ context: WKWebExtensionContext, owner: Extensions) {
+    /// The panel the extension's button opens over `tab`, as Chrome decides
+    /// it: the tab's own options over the extension's, and none where the
+    /// panel is turned off. `own`: the tab's own page, which goes with it.
+    static func actionPanel(_ context: WKWebExtensionContext, over tab: Tab.ID?) -> (url: URL, own: Bool)? {
         let id = context.uniqueIdentifier
-        guard !panelOff.contains(id), let path = panelPath[id] ?? defaultPanel(context) else { return }
-        // Resolved, not appended: a path can carry a query — Claude's names
-        // the tab its panel is for, sidepanel.html?tabId=… — which appended
-        // would be escaped into the file's name.
-        guard let url = ExtensionShims.page(path, in: context) else { return }
+        let number = tab.flatMap { tab in panelTabIDs[id]?.filter { $0.value == tab }.map(\.key).max() }
+        let own = number.flatMap { panelTabs[id]?[$0] }
+        guard own?.enabled ?? !panelOff.contains(id),
+              let path = own?.path ?? panelPath[id] ?? defaultPanel(context),
+              // Resolved, not appended: a path can carry a query — Claude's
+              // names the tab its panel is for, sidepanel.html?tabId=… —
+              // which appended would be escaped into the file's name.
+              let url = ExtensionShims.page(path, in: context)
+        else { return nil }
+        return (url, own?.path != nil)
+    }
+
+    /// The extension's button, for one that asked for its panel on a
+    /// press (openPanelOnActionClick): its panel up, or down again. False
+    /// when it has no panel turned on over the tab in front: then, as in
+    /// Chrome, the press is the extension's (action.onClicked). ChatGPT's
+    /// keeps its panel off on every tab and turns it on for the one its
+    /// button was pressed on.
+    @discardableResult
+    static func openPanel(_ context: WKWebExtensionContext, owner: Extensions) -> Bool {
+        guard let browser = owner.browser, let panel = actionPanel(context, over: browser.activeID) else { return false }
         // In the side panel; a tab of its own if the panel can't be made,
         // as before there was a panel to put it in. Beside a private tab
         // this extension may not see, the button does nothing.
-        guard let browser = owner.browser else { return }
-        if browser.toggleSidePanel(context, url: url) == .noPanel {
-            browser.open(url, foreground: true)
+        if browser.toggleSidePanel(context, url: panel.url, for: panel.own ? browser.activeID : nil) == .noPanel {
+            browser.open(panel.url, foreground: true)
         }
+        return true
     }
 
     // MARK: - bookmarks, as Chrome shapes them

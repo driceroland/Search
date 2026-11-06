@@ -1,4 +1,5 @@
 import AppKit
+import os
 import WebKit
 
 // The questions a page is allowed to ask, and the answers it gets.
@@ -361,17 +362,40 @@ extension Browser {
     /// those under memory pressure — background tabs first. Left alone, the
     /// tab shows white until somebody thinks to reload. Saying so, with the
     /// one thing worth offering, is what the failure view is for.
+    ///
+    /// WebKit's private form of the callback, which says why the process
+    /// went (see PageEnd). Answered, WebKit calls it in place of the public
+    /// one below, which stays for a WebKit that doesn't know this one.
+    @objc(_webView:webContentProcessDidTerminateWithReason:)
+    func webView(_ webView: WKWebView, webContentProcessDidTerminateWithReason reason: Int) {
+        pageProcessEnded(webView, PageEnd(webKit: reason))
+    }
+
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        pageProcessEnded(webView, .unknown)
+    }
+
+    /// Said in the system log, so a page that kept reloading or went white
+    /// can be traced afterwards to why: the reason, and what was done about
+    /// it. The site stays private there; the reason doesn't.
+    private static let pageLog = Logger(subsystem: "com.officecommun.search", category: "Pages")
+
+    private func pageProcessEnded(_ webView: WKWebView, _ end: PageEnd) {
         cancelDisplay(for: webView)
         guard let tab = tab(for: webView) else { return }
         dropQuestions(for: tab.id)
+        let host = tab.address?.host() ?? ""
         // In front of you: straight back, a reload beats a white page with a
-        // button on it. Behind another tab: the moment you come back to it.
+        // button on it — unless it keeps dying (see recoverFromCrash). Behind
+        // another tab: the moment you come back to it.
+        let outcome: String
         if tab.id == activeID, !tab.isBlank {
-            tab.recoverFromCrash()
+            outcome = tab.recoverFromCrash(end) ? "loaded again" : "kept dying, left for Try again"
         } else {
             tab.stale = true
+            outcome = "loaded again when shown"
         }
+        Self.pageLog.error("A page's process ended (\(end.name, privacy: .public)) on \(host, privacy: .private): \(outcome, privacy: .public)")
     }
 }
 

@@ -121,6 +121,10 @@ enum SettingsIndex {
         .init(id: "downloads.button", group: "downloads", icon: "arrow.down.to.line",
               title: "Always show the downloads button", detail: "Off, it shows only while a file comes in",
               keys: ["downloads.button"]),
+        .init(id: "downloads.open", group: "downloads", icon: "tray.and.arrow.down",
+              title: "Open Downloads", detail: "From its button, ⇧⌘J and History › Downloads",
+              more: "In a tab, as the side panel's card floating by the downloads button, or in the side panel beside the page.",
+              keys: ["downloads.open"], words: ["downloads window", "popover", "side panel"]),
 
         // Appearance
         .init(id: "look", group: "theme", icon: "circle.lefthalf.filled",
@@ -260,8 +264,12 @@ enum SettingsIndex {
               keys: ["spaces"], words: ["workspaces", "profiles"]),
         .init(id: "profiles", group: "spaces", icon: "person.2",
               title: "Profiles", detail: "Spaces with their own sign-ins, history and bookmarks",
-              more: "In windows of their own. Extensions, passwords and settings are shared.",
+              more: "In windows of their own, unless Profiles in one window is on. Extensions, passwords and settings are shared.",
               words: ["profile", "accounts", "work", "personal"]),
+        .init(id: "profiles.oneWindow", group: "spaces", icon: "macwindow",
+              title: "Profiles in one window", detail: "Every profile's spaces in one window, switched in place",
+              more: "Choosing a space of another profile brings that profile's window into this one's place, so each keeps its own sign-ins. Closing it closes them all.",
+              keys: ["profiles.oneWindow"], words: ["arc", "profiles", "single window", "merge"], parent: "profiles"),
         .init(id: "pins.keep", group: "pins", icon: "pin.circle",
               title: "Pins keep their site", detail: "Links elsewhere open over the pin, and ⌘W takes it back home",
               more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at.",
@@ -276,6 +284,7 @@ enum SettingsIndex {
               keys: ["newtab.floating"], words: ["command bar", "cmd t", "spotlight"]),
         .init(id: "commandbar", group: "opening", icon: "chevron.right.square",
               title: "Address bar commands", detail: "\"settings\" or \"new tab\" alone in the address field goes there",
+              more: "Part of a name, like \"down\" or \"dwn\", shows the command lower in the list.",
               keys: ["commandbar"], words: ["commands", "command palette"]),
         .init(id: "start.fresh", group: "opening", icon: "sunrise",
               title: "Start with a fresh window", detail: "Pins, groups and named tabs come back; last time's others don't",
@@ -301,7 +310,7 @@ enum SettingsIndex {
         // Privacy
         .init(id: "shield", group: "blocking", icon: "shield.lefthalf.filled",
               title: "Block ads and trackers", detail: "Third parties whose only job is to watch, and YouTube's ads",
-              more: "On YouTube, the ads announced in the player's own data are taken out before the video starts. Turn it off for one site from the site's row.",
+              more: "On YouTube, the ads announced in the player's own data are taken out before the video starts. Turn it off for one site in its card: click the tab you're on.",
               keys: ["shield"], words: ["adblock", "ad blocker", "ads", "youtube"]),
         .init(id: "sites.keep", group: "blocking", icon: "eye.slash",
               title: "Prevent cross-site tracking", detail: "As in Safari. Private tabs keep it on",
@@ -435,6 +444,7 @@ enum SettingsIndex {
         case "sidebar.roomy": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
         case "toolbar.left": return !prefs.sidebar
+        case "profiles.oneWindow": return Profiles.shared.several
         default: return true
         }
     }
@@ -445,6 +455,7 @@ enum SettingsIndex {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
+        case "profiles.oneWindow": return "Only with more than one profile"
         default: return "Only with the tabs down a side"
         }
     }
@@ -610,6 +621,7 @@ extension SettingsIndex {
             "links.show": prefs.showsLinks,
             "float.flicks": prefs.floatFlicks,
             "arc": prefs.looksLikeArc,
+            "profiles.oneWindow": prefs.profilesInOneWindow,
             "always": [
                 "splitView": prefs.splitView, "tabs.groups": prefs.usesTabGroups,
                 "panel.sites": prefs.sitesInPanel, "translate": PageTranslator.enabled,
@@ -636,6 +648,9 @@ extension SettingsIndex {
         case "pins.keep":
             guard let on = value as? Bool else { return false }
             prefs.pinsKeepSite = on
+        case "profiles.oneWindow":
+            guard let on = value as? Bool else { return false }
+            prefs.profilesInOneWindow = on
         case "links.peek":
             guard let choice = (value as? String).flatMap(PeekChoice.init) else { return false }
             prefs.peekChoice = choice

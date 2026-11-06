@@ -273,6 +273,38 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
                         "lum('#a','borderTopColor') < 0.12", "lum('#b','backgroundColor') < 0.05",
                         "!document.getElementById('inner').hasAttribute('data-office-dusk-paint')",
                         "window.__officeDusk.state().colours.unreadable === true"], settle: 1.0, served: true),
+        // An element's own colour, the same as its parent's: taken light
+        // with it. What does inherit is left be.
+        Fixture(name: "colours-unreadable-same-as-parent", html: """
+            <link rel=stylesheet href="test-other://cdn/sheet.css">
+            <div id=pg class=cdn-page>Text <a id=same class=cdn-same href=#>Home</a> <span id=inh>inherits</span>
+            <h3 class=cdn-same><span id=deep class=cdn-same>Nested</span></h3></div>
+            """, dark: false, shown: true,
+                looks: ["lum('#pg','color') > 0.4", "lum('#same','color') > 0.4", "lum('#deep','color') > 0.4", "lum('#inh','color') > 0.4",
+                        "!document.getElementById('inh').hasAttribute('data-office-dusk-paint')"], settle: 1.0, served: true),
+        // A white veil sunk into a dark ground by multiply: taken dark with
+        // it, the picture under it left as it is.
+        Fixture(name: "colours-veil-over-dark", html: """
+            <style>body{background:#fff;color:#111}#card{background-color:#1f1d1c;color:#eee;padding:40px;
+            background-image:linear-gradient(rgba(255,255,255,.6),rgba(255,255,255,.6)),url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='1' height='4' fill='white'/%3E%3C/svg%3E");
+            background-blend-mode:multiply}#card p{color:#a49d9a}</style>
+            <div id=card><p id=small>Droids keep their knowledge</p></div>
+            """, dark: false, shown: true,
+                looks: ["getComputedStyle(find('#card')).backgroundBlendMode === 'normal'",
+                        "/url\\(.*fill='white'/.test(getComputedStyle(find('#card')).backgroundImage)",
+                        "!/rgba\\(255, 255, 255, 0.6\\)/.test(getComputedStyle(find('#card')).backgroundImage)",
+                        "lum('#small','color') > 0.3"]),
+        // An unread sheet's !important on a longer selector than ours.
+        Fixture(name: "colours-unreadable-important", html: """
+            <link rel=stylesheet href="test-other://cdn/sheet.css"><style>body{background:#fff}</style>
+            <div class=cdn-pills><a id=pill href=#>MVO</a></div>
+            """, dark: false, shown: true,
+                looks: ["lum('#pill','color') > 0.4", "lum('#pill','backgroundColor') < 0.05"], settle: 1.0, served: true),
+        // The page's colours set on <html> by an unread sheet.
+        Fixture(name: "colours-unreadable-root", html: """
+            <html class=cdn-root><link rel=stylesheet href="test-other://cdn/sheet.css"><p id=text>Plain writing</p></html>
+            """, dark: false, shown: true,
+                looks: ["lum('#text','color') > 0.4", "lum('html','backgroundColor') < 0.05"], settle: 1.0, served: true),
         // The site's own rules are never touched: darkened or let go, each
         // says what the page read before anything was darkened.
         Fixture(name: "colours-leave-the-site-alone", html: """
@@ -451,7 +483,7 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
 /// Serves a served fixture's page (test-page://) and a stylesheet from
 /// another origin (test-other://), as a CDN's is to the page.
 private final class OtherOrigin: NSObject, WKURLSchemeHandler {
-    static let css = ".cdn{background:#fff;color:#111;border:2px solid #ddd}.cdn-card{background:#f4f4f4}"
+    static let css = ".cdn{background:#fff;color:#111;border:2px solid #ddd}.cdn-card{background:#f4f4f4}.cdn-page{background:#fff;color:#1d1e1c}.cdn-same{color:#1d1e1c}.cdn-pills>a{color:#000 !important;background:#fff !important}html.cdn-root{background:#fff;color:#222}"
     static var page = ""
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url else { return }

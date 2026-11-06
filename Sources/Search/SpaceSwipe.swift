@@ -79,8 +79,56 @@ final class SpaceSwipe {
         self.browser = browser
         let here = browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
         let target = here + step
-        if target >= 0, target <= browser.spaces.count { slide(browser, to: target, from: here) }
+        if let other = beyond(browser, target) {
+            leave(browser, for: other, step: step)
+        } else if target >= 0, target <= browser.spaces.count {
+            slide(browser, to: target, from: here)
+        }
         return true
+    }
+
+    /// With profiles in one window, past this window's first space or its
+    /// last: the space of the profile that comes before or after.
+    private func beyond(_ browser: Browser, _ target: Int) -> UUID? {
+        if target < 0 { return browser.spaceBeyond(-1) }
+        if target >= browser.spaces.count, !browser.makingSpace { return browser.spaceBeyond(1) }
+        return nil
+    }
+
+    /// Off to another profile's space: this window's rows go the way the
+    /// fingers went, and that profile's window takes this one's place, its
+    /// rows coming in from the other side (see OneWindow.swift).
+    private func leave(_ browser: Browser, for space: UUID, step: Int) {
+        let width = browser.prefs.sidebar ? browser.prefs.columnWidth : Metrics.strip
+        browser.spaceStep = step
+        resting = Date().addingTimeInterval(SpaceSwipe.rest)
+        carry(browser, to: CGFloat(-step) * width) {
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) {
+                browser.switchSpace(to: space)
+                browser.spaceSwipe = 0
+            }
+            guard let next = Browsers.front, next !== browser, next.spaceID == space else { return }
+            self.browser = next
+            next.spaceStep = step
+            guard !Motion.reduced else { return }
+            withTransaction(still) { next.spaceSwipe = CGFloat(step) * width }
+            withAnimation(.easeOut(duration: 0.22)) { next.spaceSwipe = 0 }
+        }
+    }
+
+    /// The rows carried on to `offset`, where the next space's lie, and then
+    /// `arrived`. With Reduce Motion on nothing travels: `arrived` at once,
+    /// and the space is simply there, as a swipe let go short already
+    /// snaps back without moving (Motion.settle).
+    private func carry(_ browser: Browser, to offset: CGFloat, then arrived: @escaping () -> Void) {
+        guard !Motion.reduced else { return arrived() }
+        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
+            browser.spaceSwipe = offset
+        } completion: {
+            arrived()
+        }
     }
 
     /// Where the tabs are: the column, or the bar across the top.
@@ -116,7 +164,11 @@ final class SpaceSwipe {
             guard rested else { return true }
             let here = browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
             let target = here + (step < 0 ? 1 : -1)
-            if target >= 0, target <= browser.spaces.count { slide(browser, to: target, from: here) }
+            if let other = beyond(browser, target) {
+                leave(browser, for: other, step: target - here)
+            } else if target >= 0, target <= browser.spaces.count {
+                slide(browser, to: target, from: here)
+            }
             return true
         }
         if !event.momentumPhase.isEmpty { return gliding }
@@ -193,6 +245,10 @@ final class SpaceSwipe {
         let here = browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
         // Fingers to the left, or up, bring what is next.
         let target = cancelled || abs(travel) < SpaceSwipe.enough(for: browser) ? here : here + (travel < 0 ? 1 : -1)
+        if target != here, let other = beyond(browser, target) {
+            leave(browser, for: other, step: target - here)
+            return
+        }
         guard target != here, target >= 0, target <= browser.spaces.count else {
             withAnimation(Motion.settle) { browser.spaceSwipe = 0 }
             return
@@ -203,7 +259,7 @@ final class SpaceSwipe {
     /// Nothing that way: the rows give a little, and come back.
     private func resisted(_ travel: CGFloat, in browser: Browser) -> CGFloat {
         let here = browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
-        let blocked = (travel > 0 && here == 0) || (travel < 0 && here == browser.spaces.count)
+        let blocked = (travel > 0 && here == 0 && browser.profileBeyond(-1) == nil) || (travel < 0 && here == browser.spaces.count)
         return blocked ? travel / 4 : travel
     }
 
@@ -220,9 +276,7 @@ final class SpaceSwipe {
         let away: CGFloat = target > here ? -1 : 1
         browser.spaceStep = target > here ? 1 : -1
         resting = Date().addingTimeInterval(SpaceSwipe.rest)
-        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
-            browser.spaceSwipe = away * width
-        } completion: {
+        carry(browser, to: away * width) {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) {

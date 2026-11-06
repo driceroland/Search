@@ -10,11 +10,39 @@ struct Keep: Codable, Identifiable, Equatable {
     var from: String
     var path: String
     var date: Date
+    /// Where the file came from, for Copy Address. Nil for a file listed
+    /// before this was noted, one from inside its page or from a private tab,
+    /// and one whose address went with the history.
+    var address: String?
 
     var id: String { path }
 
     var url: URL { URL(fileURLWithPath: path) }
     var stillThere: Bool { FileManager.default.fileExists(atPath: path) }
+
+    /// The address as another app can fetch it. A blob: or data: one means
+    /// nothing outside its page, and a data: one is the whole file again. A
+    /// password in the address goes in neither the list's file nor the
+    /// clipboard.
+    static func address(of url: URL?) -> String? {
+        guard let url, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return nil }
+        parts.user = nil
+        parts.password = nil
+        return parts.string
+    }
+}
+
+extension Shared {
+    /// History cleared or a profile deleted: where files came from goes too,
+    /// from the list and from what is still coming in. No Keep says which
+    /// profile it is from, so this is every profile's, as Clear History's
+    /// icons are.
+    @MainActor static func forgetDownloadAddresses() {
+        loot.forgetAddresses()
+        fetches.entries.forEach { $0.addressForgotten = true }
+    }
 }
 
 @MainActor
@@ -40,6 +68,14 @@ final class Loot: ObservableObject {
     /// them is the Finder's business, not a browser's.
     func forgetAll() {
         kept = []
+        save()
+    }
+
+    /// History cleared: the addresses are a list of where you have been, and
+    /// can carry a signed link. The files stay listed.
+    func forgetAddresses() {
+        guard kept.contains(where: { $0.address != nil }) else { return }
+        for index in kept.indices { kept[index].address = nil }
         save()
     }
 
