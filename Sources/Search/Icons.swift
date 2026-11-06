@@ -311,7 +311,10 @@ final class Favicons {
         for tab in tabs {
             guard tab.address != nil else { continue }
             tab.icon = cached(for: tab.address, shy: tab.shy)
-            fetch(for: tab)
+            // A page still on its way is asked when it finishes loading:
+            // asked now, it answers from the document before it, or from
+            // nothing yet, and is set down as having no icon.
+            if !tab.loading { fetch(for: tab) }
         }
     }
 
