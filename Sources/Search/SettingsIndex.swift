@@ -310,7 +310,7 @@ enum SettingsIndex {
         // Privacy
         .init(id: "shield", group: "blocking", icon: "shield.lefthalf.filled",
               title: "Block ads and trackers", detail: "Third parties whose only job is to watch, and YouTube's ads",
-              more: "On YouTube, the ads announced in the player's own data are taken out before the video starts. Turn it off for one site from the site's row.",
+              more: "On YouTube, the ads announced in the player's own data are taken out before the video starts. Turn it off for one site in its card: click the tab you're on.",
               keys: ["shield"], words: ["adblock", "ad blocker", "ads", "youtube"]),
         .init(id: "shield.lists", group: "blocking", icon: "list.bullet.rectangle",
               title: "Filter lists", detail: "EasyList, a hosts file or your own, added to the blocker and kept up to date",

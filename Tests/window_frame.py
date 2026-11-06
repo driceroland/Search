@@ -3,8 +3,11 @@
 
 Build first (`./build.sh`), then `python3 Tests/window_frame.py`. It uses the
 split suite's harness: started hidden, no window made or shown, everything
-removed afterwards. A page reads `window.outerWidth`, `outerHeight`, `screenX`
-and `screenY` from the window's frame, as in Safari. The last part opens a
+removed afterwards. A page reads `window.outerHeight` and `screenY` from the
+window's frame, as in Safari, and `outerWidth` and `screenX` from its own
+width and place: the column beside it is no chrome of Safari's, and counted,
+`outerWidth - innerWidth` passed 160, which Discord takes for DevTools open
+and signs you out (#916). The last part opens a
 public Google Doc as Safari 26.3.1 would: Docs, on a Safari before 26.4, takes
 `outerWidth / innerWidth` for the zoom, and drew its canvas at a quarter of
 the screen's sharpness when the window read as having no size. It is skipped
@@ -45,20 +48,25 @@ try:
     sv.setup(); sv.launch()
     tab = sv.page("a"); sv.cmd({"do": "select", "id": tab}); sv.cmd({"do": "wait", "id": tab, "seconds": 5})
 
-    x, y, w, h = frame()
-    seen = ev("[outerWidth, outerHeight, screenX, screenY, innerWidth, innerHeight, screen.height]")
-    ow, oh, sx, sy, iw, ih, sh = seen
-    t.ok("the window's width", near(ow, w), (seen, (x, y, w, h)))
-    t.ok("the window's height", near(oh, h), (seen, (x, y, w, h)))
-    t.ok("where it is across", near(sx, x), (seen, (x, y, w, h)))
-    t.ok("where it is down, from the top of the screen", near(sy, sh - (y + h)), (seen, (x, y, w, h)))
-    t.ok("the window holds the page", ow >= iw > 0 and oh >= ih > 0, seen)
+    def reads(label):
+        x, y, w, h = frame()
+        seen = ev("[outerWidth, outerHeight, screenX, screenY, innerWidth, innerHeight, screen.height]")
+        ow, oh, sx, sy, iw, ih, sh = seen
+        t.ok(f"{label}: the window's height", near(oh, h), (seen, (x, y, w, h)))
+        t.ok(f"{label}: where it is down, from the top of the screen", near(sy, sh - (y + h)), (seen, (x, y, w, h)))
+        t.ok(f"{label}: as wide as the page, inside the window", near(ow, iw) and sx >= x - 1 and sx + ow <= x + w + 1, (seen, (x, y, w, h)))
+        t.ok(f"{label}: no DevTools to Discord (outer less inner under 160)", ow - iw < 160 and oh - ih < 160, seen)
+        return seen
+
+    sv.cmd({"do": "ui", "sidebar": True}); time.sleep(1)
+    reads("the column out")
+    sv.cmd({"do": "ui", "sidebar": False}); time.sleep(1)
+    reads("the strip across the top")
+    sv.cmd({"do": "ui", "sidebar": True}); time.sleep(1)
 
     # Moved and resized, the page reads the new frame.
     sv.cmd({"do": "windows", "action": "frame", "n": 1, "frame": [60, 80, 1000, 700]}); time.sleep(0.5)
-    x, y, w, h = frame()
-    seen = ev("[outerWidth, outerHeight, screenX, screenY, screen.height]")
-    t.ok("moved and resized: the new frame", near(seen[0], w) and near(seen[1], h) and near(seen[2], x) and near(seen[3], seen[4] - (y + h)), (seen, (x, y, w, h)))
+    reads("moved and resized")
 
     # Google Docs, as on Safari 26.3.1 (Docs' own sample document, from its
     # API's quickstart).
@@ -71,7 +79,8 @@ try:
     # this window, and keeps the screen's sharpness when it comes forward.
     other = sv.page("b"); sv.cmd({"do": "select", "id": other}); time.sleep(1.5)
     sv.cmd({"do": "go", "id": tab, "url": DOC}); sv.cmd({"do": "wait", "id": tab, "seconds": 25}); time.sleep(8)
-    t.ok("behind: it reads this window", near(ev("outerWidth"), frame()[2]), (ev("outerWidth"), frame()))
+    front = sv.cmd({"do": "eval", "id": other, "js": "outerWidth"}).get("value")
+    t.ok("behind: it reads the page in front's width", near(ev("outerWidth"), front), (ev("outerWidth"), front))
     sv.cmd({"do": "select", "id": tab}); time.sleep(3)
     docs(tab, "loaded behind, then brought forward")
 finally:
