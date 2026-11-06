@@ -572,20 +572,27 @@ final class PaneStage: NSView {
     }
 }
 
-/// A hairline round the page the keys go to, with two pages up. Mid-grey,
+/// A line round the page the keys go to, with two pages up. Mid-grey,
 /// which shows on a white page and a dark one alike; drawn rather than a
 /// layer's border, so a picture of the window has it too. It takes no clicks.
+///
+/// Two points of the grey itself: at one point and 55% it stood about 2:1
+/// from a white page, and in dark mode about 1.6:1, little more than the
+/// other card's own edge, so which page Back, ⌘L and ⌘F would act on was
+/// hard to tell. Now about 3:1 from a white page in either look.
 final class FocusCue: NSView {
     /// Round, when the pages are cards.
     var corner: CGFloat = 0 { didSet { if corner != oldValue { needsDisplay = true } } }
+    static let width: CGFloat = 2
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func draw(_ dirtyRect: NSRect) {
-        Palette.NS.muted.withAlphaComponent(0.55).setStroke()
-        let inner = bounds.insetBy(dx: 0.5, dy: 0.5)
+        Palette.NS.muted.setStroke()
+        let half = FocusCue.width / 2
+        let inner = bounds.insetBy(dx: half, dy: half)
         let line = corner > 0
-            ? NSBezierPath(roundedRect: inner, xRadius: corner - 0.5, yRadius: corner - 0.5)
+            ? NSBezierPath(roundedRect: inner, xRadius: max(0, corner - half), yRadius: max(0, corner - half))
             : NSBezierPath(rect: inner)
-        line.lineWidth = 1
+        line.lineWidth = FocusCue.width
         line.stroke()
     }
 }
