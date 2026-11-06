@@ -77,6 +77,7 @@ final class History: ObservableObject {
     private var visits: [String: Visit] = [:] {
         didSet {
             recentCache = nil
+            popularityCache = nil
             objectWillChange.send()
         }
     }
@@ -91,7 +92,12 @@ final class History: ObservableObject {
     /// These are derived once when a visit enters memory. Suggestions run on
     /// every keystroke, so neither URL parsing nor address formatting belongs
     /// in that loop.
-    private var pageText: [String: PageText] = [:]
+    private var pageText: [String: PageText] = [:] {
+        didSet {
+            addressOrder = nil
+            popularityCache = nil
+        }
+    }
     private var visitedHosts: Set<String> = []
 
     /// Its file: history.json for Personal, one of its own for each other
@@ -345,9 +351,7 @@ final class History: ObservableObject {
 
     // MARK: - reading
 
-    /// Best matches first. A place you have been always beats a place the app
-    /// merely knows the name of, and among places you have been, one you go to
-    /// often and recently beats one you saw once in March.
+    /// Best matches first: `score = fit × log(2 + popularity)`.
     func suggestions(for typed: String, limit: Int = 5) -> [Suggestion] {
         let needle = strip(typed)
         // An empty field proposes nothing. A list of guesses in front of
@@ -356,8 +360,10 @@ final class History: ObservableObject {
         guard !needle.isEmpty else { return [] }
 
         let bytes = Array(needle.utf8)
-        let ascii = bytes.allSatisfy { $0 >= 0x20 && $0 < 0x7F } ? bytes : nil
-        let now = Date()
+        let words = needle.split(whereSeparator: \.isWhitespace).map { Array($0.utf8) }
+        let popularity = popularity(now: Date())
+        // A known name: under one fresh visit.
+        let knownWeight = log(1.5)
         // Only the best few are kept while scanning, in order, and only those
         // become suggestions. Making one for every match in a big history,
         // only to sort them all and keep five, was work thrown away each key.
@@ -365,7 +371,7 @@ final class History: ObservableObject {
         // Higher first, then the shorter key, then whichever came first: the
         // order a stable sort of every match would have left them in.
         func ahead(_ score: Double, _ key: String, of other: (Suggestion, Double)) -> Bool {
-            score == other.1 ? key.count < other.0.key.count : score > other.1
+            score == other.1 ? key.utf8.count < other.0.key.utf8.count : score > other.1
         }
         func offer(_ key: String, _ score: Double, _ make: () -> Suggestion?) {
             if best.count == limit, let last = best.last, !ahead(score, key, of: last) { return }
@@ -373,53 +379,105 @@ final class History: ObservableObject {
             best.insert((made, score), at: best.firstIndex { ahead(score, key, of: $0) } ?? best.endIndex)
             if best.count > limit { best.removeLast() }
         }
-
-        for visit in visits.values {
-            guard let text = pageText[visit.key],
-                  let rank = rank(text.searchable, against: needle, ascii: ascii)
-            else { continue }
-            // The front door before the room inside it: a bare domain is
-            // what a bare domain typed into a field means.
-            let score = rank + 4 + frecency(visit, now: now) + (text.homepage ? 1.5 : 0)
-            offer(text.address, score) {
+        func visited(_ visit: Visit, _ text: PageText, _ fit: Double) {
+            offer(text.address, fit * log(2 + (popularity[visit.key] ?? 0))) {
                 URL(string: visit.url).map { Suggestion(key: text.address, title: visit.title, url: $0, kind: .visited) }
             }
         }
-
-        // Only where memory has nothing to offer. A list of famous websites is
-        // a poor substitute for knowing where someone actually goes.
-        for known in History.known where !visitedHosts.contains(known.0) {
-            guard let rank = rank(known.0, against: needle, ascii: ascii) else { continue }
-            offer(known.0, rank) {
-                URL(string: "https://" + known.0).map { Suggestion(key: known.0, title: known.1, url: $0, kind: .known) }
+        func known(_ site: (host: String, title: String, findable: String), _ fit: Double) {
+            offer(site.host, fit * knownWeight) {
+                URL(string: "https://" + site.host).map { Suggestion(key: site.host, title: site.title, url: $0, kind: .known) }
             }
         }
 
-        // Room left: look in titles and whole addresses, allowing typos
-        // (#762). Always below exact matches, and only from three letters,
-        // since "ui" is in "build", "guide" and nearly every page.
+        for visit in visits.values {
+            guard let text = pageText[visit.key],
+                  let fit = History.fit(bytes, words, address: text.searchable, findable: text.findable)
+            else { continue }
+            visited(visit, text, fit)
+        }
+        for site in History.knownText where !visitedHosts.contains(site.host) {
+            guard let fit = History.fit(bytes, words, address: site.host, findable: site.findable) else { continue }
+            known(site, fit)
+        }
+
+        // Room left: a typo (#762), fit 1. Slowest, so only then, from three letters.
         guard best.count < limit, needle.count >= 3 else { return best.map(\.0) }
-        let words = needle.split(whereSeparator: \.isWhitespace).map { Array($0.utf8) }
         for visit in visits.values {
-            guard let text = pageText[visit.key],
-                  rank(text.searchable, against: needle, ascii: ascii) == nil,
-                  let loose = Fuzzy.match(words, in: text.findable)
-            else { continue }
-            let often = frecency(visit, now: now)
-            offer(text.address, Double(loose) - 6 + often / (often + 1)) {
-                URL(string: visit.url).map { Suggestion(key: text.address, title: visit.title, url: $0, kind: .visited) }
-            }
+            guard let text = pageText[visit.key], Fuzzy.match(words, in: text.findable) == 0 else { continue }
+            visited(visit, text, 1)
         }
-        for known in History.knownText where !visitedHosts.contains(known.host) {
-            guard rank(known.host, against: needle, ascii: ascii) == nil,
-                  let loose = Fuzzy.match(words, in: known.findable)
-            else { continue }
-            offer(known.host, Double(loose) - 8) {
-                URL(string: "https://" + known.host).map { Suggestion(key: known.host, title: known.title, url: $0, kind: .known) }
-            }
+        for site in History.knownText where !visitedHosts.contains(site.host) {
+            guard Fuzzy.match(words, in: site.findable) == 0 else { continue }
+            known(site, 1)
         }
 
         return best.map(\.0)
+    }
+
+    /// 4 address starts with it, 3 a word of the host does, 2 every word
+    /// starts a word of title or address, 1 found inside a word. Title and
+    /// path from three letters: "ui" is in nearly every page.
+    nonisolated private static func fit(_ needle: [UInt8], _ words: [[UInt8]], address: String, findable: String) -> Double? {
+        var address = address, findable = findable
+        let named = address.withUTF8 { text -> Double? in
+            if text.starts(with: needle) { return 4 }
+            let end = text.firstIndex { $0 == 0x2F || $0 == 0x3F || $0 == 0x23 } ?? text.endIndex
+            return Fuzzy.startsWord(needle, in: UnsafeBufferPointer(rebasing: text[..<end])) ? 3 : nil
+        }
+        if let named { return named }
+        guard needle.count >= 3 else { return nil }
+        return findable.withUTF8 { text -> Double? in
+            var fit = 2.0
+            for word in words where !Fuzzy.startsWord(word, in: text) {
+                guard Fuzzy.contains(text, word) else { return nil }
+                fit = 1
+            }
+            return fit
+        }
+    }
+
+    /// Addresses in order, so the pages under one sit together.
+    private var addressOrder: [(address: [UInt8], key: String)]?
+    /// Popularity per page, kept until a visit or for a minute.
+    private var popularityCache: (byKey: [String: Double], at: Date)?
+
+    /// Frecency of a page and every page under it.
+    private func popularity(now: Date) -> [String: Double] {
+        if let popularityCache, now.timeIntervalSince(popularityCache.at) < 60 { return popularityCache.byKey }
+        let order: [(address: [UInt8], key: String)]
+        if let addressOrder {
+            order = addressOrder
+        } else {
+            order = pageText.map { (Array($0.value.searchable.utf8), $0.key) }
+                .sorted { $0.address.lexicographicallyPrecedes($1.address) }
+            addressOrder = order
+        }
+        // Pages i..<j add up to sums[j] - sums[i].
+        var sums = [0.0]
+        sums.reserveCapacity(order.count + 1)
+        for page in order {
+            sums.append(sums[sums.count - 1] + (visits[page.key].map { frecency($0, now: now) } ?? 0))
+        }
+        func first(from start: Int, past before: ([UInt8]) -> Bool) -> Int {
+            var low = start, high = order.count
+            while low < high {
+                let mid = (low + high) / 2
+                if before(order[mid].address) { low = mid + 1 } else { high = mid }
+            }
+            return low
+        }
+        var byKey: [String: Double] = [:]
+        byKey.reserveCapacity(order.count)
+        for (i, page) in order.enumerated() {
+            let own = sums[i + 1] - sums[i]
+            let prefix = page.address.last == 0x2F ? page.address : page.address + [0x2F]
+            let start = first(from: i + 1) { $0.lexicographicallyPrecedes(prefix) }
+            let end = first(from: start) { $0.starts(with: prefix) }
+            byKey[page.key] = own + sums[end] - sums[start]
+        }
+        popularityCache = (byKey, now)
+        return byKey
     }
 
     /// How often each site has been visited, for site search to weigh one
@@ -487,50 +545,6 @@ final class History: ObservableObject {
             if let bare = parts.url { found.append((String(option.key.dropFirst(4)), identity(for: bare))) }
         }
         return found
-    }
-
-    /// Frecency, plus the same preference for a front door over a room inside
-    /// it that the search uses.
-    private func standing(_ visit: Visit, now: Date) -> Double {
-        frecency(visit, now: now) + (pageText[visit.key]?.homepage == true ? 1.5 : 0)
-    }
-
-    /// Where the match falls decides most of the ordering: the start of the
-    /// host is what people mean, the middle of a path almost never is.
-    private func rank(_ key: String, against needle: String, ascii: [UInt8]?) -> Double? {
-        // Plain addresses can be read as bytes. Check the whole key: even a
-        // mark attached to a slash can change where a Character ends. A nil
-        // score asks the original matcher below; zero means no ASCII match.
-        if let ascii,
-           let score = key.utf8.withContiguousStorageIfAvailable({ bytes -> Double? in
-               guard bytes.allSatisfy({ $0 >= 0x20 && $0 < 0x7F }) else { return nil }
-               if bytes.starts(with: ascii) { return 6 }
-               let hostEnd = bytes.firstIndex(where: { $0 == 0x2F || $0 == 0x3F || $0 == 0x23 }) ?? bytes.endIndex
-               let host = bytes[..<hostEnd]
-               if let dot = host.firstIndex(of: 0x2E), host[(dot + 1)...].starts(with: ascii) { return 3 }
-               if ascii.count >= 2, ascii.count <= host.count {
-                   for start in 0...(host.count - ascii.count) {
-                       if host[start...].starts(with: ascii) { return 2 }
-                   }
-               }
-               return 0
-           }), let score {
-            return score == 0 ? nil : score
-        }
-        if key.hasPrefix(needle) { return 6 }
-        // Read in place: this runs for every place in the history on every
-        // key, and splitting each key into new strings was most of its cost.
-        let hostEnd = key.firstIndex(where: { "/?#".contains($0) }) ?? key.endIndex
-        let host = key[..<hostEnd]
-        // "google" finding mail.google.com without the subdomain.
-        if let dot = host.firstIndex(of: "."), host[host.index(after: dot)...].hasPrefix(needle) { return 3 }
-        // Only from two letters up. A single letter matching anywhere inside
-        // a name turns "x" into example.com and netflix.com, which is not what
-        // anybody meant by it.
-        if needle.count >= 2, host.contains(needle) { return 2 }
-        // Deliberately no match on the path. "blog" turning up six articles
-        // from three sites is not an answer to anything.
-        return nil
     }
 
     /// Often, and lately. A month-old visit counts for about a third of a
