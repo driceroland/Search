@@ -455,16 +455,40 @@ struct AddressField: NSViewRepresentable {
         field.cell?.isScrollable = true
         // SwiftUI picks its own colour for a placeholder, and on a pale ground
         // that colour was near-white.
-        field.placeholderAttributedString = Self.placeholder(for: browser.siteChip)
-        context.coordinator.placeheld = browser.siteChip?.name
+        let words = Self.placeholderWords(for: browser)
+        field.placeholderAttributedString = Self.placeholder(words)
+        field.setAccessibilityLabel(Self.accessibilityName(for: browser))
+        context.coordinator.placeheld = words
         return field
     }
 
-    /// What the empty field asks for: an address, or with a site put in it
-    /// with Tab, the words to search that site for.
-    private static func placeholder(for site: SearchSite?) -> NSAttributedString {
+    /// What the empty field asks for: with a site put in it with Tab, the
+    /// words to search that site for; otherwise an address, and where it
+    /// will open, since the field looks the same whichever key raised it.
+    private static func placeholderWords(for browser: Browser) -> String {
+        if let site = browser.siteChip { return "Search \(site.name)" }
+        switch browser.fieldMode {
+        case .blank: return "Enter a web address"
+        case .newTab: return "New tab: enter a web address"
+        case .thisTab: return "This tab: enter a web address"
+        case .switcher: return "Switch to an open tab"
+        }
+    }
+
+    /// The field's name for VoiceOver, which reads it beside what is typed,
+    /// after the placeholder has gone.
+    private static func accessibilityName(for browser: Browser) -> String {
+        switch browser.fieldMode {
+        case .blank: return "Address"
+        case .newTab: return "Address, new tab"
+        case .thisTab: return "Address, this tab"
+        case .switcher: return "Switch to an open tab"
+        }
+    }
+
+    private static func placeholder(_ words: String) -> NSAttributedString {
         NSAttributedString(
-            string: site.map { "Search \($0.name)" } ?? "Enter a web address",
+            string: words,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 15.5),
                 .foregroundColor: NSColor(Palette.ink.opacity(0.3)),
@@ -492,9 +516,11 @@ struct AddressField: NSViewRepresentable {
             coordinator.select(from: browser.typed.count, in: field)
         }
 
-        if coordinator.placeheld != browser.siteChip?.name {
-            coordinator.placeheld = browser.siteChip?.name
-            field.placeholderAttributedString = Self.placeholder(for: browser.siteChip)
+        let words = Self.placeholderWords(for: browser)
+        if coordinator.placeheld != words {
+            coordinator.placeheld = words
+            field.placeholderAttributedString = Self.placeholder(words)
+            field.setAccessibilityLabel(Self.accessibilityName(for: browser))
             DispatchQueue.main.async { coordinator.showPlaceholder(in: field) }
         }
 
@@ -527,8 +553,8 @@ struct AddressField: NSViewRepresentable {
         var browser: Browser
         var tab: Tab.ID?
         var answered = -1
-        /// The site the placeholder last named, so it is set again only
-        /// when a site goes in or comes out.
+        /// The placeholder last given, so it is set again only when a site
+        /// goes in or comes out, or another key raises the field.
         var placeheld: String?
         /// The last value pushed in from the browser side, so an update can
         /// tell a change worth applying from one it made itself.

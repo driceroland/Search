@@ -850,6 +850,10 @@ final class Bench {
             }
             // What the address field shows, typed and offered ending alike.
             out["fieldText"] = Bench.addressField(in: (browser.window ?? Links.window)?.contentView)?.stringValue ?? ""
+            // What the empty field asks for, and its name for VoiceOver.
+            let shown = Bench.addressField(in: (browser.window ?? Links.window)?.contentView)
+            out["placeholder"] = shown?.placeholderAttributedString?.string ?? shown?.placeholderString ?? ""
+            out["fieldName"] = shown?.accessibilityLabel() ?? ""
             out["windows"] = NSApp.windows.map { window -> [String: Any] in
                 [
                     "kind": "\(type(of: window))",
