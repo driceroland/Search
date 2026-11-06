@@ -20,6 +20,7 @@ struct SettingsPanel: View {
 
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shield = Shield.shared
+    @ObservedObject private var consentRules = ConsentRules.shared
     @State private var isDefault = Links.isDefault
     /// A site shortcut being written, kept out of Preferences until it's saved.
     @State private var draft: Keyword?
@@ -720,6 +721,24 @@ struct SettingsPanel: View {
                     Pill("Try again") { shield.compile() }
                 }
                 .under()
+            }
+        case "consent.refuse":
+            // Turned on with no rules here yet: they are on their way, or
+            // didn't come.
+            if prefs.refusesCookieBanners, let trouble = consentRules.trouble {
+                Rule()
+                switch trouble {
+                case .fetching:
+                    Line("Fetching DuckDuckGo's rules…", "Pop-ups are answered once they are here") {
+                        ProgressView().controlSize(.small)
+                    }
+                    .under()
+                case .failed:
+                    Line("Couldn't fetch DuckDuckGo's rules", "No pop-up is answered until they come. Try again, or check the connection") {
+                        Pill("Try again") { consentRules.retry() }
+                    }
+                    .under()
+                }
             }
         case "privacy.forget":
             if !searched {

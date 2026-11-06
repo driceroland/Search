@@ -2208,7 +2208,7 @@ final class Browser: NSObject, ObservableObject {
         if first {
             Shield.shared.enabled = prefs.shielded
             Shield.shared.compile()
-            if prefs.refusesCookieBanners { Autoconsent.prepare() }
+            if prefs.refusesCookieBanners { ConsentRules.shared.prepare() }
             if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
             if prefs.bench {
                 Bench.shared.start(for: self)
@@ -2531,7 +2531,7 @@ final class Browser: NSObject, ObservableObject {
             .removeDuplicates()
             .sink { [weak self] on in
                 guard let self else { return }
-                if on { Autoconsent.prepare() }
+                if on { ConsentRules.shared.prepare() }
                 for tab in tabs + parkedTabs {
                     tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
                 }

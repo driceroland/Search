@@ -126,10 +126,11 @@ mv "$APP/Contents/MacOS/$NAME.sdk" "$APP/Contents/MacOS/$NAME"
 # The AppleScript dictionary (Scripting.swift): read-only, tabs' addresses
 # and titles. The plist below points to it.
 cp Search.sdef "$APP/Contents/Resources/"
-# DuckDuckGo's cookie-banner script and its rules, with their licence
-# (Autoconsent.swift), read only while Refuse cookie banners is on.
+# DuckDuckGo's cookie-banner script, its release and its licence
+# (Autoconsent.swift), read only while Refuse cookie banners is on. Its rules
+# aren't shipped: they are fetched once it is turned on.
 mkdir -p "$APP/Contents/Resources/Autoconsent"
-cp Autoconsent/autoconsent.js Autoconsent/rules.json Autoconsent/LICENSE "$APP/Contents/Resources/Autoconsent/"
+cp Autoconsent/autoconsent.js Autoconsent/VERSION Autoconsent/LICENSE "$APP/Contents/Resources/Autoconsent/"
 
 # Symbols stay out of the app. The linker leaves every function's name and a
 # map back to the source in the binary — 15,000 entries, more than half of

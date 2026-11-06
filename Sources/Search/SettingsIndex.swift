@@ -314,7 +314,7 @@ enum SettingsIndex {
               keys: ["shield"], words: ["adblock", "ad blocker", "ads", "youtube"]),
         .init(id: "consent.refuse", group: "blocking", icon: "xmark.shield",
               title: "Refuse cookie banners", detail: "A site's cookie pop-up is answered No and closed, usually before you see it",
-              more: "DuckDuckGo's rules for the pop-ups most sites use. One it doesn't know stays: ⇧⌘H hides it for good.",
+              more: "DuckDuckGo's rules for the pop-ups most sites use, fetched from jsDelivr when you turn this on and once a week after; nothing of yours is sent. One it doesn't know stays: ⇧⌘H hides it for good.",
               keys: ["consent.refuse"], words: ["cookies", "cookie banner", "consent", "gdpr", "reject", "autoconsent", "duckduckgo"]),
         .init(id: "sites.keep", group: "blocking", icon: "eye.slash",
               title: "Prevent cross-site tracking", detail: "As in Safari. Private tabs keep it on",

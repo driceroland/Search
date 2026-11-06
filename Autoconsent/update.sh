@@ -1,9 +1,12 @@
 #!/bin/bash
 # DuckDuckGo's autoconsent (github.com/duckduckgo/autoconsent), as published
 # on npm and unchanged: the script each page runs, built to be injected as
-# it is (dist/autoconsent.playwright.js), the rules it reads
-# (rules/compact-rules.json) and their licence, MPL-2.0. Search's side is
-# Sources/Search/Autoconsent.swift.
+# it is (dist/autoconsent.playwright.js), and its licence, MPL-2.0. Search's
+# side is Sources/Search/Autoconsent.swift.
+#
+# The rules aren't kept here: the app fetches them for the same major version
+# (ConsentRules). The tests' few are cut from this release's
+# (Tests/AutoconsentFixtures).
 #
 #   ./Autoconsent/update.sh           the latest release
 #   ./Autoconsent/update.sh 18.0.0    that one
@@ -14,7 +17,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 (cd "$TMP" && npm pack --silent "@duckduckgo/autoconsent@$WANT" > /dev/null && tar xzf ./*.tgz)
 cp "$TMP/package/dist/autoconsent.playwright.js" autoconsent.js
-cp "$TMP/package/rules/compact-rules.json" rules.json
 cp "$TMP/package/LICENSE" LICENSE
 python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$TMP/package/package.json" > VERSION
+python3 -I ../Tests/AutoconsentFixtures/make.py "$TMP/package/rules/compact-rules.json" > ../Tests/AutoconsentFixtures/rules.json
 echo "autoconsent $(cat VERSION)"
