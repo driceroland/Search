@@ -31,6 +31,8 @@ struct SplitTabItem: View {
 
     @Environment(\.greys) private var greys
     @State private var hovered: Tab.ID?
+    /// Carried and about to come apart: the half that stays dims.
+    @ObservedObject private var separation = PairSeparation.shared
 
     private var stacked: Bool { width == nil }
     /// Across the top, the outline is as tall as a tab's pill (28 points)
@@ -110,6 +112,14 @@ struct SplitTabItem: View {
             hovered: $hovered
         )
         .frame(maxWidth: .infinity, maxHeight: stacked ? height : .infinity)
+        .opacity(staying(tab) ? 0.35 : 1)
+        .animation(Motion.quick, value: separation.leaving)
+    }
+
+    /// The other half of the one a carried pair is letting go of.
+    private func staying(_ tab: Tab) -> Bool {
+        guard let leaving = separation.leaving, leaving != tab.id else { return false }
+        return leaving == left.id || leaving == right.id
     }
 
     /// Across the top: one cross, at the end of the item, for whichever half
@@ -292,8 +302,8 @@ private struct SplitTabHalf: View {
                 .frame(height: 16)
         } else {
             HStack(spacing: stacked ? 8 : 5) {
-                if prefs.glyph == .icons || narrow {
-                    Mark(icon: tab.icon, letter: tab.monogram, size: stacked ? 15 : 13, dim: tab.asleep)
+                if prefs.glyph == .icons || !tab.isBlank || narrow {
+                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: stacked ? 15 : 13, dim: tab.asleep)
                         .frame(width: stacked ? 15 : 13, height: stacked ? 15 : 13)
                 }
                 if tab.shy {

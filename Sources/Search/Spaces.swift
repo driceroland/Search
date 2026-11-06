@@ -556,7 +556,8 @@ struct SpaceDot: View {
         .onChange(of: key) { _, now in
             let symbol = symbol
             DispatchQueue.main.async {
-                withAnimation(.easeOut(duration: 0.22)) { shown = (now, symbol) }
+                // With Reduce Motion on, the new icon is simply there.
+                withAnimation(Motion.reduced ? nil : .easeOut(duration: 0.22)) { shown = (now, symbol) }
             }
         }
         .onChange(of: browser.spaceID) { _, _ in name() }

@@ -18,6 +18,8 @@ struct TabBar: View {
     /// Which tab is under the hand, where it started, and how far it has come.
     @State private var landing = false
     @State private var groupFrames: [UUID: GroupDropFrame] = [:]
+    /// A tab of the run is being carried along it (see Carried).
+    @State private var carrying = false
     /// The plus only comes out when the pointer is in the row.
     @State private var nearby = false
     @State private var plussed = false
@@ -116,6 +118,7 @@ struct TabBar: View {
                                         }
                                     }
                                     .frame(height: Metrics.strip)
+                                    .environment(\.rowCarrying, carrying)
                                     .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
                                 }
                                 .scrollDisabled(!overflowing(in: geo.size.width))
@@ -322,7 +325,8 @@ struct TabBar: View {
             .modifier(Carried(index: index, steps: steps, vertical: false,
                               space: "strip", onDropTab: { source, point in drop(source, at: point) },
                               groupDestination: { source, point in destination(source, at: point) },
-                              outside: { browser.dragOut(tab) }, browser: browser, tab: tab) {
+                              outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
+                              holding: { carrying = $0 }) {
                 if browser.prefs.usesTabGroups && tab.pin == nil {
                     browser.move(tab, within: group, to: $0)
                 } else {
@@ -631,6 +635,7 @@ enum Rewind {
 
 private struct TabPill: View {
     @Environment(\.tabShortcutNumbers) private var shortcutNumbers
+    @Environment(\.rowCarrying) private var rowCarrying
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
@@ -698,7 +703,7 @@ private struct TabPill: View {
                 loose
             }
         }
-        .background { ground }
+        .background { ground.animation(Motion.quick, value: rowCarrying) }
         .overlay {
             if browser.selectedTabIDs.contains(tab.id) {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -790,8 +795,8 @@ private struct TabPill: View {
                 TabAddressField(browser: browser)
                     .frame(height: 16)
             } else {
-                if prefs.glyph == .icons, !tab.isBlank {
-                    Mark(icon: tab.icon, letter: tab.monogram, size: 15)
+                if !tab.isBlank {
+                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15)
                 }
                 if tab.bench {
                     // A script's tab, not yours.
@@ -905,7 +910,7 @@ private struct TabPill: View {
         } else if hovering {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.hover)
-        } else if pinned || compact {
+        } else if pinned || compact || rowCarrying {
             // A letter with nothing behind it reads as debris. A pinned tab
             // keeps a faint ground of its own so the block of them reads as
             // one thing, and a tab down to its mark stands in the same place:
@@ -913,6 +918,11 @@ private struct TabPill: View {
             // grey says it for the mark. The live, selected and hovered
             // grounds above are unchanged, so a mark wears this one only
             // while it is none of those.
+            //
+            // So does every tab of the run while one is carried along it: a
+            // tab just passed lies half under the one carried, its title at
+            // its left under it too, and the half left showing was nothing,
+            // so it seemed gone until the hand moved on (#898).
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.wash.opacity(0.55))
         }
@@ -968,6 +978,9 @@ struct Carried: ViewModifier {
     var land: ((CGPoint?) -> Bool)? = nil
     /// Over that block: faint, so the place it opened shows through.
     var faded = false
+    /// Told when the tab is picked up and when it is put down, called off
+    /// or cancelled: the row it is carried along can show its tabs' shapes.
+    var holding: ((Bool) -> Void)? = nil
     let move: (Int) -> Void
 
     @State private var held = false
@@ -1077,6 +1090,7 @@ struct Carried: ViewModifier {
                     }
             )
             .onChange(of: carrying) { _, now in if !now { callOff() } }
+            .onChange(of: held) { _, now in holding?(now) }
             .onReceive(TabDrag.shared.$cancelledID) { id in
                 guard id == tab?.id, held else { return }
                 _ = land?(nil)
@@ -1127,6 +1141,20 @@ struct Carried: ViewModifier {
             travel = 0
             reordered = false
         }
+    }
+}
+
+/// A tab is being carried along the run of tabs across the top: every tab of
+/// it wears the faint grey of a pinned one, so a tab half under the one
+/// carried still shows where it is.
+private struct RowCarryingKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var rowCarrying: Bool {
+        get { self[RowCarryingKey.self] }
+        set { self[RowCarryingKey.self] = newValue }
     }
 }
 

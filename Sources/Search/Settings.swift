@@ -720,19 +720,6 @@ struct SettingsPanel: View {
                 }
                 .under()
             }
-            if !searched, let host = browser.hereHost, prefs.shielded, shield.trouble == nil {
-                Rule()
-                SettingRow(icon: "checkmark.shield", title: "Block on \(host)",
-                           detail: "Turn off here if the site breaks; the page reloads") {
-                    Switch(on: Binding(
-                        get: { !Shield.shared.isPaused(on: host) },
-                        set: { on in
-                            Shield.shared.pause(host, !on)
-                            browser.reload()
-                        }
-                    ))
-                }
-            }
         case "privacy.forget":
             if !searched {
                 Group {

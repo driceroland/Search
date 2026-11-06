@@ -1096,8 +1096,10 @@ private struct SideRow: View {
                     TabAddressField(browser: browser)
                         .frame(height: 16)
                 } else {
-                    if prefs.glyph == .icons, !tab.isBlank {
-                        Mark(icon: tab.icon, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15)
+                    // The site's icon, or with Letters its letter: beside the
+                    // title either way, as Settings says (#919).
+                    if !tab.isBlank {
+                        Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15)
                     }
                     if tab.bench {
                         // A script's tab, not yours.
