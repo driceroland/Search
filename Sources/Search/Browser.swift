@@ -3523,10 +3523,11 @@ final class Browser: NSObject, ObservableObject {
         // Spotlight's does. What was typed waits for the next ⌘T (see
         // dismiss()). It used to stay up with what was typed cleared. Held
         // down, on whichever key New Tab is, the repeats leave it up rather
-        // than flickering it away and back. A click has no repeat to ask
-        // about (AppKit throws), so only a key's is read.
+        // than flickering it away and back, and after a press that put it
+        // away they leave it down. A click has no repeat to ask about (AppKit
+        // throws), so only a key's is read.
+        let held = NSApp.currentEvent.map { $0.type == .keyDown && $0.isARepeat } ?? false
         if launching {
-            let held = NSApp.currentEvent.map { $0.type == .keyDown && $0.isARepeat } ?? false
             if !held { putAway() }
             return
         }
@@ -3538,6 +3539,7 @@ final class Browser: NSObject, ObservableObject {
             newTab()
             return
         }
+        if held { return }
         // From ⌘K or ⌘L the words already typed come along, only where they
         // go changes; or else the words a ⌘T put away was left with, selected
         // whole when the field takes the keys, so typing over them costs nothing.
@@ -6201,9 +6203,10 @@ final class Browser: NSObject, ObservableObject {
     /// write a parser"). An address typed out names only the tabs whose
     /// address it starts, both as the field writes one, http:// or not (see
     /// Address.editable), without www.; the shown address drops the port.
+    /// Its case counts, since /PA and /pa can be two pages on a server.
     private func openPages(matching typed: String, clearly: Bool = false) -> [Suggestion] {
         let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
-        let written = { (url: URL) in Address.withoutWWW(Address.editable(url).lowercased()) }
+        let written = { (url: URL) in Address.withoutWWW(Address.editable(url)) }
         let place = clearly ? Address.url(from: typed).map(written) : nil
         return tabs
             .filter { $0.id != activeID && !$0.isBlank }

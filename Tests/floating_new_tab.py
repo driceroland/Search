@@ -85,12 +85,21 @@ def toggle(t):
     cmd_t(); cmd_t("repeat")
     s = state()
     t.ok("⌘T held leaves the field up", s["up"] and s["tabs"] == tabs, s)
+    if not s["up"]:
+        cmd_t()
     cmd_t()
     t.ok("then ⌘T puts it away", not state()["up"])
 
     cmd_t(); press(H, "h"); time.sleep(0.2); cmd_t()
     s = state()
     t.ok("⌘T with something typed puts it away", not s["up"] and s["tabs"] == tabs, s)
+
+    # One repeat: two would put a flickering field back down by chance.
+    cmd_t(); cmd_t(); cmd_t("repeat")
+    s = state()
+    t.ok("⌘T held to put it away leaves it down", not s["up"] and s["tabs"] == tabs, s)
+    if s["up"]:
+        sv.cmd({"do": "suggest", "action": "esc"}); time.sleep(0.2)
 
 
 def open_tabs(t, a, kettle):
@@ -151,6 +160,10 @@ def open_tabs(t, a, kettle):
     sv.cmd({"do": "suggest", "action": "go"}); time.sleep(0.5)
     f = front()
     t.ok("Return switches to it, with no new tab", f and f["url"].endswith("/parser") and state()["tabs"] == tabs, (f, state()))
+
+    # A server reads /PA and /pa as two pages.
+    s = launch_with(a, f"localhost:{port}/PA")
+    t.ok("its path typed in another case: not listed", unlisted(s, "parser") and s["picked"] == -1, s)
 
     # No port is port 80, another server than the parser's, though the
     # address the tab shows leaves its port off.
