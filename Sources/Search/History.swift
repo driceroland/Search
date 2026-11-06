@@ -175,7 +175,7 @@ final class History: ObservableObject {
         let own = searchable.hasSuffix("/") ? String(searchable.dropLast()) : searchable
         let path = own.prefix { $0 != "?" && $0 != "#" }
         var trail = path.indices.filter { path[$0] == "/" }.map { String(path[..<$0]) }
-        if path.count < own.count { trail.append(String(path)) }
+        if path.endIndex < own.endIndex { trail.append(String(path)) }
         return trail + [own]
     }
 
