@@ -93,6 +93,12 @@ final class TabDrag: ObservableObject {
     /// the hand has rested over that place: a pair comes apart only where
     /// that was shown, as a page splits only where its split was.
     private var separation: (leaving: Tab.ID, before: Tab.ID?)?
+    /// The tab the press that picked this one up put away (#625): a tab in
+    /// the column opens as the button goes down, so carried onto the page it
+    /// meets its own page and splits nothing. Once the hand is over that
+    /// page, the one that was there before comes back, to split with, as it
+    /// was before the press when tabs opened on letting go.
+    private var putAway: Tab.ID?
     private var escapeMonitor: Any?
 
     /// Only a page's edges split it, a band of either side about a quarter
@@ -111,6 +117,9 @@ final class TabDrag: ObservableObject {
     /// shown coming apart: longer than a split over a page, since the hand
     /// slows to a crawl right there on its way to moving the pair a place.
     static let parting: TimeInterval = 0.3
+    /// How long after the press that opened it a drag still counts as that
+    /// press's: a hand may hold a tab a while before it sets off.
+    static let pressed: TimeInterval = 10
 
     /// Where the pointer has been lately, for whether it has settled.
     private var trail: [(point: NSPoint, at: TimeInterval)] = []
@@ -137,6 +146,7 @@ final class TabDrag: ObservableObject {
         guard cancelledID != tab.id else { return true }
         guard sourceTab != nil else { return false }
         let point = pointer(in: browser)
+        bringBack(browser: browser, at: point)
         let now = ProcessInfo.processInfo.systemUptime
         trail.append((point, now))
         trail.removeAll { now - $0.at > 0.5 }
@@ -269,6 +279,16 @@ final class TabDrag: ObservableObject {
         sourceBrowser = browser
         gestureTab = tab
         sourceTab = sourceHalf(browser: browser, gesture: tab, at: origin)
+        // Opened by this very press: the tab on screen before it, if it is
+        // still open. A press long ago, or one that opened nothing, leaves
+        // the page as it is.
+        let now = ProcessInfo.processInfo.systemUptime
+        if let opened = TabPress.openedAt, now - opened < TabDrag.pressed,
+           let came = browser.cameFrom, came.at >= opened, let before = came.id,
+           browser.visibleTabIDs.contains(tab.id), !browser.visibleTabIDs.contains(before),
+           browser.tabs.contains(where: { $0.id == before }) {
+            putAway = before
+        }
         // Escape is the drag's only while the button is down. A gesture
         // taken away mid-drag never says it ended, and its monitor stayed
         // to eat the next Escape anywhere, one meant for a video's full
@@ -300,6 +320,23 @@ final class TabDrag: ObservableObject {
         removeMonitor()
     }
 
+    /// The hand over the carried tab's own page (or its pair's): the page
+    /// that was on screen before the press comes back, once.
+    private func bringBack(browser: Browser, at point: NSPoint) {
+        guard let back = putAway, let source = sourceTab, let window = browser.window else { return }
+        let own = browser.split(for: source)?.tabs ?? [source.id]
+        markers = markers.filter { $0.value.view != nil }
+        let overOwn = markers.values.compactMap(\.view).contains { view in
+            view.kind == .stage && view.browser === browser && view.window === window
+                && !view.isHiddenOrHasHiddenAncestor
+                && view.tab.map { own.contains($0.id) } == true
+                && window.convertToScreen(view.convert(view.bounds, to: nil)).contains(point)
+        }
+        guard overOwn else { return }
+        putAway = nil
+        if let tab = browser.tabs.first(where: { $0.id == back }) { browser.select(tab) }
+    }
+
     private func clear() {
         recheck?.cancel()
         recheck = nil
@@ -309,6 +346,7 @@ final class TabDrag: ObservableObject {
         sourceBrowser = nil
         gestureTab = nil
         sourceTab = nil
+        putAway = nil
         target = .outside
         removeMonitor()
     }
