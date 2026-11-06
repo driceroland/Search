@@ -6072,11 +6072,14 @@ final class Browser: NSObject, ObservableObject {
             if list.count < 3, seen.insert(History.identity(for: place.url)).inserted { list.append(place) }
         }
         let front = visited.first.map { History.identity(for: $0.url) }
-        for kept in bookmarks.places(for: typed, limit: 3) {
-            if list.count == 2, let front, !seen.contains(front), History.identity(for: kept.url) != front { break }
-            add(kept)
+        let kept = bookmarks.places(for: typed, limit: 3)
+        for place in kept.found {
+            if list.count == 2, let front, !seen.contains(front), History.identity(for: place.url) != front { break }
+            add(place)
         }
         visited.forEach(add)
+        // A bookmark found only through a typo: under where you have been.
+        kept.slips.forEach(add)
         // Last in the list, and only when what was typed cannot be a place.
         if !typed.isEmpty, Address.url(from: typed) == nil {
             if let (keyword, rest) = Keyword.match(typed, in: prefs.keywords),
