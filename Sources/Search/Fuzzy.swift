@@ -48,7 +48,7 @@ enum Fuzzy {
         return word.withUnsafeBytes { word in
             var from = 0
             while from < text.count, let hit = memmem(base + from, text.count - from, word.baseAddress, word.count) {
-                let at = base.distance(to: hit.assumingMemoryBound(to: UInt8.self))
+                let at = UnsafeRawPointer(base).distance(to: hit)
                 if anywhere || at == 0 || !inWord(text[at - 1]) { return true }
                 from = at + 1
             }
