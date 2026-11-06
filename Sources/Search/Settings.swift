@@ -661,6 +661,7 @@ struct SettingsPanel: View {
         case "passkeys": Switch(on: $prefs.passkeys)
         case "passwords.apple": Switch(on: $prefs.applePasswords)
         case "shield": Switch(on: $prefs.shielded)
+        case "consent.refuse": Switch(on: $prefs.refusesCookieBanners)
         case "sites.keep": Switch(on: Binding(get: { !prefs.keepsSignIns }, set: { prefs.keepsSignIns = !$0 }))
         case "privacy.clickIDs": Switch(on: $prefs.removesClickIDs)
         case "privacy.gpc": Switch(on: $prefs.sendsPrivacySignal)

@@ -35,6 +35,7 @@ enum Web {
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
         controller.removeScriptMessageHandler(forName: HoveredLink.name, contentWorld: .defaultClient)
+        controller.removeScriptMessageHandler(forName: Autoconsent.name, contentWorld: Autoconsent.world)
     }
 
     /// What every view says it is after "AppleWebKit … (KHTML, like Gecko)"
@@ -942,6 +943,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
         controller.add(dusk, contentWorld: Web.world, name: DuskRelay.name)
         controller.add(translateRelay, contentWorld: Web.world, name: TranslateRelay.name)
+        controller.addScriptMessageHandler(Autoconsent.shared, contentWorld: Autoconsent.world, name: Autoconsent.name)
         PopupGestureRelay.install(on: controller)
         Shield.shared.protect(controller)
         built = web
@@ -1168,6 +1170,11 @@ final class Tab: ObservableObject, Identifiable {
         // frame that isn't YouTube's.
         for script in YouTubeAds.scripts(for: Dusk.host(of: url ?? pageAddress)) {
             controller.addUserScript(script)
+        }
+        // Only while Refuse cookie banners is on: every frame, in a world of
+        // its own (see Autoconsent.swift).
+        if Autoconsent.on, let consent = Autoconsent.script {
+            controller.addUserScript(consent)
         }
         guard !css.isEmpty else { return }
         controller.addUserScript(

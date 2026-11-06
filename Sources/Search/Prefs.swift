@@ -323,6 +323,14 @@ final class Preferences: ObservableObject {
             ClickIDs.on = removesClickIDs
         }
     }
+    /// A site's cookie pop-up answered No (see Autoconsent.swift). Off
+    /// unless asked for.
+    @Published var refusesCookieBanners: Bool {
+        didSet {
+            store.set(refusesCookieBanners, forKey: "consent.refuse")
+            Autoconsent.on = refusesCookieBanners
+        }
+    }
     /// Whether sites may ask for a passkey here. Off sends them to the
     /// password instead — the only thing that works in a build without
     /// Apple's browser entitlement.
@@ -728,6 +736,9 @@ final class Preferences: ObservableObject {
         let removes = store.object(forKey: "privacy.clickIDs") as? Bool ?? true
         removesClickIDs = removes
         ClickIDs.on = removes
+        let refuses = store.bool(forKey: "consent.refuse")
+        refusesCookieBanners = refuses
+        Autoconsent.on = refuses
         // Offered by default only in a build that can actually do them —
         // one with Apple's browser entitlement and its profile embedded. A
         // choice made under the other kind of build is not a choice about

@@ -2208,6 +2208,7 @@ final class Browser: NSObject, ObservableObject {
         if first {
             Shield.shared.enabled = prefs.shielded
             Shield.shared.compile()
+            if prefs.refusesCookieBanners { Autoconsent.prepare() }
             if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
             if prefs.bench {
                 Bench.shared.start(for: self)
@@ -2520,6 +2521,20 @@ final class Browser: NSObject, ObservableObject {
                 guard let self else { return }
                 if on { Bench.shared.start(for: self) } else { Bench.shared.stop() }
                 announce(on ? "Scripts can drive Search — see ./bench" : "The bench is closed")
+            }
+            .store(in: &bag)
+
+        // Every tab's next page (see Autoconsent.swift); the page up now
+        // stays as it is.
+        prefs.$refusesCookieBanners
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] on in
+                guard let self else { return }
+                if on { Autoconsent.prepare() }
+                for tab in tabs + parkedTabs {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                }
             }
             .store(in: &bag)
 
