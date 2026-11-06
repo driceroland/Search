@@ -94,9 +94,12 @@ final class History: ObservableObject {
     /// These are derived once when a visit enters memory. Suggestions run on
     /// every keystroke, so neither URL parsing nor address formatting belongs
     /// in that loop.
-    private var pageText: [String: PageText] = [:] {
-        didSet { if pageText.isEmpty { weights = [:] } }
-    }
+    private var pageText: [String: PageText] = [:]
+    /// Frecency under each address prefix, as of `epoch`, faded on reading.
+    private var weights: [String: Double] = [:]
+    private let epoch = Date()
+    /// Frecency's month, in seconds.
+    private static let fading = 30.0 * 86_400
     private var visitedHosts: Set<String> = []
 
     /// Its file: history.json for Personal, one of its own for each other
@@ -115,6 +118,7 @@ final class History: ObservableObject {
         retired = true
         visits = [:]
         pageText = [:]
+        weights = [:]
         visitedHosts = []
         Disk.remove(file)
     }
@@ -191,15 +195,23 @@ final class History: ObservableObject {
     private func remember(_ visit: Visit, url: URL? = nil) {
         guard let page = url ?? URL(string: visit.url) else { return }
         var text = History.pageText(for: page, title: visit.title)
-        text.weight = Double(visit.count) * exp(visit.last.timeIntervalSince(epoch) / History.fading)
-        if let old = pageText[visit.key] { credit(old, -old.weight) }
-        credit(text, text.weight)
+        text.weight = weight(of: visit)
+        if let old = pageText[visit.key] { credit(old, by: -old.weight) }
+        credit(text, by: text.weight)
         pageText[visit.key] = text
         if !text.host.isEmpty { visitedHosts.insert(text.host) }
     }
 
+    private func weight(of visit: Visit) -> Double {
+        Double(visit.count) * exp(visit.last.timeIntervalSince(epoch) / History.fading)
+    }
+
+    private func credit(_ text: PageText, by weight: Double) {
+        for prefix in text.trail { weights[prefix, default: 0] += weight }
+    }
+
     private func forgetText(for key: String) {
-        if let old = pageText[key] { credit(old, -old.weight) }
+        if let old = pageText[key] { credit(old, by: -old.weight) }
         let host = pageText.removeValue(forKey: key)?.host
         guard let host, !host.isEmpty,
               !pageText.values.contains(where: { $0.host == host })
@@ -297,6 +309,7 @@ final class History: ObservableObject {
     func forget() {
         visits = [:]
         pageText = [:]
+        weights = [:]
         visitedHosts = []
         save()
     }
@@ -451,16 +464,6 @@ final class History: ObservableObject {
         }
         guard needle.count >= 3 else { return nil }
         return findable.withUTF8 { text in words.allSatisfy { Fuzzy.startsWord($0, in: text) } ? 2 : 1 }
-    }
-
-    /// Frecency under each address prefix, as of `epoch`, faded on reading.
-    private var weights: [String: Double] = [:]
-    private let epoch = Date()
-    /// Frecency's month, in seconds.
-    private static let fading = 30.0 * 86_400
-
-    private func credit(_ text: PageText, _ weight: Double) {
-        for prefix in text.trail { weights[prefix, default: 0] += weight }
     }
 
     /// How often each site has been visited, for site search to weigh one
