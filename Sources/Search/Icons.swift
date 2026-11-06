@@ -778,7 +778,7 @@ final class SVGIcons: NSObject, WKNavigationDelegate {
                 done = true
                 answer.resume(returning: png)
             }
-            web.callAsyncJavaScript(SVGIcons.draw, arguments: ["src": source, "side": SVGIcons.side],
+            web.callAsyncJavaScript(SVGIcons.draw, arguments: ["src": source, "side": SVGIcons.side, "dark": dark],
                                     in: nil, in: .defaultClient) { result in
                 guard case .success(let value) = result, let text = value as? String, text.hasPrefix(prefix),
                       text.utf8.count < 2_000_000
@@ -797,7 +797,10 @@ final class SVGIcons: NSObject, WKNavigationDelegate {
     /// makes comes back. Kept to its proportions, centred in the square.
     /// An SVG takes its look from its <img> as it loads: detached, or not yet
     /// laid out, it is drawn light whatever the view's look, and kept so.
+    /// A view made while Search was the other look takes on its own after
+    /// a while on some Macs (#917): nothing is drawn before it has.
     private static let draw = """
+    while (matchMedia('(prefers-color-scheme: dark)').matches !== dark) await new Promise(wait => setTimeout(wait, 20));
     const img = new Image();
     document.body.append(img);
     img.offsetWidth;
