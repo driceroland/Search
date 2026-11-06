@@ -7201,7 +7201,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// Safari before 26.4, takes `outerWidth / innerWidth` for the browser's
     /// zoom: from 0 it took the smallest it knows, a quarter, and drew the
     /// document at a quarter of the screen's sharpness (#666). Safari answers
-    /// with its window, and so does this, the tabs and all.
+    /// with its window. This answers with the window as tall as it is, but
+    /// only as wide as the page: the column beside a page is no chrome of
+    /// Safari's, and with it counted `outerWidth - innerWidth` passed 160,
+    /// which Discord reads as DevTools docked open and signs you out (#916).
     @objc(_webView:getWindowFrameWithCompletionHandler:)
     func webView(_ webView: WKWebView, getWindowFrameWithCompletionHandler done: @escaping (CGRect) -> Void) {
         done(windowFrame(for: webView))
@@ -7212,7 +7215,14 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// loads there still has the width it was shown at, and Docs would take
     /// that over nothing, and keep the quarter for as long as the page lives.
     func windowFrame(for webView: WKWebView) -> CGRect {
-        webView.window?.frame ?? window?.frame ?? .zero
+        let shown: WKWebView? = webView.window != nil ? webView
+            : (active?.web.window != nil ? active?.web : nil)
+        guard let shown, let frame = shown.window?.frame else { return window?.frame ?? .zero }
+        // The page's own width, at its own place across; the window's height
+        // and place down, as the bars over a page are the browser's chrome.
+        let page = shown.convert(shown.bounds, to: nil)
+        guard page.width > 0 else { return frame }
+        return CGRect(x: frame.minX + page.minX, y: frame.minY, width: page.width, height: frame.height)
     }
 
     /// The page has drawn something: a view kept out of sight until now, so
