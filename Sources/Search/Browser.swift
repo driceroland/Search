@@ -57,6 +57,12 @@ final class Browser: NSObject, ObservableObject {
     /// Named tab sections in the current space, in display order.
     @Published var tabGroups: [TabGroup] = []
     @Published var editingGroupID: UUID?
+    /// The tab on screen before the last change, and when it changed: a tab
+    /// in the column opens as the button goes down (#625), so a tab carried
+    /// from there onto the page finds its own page under the hand, and
+    /// TabDrag puts this one back to split with.
+    private(set) var cameFrom: (id: Tab.ID?, at: TimeInterval)?
+
     @Published var activeID: Tab.ID? {
         didSet {
             // The tab just left is the tab just looked at. Whether a tab has
@@ -67,6 +73,7 @@ final class Browser: NSObject, ObservableObject {
                 DispatchQueue.main.async { held.forEach { $0.present() } }
             }
             guard oldValue != activeID else { return }
+            cameFrom = (oldValue, ProcessInfo.processInfo.systemUptime)
             // Going to another tab ends a page's run of links (see placeForLink).
             linkRun = nil
             if displayTab?.id == oldValue { cancelDisplay() }

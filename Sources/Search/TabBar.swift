@@ -1571,6 +1571,12 @@ struct TabPress: ViewModifier {
     /// letting go wasn't moved at all.
     static let travel: CGFloat = 4
 
+    /// When the last press opened its tab, until the next press (or the
+    /// release, after a drag). A tab carried from it onto the page asks (see
+    /// TabDrag.begin): the page under the hand is then its own, with
+    /// nothing to split.
+    private(set) static var openedAt: TimeInterval?
+
     func body(content: Content) -> some View {
         content.onLongPressGesture(minimumDuration: .infinity, maximumDistance: TabPress.travel, pressing: { down in
             pressing?.wrappedValue = down
@@ -1579,16 +1585,23 @@ struct TabPress: ViewModifier {
                 // did stands until the release, so the release can't take
                 // it for a fresh click on the tab now on screen.
                 if NSEvent.pressedMouseButtons & 1 != 0 {
-                    TabPress.untilRelease { selected = false }
+                    TabPress.untilRelease { selected = false; TabPress.openedAt = nil }
                     return
                 }
                 // The row's release handler must see which press selected it.
+                // `openedAt` stays until the next press: an event made by a
+                // test has no button down, and a drag it carries on with
+                // still asks.
                 DispatchQueue.main.async { selected = false }
                 return
             }
+            TabPress.openedAt = nil
             guard enabled, NSEvent.modifierFlags.intersection([.command, .control, .shift]).isEmpty else { return }
             selected = !active
-            if selected { act() }
+            if selected {
+                TabPress.openedAt = ProcessInfo.processInfo.systemUptime
+                act()
+            }
         }, perform: {})
     }
 
