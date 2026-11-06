@@ -102,9 +102,7 @@ final class SpaceSwipe {
         let width = browser.prefs.sidebar ? browser.prefs.columnWidth : Metrics.strip
         browser.spaceStep = step
         resting = Date().addingTimeInterval(SpaceSwipe.rest)
-        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
-            browser.spaceSwipe = CGFloat(-step) * width
-        } completion: {
+        carry(browser, to: CGFloat(-step) * width) {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) {
@@ -114,8 +112,22 @@ final class SpaceSwipe {
             guard let next = Browsers.front, next !== browser, next.spaceID == space else { return }
             self.browser = next
             next.spaceStep = step
+            guard !Motion.reduced else { return }
             withTransaction(still) { next.spaceSwipe = CGFloat(step) * width }
             withAnimation(.easeOut(duration: 0.22)) { next.spaceSwipe = 0 }
+        }
+    }
+
+    /// The rows carried on to `offset`, where the next space's lie, and then
+    /// `arrived`. With Reduce Motion on nothing travels: `arrived` at once,
+    /// and the space is simply there, as a swipe let go short already
+    /// snaps back without moving (Motion.settle).
+    private func carry(_ browser: Browser, to offset: CGFloat, then arrived: @escaping () -> Void) {
+        guard !Motion.reduced else { return arrived() }
+        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
+            browser.spaceSwipe = offset
+        } completion: {
+            arrived()
         }
     }
 
@@ -264,9 +276,7 @@ final class SpaceSwipe {
         let away: CGFloat = target > here ? -1 : 1
         browser.spaceStep = target > here ? 1 : -1
         resting = Date().addingTimeInterval(SpaceSwipe.rest)
-        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
-            browser.spaceSwipe = away * width
-        } completion: {
+        carry(browser, to: away * width) {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) {

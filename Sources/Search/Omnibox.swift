@@ -355,6 +355,9 @@ private struct Breath: NSViewRepresentable {
             glow.shadowOffset = .zero
             glow.shadowRadius = 26
             layer?.addSublayer(glow)
+            NSWorkspace.shared.notificationCenter.addObserver(
+                self, selector: #selector(breathe),
+                name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
         }
 
         @available(*, unavailable)
@@ -379,8 +382,17 @@ private struct Breath: NSViewRepresentable {
             glow.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 26, cornerHeight: 26, transform: nil)
             effectiveAppearance.performAsCurrentDrawingAppearance { glow.shadowColor = Palette.NS.ink.cgColor }
             CATransaction.commit()
-            // From 0.97 to 1.03, from 0.65 to full, 2.6 s each way, for as
-            // long as the field is there.
+            breathe()
+        }
+
+        /// From 0.97 to 1.03, from 0.65 to full, 2.6 s each way, for as
+        /// long as the field is there. It never stops on its own, so with
+        /// Reduce Motion on it doesn't start: the glow holds still, at its
+        /// full strength. Asked again when that setting changes, so turning
+        /// it on stills a breath already going.
+        @objc private func breathe() {
+            glow.removeAnimation(forKey: "breath")
+            guard !Motion.reduced else { return }
             let size = CABasicAnimation(keyPath: "transform.scale")
             size.fromValue = 0.97
             size.toValue = 1.03
