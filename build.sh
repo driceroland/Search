@@ -257,6 +257,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <string>Websites you visit can ask for your location. Search asks you each time a site does, unless you choose Always allow for it; Settings › Privacy forgets those choices.</string>
   <key>NSDownloadsFolderUsageDescription</key>
   <string>Files you download are saved to your Downloads folder.</string>
+  <!-- Only once you turn on Settings › Passwords › Fill in your contact
+       details: your own card, never anyone else's (MeCard.swift). -->
+  <key>NSContactsUsageDescription</key>
+  <string>Search fills in forms with the details on your own card in Contacts, once you pick them under a box. It reads no one else's card and saves no copy of yours.</string>
 </dict>
 </plist>
 PLIST

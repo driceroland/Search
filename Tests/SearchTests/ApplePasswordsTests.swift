@@ -621,14 +621,14 @@ final class ApplePairingTests: XCTestCase {
 
         // Off: nothing asked, nothing up.
         browser.prefs.applePasswords = false
-        tab.onField?(tab, spot, false, false, true, true)
+        tab.onField?(tab, spot, false, false, true, true, nil)
         XCTAssertNil(browser.suggesting)
         XCTAssertEqual(fake.handshakes, 0)
 
         // On, not paired: a row to connect, and the helper not yet run.
         browser.prefs.applePasswords = true
-        tab.onField?(tab, spot, false, false, true, false)
-        tab.onField?(tab, spot, false, false, true, true)
+        tab.onField?(tab, spot, false, false, true, false, nil)
+        tab.onField?(tab, spot, false, false, true, true, nil)
         XCTAssertEqual(browser.suggesting?.appleConnect, true)
         XCTAssertEqual(browser.suggesting?.appleOffer, nil)
         XCTAssertEqual(fake.handshakes, 0)
@@ -636,9 +636,9 @@ final class ApplePairingTests: XCTestCase {
         // Paired: the accounts, without their codes.
         await browser.applePasswords.connect()
         await browser.applePasswords.enter("246810")
-        tab.onField?(tab, nil, false, false, false, false)
+        tab.onField?(tab, nil, false, false, false, false, nil)
         XCTAssertNil(browser.suggesting?.codes.first)
-        tab.onField?(tab, spot, false, false, true, true)
+        tab.onField?(tab, spot, false, false, true, true, nil)
         try await settle { browser.suggesting?.codes.isEmpty == false }
         let list = try XCTUnwrap(browser.suggesting)
         XCTAssertEqual(list.codes.map(\.user), ["ada@example.test"])
@@ -657,7 +657,7 @@ final class ApplePairingTests: XCTestCase {
         try await settle { fake.commands == [16, 17] }
 
         // Picked: the list stays down until the caret leaves the box.
-        tab.onField?(tab, spot, false, false, true, true)
+        tab.onField?(tab, spot, false, false, true, true, nil)
         XCTAssertNil(browser.suggesting)
     }
 
@@ -672,7 +672,7 @@ final class ApplePairingTests: XCTestCase {
         let (sub, spot) = try page(in: browser, "https://sso.example.test/otp")
 
         // Not paired: nothing up, and the helper not run.
-        sub.onField?(sub, spot, false, false, false, true)
+        sub.onField?(sub, spot, false, false, false, true, nil)
         XCTAssertNil(browser.suggesting)
         XCTAssertEqual(fake.handshakes, 0)
 
@@ -680,15 +680,15 @@ final class ApplePairingTests: XCTestCase {
         await browser.applePasswords.enter("246810")
 
         // Another host of the site: asked, and not offered.
-        sub.onField?(sub, nil, false, false, false, false)
-        sub.onField?(sub, spot, false, false, false, true)
+        sub.onField?(sub, nil, false, false, false, false, nil)
+        sub.onField?(sub, spot, false, false, false, true, nil)
         try await settle { fake.commands == [16] }
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertNil(browser.suggesting)
 
         // This very host: offered, and a pick asks for the code.
         let (own, _) = try page(in: browser, "https://example.test/otp")
-        own.onField?(own, spot, false, false, false, true)
+        own.onField?(own, spot, false, false, false, true, nil)
         try await settle { browser.suggesting?.codes.isEmpty == false }
         let list = try XCTUnwrap(browser.suggesting)
         XCTAssertFalse(list.wide)
@@ -708,13 +708,13 @@ final class ApplePairingTests: XCTestCase {
 
         // The helper's account is example.test's; this page is someone else's.
         let (other, spot) = try page(in: browser, "https://example.net/otp")
-        other.onField?(other, spot, false, false, true, true)
+        other.onField?(other, spot, false, false, true, true, nil)
         try await settle { fake.commands == [16] }
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertNil(browser.suggesting)
 
         let (clear, _) = try page(in: browser, "http://sso.example.test/otp")
-        clear.onField?(clear, spot, false, false, true, true)
+        clear.onField?(clear, spot, false, false, true, true, nil)
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertNil(browser.suggesting)
         XCTAssertEqual(fake.commands, [16], "plain http isn't even asked about")

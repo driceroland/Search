@@ -847,6 +847,13 @@ final class Browser: NSObject, ObservableObject {
         /// Hung from a box that is clearly a sign-in's, with the site's
         /// other hosts' accounts; false: this host's alone.
         var wide = true
+        /// Hung from a box for your name, email, phone or address: your
+        /// card in Contacts (MeCard), a row per address, email or number.
+        var contacts: [MeCard.Offer] = []
+        /// For those: the page's number for the box, and the page they were
+        /// offered on, which a pick has to find still up, origin and all.
+        var box: Int?
+        var page: URL?
     }
     /// Set once you have picked, so the list doesn't come straight back for
     /// the box you are still in. Cleared when the caret leaves the boxes.
@@ -858,7 +865,7 @@ final class Browser: NSObject, ObservableObject {
     /// The page whose accounts were last looked up for the box the caret is
     /// in. The box reports where it is on every frame of a scroll so the
     /// list can follow it; the keychain is asked once per box, not per frame.
-    private var looked: (tab: Tab.ID, host: String, clear: Bool, name: Bool, wide: Bool, code: Bool)?
+    private var looked: (tab: Tab.ID, host: String, clear: Bool, name: Bool, wide: Bool, code: Bool, fill: Tab.Fill?)?
     /// The sign-in box the caret is in, for a list that changes while it is
     /// there: the page's passkeys arrive when they arrive.
     private var field: (tab: Tab.ID, spot: CGRect, passwords: Bool, name: Bool, code: Bool)?
@@ -893,7 +900,8 @@ final class Browser: NSObject, ObservableObject {
     /// Mac's passkeys for a page waiting for one, hang from the box, and go
     /// when the caret does. Nothing is filled on its own — the way Safari
     /// does it, and what a person expects.
-    private func hang(from tab: Tab, _ spot: CGRect?, passwords: Bool, name: Bool = false, wide: Bool = true, code: Bool = false) {
+    private func hang(from tab: Tab, _ spot: CGRect?, passwords: Bool, name: Bool = false, wide: Bool = true, code: Bool = false,
+                      fill: Tab.Fill? = nil) {
         guard let spot else {
             if field?.tab == tab.id { field = nil; appleAsk += 1 }
             if looked?.tab == tab.id { looked = nil }
@@ -924,14 +932,14 @@ final class Browser: NSObject, ObservableObject {
         // a box with no accounts stays without, and the keychain isn't
         // asked again until the caret leaves.
         if let looked, looked.tab == tab.id, looked.host == host, looked.clear == inTheClear, looked.name == name,
-           looked.wide == wide, looked.code == code {
+           looked.wide == wide, looked.code == code, looked.fill == fill {
             if var up = suggesting, up.tab == tab.id, up.spot != spot {
                 up.spot = spot
                 suggesting = up
             }
             return
         }
-        looked = (tab.id, host, inTheClear, name, wide, code)
+        looked = (tab.id, host, inTheClear, name, wide, code, fill)
         if code {
             hangCodes(from: tab, spot, host: host, wide: wide)
             return
@@ -949,7 +957,9 @@ final class Browser: NSObject, ObservableObject {
             kept.insert(kept.remove(at: at), at: 0)
         }
         let known = Array(kept.prefix(5))
-        let passkeys = Passkeys.shared.offered(in: tab.built)
+        // A page waiting for a passkey has it under its sign-in's boxes, not
+        // under a box for your address.
+        let passkeys = fill == nil ? Passkeys.shared.offered(in: tab.built) : []
         // The Mac's Passwords app, when turned on: an https page of an
         // ordinary tab only, asked about by its own host. Paired, its names
         // join the list when the helper answers; not yet, a row offers to
@@ -974,18 +984,28 @@ final class Browser: NSObject, ObservableObject {
         if let appleHost, apple.state == .paired, tab.built?.window?.isKeyWindow == true {
             lookUpApple(appleHost, in: tab, host: host, name: name, wide: wide)
         }
-        guard !known.isEmpty || !passkeys.isEmpty || connect || offer != nil else {
+        // A box for a detail of yours: your card in Contacts, if turned on
+        // and allowed.
+        let box: Int? = if case .contact(_, let box) = fill { box } else { nil }
+        let contacts: [MeCard.Offer] = {
+            guard case .contact(let kind, _) = fill, prefs.fillsContacts, MeCard.allowed else { return [] }
+            return MeCard.shared.offers(for: kind)
+        }()
+        guard !known.isEmpty || !passkeys.isEmpty || connect || offer != nil || !contacts.isEmpty else {
             suggesting = nil
             return
         }
         // What is under the pointer changed: the half second starts again.
         if let up = suggesting, up.tab == tab.id, up.logins == known, up.passkeys == passkeys, up.nameOnly == name,
-           up.appleConnect == connect, up.apple.isEmpty, up.wide == wide, up.appleOffer == offer {
+           up.appleConnect == connect, up.apple.isEmpty, up.wide == wide, up.appleOffer == offer,
+           up.contacts == contacts, up.box == box,
+           up.page == (contacts.isEmpty ? nil : tab.pageAddress) {
             suggesting?.spot = spot
             return
         }
         suggesting = Suggesting(tab: tab.id, spot: spot, logins: known, passkeys: passkeys, host: host, clear: inTheClear,
-                                nameOnly: name, appleHost: appleHost, appleConnect: connect, appleOffer: offer, wide: wide)
+                                nameOnly: name, appleHost: appleHost, appleConnect: connect, appleOffer: offer, wide: wide,
+                                contacts: contacts, box: box, page: contacts.isEmpty ? nil : tab.pageAddress)
         if let offer { applePasswordsOffer.shown(on: offer) }
     }
 
@@ -1067,6 +1087,22 @@ final class Browser: NSObject, ObservableObject {
                 suggesting = Suggesting(tab: tab.id, spot: field.spot, logins: [], host: host, clear: false,
                                         nameOnly: name, apple: apple, appleHost: appleHost)
             }
+        }
+    }
+
+    /// One of the rows from your card in Contacts: its details into the
+    /// boxes of the form, if the page is still the one it was offered on.
+    /// `alone` (shift held as it was clicked): into the box with the caret
+    /// only.
+    func choose(_ contact: MeCard.Offer, alone: Bool = false) {
+        lowering?.cancel()
+        guard let list = suggesting, let tab = tabs.first(where: { $0.id == list.tab }) else { return }
+        guard Date().timeIntervalSince(list.shown) > 0.5 else { return }
+        suggesting = nil
+        guard let page = list.page, let origin = Tab.origin(of: page), Tab.origin(of: tab.pageAddress) == origin else { return }
+        pickedInto = tab.id
+        tab.fillContact(contact.fields, alone: alone, box: list.box, onlyOn: page) { [weak self] worked in
+            if !worked { self?.announce("Couldn't find the form's boxes anymore") }
         }
     }
 
@@ -1176,6 +1212,7 @@ final class Browser: NSObject, ObservableObject {
         offerAnswered = true
         list.appleOffer = nil
         let empty = list.logins.isEmpty && list.passkeys.isEmpty && list.apple.isEmpty && !list.appleConnect
+            && list.contacts.isEmpty
         suggesting = empty ? nil : list
     }
 
@@ -2781,6 +2818,23 @@ final class Browser: NSObject, ObservableObject {
                 announce(on ? "Scripts can drive Search — see ./bench" : "The bench is closed")
             }
             .store(in: &bag)
+
+        // Every tab's next page, and the page each is showing now: the form
+        // script looks at boxes for your card only with this on.
+        prefs.$fillsContacts
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] on in
+                guard let self else { return }
+                for tab in tabs + parkedTabs {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.built?.evaluateInSearch(FormRelay.contacts(on))
+                }
+                if on { Task { await MeCard.shared.reload() } }
+            }
+            .store(in: &bag)
+        // Your card read ahead, so the first box you click has it.
+        if prefs.fillsContacts { Task { await MeCard.shared.reload() } }
 
         // Every tab's next page, and the page each is showing now (see AutoScroll.swift).
         prefs.$autoScroll
@@ -6201,8 +6255,8 @@ final class Browser: NSObject, ObservableObject {
         // The caret in a sign-in box: the accounts kept for this site hang
         // from the box, and go when the caret does. Nothing is filled on
         // its own — the way Safari does it, and what a person expects.
-        tab.onField = { [weak self] tab, spot, passwords, name, wide, code in
-            self?.hang(from: tab, spot, passwords: passwords, name: name, wide: wide, code: code)
+        tab.onField = { [weak self] tab, spot, passwords, name, wide, code, fill in
+            self?.hang(from: tab, spot, passwords: passwords, name: name, wide: wide, code: code, fill: fill)
         }
 
         tab.onCredentials = { [weak self] tab, host, user, password, clear in
