@@ -357,6 +357,14 @@ final class Preferences: ObservableObject {
     @Published var fillsPasswords: Bool {
         didSet { store.set(fillsPasswords, forKey: "passwords.fill") }
     }
+    /// Your card in Contacts under the boxes for your name, email, phone and
+    /// address (MeCard). Off unless turned on, which is when macOS asks.
+    @Published var fillsContacts: Bool {
+        didSet {
+            store.set(fillsContacts, forKey: "contacts.fill")
+            FormRelay.contacts = fillsContacts
+        }
+    }
     /// Accounts from the Mac's Passwords app under the sign-in box too, by
     /// Apple's helper for its Chrome extension (ApplePasswords.swift). Off
     /// unless turned on: unofficial, and it pairs with a code.
@@ -763,6 +771,9 @@ final class Preferences: ObservableObject {
         savesPasswords = store.object(forKey: "passwords.save") as? Bool ?? true
         fillsPasswords = store.object(forKey: "passwords.fill") as? Bool ?? true
         applePasswords = store.bool(forKey: "passwords.apple")
+        let contacts = store.bool(forKey: "contacts.fill")
+        fillsContacts = contacts
+        FormRelay.contacts = contacts
         // Anyone who already has a session was here before the welcome
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
