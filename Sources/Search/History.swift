@@ -70,6 +70,9 @@ private struct PageText {
     let host: String
     let homepage: Bool
     let findable: String
+    /// Prefixes its visits count for: host, host/team, host/team/api.
+    let trail: [String]
+    var weight = 0.0
 }
 
 @MainActor
@@ -77,7 +80,6 @@ final class History: ObservableObject {
     private var visits: [String: Visit] = [:] {
         didSet {
             recentCache = nil
-            popularityCache = nil
             objectWillChange.send()
         }
     }
@@ -93,10 +95,7 @@ final class History: ObservableObject {
     /// every keystroke, so neither URL parsing nor address formatting belongs
     /// in that loop.
     private var pageText: [String: PageText] = [:] {
-        didSet {
-            addressOrder = nil
-            popularityCache = nil
-        }
+        didSet { if pageText.isEmpty { weights = [:] } }
     }
     private var visitedHosts: Set<String> = []
 
@@ -167,8 +166,17 @@ final class History: ObservableObject {
             searchable: searchable,
             host: bareHost,
             homepage: path.isEmpty || path == "/",
-            findable: title.lowercased() + " " + searchable
+            findable: title.lowercased() + " " + searchable,
+            trail: trail(of: searchable)
         )
+    }
+
+    private static func trail(of searchable: String) -> [String] {
+        let own = searchable.hasSuffix("/") ? String(searchable.dropLast()) : searchable
+        let path = own.prefix { $0 != "?" && $0 != "#" }
+        var trail = path.indices.filter { path[$0] == "/" }.map { String(path[..<$0]) }
+        if path.count < own.count { trail.append(String(path)) }
+        return trail + [own]
     }
 
     static func stripped(_ address: String) -> String {
@@ -182,12 +190,16 @@ final class History: ObservableObject {
 
     private func remember(_ visit: Visit, url: URL? = nil) {
         guard let page = url ?? URL(string: visit.url) else { return }
-        let text = History.pageText(for: page, title: visit.title)
+        var text = History.pageText(for: page, title: visit.title)
+        text.weight = Double(visit.count) * exp(visit.last.timeIntervalSince(epoch) / History.fading)
+        if let old = pageText[visit.key] { credit(old, -old.weight) }
+        credit(text, text.weight)
         pageText[visit.key] = text
         if !text.host.isEmpty { visitedHosts.insert(text.host) }
     }
 
     private func forgetText(for key: String) {
+        if let old = pageText[key] { credit(old, -old.weight) }
         let host = pageText.removeValue(forKey: key)?.host
         guard let host, !host.isEmpty,
               !pageText.values.contains(where: { $0.host == host })
@@ -361,7 +373,7 @@ final class History: ObservableObject {
 
         let bytes = Array(needle.utf8)
         let words = needle.split(whereSeparator: \.isWhitespace).map { Array($0.utf8) }
-        let popularity = popularity(now: Date())
+        let fade = exp(-Date().timeIntervalSince(epoch) / History.fading)
         // A known name: under one fresh visit.
         let knownWeight = log(1.5)
         // Only the best few are kept while scanning, in order, and only those
@@ -380,7 +392,8 @@ final class History: ObservableObject {
             if best.count > limit { best.removeLast() }
         }
         func visited(_ visit: Visit, _ text: PageText, _ fit: Double) {
-            offer(text.address, fit * log(2 + (popularity[visit.key] ?? 0))) {
+            let popularity = max(0, (text.trail.last.flatMap { weights[$0] } ?? 0) * fade)
+            offer(text.address, fit * log(2 + popularity)) {
                 URL(string: visit.url).map { Suggestion(key: text.address, title: visit.title, url: $0, kind: .visited) }
             }
         }
@@ -418,6 +431,7 @@ final class History: ObservableObject {
         return best.map(\.0)
     }
 
+    /// Every word somewhere in the page.
     nonisolated private static func holds(_ words: [[UInt8]], _ findable: String) -> Bool {
         var findable = findable
         return findable.withUTF8 { text in words.allSatisfy { Fuzzy.contains(text, $0) } }
@@ -438,47 +452,14 @@ final class History: ObservableObject {
         return findable.withUTF8 { text in words.allSatisfy { Fuzzy.startsWord($0, in: text) } ? 2 : 1 }
     }
 
-    /// Addresses in order, so the pages under one sit together.
-    private var addressOrder: [(address: [UInt8], key: String)]?
-    /// Popularity per page, kept until a visit or for a minute.
-    private var popularityCache: (byKey: [String: Double], at: Date)?
+    /// Frecency under each address prefix, as of `epoch`, faded on reading.
+    private var weights: [String: Double] = [:]
+    private let epoch = Date()
+    /// Frecency's month, in seconds.
+    private static let fading = 30.0 * 86_400
 
-    /// Frecency of a page and every page under it.
-    private func popularity(now: Date) -> [String: Double] {
-        if let popularityCache, now.timeIntervalSince(popularityCache.at) < 60 { return popularityCache.byKey }
-        let order: [(address: [UInt8], key: String)]
-        if let addressOrder {
-            order = addressOrder
-        } else {
-            order = pageText.map { (Array($0.value.searchable.utf8), $0.key) }
-                .sorted { $0.address.lexicographicallyPrecedes($1.address) }
-            addressOrder = order
-        }
-        // Pages i..<j add up to sums[j] - sums[i].
-        var sums = [0.0]
-        sums.reserveCapacity(order.count + 1)
-        for page in order {
-            sums.append(sums[sums.count - 1] + (visits[page.key].map { frecency($0, now: now) } ?? 0))
-        }
-        func first(from start: Int, past before: ([UInt8]) -> Bool) -> Int {
-            var low = start, high = order.count
-            while low < high {
-                let mid = (low + high) / 2
-                if before(order[mid].address) { low = mid + 1 } else { high = mid }
-            }
-            return low
-        }
-        var byKey: [String: Double] = [:]
-        byKey.reserveCapacity(order.count)
-        for (i, page) in order.enumerated() {
-            let own = sums[i + 1] - sums[i]
-            let prefix = page.address.last == 0x2F ? page.address : page.address + [0x2F]
-            let start = first(from: i + 1) { $0.lexicographicallyPrecedes(prefix) }
-            let end = first(from: start) { $0.starts(with: prefix) }
-            byKey[page.key] = own + sums[end] - sums[start]
-        }
-        popularityCache = (byKey, now)
-        return byKey
+    private func credit(_ text: PageText, _ weight: Double) {
+        for prefix in text.trail { weights[prefix, default: 0] += weight }
     }
 
     /// How often each site has been visited, for site search to weigh one
