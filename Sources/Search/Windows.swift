@@ -387,7 +387,7 @@ enum Browsers {
         let owned = browser.usesFiles && !browser.isPopup
         if owned { browser.leaveFiles() }
         if remembered {
-            closed.append((record(of: browser, rows: true), Date()))
+            closed.append((record(of: browser, rows: true, keeping: true), Date()))
             if closed.count > 10 { closed.removeFirst(closed.count - 10) }
         }
         all.removeAll { $0 === browser }
@@ -446,11 +446,11 @@ enum Browsers {
 
     /// A window's state as a record: frame, space, and — for any but the
     /// oldest, or when it is going away — its rows.
-    static func record(of browser: Browser, rows: Bool) -> WindowRecord {
+    static func record(of browser: Browser, rows: Bool, keeping: Bool = false) -> WindowRecord {
         var record = browser.record
         record.space = browser.spaceID
         if let window = browser.window { record.frame = NSStringFromRect(window.frame) }
-        if rows { record.rows = browser.allRows() }
+        if rows { record.rows = browser.allRows(keeping: keeping) }
         record.merge = browser.mergeID
         record.tucked = browser.tucked ? true : nil
         return record

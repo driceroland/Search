@@ -764,6 +764,16 @@ final class Tab: ObservableObject, Identifiable {
     /// — the back list, the page, where it was scrolled to — handed to the
     /// view built to wake it, so it opens exactly where this one was left.
     private var memory: Any?
+
+    /// The same, for a tab about to close: what ⇧⌘T hands back, so the tab
+    /// comes back with Back and Forward and its place on the page, not as
+    /// its address typed in again (see Browser.Ghost). Nothing while a page
+    /// is still arriving, as `rehome` has it: the state then still holds the
+    /// page being left, and the tab would come back there.
+    var keepsake: Any? {
+        guard let built else { return memory }
+        return built.isLoading ? nil : built.interactionState
+    }
     /// The last picture of that page, compressed, for the moment it wakes.
     private var picture: Data?
     /// For the bench.
@@ -1393,7 +1403,9 @@ final class Tab: ObservableObject, Identifiable {
 
     /// Brought back from the last session: everything the row needs to draw it,
     /// and nothing fetched.
-    func restore(url: URL, title: String, name: String? = nil) {
+    /// Given `state`, a closed tab's keepsake, the view built to wake it
+    /// opens with that history, as a tab that slept does.
+    func restore(url: URL, title: String, name: String? = nil, state: Any? = nil) {
         if let own = InternalPage(url: url) {
             self.name = name
             show(own)
@@ -1403,6 +1415,7 @@ final class Tab: ObservableObject, Identifiable {
         self.title = title
         self.name = name
         pending = url
+        memory = state
         adoptIcon()
     }
 
