@@ -442,12 +442,13 @@ final class History: ObservableObject {
     /// path from three letters: "ui" is in nearly every page.
     nonisolated private static func fit(_ needle: [UInt8], _ words: [[UInt8]], address: String, findable: String) -> Double? {
         var address = address, findable = findable
-        let named = address.withUTF8 { text -> Double? in
+        if let named = address.withUTF8({ text -> Double? in
             if text.starts(with: needle) { return 4 }
-            let end = text.firstIndex { $0 == 0x2F || $0 == 0x3F || $0 == 0x23 } ?? text.endIndex
+            let end = text.firstIndex { [UInt8(ascii: "/"), UInt8(ascii: "?"), UInt8(ascii: "#")].contains($0) } ?? text.endIndex
             return Fuzzy.startsWord(needle, in: UnsafeBufferPointer(rebasing: text[..<end])) ? 3 : nil
+        }) {
+            return named
         }
-        if let named { return named }
         guard needle.count >= 3 else { return nil }
         return findable.withUTF8 { text in words.allSatisfy { Fuzzy.startsWord($0, in: text) } ? 2 : 1 }
     }
