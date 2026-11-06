@@ -176,10 +176,10 @@ final class Bookmarks: ObservableObject {
             best.insert((site, score), at: at)
             if best.count > limit { best.removeLast() }
         }
-        let made = best.map { found in
-            (Suggestion(key: Address.editable(found.site.url), title: found.site.name, url: found.site.url, kind: .bookmark), found.score == 0)
+        func suggestion(_ found: (site: Site, score: Int)) -> Suggestion {
+            Suggestion(key: Address.editable(found.site.url), title: found.site.name, url: found.site.url, kind: .bookmark)
         }
-        return (made.filter { !$0.1 }.map(\.0), made.filter(\.1).map(\.0))
+        return (best.filter { $0.score > 0 }.map(suggestion), best.filter { $0.score == 0 }.map(suggestion))
     }
 
     private static func sites(_ nodes: [Bookmark]) -> [Site] {
