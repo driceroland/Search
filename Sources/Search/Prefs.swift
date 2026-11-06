@@ -659,6 +659,11 @@ final class Preferences: ObservableObject {
     @Published var floatingNewTab: Bool {
         didSet { store.set(floatingNewTab, forKey: "newtab.floating") }
     }
+    /// The floating field also lists open tabs that match what is typed, to
+    /// switch to (Browser.withOpenTabs). Off unless asked for.
+    @Published var switchesInNewTab: Bool {
+        didSet { store.set(switchesInNewTab, forKey: "newtab.tabs") }
+    }
 
     init() {
         navigationLeft = store.bool(forKey: "toolbar.left")
@@ -782,6 +787,7 @@ final class Preferences: ObservableObject {
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
         commandBar = store.bool(forKey: "commandbar")
         floatingNewTab = store.bool(forKey: "newtab.floating")
+        switchesInNewTab = store.bool(forKey: "newtab.tabs")
         // On for everyone who never touched it (24 Oct 2026).
         let history = store.object(forKey: "swipe.history") as? Bool ?? true
         holdsHistory = history

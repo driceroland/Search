@@ -1345,6 +1345,10 @@ final class Bench {
                     "ending": browser.ending ?? "",
                     // ⌘K's line when it has no page to offer.
                     "note": browser.switcherNote ?? "",
+                    // The row the arrow keys are on, or -1.
+                    "picked": browser.picked ?? -1,
+                    // What each row says at its end ("Open tab", "↩ Switch").
+                    "notes": browser.offers.indices.map { browser.rowNote($0)?.text ?? "" },
                     "asked": browser.suggester.asked, "cancelled": browser.suggester.cancelled,
                     "tooSlow": browser.suggester.tooSlow,
                     "on": browser.prefs.engineSuggests, "shy": browser.active?.shy ?? false,
