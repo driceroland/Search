@@ -19,6 +19,7 @@ in [ROADMAP.md](ROADMAP.md).
 - A PDF saved from the PDF bar, or a page saved with Save Page As…, is marked as downloaded from the internet, like any other download, so macOS checks it when first opened. Thanks [@pasteley](https://github.com/pasteley) ([#990](https://github.com/driceroland/Search/pull/990))
 - Saved names, passwords and codes are handed to the page's form filler as values, never written into the script that fills the form. Thanks [@pasteley](https://github.com/pasteley) ([#992](https://github.com/driceroland/Search/pull/992))
 - Extensions' WebSockets keep no cookies, so one extension's socket no longer sends what another's was given. Thanks [@pasteley](https://github.com/pasteley) ([#993](https://github.com/driceroland/Search/pull/993))
+- A window opens with the keys on the page in front, so typing and the arrow keys reach it without a click first. With Keyboard navigation on in the Mac's Keyboard settings, the window kept them, and the Mac handed them to the first button that takes them: Reload opened with a focus ring around it.
 
 ### Changed
 

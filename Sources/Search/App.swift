@@ -884,6 +884,10 @@ struct ContentView: View {
         .onAppear {
             watchKeys()
             browser.askFocus()
+            // Over a page, the page has the keys from the start. Left with
+            // the window, the Mac's keyboard navigation handed them to the
+            // first button that takes them, Reload, ringed.
+            handBack()
             // Addresses from other apps have somewhere to go from here on.
             Links.hand(to: browser)
             BookmarkMenu.shared.start(for: browser)
