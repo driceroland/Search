@@ -1654,7 +1654,9 @@ struct ContentView: View {
         case "w" where shifted:
             browser.closeWindow()
         case "l" where !shifted:
-            browser.edit()
+            // Held down, the field stays up: its repeats would put it away
+            // and raise it again, over and over.
+            if !event.isARepeat { browser.edit() }
         case "r" where !shifted:
             browser.reload()
         case "r" where shifted:
