@@ -184,16 +184,27 @@ final class Favicons {
         guard !saving else { return }
         saving = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
-            saving = false
-            let gone = prune().map(Favicons.file)
-            guard let data = try? JSONEncoder().encode(pages) else { return }
-            let folder = Favicons.folder, index = Favicons.index
-            Favicons.disk.async {
-                try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                try? data.write(to: index, options: .atomic)
-                for file in gone { try? FileManager.default.removeItem(at: file) }
-            }
+            write(now: false)
         }
+    }
+
+    /// Quitting: the write still waiting out `save`'s pause, made before the
+    /// process ends rather than never.
+    func flush() { write(now: true) }
+
+    private func write(now: Bool) {
+        guard saving else { return }
+        saving = false
+        let gone = prune().map(Favicons.file)
+        guard let data = try? JSONEncoder().encode(pages) else { return }
+        let folder = Favicons.folder, index = Favicons.index
+        let put: @Sendable () -> Void = {
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try? data.write(to: index, options: .atomic)
+            for file in gone { try? FileManager.default.removeItem(at: file) }
+        }
+        // sync also waits out any write of the index already queued.
+        if now { Favicons.disk.sync(execute: put) } else { Favicons.disk.async(execute: put) }
     }
 
     /// Forgets the pages seen longest ago once there are too many, and says
