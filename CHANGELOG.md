@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A video floating in Search's window stays the only one out after picture in picture is chosen in Settings. Leaving another video's tab, or Search, sent that one into picture in picture too, and both were up at once. Thanks [@oddharsh](https://github.com/oddharsh) ([#956](https://github.com/driceroland/Search/pull/956))
+
 - A video playing in a window on another screen — a TV, a second display — no longer floats out when you work in another app on this one.
 
 - A Split View pair carried in the column or across the top comes apart only where that was shown: rest over another tab and the half that stays dims, with the same tick as a split shown over a page, and only then does letting go take the other half out. Let go a few points past the pair's own edge on its way to a new place, it used to lose the half being held with no sign it would. Thanks [@ubeann](https://github.com/ubeann) ([#887](https://github.com/driceroland/Search/pull/887))
