@@ -80,6 +80,10 @@ struct SearchApp: App {
                 Button("Bring Things Over…") { browser.bringingIn = "" }
                     .shortcut("file.import")
                 Divider()
+                // Your profile as an offline file for your other Mac;
+                // passwords and cookies never go in it (see Settings).
+                Button("Export Search Profile…") { browser.exportProfile() }
+                    .shortcut("file.exportProfile")
                 Button("Close Tab") { browser.closeFront() }
                     .shortcut("file.closeTab")
                 Button("Close Window") { browser.closeWindow() }

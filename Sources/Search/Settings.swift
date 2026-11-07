@@ -477,8 +477,12 @@ struct SettingsPanel: View {
             }
         case "general.import":
             // Coming from another browser, now or any time later: the same
-            // page as File › Bring Things Over… and the Welcome's.
-            Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
+            // page as File › Bring Things Over… and the Welcome's. Export
+            // writes that profile back out as an offline file, no secrets in it.
+            HStack(spacing: 6) {
+                Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
+                Pill("Export Search Profile…") { browser.exportProfile() }
+            }
         case "quit.confirm": Switch(on: $prefs.confirmsQuit)
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)

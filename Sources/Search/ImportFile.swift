@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import UniformTypeIdentifiers
 
 // What another browser exported to a file, brought in: the way in from a
 // browser Search can't read directly, from another Mac, or from Safari,
@@ -395,4 +396,118 @@ enum ImportFile {
         if process.isRunning { _ = kill(process.processIdentifier, SIGKILL) }
         process.waitUntilExit()
     }
+
+    // MARK: - a Search profile, coming back in
+
+    // Part B's half of one-click profile migration: telling a profile export
+    // apart, peeking into a ZIP for one, and reading its flat folder into one
+    // payload for takeSearchProfile. The format itself — manifest, prefs
+    // allowlist, history rows — stays part A's (see SearchProfile); what
+    // comes over and where it lands is decided there, only read here.
+    nonisolated static let searchProfileExtension = "searchprofile"
+
+    /// The panel type for the export's extension: a stand-in of Search's own,
+    /// since no system type covers it.
+    nonisolated static var searchProfileType: UTType {
+        UTType(filenameExtension: searchProfileExtension) ?? UTType(exportedAs: "app.search.profile")
+    }
+
+    nonisolated static func isSearchProfile(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == searchProfileExtension
+    }
+
+    /// Whether a .zip is a profile export rather than Safari's: a manifest
+    /// with the profile's scope and format, read from a scratch folder that's
+    /// gone before this returns. Runs wherever called; the caller keeps it
+    /// off the main thread. Decides which reader takes the file.
+    nonisolated static func isProfileZip(_ url: URL) -> Bool {
+        guard let folder = try? SearchProfile.unzip(url) else { return false }
+        defer { try? FileManager.default.removeItem(at: folder) }
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("manifest.json")),
+              let manifest = try? JSONDecoder().decode(SearchProfileManifest.self, from: data)
+        else { return false }
+        return manifest.scope == "profile" && manifest.format == SearchProfile.format
+    }
+
+    /// What another copy may honour, asked the same way part A asks: the rows
+    /// Settings shows, plus per-site shield pauses. A file never sets what
+    /// isn't here — nothing identifying this Mac, its state or its accounts.
+    nonisolated static func profilePrefAllowlist() -> Set<String> {
+        let indexed = Set(SettingsIndex.items.flatMap { $0.keys })
+        guard !indexed.isEmpty else { return fallbackProfilePrefs }
+        return indexed.union(["shield.paused"])
+    }
+
+    /// Stand-in when the index isn't there to ask, mirroring part A's: the
+    /// keys this migration was scoped to.
+    nonisolated static let fallbackProfilePrefs: Set<String> = [
+        "search.engine", "search.custom", "search.keywords", "search.suggest",
+        "tabs.newPlace", "tabs.newAfterLast", "tabs.closeGoesBack", "tabs.lazy",
+        "tabs.popupWindows", "tabs.sleep", "tabs.sleep.pace", "tabs.close.after",
+        "tabs.shortcuts", "tabs.address", "tabs.reading", "tabs.give", "tabs.awakeSites",
+        "sidebar", "sidebar.position", "sidebar.icons", "sidebar.hides", "sidebar.roomy", "sidebar.width",
+        "layout.cards",
+        "shield", "shield.paused",
+        "privacy.gpc", "privacy.clickIDs", "privacy.popupSites",
+        "commandbar", "newtab.floating",
+    ]
+
+    /// Everything one file holds, keyed as the flat folder holds it: sessions
+    /// by their old space ("session" for the first), bookmarks and history
+    /// by "personal" or their old profile, pins under the keys pins.json
+    /// keeps. A missing profiles.json is Personal standing alone (see
+    /// SearchProfile), which needs no entry to map to.
+    struct IncomingProfile {
+        var manifest: SearchProfileManifest?
+        var profiles: [Profile] = []
+        var spaces: [Space] = []
+        var sessions: [String: Session.Shape] = [:]
+        var pinsBySpace: [String: [PinDef]] = [:]
+        var pinsShared: [String: [PinDef]] = [:]
+        var bookmarks: [String: [Bookmark]] = [:]
+        var histories: [String: [History.Entry]] = [:]
+        var prefs: [String: AnyCodable] = [:]
+        var extensions: [String] = []
+    }
+
+    /// The folder's files into a payload, section by section: one unreadable
+    /// section never hides the rest.
+    nonisolated static func readIncomingProfile(in folder: URL) -> IncomingProfile {
+        func data(_ name: String) -> Data? { try? Data(contentsOf: folder.appendingPathComponent(name)) }
+        func decode<T: Decodable>(_ name: String) -> T? { data(name).flatMap { try? JSONDecoder().decode(T.self, from: $0) } }
+        var out = IncomingProfile()
+        out.manifest = decode("manifest.json")
+        if let profiles: [Profile] = decode("profiles.json") { out.profiles = profiles }
+        if let spaces: [Space] = decode("spaces.json") { out.spaces = spaces }
+        if let raw = data("pins.json") {
+            if let decoded = Pins.decode(raw) {
+                for (id, defs) in decoded.bySpace { out.pinsBySpace[id.uuidString] = defs }
+            }
+            for (id, defs) in Pins.sharedLists(raw) {
+                out.pinsShared[id == Profile.personalID ? Pins.sharedKey : Pins.sharedKey + ":" + id.uuidString] = defs
+            }
+        }
+        if let prefs: [String: AnyCodable] = decode("prefs.json") { out.prefs = prefs }
+        if let ids: [String] = decode("installed.json") { out.extensions = ids }
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return out }
+        for name in names where name.hasSuffix(".json") {
+            let stem = String(name.dropLast(5))
+            if stem == "session" {
+                if let shape: Session.Shape = decode(name) { out.sessions[Space.firstID.uuidString] = shape }
+            } else if stem.hasPrefix("session-"), UUID(uuidString: String(stem.dropFirst(8))) != nil {
+                if let shape: Session.Shape = decode(name) { out.sessions[String(stem.dropFirst(8))] = shape }
+            } else if stem == "bookmarks" {
+                if let nodes: [Bookmark] = decode(name) { out.bookmarks["personal"] = nodes }
+            } else if stem.hasPrefix("bookmarks-"), UUID(uuidString: String(stem.dropFirst(10))) != nil {
+                if let nodes: [Bookmark] = decode(name) { out.bookmarks[String(stem.dropFirst(10))] = nodes }
+            } else if stem == "history" {
+                if let rows: [History.Entry] = decode(name) { out.histories["personal"] = rows }
+            } else if stem.hasPrefix("history-"), UUID(uuidString: String(stem.dropFirst(8))) != nil {
+                if let rows: [History.Entry] = decode(name) { out.histories[String(stem.dropFirst(8))] = rows }
+            }
+        }
+        return out
+    }
+
+    // (packing is part A's: SearchProfile.zip over collectCurrentProfile)
 }
