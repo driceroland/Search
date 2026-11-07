@@ -3270,6 +3270,16 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
+    /// ⌥⌘N, and Tabs › Split Current Page: on one page, an empty page
+    /// beside it (or the two tabs picked, side by side); on a pair, the
+    /// pair taken apart, both pages staying as tabs. The key that made the
+    /// split puts it away, as ⌘T, ⌘L and ⌘K each put away what they raised
+    /// (#912). It used to go to the right-hand page, which ⌃⌘→ already does.
+    func splitKey() {
+        if pickedPair == nil, activeSplit != nil, let tab = active { return detachSplit(tab) }
+        startSplit()
+    }
+
     func startSplit() {
         // Two tabs picked in the column: those two side by side.
         if pickedPair != nil { return pairPickedTabs() }
