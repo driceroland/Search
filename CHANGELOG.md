@@ -39,6 +39,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Recent places in the new tab, in Settings beside the floating new tab and off unless turned on: ⌘T's floating field offers the last three places from History before anything is typed, leaving out pages already open in the window, which ⌘K finds. Nothing is picked until an arrow key picks it, so Return on the empty field still opens nothing; nothing is asked of a search engine, and a private tab offers nothing. Thanks [@ubeann](https://github.com/ubeann) ([#914](https://github.com/driceroland/Search/pull/914))
 - Copy Address in a download's right-click menu, while it runs and once it is done, for files downloaded from now on, to hand it to another download app. Clearing history takes these addresses with it; the files stay listed. Asked for by [@ejzpan](https://github.com/ejzpan) ([#853](https://github.com/driceroland/Search/issues/853))
 - With a site put in the address field with Tab, the list offers what you searched that site for before, newest first, read from your history on this Mac and sent nowhere; the last few show before you type, and none in a private tab. A site shortcut ("yt naruto") offers the same. With Google in the field and Google your search engine, Suggestions from your search engine shows its suggestions there too; words typed to any other site never go to your engine. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#882](https://github.com/driceroland/Search/pull/882))
 

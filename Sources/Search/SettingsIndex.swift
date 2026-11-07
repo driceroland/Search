@@ -282,6 +282,10 @@ enum SettingsIndex {
               title: "New tab in a floating field", detail: "⌘T raises the address field over the page, as in Arc",
               more: "Return opens what you typed in a new tab; Escape, ⌘W or a click outside puts it away.",
               keys: ["newtab.floating"], words: ["command bar", "cmd t", "spotlight"]),
+        .init(id: "newtab.recent", group: "opening", icon: "clock.arrow.circlepath",
+              title: "Recent places in the new tab", detail: "Before you type, ⌘T's field lists the last three places you went",
+              more: "From History on this Mac, leaving out pages already open, which ⌘K finds. Nothing is picked until an arrow key picks it, and a private tab lists nothing.",
+              keys: ["newtab.recent"], words: ["recent", "history", "suggestions", "cmd t", "last visited"], parent: "newtab.floating"),
         .init(id: "commandbar", group: "opening", icon: "chevron.right.square",
               title: "Address bar commands", detail: "\"settings\" or \"new tab\" alone in the address field goes there",
               more: "Part of a name, like \"down\" or \"dwn\", shows the command lower in the list.",
@@ -445,6 +449,7 @@ enum SettingsIndex {
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
         case "toolbar.left": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
+        case "newtab.recent": return prefs.floatingNewTab
         default: return true
         }
     }
@@ -456,6 +461,7 @@ enum SettingsIndex {
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
         case "profiles.oneWindow": return "Only with more than one profile"
+        case "newtab.recent": return "Only with the new tab in a floating field"
         default: return "Only with the tabs down a side"
         }
     }
