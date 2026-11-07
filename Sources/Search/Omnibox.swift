@@ -42,9 +42,9 @@ struct Omnibox: View {
             // page's cover fades without pulling its edges into view.
             if browser.fieldShowing {
                 if over {
-                    // The page is still there, just out of the way.
+                    // The page is still there, just set back, as under a peek.
                     Rectangle()
-                        .fill(Palette.ground.opacity(0.74))
+                        .fill(Palette.dim)
                         .ignoresSafeArea(.all, edges: fitted ? [] : .all)
                         .onTapGesture { browser.dismiss() }
                         .transition(.opacity)

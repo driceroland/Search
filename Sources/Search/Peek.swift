@@ -121,7 +121,7 @@ struct PeekLayer: View {
             // The dimming only fades. Grown and shrunk with the panel, its
             // edges travelled across the window as it came (Drice, 24 Sep 2026).
             if browser.peekTab != nil {
-                Color.black.opacity(0.22)
+                Palette.dim
                     .contentShape(Rectangle())
                     .onTapGesture { browser.closePeek() }
                     .transition(.opacity)
