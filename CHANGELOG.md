@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- An extension that names nativeMessaging among its optional permissions, as Bitwarden does, can talk to its app on this Mac again: it was refused every call, so its unlock with Touch ID never reached its app. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#751](https://github.com/driceroland/Search/pull/751)), and [@shahrushi2003](https://github.com/shahrushi2003) and [@2cristo7](https://github.com/2cristo7) for reporting ([#741](https://github.com/driceroland/Search/issues/741))
+
 - Close Both Pages is remembered as one, as Close Tabs Below is: one ⇧⌘T brings both pages back side by side, as the pair they were, with the keys in the page that had them. Each page used to be its own entry, so ⇧⌘T brought back one page alone, and a second ⇧⌘T the other, apart. Thanks [@ubeann](https://github.com/ubeann) ([#930](https://github.com/driceroland/Search/pull/930))
 
 - A download cancelled while it is still stopping says "Cancelling…" in the Downloads panel, whether Cancel was pressed while it ran or while a pause was under way. It said "Pausing…", as if Cancel had paused it. Thanks [@oddharsh](https://github.com/oddharsh) ([#967](https://github.com/driceroland/Search/pull/967))
