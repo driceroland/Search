@@ -121,6 +121,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- A second engine one key away: with Settings › Browsing › Shift-Return searches with set, Shift-Return in the address field sends what you typed there, while Return keeps your default. Off unless an engine is picked. Thanks [@aminezar](https://github.com/aminezar) ([#856](https://github.com/driceroland/Search/pull/856))
+
 - With links from other apps opening in a small window, a link to a page already open can go to its tab instead (Settings › Browsing › Links › Go to a tab that has the page, off unless turned on). Thanks [@Comradevergreen](https://github.com/Comradevergreen) ([#798](https://github.com/driceroland/Search/pull/798))
 
 - Choose a page translation language in Settings › Browsing › Pages, independently of the Mac's language. System Default keeps the previous behavior; automatically translated pages use the same choice ([#747](https://github.com/driceroland/Search/issues/747)). Thanks [@2470046](https://github.com/2470046) ([#821](https://github.com/driceroland/Search/pull/821))

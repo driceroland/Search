@@ -1497,6 +1497,17 @@ struct ContentView: View {
             return false
         }
 
+        // Shift-Return in the address field, with an engine chosen for it in
+        // Settings › Browsing: the words go there instead of to the default
+        // engine. With none chosen it isn't taken, and Return has it as
+        // before. Only this window's own address field, as ⌘Return below.
+        if event.keyCode == 36 || event.keyCode == 76,
+           flags.intersection([.command, .shift, .option, .control]) == .shift,
+           browser.prefs.shiftEngine != nil, browser.fieldShowing, browser.editingTab == nil,
+           let window, event.window === window, ContentView.inAddressField(window) {
+            return browser.submitToShiftEngine()
+        }
+
         // Space keys have no menu; other commands arrive here when rebound.
         // A key taken off a command goes back to the page.
         if ShortcutStore.shared.anyChanged || browser.prefs.usesSpaces, let combo = KeyCombo(event: event) {

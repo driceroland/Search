@@ -194,6 +194,18 @@ final class Preferences: ObservableObject {
     @Published var customEngine: String {
         didSet { store.set(customEngine, forKey: "search.custom") }
     }
+    /// Where Shift-Return in the address field sends the words instead of
+    /// the default engine (#848). Nil, as for anyone who never picks one:
+    /// Shift-Return is Return, as it always was.
+    @Published var shiftEngine: Engine? {
+        didSet {
+            if let shiftEngine { store.set(shiftEngine.rawValue, forKey: "search.shift") }
+            else { store.removeObject(forKey: "search.shift") }
+        }
+    }
+    @Published var shiftCustom: String {
+        didSet { store.set(shiftCustom, forKey: "search.shiftCustom") }
+    }
     /// Shortcuts to a site's own search, ahead of the default engine (see
     /// Keyword.swift). Empty until someone adds one.
     @Published var keywords: [Keyword] {
@@ -728,6 +740,8 @@ final class Preferences: ObservableObject {
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
+        shiftEngine = store.string(forKey: "search.shift").flatMap(Engine.init)
+        shiftCustom = store.string(forKey: "search.shiftCustom") ?? ""
         keywords = store.data(forKey: "search.keywords")
             .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
         tabsGive = store.bool(forKey: "tabs.give")
