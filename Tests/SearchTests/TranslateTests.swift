@@ -58,3 +58,49 @@ final class TranslateTests: XCTestCase {
         XCTAssertFalse(PageTranslator.same(Locale.Language(identifier: "zh-Hans"), Locale.Language(identifier: "zh-Hant")))
     }
 }
+
+/// A translation run against a real page, with the stand-in translator.
+@MainActor
+final class TranslateRunTests: XCTestCase {
+    override class func setUp() {
+        setenv("SEARCH_PROBE", "translate-run-\(getpid())", 1)
+        setenv("SEARCH_TRANSLATE_FAKE", "1", 1)
+        super.setUp()
+    }
+
+    private static let french = """
+        <html><body><p>Bonjour à tous, voici la page d'accueil du musée du Louvre à Paris.</p>
+        <p>Le musée est ouvert tous les jours sauf le mardi, de neuf heures à dix-huit heures.</p>
+        <script>window.fixtureReady = true</script></body></html>
+        """
+
+    private func frenchTab() async throws -> Tab {
+        _ = NSApplication.shared
+        let tab = Tab(bench: true)
+        tab.web.loadHTMLString(Self.french, baseURL: URL(string: "https://translate-run.invalid/"))
+        for _ in 0..<200 {
+            if (try? await tab.web.evaluateJavaScript("window.fixtureReady")) as? Bool == true { return tab }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTFail("Timed out loading the French page")
+        throw CancellationError()
+    }
+
+    func testARunLeftByANewPageMarksNothing() async throws {
+        let shown = try await frenchTab()
+        XCTAssertNotNil(PageTranslator.start(shown, to: Locale.Language(identifier: "en")))
+        for _ in 0..<200 where shown.translation?.phase != .done {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertEqual(shown.translation, TranslationMark(from: "fr", to: "en", phase: .done))
+        shown.translationGone(sleeping: false)
+
+        // The page goes while the first collect is still out in the page.
+        let left = try await frenchTab()
+        XCTAssertNotNil(PageTranslator.start(left, to: Locale.Language(identifier: "en")))
+        left.translationGone(sleeping: false)
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertNil(left.translator)
+        XCTAssertNil(left.translation)
+    }
+}

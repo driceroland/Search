@@ -166,6 +166,11 @@ final class Preferences: ObservableObject {
     /// The column's width as drawn: fixed with icons only, pulled by its
     /// edge otherwise (the width pulled is kept for when titles come back).
     var columnWidth: CGFloat { iconColumn ? Metrics.iconColumn : sideWidth }
+    /// A tab playing sound out of sight shows at the foot of the sidebar,
+    /// with its pause (see Player.swift). Off unless asked for.
+    @Published var showsPlayer: Bool {
+        didSet { store.set(showsPlayer, forKey: "sidebar.player") }
+    }
     /// One tab's line in the column, and the size its title is set in.
     var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 28 }
     var sideTitle: CGFloat { roomyTabs ? 14 : 12.5 }
@@ -256,6 +261,12 @@ final class Preferences: ObservableObject {
     /// Where a new tab goes in the row. Next unless asked for.
     @Published var newTabPlace: NewTabPlace {
         didSet { store.set(newTabPlace.rawValue, forKey: "tabs.newPlace") }
+    }
+    /// With After current, a page a link opens in front goes right after
+    /// the page it came from, as a ⌘-click's does, rather than to the end
+    /// of the row (see Browser.frontLinksBeside). Off unless asked for.
+    @Published var frontLinksBeside: Bool {
+        didSet { store.set(frontLinksBeside, forKey: "tabs.frontBeside") }
     }
     /// Each launch starts with a fresh window: the pins stay, last time's
     /// other tabs don't come back (see Session.startFresh). Off unless
@@ -411,9 +422,10 @@ final class Preferences: ObservableObject {
             FrameRate.mode = fastPages
         }
     }
-    /// Springs become a short ease-out in Low Power Mode (see Motion.light).
-    /// Off unless turned on, and even then nothing changes until the Mac is
-    /// asked to save power.
+    /// Springs become a short ease-out in Low Power Mode (see Motion.light),
+    /// and idle tabs sleep after Sooner's ten minutes at most (see
+    /// Motion.savingPower). Off unless turned on, and even then nothing
+    /// changes until the Mac is asked to save power.
     @Published var lightMotion: Bool {
         didSet { store.set(lightMotion, forKey: Motion.lightKey) }
     }
@@ -659,6 +671,11 @@ final class Preferences: ObservableObject {
     @Published var floatingNewTab: Bool {
         didSet { store.set(floatingNewTab, forKey: "newtab.floating") }
     }
+    /// The floating field lists the last few places from History before
+    /// anything is typed (Browser.recentPlaces). Off unless asked for.
+    @Published var recentInNewTab: Bool {
+        didSet { store.set(recentInNewTab, forKey: "newtab.recent") }
+    }
 
     init() {
         navigationLeft = store.bool(forKey: "toolbar.left")
@@ -688,6 +705,7 @@ final class Preferences: ObservableObject {
         sideHides = store.bool(forKey: "sidebar.hides")
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         sideIcons = store.bool(forKey: "sidebar.icons")
+        showsPlayer = store.bool(forKey: "sidebar.player")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
@@ -706,6 +724,7 @@ final class Preferences: ObservableObject {
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
+        frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
         confirmsQuit = store.bool(forKey: Preferences.confirmQuitKey)
@@ -742,12 +761,15 @@ final class Preferences: ObservableObject {
         passkeysPossible = entitled
         let settledFor = store.object(forKey: "passkeys.for") as? Bool
             ?? (entitled && store.bool(forKey: "passkeys.entitled") ? true : nil)
+        let offers: Bool
         if settledFor != entitled {
-            passkeys = entitled
+            offers = entitled
             store.set(entitled, forKey: "passkeys")
         } else {
-            passkeys = store.object(forKey: "passkeys") as? Bool ?? entitled
+            offers = store.object(forKey: "passkeys") as? Bool ?? entitled
         }
+        passkeys = offers
+        FormRelay.passkeysOffered = offers
         store.set(entitled, forKey: "passkeys.for")
         store.set(entitled, forKey: "passkeys.entitled")
         // A test run downloads into its own folder: ~/Downloads would have
@@ -782,6 +804,7 @@ final class Preferences: ObservableObject {
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
         commandBar = store.bool(forKey: "commandbar")
         floatingNewTab = store.bool(forKey: "newtab.floating")
+        recentInNewTab = store.bool(forKey: "newtab.recent")
         // On for everyone who never touched it (24 Oct 2026).
         let history = store.object(forKey: "swipe.history") as? Bool ?? true
         holdsHistory = history

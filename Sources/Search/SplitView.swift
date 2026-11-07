@@ -60,6 +60,18 @@ struct SplitStage: View {
                             .offset(x: frame.minX, y: frame.minY)
                     }
                 }
+                // Over a page it could split, before the hand is at an edge
+                // or has stopped: where letting go would split it. Gone once
+                // the split itself is shown.
+                if drag.preview == nil, let over = drag.over, over.browserID == ObjectIdentifier(browser),
+                   let frame = frames[over.targetID] {
+                    SplitDropHint(width: frame.width)
+                        .frame(width: frame.width, height: frame.height)
+                        .offset(x: frame.minX, y: frame.minY)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
                 if let preview = drag.preview, preview.browserID == ObjectIdentifier(browser) {
                     SplitDropPreview(preview: preview, tabs: browser.tabs)
                         .transition(.opacity)
@@ -70,6 +82,38 @@ struct SplitStage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .animation(Motion.quick, value: drag.preview)
+        .animation(Motion.quick, value: drag.over)
+    }
+}
+
+/// A page's two edges while a tab is carried over it: the bands that split
+/// it, as wide as TabDrag reads them, faint, so the page shows through. Over
+/// the middle, letting go splits nothing; this says so before it happens.
+private struct SplitDropHint: View {
+    let width: CGFloat
+
+    private var band: CGFloat { min(width / 2, max(TabDrag.band, width * TabDrag.bandShare)) }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            edge
+            Spacer(minLength: 0)
+            edge
+        }
+    }
+
+    private var edge: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Palette.ground.opacity(0.35))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Palette.ink.opacity(0.18), lineWidth: 1)
+            Image(systemName: "rectangle.split.2x1")
+                .font(.system(size: 15))
+                .foregroundStyle(Palette.ink.opacity(0.4))
+        }
+        .padding(6)
+        .frame(width: band)
     }
 }
 

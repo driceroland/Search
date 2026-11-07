@@ -545,6 +545,10 @@ enum Browsers {
     static func flush() {
         for browser in all { browser.flushSession() }
         save(now: true)
+        // A visit or an icon from the last second or so, still waiting to be
+        // written.
+        Profiles.flushHistories()
+        Favicons.shared.flush()
     }
 
     /// The window has moved or changed size.

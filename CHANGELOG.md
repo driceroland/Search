@@ -14,6 +14,74 @@ in [ROADMAP.md](ROADMAP.md).
 ### Fixed
 
 - A site's SVG icon with a dark look of its own, like ChatGPT's, wears that look when Search is dark. It was drawn in its light look, black on the dark tab bar and column. An icon kept before this update keeps its light look until it is a week old. Thanks [@dhruvkb](https://github.com/dhruvkb) for reporting ([#807](https://github.com/driceroland/Search/issues/807))
+- An extension's popup opens in the window where its button was pressed, not another open window: button anchors are kept per window instead of in a single global map, and pressing an extension's button acts in its window. Thanks [@BeNDYGo](https://github.com/BeNDYGo) ([#839](https://github.com/driceroland/Search/pull/839))
+
+- Disconnect Apple Passwords while a typed code is still being checked, then Connect again, and the new pairing waits for its own code. The old code's answer used to drop it, with "Apple's Passwords helper answered in a way Search doesn't know". Thanks [@oddharsh](https://github.com/oddharsh) ([#973](https://github.com/driceroland/Search/pull/973))
+
+- Pages that load their own `.bundle.js` files, GitLab's among them, are no longer left half-drawn with uBlock Origin Lite installed. One of its rules blocks a site's bundles only when the server answers with an anti-adblock header; WebKit has no way to read that header, skipped it, and blocked every site's bundles. An extension's rules that depend on a response's headers are now left out. Thanks [@pasteley](https://github.com/pasteley) ([#858](https://github.com/driceroland/Search/pull/858))
+
+- A page visited, retitled or given its icon in the last second or two before quitting is still in History and keeps its icon. Search waited a moment before writing either, and quitting inside that moment threw the write away. Thanks [@oddharsh](https://github.com/oddharsh) ([#971](https://github.com/driceroland/Search/pull/971))
+
+- A tab closed while it played video or music (YouTube, Twitch) went quiet only on screen: its sound could carry on in the background, and a stream could keep filling memory with nothing to show it in. Thanks [@BeNDYGo](https://github.com/BeNDYGo) ([#943](https://github.com/driceroland/Search/pull/943))
+
+- A WebSocket an extension's worker closes before it has connected stays closed. It could open anyway a moment later, and say so to the extension, if the browser hadn't yet heard it was asked to open when the close came; a real WebSocket never opens once it is closing. Thanks [@oddharsh](https://github.com/oddharsh) ([#969](https://github.com/driceroland/Search/pull/969))
+
+- Two extensions added from the store at once each keep showing "Adding…" until they are in. The first to finish took the spinner in Settings and the store page's "Adding…" away from the other, which looked done while it was still on its way, and one that turned out already installed could leave the spinner turning for good. Thanks [@oddharsh](https://github.com/oddharsh) ([#968](https://github.com/driceroland/Search/pull/968))
+
+- Under a sign-in box, the accounts saved for that exact host come first, and the site's other accounts follow under a thin line naming the site, so a login for admin.example.com never passes for example.com's. Nothing is hidden, only ordered. Thanks [@tomaswarynyca](https://github.com/tomaswarynyca) ([#723](https://github.com/driceroland/Search/pull/723))
+
+- Going to another tab while picking things to hide puts the picker away. Clicking a tab in the column or across the top left the page before still picking, out of sight, and Escape then tried to put away a picker on the tab in front, which had none, so the one left behind kept going. Thanks [@oddharsh](https://github.com/oddharsh) ([#966](https://github.com/driceroland/Search/pull/966))
+
+- ⌘K puts the tab switcher away after Tabs › Search Tabs… was clicked in the menu. It stepped down the list instead, and letting go of ⌘ then switched to the second tab in it. Thanks [@oddharsh](https://github.com/oddharsh) ([#959](https://github.com/driceroland/Search/pull/959))
+
+- When the page in the half of a Split View pair you aren't typing in crashes or is ended by the system, it loads again straight away, as the half you are in does. It stayed white, though on screen, until you clicked into it or went to another tab and back. Thanks [@oddharsh](https://github.com/oddharsh) ([#955](https://github.com/driceroland/Search/pull/955))
+
+- A page's camera, microphone, location or notifications card goes away with its page: going to another tab, or the page going elsewhere or closing, refuses it, as the screen-sharing card already did. It stayed up over the next tab, and Allow gave the page you had left what it asked for. A screen-sharing question waiting for a tab behind no longer refuses every other page's camera, location and notifications until you go to that tab. Thanks [@oddharsh](https://github.com/oddharsh) ([#954](https://github.com/driceroland/Search/pull/954))
+
+- A sign-in the page sends from its own script is offered a place in the keychain too: a "Sign in" link that posts the form, a box styled as a button, or a page that sends itself after a moment. Still only once the next page shows it worked. Thanks [@oddharsh](https://github.com/oddharsh) ([#705](https://github.com/driceroland/Search/pull/705))
+
+- Translate Page left by going to another page before it had read the first one leaves nothing behind. The sign came back saying the page was still being translated, with nothing translating it, and stayed until the next page; if the language still had to be downloaded, the download sheet could come up over the page you went to. Thanks [@oddharsh](https://github.com/oddharsh) ([#953](https://github.com/driceroland/Search/pull/953))
+
+- A tab dragged from the column onto the page splits it again, as Welcome and Settings say. Since tabs in the column open as the button goes down (#625), the page under the hand was the dragged tab itself, so nothing was shown at the page's edges and letting go only changed the page. Once the hand is over the page, the page that was there before comes back, and the split is shown and made with it. Letting go anywhere else leaves that page on screen, as before #625. Thanks [@ubeann](https://github.com/ubeann) ([#928](https://github.com/driceroland/Search/pull/928))
+
+- With Split View on, a tab carried in the column or across the top and let go of with Escape stays put down until the button comes up. The next move of the hand picked it up again, shadow and all, under the pointer until the button came up. Thanks [@oddharsh](https://github.com/oddharsh) ([#952](https://github.com/driceroland/Search/pull/952))
+
+- Going to another space with ⌃1–⌃9 or the space menu while the card for a new space is up puts the card away, as Escape does. The row changed but the card and its plus stayed, and if the card came from a tab's Move to Space › New Space…, a later Create carried that tab into the new space too. Typing "new space" in the address field now opens the card the way New Space… does. Thanks [@oddharsh](https://github.com/oddharsh) ([#951](https://github.com/driceroland/Search/pull/951))
+
+- An extension that names nativeMessaging among its optional permissions, as Bitwarden does, can talk to its app on this Mac again: it was refused every call, so its unlock with Touch ID never reached its app. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#751](https://github.com/driceroland/Search/pull/751)), and [@shahrushi2003](https://github.com/shahrushi2003) and [@2cristo7](https://github.com/2cristo7) for reporting ([#741](https://github.com/driceroland/Search/issues/741))
+
+- Close Both Pages is remembered as one, as Close Tabs Below is: one ⇧⌘T brings both pages back side by side, as the pair they were, with the keys in the page that had them. Each page used to be its own entry, so ⇧⌘T brought back one page alone, and a second ⇧⌘T the other, apart. Thanks [@ubeann](https://github.com/ubeann) ([#930](https://github.com/driceroland/Search/pull/930))
+
+- An extension switched off in Settings while it was still starting stays off. The start already under way finished after the switch, so the extension ran and kept its button with its switch showing off, until the next launch; removing one mid-start did the same. Thanks [@oddharsh](https://github.com/oddharsh) ([#950](https://github.com/driceroland/Search/pull/950))
+
+- A download cancelled while it is still stopping says "Cancelling…" in the Downloads panel, whether Cancel was pressed while it ran or while a pause was under way. It said "Pausing…", as if Cancel had paused it. Thanks [@oddharsh](https://github.com/oddharsh) ([#967](https://github.com/driceroland/Search/pull/967))
+
+- Passkeys follow the switch of the Search they run in: a build of your own started beside a release turned them off for the release's new tabs while its switch still said on. Thanks [@oddharsh](https://github.com/oddharsh) ([#737](https://github.com/driceroland/Search/pull/737))
+
+- A tab moved to a space with its own sign-ins while it played sound no longer keeps its speaker once its page is let go. It went on saying "playing sound" with nothing behind it, so it never slept or closed itself. Thanks [@oddharsh](https://github.com/oddharsh) ([#958](https://github.com/driceroland/Search/pull/958))
+
+- Closing a page that a link just opened in front goes back to the page the link was clicked in, while that is still the tab you were on before it. It opens at the end of the row, so with Closing a tab goes back to the one before off, ⌘W landed on whatever tab was last there. Thanks [@ubeann](https://github.com/ubeann) ([#963](https://github.com/driceroland/Search/pull/963))
+
+- An update downloading when the hourly check can't reach the feed goes on to be ready. The check forgot it was on its way, so the finished download was never said to be ready, and the next check swapped it in again, deleting the copy of Search still running until it quit. Thanks [@oddharsh](https://github.com/oddharsh) ([#949](https://github.com/driceroland/Search/pull/949))
+
+- A link that opens a new tab in front — a plain click on one that opens in a new tab, or a page's own window.open — from a tab in a group joins the group, at its end. It landed outside the group, at the end of the row, though Settings says a link from a group stays in it and a ⌘-click's tab already did. Thanks [@ubeann](https://github.com/ubeann) ([#962](https://github.com/driceroland/Search/pull/962))
+
+- Settings › Tabs › New tab position says which links After current puts beside their page: the ones you ⌘-click. ⌘T's new tab and a page a link opens in front go at the end. It said "a link", and a plain click on a link that opens a new tab, the usual kind, went to the end. Thanks [@ubeann](https://github.com/ubeann) ([#964](https://github.com/driceroland/Search/pull/964))
+
+- Reading mode brings the whole article on a page whose article cites its sources: links are weighed by how much of a box they are, not counted, so Wikipedia and MDN come whole, a comment section stays out, and a page that is only links still offers nothing to read. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#774](https://github.com/driceroland/Search/pull/774)), and [@pasteley](https://github.com/pasteley) for reporting ([#757](https://github.com/driceroland/Search/issues/757))
+
+- A page opened just as Search's look changes, light to dark or back, wears its icon once it has loaded. It was asked for its icon before it had arrived, found none, and showed its letter until the look changed again. Thanks [@oddharsh](https://github.com/oddharsh) ([#942](https://github.com/driceroland/Search/pull/942))
+
+- ⌘L held down keeps the address field up. Each of the key's repeats put the field away or raised it again, so it flickered and stayed wherever the count left it. Thanks [@oddharsh](https://github.com/oddharsh) ([#976](https://github.com/driceroland/Search/pull/976))
+
+- Closing the assistant while the on-device engine is still starting no longer leaves it writing an answer for nobody, which kept the engine running until it was done. Thanks [@oddharsh](https://github.com/oddharsh) ([#970](https://github.com/driceroland/Search/pull/970))
+
+- Cancel during the on-device model download puts AI back to off, ready to turn on again. It said the download failed, "cancelled", with Try Again, and the progress bar could come back after it. Thanks [@oddharsh](https://github.com/oddharsh) ([#970](https://github.com/driceroland/Search/pull/970))
+
+- A window closed while Search waits on an import to stop before quitting stays closed. Quitting already counted as begun, so the window was kept as if Search were quitting it, and it came back at the next launch. Thanks [@oddharsh](https://github.com/oddharsh) ([#957](https://github.com/driceroland/Search/pull/957))
+
+- A video floating in Search's window stays the only one out after picture in picture is chosen in Settings. Leaving another video's tab, or Search, sent that one into picture in picture too, and both were up at once. Thanks [@oddharsh](https://github.com/oddharsh) ([#956](https://github.com/driceroland/Search/pull/956))
+
 - A video playing in a window on another screen — a TV, a second display — no longer floats out when you work in another app on this one.
 
 - A Split View pair carried in the column or across the top comes apart only where that was shown: rest over another tab and the half that stays dims, with the same tick as a split shown over a page, and only then does letting go take the other half out. Let go a few points past the pair's own edge on its way to a new place, it used to lose the half being held with no sign it would. Thanks [@ubeann](https://github.com/ubeann) ([#887](https://github.com/driceroland/Search/pull/887))
@@ -40,10 +108,26 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Recent places in the new tab, in Settings beside the floating new tab and off unless turned on: ⌘T's floating field offers the last three places from History before anything is typed, leaving out pages already open in the window, which ⌘K finds. Nothing is picked until an arrow key picks it, so Return on the empty field still opens nothing; nothing is asked of a search engine, and a private tab offers nothing. Thanks [@ubeann](https://github.com/ubeann) ([#914](https://github.com/driceroland/Search/pull/914))
+
+- A tab carried over a page shows where letting go would split it: the page's two edges, faint, as soon as the tab is over it, with the split itself shown as before once the pointer rests on one. Over the middle of a page nothing splits, and nothing used to say where would. Thanks [@ubeann](https://github.com/ubeann) ([#936](https://github.com/driceroland/Search/pull/936))
+
+- The empty page of a Split View pair finds your open tabs by what you type, as ⌘K does: those that answer come first in its list, and a click or Return brings the tab in beside the other page. Its list of open tabs shows the six last looked at and goes once you type, and the field offered only places to load, so a tab past those six came in as a second copy, loaded again. A page offered as an open tab isn't offered again from History. Only there: anywhere else, ⌘K is the key for open tabs. Thanks [@ubeann](https://github.com/ubeann) ([#934](https://github.com/driceroland/Search/pull/934))
+
+- Settings › Tabs › Links opened in front go beside their page, off unless turned on, with New tab position on After current. A plain click on a link that opens a new tab, a page's window.open on a click, or a ⇧⌘-click puts its page right after the page it came from, in the order you click, as a ⌘-click's goes, while you go back and forth between the page and the tabs it opened. Otherwise they go to the end of the row, as before. Thanks [@ubeann](https://github.com/ubeann) ([#965](https://github.com/driceroland/Search/pull/965))
+
+- What plays in another tab can show at the foot of the sidebar: its icon and title, with its pause, and a click goes to the tab. Off unless you turn it on in Settings › Appearance › Tabs. Thanks [@Tom-Boscher](https://github.com/Tom-Boscher) ([#764](https://github.com/driceroland/Search/pull/764))
+
 - Copy Address in a download's right-click menu, while it runs and once it is done, for files downloaded from now on, to hand it to another download app. Clearing history takes these addresses with it; the files stay listed. Asked for by [@ejzpan](https://github.com/ejzpan) ([#853](https://github.com/driceroland/Search/issues/853))
 - With a site put in the address field with Tab, the list offers what you searched that site for before, newest first, read from your history on this Mac and sent nowhere; the last few show before you type, and none in a private tab. A site shortcut ("yt naruto") offers the same. With Google in the field and Google your search engine, Suggestions from your search engine shows its suggestions there too; words typed to any other site never go to your engine. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#882](https://github.com/driceroland/Search/pull/882))
 
 ### Changed
+
+- ⌥⌘N on a Split View pair puts it apart, both pages staying as tabs, with the one that had the keys on screen: the key that made the split takes it away, as ⌘T, ⌘L and ⌘K each put away what they raised. It went to the right-hand page, which ⌃⌘→ already does. On a pair, Tabs › Split Current Page reads Separate Split Tabs. Thanks [@ubeann](https://github.com/ubeann) ([#932](https://github.com/driceroland/Search/pull/932))
+
+- Settings › Appearance › Motion › Save power in Low Power Mode (was Reduce animations) also lets idle tabs sleep after ten minutes at most while in Low Power Mode. Off by default. Thanks [@oddharsh](https://github.com/oddharsh) ([#745](https://github.com/driceroland/Search/pull/745))
+
+- In Split View, the page your typing, Back and ⌘F go to has a clearer line round it: two points of mid-grey, where it was one point at a little over half strength. Against a white page it stood about 2:1 in light and 1.7:1 in dark, little more than the other page's own edge; now about 3:1 in both. Thanks [@ubeann](https://github.com/ubeann) ([#938](https://github.com/driceroland/Search/pull/938))
 
 - The key that raised the address field puts it away: ⌘T again closes ⌘T's floating field, ⌘L again closes ⌘L's, and ⌘K pressed afresh closes the switcher, as Spotlight's key does. ⌘K held still steps down the list. ⌘T again used to leave the field up with what was typed cleared, ⌘L again put the address back over an edit, and ⌘K, let go, ⌘K switched to the second tab in the list. What was typed is kept: switching between ⌘T, ⌘L and ⌘K changes only where Return goes, and a ⌘T put away without opening anything comes back with its words, selected. Thanks [@ubeann](https://github.com/ubeann) ([#912](https://github.com/driceroland/Search/pull/912))
 - The downloads button gives one quick pulse each time a new download starts, so a file that comes in fast still shows it began. A button just coming in has its usual scale-in instead, a resume or a retry doesn't pulse, and with Reduce Motion it holds still. Asked for by [@pasteley](https://github.com/pasteley) ([#830](https://github.com/driceroland/Search/issues/830))

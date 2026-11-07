@@ -35,6 +35,8 @@ final class FetchEntry: ObservableObject, Identifiable {
         let modified: Date
     }
 
+    /// What the row says while WebKit is stopping it.
+    var stopping: String { pendingStop == .cancel ? "Cancelling…" : "Pausing…" }
     var canPause: Bool { state == .downloading && request.map(Self.replayable) == true }
     var canResume: Bool {
         (state == .paused || state == .failed) && resumeData != nil && store != nil
@@ -67,7 +69,7 @@ final class FetchEntry: ObservableObject, Identifiable {
     /// The name asked for, before " 2" and so on: a retry is numbered afresh.
     var retryName: String
     var download: WKDownload?
-    var pendingStop: StopAction?
+    @Published var pendingStop: StopAction?
     var operationID = UUID()
     private var destinationWasAbsent: Bool?
     private var partialFileVersion: PartialFileVersion?

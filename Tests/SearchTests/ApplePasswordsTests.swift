@@ -225,6 +225,20 @@ final class ApplePasswordsTests: XCTestCase {
         XCTAssertFalse(belongs([], "example.com"))
     }
 
+    func testTheHostsOwnAccountsComeBeforeTheSites() {
+        let registrable: (String) -> String = { $0.split(separator: ".").suffix(2).joined(separator: ".") }
+        let qa = AppleLogin(user: "qa", sites: ["admin-qa.example.com"])
+        let prod = AppleLogin(user: "prod", sites: ["admin.example.com"])
+        let root = AppleLogin(user: "root", sites: ["example.com"])
+        func ordered(_ host: String, wide: Bool = true) -> [AppleLogin] {
+            ApplePasswords.exactFirst([qa, root, prod], to: host, wide: wide, registrable: registrable)
+        }
+        XCTAssertEqual(ordered("admin.example.com"), [prod, qa, root])
+        XCTAssertEqual(ordered("admin-qa.example.com"), [qa, root, prod])
+        XCTAssertEqual(ordered("accounts.example.com"), [qa, root, prod], "none of its own: the site's, as they came")
+        XCTAssertEqual(ordered("admin.example.com", wide: false), [prod])
+    }
+
     func testFillIsRecognisedWithoutKeepingThePassword() {
         let fill = AppleFill(host: "accounts.example.test", user: "ada", password: "made-up-secret")
         XCTAssertTrue(fill.matches(host: "accounts.example.test", user: "ada", password: "made-up-secret"))
@@ -305,6 +319,28 @@ final class ApplePasswordsTests: XCTestCase {
         XCTAssertEqual(fake.handshakes, 2)
         await apple.enter("246810")
         XCTAssertEqual(apple.state, .paired)
+    }
+
+    /// Disconnect and Connect again while a typed code is still being
+    /// worked out: that old code's answer leaves the new pairing alone.
+    @MainActor
+    func testCodeFromAPairingGoneLeavesTheNextOneAlone() async {
+        let fake = FakeHelper(code: "246810")
+        let apple = ApplePasswords(makeLink: { fake })
+        await apple.connect()
+        let stale = Task { await apple.enter("246810") }
+        while apple.state != .checking { await Task.yield() }
+        // Nothing else runs on the main actor between these two: the old
+        // code is still being worked out off it.
+        apple.disconnect()
+        await apple.connect()
+        await stale.value
+        XCTAssertEqual(apple.state, .code)
+        XCTAssertNil(apple.trouble)
+        XCTAssertEqual(fake.handshakes, 2)
+        await apple.enter("246810")
+        XCTAssertEqual(apple.state, .paired)
+        XCTAssertEqual(fake.verifications, 1)
     }
 
     func testNotACodeIsNotSent() async {

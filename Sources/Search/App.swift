@@ -249,7 +249,11 @@ struct SearchApp: App {
                     .shortcut("tabs.search")
                 Divider()
                 if browser.prefs.splitView {
-                    Button("Split Current Page") { browser.startSplit() }
+                    // The same key puts a pair apart: on a pair, the item
+                    // says so, and the one below it without a key goes.
+                    Button(browser.activeSplit == nil || browser.pickedPair != nil ? "Split Current Page" : "Separate Split Tabs") {
+                        browser.splitKey()
+                    }
                         .shortcut("tabs.split")
                         .disabled(browser.active == nil || browser.active?.bench == true)
                     Button("Focus Left Page") { browser.focusPane(onLeft: true) }
@@ -261,11 +265,13 @@ struct SearchApp: App {
                     Button("Swap Pages") { browser.swapSplit() }
                         .shortcut("tabs.swapSplit")
                         .disabled(browser.activeSplit == nil)
-                    Button("Separate Split Tabs") {
-                        if let tab = browser.active { browser.detachSplit(tab) }
+                    if browser.activeSplit == nil || browser.pickedPair != nil {
+                        Button("Separate Split Tabs") {
+                            if let tab = browser.active { browser.detachSplit(tab) }
+                        }
+                        .shortcut("tabs.separateSplit")
+                        .disabled(browser.activeSplit == nil)
                     }
-                    .shortcut("tabs.separateSplit")
-                    .disabled(browser.activeSplit == nil)
                     Button("Close Both Pages") { browser.closeSplit() }
                         .disabled(browser.activeSplit == nil)
                     Divider()
@@ -1654,7 +1660,9 @@ struct ContentView: View {
         case "w" where shifted:
             browser.closeWindow()
         case "l" where !shifted:
-            browser.edit()
+            // Held down, the field stays up: its repeats would put it away
+            // and raise it again, over and over.
+            if !event.isARepeat { browser.edit() }
         case "r" where !shifted:
             browser.reload()
         case "r" where shifted:

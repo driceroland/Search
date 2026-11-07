@@ -424,13 +424,15 @@ final class Tab: ObservableObject, Identifiable {
             return
         }
         seekingTwin = true
-        let page = web.url
-        web.callAsyncJavaScript(Reader.twin, arguments: [:], in: nil, in: Web.world) { [weak self] result in
-            guard let self else { return }
+        let view = web
+        let token = loadGeneration
+        let page = view.url
+        view.callAsyncJavaScript(Reader.twin, arguments: [:], in: nil, in: Web.world) { [weak self, weak view] result in
+            guard let self, let view, self.loadGeneration == token, self.built === view, self.seekingTwin else { return }
             self.seekingTwin = false
             // Gone somewhere else while the twin was on its way: it belongs
             // to a page that isn't there any more, and so does the guess.
-            guard self.web.url == page else { return }
+            guard view.url == page else { return }
             guard let found = try? result.get() as? [String: Any],
                   let text = found["text"] as? String,
                   let address = (found["url"] as? String).flatMap(URL.init(string:)) else {
@@ -450,7 +452,7 @@ final class Tab: ObservableObject, Identifiable {
                 "sheet": Reader.sheet,
                 "readerLook": Reader.look.rawValue,
             ]
-            self.web.callAsyncJavaScript(Reader.show, arguments: arguments, in: nil, in: Web.world) { [weak self] result in
+            view.callAsyncJavaScript(Reader.show, arguments: arguments, in: nil, in: Web.world) { [weak self] result in
                 let worked = (try? result.get()) as? String == "read"
                 if worked { self?.reader = true }
                 done(worked)
@@ -560,6 +562,9 @@ final class Tab: ObservableObject, Identifiable {
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
     @Published var noisy = false
+    /// Paused from the player at the foot of the sidebar, to be played again
+    /// from there (see Player.swift).
+    @Published var stilled = false
     /// Darkened by Search, as its page last said (see Dusk.swift).
     @Published var dusked = false
     /// What the page measured: true, dark by itself; nil, not yet measured.
@@ -1252,6 +1257,14 @@ final class Tab: ObservableObject, Identifiable {
         sent = (bare, user, password, pageAddress?.scheme?.lowercased() == "http", Date())
     }
 
+    /// A form of this page's on its way out, as the browser is asked
+    /// whether it may go. The page still has its boxes filled in, so what
+    /// is in them is read now (see `sent` in Forms.swift) and held like
+    /// any other sign-in, to be offered only if the next page takes it.
+    func formSent() {
+        built?.evaluateInSearch("window.__officeForms && window.__officeForms.sent && window.__officeForms.sent()")
+    }
+
     /// The page has moved on — a new document has loaded, or the sign-in
     /// fields have gone. If a password went out recently and there is no
     /// longer a box for it, that is a sign-in that took.
@@ -1276,7 +1289,8 @@ final class Tab: ObservableObject, Identifiable {
             }
             return
         }
-        web.evaluateInSearch("!!(window.__officeForms && window.__officeForms.hasPassword())") { [weak self] still in
+        guard let built else { return }
+        built.evaluateInSearch("!!(window.__officeForms && window.__officeForms.hasPassword())") { [weak self] still in
             MainActor.assumeIsolated {
                 guard let self, let sent = self.sent else { return }
                 // The box is still there: a refused sign-in, or the second
@@ -1396,6 +1410,7 @@ final class Tab: ObservableObject, Identifiable {
         picture = nil
         cover = nil
         adoptIcon()
+        loadGeneration &+= 1
         web.open(url)
         // Back, from a page that came out of one of Search's own, goes there.
         steps()
@@ -1440,7 +1455,6 @@ final class Tab: ObservableObject, Identifiable {
         memory = nil
         picture = nil
         reading = 0
-        noisy = false
         stale = false
         pull = nil
         // Loading about:blank here looked like letting the page go, and
@@ -1567,9 +1581,9 @@ final class Tab: ObservableObject, Identifiable {
 
     /// What the store page's own button should say: added, on its way, or
     /// free to add.
-    func tellStore(installed: [String], busy: String?) {
+    func tellStore(installed: [String], busy: [String]) {
         guard let built,
-              let data = try? JSONSerialization.data(withJSONObject: ["installed": installed, "busy": busy.map { $0 as Any } ?? NSNull()]),
+              let data = try? JSONSerialization.data(withJSONObject: ["installed": installed, "busy": busy]),
               let json = String(data: data, encoding: .utf8)
         else { return }
         built.evaluateInSearch("window.__officeStore && window.__officeStore.state(\(json))")
@@ -1642,13 +1656,23 @@ final class Tab: ObservableObject, Identifiable {
         return true
     }
 
+    private var loadGeneration: UInt64 = 0
+
     /// `web.load`, checked a moment later rather than trusted outright: a
     /// load handed to WebKit right after a process just died, or as the
     /// very first thing a freshly-built view is asked to do, doesn't always
     /// take — no error, no navigation, just a view that goes on sitting on
     /// about:blank with nothing left to say so. Still there, or still
     /// answering for a process that's already gone, is asked once more.
-    private func loadAndVerify(_ url: URL, state: Any? = nil, tries: Int = 0) {
+    private func loadAndVerify(_ url: URL, state: Any? = nil) {
+        loadGeneration &+= 1
+        let token = loadGeneration
+        let view = web
+        continueLoadAndVerify(url, state: state, view: view, token: token, tries: 0)
+    }
+
+    private func continueLoadAndVerify(_ url: URL, state: Any?, view: PageView, token: UInt64, tries: Int) {
+        guard loadGeneration == token, built === view else { return }
         // Wait for the stage to take the view back before loading into it. A
         // page loaded while its view is off any window boots as a hidden tab,
         // and a site that holds everything until it is shown — x.com does,
@@ -1659,10 +1683,10 @@ final class Tab: ObservableObject, Identifiable {
         // SwiftUI actually putting the view on screen. Bounded at about a
         // second, so a wake with no stage waiting for it still loads rather
         // than hanging on one that will never come.
-        let view = web
         if view.window == nil, tries < 50 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
-                self?.loadAndVerify(url, state: state, tries: tries + 1)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self, weak view] in
+                guard let self, let view else { return }
+                self.continueLoadAndVerify(url, state: state, view: view, token: token, tries: tries + 1)
             }
             return
         }
@@ -1675,21 +1699,22 @@ final class Tab: ObservableObject, Identifiable {
         } else {
             view.open(url)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self, weak view] in
             // A page that has said why it isn't there (recoverFromCrash gave
             // up, or it never arrived) isn't asked for again behind that.
-            guard let self, failure == nil else { return }
-            guard built?.url?.absoluteString != "about:blank" else {
-                web.open(url)
+            guard let self, let view, self.loadGeneration == token, self.built === view, self.failure == nil else { return }
+            guard self.built?.url?.absoluteString != "about:blank" else {
+                view.open(url)
                 return
             }
-            web.evaluateJavaScript("document.readyState") { [weak self] _, error in
+            view.evaluateJavaScript("document.readyState") { [weak self, weak view] _, error in
                 MainActor.assumeIsolated {
-                    guard let self, self.failure == nil, let error = error as NSError? else { return }
+                    guard let self, let view, self.loadGeneration == token, self.built === view, self.failure == nil,
+                          let error = error as NSError? else { return }
                     guard error.domain == WKErrorDomain,
                           error.code == WKError.webContentProcessTerminated.rawValue
                     else { return }
-                    self.web.open(url)
+                    view.open(url)
                 }
             }
         }
@@ -1710,12 +1735,17 @@ final class Tab: ObservableObject, Identifiable {
         // A view with no document behind an address: whatever emptied it, the
         // address is what to show, and reload alone would have nothing to do.
         if hollow, let address {
+            loadGeneration &+= 1
             web.open(address)
             return
         }
-        web.evaluateJavaScript("document.readyState") { [weak self] _, error in
+        guard let built else { return }
+        let view = built
+        let token = loadGeneration
+        view.evaluateJavaScript("document.readyState") { [weak self, weak view] _, error in
             MainActor.assumeIsolated {
-                guard let self, let error = error as NSError? else { return }
+                guard let self, let view, self.loadGeneration == token, self.built === view,
+                      let error = error as NSError? else { return }
                 guard error.domain == WKErrorDomain,
                       error.code == WKError.webContentProcessTerminated.rawValue
                 else { return }
@@ -1795,14 +1825,20 @@ final class Tab: ObservableObject, Identifiable {
         }
         // A file is read again with the folder it may read (see open).
         if let address, hollow || address.isFileURL {
+            loadGeneration &+= 1
             web.open(address)
         } else if fromOrigin {
+            loadGeneration &+= 1
             web.reloadFromOrigin()
         } else {
+            loadGeneration &+= 1
             web.reload()
         }
     }
-    func stop() { web.stopLoading() }
+    func stop() {
+        loadGeneration &+= 1
+        web.stopLoading()
+    }
     /// Straight through, every time. A page that has to be fetched again is
     /// fetched again — nothing is kept behind to make that look otherwise.
     func back() {
@@ -1820,6 +1856,7 @@ final class Tab: ObservableObject, Identifiable {
             show(behind, stepping: false)
             return
         }
+        loadGeneration &+= 1
         web.goBack()
     }
     func forward() {
@@ -1832,6 +1869,7 @@ final class Tab: ObservableObject, Identifiable {
             steps()
             return
         }
+        loadGeneration &+= 1
         web.goForward()
     }
     /// Every page that way, nearest first, for the list a held Back or
@@ -1843,7 +1881,10 @@ final class Tab: ObservableObject, Identifiable {
         return back ? built.backForwardList.backList.reversed() : built.backForwardList.forwardList
     }
     /// Straight to a page several steps away, as one step.
-    func go(to item: WKBackForwardListItem) { web.go(to: item) }
+    func go(to item: WKBackForwardListItem) {
+        loadGeneration &+= 1
+        web.go(to: item)
+    }
 
     /// Called when the tab is thrown away. Without it the view keeps running
     /// whatever the page left behind — timers, video, sockets.
@@ -1870,6 +1911,8 @@ final class Tab: ObservableObject, Identifiable {
     private func heard(_ on: Bool) {
         let was = noisy
         noisy = on
+        // Playing again, from the player or from the page: nothing paused.
+        if on { stilled = false }
         quiet?.invalidate()
         quiet = nil
         guard was, !on else { return }
@@ -1878,11 +1921,39 @@ final class Tab: ObservableObject, Identifiable {
         }
     }
 
-    /// The page is going: its count and its frames with it.
+    /// The page is going: its count and its frames with it, and what the
+    /// player paused on it.
     func leaving() {
         quiet?.invalidate()
         quiet = nil
         media.forget()
+        stilled = false
+    }
+
+    /// The player's pause (Player.swift): what plays is paused and
+    /// remembered, in each frame that played and then in the page, and once
+    /// the page has done that, WebKit pauses what a script can't reach.
+    /// Nothing remembered anywhere, and the player has nothing to play again.
+    func still() {
+        guard noisy, let built else { return }
+        stilled = true
+        for frame in media.frames {
+            built.evaluateJavaScript(Player.still, in: frame, in: Web.world) { _ in }
+        }
+        let frames = !media.frames.isEmpty
+        built.evaluateJavaScript(Player.still, in: nil, in: Web.world) { [weak self] result in
+            if !frames, ((try? result.get()) as? Int ?? 0) == 0 { self?.stilled = false }
+            built.pauseAllMediaPlayback()
+        }
+    }
+
+    /// The player's play: what its pause stopped, playing again.
+    func playAgain() {
+        guard stilled, let built else { return }
+        for frame in media.frames {
+            built.evaluateJavaScript(Player.again, in: frame, in: Web.world) { _ in }
+        }
+        built.evaluateJavaScript(Player.again, in: nil, in: Web.world) { _ in }
     }
 
     /// Quiet long enough: the paused media muted, in the page and in each
@@ -1901,14 +1972,20 @@ final class Tab: ObservableObject, Identifiable {
     /// back-forward cache. The tab keeps its address; `web` builds again the
     /// next time anyone asks for it.
     private func discard() {
+        loadGeneration &+= 1
+        seekingTwin = false
+        sent = nil
         popupGesture.clear()
         if !blockedPopups.isEmpty { blockedPopups = [] }
         translationGone(sleeping: true)
         watch = []
         ears.stop()
+        noisy = false
         quiet?.invalidate()
         quiet = nil
         media.forget()
+        // What the player paused went with the page: nothing to play again.
+        stilled = false
         guard let web = built else { return }
         (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
@@ -1938,7 +2015,9 @@ final class Tab: ObservableObject, Identifiable {
         web.onImage = nil
         web.onSearch = nil
         web.stopLoading()
-        // Detaching a view doesn't end capture while something still holds it.
+        web.setAllMediaPlaybackSuspended(true, completionHandler: nil)
+        web.closeAllMediaPresentations(completionHandler: nil)
+        // Detaching a view doesn't end capture or playback while something still holds it.
         web.setCameraCaptureState(.none, completionHandler: nil)
         web.setMicrophoneCaptureState(.none, completionHandler: nil)
         web.navigationDelegate = nil
@@ -3058,7 +3137,7 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
     ) {
         guard let body = message.body as? [String: Any] else { return }
         if let side = body["side"] as? String {
-            MainActor.assumeIsolated { tab?.web.answer(free: side == "free") }
+            MainActor.assumeIsolated { tab?.built?.answer(free: side == "free") }
             return
         }
         guard let y = body["y"] as? Double,

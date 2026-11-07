@@ -23,8 +23,9 @@ sv.use("field-keys")
 KEYS = {"t": 17, "l": 37, "k": 40}
 
 
-def press(key, letgo=True):
-    sv.cmd({"do": "press", "code": KEYS[key], "chars": key, "mods": ["cmd"], "letgo": letgo})
+def press(key, letgo=True, held=False):
+    mods = ["cmd", "repeat"] if held else ["cmd"]
+    sv.cmd({"do": "press", "code": KEYS[key], "chars": key, "mods": mods, "letgo": letgo})
     time.sleep(0.6)
 
 
@@ -73,6 +74,15 @@ def main():
         t.ok("then ⌘L: still the words, for this page now", s["up"] and s["typed"] == "half typed", s)
         press("l")
         t.ok("⌘L again puts it away", not state()["up"], state())
+
+        press("l"); press("l", held=True)
+        s = state()
+        t.ok("⌘L held down: its first repeat leaves the field up", s["up"] and s["typed"].endswith("/bravo"), s)
+        press("l", held=True)
+        s = state()
+        t.ok("and so does the next", s["up"] and s["typed"].endswith("/bravo"), s)
+        press("l")
+        t.ok("and a fresh ⌘L still puts it away", not state()["up"], state())
 
         press("l")
         s = state()
