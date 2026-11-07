@@ -6872,6 +6872,18 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             // leaves it behind.
             if beside, destination === self { pair(tab, with: opener, onLeft: false) }
         } else {
+            // From a grouped tab it joins the group, as a link opened behind
+            // does: Settings says a link from a group stays in it, and it
+            // landed outside, at the end of the row. Still where a page
+            // opened in front goes, only inside the group — arrangeGroupedTabs
+            // keeps the row in group order, so the end of the row is the end
+            // of the group.
+            if prefs.usesTabGroups, !tab.shy, !tab.bench, destination === self, let group = group(of: opener) {
+                tab.groupID = group
+                if let index = tabGroups.firstIndex(where: { $0.id == group }), tabGroups[index].collapsed {
+                    tabGroups[index].collapsed = false
+                }
+            }
             destination.tabs.insert(tab, at: destination.placeForFront())
             if clicked, let run = destination.linkRun { destination.runBeforeScript = (tab.id, run) }
             destination.activeID = tab.id
