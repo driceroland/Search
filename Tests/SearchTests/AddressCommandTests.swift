@@ -65,4 +65,25 @@ final class AddressCommandTests: XCTestCase {
         browser.prefs.commandBar = false
         XCTAssertFalse(browser.placeOffers(for: "dwn").offers.contains { $0.kind.isCommand }, "off means off")
     }
+
+    func testABookmarkFoundOnlyThroughATypoGoesUnderHistory() throws {
+        _ = NSApplication.shared
+        let browser = Browser(record: WindowRecord())
+        let slip = try XCTUnwrap(URL(string: "https://dashboards.example/d/nodes"))
+        let mark = try XCTUnwrap(browser.bookmarks.add(slip, title: "Nodes dashboard"))
+        defer { browser.bookmarks.remove(mark.id) }
+
+        // "noda": one letter from "nodes", exact only in history.
+        let alone = browser.placeOffers(for: "noda").offers.filter { $0.kind == .bookmark }
+        XCTAssertEqual(alone.first?.url, slip, "with nothing else, the slip is offered")
+        let page = try XCTUnwrap(URL(string: "https://wiki.example/noda"))
+        browser.history.record(page, title: "Noda")
+        defer { browser.history.forget(History.identity(for: page)) }
+        let offers = browser.placeOffers(for: "noda").offers.filter { $0.kind == .visited || $0.kind == .bookmark }
+        XCTAssertEqual(offers.first?.url, page, "where you have been, as typed, before a bookmark one letter off")
+        XCTAssertTrue(offers.contains { $0.url == slip }, "the bookmark is still offered, under it")
+
+        let exact = browser.placeOffers(for: "nodes").offers.filter { $0.kind == .visited || $0.kind == .bookmark }
+        XCTAssertEqual(exact.first?.url, slip, "a bookmark that fits as typed still leads")
+    }
 }

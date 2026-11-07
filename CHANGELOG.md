@@ -128,6 +128,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- The address field's history suggestions weigh how often you go to a place against how well it matches what was typed, so a page you use every day comes before one seen once, typo or not, and a site counts the visits to its pages too. A bookmark found only through a typo comes after where you have been. Typing in a long history is faster too. Thanks [@pasteley](https://github.com/pasteley) ([#944](https://github.com/driceroland/Search/pull/944))
+
 - ⌥⌘N on a Split View pair puts it apart, both pages staying as tabs, with the one that had the keys on screen: the key that made the split takes it away, as ⌘T, ⌘L and ⌘K each put away what they raised. It went to the right-hand page, which ⌃⌘→ already does. On a pair, Tabs › Split Current Page reads Separate Split Tabs. Thanks [@ubeann](https://github.com/ubeann) ([#932](https://github.com/driceroland/Search/pull/932))
 
 - Settings › Appearance › Motion › Save power in Low Power Mode (was Reduce animations) also lets idle tabs sleep after ten minutes at most while in Low Power Mode. Off by default. Thanks [@oddharsh](https://github.com/oddharsh) ([#745](https://github.com/driceroland/Search/pull/745))
