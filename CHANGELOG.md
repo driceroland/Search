@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Whatever comes up over the page puts away what was up before it: the welcome, the list of what is hidden on a site, the bookmarks dropdown, picking things to hide, ⌘K, a new Space, a peek and a tab's own field. Two could be up at once, the hidden list drawn over the welcome or ⌘K's field left under the bookmarks, and ⌃Tab did nothing until both were put away. A peek put away this way closes, as Escape closes it, and picking stops on the page.
+- ⌃Tab brings up the tab switcher after ⌘K was answered by opening a page, pasting an address, or a page opening a tab. ⌘K stayed on behind the field it had put away, so ⌃Tab did nothing until ⌘K was pressed again, and the next field raised still said "Switch to an open tab".
 - A video playing in a window on another screen — a TV, a second display — no longer floats out when you work in another app on this one.
 
 - A Split View pair carried in the column or across the top comes apart only where that was shown: rest over another tab and the half that stays dims, with the same tick as a split shown over a page, and only then does letting go take the other half out. Let go a few points past the pair's own edge on its way to a new place, it used to lose the half being held with no sign it would. Thanks [@ubeann](https://github.com/ubeann) ([#887](https://github.com/driceroland/Search/pull/887))
