@@ -206,7 +206,7 @@ struct IconTile: View {
         .accessibilityLabel(tip)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Close tab") { if interactive { close() } }
-        .animation(Motion.quick, value: hovering)
+        .animation(nil, value: hovering)
         .animation(Motion.quick, value: tab.loading)
         .animation(Motion.quick, value: speaker)
         .animation(Motion.quick, value: tab.recording)
@@ -261,6 +261,8 @@ struct IconPair: View {
     let pill: Namespace.ID
 
     @Environment(\.greys) private var greys
+    /// Carried and about to come apart: the half that stays dims.
+    @ObservedObject private var separation = PairSeparation.shared
 
     private var focused: Tab.ID? { live ? (focusedID ?? browser.activeID) : nil }
 
@@ -269,6 +271,7 @@ struct IconPair: View {
             half(left)
             half(right)
         }
+        .animation(Motion.quick, value: separation.leaving)
         .background {
             // The pair's own ground, lighter than the live grey that sits on
             // the half the keys go to.
@@ -289,6 +292,7 @@ struct IconPair: View {
     private func half(_ tab: Tab) -> some View {
         IconTile(browser: browser, prefs: prefs, tab: tab, live: focused == tab.id, pill: pill,
                  close: { browser.closeTab(tab) }, interactive: interactive, half: true)
+            .opacity(separation.leaving.map { $0 != tab.id && ($0 == left.id || $0 == right.id) } == true ? 0.35 : 1)
             .background {
                 if focused == tab.id {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)

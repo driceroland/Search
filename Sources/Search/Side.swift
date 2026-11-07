@@ -218,7 +218,7 @@ struct SideBar: View {
                 page(at - 1, pill: before)
                     .offset(x: swipe - width)
             }
-            if swipe < 0, at < browser.spaces.count {
+            if swipe < 0, browser.drawsPage(after: at) {
                 page(at + 1, pill: after)
                     .offset(x: swipe + width)
             }
@@ -477,6 +477,13 @@ struct SideBar: View {
         }
     }
 
+    /// Each row's place down the column, the gap under it included: a pair
+    /// stands as two lines (see Carried). Worked out once for the list.
+    private func steps(_ rows: [Tab]) -> [CGFloat] {
+        let pairs = prefs.splitView ? Set(browser.splits.filter { $0.left != $0.right }.map(\.left)) : []
+        return rows.map { (pairs.contains($0.id) ? rowHeight * 2 : rowHeight) + SideBar.gap }
+    }
+
     // MARK: - the pinned squares
 
     private var pinnedTabs: [Tab] { browser.squarePins }
@@ -587,6 +594,7 @@ struct SideBar: View {
         let pins = browser.listedPins
         let squares = browser.squarePins.count
         let ghost: Int? = if case .listed(let at)? = crossing?.target { at } else { nil }
+        let pinSteps = steps(pins)
         return VStack(spacing: SideBar.gap) {
             ForEach(Array(pins.enumerated()), id: \.element.id) { index, tab in
                 if ghost == index, let carried = crossingTab {
@@ -603,8 +611,7 @@ struct SideBar: View {
                                 close: { browser.close(tab) })
                     }
                 }
-                    .modifier(Carried(index: index, count: pins.count,
-                                      step: rowHeight + SideBar.gap, vertical: true,
+                    .modifier(Carried(index: index, steps: pinSteps, vertical: true,
                                       space: "listed",
                                       cross: { cross(tab, $0, from: .listed) },
                                       land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
@@ -642,9 +649,9 @@ struct SideBar: View {
             // In a stack of their own, measured, for where a pin carried
             // among them would land.
             if !loose.isEmpty || ghost != nil {
+                let looseSteps = steps(loose)
                 VStack(spacing: SideBar.gap) {
                     ForEach(Array(loose.enumerated()), id: \.element.id) { index, tab in
-                        let step = rowHeight + SideBar.gap
                         if ghost == index, let carried = crossingTab {
                             RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
                         }
@@ -653,7 +660,7 @@ struct SideBar: View {
                                 close: { browser.closeTab(tab) })
                         // Positions here are among the loose rows; the pinned block
                         // sits in front of them in the real list.
-                        .modifier(Carried(index: index, count: loose.count, step: step, vertical: true,
+                        .modifier(Carried(index: index, steps: looseSteps, vertical: true,
                                           space: "rows", onDropTab: { source, point in drop(source, at: point) },
                                           groupDestination: { source, point in destination(source, at: point) },
                                           outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
@@ -690,14 +697,14 @@ struct SideBar: View {
 
     private func groupRows(_ group: TabGroup) -> some View {
         let members = browser.visibleTabs(in: group)
+        let memberSteps = steps(members)
         return VStack(spacing: SideBar.gap) {
             ForEach(Array(members.enumerated()), id: \.element.id) { index, tab in
                 rowItem(tab, tabs: browser.tabs, splits: browser.splits,
                         activeID: browser.activeID, interactive: true, pill: pill,
                         close: { browser.closeTab(tab) })
                     .padding(.leading, icons ? 0 : 14)
-                    .modifier(Carried(index: index, count: members.count,
-                                      step: rowHeight + SideBar.gap, vertical: true,
+                    .modifier(Carried(index: index, steps: memberSteps, vertical: true,
                                       space: "rows", onDropTab: { source, point in drop(source, at: point) },
                                       groupDestination: { source, point in destination(source, at: point) },
                                       outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
@@ -846,7 +853,7 @@ struct SideBar: View {
     /// The foot's door and its margin beneath; with icons only, its doors
     /// one above the other.
     private var footHeight: CGFloat {
-        icons ? CGFloat(SideFoot.doors(prefs, browser.fetches)) * 28 + 8 : 26 + 10
+        icons ? CGFloat(SideFoot.doors(prefs, browser.fetches, hanging: browser.downloadsHanging)) * 28 + 8 : 26 + 10
     }
 
     @ViewBuilder
@@ -884,7 +891,7 @@ private struct SideFoot: View {
     var body: some View {
         if vertical {
             VStack(spacing: 2) {
-                FetchDoor(browser: browser, fetches: fetches)
+                FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 ExtensionSlot(edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
                 BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 if prefs.usesSpaces { SpaceDot(browser: browser) }
@@ -899,7 +906,7 @@ private struct SideFoot: View {
                 ExtensionSlot(edge: .trailing, room: room)
                 BookmarkDoor(browser: browser, arrowEdge: .trailing)
                 // Only while a download is running, and a moment after.
-                FetchDoor(browser: browser, fetches: fetches)
+                FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
@@ -908,11 +915,11 @@ private struct SideFoot: View {
     }
 
     /// How many doors the foot has, stacked: what the rows stop short of.
-    @MainActor static func doors(_ prefs: Preferences, _ fetches: Fetches) -> Int {
+    @MainActor static func doors(_ prefs: Preferences, _ fetches: Fetches, hanging: Bool = false) -> Int {
         var kept = 2  // the puzzle and bookmarks
         if prefs.usesSpaces { kept += 1 }
         if Profiles.shared.several { kept += 1 }
-        if FetchDoor.shows(fetches, prefs) { kept += 1 }
+        if FetchDoor.shows(fetches, prefs, hanging: hanging) { kept += 1 }
         return kept
     }
 
@@ -923,7 +930,7 @@ private struct SideFoot: View {
         var kept = 2  // the puzzle and bookmarks
         if prefs.usesSpaces { kept += 1 }
         if Profiles.shared.several { kept += 1 }
-        if FetchDoor.shows(fetches, prefs) { kept += 1 }
+        if FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
         let free = prefs.sideWidth - 2 * 10 + 2 - CGFloat(kept) * door
         return max(0, Int((free / door).rounded(.down)))
     }
@@ -1042,7 +1049,7 @@ private struct PinSquare: View {
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
         .help(tab.label)
-        .animation(Motion.quick, value: hovering)
+        .animation(nil, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))
     }
 }
@@ -1089,8 +1096,10 @@ private struct SideRow: View {
                     TabAddressField(browser: browser)
                         .frame(height: 16)
                 } else {
-                    if prefs.glyph == .icons, !tab.isBlank {
-                        Mark(icon: tab.icon, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15)
+                    // The site's icon, or with Letters its letter: beside the
+                    // title either way, as Settings says (#919).
+                    if !tab.isBlank {
+                        Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15)
                     }
                     if tab.bench {
                         // A script's tab, not yours.
@@ -1229,7 +1238,7 @@ private struct SideRow: View {
                 SplitDropZone(browser: browser, tab: tab, kind: .strip)
             }
         }
-        .animation(Motion.quick, value: hovering)
+        .animation(nil, value: hovering)
         .animation(Motion.glide, value: editing)
         .onChange(of: browser.refusals) { _, _ in
             guard editing else { return }
@@ -1476,6 +1485,11 @@ struct PinCarried: ViewModifier {
     @State private var held = false
     @State private var from = 0
     @State private var travel: CGSize = .zero
+    /// Put back by SwiftUI when the drag is called off as well as when it
+    /// ends: the square's look changing under the hand calls it off, and the
+    /// square stayed floating (see CarryGuard).
+    @GestureState private var carrying = false
+    @State private var ticket = UUID()
 
     func body(content: Content) -> some View {
         content
@@ -1489,10 +1503,12 @@ struct PinCarried: ViewModifier {
             // the drag from where it now is, and shuttle between two cells.
             .gesture(
                 DragGesture(minimumDistance: 5, coordinateSpace: .named("pins"))
+                    .updating($carrying) { _, carrying, _ in carrying = true }
                     .onChanged { value in
                         if !held {
                             held = true
                             from = index
+                            CarryGuard.open(ticket, end: callOff)
                         }
                         travel = value.translation
                         if cross?(value.location) == true { return }
@@ -1502,6 +1518,7 @@ struct PinCarried: ViewModifier {
                         }
                     }
                     .onEnded { value in
+                        guard CarryGuard.close(ticket) else { return }
                         _ = land?(value.location)
                         withAnimation(Motion.settle) {
                             held = false
@@ -1509,6 +1526,19 @@ struct PinCarried: ViewModifier {
                         }
                     }
             )
+            .onChange(of: carrying) { _, now in if !now { callOff() } }
+    }
+
+    /// Called off rather than let go: it stays in the cell it was last
+    /// moved to, and nothing is dropped across.
+    private func callOff() {
+        CarryGuard.close(ticket)
+        guard held else { return }
+        _ = land?(nil)
+        withAnimation(Motion.settle) {
+            held = false
+            travel = .zero
+        }
     }
 
     /// The held square stays glued to the fingers; every other square is

@@ -35,6 +35,9 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         let tab = Tab(configuration: Web.configuration(space: browser.spaceID))
         browser.prepare(tab)
         tab.go(to: url)
+        // Not in the row until kept: extensions are told of it here, as of a
+        // peek (see Extensions.openedAside).
+        if #available(macOS 15.4, *) { Extensions.shared.openedAside(tab) }
         let little = LittleWindow(tab: tab, browser: browser)
         // A step down and in from the newest one on screen, so that five
         // links from Mail are five windows you can see are there, not one

@@ -134,6 +134,8 @@ final class Bookmarks: ObservableObject {
         let title: String
         let address: String
         let url: URL
+        /// Name and address together, to search both at once.
+        let findable: String
     }
 
     /// Every site, folders opened, made once after each change of the list
@@ -143,7 +145,8 @@ final class Bookmarks: ObservableObject {
     private var sites: [Site]?
 
     /// The sites for what is typed in the address field, the best `limit`
-    /// first: every word, in any order, in the name or the address. Kept to
+    /// first: every word, in any order, in the name or the address, allowing
+    /// a typo. Kept to
     /// two letters and more: one letter is in nearly every name, and the
     /// field finishes a single letter only towards a site you have been to.
     func places(for typed: String, limit: Int) -> [Suggestion] {
@@ -155,11 +158,14 @@ final class Bookmarks: ObservableObject {
             sites = Bookmarks.sites(roots)
         }
         // The address starting with what was typed first, then the name,
-        // then a word anywhere; among equals, the shorter address.
+        // then a word anywhere, then a typo; among equals, the shorter
+        // address.
+        let typed = words.map { Array($0.utf8) }
         var best: [(site: Site, score: Int)] = []
         for site in sites ?? [] {
-            guard words.allSatisfy({ site.title.contains($0) || site.address.contains($0) }) else { continue }
-            let score = site.address.hasPrefix(bare) ? 3
+            guard let found = Fuzzy.match(typed, in: site.findable) else { continue }
+            let score = found == 0 ? 0
+                : site.address.hasPrefix(bare) ? 3
                 : site.title.hasPrefix(needle) || site.title.split(separator: " ").contains(where: { $0.hasPrefix(first) }) ? 2
                 : 1
             let at = best.firstIndex {
@@ -180,7 +186,8 @@ final class Bookmarks: ObservableObject {
             // Only places to go: a bookmarklet's javascript: is no address.
             guard let url = node.address, ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else { return [] }
             let title = node.unnamed ? "" : node.title
-            return [Site(name: title, title: title.lowercased(), address: History.stripped(url.absoluteString), url: url)]
+            let lowered = title.lowercased(), address = History.stripped(url.absoluteString)
+            return [Site(name: title, title: lowered, address: address, url: url, findable: lowered + " " + address)]
         }
     }
 

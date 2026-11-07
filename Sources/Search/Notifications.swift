@@ -24,6 +24,10 @@ import WebKit
 final class SiteNotifications: NSObject {
     static let shared = SiteNotifications()
 
+    /// The tab that sent a notification, in its info: written when it is
+    /// posted and read when it is clicked.
+    static let senderKey = "search.tab"
+
     /// What a test run would have posted, newest last.
     private(set) var recorded: [[String: String]] = []
 
@@ -140,7 +144,8 @@ final class SiteNotifications: NSObject {
 
     func post(id: String, title: String, body: String, origin: String, tag: String, info: [String: Any]) {
         guard !Store.testing else {
-            recorded.append(["title": title, "body": body, "origin": origin, "tag": tag, "kind": info["search.kind"] as? String ?? ""])
+            recorded.append(["title": title, "body": body, "origin": origin, "tag": tag, "kind": info["search.kind"] as? String ?? "",
+                             "tab": info[SiteNotifications.senderKey] as? String ?? ""])
             return
         }
         let content = UNMutableNotificationContent()
@@ -178,10 +183,9 @@ final class SiteNotifications: NSObject {
 
     /// Clicked: the site's tab in front, and the click to its worker.
     func clicked(_ info: [AnyHashable: Any]) {
-        let origin = info["search.origin"] as? String ?? ""
         let key = info["search.key"] as? String
         let from = key.flatMap { stores.removeValue(forKey: $0) }
-        bringForward(origin, from: from)
+        bringForward(info, from: from)
         if info["search.kind"] as? String == "page", let id = (info["search.id"] as? String).flatMap(UInt64.init) {
             return PageNotifications.clicked(id)
         }
@@ -207,23 +211,34 @@ final class SiteNotifications: NSObject {
         unsafeBitCast(method, to: Deliver.self)(store, selector, data) { _ in }
     }
 
-    /// The tab showing the site in front: one signed in with the store the
-    /// notification came from if there is one, never a private tab.
-    private func bringForward(_ origin: String, from store: WKWebsiteDataStore?) {
-        let found = Browsers.all.filter { !$0.isPopup }.flatMap { browser in
+    private func bringForward(_ info: [AnyHashable: Any], from store: WKWebsiteDataStore?) {
+        guard let (browser, tab) = SiteNotifications.tabToBringForward(info, from: store, among: Browsers.all) else { return }
+        browser.select(tab)
+        Browsers.show(browser)
+        NSApp.activate()
+    }
+
+    /// The tab showing the site to bring to the front: the one that sent the
+    /// notification, while it is still there, then one signed in with the
+    /// store the notification came from if there is one, never a private tab.
+    /// A service worker's notification names no tab, and the one named from
+    /// before a restart is gone: tab ids don't outlive a launch.
+    static func tabToBringForward(_ info: [AnyHashable: Any], from store: WKWebsiteDataStore?, among browsers: [Browser]) -> (Browser, Tab)? {
+        let origin = info["search.origin"] as? String ?? ""
+        let sender = (info[senderKey] as? String).flatMap(UUID.init(uuidString:))
+        let found = browsers.filter { !$0.isPopup }.flatMap { browser in
             browser.tabs.filter { tab in
                 guard !tab.shy, tab.store.isPersistent, let url = tab.address, let scheme = url.scheme, let host = url.host() else { return false }
                 return Browser.origin(scheme, host, url.port ?? 0) == origin
             }.map { (browser, $0) }
         }
-        // Failing that, a tab of the same profile: never one of another
-        // profile, signed in as someone else (see Profiles.swift).
-        guard let (browser, tab) = found.first(where: { $0.1.store === store })
-            ?? found.first(where: { pair in store.map { s in Spaces.stores(of: pair.0.profileID).contains { $0 === s } } ?? true })
-        else { return }
-        browser.select(tab)
-        Browsers.show(browser)
-        NSApp.activate()
+        // Failing the store, a tab of the same profile: never one of another
+        // profile, signed in as someone else (see Profiles.swift). The sender
+        // answers to this too: moved since, it may be signed in differently.
+        let sameProfile = { (pair: (Browser, Tab)) in store.map { s in Spaces.stores(of: pair.0.profileID).contains { $0 === s } } ?? true }
+        return found.first(where: { $0.1.id == sender && ($0.1.store === store || sameProfile($0)) })
+            ?? found.first(where: { $0.1.store === store })
+            ?? found.first(where: sameProfile)
     }
 }
 
@@ -403,6 +418,14 @@ enum PageNotifications {
         return Browser.origin(scheme, host, url.port ?? 0)
     }
 
+    /// What a page's notification carries for its click, with the tab that
+    /// sent it: several tabs can show one site. A page in no tab names none.
+    static func info(id: UInt64, origin: String, web: WKWebView, among browsers: [Browser]) -> [String: Any] {
+        let sender = browsers.lazy.compactMap { $0.anyTab(for: web) }.first
+        return ["search.kind": "page", "search.id": String(id), "search.origin": origin,
+                SiteNotifications.senderKey: sender?.id.uuidString ?? ""]
+    }
+
     private static func show(_ page: Ref, _ note: Ref) {
         guard let c = WebKitC.loaded, c.persistent?(note) != true,
               let context = c.pageContext(page), let manager = c.manager(context) else { return }
@@ -415,7 +438,7 @@ enum PageNotifications {
         let id = c.id(note)
         SiteNotifications.shared.post(id: "page|\(id)", title: c.text(c.title(note)), body: c.text(c.body(note)),
                                       origin: origin, tag: c.text(c.tag(note)),
-                                      info: ["search.kind": "page", "search.id": String(id), "search.origin": origin])
+                                      info: info(id: id, origin: origin, web: web, among: Browsers.all))
         shown[id] = manager
         SiteNotifications.shared.stores["page|\(id)"] = web.configuration.websiteDataStore
         c.didShow(manager, id)

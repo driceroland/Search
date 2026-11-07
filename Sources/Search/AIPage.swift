@@ -162,20 +162,20 @@ enum AIPage {
         let pageText = normalized(read.text + "\n" + read.title)
         var pageEmails = Set<String>(), pageHosts = Set<String>(), pagePhones = Set<String>()
         for word in words(pageText) + read.links + [read.url?.absoluteString ?? ""] {
-            for email in matches(emailPattern, in: word) { pageEmails.insert(email.lowercased()) }
-            for place in matches(placePattern, in: word) { if let host = host(of: place) { pageHosts.insert(host) } }
+            for email in matches(emailExpression, in: word) { pageEmails.insert(email.lowercased()) }
+            for place in matches(placeExpression, in: word) { if let host = host(of: place) { pageHosts.insert(host) } }
         }
         for line in lines(pageText) {
-            for phone in matches(phonePattern, in: line) { pagePhones.insert(phone.filter(\.isNumber)) }
+            for phone in matches(phoneExpression, in: line) { pagePhones.insert(phone.filter(\.isNumber)) }
         }
         if let host = read.url?.host()?.lowercased() { pageHosts.insert(host.hasPrefix("www.") ? String(host.dropFirst(4)) : host) }
 
         var found: [String] = []
         func note(_ item: String) { if !found.contains(item) { found.append(item) } }
         for word in words(said) {
-            let emails = matches(emailPattern, in: word)
+            let emails = matches(emailExpression, in: word)
             for email in emails where !pageEmails.contains(email.lowercased()) { note(email) }
-            for place in matches(placePattern, in: word) {
+            for place in matches(placeExpression, in: word) {
                 var shown = place
                 while let last = shown.last, ".,;:!?".contains(last) { shown.removeLast() }
                 let written = shown.lowercased().hasPrefix("http") || shown.lowercased().hasPrefix("www.")
@@ -189,7 +189,7 @@ enum AIPage {
             }
         }
         for line in lines(said) {
-            for phone in matches(phonePattern, in: line) {
+            for phone in matches(phoneExpression, in: line) {
                 let digits = phone.filter(\.isNumber)
                 guard digits.count >= 7, !pagePhones.contains(where: { $0.contains(digits) }) else { continue }
                 note(phone.trimmingCharacters(in: .whitespaces))
@@ -198,9 +198,9 @@ enum AIPage {
         return found
     }
 
-    private static let emailPattern = #"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"#
-    private static let placePattern = #"(?:https?://|www\.)[^\s<>()\[\]"']+|\b(?:[A-Za-z0-9\-]+\.)+[A-Za-z]{2,}(?:/[^\s<>()\[\]"']*)?"#
-    private static let phonePattern = #"\+?\d[\d\s().\-]{6,}\d"#
+    private static let emailExpression = try! NSRegularExpression(pattern: #"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"#)
+    private static let placeExpression = try! NSRegularExpression(pattern: #"(?:https?://|www\.)[^\s<>()\[\]"']+|\b(?:[A-Za-z0-9\-]+\.)+[A-Za-z]{2,}(?:/[^\s<>()\[\]"']*)?"#)
+    private static let phoneExpression = try! NSRegularExpression(pattern: #"\+?\d[\d\s().\-]{6,}\d"#)
 
     /// Look-alikes made plain: full-width letters and digits, and the dots a
     /// name can be written with instead of ".".
@@ -235,9 +235,8 @@ enum AIPage {
         "doc", "docx", "xls", "xlsx", "ppt", "pptx", "mp3", "mp4", "mov", "wav", "log", "plist", "ini", "toml",
     ]
 
-    nonisolated private static func matches(_ pattern: String, in text: String) -> [String] {
-        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
-        return expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+    nonisolated private static func matches(_ expression: NSRegularExpression, in text: String) -> [String] {
+        expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
             Range($0.range, in: text).map { String(text[$0]) }
         }
     }

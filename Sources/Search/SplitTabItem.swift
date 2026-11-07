@@ -31,8 +31,13 @@ struct SplitTabItem: View {
 
     @Environment(\.greys) private var greys
     @State private var hovered: Tab.ID?
+    /// Carried and about to come apart: the half that stays dims.
+    @ObservedObject private var separation = PairSeparation.shared
 
     private var stacked: Bool { width == nil }
+    /// Across the top, the outline is as tall as a tab's pill (28 points)
+    /// rather than the strip, so a pair stands as high as the tabs beside it.
+    private var inset: CGFloat { stacked ? 0 : max(0, (height - SplitTabHalf.pillHeight) / 2) }
     private var focused: Tab.ID? { live ? (focusedID ?? browser.activeID) : nil }
 
     var body: some View {
@@ -56,23 +61,27 @@ struct SplitTabItem: View {
                     Rectangle()
                         .fill(Palette.hairline)
                         .frame(width: 1)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, inset + 6)
                     half(right, first: false)
                 }
                 .frame(width: width, height: height)
                 .overlay(alignment: .trailing) { cross }
+                // The pointer over the cross is over the cross, not over
+                // either half, so a half losing it can't take the cross away
+                // under it: only leaving the whole item clears the half.
+                .onHover { if !$0 { hovered = nil } }
             }
         }
         .background {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(greys.tile)
-                .padding(.vertical, stacked ? 0 : 6)
+                .padding(.vertical, inset)
                 .allowsHitTesting(false)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
-                .padding(.vertical, stacked ? 0 : 6)
+                .padding(.vertical, inset)
                 .allowsHitTesting(false)
         }
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -103,6 +112,14 @@ struct SplitTabItem: View {
             hovered: $hovered
         )
         .frame(maxWidth: .infinity, maxHeight: stacked ? height : .infinity)
+        .opacity(staying(tab) ? 0.35 : 1)
+        .animation(Motion.quick, value: separation.leaving)
+    }
+
+    /// The other half of the one a carried pair is letting go of.
+    private func staying(_ tab: Tab) -> Bool {
+        guard let leaving = separation.leaving, leaving != tab.id else { return false }
+        return leaving == left.id || leaving == right.id
     }
 
     /// Across the top: one cross, at the end of the item, for whichever half
@@ -128,6 +145,10 @@ struct SplitTabItem: View {
 }
 
 private struct SplitTabHalf: View {
+    /// A half's grey across the top: a tab's pill, 15 points of mark and 6
+    /// above and below.
+    static let pillHeight: CGFloat = 28
+
     @Environment(\.greys) private var greys
     @Environment(\.tabShortcutNumbers) private var shortcutNumbers
     @ObservedObject var browser: Browser
@@ -161,7 +182,7 @@ private struct SplitTabHalf: View {
         row
             .padding(.leading, stacked ? 0 : 9)
             .padding(.trailing, stacked ? 7 : 4)
-            .frame(height: stacked ? height : 28)
+            .frame(height: stacked ? height : Self.pillHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background { ground.animation(Motion.quick, value: stacked && focused).animation(Motion.quick, value: joined) }
             .frame(height: height)
@@ -190,7 +211,10 @@ private struct SplitTabHalf: View {
                 if interactive { MiddleClick { browser.closeTab(tab) } }
             }
             .onHover { over in
-                if over { hovered = tab.id } else if hovered == tab.id { hovered = nil }
+                if over { hovered = tab.id }
+                // In the column each line is on its own; across the top the
+                // item clears it, so the shared cross keeps its half.
+                else if stacked, hovered == tab.id { hovered = nil }
             }
             .contextMenu {
                 if interactive { TabMenu(browser: browser, tab: tab, close: { browser.closeTab(tab) }) }
@@ -278,8 +302,8 @@ private struct SplitTabHalf: View {
                 .frame(height: 16)
         } else {
             HStack(spacing: stacked ? 8 : 5) {
-                if prefs.glyph == .icons || narrow {
-                    Mark(icon: tab.icon, letter: tab.monogram, size: stacked ? 15 : 13, dim: tab.asleep)
+                if prefs.glyph == .icons || !tab.isBlank || narrow {
+                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: stacked ? 15 : 13, dim: tab.asleep)
                         .frame(width: stacked ? 15 : 13, height: stacked ? 15 : 13)
                 }
                 if tab.shy {

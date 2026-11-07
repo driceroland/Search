@@ -83,6 +83,8 @@ final class Extensions: NSObject, ObservableObject {
     /// Each window's row as WebKit last heard it, by browser.
     private var orders: [ObjectIdentifier: [Tab.ID]] = [:]
     private var watching: [Tab.ID: [AnyCancellable]] = [:]
+    /// Pages you see that are in no window's row (see openedAside).
+    private var aside: Set<Tab.ID> = []
     private var bag = Set<AnyCancellable>()
     /// Each window's adapter, by browser.
     private var windows: [ObjectIdentifier: ExtensionWindow] = [:]
@@ -328,16 +330,25 @@ final class Extensions: NSObject, ObservableObject {
     /// WebKit's (the window in front first), not Browsers.all's. WebKit
     /// turns the window's frame over from the bottom of the first screen;
     /// it is turned back here, give or take two points.
-    func tab(windowFrame frame: CGRect, index: Int, for context: WKWebExtensionContext) -> Tab? {
+    /// Two windows with one frame (one made over another, or profiles in
+    /// one window) are told apart by the tab's address at that place, when
+    /// the extension gave it (#872); still two, it is neither.
+    func tab(windowFrame frame: CGRect, index: Int, address: String? = nil, for context: WKWebExtensionContext) -> Tab? {
         let height = NSScreen.screens.first?.frame.height ?? 0
         let match = Browsers.all.filter { browser in
             guard let window = browser.window?.frame else { return false }
             return abs(window.minX - frame.minX) <= 2 && abs((height - window.maxY) - frame.minY) <= 2
                 && abs(window.width - frame.width) <= 2 && abs(window.height - frame.height) <= 2
         }
-        guard match.count == 1, let browser = match.first else { return nil }
-        let tabs = visibleTabs(of: browser, for: context)
-        return tabs.indices.contains(index) ? tabs[index] : nil
+        let found = match.compactMap { browser -> Tab? in
+            let tabs = visibleTabs(of: browser, for: context)
+            return tabs.indices.contains(index) ? tabs[index] : nil
+        }
+        if found.count == 1 { return found[0] }
+        guard found.count > 1, let address else { return nil }
+        let blank = address.isEmpty || address == "about:blank"
+        let same = found.filter { blank ? $0.isBlank : $0.address?.absoluteString == address }
+        return same.count == 1 ? same[0] : nil
     }
 
     /// The window a tab is in, when it is in one's row.
@@ -430,6 +441,16 @@ final class Extensions: NSObject, ObservableObject {
             watching[id] = nil
         }
         for tab in now where !order.contains(tab.id) {
+            // Kept from a peek or a small window: extensions hear of it as a
+            // new tab in this window, as of any link opened into the row. The
+            // windowless one they had goes without a word, as an offscreen
+            // document does (the shim drops a window -1 onRemoved).
+            if aside.remove(tab.id) != nil, let was = adapters.removeValue(forKey: tab.id) {
+                for context in contexts.values where context.openTabs.contains(was) {
+                    context.didCloseTab(was, windowIsClosing: false)
+                }
+                watching[tab.id] = nil
+            }
             let from = inTransit.removeValue(forKey: tab.id)
                 ?? orders.first(where: { $0.key != key && $0.value.contains(tab.id) })
                     .map { ($0.key, visibleOrders($0.value)) }
@@ -463,6 +484,46 @@ final class Extensions: NSObject, ObservableObject {
             }
         }
         orders[key] = ids
+    }
+
+    /// A page you see that is in no window's row: a peek (Peek.swift), or
+    /// the small window for a link from another app (Little.swift). An
+    /// extension is told of it as a tab with no window, as an offscreen
+    /// document is: WebKit refuses a content script there anything from
+    /// its extension ("Tab not found") on a page it was never told of, so
+    /// Stylus styled nothing in a peek, and nothing that asks its worker
+    /// first worked there. chrome.tabs.query still lists only the row.
+    func openedAside(_ tab: Tab) {
+        guard seen(tab), aside.insert(tab.id).inserted else { return }
+        let adapter = adapter(for: tab)
+        adapter.aside = true
+        for context in contexts.values where seen(tab, for: context) {
+            context.didOpenTab(adapter)
+        }
+        watch(tab)
+    }
+
+    /// Closed without being kept (Tab.close); nothing for a tab in a row,
+    /// which follow() takes care of.
+    func closedAside(_ tab: Tab) {
+        guard aside.remove(tab.id) != nil else { return }
+        if let adapter = adapters[tab.id] {
+            for context in contexts.values where context.openTabs.contains(adapter) {
+                context.didCloseTab(adapter, windowIsClosing: false)
+            }
+        }
+        adapters[tab.id] = nil
+        watching[tab.id] = nil
+    }
+
+    /// An extension loaded while a peek was open learns of it as it does of
+    /// the row, which WebKit reads from the windows.
+    private func openAside(in context: WKWebExtensionContext) {
+        for id in aside {
+            guard let adapter = adapters[id], let tab = adapter.tab, seen(tab, for: context),
+                  !context.openTabs.contains(adapter) else { continue }
+            context.didOpenTab(adapter)
+        }
     }
 
     private func watch(_ tab: Tab) {
@@ -553,6 +614,7 @@ final class Extensions: NSObject, ObservableObject {
             if contexts[item.id] == nil, loadsThisRun.contains(item.id) { loadedBefore.insert(item.id) }
             loadsThisRun.insert(item.id)
             contexts[item.id] = context
+            openAside(in: context)
             // Keys you gave its commands in Settings › Shortcuts (#189).
             ShortcutStore.shared.adopt(context, id: item.id)
             actionsChanged += 1
@@ -623,6 +685,23 @@ final class Extensions: NSObject, ObservableObject {
         }
         busy = id
         Task { await install(id: id, confirm: confirm) }
+    }
+
+    /// Test runs only: a store package already on disk (Tests/panel_lax.py),
+    /// checked against its id exactly as one fetched from the store is.
+    func installForTests(crx: Data, id: String) async {
+        guard Store.testing, id.count == 32, id.allSatisfy({ ("a"..."p").contains($0) }),
+              !installed.contains(where: { $0.id == id }) else { return }
+        let staged = Extensions.stagingFolder(for: id)
+        defer { try? FileManager.default.removeItem(at: staged) }
+        do {
+            let zip = try Crx.verifiedZip(crx, id: id)
+            try Crx.unpack(zip, into: staged)
+            try ExtensionShims.prepare(staged, fresh: true)
+            try await admit(staged, as: id, fromStore: true, finalFolder: Extensions.folder(for: id), confirm: false)
+        } catch {
+            browser?.announce(error.localizedDescription)
+        }
     }
 
     /// One from the store by its id, done — asked about, and installed or
@@ -795,6 +874,7 @@ final class Extensions: NSObject, ObservableObject {
             loadedBefore.insert(id)
             try controller.load(context)
             contexts[id] = context
+            openAside(in: context)
             watch(context)
             ShortcutStore.shared.adopt(context, id: id)
             actionsChanged += 1
@@ -1786,6 +1866,10 @@ extension Extensions: WKWebExtensionControllerDelegate {
         let ports = nativePorts[id] ?? NSHashTable<WKWebExtension.MessagePort>.weakObjects()
         ports.add(port)
         nativePorts[id] = ports
+        if port.applicationIdentifier == ExtensionFetch.name {
+            ExtensionFetch.connect(port, from: extensionContext)
+            return
+        }
         if port.applicationIdentifier == ExtensionSocket.name {
             ExtensionSocket.connect(port, from: extensionContext.uniqueIdentifier)
             return
@@ -1814,6 +1898,8 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
     weak var tab: Tab?
     unowned let owner: Extensions
     private weak var lastWindow: ExtensionWindow?
+    /// Made for a page outside the row (Extensions.openedAside).
+    var aside = false
 
     init(tab: Tab, owner: Extensions) {
         self.tab = tab
@@ -1824,6 +1910,9 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
     private var browser: Browser? { tab.flatMap(owner.browser(of:)) }
 
     func window(for context: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
+        // A peek's or a small window's: in no window, even once kept into
+        // one, when this adapter is closed and another one opened.
+        if aside { return nil }
         // WebKit asks a closed tab for its window after it has left the row,
         // and with none, onRemoved said window -1 and the shim dropped it.
         if let browser { lastWindow = owner.window(of: browser) }
@@ -1831,7 +1920,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
     }
 
     func indexInWindow(for context: WKWebExtensionContext) -> Int {
-        guard let tab, let browser else { return NSNotFound }
+        guard !aside, let tab, let browser else { return NSNotFound }
         return owner.visibleTabs(of: browser, for: context).firstIndex { $0.id == tab.id } ?? NSNotFound
     }
 
