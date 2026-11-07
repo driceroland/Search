@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A muted video now floats when you go to another desktop, as it does when you go to another app; one you paused yourself still stays in its tab. Thanks [@Comradevergreen](https://github.com/Comradevergreen) ([#791](https://github.com/driceroland/Search/pull/791))
+
 
 - Page translation stays quick on a Mac with Apple Intelligence: Search prefers the faster on-device translation model, as it did before macOS 26.4's SDK changed the default. Language pairs only the newer model supports still use it. Thanks [@2470046](https://github.com/2470046) ([#821](https://github.com/driceroland/Search/pull/821))
 
