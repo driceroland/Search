@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A page visited, retitled or given its icon in the last second or two before quitting is still in History and keeps its icon. Search waited a moment before writing either, and quitting inside that moment threw the write away.
 - A video playing in a window on another screen — a TV, a second display — no longer floats out when you work in another app on this one.
 
 - A Split View pair carried in the column or across the top comes apart only where that was shown: rest over another tab and the half that stays dims, with the same tick as a split shown over a page, and only then does letting go take the other half out. Let go a few points past the pair's own edge on its way to a new place, it used to lose the half being held with no sign it would. Thanks [@ubeann](https://github.com/ubeann) ([#887](https://github.com/driceroland/Search/pull/887))
