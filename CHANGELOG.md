@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Going to another tab while picking things to hide puts the picker away. Clicking a tab in the column or across the top left the page before still picking, out of sight, and Escape then tried to put away a picker on the tab in front, which had none, so the one left behind kept going.
 - A video playing in a window on another screen — a TV, a second display — no longer floats out when you work in another app on this one.
 
 - A Split View pair carried in the column or across the top comes apart only where that was shown: rest over another tab and the half that stays dims, with the same tick as a split shown over a page, and only then does letting go take the other half out. Let go a few points past the pair's own edge on its way to a new place, it used to lose the half being held with no sign it would. Thanks [@ubeann](https://github.com/ubeann) ([#887](https://github.com/driceroland/Search/pull/887))
