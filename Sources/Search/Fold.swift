@@ -53,6 +53,19 @@ extension Browser {
         withAnimation(Motion.folding(out: out)) { peeking = out }
     }
 
+    /// A page filling the screen in front of this window. With
+    /// Preferences.keepsWindow, one settled in a Space of its own isn't, once
+    /// this window's Space is the one in view: the window is whole again, to
+    /// be used beside the video.
+    func fillsHere(_ tab: Tab) -> Bool {
+        guard tab.immersed else { return false }
+        guard prefs.keepsWindow, let window, tab.built?.fullscreenState == .inFullscreen else { return true }
+        return !window.isOnActiveSpace
+    }
+
+    /// The tab in front is such a page.
+    var frontFillsHere: Bool { active.map(fillsHere) ?? false }
+
     /// Whether something of the window's lies over `page` at `point`, in the
     /// window's own coordinates: a peek over the page in front (not over its
     /// own), the address field or a panel over it, the Find bar, or the
@@ -77,7 +90,7 @@ extension Browser {
            hit !== page, !hit.isDescendant(of: page) {
             return true
         }
-        guard folded, peeking, active?.immersed != true, let size = window.contentView?.bounds.size else { return false }
+        guard folded, peeking, !frontFillsHere, let size = window.contentView?.bounds.size else { return false }
         if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
         return prefs.sidePosition == .right ? point.x >= size.width - prefs.columnWidth : point.x <= prefs.columnWidth
     }
@@ -131,7 +144,7 @@ struct Fold: View {
             // the page the top edge too, and the same band: there was nothing
             // to take hold of until the strip came down. Unfolded, the strip
             // is its own title bar, and no band lies over its tabs.
-            if prefs.sidebar || folding, browser.active?.immersed != true {
+            if prefs.sidebar || folding, !browser.frontFillsHere {
                 DragStrip()
                     .frame(height: Fold.top)
                     .frame(maxWidth: .infinity)
@@ -265,7 +278,7 @@ struct Fold: View {
 
     /// Folded, and not taken over by a page filling the screen.
     private var folding: Bool {
-        browser.folded && browser.active?.immersed != true
+        browser.folded && !browser.frontFillsHere
     }
 
     private var lightsOff: Bool {
