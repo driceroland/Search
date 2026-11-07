@@ -65,7 +65,8 @@ final class Extensions: NSObject, ObservableObject {
     @Published private(set) var contexts: [String: WKWebExtensionContext] = [:]
     /// Bumped when any extension's button changes — icon, badge, enabled.
     @Published private(set) var actionsChanged = 0
-    @Published private(set) var busy: String?
+    /// Store ids being fetched and installed right now.
+    @Published private(set) var busy: Set<String> = []
     /// Errors an extension's pages and worker ran into, newest last, a few
     /// dozen at most per extension.
     @Published private(set) var errors: [String: [String]] = [:]
@@ -683,7 +684,6 @@ final class Extensions: NSObject, ObservableObject {
             browser?.announce("Already installed")
             return
         }
-        busy = id
         Task { await install(id: id, confirm: confirm) }
     }
 
@@ -711,9 +711,9 @@ final class Extensions: NSObject, ObservableObject {
         // A store id, and nothing else, goes into the request and the folder
         // names below, whoever called.
         guard id.count == 32, id.allSatisfy({ ("a"..."p").contains($0) }) else { return }
+        guard busy.insert(id).inserted else { return }
+        defer { busy.remove(id) }
         guard !installed.contains(where: { $0.id == id }) else { return }
-        busy = id
-        defer { busy = nil }
         let staged = Extensions.stagingFolder(for: id)
         defer { try? FileManager.default.removeItem(at: staged) }
         do {
