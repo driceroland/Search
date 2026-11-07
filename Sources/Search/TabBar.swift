@@ -993,6 +993,9 @@ struct Carried: ViewModifier {
     /// off as well as when it ends (see CarryGuard).
     @GestureState private var carrying = false
     @State private var ticket = UUID()
+    /// Cancelled with Escape: put down until the hand lets go, not picked
+    /// up again by its next move.
+    @State private var escaped = false
 
     func body(content: Content) -> some View {
         // What it has travelled, less the ground its new place has already
@@ -1023,6 +1026,7 @@ struct Carried: ViewModifier {
                     .updating($carrying) { _, carrying, _ in carrying = true }
                     .onChanged { value in
                         if !held {
+                            guard !escaped else { return }
                             held = true
                             from = index
                             start = Carried.leading(of: index, in: steps)
@@ -1048,6 +1052,7 @@ struct Carried: ViewModifier {
                         }
                     }
                     .onEnded { value in
+                        escaped = false
                         // Already put down (see callOff): a press that
                         // came after can't be where it was let go.
                         guard CarryGuard.close(ticket) else { return }
@@ -1093,6 +1098,9 @@ struct Carried: ViewModifier {
             .onChange(of: held) { _, now in holding?(now) }
             .onReceive(TabDrag.shared.$cancelledID) { id in
                 guard id == tab?.id, held else { return }
+                CarryGuard.close(ticket)
+                escaped = true
+                if let tab { TabDrag.shared.callOff(tab) }
                 _ = land?(nil)
                 if reordered { move(from) }
                 held = false
@@ -1133,6 +1141,7 @@ struct Carried: ViewModifier {
     /// let go of. After a real end, held is already false and this is nothing.
     private func callOff() {
         CarryGuard.close(ticket)
+        escaped = false
         guard held else { return }
         if let browser, let tab, browser.prefs.splitView { TabDrag.shared.callOff(tab) }
         _ = land?(nil)
