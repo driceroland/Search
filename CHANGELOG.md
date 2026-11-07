@@ -15,6 +15,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 - A sign-in the page sends from its own script is offered a place in the keychain too: a "Sign in" link that posts the form, a box styled as a button, or a page that sends itself after a moment. Still only once the next page shows it worked. Thanks [@oddharsh](https://github.com/oddharsh) ([#705](https://github.com/driceroland/Search/pull/705))
 
+- Translate Page left by going to another page before it had read the first one leaves nothing behind. The sign came back saying the page was still being translated, with nothing translating it, and stayed until the next page; if the language still had to be downloaded, the download sheet could come up over the page you went to. Thanks [@oddharsh](https://github.com/oddharsh) ([#953](https://github.com/driceroland/Search/pull/953))
+
 - A tab dragged from the column onto the page splits it again, as Welcome and Settings say. Since tabs in the column open as the button goes down (#625), the page under the hand was the dragged tab itself, so nothing was shown at the page's edges and letting go only changed the page. Once the hand is over the page, the page that was there before comes back, and the split is shown and made with it. Letting go anywhere else leaves that page on screen, as before #625. Thanks [@ubeann](https://github.com/ubeann) ([#928](https://github.com/driceroland/Search/pull/928))
 
 - With Split View on, a tab carried in the column or across the top and let go of with Escape stays put down until the button comes up. The next move of the hand picked it up again, shadow and all, under the pointer until the button came up. Thanks [@oddharsh](https://github.com/oddharsh) ([#952](https://github.com/driceroland/Search/pull/952))
