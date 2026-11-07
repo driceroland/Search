@@ -326,6 +326,8 @@ final class Browser: NSObject, ObservableObject {
         didSet {
             if !editing, siteChip != nil { siteChip = nil }
             if !editing, launching { launching = false }
+            // ⌘K is that field: whatever puts it away ends the switcher too.
+            if !editing, summoning { summoning = false }
         }
     }
     /// True while the field is up over a page for a tab that doesn't exist
