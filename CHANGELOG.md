@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A window closed while Search waits on an import to stop before quitting stays closed. Quitting already counted as begun, so the window was kept as if Search were quitting it, and it came back at the next launch. Thanks [@oddharsh](https://github.com/oddharsh) ([#957](https://github.com/driceroland/Search/pull/957))
+
 - A video floating in Search's window stays the only one out after picture in picture is chosen in Settings. Leaving another video's tab, or Search, sent that one into picture in picture too, and both were up at once. Thanks [@oddharsh](https://github.com/oddharsh) ([#956](https://github.com/driceroland/Search/pull/956))
 
 - A video playing in a window on another screen — a TV, a second display — no longer floats out when you work in another app on this one.
