@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A video playing in a window on another screen — a TV, a second display — no longer floats out when you work in another app on this one.
 - ⌘S hides and shows the column as soon as it's pressed. Each press built every row of the column four times over before the slide could start, about 150ms with 30 tabs, as long as the slide itself; it now takes about 38ms, and the column that slides away is the same one that comes back. Thanks [@oddharsh](https://github.com/oddharsh)
 - A Split View pair carried in the column or across the top comes apart only where that was shown: rest over another tab and the half that stays dims, with the same tick as a split shown over a page, and only then does letting go take the other half out. Let go a few points past the pair's own edge on its way to a new place, it used to lose the half being held with no sign it would. Thanks [@ubeann](https://github.com/ubeann) ([#887](https://github.com/driceroland/Search/pull/887))
 - The address field says where Return goes. ⌘T's floating field reads "New tab: enter a web address", ⌘L's "This tab: enter a web address", and ⌘K's "Switch to an open tab"; a blank tab's still reads "Enter a web address". VoiceOver hears the same. All three said "Enter a web address", though ⌘K only finds open tabs. Thanks [@ubeann](https://github.com/ubeann) ([#913](https://github.com/driceroland/Search/pull/913))
