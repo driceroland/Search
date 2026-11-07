@@ -3891,7 +3891,13 @@ final class Browser: NSObject, ObservableObject {
             // were doing, as their cards were before 1.0.7. Closing one
             // shouldn't leave you on its neighbour, or on the last tab when
             // ⌘Y brought forward a History tab kept at the end of the row.
-            let before = prefs.closeGoesBack || tab.page != nil ? tabBefore(tab) : nil
+            // A page a link just opened in front goes back to the page it
+            // came from too, while that is still the tab you were on before
+            // it: it was opened at the end of the row, and its neighbour
+            // there is a tab you weren't reading.
+            let back = tabBefore(tab)
+            let before = prefs.closeGoesBack || tab.page != nil ? back
+                : back.flatMap { $0.id == tab.opener ? $0 : nil }
             select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
         }
         rememberSession()
