@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Under a sign-in box, the accounts saved for that exact host come first, and the site's other accounts follow under a thin line naming the site, so a login for admin.example.com never passes for example.com's. Nothing is hidden, only ordered. Thanks [@tomaswarynyca](https://github.com/tomaswarynyca) ([#723](https://github.com/driceroland/Search/pull/723))
+
 - ⌘K puts the tab switcher away after Tabs › Search Tabs… was clicked in the menu. It stepped down the list instead, and letting go of ⌘ then switched to the second tab in it. Thanks [@oddharsh](https://github.com/oddharsh) ([#959](https://github.com/driceroland/Search/pull/959))
 
 - When the page in the half of a Split View pair you aren't typing in crashes or is ended by the system, it loads again straight away, as the half you are in does. It stayed white, though on screen, until you clicked into it or went to another tab and back. Thanks [@oddharsh](https://github.com/oddharsh) ([#955](https://github.com/driceroland/Search/pull/955))

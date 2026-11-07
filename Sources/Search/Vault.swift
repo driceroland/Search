@@ -89,7 +89,10 @@ enum Vault {
         let wider = !wide ? [] : rows(where: [:])
             .filter { ($0[kSecAttrServer as String] as? String).map { $0 != host && belongs($0, to: host, domain: domain) } ?? false }
             .compactMap(kept(from:))
-        return (exact + wider).sorted { ($0.used ?? .distantPast) > ($1.used ?? .distantPast) }
+        // The host's own accounts first, the site's others after them: each
+        // group newest first.
+        let newest: (Kept, Kept) -> Bool = { ($0.used ?? .distantPast) > ($1.used ?? .distantPast) }
+        return exact.sorted(by: newest) + wider.sorted(by: newest)
     }
 
     /// Everything this app holds, as the list needs it: no secrets. Each one

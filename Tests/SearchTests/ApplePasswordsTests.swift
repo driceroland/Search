@@ -225,6 +225,20 @@ final class ApplePasswordsTests: XCTestCase {
         XCTAssertFalse(belongs([], "example.com"))
     }
 
+    func testTheHostsOwnAccountsComeBeforeTheSites() {
+        let registrable: (String) -> String = { $0.split(separator: ".").suffix(2).joined(separator: ".") }
+        let qa = AppleLogin(user: "qa", sites: ["admin-qa.example.com"])
+        let prod = AppleLogin(user: "prod", sites: ["admin.example.com"])
+        let root = AppleLogin(user: "root", sites: ["example.com"])
+        func ordered(_ host: String, wide: Bool = true) -> [AppleLogin] {
+            ApplePasswords.exactFirst([qa, root, prod], to: host, wide: wide, registrable: registrable)
+        }
+        XCTAssertEqual(ordered("admin.example.com"), [prod, qa, root])
+        XCTAssertEqual(ordered("admin-qa.example.com"), [qa, root, prod])
+        XCTAssertEqual(ordered("accounts.example.com"), [qa, root, prod], "none of its own: the site's, as they came")
+        XCTAssertEqual(ordered("admin.example.com", wide: false), [prod])
+    }
+
     func testFillIsRecognisedWithoutKeepingThePassword() {
         let fill = AppleFill(host: "accounts.example.test", user: "ada", password: "made-up-secret")
         XCTAssertTrue(fill.matches(host: "accounts.example.test", user: "ada", password: "made-up-secret"))
