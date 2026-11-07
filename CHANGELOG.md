@@ -13,6 +13,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Closing the assistant while the on-device engine is still starting no longer leaves it writing an answer for nobody, which kept the engine running until it was done. Thanks [@oddharsh](https://github.com/oddharsh) ([#970](https://github.com/driceroland/Search/pull/970))
+
+- Cancel during the on-device model download puts AI back to off, ready to turn on again. It said the download failed, "cancelled", with Try Again, and the progress bar could come back after it. Thanks [@oddharsh](https://github.com/oddharsh) ([#970](https://github.com/driceroland/Search/pull/970))
+
 - A window closed while Search waits on an import to stop before quitting stays closed. Quitting already counted as begun, so the window was kept as if Search were quitting it, and it came back at the next launch. Thanks [@oddharsh](https://github.com/oddharsh) ([#957](https://github.com/driceroland/Search/pull/957))
 
 - A video floating in Search's window stays the only one out after picture in picture is chosen in Settings. Leaving another video's tab, or Search, sent that one into picture in picture too, and both were up at once. Thanks [@oddharsh](https://github.com/oddharsh) ([#956](https://github.com/driceroland/Search/pull/956))
