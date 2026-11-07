@@ -87,6 +87,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Recent places in the new tab, in Settings beside the floating new tab and off unless turned on: ⌘T's floating field offers the last three places from History before anything is typed, leaving out pages already open in the window, which ⌘K finds. Nothing is picked until an arrow key picks it, so Return on the empty field still opens nothing; nothing is asked of a search engine, and a private tab offers nothing. Thanks [@ubeann](https://github.com/ubeann) ([#914](https://github.com/driceroland/Search/pull/914))
+
 - A tab carried over a page shows where letting go would split it: the page's two edges, faint, as soon as the tab is over it, with the split itself shown as before once the pointer rests on one. Over the middle of a page nothing splits, and nothing used to say where would. Thanks [@ubeann](https://github.com/ubeann) ([#936](https://github.com/driceroland/Search/pull/936))
 
 - The empty page of a Split View pair finds your open tabs by what you type, as ⌘K does: those that answer come first in its list, and a click or Return brings the tab in beside the other page. Its list of open tabs shows the six last looked at and goes once you type, and the field offered only places to load, so a tab past those six came in as a second copy, loaded again. A page offered as an open tab isn't offered again from History. Only there: anywhere else, ⌘K is the key for open tabs. Thanks [@ubeann](https://github.com/ubeann) ([#934](https://github.com/driceroland/Search/pull/934))
