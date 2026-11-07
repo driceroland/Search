@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Closing the assistant while the on-device engine is still starting no longer leaves it writing an answer for nobody, which kept the engine running until it was done.
 - Cancel during the on-device model download puts AI back to off, ready to turn on again. It said the download failed, "cancelled", with Try Again, and the progress bar could come back after it.
 - A Split View pair carried in the column or across the top comes apart only where that was shown: rest over another tab and the half that stays dims, with the same tick as a split shown over a page, and only then does letting go take the other half out. Let go a few points past the pair's own edge on its way to a new place, it used to lose the half being held with no sign it would. Thanks [@ubeann](https://github.com/ubeann) ([#887](https://github.com/driceroland/Search/pull/887))
 - The address field says where Return goes. ⌘T's floating field reads "New tab: enter a web address", ⌘L's "This tab: enter a web address", and ⌘K's "Switch to an open tab"; a blank tab's still reads "Enter a web address". VoiceOver hears the same. All three said "Enter a web address", though ⌘K only finds open tabs. Thanks [@ubeann](https://github.com/ubeann) ([#913](https://github.com/driceroland/Search/pull/913))

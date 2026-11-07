@@ -471,6 +471,10 @@ final class AIEngine: ObservableObject {
                 guard let self else { return continuation.finish() }
                 do {
                     try await self.start()
+                    self.rest()
+                    // Starting ignores cancellation: an answer given up on
+                    // while the engine started is not asked for.
+                    try Task.checkCancellation()
                     self.answering[id] = continuation
                     let request: [String: Any] = [
                         "id": id, "system": system, "max_tokens": 768, "temperature": 0.2,
@@ -479,7 +483,6 @@ final class AIEngine: ObservableObject {
                     var line = try JSONSerialization.data(withJSONObject: request)
                     line.append(0x0A)
                     try self.input?.write(contentsOf: line)
-                    self.rest()
                 } catch {
                     continuation.finish(throwing: error)
                 }
