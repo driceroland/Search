@@ -39,6 +39,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Settings › Tabs › Links opened in front go beside their page, off unless turned on, with New tab position on After current. A plain click on a link that opens a new tab, a page's window.open on a click, or a ⇧⌘-click puts its page right after the page it came from, in the order you click, as a ⌘-click's goes, while you go back and forth between the page and the tabs it opened. Otherwise they go to the end of the row, as before. Thanks [@ubeann](https://github.com/ubeann) ([#965](https://github.com/driceroland/Search/pull/965))
+
 - Copy Address in a download's right-click menu, while it runs and once it is done, for files downloaded from now on, to hand it to another download app. Clearing history takes these addresses with it; the files stay listed. Asked for by [@ejzpan](https://github.com/ejzpan) ([#853](https://github.com/driceroland/Search/issues/853))
 - With a site put in the address field with Tab, the list offers what you searched that site for before, newest first, read from your history on this Mac and sent nowhere; the last few show before you type, and none in a private tab. A site shortcut ("yt naruto") offers the same. With Google in the field and Google your search engine, Suggestions from your search engine shows its suggestions there too; words typed to any other site never go to your engine. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#882](https://github.com/driceroland/Search/pull/882))
 

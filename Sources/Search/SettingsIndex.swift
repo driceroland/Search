@@ -175,6 +175,10 @@ enum SettingsIndex {
               title: "New tab position", detail: "Where a link or ⌘T's new tab goes in the row",
               more: "After current puts a link beside the tab you're on, and ⌘T's new tab at the end. Pins stay first; a link from a group stays in it.",
               keys: ["tabs.newPlace"], words: ["new tab", "order"]),
+        .init(id: "tabs.frontBeside", group: "newtabs", icon: "arrow.turn.down.right",
+              title: "Links opened in front go beside their page", detail: "A link that opens a new tab lands right after the tab it came from",
+              more: "In the order you click them, as ⌘-clicks do, while you go back and forth between the page and the tabs it opened. Going to any other tab starts again right after the page.",
+              keys: ["tabs.frontBeside"], words: ["target blank", "new tab", "order", "next to", "opener", "link"], parent: "tabs.newPlace"),
         .init(id: "tabs.newAfterLast", group: "newtabs", icon: "plus.rectangle.on.rectangle",
               title: "Leave a new tab when the last tab closes", detail: "Otherwise you land on a pinned tab",
               keys: ["tabs.newAfterLast"], words: ["last tab"]),
@@ -445,6 +449,7 @@ enum SettingsIndex {
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
         case "toolbar.left": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
+        case "tabs.frontBeside": return prefs.newTabPlace == .next
         default: return true
         }
     }
@@ -456,6 +461,7 @@ enum SettingsIndex {
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
         case "profiles.oneWindow": return "Only with more than one profile"
+        case "tabs.frontBeside": return "Only with New tab position on After current"
         default: return "Only with the tabs down a side"
         }
     }
