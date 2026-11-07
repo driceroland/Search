@@ -15,6 +15,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 - A tab closed while it played video or music (YouTube, Twitch) went quiet only on screen: its sound could carry on in the background, and a stream could keep filling memory with nothing to show it in. Thanks [@BeNDYGo](https://github.com/BeNDYGo) ([#943](https://github.com/driceroland/Search/pull/943))
 
+- A WebSocket an extension's worker closes before it has connected stays closed. It could open anyway a moment later, and say so to the extension, if the browser hadn't yet heard it was asked to open when the close came; a real WebSocket never opens once it is closing. Thanks [@oddharsh](https://github.com/oddharsh) ([#969](https://github.com/driceroland/Search/pull/969))
+
 - Two extensions added from the store at once each keep showing "Adding…" until they are in. The first to finish took the spinner in Settings and the store page's "Adding…" away from the other, which looked done while it was still on its way, and one that turned out already installed could leave the spinner turning for good. Thanks [@oddharsh](https://github.com/oddharsh) ([#968](https://github.com/driceroland/Search/pull/968))
 
 - Under a sign-in box, the accounts saved for that exact host come first, and the site's other accounts follow under a thin line naming the site, so a login for admin.example.com never passes for example.com's. Nothing is hidden, only ordered. Thanks [@tomaswarynyca](https://github.com/tomaswarynyca) ([#723](https://github.com/driceroland/Search/pull/723))

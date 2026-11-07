@@ -724,7 +724,7 @@ enum ExtensionShims {
         const decode = (text) => { const s = atob(text), bytes = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i); return bytes.buffer; };
         const states = { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 };
         class WebSocket extends EventTarget {
-          #port; #state = 0; #queue = Promise.resolve(); #origin; #hello;
+          #port; #state = 0; #queue = Promise.resolve(); #origin; #hello; #closing;
           constructor(url, protocols) {
             super();
             let parsed;
@@ -782,7 +782,10 @@ enum ExtensionShims {
           }
           #take(m) {
             if (!m || this.#state === 3) return;
-            if ("opened" in m) { this.protocol = m.opened; this.#state = 1; this.#fire("open"); }
+            // Closed while connecting: the browser may have opened it anyway,
+            // if the close was lost or came before the opening. Say it again.
+            if ("opened" in m && this.#state === 2) { try { this.#port.postMessage(this.#closing); } catch (e) {} }
+            else if ("opened" in m) { this.protocol = m.opened; this.#state = 1; this.#fire("open"); }
             else if ("text" in m) this.#fire("message", { data: m.text, origin: this.#origin });
             else if ("binary" in m) {
               const buffer = decode(m.binary);
@@ -808,7 +811,7 @@ enum ExtensionShims {
             }
             if (this.#state >= 2) return;
             this.#state = 2;
-            const message = { close: code === undefined ? 1000 : code, reason: reason === undefined ? "" : String(reason) };
+            const message = this.#closing = { close: code === undefined ? 1000 : code, reason: reason === undefined ? "" : String(reason) };
             this.#queue = this.#queue.then(() => { try { this.#port.postMessage(message); } catch (e) {} });
           }
         }
