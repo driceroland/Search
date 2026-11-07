@@ -104,6 +104,7 @@ Not in this version, kept on main for a later one:
 
 ### Fixed
 
+- Keeping a bookmark or letting one go no longer stalls the window with many tabs open. Each one built every tab's row in the column again, though no row shows a bookmark: with 200 tabs it held the window for 146 to 188 ms, now 12 ms. The bookmarks bar still follows at once. `python3 Tests/bookmark_redraws.py` checks it
 - Typing in a new tab carries on with Split View on: after ⌘T from a page, the first letter or two went into the field and every key after them made the Mac's error sound and typed nothing, which looked like the grey ending stopping the typing. The field over the page being left took the keys back as it went, and left them with the window
 - With the floating video set to Picture in picture (Settings › General), the button at the top right of the video's little window takes you back to it: Search comes forward on the video's tab and the video goes back into its page. It did nothing when that tab was behind another one or behind another app, which is how it nearly always got there, because macOS puts a video back only into a page that is on screen
 - A video filling the screen can be clicked again once paused: clicking it, or its play button, plays it again, as the space bar did. The view macOS lays over a paused video to pick out its text and subject took every click, and is now kept out of the way while the video fills the screen

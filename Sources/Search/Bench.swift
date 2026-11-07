@@ -1085,6 +1085,66 @@ final class Bench {
             }
             walk(0)
 
+        case "bookmarksweep":
+            // Bookmarks kept and then let go, one a frame, as the star or a
+            // folder's menu would: how many rows of the column and how many
+            // bookmarks bars were built again along the way, and how long
+            // each pass of the main run loop carrying an edit took. Test
+            // runs only: it writes the world's bookmarks.
+            guard Store.testing else { answer(["error": "bookmarksweep is for test runs"]); return }
+            let count = request["count"] as? Int ?? 10
+            let interval = request["interval"] as? Double ?? 1.0 / 60
+            let urls = (0..<count).compactMap { URL(string: "https://bookmarksweep.test/\($0)") }
+            var made: [Bookmark.ID] = []
+            let clock = LoopClock()
+            Bench.bodies = [:]
+            clock.start()
+            func edit(_ n: Int) {
+                guard n < urls.count * 2 else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        clock.stop()
+                        answer([
+                            "edits": urls.count * 2, "tabs": browser.tabs.count,
+                            "bodies": Bench.bodies, "left": browser.bookmarks.count,
+                            "editMs": LoopClock.summary(clock.marked),
+                            "otherMs": LoopClock.summary(clock.unmarked),
+                        ])
+                    }
+                    return
+                }
+                clock.mark()
+                if n < urls.count {
+                    if let kept = browser.bookmarks.add(urls[n], title: "Sweep \(n)") { made.append(kept.id) }
+                } else {
+                    if n - urls.count < made.count { browser.bookmarks.remove(made[n - urls.count]) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + interval) { edit(n + 1) }
+            }
+            edit(0)
+
+        case "keeppage":
+            // The page on screen kept, or let go ("keep": false), on the
+            // bookmarks alone, as the Bookmarks panel does it: nothing else
+            // of the browser changes. Then the Bookmarks menu's items as it
+            // would open, a moment later, and how many times the bookmarks
+            // bar was built meanwhile. Test runs only: it writes the world's
+            // bookmarks.
+            guard Store.testing else { answer(["error": "keeppage is for test runs"]); return }
+            guard let tab = browser.active, let url = tab.address else { answer(["error": "no page on screen"]); return }
+            Bench.bodies = [:]
+            if request["keep"] as? Bool == false {
+                if let kept = browser.bookmarks.bookmark(for: url) { browser.bookmarks.remove(kept.id) }
+            } else {
+                _ = browser.bookmarks.add(url, title: tab.title)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let menu = NSApp.mainMenu?.items.first { $0.title == "Bookmarks" }?.submenu
+                if let menu { menu.delegate?.menuNeedsUpdate?(menu) }
+                answer(["kept": browser.pageKept,
+                        "items": menu?.items.prefix(2).map(\.title) ?? [],
+                        "bar": Bench.bodies["bar"] ?? 0])
+            }
+
         case "pointer":
             // What a page's own tracking areas hand their owners as the
             // pointer goes over it — a move, or the pointer coming in — and a
