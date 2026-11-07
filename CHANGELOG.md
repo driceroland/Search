@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Two extensions added from the store at once each keep showing "Adding…" until they are in. The first to finish took the spinner in Settings and the store page's "Adding…" away from the other, which looked done while it was still on its way, and one that turned out already installed could leave the spinner turning for good. Thanks [@oddharsh](https://github.com/oddharsh) ([#968](https://github.com/driceroland/Search/pull/968))
+
 - Under a sign-in box, the accounts saved for that exact host come first, and the site's other accounts follow under a thin line naming the site, so a login for admin.example.com never passes for example.com's. Nothing is hidden, only ordered. Thanks [@tomaswarynyca](https://github.com/tomaswarynyca) ([#723](https://github.com/driceroland/Search/pull/723))
 
 - Going to another tab while picking things to hide puts the picker away. Clicking a tab in the column or across the top left the page before still picking, out of sight, and Escape then tried to put away a picker on the tab in front, which had none, so the one left behind kept going. Thanks [@oddharsh](https://github.com/oddharsh) ([#966](https://github.com/driceroland/Search/pull/966))
