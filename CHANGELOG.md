@@ -83,6 +83,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- The empty page of a Split View pair finds your open tabs by what you type, as ⌘K does: those that answer come first in its list, and a click or Return brings the tab in beside the other page. Its list of open tabs shows the six last looked at and goes once you type, and the field offered only places to load, so a tab past those six came in as a second copy, loaded again. A page offered as an open tab isn't offered again from History. Only there: anywhere else, ⌘K is the key for open tabs. Thanks [@ubeann](https://github.com/ubeann) ([#934](https://github.com/driceroland/Search/pull/934))
+
 - Settings › Tabs › Links opened in front go beside their page, off unless turned on, with New tab position on After current. A plain click on a link that opens a new tab, a page's window.open on a click, or a ⇧⌘-click puts its page right after the page it came from, in the order you click, as a ⌘-click's goes, while you go back and forth between the page and the tabs it opened. Otherwise they go to the end of the row, as before. Thanks [@ubeann](https://github.com/ubeann) ([#965](https://github.com/driceroland/Search/pull/965))
 
 - What plays in another tab can show at the foot of the sidebar: its icon and title, with its pause, and a click goes to the tab. Off unless you turn it on in Settings › Appearance › Tabs. Thanks [@Tom-Boscher](https://github.com/Tom-Boscher) ([#764](https://github.com/driceroland/Search/pull/764))
