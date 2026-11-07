@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- ⌘L held down keeps the address field up. Each of the key's repeats put the field away or raised it again, so it flickered and stayed wherever the count left it. Thanks [@oddharsh](https://github.com/oddharsh) ([#976](https://github.com/driceroland/Search/pull/976))
+
 - Closing the assistant while the on-device engine is still starting no longer leaves it writing an answer for nobody, which kept the engine running until it was done. Thanks [@oddharsh](https://github.com/oddharsh) ([#970](https://github.com/driceroland/Search/pull/970))
 
 - Cancel during the on-device model download puts AI back to off, ready to turn on again. It said the download failed, "cancelled", with Try Again, and the progress bar could come back after it. Thanks [@oddharsh](https://github.com/oddharsh) ([#970](https://github.com/driceroland/Search/pull/970))
