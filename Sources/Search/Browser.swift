@@ -84,6 +84,7 @@ final class Browser: NSObject, ObservableObject {
             }) == true) {
                 linkRun = nil
             }
+            if veiling { stopHiding() }
             if displayTab?.id == oldValue { cancelDisplay() }
             if decideTab?.id == oldValue { settleCapture() }
             clearTabSelection()
@@ -670,6 +671,8 @@ final class Browser: NSObject, ObservableObject {
     let floater = Shared.floater
     /// True while the pointer is picking things to hide.
     @Published private(set) var veiling = false
+    /// The tab doing the picking, which is not always the one in front.
+    private weak var picking: Tab?
     /// True while the list of what is hidden here is up.
     @Published var reviewing = false {
         didSet { if !reviewing { stopPeeking() } }
@@ -680,15 +683,18 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘⇧H. Point at anything on the page and it goes, for good, on this site.
     func toggleHiding() {
+        if veiling { return stopHiding() }
         guard let tab = active, tab.isWeb else { return }
-        if veiling {
-            veiling = false
-            tab.stopPicking()
-        } else {
-            reviewing = false
-            veiling = true
-            tab.startPicking()
-        }
+        reviewing = false
+        veiling = true
+        picking = tab
+        tab.startPicking()
+    }
+
+    private func stopHiding() {
+        veiling = false
+        picking?.stopPicking()
+        picking = nil
     }
 
     /// What a private tab took off its page, kept for that page only.
@@ -5804,7 +5810,11 @@ final class Browser: NSObject, ObservableObject {
             tab.applyVeils(css)
             announce("Hidden — ⌘Z puts it back")
         }
-        tab.onPickEnd = { [weak self] _ in self?.veiling = false }
+        tab.onPickEnd = { [weak self] tab in
+            guard let self, picking === tab else { return }
+            veiling = false
+            picking = nil
+        }
         tab.onImageMenu = { [weak self] tab, url in self?.showImageMenu(for: tab, at: url) }
         tab.onImageItem = { [weak self] tab, url, copy in
             guard let self, let web = tab.built else { return }
