@@ -190,6 +190,10 @@ final class PageTranslator {
             guard let from = PageTranslator.detect(sample, hint: await hint) else {
                 throw Failure("Search couldn't tell which language this page is in")
             }
+            // A page call comes back even after end() cancelled the run, and
+            // end() is the only way a translator loses its tab: from here a
+            // run that's been let go of writes nothing.
+            try Task.checkCancellation()
             source = from
             report["source"] = PageTranslator.code(from)
             tab.translation = TranslationMark(from: PageTranslator.code(from), to: PageTranslator.code(target), phase: .working)
@@ -203,6 +207,7 @@ final class PageTranslator {
             for frame in tab.translateFrames {
                 try await frameRound(frame)
             }
+            try Task.checkCancellation()
             report["fullMs"] = ms()
             if (report["applied"] as? Int ?? 0) == 0, PageTranslator.same(from, target) {
                 throw Failure("This page is already in \(PageTranslator.name(PageTranslator.code(target)))")
@@ -487,6 +492,7 @@ final class PageTranslator {
         }
         guard #available(macOS 15, *) else { throw Failure("Translate Page needs macOS 15 or later") }
         let status = await LanguageAvailability().status(from: from, to: target)
+        try Task.checkCancellation()
         if main { report["availability"] = "\(status)" }
         switch status {
         case .unsupported:
@@ -505,6 +511,10 @@ final class PageTranslator {
         }
         guard let content = web?.window?.contentView else { throw Failure("Translate Page needs the tab in a window") }
         let lease = try await SessionLease.open(from: from, to: target, in: content)
+        guard !Task.isCancelled else {
+            lease.close()
+            throw CancellationError()
+        }
         leases.append(lease)
         let session: TranslationSession = lease.session
         return { strings in try await PageTranslator.translate(strings, with: session) }
