@@ -194,6 +194,8 @@ struct SiteCard: View {
 
     /// One step in: the connection, said in full.
     @State private var deeper: Bool
+    @State private var showingPermissions = false
+    @ObservedObject private var notifications = SiteNotifications.shared
     /// Whether this Mac trusts the site's certificate. Unknown until it has
     /// been asked, off the main thread: asking can go to the network.
     @State private var certified: Bool?
@@ -208,7 +210,9 @@ struct SiteCard: View {
 
     var body: some View {
         Group {
-            if deeper, let safety {
+            if showingPermissions {
+                permissions
+            } else if deeper, let safety {
                 security(safety)
             } else {
                 front
@@ -247,6 +251,9 @@ struct SiteCard: View {
             Row("Print…", keys: "⌘P") { after { browser.printPage() } }
             zoom
             blocker
+            if let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+                Row("Site Permissions", submenu: true) { showingPermissions = true }
+            }
             sound
             grounded
             darken
@@ -265,6 +272,52 @@ struct SiteCard: View {
                 .padding(.trailing, MenuMetrics.trailing)
                 .frame(height: MenuMetrics.row)
                 .help(tab.shy ? "Only in this private tab, until it closes. Uses more memory." : "Prevents sleep and automatic closure, even when memory is low. You can still close the tab.")
+            }
+        }
+    }
+
+    @ViewBuilder private var permissions: some View {
+        if let url = tab.pageAddress, let scheme = url.scheme, let host = url.host() {
+            let origin = Browser.origin(scheme, host, url.port ?? 0)
+            VStack(alignment: .leading, spacing: 0) {
+                Header(title: origin)
+                if tab.shy {
+                    Text("Permissions aren't saved in a private tab.")
+                        .font(.system(size: 11)).foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .padding(.horizontal, MenuMetrics.text).padding(.vertical, 8)
+                } else {
+                    ForEach([CaptureChoices.Kind.camera, .microphone, .location, .notifications]) { kind in
+                        HStack {
+                            Text(kind.title).font(MenuMetrics.font)
+                            Spacer(minLength: 24)
+                            Menu {
+                                Button("Ask") { browser.setSitePermission(nil, kind: kind, origin: origin) }
+                                Button("Allow") { browser.setSitePermission(true, kind: kind, origin: origin) }
+                                    .disabled(kind == .notifications && !prefs.siteNotifications)
+                                Button("Refuse") { browser.setSitePermission(false, kind: kind, origin: origin) }
+                            } label: {
+                                Text(CaptureChoices.choice(kind, origin: origin).title)
+                                    .font(MenuMetrics.font)
+                            }
+                            .accessibilityLabel("\(kind.title): \(CaptureChoices.choice(kind, origin: origin).title)")
+                            .menuStyle(.borderlessButton).fixedSize()
+                        }.padding(.horizontal, MenuMetrics.text).frame(height: MenuMetrics.row)
+                    }
+                    if !prefs.siteNotifications {
+                        Text("Notifications are off in Settings › Privacy.")
+                            .font(.system(size: 11)).foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                            .frame(width: 230, alignment: .leading)
+                            .padding(.horizontal, MenuMetrics.text).padding(.vertical, 6)
+                    }
+                    if [CaptureChoices.Kind.camera, .microphone, .location, .notifications].contains(where: { CaptureChoices.choice($0, origin: origin) == .different }) {
+                        Text("Saved two ways for this site. Pick one to keep.")
+                            .font(.system(size: 11)).foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                            .frame(width: 230, alignment: .leading)
+                            .padding(.horizontal, MenuMetrics.text).padding(.vertical, 6)
+                    }
+                }
+                Separator()
+                Row("Back") { showingPermissions = false }
             }
         }
     }

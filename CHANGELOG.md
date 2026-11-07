@@ -121,6 +121,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- The site card has Site Permissions: see and change what a site may use — camera, microphone, location and notifications — each Ask, Allow or Refuse. Camera and microphone are kept apart, and refusing one stops it in that site's tabs at once. Thanks [@2470046](https://github.com/2470046) ([#940](https://github.com/driceroland/Search/pull/940))
+
 - Verification codes from Apple's Passwords app come up under the box that asks for one. With Apple Passwords on in Settings › Passwords, pick an account and the code goes into the box, after Touch ID if macOS asks; nothing is filled on its own and Search keeps no code. Only on https pages, never in a private tab. Thanks [@Tom-Boscher](https://github.com/Tom-Boscher) ([#855](https://github.com/driceroland/Search/pull/855))
 
 - A second engine one key away: with Settings › Browsing › Shift-Return searches with set, Shift-Return in the address field sends what you typed there, while Return keeps your default. Off unless an engine is picked. Thanks [@aminezar](https://github.com/aminezar) ([#856](https://github.com/driceroland/Search/pull/856))
