@@ -67,8 +67,16 @@ final class Browser: NSObject, ObservableObject {
                 DispatchQueue.main.async { held.forEach { $0.present() } }
             }
             guard oldValue != activeID else { return }
-            // Going to another tab ends a page's run of links (see placeForLink).
-            linkRun = nil
+            // Going to another tab ends a page's run of links (see
+            // placeForLink) — but with links opened in front beside their
+            // page, not going between the page and the tabs it opened: each
+            // of them is in front as it opens, and you go back to the page
+            // for the next.
+            if !(frontLinksBeside && linkRun.map({ run in
+                [oldValue, activeID].allSatisfy { $0 == run.opener || $0.map(run.opened.contains) == true }
+            }) == true) {
+                linkRun = nil
+            }
             if displayTab?.id == oldValue { cancelDisplay() }
             clearTabSelection()
             // What was found belongs to the page just left; the words typed
@@ -335,7 +343,13 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var launching = false
     /// The page links were last opened behind from, and the last of them:
     /// the next one from that page goes after it (see placeForLink).
-    private struct LinkRun { let opener: Tab.ID; let last: Tab.ID }
+    private struct LinkRun {
+        let opener: Tab.ID
+        let last: Tab.ID
+        /// Every tab of the run, for going between them and the page
+        /// without ending it (see frontLinksBeside).
+        var opened: Set<Tab.ID> = []
+    }
     private var linkRun: LinkRun?
     /// The run as it was when a page's script opened a tab in front, for the
     /// ⌘-click that tab turns out to be (see openClicked).
@@ -4887,7 +4901,7 @@ final class Browser: NSObject, ObservableObject {
         // are on: turned off, they sleep, and nothing new goes into one.
         if prefs.usesTabGroups, let source, !tab.shy, !tab.bench { tab.groupID = source.groupID }
         tabs.insert(tab, at: atEnd ? tabs.count : link ? placeForLink(from: source) : placeForNew())
-        if link, !atEnd, !foreground { noteLink(tab, from: source) }
+        if link, !atEnd, !foreground || frontLinksBeside { noteLink(tab, from: source) }
         if mayWait, !foreground, prefs.lazyTabs, page == nil {
             tab.restore(url: url, title: "")
         } else {
@@ -5360,8 +5374,14 @@ final class Browser: NSObject, ObservableObject {
         guard let source = source.flatMap({ source in tabs.first { $0.id == source.id } }) ?? active,
               let here = tabs.firstIndex(where: { $0.id == source.id }) else { return placeForNew() }
         var anchor = here
+        // With links opened in front beside their page, the last of the run
+        // still in the row: one of them closed on the way back to the page
+        // shouldn't send the next one in front of the others.
+        let lastOfRun = linkRun.flatMap { run in
+            frontLinksBeside ? tabs.lastIndex { run.opened.contains($0.id) } : tabs.firstIndex { $0.id == run.last }
+        }
         if let run = linkRun, run.opener == source.id,
-           let last = tabs.firstIndex(where: { $0.id == run.last }), last > here,
+           let last = lastOfRun, last > here,
            tabs[last].groupID == source.groupID {
             anchor = last
         }
@@ -5372,8 +5392,14 @@ final class Browser: NSObject, ObservableObject {
     /// A link just opened behind `source`: the next one goes after it.
     private func noteLink(_ tab: Tab, from source: Tab?) {
         guard let source, tabs.contains(where: { $0.id == source.id }) else { return }
-        linkRun = LinkRun(opener: source.id, last: tab.id)
+        let earlier = linkRun.flatMap { $0.opener == source.id ? $0.opened : nil } ?? []
+        linkRun = LinkRun(opener: source.id, last: tab.id, opened: earlier.union([tab.id]))
     }
+
+    /// Settings › Tabs › Links opened in front go beside their page, which
+    /// counts only with After current: Top and Bottom are for pages opened
+    /// in front (see placeForLink).
+    var frontLinksBeside: Bool { prefs.frontLinksBeside && prefs.newTabPlace == .next }
 
     private func placeBlank(_ tab: Tab) {
         guard let from = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
@@ -6847,6 +6873,17 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             // site's own pop-up window, whose tab opens in another window,
             // leaves it behind.
             if beside, destination === self { pair(tab, with: opener, onLeft: false) }
+        } else if clicked, destination === self, frontLinksBeside {
+            // Settings › Tabs › Links opened in front go beside their page:
+            // where a ⌘-click's goes, after the ones the page already opened,
+            // in click order, its group and its pair kept. A window the page
+            // opens with no click goes to the end, as before.
+            if let run = linkRun { runBeforeScript = (tab.id, run) }
+            if prefs.usesTabGroups, !tab.shy, !tab.bench { tab.groupID = opener.groupID }
+            tabs.insert(tab, at: placeForLink(from: opener))
+            noteLink(tab, from: opener)
+            activeID = tab.id
+            editing = false
         } else {
             destination.tabs.insert(tab, at: destination.placeForFront())
             if clicked, let run = destination.linkRun { destination.runBeforeScript = (tab.id, run) }
@@ -6877,11 +6914,17 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             // the ⌘-click's, so it goes where the ⌘-click's would have.
             if let source, tabs.contains(where: { $0.id == source.id }), source.id != tab.id,
                split(for: tab) == nil, let at = tabs.firstIndex(where: { $0.id == tab.id }) {
-                if !foreground, run?.opener == source.id { linkRun = run }
+                if frontLinksBeside {
+                    // It already went beside the page as a click's, and
+                    // counted in the run: the run as it was before it.
+                    linkRun = run?.opener == source.id ? run : nil
+                } else if !foreground, run?.opener == source.id {
+                    linkRun = run
+                }
                 tabs.remove(at: at)
                 if prefs.usesTabGroups, !tab.shy, !tab.bench { tab.groupID = source.groupID }
                 tabs.insert(tab, at: placeForLink(from: source))
-                if !foreground { noteLink(tab, from: source) }
+                if !foreground || frontLinksBeside { noteLink(tab, from: source) }
             }
             return
         }

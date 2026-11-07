@@ -257,6 +257,12 @@ final class Preferences: ObservableObject {
     @Published var newTabPlace: NewTabPlace {
         didSet { store.set(newTabPlace.rawValue, forKey: "tabs.newPlace") }
     }
+    /// With After current, a page a link opens in front goes right after
+    /// the page it came from, as a ⌘-click's does, rather than to the end
+    /// of the row (see Browser.frontLinksBeside). Off unless asked for.
+    @Published var frontLinksBeside: Bool {
+        didSet { store.set(frontLinksBeside, forKey: "tabs.frontBeside") }
+    }
     /// Each launch starts with a fresh window: the pins stay, last time's
     /// other tabs don't come back (see Session.startFresh). Off unless
     /// asked for (#406).
@@ -706,6 +712,7 @@ final class Preferences: ObservableObject {
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
+        frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
         confirmsQuit = store.bool(forKey: Preferences.confirmQuitKey)
