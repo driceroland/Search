@@ -337,7 +337,11 @@ extension Browser {
             return visible.contains { $0 == floating || $0 == pictured }
         } ?? false
         if !returningVideo { leavingSpace() }
-        writeSession(now: true)
+        // In the background: Disk keeps the writes in order, a read of the
+        // row waits for its write (Session.read), and quitting writes the
+        // row on screen at once. Written here on the main thread, it was
+        // half of what a switch spent (2 ms of 4.3, forty tabs).
+        writeSession()
         for tab in tabs where visibleTabIDs.contains(tab.id) { tab.touch() }
 
         // The row on screen is parked as it is, sound and all: music or a

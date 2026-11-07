@@ -58,6 +58,10 @@ final class Favicons {
     private static let backoff: TimeInterval = 60
     /// Icons with no file on disk, as far as `known` has looked.
     private var absent: Set<String> = []
+    /// When each icon on disk was kept, asked of the disk once a session and
+    /// then remembered, rather than on every page loaded; `distantPast` for
+    /// none there.
+    private static var stamps: [String: Date] = [:]
 
     /// More pages than this and the ones seen longest ago are forgotten.
     private static let most = 4000
@@ -80,6 +84,7 @@ final class Favicons {
         failed.removeAll()
         unreachable.removeAll()
         absent.removeAll()
+        Favicons.stamps.removeAll()
         if #available(macOS 15.4, *) { ExtensionShims.forgetIcons() }
     }
 
@@ -185,7 +190,9 @@ final class Favicons {
         saving = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
             saving = false
-            let gone = prune().map(Favicons.file)
+            let pruned = prune()
+            for ident in pruned { Favicons.stamps[ident] = nil }
+            let gone = pruned.map(Favicons.file)
             guard let data = try? JSONEncoder().encode(pages) else { return }
             let folder = Favicons.folder, index = Favicons.index
             Favicons.disk.async {
@@ -298,8 +305,12 @@ final class Favicons {
     }
 
     private static func fresh(_ ident: String) -> Bool {
-        guard let stamp = try? file(ident).resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        else { return false }
+        let stamp = stamps[ident] ?? {
+            let found = (try? file(ident).resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            stamps[ident] = found
+            return found
+        }()
         return Date().timeIntervalSince(stamp) < 7 * 86_400
     }
 
@@ -378,14 +389,28 @@ final class Favicons {
         return .any
     }
 
+    /// One session for every icon fetched, and one more for private tabs',
+    /// so nothing of a private tab's fetch rides on an ordinary one's
+    /// connection. Neither carries a cookie, a credential or a cached answer
+    /// from one fetch to the next, as no session made afresh for each did.
+    /// Made for each, those were never let go, and every fetch's connection
+    /// started from nothing.
+    private static let sessions: (open: URLSession, shy: URLSession) = (session(), session())
+
+    private static func session() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 8
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.urlCredentialStorage = nil
+        config.urlCache = nil
+        return URLSession(configuration: config)
+    }
+
     private func download(_ candidates: [URL], site: String, page: String, dark: Bool, shy: Bool, again: Bool = true) async {
         let busyKey = site + page
         defer { busy.remove(busyKey) }
-        let session = URLSession(configuration: {
-            let config = URLSessionConfiguration.ephemeral
-            config.timeoutIntervalForRequest = 8
-            return config
-        }())
+        let session = shy ? Favicons.sessions.shy : Favicons.sessions.open
         var unanswered: [URL] = []
         var asked = false
         for candidate in candidates where !failed.contains(candidate) {
@@ -519,6 +544,7 @@ final class Favicons {
     }
 
     private static func keep(_ image: NSImage, for ident: String) {
+        stamps[ident] = Date()
         guard let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff),
               let png = rep.representation(using: .png, properties: [:])

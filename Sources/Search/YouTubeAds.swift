@@ -58,12 +58,19 @@ enum YouTubeAds {
     /// frame's host, without www): none while Shield is off or paused there.
     @MainActor
     static func scripts(for site: String?) -> [WKUserScript] {
+        parts(for: site).map {
+            WKUserScript(source: $0.source, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: $0.world)
+        }
+    }
+
+    /// What `scripts` makes, before it is made: every frame, before the
+    /// document. Tab.arm compares these with the last page's, which a made
+    /// script can't be, since it doesn't say which world it is for.
+    @MainActor
+    static func parts(for site: String?) -> [(source: String, world: WKContentWorld)] {
         guard Shield.shared.enabled, !Shield.shared.isPaused(on: site) else { return [] }
         let hosts = hostsThisRun
-        return [
-            WKUserScript(source: page(hosts: hosts), injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page),
-            WKUserScript(source: skipper(hosts: hosts), injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world),
-        ]
+        return [(page(hosts: hosts), .page), (skipper(hosts: hosts), Web.world)]
     }
 
     static func hostList(_ hosts: [String]) -> String {

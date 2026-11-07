@@ -184,6 +184,7 @@ Not in this version, kept on main for a later one:
 
 ### Fixed
 
+- Search does less work while pages load and sit idle: downloads measure progress less often, extension popups resize when their content changes, and repeated saves, session writes, icon fetches and page scripts avoid work they do not need. Split-page and peek shadows use their outlines; idle animations use fewer frames.
 - Saved accounts are offered only in real sign-in fields, as in Safari and Chrome: a password box, a name box beside one, or the name step of a sign-in that asks for it first (Google, Microsoft, Okta, impots.gouv.fr) when the field says it takes a name, email or phone and the page looks like a sign-in. A project's name in the Google Cloud console, a repository's name, a message box, an email's To field, a search box, a newsletter or a checkout's email no longer show the list, and accounts from the site's other addresses (accounts.google.com on console.cloud.google.com) come only in a real sign-in field ([#631](https://github.com/driceroland/Search/issues/631))
 - Closing the last tab that isn't in a group or pinned leaves an empty tab, as Arc does, instead of taking you to a page out of one of your tab groups and opening that group. ⌘T then gave the floating field over that page rather than a new tab. An empty tab closed there stays, and so does the window
 - Escape in a new tab clears what you typed first, the tab staying, and a second Escape closes the tab you didn't use, as in Arc. With a word typed, Escape did nothing

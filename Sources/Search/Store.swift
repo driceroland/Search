@@ -195,6 +195,8 @@ enum Disk {
     /// The newest write asked for, by file.
     nonisolated(unsafe) private static var newest: [URL: Int] = [:]
     nonisolated(unsafe) private static var count = 0
+    /// Writes still on the queue, by file.
+    nonisolated(unsafe) private static var queued: [URL: Int] = [:]
 
     /// `encode` runs where the write does. `now` writes on the calling
     /// thread: quitting doesn't wait for a queue.
@@ -203,17 +205,46 @@ enum Disk {
         count += 1
         let turn = count
         newest[file] = turn
+        if !now { queued[file, default: 0] += 1 }
         lock.unlock()
         let put: @Sendable () -> Void = {
+            // Overtaken before it began: no use encoding what won't be
+            // written. A session saved twice in quick succession was encoded
+            // twice, the first time for nothing.
+            lock.lock()
+            let overtaken = newest[file] != turn
+            lock.unlock()
+            if overtaken { return }
             guard let data = encode() else { return }
             lock.lock()
             defer { lock.unlock() }
-            // Overtaken: something newer of this file was asked for since.
+            // Overtaken while it was encoded: something newer of this file
+            // was asked for since.
             guard newest[file] == turn else { return }
             try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: file, options: .atomic)
         }
-        if now { put() } else { queue.async(execute: put) }
+        if now {
+            put()
+        } else {
+            queue.async {
+                put()
+                lock.lock()
+                queued[file, default: 1] -= 1
+                if queued[file] == 0 { queued[file] = nil }
+                lock.unlock()
+            }
+        }
+    }
+
+    /// A file about to be read: the writes of it still on the queue land
+    /// first, so what is read is what was last written. Nothing to wait
+    /// for, and it returns at once. Never from the queue itself.
+    static func settle(_ file: URL) {
+        lock.lock()
+        let waiting = queued[file] != nil
+        lock.unlock()
+        if waiting { queue.sync {} }
     }
 
     /// The file gone, after any write of it already asked for — and none
