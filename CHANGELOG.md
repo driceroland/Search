@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A page's camera, microphone, location or notifications card goes away with its page: going to another tab, or the page going elsewhere or closing, refuses it, as the screen-sharing card already did. It stayed up over the next tab, and Allow gave the page you had left what it asked for. A screen-sharing question waiting for a tab behind no longer refuses every other page's camera, location and notifications until you go to that tab. Thanks [@oddharsh](https://github.com/oddharsh) ([#954](https://github.com/driceroland/Search/pull/954))
+
 - A sign-in the page sends from its own script is offered a place in the keychain too: a "Sign in" link that posts the form, a box styled as a button, or a page that sends itself after a moment. Still only once the next page shows it worked. Thanks [@oddharsh](https://github.com/oddharsh) ([#705](https://github.com/driceroland/Search/pull/705))
 
 - Translate Page left by going to another page before it had read the first one leaves nothing behind. The sign came back saying the page was still being translated, with nothing translating it, and stayed until the next page; if the language still had to be downloaded, the download sheet could come up over the page you went to. Thanks [@oddharsh](https://github.com/oddharsh) ([#953](https://github.com/driceroland/Search/pull/953))

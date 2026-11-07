@@ -85,6 +85,7 @@ final class Browser: NSObject, ObservableObject {
                 linkRun = nil
             }
             if displayTab?.id == oldValue { cancelDisplay() }
+            if decideTab?.id == oldValue { settleCapture() }
             clearTabSelection()
             // What was found belongs to the page just left; the words typed
             // go on to be looked for on this one.
@@ -1566,12 +1567,19 @@ final class Browser: NSObject, ObservableObject {
 
     @Published private(set) var asking: CaptureAsk?
     private var decide: ((WKPermissionDecision) -> Void)?
+    /// The tab whose card `decide` answers. Leaving it, or it going away,
+    /// refuses the card, as the screen's does: Allow must never reach a page
+    /// you are no longer looking at.
+    private weak var decideTab: Tab?
     /// WebKit's screen-sharing answers: deny (0), screen (1), window (2).
     private var decideDisplay: ((Int) -> Void)?
     private weak var displayTab: Tab?
     private var displayHeld: HeldQuestion?
     private var displayRequest: UUID?
-    private var permissionBusy: Bool { decide != nil || decideDisplay != nil }
+    /// A card on screen. A screen question held for a tab behind has no card
+    /// yet, so it keeps out only another screen question, not the camera,
+    /// location or notifications on the tab you are on.
+    private var permissionBusy: Bool { decide != nil || asking?.screen == true }
     private(set) static var displayAnswered: Int?
     private var askedAbout = ""
 
@@ -1589,7 +1597,10 @@ final class Browser: NSObject, ObservableObject {
         finishDisplay(decision)
     }
 
+    /// A page going away, or going elsewhere: its screen question is refused,
+    /// and so is its camera, location or notifications card.
     func cancelDisplay(for webView: WKWebView? = nil) {
+        if let webView, decideTab?.built === webView { settleCapture() }
         guard webView == nil || displayTab?.built === webView else { return }
         finishDisplay(0)
     }
@@ -1613,8 +1624,13 @@ final class Browser: NSObject, ObservableObject {
     /// the screen's included.
     func cancelCapture() {
         cancelDisplay()
+        settleCapture()
+    }
+
+    private func settleCapture() {
         let pending = decide
         decide = nil
+        decideTab = nil
         askedAbout = ""
         asking = nil
         pending?(.deny)
@@ -1625,6 +1641,7 @@ final class Browser: NSObject, ObservableObject {
         // Remembered per site, so a call you take every week asks once.
         if keep, !askedAbout.isEmpty { Store.settings.set(decision == .grant, forKey: "capture." + askedAbout) }
         self.decide = nil
+        decideTab = nil
         askedAbout = ""
         self.asking = nil
         decide(decision)
@@ -7306,6 +7323,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             // still waiting is refused rather than queued behind it.
             guard !permissionBusy else { return decisionHandler(.deny) }
             decide = decisionHandler
+            decideTab = tab(for: webView)
             askedAbout = shy ? "" : key
             asking = CaptureAsk(host: host, wants: Browser.name(for: type))
         }, drop: { decisionHandler(.deny) })
@@ -7316,7 +7334,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     @objc(_webView:requestDisplayCapturePermissionForOrigin:initiatedByFrame:withSystemAudio:decisionHandler:)
     func askedToShareScreen(_ webView: WKWebView, origin: WKSecurityOrigin, frame: WKFrameInfo,
                             systemAudio: Bool, decisionHandler: @escaping (Int) -> Void) {
-        guard !permissionBusy, let tab = (tabs + parkedTabs).first(where: { $0.built === webView })
+        guard decideDisplay == nil, decide == nil, let tab = (tabs + parkedTabs).first(where: { $0.built === webView })
         else { return decisionHandler(0) }
         let request = UUID()
         displayRequest = request
@@ -7328,7 +7346,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // Recheck ownership when a background tab's question is shown.
         displayHeld = ask(from: webView, show: { [weak self, weak webView] in
             guard let self, displayRequest == request else { return }
-            guard let webView, activeID == tab.id, tab.built === webView else { return cancelDisplay() }
+            guard let webView, activeID == tab.id, tab.built === webView, decide == nil else { return cancelDisplay() }
             asking = CaptureAsk(host: named, wants: "screen", screen: true, sound: systemAudio)
         }, drop: { [weak self] in
             guard let self, displayRequest == request else { return }
@@ -7386,6 +7404,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // One question at a time, as for the camera.
         guard !permissionBusy else { return give(.deny) }
         decide = give
+        decideTab = tab
         askedAbout = tab.shy ? "" : key
         let named = Browser.extensionScheme(origin.protocol) ? Browser.extensionName(origin.host) : origin.host
         asking = CaptureAsk(host: named, wants: "location", once: true, keeps: !tab.shy)
@@ -7412,6 +7431,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
                 decisionHandler(decision == .grant)
                 SiteNotifications.shared.objectWillChange.send()
             }
+            decideTab = tab
             askedAbout = "\(site)|notifications"
             asking = CaptureAsk(host: origin.host, wants: "notifications")
         }, drop: { decisionHandler(false) })
