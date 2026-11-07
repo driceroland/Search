@@ -2347,6 +2347,10 @@ final class Browser: NSObject, ObservableObject {
     /// The merged window it is one of, with profiles in one window: the
     /// windows of different profiles that take turns in one place.
     var mergeID: UUID?
+    /// Its window closed for good, with others open (see closeAll): it
+    /// writes nothing from here on. A write still waiting (rememberSession)
+    /// found its row empty, and told every other window it had no pins.
+    private(set) var retired = false
     /// Its window is there to be seen — on screen, or behind a hidden app.
     /// Not one tucked behind another profile's.
     var isOpen: Bool { window != nil && !shut && !tucked }
@@ -2843,7 +2847,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func writeSession(now: Bool = false) {
-        guard !isPopup else { return }
+        guard !isPopup, !retired else { return }
         // The pins as they are here, for the other windows (see Pins.swift):
         // the space's own, and the ones every space shows (only from a row
         // that holds them: see Pins.sharedToWrite).
@@ -2914,7 +2918,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// Another window changed a space's pins: this window's row there follows.
     func pinsChanged(in space: UUID) {
-        guard !isPopup else { return }
+        guard !isPopup, !retired else { return }
         if space == spaceID {
             // Drawn again even when only a pin's letter or name changed.
             objectWillChange.send()
@@ -3315,6 +3319,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// Its window closed for good, with others open: every page let go.
     func closeAll() {
+        retired = true
         cancelDisplay()
         cancelCapture()
         for questions in heldDialogs.values { questions.forEach { $0.dismiss() } }
