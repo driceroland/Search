@@ -118,6 +118,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- With links from other apps opening in a small window, a link to a page already open can go to its tab instead (Settings › Browsing › Links › Go to a tab that has the page, off unless turned on). Thanks [@Comradevergreen](https://github.com/Comradevergreen) ([#798](https://github.com/driceroland/Search/pull/798))
+
 - Choose a page translation language in Settings › Browsing › Pages, independently of the Mac's language. System Default keeps the previous behavior; automatically translated pages use the same choice ([#747](https://github.com/driceroland/Search/issues/747)). Thanks [@2470046](https://github.com/2470046) ([#821](https://github.com/driceroland/Search/pull/821))
 
 - A video in full screen no longer takes its window with it, if you ask: with Settings › Browsing › Keep the window in use during full screen on, the window on its own desktop keeps its tabs and the folded column while the video plays on, and you can browse in other tabs. Esc over the video lands it back in its tab. Off unless turned on. Thanks [@pasteley](https://github.com/pasteley) ([#980](https://github.com/driceroland/Search/pull/980))

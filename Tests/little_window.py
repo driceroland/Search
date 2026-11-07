@@ -125,6 +125,33 @@ try:
     t.ok("a plain launch after: all three windows, their pages", len(st["windows"]) == 3
          and any(f"{sv.BASE}/two" in w["tabs"] for w in st["windows"])
          and any(f"{sv.BASE}/three" in w["tabs"] for w in st["windows"]), st["windows"])
+
+    # Go to a tab that has the page: off, a link to a page open in a tab
+    # still gets a small window of its own.
+    def tabs(): return sv.cmd({"do": "tabs"})["tabs"]
+    def active(): return next((x["url"] for x in tabs() if x["active"]), "")
+    opened = f"{sv.BASE}/open"
+    sv.setup(**{"links.little": True}); sv.launch()
+    sv.cmd({"do": "open", "url": opened}); time.sleep(1.5)
+    windows(action="link", url=opened); time.sleep(0.5)
+    t.ok("off: a link to an open page gets a small window", little("look")["littles"] == [opened], little("look"))
+
+    # On: that link goes to its tab, and a page open nowhere still gets a
+    # small window, which the same link again brings forward.
+    sv.setup(**{"links.little": True, "links.little.tabs": True}); sv.launch()
+    sv.cmd({"do": "open", "url": opened}); time.sleep(1.5)
+    t.ok("the page opens behind", active() != opened, tabs())
+    windows(action="link", url=opened); time.sleep(0.5)
+    st = little("look")
+    t.ok("on: a link to an open page goes to its tab", active() == opened, tabs())
+    t.ok("with no small window", st["littles"] == [], st["littles"])
+    elsewhere = f"{sv.BASE}/elsewhere"
+    windows(action="link", url=elsewhere); time.sleep(1.5)
+    t.ok("a page open nowhere still gets a small window", little("look")["littles"] == [elsewhere], little("look"))
+    windows(action="link", url=elsewhere); time.sleep(0.5)
+    st = little("look")
+    t.ok("the same link again brings that small window, not a second",
+         st["littles"] == [elsewhere] and st["fronted"] == elsewhere, st)
 finally:
     subprocess.run(["pbcopy"], input=saved)
     t.done(); sv.finish()
