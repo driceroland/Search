@@ -166,6 +166,11 @@ final class Preferences: ObservableObject {
     /// The column's width as drawn: fixed with icons only, pulled by its
     /// edge otherwise (the width pulled is kept for when titles come back).
     var columnWidth: CGFloat { iconColumn ? Metrics.iconColumn : sideWidth }
+    /// A tab playing sound out of sight shows at the foot of the sidebar,
+    /// with its pause (see Player.swift). Off unless asked for.
+    @Published var showsPlayer: Bool {
+        didSet { store.set(showsPlayer, forKey: "sidebar.player") }
+    }
     /// One tab's line in the column, and the size its title is set in.
     var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 28 }
     var sideTitle: CGFloat { roomyTabs ? 14 : 12.5 }
@@ -256,6 +261,12 @@ final class Preferences: ObservableObject {
     /// Where a new tab goes in the row. Next unless asked for.
     @Published var newTabPlace: NewTabPlace {
         didSet { store.set(newTabPlace.rawValue, forKey: "tabs.newPlace") }
+    }
+    /// With After current, a page a link opens in front goes right after
+    /// the page it came from, as a ⌘-click's does, rather than to the end
+    /// of the row (see Browser.frontLinksBeside). Off unless asked for.
+    @Published var frontLinksBeside: Bool {
+        didSet { store.set(frontLinksBeside, forKey: "tabs.frontBeside") }
     }
     /// Each launch starts with a fresh window: the pins stay, last time's
     /// other tabs don't come back (see Session.startFresh). Off unless
@@ -411,9 +422,10 @@ final class Preferences: ObservableObject {
             FrameRate.mode = fastPages
         }
     }
-    /// Springs become a short ease-out in Low Power Mode (see Motion.light).
-    /// Off unless turned on, and even then nothing changes until the Mac is
-    /// asked to save power.
+    /// Springs become a short ease-out in Low Power Mode (see Motion.light),
+    /// and idle tabs sleep after Sooner's ten minutes at most (see
+    /// Motion.savingPower). Off unless turned on, and even then nothing
+    /// changes until the Mac is asked to save power.
     @Published var lightMotion: Bool {
         didSet { store.set(lightMotion, forKey: Motion.lightKey) }
     }
@@ -505,6 +517,10 @@ final class Preferences: ObservableObject {
     /// adds a command, so there is no switch. Still a property, for the
     /// code that asks and the tests that turn it off; never written.
     @Published var translatesPages = true
+    /// Empty follows the Mac's preferred language.
+    @Published var translateTarget: String {
+        didSet { store.set(translateTarget, forKey: "translate.target") }
+    }
     /// The languages whose pages are translated as they open, chosen from
     /// the translated sign's menu (never from a private tab). None at first.
     @Published var translateAlways: Set<String> {
@@ -539,6 +555,13 @@ final class Preferences: ObservableObject {
     /// Safari.
     @Published var escapeTwice: Bool {
         didSet { store.set(escapeTwice, forKey: "fullscreen.escapeTwice") }
+    }
+    /// The window stays whole and in use on its own desktop while a page
+    /// fills the screen on another, its other tabs in reach (see
+    /// Browser.fillsHere). Off unless asked for: the window steps aside
+    /// behind the video, as in Safari.
+    @Published var keepsWindow: Bool {
+        didSet { store.set(keepsWindow, forKey: "fullscreen.keepsWindow") }
     }
     /// A newer build is fetched, checked and put in place on its own, as it
     /// always was. Off, Search still looks every hour and says so, and waits
@@ -659,6 +682,11 @@ final class Preferences: ObservableObject {
     @Published var floatingNewTab: Bool {
         didSet { store.set(floatingNewTab, forKey: "newtab.floating") }
     }
+    /// The floating field lists the last few places from History before
+    /// anything is typed (Browser.recentPlaces). Off unless asked for.
+    @Published var recentInNewTab: Bool {
+        didSet { store.set(recentInNewTab, forKey: "newtab.recent") }
+    }
 
     init() {
         navigationLeft = store.bool(forKey: "toolbar.left")
@@ -688,6 +716,7 @@ final class Preferences: ObservableObject {
         sideHides = store.bool(forKey: "sidebar.hides")
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         sideIcons = store.bool(forKey: "sidebar.icons")
+        showsPlayer = store.bool(forKey: "sidebar.player")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
@@ -706,6 +735,7 @@ final class Preferences: ObservableObject {
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
+        frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
         confirmsQuit = store.bool(forKey: Preferences.confirmQuitKey)
@@ -742,12 +772,15 @@ final class Preferences: ObservableObject {
         passkeysPossible = entitled
         let settledFor = store.object(forKey: "passkeys.for") as? Bool
             ?? (entitled && store.bool(forKey: "passkeys.entitled") ? true : nil)
+        let offers: Bool
         if settledFor != entitled {
-            passkeys = entitled
+            offers = entitled
             store.set(entitled, forKey: "passkeys")
         } else {
-            passkeys = store.object(forKey: "passkeys") as? Bool ?? entitled
+            offers = store.object(forKey: "passkeys") as? Bool ?? entitled
         }
+        passkeys = offers
+        FormRelay.passkeysOffered = offers
         store.set(entitled, forKey: "passkeys.for")
         store.set(entitled, forKey: "passkeys.entitled")
         // A test run downloads into its own folder: ~/Downloads would have
@@ -782,6 +815,7 @@ final class Preferences: ObservableObject {
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
         commandBar = store.bool(forKey: "commandbar")
         floatingNewTab = store.bool(forKey: "newtab.floating")
+        recentInNewTab = store.bool(forKey: "newtab.recent")
         // On for everyone who never touched it (24 Oct 2026).
         let history = store.object(forKey: "swipe.history") as? Bool ?? true
         holdsHistory = history
@@ -796,7 +830,9 @@ final class Preferences: ObservableObject {
         panelSite = store.string(forKey: "panel.site") ?? ""
         floatStyle = store.string(forKey: "float.style").flatMap(FloatStyle.init(rawValue:)) ?? .search
         escapeTwice = store.bool(forKey: "fullscreen.escapeTwice")
+        keepsWindow = store.bool(forKey: "fullscreen.keepsWindow")
         waitsForPlay = store.bool(forKey: Preferences.waitsKey)
+        translateTarget = store.string(forKey: "translate.target") ?? ""
         translateAlways = Set(store.stringArray(forKey: PageTranslator.alwaysKey) ?? [])
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true

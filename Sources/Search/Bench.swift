@@ -518,6 +518,27 @@ final class Bench {
             if let cover = tab.cover { out["cover"] = NSStringFromSize(cover.size) }
             answer(out)
 
+        case "player":
+            // What plays in another tab, at the foot of the sidebar
+            // (Player.swift): the tab it is for, and whether it was paused
+            // from there. With "act", what its buttons do first — still,
+            // play or away — or "go", a click on it, which takes the window
+            // over: a test run only, as select is.
+            if let act = request["act"] as? String {
+                guard Store.testing else { answer(["error": "player's act only works on a --test run"]); return }
+                guard let tab = browser.player else { answer(["error": "nothing plays out of sight"]); return }
+                switch act {
+                case "still": tab.still()
+                case "play": tab.playAgain()
+                case "away": tab.stilled = false
+                case "go": browser.select(tab)
+                default: answer(["error": "act is still, play, away or go"]); return
+                }
+            }
+            let tab = browser.player
+            answer(["tab": tab.map { Bench.short($0) } ?? "", "stilled": tab?.stilled ?? false,
+                    "noisy": tab?.noisy ?? false, "sounding": browser.sounding.count])
+
         case "eval":
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             guard let js = request["js"] as? String else { answer(["error": "eval needs js"]); return }
@@ -1084,6 +1105,39 @@ final class Bench {
                 DispatchQueue.main.asyncAfter(deadline: .now() + interval) { walk(n + 1) }
             }
             walk(0)
+
+        case "foldtime":
+            // ⌘S, timed: each pass of the main run loop for the next 0.7 s,
+            // from waking to going back to sleep, with when it started after
+            // the press, the page's width at its end, and the rows built in
+            // it. The first pass is the press itself, whatever it costs
+            // before the slide can start. Test runs only.
+            guard Store.testing else { answer(["error": "foldtime is for test runs"]); return }
+            guard let web = browser.active?.built else { answer(["error": "foldtime needs a page on screen"]); return }
+            var passes: [[String: Any]] = []
+            var woke: CFAbsoluteTime = 0
+            var rows = 0
+            let pressed = CFAbsoluteTimeGetCurrent()
+            let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { _, _ in
+                woke = CFAbsoluteTimeGetCurrent()
+            }
+            let sleep = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
+                let now = CFAbsoluteTimeGetCurrent()
+                let start = woke > 0 ? woke : pressed
+                let built = Bench.bodies["row", default: 0]
+                passes.append(["at": ((start - pressed) * 1000).rounded(), "ms": ((now - start) * 10000).rounded() / 10,
+                               "page": Double(web.frame.width), "rows": built - rows])
+                rows = built
+                woke = 0
+            }
+            for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes) }
+            Bench.bodies = [:]
+            let before = Double(web.frame.width)
+            browser.toggleFold()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+                answer(["folded": browser.folded, "pageBefore": before, "passes": passes])
+            }
 
         case "bookmarksweep":
             // Bookmarks kept and then let go, one a frame, as the star or a
@@ -2019,7 +2073,7 @@ final class Bench {
                 tab.setAlwaysTranslates(code, action == "always")
                 answer(state())
             default:
-                let target = (request["lang"] as? String).map(Locale.Language.init(identifier:)) ?? PageTranslator.reader
+                let target = (request["lang"] as? String).map(Locale.Language.init(identifier:)) ?? PageTranslator.preferredTarget
                 if PageTranslator.start(tab, to: target, done: { report in
                     var reply = state()
                     reply["report"] = report
@@ -3752,6 +3806,8 @@ final class Bench {
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
                 "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }
@@ -4220,7 +4276,7 @@ final class Bench {
         let skip = Store.testing && (request["yes"] as? Bool ?? false)
         switch verb {
         case "extensions":
-            answer(["started": extensions.started, "busy": extensions.busy ?? "", "extensions": extensions.installed.map { item -> [String: Any] in
+            answer(["started": extensions.started, "busy": extensions.busy.sorted(), "extensions": extensions.installed.map { item -> [String: Any] in
                 let context = extensions.contexts[item.id]
                 let action = context.flatMap { $0.action(for: extensions.activeAdapter(for: $0)) }
                 return [
@@ -4384,6 +4440,7 @@ final class Bench {
             "asleep": tab.asleep,
             "shy": tab.shy,
             "noisy": tab.noisy,
+            "stilled": tab.stilled,
             "muted": tab.muted,
             // Darkened by Search, as the page last said, and what the page
             // was seen to be: dark by itself, light, or not looked at (see

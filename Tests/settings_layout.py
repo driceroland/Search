@@ -38,7 +38,7 @@ BEFORE = {
     "search.suggest": "suggestions", "search.keywords": "site shortcuts", "links.little": "small window",
     "reader.twins": "markdown", "reader.follows": "reading mode", "float.style": "picture in picture",
     "float.leave": "float", "float.away": "switch apps", "media.click": "autoplay",
-    "fullscreen.escapeTwice": "esc", "pageZoom": "zoom", "pages.120.mode": "120", "spaces": "spaces",
+    "fullscreen.escapeTwice": "esc", "fullscreen.keepsWindow": "desktop", "pageZoom": "zoom", "pages.120.mode": "120", "spaces": "spaces",
     "pins.home": "pins", "pins.peek": "pins", "pins.list": "pinned rows", "newtab.floating": "floating",
     "commandbar": "commands", "start.fresh": "fresh window", "passwords.save": "save passwords",
     "passwords.fill": "fill", "passkeys": "passkeys", "passwords.apple": "apple passwords",
@@ -83,7 +83,7 @@ def case_reachable(t):
     t.ok("results carry section and group", found and all(i["page"] and i["groupTitle"] for i in found), found)
     t.ok("…in Browsing › Video", any(i["page"] == "browsing" and i["groupTitle"] == "Video" for i in found))
     shown = [i for i in items if not i["findOnly"]]
-    t.ok("about fifty rows in the sections", 45 <= len(shown) <= 70, len(shown))
+    t.ok("about fifty rows in the sections", 45 <= len(shown) <= 75, len(shown))
     t.ok("ten sections", len(every["pages"]) == 10, every["pages"])
     # Old addresses land in the new sections.
     sv.cmd({"do": "ui", "show": "search://settings/shortcuts"}); time.sleep(0.6)

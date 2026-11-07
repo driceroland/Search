@@ -152,10 +152,11 @@ final class Bookmarks {
     /// a typo. Kept to
     /// two letters and more: one letter is in nearly every name, and the
     /// field finishes a single letter only towards a site you have been to.
-    func places(for typed: String, limit: Int) -> [Suggestion] {
+    /// Those found only through a typo come apart, in `slips`.
+    func places(for typed: String, limit: Int) -> (found: [Suggestion], slips: [Suggestion]) {
         let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
         let words = needle.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard needle.count >= 2, let first = words.first else { return [] }
+        guard needle.count >= 2, let first = words.first else { return ([], []) }
         let bare = History.stripped(needle)
         if sites == nil {
             sites = Bookmarks.sites(roots)
@@ -178,9 +179,10 @@ final class Bookmarks {
             best.insert((site, score), at: at)
             if best.count > limit { best.removeLast() }
         }
-        return best.map { found in
+        func suggestion(_ found: (site: Site, score: Int)) -> Suggestion {
             Suggestion(key: Address.editable(found.site.url), title: found.site.name, url: found.site.url, kind: .bookmark)
         }
+        return (best.filter { $0.score > 0 }.map(suggestion), best.filter { $0.score == 0 }.map(suggestion))
     }
 
     private static func sites(_ nodes: [Bookmark]) -> [Site] {

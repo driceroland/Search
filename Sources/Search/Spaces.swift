@@ -327,9 +327,17 @@ extension Browser {
     }
 
     func enter(_ id: UUID) {
-        guard id != spaceID, let to = spaces.firstIndex(where: { $0.id == id }) else { return }
+        guard let to = spaces.firstIndex(where: { $0.id == id }) else { return }
         // Which way the icon at the foot turns over: the way the spaces lie.
-        if !makingSpace { spaceStep = to > (spaces.firstIndex { $0.id == spaceID } ?? 0) ? 1 : -1 }
+        // The card for a new space lies past the last one.
+        let here = makingSpace ? spaces.count : (spaces.firstIndex { $0.id == spaceID } ?? 0)
+        if to != here { spaceStep = to > here ? 1 : -1 }
+        // Going to a space from the card puts it away, as Escape does.
+        if makingSpace {
+            cancelSpaceCreation()
+            makingSpace = false
+        }
+        guard id != spaceID else { return }
         cancelTabEdit()
         let returningVideo = parked[id].map { row in
             guard let active = row.active else { return false }

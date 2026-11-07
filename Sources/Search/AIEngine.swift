@@ -143,7 +143,8 @@ final class AIEngine: ObservableObject {
                 if let offer = offered, offer.version > (installedVersion ?? 0) {
                     state = .downloading(0)
                     let file = try await AIDownload.fetch(offer.url, size: offer.size, sha256: offer.sha256) { [weak self] done in
-                        self?.state = .downloading(done * Double(offer.size) / Double(max(1, self?.downloadSize ?? 1)))
+                        guard let self, case .downloading = self.state else { return }
+                        self.state = .downloading(done * Double(offer.size) / Double(max(1, self.downloadSize)))
                     }
                     let place = AIEngine.engines.appendingPathComponent("\(offer.version)", isDirectory: true)
                     try? FileManager.default.removeItem(at: place)
@@ -166,7 +167,8 @@ final class AIEngine: ObservableObject {
                     let start = Double(downloadSize - pin.size) / Double(max(1, downloadSize))
                     state = .downloading(start)
                     let file = try await AIDownload.fetch(pin.url, size: pin.size, sha256: pin.sha256) { [weak self] done in
-                        self?.state = .downloading(start + done * (1 - start))
+                        guard let self, case .downloading = self.state else { return }
+                        self.state = .downloading(start + done * (1 - start))
                     }
                     try FileManager.default.moveItem(at: file, to: AIEngine.modelFile)
                     var place = AIEngine.modelFile
@@ -179,7 +181,9 @@ final class AIEngine: ObservableObject {
                 state = .preparing
                 try await start()
                 state = .ready
-            } catch is CancellationError {
+            } catch where error is CancellationError || Task.isCancelled {
+                // A cancelled download throws URLError(.cancelled), not
+                // CancellationError: either way it was Cancel, not a failure.
                 state = .absent
             } catch {
                 state = .failed(error.localizedDescription)
@@ -467,6 +471,10 @@ final class AIEngine: ObservableObject {
                 guard let self else { return continuation.finish() }
                 do {
                     try await self.start()
+                    self.rest()
+                    // Starting ignores cancellation: an answer given up on
+                    // while the engine started is not asked for.
+                    try Task.checkCancellation()
                     self.answering[id] = continuation
                     let request: [String: Any] = [
                         "id": id, "system": system, "max_tokens": 768, "temperature": 0.2,
@@ -475,7 +483,6 @@ final class AIEngine: ObservableObject {
                     var line = try JSONSerialization.data(withJSONObject: request)
                     line.append(0x0A)
                     try self.input?.write(contentsOf: line)
-                    self.rest()
                 } catch {
                     continuation.finish(throwing: error)
                 }

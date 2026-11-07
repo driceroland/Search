@@ -522,6 +522,7 @@ struct SettingsPanel: View {
                 get: { prefs.roomyTabs },
                 set: { on in withAnimation(Motion.glide) { prefs.roomyTabs = on } }
             ))
+        case "sidebar.player": Switch(on: $prefs.showsPlayer)
         case "glyph": Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
         case "tabs.reading": Switch(on: $prefs.showsReading)
         case "tabs.give": Switch(on: $prefs.tabsGive)
@@ -546,6 +547,7 @@ struct SettingsPanel: View {
             .fixedSize()
         case "tabs.newAfterLast": Switch(on: $prefs.newTabAfterLast)
         case "tabs.closeGoesBack": Switch(on: $prefs.closeGoesBack)
+        case "tabs.frontBeside": Switch(on: $prefs.frontLinksBeside)
         case "tabs.lazy": Switch(on: $prefs.lazyTabs)
         case "tabs.popupWindows": Switch(on: $prefs.popupWindows)
         case "tabs.sleep":
@@ -609,6 +611,10 @@ struct SettingsPanel: View {
                 .frame(maxWidth: 340)
         case "media.click": Switch(on: $prefs.waitsForPlay)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
+        case "fullscreen.keepsWindow": Switch(on: $prefs.keepsWindow)
+        case "translate.target":
+            if PageTranslator.available { TranslateTargetPicker(prefs: prefs) }
+            else { Text("Requires macOS 15").foregroundStyle(Palette.muted) }
         case "pageZoom":
             // The number itself takes it back to 100%.
             Steps(stops: Preferences.zooms, value: $prefs.pageZoom, home: 1) { "\(Int(($0 * 100).rounded()))%" }
@@ -645,6 +651,7 @@ struct SettingsPanel: View {
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
+        case "newtab.recent": Switch(on: $prefs.recentInNewTab)
         case "commandbar": Switch(on: $prefs.commandBar)
         case "start.fresh": Switch(on: $prefs.startsFresh)
         case "note.sharedpins", "note.pinback": Always()

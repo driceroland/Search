@@ -153,6 +153,10 @@ enum SettingsIndex {
         .init(id: "sidebar.roomy", group: "tablook", icon: "textformat.size.larger",
               title: "Roomier tabs", detail: "Taller rows and larger titles in the column",
               keys: ["sidebar.roomy"], words: ["bigger", "larger", "text size", "accessibility"], parent: "tabs.layout"),
+        .init(id: "sidebar.player", group: "tablook", icon: "play.circle",
+              title: "What's playing in other tabs", detail: "At the foot of the sidebar, to pause it, play it again or go to it",
+              more: "A tab playing sound while you're on another one shows above the sidebar's foot.",
+              keys: ["sidebar.player"], words: ["media", "music", "now playing", "pause", "player", "sound", "audio"], parent: "tabs.layout"),
         .init(id: "glyph", group: "tablook", icon: "app",
               title: "Tabs show", detail: "Beside the title, and on a pinned square",
               keys: ["glyph"], words: ["favicon", "icons", "letters"]),
@@ -166,15 +170,19 @@ enum SettingsIndex {
               title: "Show the bookmarks bar", detail: "Your bookmarks in a row above the page",
               keys: ["bookmarks.bar"], words: ["favorites bar"]),
         .init(id: "motion.light", group: "motion", icon: "leaf",
-              title: "Reduce animations in Low Power Mode", detail: "Quicker, simpler motion while the Mac saves power",
+              title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
               keys: [Motion.lightKey], words: ["battery", "animations", "motion"]),
 
         // Tabs
         .init(id: "tabs.newPlace", group: "newtabs", icon: "arrow.right.to.line",
               title: "New tab position", detail: "Where a link or ⌘T's new tab goes in the row",
-              more: "After current puts a link beside the tab you're on, and ⌘T's new tab at the end. Pins stay first; a link from a group stays in it.",
+              more: "After current puts a link you ⌘-click right after its page; ⌘T's new tab and a page a link opens in front go at the end. Pins stay first; a link from a group stays in it.",
               keys: ["tabs.newPlace"], words: ["new tab", "order"]),
+        .init(id: "tabs.frontBeside", group: "newtabs", icon: "arrow.turn.down.right",
+              title: "Links opened in front go beside their page", detail: "A link that opens a new tab lands right after the tab it came from",
+              more: "In the order you click them, as ⌘-clicks do, while you go back and forth between the page and the tabs it opened. Going to any other tab starts again right after the page.",
+              keys: ["tabs.frontBeside"], words: ["target blank", "new tab", "order", "next to", "opener", "link"], parent: "tabs.newPlace"),
         .init(id: "tabs.newAfterLast", group: "newtabs", icon: "plus.rectangle.on.rectangle",
               title: "Leave a new tab when the last tab closes", detail: "Otherwise you land on a pinned tab",
               keys: ["tabs.newAfterLast"], words: ["last tab"]),
@@ -242,6 +250,12 @@ enum SettingsIndex {
         .init(id: "fullscreen.escapeTwice", group: "video", icon: "escape",
               title: "Press Esc twice to leave full screen", detail: "The first press shows a reminder, as in Arc",
               keys: ["fullscreen.escapeTwice"], words: ["escape", "full screen"]),
+        .init(id: "fullscreen.keepsWindow", group: "video", icon: "macwindow",
+              title: "Keep the window in use during full screen", detail: "Its tabs stay in reach on its own desktop while a video plays on another",
+              keys: ["fullscreen.keepsWindow"], words: ["full screen", "desktop", "space", "video"]),
+        .init(id: "translate.target", group: "pages", icon: "translate",
+              title: "Translation language", detail: "Pages are translated on this Mac",
+              keys: ["translate.target"], words: ["translate", "language"]),
         .init(id: "pageZoom", group: "pages", icon: "plus.magnifyingglass",
               title: "Page zoom", detail: "Where every site starts. ⌘+ and ⌘− are kept for each site",
               keys: ["pageZoom"], words: ["zoom", "size", "scale"]),
@@ -282,6 +296,10 @@ enum SettingsIndex {
               title: "New tab in a floating field", detail: "⌘T raises the address field over the page, as in Arc",
               more: "Return opens what you typed in a new tab; Escape, ⌘W or a click outside puts it away.",
               keys: ["newtab.floating"], words: ["command bar", "cmd t", "spotlight"]),
+        .init(id: "newtab.recent", group: "opening", icon: "clock.arrow.circlepath",
+              title: "Recent places in the new tab", detail: "Before you type, ⌘T's field lists the last three places you went",
+              more: "From History on this Mac, leaving out pages already open, which ⌘K finds. Nothing is picked until an arrow key picks it, and a private tab lists nothing.",
+              keys: ["newtab.recent"], words: ["recent", "history", "suggestions", "cmd t", "last visited"], parent: "newtab.floating"),
         .init(id: "commandbar", group: "opening", icon: "chevron.right.square",
               title: "Address bar commands", detail: "\"settings\" or \"new tab\" alone in the address field goes there",
               more: "Part of a name, like \"down\" or \"dwn\", shows the command lower in the list.",
@@ -441,10 +459,12 @@ enum SettingsIndex {
     @MainActor static func applies(_ item: SettingsItem, _ prefs: Preferences) -> Bool {
         switch item.id {
         case "pages.dusk": return prefs.look != .light
-        case "sidebar.roomy": return prefs.sidebar && !prefs.sideIcons
+        case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
         case "toolbar.left": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
+        case "tabs.frontBeside": return prefs.newTabPlace == .next
+        case "newtab.recent": return prefs.floatingNewTab
         default: return true
         }
     }
@@ -456,6 +476,9 @@ enum SettingsIndex {
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
         case "profiles.oneWindow": return "Only with more than one profile"
+        case "sidebar.player": return "Only with titles in the sidebar"
+        case "tabs.frontBeside": return "Only with New tab position on After current"
+        case "newtab.recent": return "Only with the new tab in a floating field"
         default: return "Only with the tabs down a side"
         }
     }

@@ -70,6 +70,11 @@ final class PageTranslator {
         Locale.Language(identifier: Locale.preferredLanguages.first ?? "en")
     }
 
+    static var preferredTarget: Locale.Language {
+        let choice = Shared.prefs.translateTarget
+        return choice.isEmpty ? reader : Locale.Language(identifier: choice)
+    }
+
     /// A language as Search's menus name it ("French"): in English, as the
     /// rest of the interface is.
     nonisolated static func name(_ code: String) -> String {
@@ -121,7 +126,8 @@ final class PageTranslator {
     /// Translates the tab's page into `target`, and keeps translating what
     /// the page adds until Show Original or the page goes.
     @discardableResult
-    static func start(_ tab: Tab, to target: Locale.Language = reader, done: (([String: Any]) -> Void)? = nil) -> PageTranslator? {
+    static func start(_ tab: Tab, to requested: Locale.Language? = nil, done: (([String: Any]) -> Void)? = nil) -> PageTranslator? {
+        let target = requested ?? preferredTarget
         tab.translator?.end(restore: true)
         guard enabled, tab.built != nil else {
             done?(["error": enabled ? "no page" : "off"])
@@ -190,6 +196,10 @@ final class PageTranslator {
             guard let from = PageTranslator.detect(sample, hint: await hint) else {
                 throw Failure("Search couldn't tell which language this page is in")
             }
+            // A page call comes back even after end() cancelled the run, and
+            // end() is the only way a translator loses its tab: from here a
+            // run that's been let go of writes nothing.
+            try Task.checkCancellation()
             source = from
             report["source"] = PageTranslator.code(from)
             tab.translation = TranslationMark(from: PageTranslator.code(from), to: PageTranslator.code(target), phase: .working)
@@ -203,6 +213,7 @@ final class PageTranslator {
             for frame in tab.translateFrames {
                 try await frameRound(frame)
             }
+            try Task.checkCancellation()
             report["fullMs"] = ms()
             if (report["applied"] as? Int ?? 0) == 0, PageTranslator.same(from, target) {
                 throw Failure("This page is already in \(PageTranslator.name(PageTranslator.code(target)))")
@@ -486,7 +497,27 @@ final class PageTranslator {
             return { strings in strings.map { tag + $0 } }
         }
         guard #available(macOS 15, *) else { throw Failure("Translate Page needs macOS 15 or later") }
-        let status = await LanguageAvailability().status(from: from, to: target)
+        // SDK 26.4 and later default to Apple Intelligence's higher-fidelity
+        // model. Keep page translation responsive as it was with older SDKs,
+        // while retaining the newer model for pairs the fast one cannot do.
+        #if compiler(>=6.3)
+        var fast = false
+        #else
+        let fast = false
+        #endif
+        let status: LanguageAvailability.Status
+        #if compiler(>=6.3)
+        if #available(macOS 26.4, *) {
+            let quick = await LanguageAvailability(preferredStrategy: .lowLatency).status(from: from, to: target)
+            fast = quick != .unsupported
+            status = fast ? quick : await LanguageAvailability(preferredStrategy: .highFidelity).status(from: from, to: target)
+        } else {
+            status = await LanguageAvailability().status(from: from, to: target)
+        }
+        #else
+        status = await LanguageAvailability().status(from: from, to: target)
+        #endif
+        try Task.checkCancellation()
         if main { report["availability"] = "\(status)" }
         switch status {
         case .unsupported:
@@ -495,6 +526,13 @@ final class PageTranslator {
             }
             return nil
         case .installed:
+            #if compiler(>=6.3)
+            if #available(macOS 26.4, *) {
+                let session = TranslationSession(installedSource: from, target: target,
+                                                 preferredStrategy: fast ? .lowLatency : .highFidelity)
+                return { strings in try await PageTranslator.translate(strings, with: session) }
+            }
+            #endif
             if #available(macOS 26, *) {
                 let session = TranslationSession(installedSource: from, target: target)
                 return { strings in try await PageTranslator.translate(strings, with: session) }
@@ -504,7 +542,11 @@ final class PageTranslator {
             if !main { return nil }
         }
         guard let content = web?.window?.contentView else { throw Failure("Translate Page needs the tab in a window") }
-        let lease = try await SessionLease.open(from: from, to: target, in: content)
+        let lease = try await SessionLease.open(from: from, to: target, fast: fast, in: content)
+        guard !Task.isCancelled else {
+            lease.close()
+            throw CancellationError()
+        }
         leases.append(lease)
         let session: TranslationSession = lease.session
         return { strings in try await PageTranslator.translate(strings, with: session) }
@@ -805,11 +847,21 @@ private final class SessionLease: Closable {
     private var hold: CheckedContinuation<Void, Never>?
     private var closed = false
 
-    static func open(from: Locale.Language, to: Locale.Language, in content: NSView) async throws -> SessionLease {
+    static func open(from: Locale.Language, to: Locale.Language, fast: Bool, in content: NSView) async throws -> SessionLease {
         let lease = SessionLease()
+        let configuration: TranslationSession.Configuration
+        #if compiler(>=6.3)
+        if #available(macOS 26.4, *) {
+            configuration = .init(source: from, target: to, preferredStrategy: fast ? .lowLatency : .highFidelity)
+        } else {
+            configuration = .init(source: from, target: to)
+        }
+        #else
+        configuration = .init(source: from, target: to)
+        #endif
         let session: TranslationSession = await withCheckedContinuation { got in
             var given = false
-            let view = NSHostingView(rootView: SessionHost(configuration: .init(source: from, target: to)) { session in
+            let view = NSHostingView(rootView: SessionHost(configuration: configuration) { session in
                 guard !given else { return }
                 given = true
                 got.resume(returning: session)
@@ -938,7 +990,7 @@ extension Tab {
                 guard let self, self.translator == nil, self.built === web,
                       let pair = (try? result.get()) as? [String], pair.count == 2,
                       let language = PageTranslator.detect(pair[1], hint: pair[0]),
-                      !PageTranslator.same(language, PageTranslator.reader),
+                      !PageTranslator.same(language, PageTranslator.preferredTarget),
                       wanted.contains(PageTranslator.code(language)) else { return }
                 PageTranslator.start(self)
             }
@@ -1070,6 +1122,35 @@ struct TranslateLanguageList: View {
             Rule()
             Line("Always translate \(PageTranslator.name(code))", "Pages in \(PageTranslator.name(code)) are translated as they open") {
                 Pill("Remove") { prefs.translateAlways.remove(code) }
+            }
+        }
+    }
+}
+
+/// Load Apple's current language list only when this settings control appears.
+struct TranslateTargetPicker: View {
+    @ObservedObject var prefs: Preferences
+    @State private var languages: [String] = []
+
+    var body: some View {
+        Picker("Translation language", selection: $prefs.translateTarget) {
+            Text("System Default").tag("")
+            if !prefs.translateTarget.isEmpty && !languages.contains(prefs.translateTarget) {
+                Text(PageTranslator.name(prefs.translateTarget)).tag(prefs.translateTarget)
+            }
+            ForEach(languages, id: \.self) { code in
+                Text(PageTranslator.name(code)).tag(code)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .fixedSize()
+        .task {
+            if #available(macOS 15, *) {
+                let supported = await LanguageAvailability().supportedLanguages
+                languages = Array(Set(supported.map(PageTranslator.code))).sorted {
+                    PageTranslator.name($0).localizedStandardCompare(PageTranslator.name($1)) == .orderedAscending
+                }
             }
         }
     }

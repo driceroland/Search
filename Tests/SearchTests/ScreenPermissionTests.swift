@@ -127,6 +127,48 @@ final class ScreenPermissionTests: XCTestCase {
         }
     }
 
+    func testCameraCardEndsWhenItsTabIsLeftOrGoes() async throws {
+        for event in ["switch", "navigate", "close"] {
+            let (browser, tab, frame) = try await fixture()
+            var replies: [WKPermissionDecision] = []
+            browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .camera) { replies.append($0) }
+            XCTAssertEqual(browser.asking?.wants, "camera", event)
+            switch event {
+            case "switch": browser.newTab()
+            case "navigate":
+                tab.web.loadHTMLString("<p>A different document</p>", baseURL: URL(string: "https://screen.example/next"))
+                try await Task.sleep(nanoseconds: 200_000_000)
+            default: browser.close(tab)
+            }
+            XCTAssertEqual(replies, [.deny], event)
+            XCTAssertNil(browser.asking, event)
+            try await Task.sleep(nanoseconds: 550_000_000)
+            browser.allowCapture()
+            browser.closeAll()
+            XCTAssertEqual(replies, [.deny], "\(event) answers exactly once")
+        }
+    }
+
+    func testHeldScreenQuestionLeavesTheTabInFrontFreeToAsk() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.closeAll() }
+        browser.newTab()
+        let other = try XCTUnwrap(browser.active)
+        other.web.loadHTMLString("<p>Front</p>", baseURL: URL(string: "https://screen.example/front"))
+        var screen: [Int] = []
+        ask(browser, tab, frame) { screen.append($0) }
+        XCTAssertNil(browser.asking)
+        var camera: [WKPermissionDecision] = []
+        browser.askedForCapture(other.web, origin: frame.securityOrigin, frame: frame, type: .camera) { camera.append($0) }
+        XCTAssertEqual(browser.asking?.wants, "camera")
+        XCTAssertTrue(camera.isEmpty)
+        browser.select(tab)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(camera, [.deny])
+        XCTAssertEqual(browser.asking?.wants, "screen")
+        XCTAssertTrue(screen.isEmpty)
+    }
+
     func testCompletionCanRequestAgainWithoutLosingTheNewCard() async throws {
         let (browser, tab, frame) = try await fixture()
         defer { browser.closeAll() }

@@ -79,6 +79,34 @@ final class PairSeparateTests: XCTestCase {
         XCTAssertNotNil(browser.split(for: t[1]), "still a pair")
     }
 
+    /// Escape puts the carried tab down until the button comes up: the next
+    /// move of the hand picked it up again, shadow and all. Escape is sent
+    /// to TabDrag directly, since its monitor asks whether the real button
+    /// is down.
+    func testEscapedStaysPutDownUntilLetGo() async throws {
+        let (browser, t, window) = try await setUpColumn()
+        try await carry(from: 82, to: 94, in: window)
+        XCTAssertEqual(CarryGuard.count, 1, "carried")
+        TabDrag.shared.cancel()
+        try await settle()
+        for y in stride(from: CGFloat(98), through: 106, by: 4) {
+            try await send(.leftMouseDragged, at: y, in: window)
+        }
+        XCTAssertEqual(CarryGuard.count, 0, "not picked up again")
+        try await send(.leftMouseUp, at: 106, in: window)
+        try await settle()
+        XCTAssertNotNil(browser.split(for: t[1]), "still a pair")
+        XCTAssertEqual(browser.tabs.map(\.id), t.map(\.id))
+
+        // The next carry is its own, not the cancelled one.
+        try await carry(from: 82, to: 94, in: window)
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(PairSeparation.shared.leaving, t[2].id)
+        try await send(.leftMouseUp, at: 94, in: window)
+        try await settle()
+        XCTAssertNil(browser.split(for: t[1]), "apart, as shown")
+    }
+
     /// The column with a separation shown, for looking at by eye: only when
     /// PAIR_SEPARATE_SHOTS names a folder.
     func testLooks() async throws {

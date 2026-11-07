@@ -126,11 +126,18 @@ struct SideBar: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
-            // Clear of the foot, which sits over the column's bottom edge.
-            .padding(.bottom, footHeight)
+            // Clear of the foot, which sits over the sidebar's bottom edge,
+            // and of what plays in another tab, over the foot.
+            .padding(.bottom, footHeight + (browser.player == nil ? 0 : rowHeight + SideBar.playerGap))
 
-            VStack {
+            VStack(spacing: 0) {
                 Spacer()
+                if let tab = browser.player {
+                    PlayerRow(browser: browser, prefs: prefs, tab: tab)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, SideBar.playerGap)
+                        .transition(.opacity)
+                }
                 foot
             }
         }
@@ -157,6 +164,7 @@ struct SideBar: View {
             browser.take(providers)
         }
         .animation(Motion.quick, value: landing)
+        .animation(Motion.quick, value: browser.player?.id)
         .animation(Motion.glide, value: browser.activeID)
         .animation(Motion.glide, value: browser.editingTab)
         .animation(Motion.settle, value: browser.tabs.map(\.id))
@@ -855,6 +863,8 @@ struct SideBar: View {
     private var footHeight: CGFloat {
         icons ? CGFloat(SideFoot.doors(prefs, browser.fetches, hanging: browser.downloadsHanging)) * 28 + 8 : 26 + 10
     }
+    /// Between what plays in another tab and the foot's doors.
+    private static let playerGap: CGFloat = 4
 
     @ViewBuilder
     private var newTab: some View {
@@ -892,7 +902,7 @@ private struct SideFoot: View {
         if vertical {
             VStack(spacing: 2) {
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
-                ExtensionSlot(edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
+                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
                 BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 if prefs.usesSpaces { SpaceDot(browser: browser) }
                 if Profiles.shared.several { ProfileBadge(browser: browser) }
@@ -903,7 +913,7 @@ private struct SideFoot: View {
             HStack(spacing: 2) {
                 if Profiles.shared.several { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces { SpaceDot(browser: browser) }
-                ExtensionSlot(edge: .trailing, room: room)
+                ExtensionSlot(browser: browser, edge: .trailing, room: room)
                 BookmarkDoor(browser: browser, arrowEdge: .trailing)
                 // Only while a download is running, and a moment after.
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
@@ -1034,7 +1044,7 @@ private struct PinSquare: View {
         }
         .animation(Motion.quick, value: browser.peekFrom)
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
-        .modifier(TabPress(enabled: browser.editingPin != tab.id, active: live, selected: $selectedOnPress) {
+        .modifier(TabPress(enabled: browser.editingPin != tab.id && !browser.isPickedAmongOthers(tab), active: live, selected: $selectedOnPress) {
             browser.clearTabSelection()
             browser.select(tab)
         })
@@ -1132,7 +1142,7 @@ private struct SideRow: View {
             .padding(.trailing, status || peeking ? 0 : 10)
             .frame(height: prefs.sideRow)
             .contentShape(Rectangle())
-            .modifier(TabPress(enabled: interactive && !editing, active: live, selected: $selectedOnPress, pressing: $pressed) {
+            .modifier(TabPress(enabled: interactive && !editing && !browser.isPickedAmongOthers(tab), active: live, selected: $selectedOnPress, pressing: $pressed) {
                 browser.clearTabSelection()
                 browser.select(tab)
             })
@@ -1493,7 +1503,14 @@ struct PinCarried: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .offset(held ? PinCarried.offset(travel: travel, from: from, index: index, cells: cells) : .zero)
+            // Read where the square is drawn this frame, partway through the
+            // spring to its new cell, and only for the square in hand.
+            .visualEffect { [held, travel, from, cells] content, proxy in
+                guard held else { return content.offset(.zero) }
+                let frame = proxy.frame(in: .named("pins"))
+                return content.offset(PinCarried.offset(travel: travel, from: from, cells: cells,
+                                                        now: CGPoint(x: frame.midX, y: frame.midY)))
+            }
             // Under the hand exactly, as a row is (see Carried).
             .transaction { if held { $0.animation = nil } }
             .zIndex(held ? 1 : 0)
@@ -1544,11 +1561,12 @@ struct PinCarried: ViewModifier {
     /// The held square stays glued to the fingers; every other square is
     /// already where it belongs, because the move put it there. This only
     /// takes off what the held square got for free by changing cell under
-    /// its own drag.
-    static func offset(travel: CGSize, from: Int, index: Int, cells: [CGRect]) -> CGSize {
-        guard cells.indices.contains(from), cells.indices.contains(index) else { return .zero }
-        let start = cells[from], now = cells[index]
-        return CGSize(width: travel.width - (now.midX - start.midX), height: travel.height - (now.midY - start.midY))
+    /// its own drag: as far as its centre is drawn `now`, which the spring
+    /// to the new cell hasn't finished carrying yet.
+    nonisolated static func offset(travel: CGSize, from: Int, cells: [CGRect], now: CGPoint) -> CGSize {
+        guard cells.indices.contains(from) else { return .zero }
+        let start = cells[from]
+        return CGSize(width: travel.width - (now.x - start.midX), height: travel.height - (now.y - start.midY))
     }
 
     /// The cell the held square is over: the one whose centre is nearest to
