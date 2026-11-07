@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Closing a page that a link just opened in front goes back to the page the link was clicked in, while that is still the tab you were on before it. It opens at the end of the row, so with Closing a tab goes back to the one before off, ⌘W landed on whatever tab was last there. Thanks [@ubeann](https://github.com/ubeann) ([#963](https://github.com/driceroland/Search/pull/963))
+
 - A link that opens a new tab in front — a plain click on one that opens in a new tab, or a page's own window.open — from a tab in a group joins the group, at its end. It landed outside the group, at the end of the row, though Settings says a link from a group stays in it and a ⌘-click's tab already did. Thanks [@ubeann](https://github.com/ubeann) ([#962](https://github.com/driceroland/Search/pull/962))
 
 - Settings › Tabs › New tab position says which links After current puts beside their page: the ones you ⌘-click. ⌘T's new tab and a page a link opens in front go at the end. It said "a link", and a plain click on a link that opens a new tab, the usual kind, went to the end. Thanks [@ubeann](https://github.com/ubeann) ([#964](https://github.com/driceroland/Search/pull/964))
