@@ -23,6 +23,26 @@ final class OverlayOwnerTests: XCTestCase {
         XCTAssertEqual(browser.fieldMode, .blank)
     }
 
+    func testRaisingAnOverlayPutsAwayTheOneUp() {
+        let browser = makeBrowser()
+        browser.welcoming = true
+        browser.reviewing = true
+        XCTAssertTrue(browser.reviewing)
+        XCTAssertFalse(browser.welcoming)
+
+        // The switcher's field goes with the switcher.
+        browser.summon()
+        XCTAssertFalse(browser.reviewing)
+        XCTAssertTrue(browser.editing)
+        browser.bookmarksOpen = true
+        XCTAssertFalse(browser.summoning)
+        XCTAssertFalse(browser.editing)
+
+        // Closing one that isn't up leaves the one that is.
+        browser.reviewing = false
+        XCTAssertTrue(browser.bookmarksOpen)
+    }
+
     private func makeBrowser() -> Browser {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)

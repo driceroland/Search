@@ -38,7 +38,10 @@ enum SiteCardPanel {
         anchor = field
         let key = ObjectIdentifier(browser)
         guard watching[key] == nil else { return }
-        watching[key] = browser.$editingTab.combineLatest(browser.$tabDraft)
+        watching[key] = browser.$overlay
+            .map { overlay -> Tab.ID? in if case .tabField(let id) = overlay { id } else { nil } }
+            .removeDuplicates()
+            .combineLatest(browser.$tabDraft)
             .receive(on: DispatchQueue.main)
             .sink { [weak browser] editing, draft in
                 MainActor.assumeIsolated {
