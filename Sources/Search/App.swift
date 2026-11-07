@@ -510,14 +510,8 @@ struct ContentView: View {
             // (see SidePanel.swift); two pages in Split View share what's left.
             if panelRoom > 0 { sidePanel }
 
-            // The column of tabs, in the way that has one. It takes the full
-            // height, so the traffic lights sit in its own corner rather than
-            // over the page.
-            if sidebar {
-                SideBar(browser: browser, prefs: browser.prefs, onFrame: cards)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .transition(.move(edge: sideOnRight ? .trailing : .leading))
-            }
+            // The column of tabs is Fold's, in its place beside the page or
+            // folded away (see Fold.swift).
 
             if !browser.prefs.sidebar, !browser.folded, fullscreenTab == nil {
                 TabBar(browser: browser)

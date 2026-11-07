@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- ⌘S hides and shows the column as soon as it's pressed. Each press built every row of the column four times over before the slide could start, about 150ms with 30 tabs, as long as the slide itself; it now takes about 38ms, and the column that slides away is the same one that comes back. Thanks [@oddharsh](https://github.com/oddharsh) ([#948](https://github.com/driceroland/Search/pull/948))
+
 - Dragging one of several tabs picked with ⌘- or ⇧-click carries them all: they land together where they're let go, in the order they had, Split View pairs whole, and dropped on a group they all go in. Only the tab under the pointer moved, since pressing it in the column brought it forward, which let go of the rest. A click on one of them still brings that one forward and ends the selection, now as the button comes up. Thanks [@oddharsh](https://github.com/oddharsh) ([#947](https://github.com/driceroland/Search/pull/947))
 
 - An extension's popup opens in the window where its button was pressed, not another open window: button anchors are kept per window instead of in a single global map, and pressing an extension's button acts in its window. Thanks [@BeNDYGo](https://github.com/BeNDYGo) ([#839](https://github.com/driceroland/Search/pull/839))
