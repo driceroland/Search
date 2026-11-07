@@ -383,6 +383,50 @@ private func testTitlesPathsAndSlipsFillWhatTheAddressLeaves() {
     Checks.expect(history.suggestions(for: "da", limit: 5).allSatisfy { !$0.title.contains("Daily") }, "two letters match no title")
     Checks.expect(history.suggestions(for: "dai", limit: 5).contains { $0.title.contains("Daily") }, "three letters do")
 
+    // score = fit × log(2 + popularity)
+    Store.use("score-slip")
+    let slip = History()
+    slip.record(url("https://wiki.example/notes"), title: "Pipline notes")
+    for _ in 0..<40 { slip.record(url("https://git.example/team/api/-/pipelines"), title: "Pipelines") }
+    let often = slip.suggestions(for: "pipline", limit: 5).map(\.key)
+    Checks.expect(often.first == "git.example/team/api/-/pipelines", "a page used daily, with a slip, should beat one seen once, got \(often)")
+
+    Store.use("score-tie")
+    let tie = History()
+    tie.record(url("https://git.example/team/api/-/pipelines"), title: "")
+    tie.record(url("https://wiki.example/notes"), title: "Pipline")
+    let even = tie.suggestions(for: "pipline", limit: 5).map(\.key)
+    Checks.expect(even.first == "wiki.example/notes", "as often visited, the match as typed should lead, got \(even)")
+
+    Store.use("score-many")
+    let many = History()
+    for _ in 0..<50 { many.record(url("https://git.example/old/api"), title: "") }
+    for _ in 0..<500 { many.record(url("https://git.example/team/api"), title: "") }
+    let more = many.suggestions(for: "api", limit: 5).map(\.key)
+    Checks.expect(more.first == "git.example/team/api", "500 visits should lead 50, got \(more)")
+
+    // A page counts the visits to every page under it.
+    Store.use("score-under")
+    let under = History()
+    for _ in 0..<5 { under.record(url("https://git.example/team/api"), title: "team / api") }
+    for _ in 0..<40 { under.record(url("https://git.example/team/api/-/merge_requests/1"), title: "Fix api") }
+    for _ in 0..<20 { under.record(url("https://git.example/team/api/-/pipelines/2"), title: "Pipeline · api") }
+    under.record(url("https://git.example/team/api-old/-/merge_requests/9"), title: "Old api")
+    for _ in 0..<5 { under.record(url("https://rapid.example/"), title: "Rapid") }
+    let repo = under.suggestions(for: "api", limit: 3).map(\.key)
+    Checks.expect(repo.first == "git.example/team/api", "a repository should lead its merge requests, got \(repo)")
+    Checks.expect(repo.dropFirst().first == "git.example/team/api/-/merge_requests/1", "then the busiest page under it, got \(repo)")
+
+    // As often visited, the fit decides.
+    Store.use("score-fit")
+    let fits = History()
+    for page in ["https://api.example/", "https://dev-api.example/", "https://git.example/team/api", "https://rapid.example/"] {
+        fits.record(url(page), title: "")
+    }
+    let fit = fits.suggestions(for: "api", limit: 5).map(\.key)
+    Checks.expect(fit.prefix(2).map { $0.hasPrefix("api.") || $0.hasPrefix("dev-api.") } == [true, true] && fit.first?.hasPrefix("api.") == true, "the start of the address, then of a word of the name, got \(fit)")
+    Checks.expect(fit.firstIndex(of: "git.example/team/api") ?? 9 < fit.firstIndex { $0.hasPrefix("rapid") } ?? 9, "a word of the path before a word it is hidden in, got \(fit)")
+
     // A name the app knows, typed with a slip, while nothing visited is near.
     Store.use("loose-known")
     let github = History().suggestions(for: "githb", limit: 5)

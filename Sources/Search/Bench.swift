@@ -1106,6 +1106,99 @@ final class Bench {
             }
             walk(0)
 
+        case "foldtime":
+            // ⌘S, timed: each pass of the main run loop for the next 0.7 s,
+            // from waking to going back to sleep, with when it started after
+            // the press, the page's width at its end, and the rows built in
+            // it. The first pass is the press itself, whatever it costs
+            // before the slide can start. Test runs only.
+            guard Store.testing else { answer(["error": "foldtime is for test runs"]); return }
+            guard let web = browser.active?.built else { answer(["error": "foldtime needs a page on screen"]); return }
+            var passes: [[String: Any]] = []
+            var woke: CFAbsoluteTime = 0
+            var rows = 0
+            let pressed = CFAbsoluteTimeGetCurrent()
+            let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { _, _ in
+                woke = CFAbsoluteTimeGetCurrent()
+            }
+            let sleep = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
+                let now = CFAbsoluteTimeGetCurrent()
+                let start = woke > 0 ? woke : pressed
+                let built = Bench.bodies["row", default: 0]
+                passes.append(["at": ((start - pressed) * 1000).rounded(), "ms": ((now - start) * 10000).rounded() / 10,
+                               "page": Double(web.frame.width), "rows": built - rows])
+                rows = built
+                woke = 0
+            }
+            for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes) }
+            Bench.bodies = [:]
+            let before = Double(web.frame.width)
+            browser.toggleFold()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+                answer(["folded": browser.folded, "pageBefore": before, "passes": passes])
+            }
+
+        case "bookmarksweep":
+            // Bookmarks kept and then let go, one a frame, as the star or a
+            // folder's menu would: how many rows of the column and how many
+            // bookmarks bars were built again along the way, and how long
+            // each pass of the main run loop carrying an edit took. Test
+            // runs only: it writes the world's bookmarks.
+            guard Store.testing else { answer(["error": "bookmarksweep is for test runs"]); return }
+            let count = request["count"] as? Int ?? 10
+            let interval = request["interval"] as? Double ?? 1.0 / 60
+            let urls = (0..<count).compactMap { URL(string: "https://bookmarksweep.test/\($0)") }
+            var made: [Bookmark.ID] = []
+            let clock = LoopClock()
+            Bench.bodies = [:]
+            clock.start()
+            func edit(_ n: Int) {
+                guard n < urls.count * 2 else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        clock.stop()
+                        answer([
+                            "edits": urls.count * 2, "tabs": browser.tabs.count,
+                            "bodies": Bench.bodies, "left": browser.bookmarks.count,
+                            "editMs": LoopClock.summary(clock.marked),
+                            "otherMs": LoopClock.summary(clock.unmarked),
+                        ])
+                    }
+                    return
+                }
+                clock.mark()
+                if n < urls.count {
+                    if let kept = browser.bookmarks.add(urls[n], title: "Sweep \(n)") { made.append(kept.id) }
+                } else {
+                    if n - urls.count < made.count { browser.bookmarks.remove(made[n - urls.count]) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + interval) { edit(n + 1) }
+            }
+            edit(0)
+
+        case "keeppage":
+            // The page on screen kept, or let go ("keep": false), on the
+            // bookmarks alone, as the Bookmarks panel does it: nothing else
+            // of the browser changes. Then the Bookmarks menu's items as it
+            // would open, a moment later, and how many times the bookmarks
+            // bar was built meanwhile. Test runs only: it writes the world's
+            // bookmarks.
+            guard Store.testing else { answer(["error": "keeppage is for test runs"]); return }
+            guard let tab = browser.active, let url = tab.address else { answer(["error": "no page on screen"]); return }
+            Bench.bodies = [:]
+            if request["keep"] as? Bool == false {
+                if let kept = browser.bookmarks.bookmark(for: url) { browser.bookmarks.remove(kept.id) }
+            } else {
+                _ = browser.bookmarks.add(url, title: tab.title)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let menu = NSApp.mainMenu?.items.first { $0.title == "Bookmarks" }?.submenu
+                if let menu { menu.delegate?.menuNeedsUpdate?(menu) }
+                answer(["kept": browser.pageKept,
+                        "items": menu?.items.prefix(2).map(\.title) ?? [],
+                        "bar": Bench.bodies["bar"] ?? 0])
+            }
+
         case "pointer":
             // What a page's own tracking areas hand their owners as the
             // pointer goes over it — a move, or the pointer coming in — and a
@@ -1980,7 +2073,7 @@ final class Bench {
                 tab.setAlwaysTranslates(code, action == "always")
                 answer(state())
             default:
-                let target = (request["lang"] as? String).map(Locale.Language.init(identifier:)) ?? PageTranslator.reader
+                let target = (request["lang"] as? String).map(Locale.Language.init(identifier:)) ?? PageTranslator.preferredTarget
                 if PageTranslator.start(tab, to: target, done: { report in
                     var reply = state()
                     reply["report"] = report

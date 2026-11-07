@@ -1014,6 +1014,8 @@ final class Tab: ObservableObject, Identifiable {
                     guard let self, let state = self.built?.fullscreenState else { return }
                     let on = state == .enteringFullscreen || state == .inFullscreen
                     if self.immersed != on { self.immersed = on }
+                    // Home behind another tab: its stage puts it away.
+                    if state == .notInFullscreen, Shared.prefs.keepsWindow { self.built?.superview?.needsLayout = true }
                 }
             },
         ]
@@ -2313,7 +2315,7 @@ final class PageView: WKWebView {
     /// nothing while the switch is off.
     func translateItem() -> NSMenuItem? {
         guard PageTranslator.enabled, let on = translating?() else { return nil }
-        let language = PageTranslator.name(PageTranslator.code(PageTranslator.reader))
+        let language = PageTranslator.name(PageTranslator.code(PageTranslator.preferredTarget))
         let item = NSMenuItem(title: on ? "Show Original" : "Translate Page to \(language)", action: #selector(translatePage(_:)), keyEquivalent: "")
         item.target = self
         return item

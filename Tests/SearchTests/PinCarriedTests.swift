@@ -25,12 +25,18 @@ final class PinCarriedTests: XCTestCase {
 
     func testHeldSquareStaysUnderTheHandAfterMoving() {
         let travel = CGSize(width: 70, height: 3)
+        let centre = { (cell: CGRect) in CGPoint(x: cell.midX, y: cell.midY) }
         // Before it changes cell, the offset is the travel itself.
-        XCTAssertEqual(PinCarried.offset(travel: travel, from: 0, index: 0, cells: cells), travel)
+        XCTAssertEqual(PinCarried.offset(travel: travel, from: 0, cells: cells, now: centre(cells[0])), travel)
         // Once it is in the next cell, only what is left over.
-        let after = PinCarried.offset(travel: travel, from: 0, index: 1, cells: cells)
+        let after = PinCarried.offset(travel: travel, from: 0, cells: cells, now: centre(cells[1]))
         XCTAssertEqual(after.width, 4, accuracy: 0.001)
         XCTAssertEqual(after.height, 3, accuracy: 0.001)
-        XCTAssertEqual(PinCarried.offset(travel: travel, from: 9, index: 0, cells: cells), .zero)
+        // Halfway through its spring there, what the cell hasn't carried it
+        // yet is still the hand's: the square stays under it throughout.
+        let halfway = CGPoint(x: (cells[0].midX + cells[1].midX) / 2, y: cells[0].midY)
+        let mid = PinCarried.offset(travel: travel, from: 0, cells: cells, now: halfway)
+        XCTAssertEqual(mid.width, 37, accuracy: 0.001)
+        XCTAssertEqual(PinCarried.offset(travel: travel, from: 9, cells: cells, now: centre(cells[0])), .zero)
     }
 }

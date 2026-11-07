@@ -458,8 +458,9 @@ final class StageView: NSView {
             }
             // Nothing of its own here: the last tab's page, left as it was,
             // stood at its old size in a stage grown to the whole window,
-            // with an empty band beside it where the column had been.
-            if homecoming != nil { clearUnwanted() }
+            // with an empty band beside it where the column had been. Nor
+            // the tab shown in front of it while it filled the screen.
+            if homecoming != nil || Shared.prefs.keepsWindow { clearUnwanted() }
             return
         }
 
@@ -475,6 +476,13 @@ final class StageView: NSView {
     private func clearUnwanted() {
         let docked = inspecting
         for view in subviews where view !== wanted && !(docked && Self.isInspector(view)) {
+            // Another tab in front while this page fills the screen: WebKit
+            // brings the page home to its placeholder, so that stays, under
+            // the tab in front, and so does the page on its way back.
+            if Shared.prefs.keepsWindow {
+                if Self.isPlaceholder(view) { continue }
+                if let page = view as? WKWebView, page.fullscreenState != .notInFullscreen { continue }
+            }
             // Unseen, and still drawn: WebKit asks whether its view is in a
             // window and not hidden, not whether anything shows of it.
             if view === parting {

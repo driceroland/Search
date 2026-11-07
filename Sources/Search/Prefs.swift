@@ -517,6 +517,10 @@ final class Preferences: ObservableObject {
     /// adds a command, so there is no switch. Still a property, for the
     /// code that asks and the tests that turn it off; never written.
     @Published var translatesPages = true
+    /// Empty follows the Mac's preferred language.
+    @Published var translateTarget: String {
+        didSet { store.set(translateTarget, forKey: "translate.target") }
+    }
     /// The languages whose pages are translated as they open, chosen from
     /// the translated sign's menu (never from a private tab). None at first.
     @Published var translateAlways: Set<String> {
@@ -551,6 +555,13 @@ final class Preferences: ObservableObject {
     /// Safari.
     @Published var escapeTwice: Bool {
         didSet { store.set(escapeTwice, forKey: "fullscreen.escapeTwice") }
+    }
+    /// The window stays whole and in use on its own desktop while a page
+    /// fills the screen on another, its other tabs in reach (see
+    /// Browser.fillsHere). Off unless asked for: the window steps aside
+    /// behind the video, as in Safari.
+    @Published var keepsWindow: Bool {
+        didSet { store.set(keepsWindow, forKey: "fullscreen.keepsWindow") }
     }
     /// A newer build is fetched, checked and put in place on its own, as it
     /// always was. Off, Search still looks every hour and says so, and waits
@@ -819,7 +830,9 @@ final class Preferences: ObservableObject {
         panelSite = store.string(forKey: "panel.site") ?? ""
         floatStyle = store.string(forKey: "float.style").flatMap(FloatStyle.init(rawValue:)) ?? .search
         escapeTwice = store.bool(forKey: "fullscreen.escapeTwice")
+        keepsWindow = store.bool(forKey: "fullscreen.keepsWindow")
         waitsForPlay = store.bool(forKey: Preferences.waitsKey)
+        translateTarget = store.string(forKey: "translate.target") ?? ""
         translateAlways = Set(store.stringArray(forKey: PageTranslator.alwaysKey) ?? [])
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true

@@ -989,6 +989,9 @@ struct Carried: ViewModifier {
     @State private var start: CGFloat = 0
     @State private var travel: CGFloat = 0
     @State private var reordered = false
+    /// Where it was drawn in `space` when it was picked up, read once by the
+    /// held item alone, so the others measure nothing as the row scrolls.
+    @State private var origin: CGFloat?
     /// True while the drag lasts, and put back by SwiftUI when it is called
     /// off as well as when it ends (see CarryGuard).
     @GestureState private var carrying = false
@@ -999,10 +1002,32 @@ struct Carried: ViewModifier {
 
     func body(content: Content) -> some View {
         // What it has travelled, less the ground its new place has already
-        // given it.
+        // given it: until its origin is read, the frame after pick-up, before
+        // it has gone anywhere.
         let shift = held ? travel - (Carried.leading(of: index, in: steps) - start) : 0
         return content
-            .offset(x: vertical ? 0 : shift, y: vertical ? shift : 0)
+            // Always attached and asked only while held. A reader added under
+            // the hand at pick-up changed the view and called the drag off
+            // (RowCarryTests' pair carry failed 8 of 8, 2026-11-07).
+            .onGeometryChange(for: CGFloat?.self, of: { [held, vertical, space] proxy in
+                guard held else { return nil }
+                let frame = proxy.frame(in: .named(space))
+                return vertical ? frame.minY : frame.minX
+            }) { drawn in
+                if origin == nil, let drawn { origin = drawn }
+            }
+            // Its place springs when it passes another tab, so the ground the
+            // place has given it is where the place is drawn this frame, not
+            // where the spring will end. Taken from the end, the tab fell a
+            // place behind the hand at every tab it passed and drifted back.
+            .visualEffect { [held, origin, travel, shift, vertical, space] content, proxy in
+                var moved = shift
+                if held, let origin {
+                    let frame = proxy.frame(in: .named(space))
+                    moved = origin + travel - (vertical ? frame.minY : frame.minX)
+                }
+                return content.offset(x: vertical ? 0 : moved, y: vertical ? moved : 0)
+            }
             .background {
                 if let browser, let tab, browser.prefs.usesTabGroups, let group = browser.group(of: tab) {
                     GeometryReader { geometry in
@@ -1030,6 +1055,7 @@ struct Carried: ViewModifier {
                             held = true
                             from = index
                             start = Carried.leading(of: index, in: steps)
+                            origin = nil
                             CarryGuard.open(ticket, end: callOff)
                         }
                         travel = vertical ? value.translation.height : value.translation.width

@@ -510,14 +510,8 @@ struct ContentView: View {
             // (see SidePanel.swift); two pages in Split View share what's left.
             if panelRoom > 0 { sidePanel }
 
-            // The column of tabs, in the way that has one. It takes the full
-            // height, so the traffic lights sit in its own corner rather than
-            // over the page.
-            if sidebar {
-                SideBar(browser: browser, prefs: browser.prefs, onFrame: cards)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .transition(.move(edge: sideOnRight ? .trailing : .leading))
-            }
+            // The column of tabs is Fold's, in its place beside the page or
+            // folded away (see Fold.swift).
 
             if !browser.prefs.sidebar, !browser.folded, fullscreenTab == nil {
                 TabBar(browser: browser)
@@ -849,6 +843,9 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { Browsers.becameKey(browser) }
             }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)) { _ in
+                if browser.prefs.keepsWindow, browser.tabs.contains(where: \.immersed) { immersing() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
                 if let window, (note.object as? NSWindow) === window {
                     browser.tabSwitcher.cancel()
@@ -995,12 +992,12 @@ struct ContentView: View {
     /// only the browser (see fullscreenWatch).
     private var fullscreenTab: Tab? {
         _ = immersionRevision
-        guard browser.prefs.splitView else { return browser.active?.immersed == true ? browser.active : nil }
+        guard browser.prefs.splitView else { return browser.active.flatMap { browser.fillsHere($0) ? $0 : nil } }
         if let split = browser.activeSplit,
-           let immersed = browser.tabs.first(where: { split.contains($0.id) && $0.immersed }) {
+           let immersed = browser.tabs.first(where: { split.contains($0.id) && browser.fillsHere($0) }) {
             return immersed
         }
-        return browser.active?.immersed == true ? browser.active : nil
+        return browser.active.flatMap { browser.fillsHere($0) ? $0 : nil }
     }
 
     /// The pages on screen, watched for full screen. The page alone too: left
@@ -1034,6 +1031,8 @@ struct ContentView: View {
         var still = Transaction()
         still.disablesAnimations = true
         withTransaction(still) {
+            // The folded column reads this too (Browser.fillsHere).
+            browser.objectWillChange.send()
             immersionRevision += 1
             roomTicket += 1
             room = chrome

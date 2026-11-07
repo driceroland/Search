@@ -14,6 +14,16 @@ in [ROADMAP.md](ROADMAP.md).
 ### Fixed
 
 - A site's SVG icon with a dark look of its own, like ChatGPT's, wears that look when Search is dark. It was drawn in its light look, black on the dark tab bar and column. An icon kept before this update keeps its light look until it is a week old. Thanks [@dhruvkb](https://github.com/dhruvkb) for reporting ([#807](https://github.com/driceroland/Search/issues/807))
+- Page translation stays quick on a Mac with Apple Intelligence: Search prefers the faster on-device translation model, as it did before macOS 26.4's SDK changed the default. Language pairs only the newer model supports still use it. Thanks [@2470046](https://github.com/2470046) ([#821](https://github.com/driceroland/Search/pull/821))
+
+- Keeping a bookmark or letting one go no longer stalls the window with many tabs open. Each one built every tab's row in the column again, though no row shows a bookmark: with 200 tabs it held the window for 146 to 188 ms, now 12 ms. The bookmarks bar still follows at once. `python3 Tests/bookmark_redraws.py` checks it Thanks [@oddharsh](https://github.com/oddharsh) ([#982](https://github.com/driceroland/Search/pull/982))
+
+- A tab carried past another stays under the pointer, in the column, the icon column and across the top. At every tab it passed it was thrown a place behind and glided back. Thanks [@oddharsh](https://github.com/oddharsh) ([#979](https://github.com/driceroland/Search/pull/979))
+
+- ⌘S hides and shows the column as soon as it's pressed. Each press built every row of the column four times over before the slide could start, about 150ms with 30 tabs, as long as the slide itself; it now takes about 38ms, and the column that slides away is the same one that comes back. Thanks [@oddharsh](https://github.com/oddharsh) ([#948](https://github.com/driceroland/Search/pull/948))
+
+- Dragging one of several tabs picked with ⌘- or ⇧-click carries them all: they land together where they're let go, in the order they had, Split View pairs whole, and dropped on a group they all go in. Only the tab under the pointer moved, since pressing it in the column brought it forward, which let go of the rest. A click on one of them still brings that one forward and ends the selection, now as the button comes up. Thanks [@oddharsh](https://github.com/oddharsh) ([#947](https://github.com/driceroland/Search/pull/947))
+
 - An extension's popup opens in the window where its button was pressed, not another open window: button anchors are kept per window instead of in a single global map, and pressing an extension's button acts in its window. Thanks [@BeNDYGo](https://github.com/BeNDYGo) ([#839](https://github.com/driceroland/Search/pull/839))
 
 - Disconnect Apple Passwords while a typed code is still being checked, then Connect again, and the new pairing waits for its own code. The old code's answer used to drop it, with "Apple's Passwords helper answered in a way Search doesn't know". Thanks [@oddharsh](https://github.com/oddharsh) ([#973](https://github.com/driceroland/Search/pull/973))
@@ -108,6 +118,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Choose a page translation language in Settings › Browsing › Pages, independently of the Mac's language. System Default keeps the previous behavior; automatically translated pages use the same choice ([#747](https://github.com/driceroland/Search/issues/747)). Thanks [@2470046](https://github.com/2470046) ([#821](https://github.com/driceroland/Search/pull/821))
+
+- A video in full screen no longer takes its window with it, if you ask: with Settings › Browsing › Keep the window in use during full screen on, the window on its own desktop keeps its tabs and the folded column while the video plays on, and you can browse in other tabs. Esc over the video lands it back in its tab. Off unless turned on. Thanks [@pasteley](https://github.com/pasteley) ([#980](https://github.com/driceroland/Search/pull/980))
+
 - Recent places in the new tab, in Settings beside the floating new tab and off unless turned on: ⌘T's floating field offers the last three places from History before anything is typed, leaving out pages already open in the window, which ⌘K finds. Nothing is picked until an arrow key picks it, so Return on the empty field still opens nothing; nothing is asked of a search engine, and a private tab offers nothing. Thanks [@ubeann](https://github.com/ubeann) ([#914](https://github.com/driceroland/Search/pull/914))
 
 - A tab carried over a page shows where letting go would split it: the page's two edges, faint, as soon as the tab is over it, with the split itself shown as before once the pointer rests on one. Over the middle of a page nothing splits, and nothing used to say where would. Thanks [@ubeann](https://github.com/ubeann) ([#936](https://github.com/driceroland/Search/pull/936))
@@ -122,6 +136,8 @@ in [ROADMAP.md](ROADMAP.md).
 - With a site put in the address field with Tab, the list offers what you searched that site for before, newest first, read from your history on this Mac and sent nowhere; the last few show before you type, and none in a private tab. A site shortcut ("yt naruto") offers the same. With Google in the field and Google your search engine, Suggestions from your search engine shows its suggestions there too; words typed to any other site never go to your engine. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#882](https://github.com/driceroland/Search/pull/882))
 
 ### Changed
+
+- The address field's history suggestions weigh how often you go to a place against how well it matches what was typed, so a page you use every day comes before one seen once, typo or not, and a site counts the visits to its pages too. A bookmark found only through a typo comes after where you have been. Typing in a long history is faster too. Thanks [@pasteley](https://github.com/pasteley) ([#944](https://github.com/driceroland/Search/pull/944))
 
 - ⌥⌘N on a Split View pair puts it apart, both pages staying as tabs, with the one that had the keys on screen: the key that made the split takes it away, as ⌘T, ⌘L and ⌘K each put away what they raised. It went to the right-hand page, which ⌃⌘→ already does. On a pair, Tabs › Split Current Page reads Separate Split Tabs. Thanks [@ubeann](https://github.com/ubeann) ([#932](https://github.com/driceroland/Search/pull/932))
 

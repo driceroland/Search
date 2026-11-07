@@ -611,6 +611,10 @@ struct SettingsPanel: View {
                 .frame(maxWidth: 340)
         case "media.click": Switch(on: $prefs.waitsForPlay)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
+        case "fullscreen.keepsWindow": Switch(on: $prefs.keepsWindow)
+        case "translate.target":
+            if PageTranslator.available { TranslateTargetPicker(prefs: prefs) }
+            else { Text("Requires macOS 15").foregroundStyle(Palette.muted) }
         case "pageZoom":
             // The number itself takes it back to 100%.
             Steps(stops: Preferences.zooms, value: $prefs.pageZoom, home: 1) { "\(Int(($0 * 100).rounded()))%" }
