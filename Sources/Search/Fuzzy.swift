@@ -37,8 +37,23 @@ enum Fuzzy {
         return rest.isEmpty
     }
 
-    private static func contains(_ text: UnsafeBufferPointer<UInt8>, _ word: [UInt8]) -> Bool {
+    static func contains(_ text: UnsafeBufferPointer<UInt8>, _ word: [UInt8]) -> Bool {
         word.withUnsafeBytes { memmem(text.baseAddress, text.count, $0.baseAddress, $0.count) != nil }
+    }
+
+    /// Whether `word` starts a word of `text`: "api" in "team/api", not "rapid".
+    static func startsWord(_ word: [UInt8], in text: UnsafeBufferPointer<UInt8>) -> Bool {
+        guard let base = text.baseAddress, !word.isEmpty, text.count >= word.count else { return false }
+        let anywhere = !inWord(word[0])
+        return word.withUnsafeBytes { word in
+            var from = 0
+            while from < text.count, let hit = memmem(base + from, text.count - from, word.baseAddress, word.count) {
+                let at = UnsafeRawPointer(base).distance(to: hit)
+                if anywhere || at == 0 || !inWord(text[at - 1]) { return true }
+                from = at + 1
+            }
+            return false
+        }
     }
 
     /// Letters and digits, and anything outside ASCII.
