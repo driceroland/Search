@@ -234,7 +234,7 @@ enum SettingsIndex {
               keys: ["float.style"], words: ["pip", "picture in picture", "mini player"]),
         .init(id: "float.own", group: "video", icon: "pip.exit",
               title: "Float the video on its own", detail: "A playing video comes out when you leave its tab, or Search",
-              more: "It goes back into its tab when you return. ⇧⌘P still floats one by hand.",
+              more: "It goes back into its tab when you return, and stays put while its window is still in view on another screen. ⇧⌘P still floats one by hand.",
               keys: ["float.leave", "float.away"], words: ["pip", "picture in picture", "switch apps"], kind: .wide),
         .init(id: "media.click", group: "video", icon: "play.slash",
               title: "Videos wait for a click", detail: "Videos don't start by themselves, even without sound",
