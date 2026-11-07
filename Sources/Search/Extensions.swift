@@ -556,6 +556,8 @@ final class Extensions: NSObject, ObservableObject {
 
     @discardableResult
     private func load(_ item: Installed) async -> Bool {
+        let ticket = loadTickets[item.id, default: 0] + 1
+        loadTickets[item.id] = ticket
         if let forgetting = forgetting[item.id] { await forgetting.value }
         // The shim this build of Search carries, in place of whatever the
         // build that installed it carried — away from the main thread: the
@@ -571,6 +573,11 @@ final class Extensions: NSObject, ObservableObject {
         try? await Task.detached(priority: .userInitiated) { try ExtensionShims.prepare(folder, workerGeneration: generation) }.value
         do {
             let found = try await WKWebExtension(resourceBaseURL: Extensions.folder(for: item.id))
+            // Switched off, removed, or loaded again while this one waited
+            // (or before its task began): unload had nothing to take away
+            // yet, so this one stands down.
+            guard loadTickets[item.id] == ticket,
+                  installed.contains(where: { $0.id == item.id && $0.enabled }) else { return false }
             let context = WKWebExtensionContext(for: found)
             context.uniqueIdentifier = item.id
             // The same origin every launch. WebKit picks a fresh one
@@ -627,6 +634,7 @@ final class Extensions: NSObject, ObservableObject {
 
     @discardableResult
     private func unload(_ id: String, replacingContext: Bool = true) -> Bool {
+        loadTickets[id, default: 0] += 1
         guard let context = contexts[id] else { return false }
         var unloaded = false
         do { try controller.unload(context); unloaded = true } catch {}
@@ -854,6 +862,9 @@ final class Extensions: NSObject, ObservableObject {
 
     /// Loaded at least once since the browser started, and loaded again.
     private var loadsThisRun: Set<String> = []
+    /// Bumped by every load and unload of an id: a load lands only if its
+    /// ticket is still the latest once it is done waiting.
+    private var loadTickets: [String: Int] = [:]
     private(set) var loadedBefore: Set<String> = []
 
     @discardableResult

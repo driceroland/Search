@@ -17,6 +17,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Close Both Pages is remembered as one, as Close Tabs Below is: one ⇧⌘T brings both pages back side by side, as the pair they were, with the keys in the page that had them. Each page used to be its own entry, so ⇧⌘T brought back one page alone, and a second ⇧⌘T the other, apart. Thanks [@ubeann](https://github.com/ubeann) ([#930](https://github.com/driceroland/Search/pull/930))
 
+- An extension switched off in Settings while it was still starting stays off. The start already under way finished after the switch, so the extension ran and kept its button with its switch showing off, until the next launch; removing one mid-start did the same. Thanks [@oddharsh](https://github.com/oddharsh) ([#950](https://github.com/driceroland/Search/pull/950))
+
 - A download cancelled while it is still stopping says "Cancelling…" in the Downloads panel, whether Cancel was pressed while it ran or while a pause was under way. It said "Pausing…", as if Cancel had paused it. Thanks [@oddharsh](https://github.com/oddharsh) ([#967](https://github.com/driceroland/Search/pull/967))
 
 - Passkeys follow the switch of the Search they run in: a build of your own started beside a release turned them off for the release's new tabs while its switch still said on. Thanks [@oddharsh](https://github.com/oddharsh) ([#737](https://github.com/driceroland/Search/pull/737))
