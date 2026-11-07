@@ -51,12 +51,12 @@ final class Links: NSObject, NSApplicationDelegate {
     /// Quitting closes every window on the way out; that isn't a window
     /// closed for good, whose tabs would go (see Browsers.closing).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let waiting = MainActor.assumeIsolated {
-            Browsers.quitting = true
-            return Browser.cancelAllFileImports()
-        }
+        let waiting = MainActor.assumeIsolated { Browser.cancelAllFileImports() }
         guard waiting else {
             terminationPending = false
+            // Only once the quit goes ahead: while it waits on an import,
+            // a window closed is closed for good.
+            MainActor.assumeIsolated { Browsers.quitting = true }
             return .terminateNow
         }
         if !terminationPending {
