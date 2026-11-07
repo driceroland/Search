@@ -15,6 +15,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 - An extension's popup opens in the window where its button was pressed, not another open window: button anchors are kept per window instead of in a single global map, and pressing an extension's button acts in its window. Thanks [@BeNDYGo](https://github.com/BeNDYGo) ([#839](https://github.com/driceroland/Search/pull/839))
 
+- Disconnect Apple Passwords while a typed code is still being checked, then Connect again, and the new pairing waits for its own code. The old code's answer used to drop it, with "Apple's Passwords helper answered in a way Search doesn't know". Thanks [@oddharsh](https://github.com/oddharsh) ([#973](https://github.com/driceroland/Search/pull/973))
+
 - Pages that load their own `.bundle.js` files, GitLab's among them, are no longer left half-drawn with uBlock Origin Lite installed. One of its rules blocks a site's bundles only when the server answers with an anti-adblock header; WebKit has no way to read that header, skipped it, and blocked every site's bundles. An extension's rules that depend on a response's headers are now left out. Thanks [@pasteley](https://github.com/pasteley) ([#858](https://github.com/driceroland/Search/pull/858))
 
 - A page visited, retitled or given its icon in the last second or two before quitting is still in History and keeps its icon. Search waited a moment before writing either, and quitting inside that moment threw the write away. Thanks [@oddharsh](https://github.com/oddharsh) ([#971](https://github.com/driceroland/Search/pull/971))
