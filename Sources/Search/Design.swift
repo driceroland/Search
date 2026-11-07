@@ -38,6 +38,9 @@ enum Palette {
     /// way, and one anybody can (see SiteCard.swift).
     static let safe = Color(nsColor: NS.safe)           // green-700 · green-400
     static let unsafe = Color(nsColor: NS.unsafe)       // amber-700 · amber-400
+    /// The page set back under a peek, or under the address field raised
+    /// over it. The same in light and dark.
+    static let dim = Color.black.opacity(0.22)
 
     /// The same colours for the AppKit corners of the app — a text field's
     /// ink, a window's background — which want an NSColor and keep it.
