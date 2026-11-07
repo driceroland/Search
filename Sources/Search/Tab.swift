@@ -1443,7 +1443,6 @@ final class Tab: ObservableObject, Identifiable {
         memory = nil
         picture = nil
         reading = 0
-        noisy = false
         stale = false
         pull = nil
         // Loading about:blank here looked like letting the page go, and
@@ -1939,6 +1938,7 @@ final class Tab: ObservableObject, Identifiable {
         translationGone(sleeping: true)
         watch = []
         ears.stop()
+        noisy = false
         quiet?.invalidate()
         quiet = nil
         media.forget()

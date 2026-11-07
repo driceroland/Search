@@ -15,6 +15,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Passkeys follow the switch of the Search they run in: a build of your own started beside a release turned them off for the release's new tabs while its switch still said on. Thanks [@oddharsh](https://github.com/oddharsh) ([#737](https://github.com/driceroland/Search/pull/737))
 
+- A tab moved to a space with its own sign-ins while it played sound no longer keeps its speaker once its page is let go. It went on saying "playing sound" with nothing behind it, so it never slept or closed itself. Thanks [@oddharsh](https://github.com/oddharsh) ([#958](https://github.com/driceroland/Search/pull/958))
+
 - Closing a page that a link just opened in front goes back to the page the link was clicked in, while that is still the tab you were on before it. It opens at the end of the row, so with Closing a tab goes back to the one before off, ⌘W landed on whatever tab was last there. Thanks [@ubeann](https://github.com/ubeann) ([#963](https://github.com/driceroland/Search/pull/963))
 
 - An update downloading when the hourly check can't reach the feed goes on to be ready. The check forgot it was on its way, so the finished download was never said to be ready, and the next check swapped it in again, deleting the copy of Search still running until it quit. Thanks [@oddharsh](https://github.com/oddharsh) ([#949](https://github.com/driceroland/Search/pull/949))
