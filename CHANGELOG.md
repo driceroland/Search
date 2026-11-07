@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- CHANGED:A link's small window opens where you last left it, at that size; if no screen shows most of that place any more, it opens centred. Thanks [@Comradevergreen](https://github.com/Comradevergreen) ([#789](https://github.com/driceroland/Search/pull/789))
+
 - Page translation stays quick on a Mac with Apple Intelligence: Search prefers the faster on-device translation model, as it did before macOS 26.4's SDK changed the default. Language pairs only the newer model supports still use it. Thanks [@2470046](https://github.com/2470046) ([#821](https://github.com/driceroland/Search/pull/821))
 
 - Keeping a bookmark or letting one go no longer stalls the window with many tabs open. Each one built every tab's row in the column again, though no row shows a bookmark: with 200 tabs it held the window for 146 to 188 ms, now 12 ms. The bookmarks bar still follows at once. `python3 Tests/bookmark_redraws.py` checks it Thanks [@oddharsh](https://github.com/oddharsh) ([#982](https://github.com/driceroland/Search/pull/982))
