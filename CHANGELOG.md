@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- ⌘K puts the tab switcher away after Tabs › Search Tabs… was clicked in the menu. It stepped down the list instead, and letting go of ⌘ then switched to the second tab in it. Thanks [@oddharsh](https://github.com/oddharsh) ([#959](https://github.com/driceroland/Search/pull/959))
+
 - When the page in the half of a Split View pair you aren't typing in crashes or is ended by the system, it loads again straight away, as the half you are in does. It stayed white, though on screen, until you clicked into it or went to another tab and back. Thanks [@oddharsh](https://github.com/oddharsh) ([#955](https://github.com/driceroland/Search/pull/955))
 
 - A page's camera, microphone, location or notifications card goes away with its page: going to another tab, or the page going elsewhere or closing, refuses it, as the screen-sharing card already did. It stayed up over the next tab, and Allow gave the page you had left what it asked for. A screen-sharing question waiting for a tab behind no longer refuses every other page's camera, location and notifications until you go to that tab. Thanks [@oddharsh](https://github.com/oddharsh) ([#954](https://github.com/driceroland/Search/pull/954))
