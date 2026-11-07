@@ -2295,9 +2295,6 @@ final class Browser: NSObject, ObservableObject {
         history.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &bag)
-        bookmarks.objectWillChange
-            .sink { [weak self] in self?.objectWillChange.send() }
-            .store(in: &bag)
 
         // A page's passkeys for under its field, arriving while the caret
         // is already there, or going with the page's request.
