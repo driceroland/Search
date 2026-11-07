@@ -1647,13 +1647,23 @@ struct TabPress: ViewModifier {
                 return
             }
             TabPress.openedAt = nil
-            guard enabled, NSEvent.modifierFlags.intersection([.command, .control, .shift]).isEmpty else { return }
+            guard enabled, NSEvent.modifierFlags.intersection([.command, .control, .shift]).isEmpty,
+                  !TabPress.otherButton else { return }
             selected = !active
             if selected {
                 TabPress.openedAt = ProcessInfo.processInfo.systemUptime
                 act()
             }
         }, perform: {})
+    }
+
+    /// The press is the right button's or the middle one's: the long press
+    /// hears every button go down, and a right-click is the tab's menu, a
+    /// middle-click its closing, never its selection.
+    private static var otherButton: Bool {
+        if let type = NSApp.currentEvent?.type { return type == .rightMouseDown || type == .otherMouseDown }
+        let buttons = NSEvent.pressedMouseButtons
+        return buttons != 0 && buttons & 1 == 0
     }
 
     /// Once, at the left button's release.
