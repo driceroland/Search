@@ -1544,6 +1544,7 @@ final class Browser: NSObject, ObservableObject {
     private var permissionBusy: Bool { decide != nil || decideDisplay != nil }
     private(set) static var displayAnswered: Int?
     private var askedAbout = ""
+    private var askedRevision: UInt?
 
     func allowCapture() { answerCapture(.grant) }
     func allowCaptureOnce() { answerCapture(.grant, keep: false) }
@@ -1586,17 +1587,76 @@ final class Browser: NSObject, ObservableObject {
         let pending = decide
         decide = nil
         askedAbout = ""
+        askedRevision = nil
         asking = nil
         pending?(.deny)
     }
 
+    /// A setting changed while another window was showing this question.
+    static func cancelSiteQuestions(keys: Set<String>, including source: Browser) {
+        let browsers = Browsers.all + (Browsers.all.contains { $0 === source } ? [] : [source])
+        for browser in browsers where !browser.askedAbout.isEmpty && keys.contains("capture." + browser.askedAbout) {
+            browser.cancelCapture()
+        }
+    }
+
+    /// Change a site's saved answer and end matching tabs' active capture.
+    func setSitePermission(_ value: Bool?, kind: CaptureChoices.Kind, origin: String) {
+        let keys = CaptureChoices.set(value, for: kind, origin: origin)
+        Browser.cancelSiteQuestions(keys: keys, including: self)
+        if kind == .notifications, value == true { SiteNotifications.shared.authorize() }
+        SiteNotifications.shared.objectWillChange.send()
+        guard value == false, kind.media else { return }
+
+        let browsers = Browsers.all + (Browsers.all.contains { $0 === self } ? [] : [self])
+        let tabs = browsers.flatMap { $0.tabs + $0.parkedTabs + [$0.peekTab].compactMap { $0 } }
+            + LittleWindow.all.map(\.tab)
+        var visited: Set<ObjectIdentifier> = []
+        for tab in tabs where !tab.shy {
+            guard let web = tab.built, web.configuration.websiteDataStore.isPersistent,
+                  visited.insert(ObjectIdentifier(web)).inserted,
+                  let url = web.url, let scheme = url.scheme, let host = url.host(),
+                  Browser.origin(scheme, host, url.port ?? 0) == origin else { continue }
+            if kind == .camera || kind == .cameraAndMicrophone {
+                web.setCameraCaptureState(.none, completionHandler: nil)
+            }
+            if kind == .microphone || kind == .cameraAndMicrophone {
+                web.setMicrophoneCaptureState(.none, completionHandler: nil)
+            }
+        }
+    }
+
     private func answerCapture(_ decision: WKPermissionDecision, keep: Bool = true) {
         guard let decide, let asking, Date().timeIntervalSince(asking.shown) > 0.5 else { return }
+        if let revision = askedRevision, revision != CaptureChoices.revision(for: "capture." + askedAbout) {
+            return cancelCapture()
+        }
+        var invalidated: Set<String> = []
         // Remembered per site, so a call you take every week asks once.
-        if keep, !askedAbout.isEmpty { Store.settings.set(decision == .grant, forKey: "capture." + askedAbout) }
+        if keep, !askedAbout.isEmpty {
+            if let split = askedAbout.lastIndex(of: "|"),
+               let kind = [CaptureChoices.Kind.camera, .microphone, .cameraAndMicrophone, .location, .notifications]
+                   .first(where: { $0.suffix == String(askedAbout[askedAbout.index(after: split)...]) }) {
+                let origin = String(askedAbout[..<split])
+                if kind == .cameraAndMicrophone, decision == .deny {
+                    // A combined request can include a device already allowed.
+                    // Refuse only the devices for which this prompt asked.
+                    for device: CaptureChoices.Kind in [.camera, .microphone]
+                    where CaptureChoices.mediaDecision(device, origin: origin) == nil {
+                        invalidated.formUnion(CaptureChoices.set(false, for: device, origin: origin))
+                    }
+                } else {
+                    invalidated.formUnion(CaptureChoices.set(decision == .grant, for: kind, origin: origin))
+                }
+            } else {
+                Store.settings.set(decision == .grant, forKey: "capture." + askedAbout)
+            }
+        }
         self.decide = nil
         askedAbout = ""
+        askedRevision = nil
         self.asking = nil
+        Browser.cancelSiteQuestions(keys: invalidated, including: self)
         decide(decision)
     }
 
@@ -7155,23 +7215,34 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             site = origin.host.isEmpty ? host : "\(origin.protocol)://\(origin.host)" + (origin.port == 0 ? "" : ":\(origin.port)")
         }
         let key = "\(site)|\(type.rawValue)"
-        let shy = tab(for: webView).map { $0.shy || !webView.configuration.websiteDataStore.isPersistent } ?? false
+        let shy = !webView.configuration.websiteDataStore.isPersistent || (popupTab(for: webView)?.shy ?? false)
 
-        if !shy, let remembered = Store.settings.object(forKey: "capture." + key) as? Bool {
-            decisionHandler(remembered ? .grant : .deny)
-            return
+        if !shy, type == .cameraAndMicrophone {
+            if CaptureChoices.combinedBlocked(origin: site) { return decisionHandler(.deny) }
+            if CaptureChoices.combinedAllowed(origin: site) { return decisionHandler(.grant) }
+        } else if !shy, let kind = type == .camera ? CaptureChoices.Kind.camera : type == .microphone ? .microphone : nil,
+                  let remembered = CaptureChoices.mediaDecision(kind, origin: site) {
+            return decisionHandler(remembered ? .grant : .deny)
         }
         // Asked over its own page only, as a page's other questions are (see
         // ask): a tab behind, or the other page of a pair, waits until you go
         // to it, and is asked then — never over the page you are on.
+        var wants = Browser.name(for: type)
+        if !shy, type == .cameraAndMicrophone {
+            if CaptureChoices.mediaDecision(.camera, origin: site) == true { wants = "microphone" }
+            else if CaptureChoices.mediaDecision(.microphone, origin: site) == true { wants = "camera" }
+        }
+        let revision = CaptureChoices.revision(for: "capture." + key)
         ask(from: webView, show: { [weak self] in
             guard let self else { return decisionHandler(.deny) }
+            guard shy || revision == CaptureChoices.revision(for: "capture." + key) else { return decisionHandler(.deny) }
             // One question at a time. A second page asking while the first is
             // still waiting is refused rather than queued behind it.
             guard !permissionBusy else { return decisionHandler(.deny) }
             decide = decisionHandler
             askedAbout = shy ? "" : key
-            asking = CaptureAsk(host: host, wants: Browser.name(for: type))
+            askedRevision = shy ? nil : revision
+            asking = CaptureAsk(host: host, wants: wants)
         }, drop: { decisionHandler(.deny) })
     }
 
@@ -7251,6 +7322,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         guard !permissionBusy else { return give(.deny) }
         decide = give
         askedAbout = tab.shy ? "" : key
+        askedRevision = tab.shy ? nil : CaptureChoices.revision(for: "capture." + key)
         let named = Browser.extensionScheme(origin.protocol) ? Browser.extensionName(origin.host) : origin.host
         asking = CaptureAsk(host: named, wants: "location", once: true, keeps: !tab.shy)
     }
@@ -7268,8 +7340,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
               Browser.origin(scheme, host, page.port ?? 0) == site
         else { return decisionHandler(false) }
         if let remembered = SiteNotifications.choices[site] { return decisionHandler(remembered) }
+        let revision = CaptureChoices.revision(for: "capture.\(site)|notifications")
         ask(from: webView, show: { [weak self] in
             guard let self else { return decisionHandler(false) }
+            guard revision == CaptureChoices.revision(for: "capture.\(site)|notifications") else { return decisionHandler(false) }
             guard !permissionBusy else { return decisionHandler(false) }
             decide = { decision in
                 if decision == .grant { SiteNotifications.shared.authorize() }
@@ -7277,6 +7351,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
                 SiteNotifications.shared.objectWillChange.send()
             }
             askedAbout = "\(site)|notifications"
+            askedRevision = revision
             asking = CaptureAsk(host: origin.host, wants: "notifications")
         }, drop: { decisionHandler(false) })
     }
