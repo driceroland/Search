@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Going to another space with ⌃1–⌃9 or the space menu while the card for a new space is up puts the card away, as Escape does. The row changed but the card and its plus stayed, and if the card came from a tab's Move to Space › New Space…, a later Create carried that tab into the new space too. Typing "new space" in the address field now opens the card the way New Space… does.
 - A video playing in a window on another screen — a TV, a second display — no longer floats out when you work in another app on this one.
 
 - A Split View pair carried in the column or across the top comes apart only where that was shown: rest over another tab and the half that stays dims, with the same tick as a split shown over a page, and only then does letting go take the other half out. Let go a few points past the pair's own edge on its way to a new place, it used to lose the half being held with no sign it would. Thanks [@ubeann](https://github.com/ubeann) ([#887](https://github.com/driceroland/Search/pull/887))
