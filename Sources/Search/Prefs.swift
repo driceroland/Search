@@ -898,6 +898,83 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// The folder the settings file is in, watched for as long as the app
+    /// runs (see followFile).
+    private var fileWatch: DispatchSourceFileSystemObject?
+
+    /// A line of the settings file changed from outside, by `defaults write`
+    /// while Search runs, moves its switch at once, as if it had been
+    /// flipped in Settings. The folder rather than the file: `defaults` puts
+    /// a new file in place of the old one. Nothing else hears it on macOS
+    /// 27.2: UserDefaults.didChangeNotification only fires for this
+    /// process's own writes, and KVO misses every key with a dot in it.
+    /// Started once, at launch, for the app's own settings (see Links).
+    func followFile() {
+        let folder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")
+        let handle = open(folder.path, O_EVTONLY)
+        guard handle >= 0 else { return }
+        let watch = DispatchSource.makeFileSystemObjectSource(fileDescriptor: handle, eventMask: .write, queue: .main)
+        watch.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.reread() } }
+        watch.resume()
+        fileWatch = watch
+    }
+
+    /// The settings that only change how the tabs, the sidebar and the
+    /// window look and sit, read again as init reads them, and set only
+    /// where that differs, through their own didSet: what the switch does
+    /// happens, and the value written back says what the line already said,
+    /// so the next look finds nothing to do. Only these: privacy, security,
+    /// passwords, extensions and anything that loosens a protection keep
+    /// applying at the next launch, as before, and `bench` stays behind
+    /// Bench.Consent (Drice, on #736, 26 Oct 2026). The folder holds every
+    /// app's settings, and a change is often heard twice, the first time
+    /// before it can be read; either costs a read and nothing more. A line
+    /// taken out puts its default back and leaves no line, as launch leaves
+    /// none; a choice or a width this build can't read is left as it is (see
+    /// take). The switches that are off unless turned on are read through
+    /// bool as launch reads them: any line, or none, is off, and that is
+    /// written back.
+    func reread() {
+        take(\.look, "look", store.string(forKey: "look").flatMap(Look.init), or: .system)
+        take(\.navigationLeft, store.bool(forKey: "toolbar.left"))
+        take(\.sidebar, "sidebar", store.object(forKey: "sidebar") as? Bool, or: store.string(forKey: "manner") == "side")
+        take(\.sidePosition, "sidebar.position", store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init),
+             or: .left)
+        take(\.sideHides, store.bool(forKey: "sidebar.hides"))
+        take(\.roomyTabs, store.bool(forKey: "sidebar.roomy"))
+        take(\.sideIcons, store.bool(forKey: "sidebar.icons"))
+        take(\.sideWidth, "sidebar.width", (store.object(forKey: "sidebar.width") as? Double).map { CGFloat($0) }
+            .flatMap { (Metrics.sideMin...Metrics.sideMax).contains($0) ? $0 : nil }, or: Metrics.side)
+        take(\.sidePanelWidth, "sidepanel.width", (store.object(forKey: "sidepanel.width") as? Double).map { CGFloat($0) }
+            .flatMap { Preferences.sidePanelWidths.contains($0) ? $0 : nil }, or: 380)
+        take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)
+        take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
+        take(\.tabsGive, store.bool(forKey: "tabs.give"))
+        take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))
+        take(\.bookmarksBar, store.bool(forKey: "bookmarks.bar"))
+        take(\.alwaysShowsDownloads, store.bool(forKey: "downloads.button"))
+    }
+
+    /// The setting as its line reads, or `fallback` where there's no line,
+    /// and still no line after didSet has run: launch writes none for a
+    /// default, so a later build that changes the default finds it never
+    /// touched. A line there that this build can't read (a choice a newer
+    /// build added, a width past this one's limits, a typo) leaves the
+    /// setting and the line as they are: launch falls back to the default for
+    /// it, but written back the default would take that choice from the newer
+    /// build as well.
+    private func take<T: Equatable>(_ setting: ReferenceWritableKeyPath<Preferences, T>, _ key: String, _ read: T?,
+                                    or fallback: T) {
+        if let read { return take(setting, read) }
+        guard store.object(forKey: key) == nil, self[keyPath: setting] != fallback else { return }
+        self[keyPath: setting] = fallback
+        store.removeObject(forKey: key)
+    }
+
+    private func take<T: Equatable>(_ setting: ReferenceWritableKeyPath<Preferences, T>, _ value: T) {
+        if self[keyPath: setting] != value { self[keyPath: setting] = value }
+    }
+
     /// WebKit's text checker takes its orders from the app's standard
     /// defaults — the real ones, not the test suite, because it is WebKit
     /// reading them and not us. Text replacement, smart quotes and smart
