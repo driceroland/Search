@@ -90,6 +90,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- ⌥⌘N on a Split View pair puts it apart, both pages staying as tabs, with the one that had the keys on screen: the key that made the split takes it away, as ⌘T, ⌘L and ⌘K each put away what they raised. It went to the right-hand page, which ⌃⌘→ already does. On a pair, Tabs › Split Current Page reads Separate Split Tabs. Thanks [@ubeann](https://github.com/ubeann) ([#932](https://github.com/driceroland/Search/pull/932))
+
 - Settings › Appearance › Motion › Save power in Low Power Mode (was Reduce animations) also lets idle tabs sleep after ten minutes at most while in Low Power Mode. Off by default. Thanks [@oddharsh](https://github.com/oddharsh) ([#745](https://github.com/driceroland/Search/pull/745))
 
 - In Split View, the page your typing, Back and ⌘F go to has a clearer line round it: two points of mid-grey, where it was one point at a little over half strength. Against a white page it stood about 2:1 in light and 1.7:1 in dark, little more than the other page's own edge; now about 3:1 in both. Thanks [@ubeann](https://github.com/ubeann) ([#938](https://github.com/driceroland/Search/pull/938))

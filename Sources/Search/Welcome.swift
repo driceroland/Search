@@ -197,7 +197,7 @@ struct WelcomePanel: View {
                 Key("⌘K", "Every open tab, by name.")
                 Key("⌘,", "Settings, including passwords and updates. ⌘F there finds any setting.")
                 Key("⌃1", "Spaces: separate tabs and sign-ins. Turn them on in Settings › Spaces & Pins, or Set Up Like Arc there.")
-                Key("⌥⌘N", "Split a page in two, or drag a tab onto a page; ⌃⌘← and ⌃⌘→ go from one page to the other.")
+                Key("⌥⌘N", "Split a page in two, or drag a tab onto a page; ⌃⌘← and ⌃⌘→ go from one page to the other, and ⌥⌘N again puts them apart.")
                 Key("⌘O", "Links from other apps can open in a small window. Settings › Browsing.")
                 Key("⌘L", "Suggestions from your search engine as you type — off until you turn them on in Settings › Browsing.")
                 Key("⌘", "Held, it can show each tab's number for ⌘1–9. Settings › Tabs.")
