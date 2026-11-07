@@ -19,6 +19,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Reading mode brings the whole article on a page whose article cites its sources: links are weighed by how much of a box they are, not counted, so Wikipedia and MDN come whole, a comment section stays out, and a page that is only links still offers nothing to read. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#774](https://github.com/driceroland/Search/pull/774)), and [@pasteley](https://github.com/pasteley) for reporting ([#757](https://github.com/driceroland/Search/issues/757))
 
+- A page opened just as Search's look changes, light to dark or back, wears its icon once it has loaded. It was asked for its icon before it had arrived, found none, and showed its letter until the look changed again. Thanks [@oddharsh](https://github.com/oddharsh) ([#942](https://github.com/driceroland/Search/pull/942))
+
 - ⌘L held down keeps the address field up. Each of the key's repeats put the field away or raised it again, so it flickered and stayed wherever the count left it. Thanks [@oddharsh](https://github.com/oddharsh) ([#976](https://github.com/driceroland/Search/pull/976))
 
 - Closing the assistant while the on-device engine is still starting no longer leaves it writing an answer for nobody, which kept the engine running until it was done. Thanks [@oddharsh](https://github.com/oddharsh) ([#970](https://github.com/driceroland/Search/pull/970))
