@@ -15,6 +15,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 - A muted video now floats when you go to another desktop, as it does when you go to another app; one you paused yourself still stays in its tab. Thanks [@Comradevergreen](https://github.com/Comradevergreen) ([#791](https://github.com/driceroland/Search/pull/791))
 
+- A site's SVG icon with a dark look of its own, like ChatGPT's, wears that look when Search is dark. It was drawn in its light look, black on the dark tab bar and column. An icon kept before this update keeps its light look until it is a week old. Thanks [@oddharsh](https://github.com/oddharsh) ([#917](https://github.com/driceroland/Search/pull/917))
 
 - Page translation stays quick on a Mac with Apple Intelligence: Search prefers the faster on-device translation model, as it did before macOS 26.4's SDK changed the default. Language pairs only the newer model supports still use it. Thanks [@2470046](https://github.com/2470046) ([#821](https://github.com/driceroland/Search/pull/821))
 
