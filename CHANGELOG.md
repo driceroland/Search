@@ -53,6 +53,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- What plays in another tab can show at the foot of the sidebar: its icon and title, with its pause, and a click goes to the tab. Off unless you turn it on in Settings › Appearance › Tabs. Thanks [@Tom-Boscher](https://github.com/Tom-Boscher) ([#764](https://github.com/driceroland/Search/pull/764))
+
 - Copy Address in a download's right-click menu, while it runs and once it is done, for files downloaded from now on, to hand it to another download app. Clearing history takes these addresses with it; the files stay listed. Asked for by [@ejzpan](https://github.com/ejzpan) ([#853](https://github.com/driceroland/Search/issues/853))
 - With a site put in the address field with Tab, the list offers what you searched that site for before, newest first, read from your history on this Mac and sent nowhere; the last few show before you type, and none in a private tab. A site shortcut ("yt naruto") offers the same. With Google in the field and Google your search engine, Suggestions from your search engine shows its suggestions there too; words typed to any other site never go to your engine. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#882](https://github.com/driceroland/Search/pull/882))
 
