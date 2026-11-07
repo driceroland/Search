@@ -678,7 +678,7 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         guard let host = hereHost, let back = curtain.undo(on: host) else { return }
-        redress()
+        redress(sparing: [back])
         announce("\(back.label) is back")
     }
 
@@ -686,7 +686,7 @@ final class Browser: NSObject, ObservableObject {
     /// outlined, and scrolls the page to it.
     func peek(_ veil: Veil) {
         guard let tab = active else { return }
-        tab.peek(veil.selector, keeping: curtain.css(on: hereHost, without: veil.selector))
+        tab.peek(veil, keeping: curtain.css(on: hereHost, without: veil.selector))
     }
 
     func stopPeeking() {
@@ -696,23 +696,23 @@ final class Browser: NSObject, ObservableObject {
     func restore(_ veil: Veil) {
         guard let host = hereHost else { return }
         curtain.restore(veil, on: host)
-        redress()
+        redress(sparing: [veil])
     }
 
     func restoreAll() {
         guard let host = hereHost else { return }
+        let all = curtain.veils(on: host)
         curtain.restoreAll(on: host)
-        redress()
+        redress(sparing: all)
         reviewing = false
         announce("Everything is back")
     }
 
     /// Both the page in front of you and the one that loads next time.
-    private func redress() {
+    private func redress(sparing back: [Veil]) {
         guard let tab = active else { return }
-        let css = curtain.css(on: hereHost)
-        tab.arm(hiding: css)
-        tab.applyVeils(css)
+        tab.arm(hiding: curtain.loadingCSS(on: hereHost))
+        tab.spare(back, keeping: curtain.css(on: hereHost))
     }
 
     // MARK: - passwords
@@ -2529,7 +2529,7 @@ final class Browser: NSObject, ObservableObject {
             .sink { [weak self] on in
                 guard let self else { return }
                 for tab in tabs + parkedTabs {
-                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.arm(hiding: curtain.loadingCSS(on: curtain.host(of: tab.address)))
                     tab.built?.evaluateInSearch(on ? AutoScroll.script : AutoScroll.off)
                 }
             }
@@ -2556,7 +2556,7 @@ final class Browser: NSObject, ObservableObject {
                 guard let self else { return }
                 if !on { linkStatus.dismiss() }
                 for tab in tabs + parkedTabs {
-                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.arm(hiding: curtain.loadingCSS(on: curtain.host(of: tab.address)))
                     tab.built?.evaluateJavaScript(on ? HoveredLink.script : HoveredLink.off, in: nil, in: .defaultClient)
                 }
             }
@@ -2584,7 +2584,7 @@ final class Browser: NSObject, ObservableObject {
                 // re-arming with nothing would quietly restore every element
                 // this person had taken off, everywhere.
                 for tab in tabs {
-                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.arm(hiding: curtain.loadingCSS(on: curtain.host(of: tab.address)))
                 }
                 announce(on ? "Passkeys offered again — reload the page" : "Sites will ask for a password instead")
             }
@@ -5715,9 +5715,8 @@ final class Browser: NSObject, ObservableObject {
                 return
             }
             curtain.hide(selector, label: label, note: note, on: host)
-            let css = curtain.css(on: host)
-            tab.arm(hiding: css)
-            tab.applyVeils(css)
+            tab.arm(hiding: curtain.loadingCSS(on: host))
+            tab.applyVeils(curtain.css(on: host))
             announce("Hidden — ⌘Z puts it back")
         }
         tab.onPickEnd = { [weak self] _ in self?.veiling = false }
@@ -6433,7 +6432,7 @@ final class Browser: NSObject, ObservableObject {
     /// yet, looked at.
     private func redusk() {
         for tab in tabs + parkedTabs {
-            tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+            tab.arm(hiding: curtain.loadingCSS(on: curtain.host(of: tab.address)))
             guard let web = tab.built else { continue }
             let host = Dusk.host(of: tab.pageAddress)
             if Dusk.shared.unsure(host) { duskLook(tab) } else { web.evaluateInSearch(Dusk.shared.update(for: host)) }
@@ -6455,7 +6454,7 @@ final class Browser: NSObject, ObservableObject {
                 if !tab.shy { Dusk.shared.saw(host, dark: dark) }
                 guard !dark, let script = Dusk.shared.script(for: host, light: true) else { return }
                 web.evaluateInSearch(script)
-                tab.arm(hiding: self.curtain.css(on: self.curtain.host(of: tab.address)))
+                tab.arm(hiding: self.curtain.loadingCSS(on: self.curtain.host(of: tab.address)))
             }
         }
     }
@@ -6628,7 +6627,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // decided here because here is the last moment before it loads.
         if action.targetFrame?.isMainFrame ?? true, let tab = tab(for: webView) {
             let host = curtain.host(of: url)
-            tab.arm(hiding: curtain.css(on: host), to: url)
+            tab.arm(hiding: curtain.loadingCSS(on: host), to: url)
             // And the blocker, on or off for where it is going.
             Shield.shared.tune(webView.configuration.userContentController, for: host)
             // The frames that were told about the last page's darkening go
