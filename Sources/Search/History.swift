@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 // Where you have been, so the field can finish the address for you. Kept in one
@@ -81,6 +82,27 @@ final class History: ObservableObject {
         didSet {
             recentCache = nil
             objectWillChange.send()
+            noteRecent()
+        }
+    }
+    /// Sent when the last few places have changed, for the History menu,
+    /// once a turn at most. The menu bar is drawn from the window's changes,
+    /// and passing on every change to the history — a background tab's
+    /// title counting its unread mail, say — drew every window and the menu
+    /// bar again for a list that was the same.
+    let recentChanges = PassthroughSubject<Void, Never>()
+    private var recentShown: [Trace]?
+    private var recentQueued = false
+    private func noteRecent() {
+        guard !recentQueued else { return }
+        recentQueued = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            recentQueued = false
+            let now = recent()
+            guard now != recentShown else { return }
+            recentShown = now
+            recentChanges.send()
         }
     }
     /// The last few places, as the History menu lists them. The menu bar is
@@ -302,8 +324,18 @@ final class History: ObservableObject {
     func retitle(_ url: URL, _ title: String) {
         let key = History.identity(for: url)
         guard !title.isEmpty, var seen = visits[key], seen.title != title else { return }
+        // The last few places stay worked out: only this one's title changed.
+        // Unless it was a front door with no title, which the list leaves
+        // out until it has one: then it may belong in it now.
+        let joins = seen.title.isEmpty && pageText[key]?.homepage == true
         seen.title = title
+        let cached = joins ? nil : recentCache
         visits[key] = seen
+        recentCache = cached?.map { trace in
+            trace.key == key
+                ? Trace(key: key, address: trace.address, title: title, url: trace.url, last: trace.last, count: trace.count)
+                : trace
+        }
         remember(seen)
         save()
     }
@@ -371,7 +403,21 @@ final class History: ObservableObject {
     /// history has changed.
     func recent() -> [Trace] {
         if let recentCache { return recentCache }
-        let made = Array(everything().prefix(8))
+        // One pass keeping the newest eight, as `everything()` would list
+        // them, rather than sorting the whole history and making a Trace of
+        // every visit for the first eight of them.
+        var newest: [(visit: Visit, url: URL)] = []
+        for visit in visits.values where !(visit.title.isEmpty && pageText[visit.key]?.homepage == true) {
+            if newest.count == 8, let last = newest.last, visit.last <= last.visit.last { continue }
+            guard let url = URL(string: visit.url) else { continue }
+            let at = newest.firstIndex { visit.last > $0.visit.last } ?? newest.count
+            newest.insert((visit, url), at: at)
+            if newest.count > 8 { newest.removeLast() }
+        }
+        let made = newest.map { visit, url in
+            Trace(key: visit.key, address: pageText[visit.key]?.address ?? visit.key, title: visit.title,
+                  url: url, last: visit.last, count: visit.count)
+        }
         recentCache = made
         return made
     }

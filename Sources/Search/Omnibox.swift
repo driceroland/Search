@@ -1,12 +1,24 @@
 import SwiftUI
 import AppKit
 
+/// What is typed in a window's field and what answers it (`Browser.typing`):
+/// the field and its list watch it, and nothing else has to.
+@MainActor
+final class FieldState: ObservableObject {
+    @Published var typed = ""
+    @Published var offers: [Suggestion] = []
+    @Published var ending: String?
+    @Published var picked: Int?
+    @Published var siteOffer: SearchSite?
+}
+
 /// One field, in the middle, and the few places it thinks you mean. It takes
 /// addresses and only addresses: type something that isn't a place and it
 /// shivers and says so, rather than quietly handing your keystrokes to a
 /// search engine.
 struct Omnibox: View {
     @ObservedObject var browser: Browser
+    @ObservedObject private var typing: FieldState
     /// Raised over a page by ⌘L, rather than standing on an empty tab.
     let over: Bool
 
@@ -22,6 +34,14 @@ struct Omnibox: View {
     var fitted = false
     /// The page whose pane this field stands on, with Split View on.
     var tab: Tab.ID?
+
+    init(browser: Browser, over: Bool, fitted: Bool = false, tab: Tab.ID? = nil) {
+        self.browser = browser
+        self.typing = browser.typing
+        self.over = over
+        self.fitted = fitted
+        self.tab = tab
+    }
 
     var body: some View {
         Group {
@@ -426,8 +446,15 @@ private struct Breath: NSViewRepresentable {
 /// needs a real text field and its delegate.
 struct AddressField: NSViewRepresentable {
     @ObservedObject var browser: Browser
+    @ObservedObject private var typing: FieldState
     /// The pane's page, for a field standing on one (see Coordinator.focus).
     var tab: Tab.ID?
+
+    init(browser: Browser, tab: Tab.ID? = nil) {
+        self.browser = browser
+        self.typing = browser.typing
+        self.tab = tab
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 

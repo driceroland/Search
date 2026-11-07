@@ -67,9 +67,19 @@ struct GroupHeading: View {
     /// And in the column of icons.
     static let compactHeight: CGFloat = 18
 
+    /// Measured once a name: the row asks for every heading's on every redraw.
+    private static var measured: [String: CGFloat] = [:]
+    private static let font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
     static func width(for name: String, numbered: Bool = false) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
-        return ceil((name as NSString).size(withAttributes: [.font: font]).width) + 20 + (numbered ? 23 : 0)
+        let text: CGFloat
+        if let known = measured[name] {
+            text = known
+        } else {
+            text = ceil((name as NSString).size(withAttributes: [.font: font]).width)
+            if measured.count > 500 { measured.removeAll() }
+            measured[name] = text
+        }
+        return text + 20 + (numbered ? 23 : 0)
     }
 
     var body: some View {

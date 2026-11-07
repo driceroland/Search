@@ -164,9 +164,8 @@ private struct PaneLayers: View {
             // An empty page of a pair: the field, and the tabs already open,
             // to bring one in. Gone while something is typed, when the field's
             // own list is there.
-            if paired, tab.isBlank, browser.typed.isEmpty {
-                OpenTabs(browser: browser, blank: tab)
-                    .transition(.opacity)
+            if paired, tab.isBlank {
+                OpenTabsUntilTyped(typing: browser.typing, browser: browser, blank: tab)
             }
 
             // What this page asked, over this page alone.
@@ -235,6 +234,21 @@ private struct SplitDropPreview: View {
                 .padding(.horizontal, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The tabs already open, on an empty page of a pair, until something is
+/// typed: watching the field itself, so the pane isn't drawn again per key.
+private struct OpenTabsUntilTyped: View {
+    @ObservedObject var typing: FieldState
+    let browser: Browser
+    let blank: Tab
+
+    var body: some View {
+        if typing.typed.isEmpty {
+            OpenTabs(browser: browser, blank: blank)
+                .transition(.opacity)
+        }
     }
 }
 

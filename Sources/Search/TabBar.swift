@@ -35,10 +35,14 @@ struct TabBar: View {
         // riding at the very top of the strip while the traffic lights centre
         // themselves halfway down it.
         GeometryReader { geo in
+            // The row's measures, worked out once for the whole body: asked
+            // for wherever they were needed, each a walk of the whole row,
+            // they were worked out nine times over on every redraw.
+            let row = measures(in: geo.size.width)
             ZStack(alignment: .leading) {
                 // The empty half of the strip is what you grab to move the
                 // window; the tabs keep the run they sit on.
-                DragStrip(reserved: lights + dot + leading + (making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width)) + Metrics.tabGap + Metrics.plusWidth, trailing: doors + 12, onDoubleClick: browser.newTab)
+                DragStrip(reserved: lights + dot + leading + (making ? min(540, row.room) : row.run) + Metrics.tabGap + Metrics.plusWidth, trailing: doors + 12, onDoubleClick: browser.newTab)
                 // And the corner the lights sit in, which is title bar too —
                 // the one stretch left to take hold of when tabs fill the row.
                 DragStrip()
@@ -67,7 +71,7 @@ struct TabBar: View {
                         if making {
                             NewSpaceCard(browser: browser, inline: true)
                                 .fixedSize()
-                                .offset(y: browser.spaceSwipe)
+                                .modifier(SwipeShift(offset: browser.spaceSwipeOffset))
                         } else {
                             ScrollViewReader { reader in
                                 ScrollView(.horizontal, showsIndicators: false) {
@@ -76,7 +80,7 @@ struct TabBar: View {
                                     // the whole row, group by group, and with 300 tabs
                                     // asking one after another a redraw of the strip
                                     // took over a second.
-                                    let each = width(in: geo.size.width)
+                                    let each = row.each
                                     HStack(spacing: Metrics.tabGap) {
                                         if browser.prefs.usesTabGroups {
                                             let pins = browser.displayedTabs.filter { $0.pin != nil }
@@ -121,24 +125,24 @@ struct TabBar: View {
                                     .environment(\.rowCarrying, carrying)
                                     .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
                                 }
-                                .scrollDisabled(!overflowing(in: geo.size.width))
-                                .frame(width: run(in: geo.size.width))
+                                .scrollDisabled(!row.overflowing)
+                                .frame(width: row.run)
                                 .onAppear { reveal(reader, in: geo.size.width) }
-                                .onChange(of: overflowing(in: geo.size.width)) { _, _ in reveal(reader, in: geo.size.width) }
+                                .onChange(of: row.overflowing) { _, _ in reveal(reader, in: geo.size.width) }
                                 .onChange(of: browser.activeID) { _, _ in reveal(reader, in: geo.size.width, gliding: true) }
                             }
-                                .offset(y: browser.spaceSwipe)
+                                .modifier(SwipeShift(offset: browser.spaceSwipeOffset))
                         }
-                        if browser.spaceSwipe > 0, spaceAt > 0 {
+                        if browser.spaceSwipeSide > 0, spaceAt > 0 {
                             page(spaceAt - 1, in: geo.size.width, pill: above)
-                                .offset(y: browser.spaceSwipe - Metrics.strip)
+                                .modifier(SwipeShift(offset: browser.spaceSwipeOffset, by: -Metrics.strip))
                         }
-                        if browser.spaceSwipe < 0, browser.drawsPage(after: spaceAt) {
+                        if browser.spaceSwipeSide < 0, browser.drawsPage(after: spaceAt) {
                             page(spaceAt + 1, in: geo.size.width, pill: below)
-                                .offset(y: browser.spaceSwipe + Metrics.strip)
+                                .modifier(SwipeShift(offset: browser.spaceSwipeOffset, by: Metrics.strip))
                         }
                     }
-                    .frame(width: making ? min(540, room(in: geo.size.width)) : run(in: geo.size.width), height: Metrics.strip, alignment: .leading)
+                    .frame(width: making ? min(540, row.room) : row.run, height: Metrics.strip, alignment: .leading)
                     // Only up and down: a neighbour's row may run wider than this one.
                     .mask(Rectangle().frame(width: 4000, height: Metrics.strip))
 
@@ -386,7 +390,20 @@ struct TabBar: View {
     /// How wide the run of tabs is: as wide as the tabs while they fit, as
     /// wide as the room there is once they don't.
     private func run(in strip: CGFloat) -> CGFloat {
-        min(content(in: strip), room(in: strip))
+        measures(in: strip).run
+    }
+
+    private struct Measures {
+        let each: CGFloat
+        let room: CGFloat
+        let content: CGFloat
+        var run: CGFloat { min(content, room) }
+        var overflowing: Bool { content > room + 0.5 }
+    }
+
+    private func measures(in strip: CGFloat) -> Measures {
+        let each = width(in: strip)
+        return Measures(each: each, room: room(in: strip), content: content(in: strip, each: each))
     }
 
     /// The line stands between the pins and the tabs that come and go, and
@@ -404,13 +421,12 @@ struct TabBar: View {
     }
 
     private func overflowing(in strip: CGFloat) -> Bool {
-        content(in: strip) > room(in: strip) + 0.5
+        measures(in: strip).overflowing
     }
 
     /// Everything in the run at the width the tabs get — and the address
     /// field's width for a tab being edited, which grows to take it.
-    private func content(in strip: CGFloat) -> CGFloat {
-        let each = width(in: strip)
+    private func content(in strip: CGFloat, each: CGFloat) -> CGFloat {
         let displayed = browser.displayedTabs
         let pinned = CGFloat(displayed.filter { $0.pin != nil }.count)
         let ungrouped = displayed.filter { $0.pin == nil && browser.group(of: $0) == nil }

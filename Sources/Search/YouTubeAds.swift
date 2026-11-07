@@ -61,8 +61,8 @@ enum YouTubeAds {
         guard Shield.shared.enabled, !Shield.shared.isPaused(on: site) else { return [] }
         let hosts = hostsThisRun
         return [
-            WKUserScript(source: page(hosts: hosts), injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page),
-            WKUserScript(source: skipper(hosts: hosts), injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world),
+            Armed.script(page(hosts: hosts), .atDocumentStart, mainFrameOnly: false, in: .page),
+            Armed.script(skipper(hosts: hosts), .atDocumentStart, mainFrameOnly: false, in: Web.world),
         ]
     }
 

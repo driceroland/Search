@@ -24,6 +24,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Show how far you've read is off unless you turn it on, in Settings › Appearance › Tabs: a tab half filled with grey read like a page stuck loading. It stays on for anyone who turned it on themselves. Asked for by [@aminezar](https://github.com/aminezar) ([#994](https://github.com/driceroland/Search/issues/994))
 - The tab column draws no scroll bar when its tabs run past the window, as the tabs across the top already don't, even with macOS set to always show scroll bars. The wheel, the trackpad and the keyboard scroll it as before. Thanks [@TheOmkarBirje](https://github.com/TheOmkarBirje) ([#984](https://github.com/driceroland/Search/pull/984))
+- Search keeps up with you when you have many tabs open. A key typed in the address field, each step of a swipe between spaces, and a tab in the background changing its title used to draw every tab in the window again, and the menu bar with them: with 60 tabs a key typed took 89 ms and now takes 7, and a swipe between spaces takes under 5 ms a step instead of 70, so it follows the fingers. A window with several spaces opens before the other spaces' tabs are made, a download brings its row up to date ten times a second rather than hundreds, and saving, following a link and laying out a long row of tabs each do less.
 
 ### Added
 

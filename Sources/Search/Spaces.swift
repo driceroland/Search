@@ -394,10 +394,27 @@ extension Browser {
 
     /// Every other space's row, made ahead of time, so the column can show
     /// the next space beside this one while two fingers bring it in.
-    func preloadSpaces() {
-        for space in spaces where space.id != spaceID && parked[space.id] == nil {
-            parked[space.id] = loadRow(space.id)
+    /// Gradually, one space a turn of the run loop, the next ones first, so
+    /// a launch with many spaces never holds the window still for all of them.
+    func preloadSpaces(gradually: Bool = false) {
+        guard gradually else {
+            for space in spaces where space.id != spaceID && parked[space.id] == nil {
+                parked[space.id] = loadRow(space.id)
+            }
+            return
         }
+        guard prefs.usesSpaces, !retired else { return }
+        let at = spaces.firstIndex { $0.id == spaceID } ?? 0
+        let next = spaces.indices
+            .filter { spaces[$0].id != spaceID && parked[spaces[$0].id] == nil }
+            .min { abs($0 - at) < abs($1 - at) }
+        guard let next else {
+            // All in memory now: the sweep at launch saw only this row.
+            closeLeftAlone()
+            return
+        }
+        parked[spaces[next].id] = loadRow(spaces[next].id)
+        DispatchQueue.main.async { [weak self] in self?.preloadSpaces(gradually: true) }
     }
 
     /// The Nth space: of this window's profile, or with profiles in one
