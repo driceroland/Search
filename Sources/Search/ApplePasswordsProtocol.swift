@@ -389,6 +389,17 @@ enum AppleCommand: Int {
     case passwordsDisabled = 9
     case reloginNeeded = 10
     case hello = 14
+    case codes = 16
+    case codeFilled = 17
+}
+
+/// A verification code the helper keeps for a site: whose it is and which
+/// site's, never the code. That is asked for on its own, once picked.
+struct AppleCode: Identifiable, Equatable, Hashable {
+    let user: String
+    /// The site the helper says it is for.
+    let domain: String
+    var id: String { "code\u{1}" + domain + "\u{1}" + user }
 }
 
 /// One account the helper knows for a site: the name only. Its password is
@@ -449,6 +460,25 @@ enum AppleMessages {
     static func password(user: String, host: String, tab: Int, client: SRPClient, key: SymmetricKey) throws -> [String: Any] {
         try ask(.password, query: "CmdGetPassword4LoginName", body: ["ACT": 2, "URL": host, "USR": user],
                 host: host, tab: tab, client: client, key: key)
+    }
+
+    /// Which verification codes are kept for a site. The helper reads the
+    /// page's address and the action: 5 lists them without the codes, and
+    /// asks nothing of you.
+    static func codes(host: String, tab: Int, client: SRPClient, key: SymmetricKey) throws -> [String: Any] {
+        try ask(.codes, query: "CmdGetOneTimeCodes", body: codeQuestion(action: 5, host: host),
+                host: host, tab: tab, client: client, key: key)
+    }
+
+    /// The codes themselves, for the one you picked: 2, under the command
+    /// that puts up the Mac's own prompt first.
+    static func code(host: String, tab: Int, client: SRPClient, key: SymmetricKey) throws -> [String: Any] {
+        try ask(.codeFilled, query: "CmdDidFillOneTimeCode", body: codeQuestion(action: 2, host: host),
+                host: host, tab: tab, client: client, key: key)
+    }
+
+    private static func codeQuestion(action: Int, host: String) -> [String: Any] {
+        ["ACT": action, "TYPE": "oneTimeCodes", "frameURLs": ["https://\(host)/"]]
     }
 
     // Reading.
@@ -551,6 +581,40 @@ enum AppleMessages {
                       let password = entry["PWD"] as? String, !password.isEmpty, password != "Not Included"
                 else { continue }
                 return (name, password, entry["sites"] as? [String] ?? [])
+            }
+            return nil
+        case 3: return nil
+        case let status: throw ApplePasswordsError.status(status ?? -1)
+        }
+    }
+
+    /// Accounts with a verification code in the Passwords app. A code that
+    /// came by message (it has a guid, or says another source) is the Mac's
+    /// to deliver and isn't one of these.
+    private static func kept(_ entry: [String: Any]) -> AppleCode? {
+        guard let user = entry["username"] as? String, let domain = entry["domain"] as? String, !domain.isEmpty,
+              (entry["guid"] as? String ?? "").isEmpty, (entry["source"] as? String ?? "totp") == "totp"
+        else { return nil }
+        return AppleCode(user: user, domain: domain)
+    }
+
+    /// Whose codes there are, whatever else the answer came with.
+    static func readCodes(_ answer: [String: Any]) throws -> [AppleCode] {
+        switch int(answer["STATUS"]) {
+        case 0: return entries(answer).compactMap(kept)
+        case 3: return []
+        case let status: throw ApplePasswordsError.status(status ?? -1)
+        }
+    }
+
+    /// The one code asked for, or nothing. Only what could be a code goes
+    /// any further: it is on its way into a page.
+    static func readCode(_ answer: [String: Any], for wanted: AppleCode) throws -> String? {
+        switch int(answer["STATUS"]) {
+        case 0:
+            for entry in entries(answer) where kept(entry) == wanted {
+                let code = (entry["code"] as? String ?? "").filter { !$0.isWhitespace }
+                if (4...12).contains(code.count), code.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) { return code }
             }
             return nil
         case 3: return nil

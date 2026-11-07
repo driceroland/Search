@@ -121,6 +121,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Verification codes from Apple's Passwords app come up under the box that asks for one. With Apple Passwords on in Settings › Passwords, pick an account and the code goes into the box, after Touch ID if macOS asks; nothing is filled on its own and Search keeps no code. Only on https pages, never in a private tab. Thanks [@Tom-Boscher](https://github.com/Tom-Boscher) ([#855](https://github.com/driceroland/Search/pull/855))
+
 - A second engine one key away: with Settings › Browsing › Shift-Return searches with set, Shift-Return in the address field sends what you typed there, while Return keeps your default. Off unless an engine is picked. Thanks [@aminezar](https://github.com/aminezar) ([#856](https://github.com/driceroland/Search/pull/856))
 
 - The look and layout of the tabs, the sidebar and the window follow a change made from Terminal while Search runs, `defaults write com.officecommun.search sidebar.position -string right` and the like: the switch in Settings moves to match and does what it does when flipped there. Before, the running app kept what it read at launch until the next one. Privacy, security, passwords, extensions and Let a script drive Search are still read only at launch. Thanks [@oddharsh](https://github.com/oddharsh) ([#946](https://github.com/driceroland/Search/pull/946))

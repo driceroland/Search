@@ -196,6 +196,65 @@ final class ApplePasswordsTests: XCTestCase {
         XCTAssertNil(try AppleMessages.readPassword(["STATUS": 0, "Entries": [["USR": "eve", "PWD": "x"]]], user: "ada"))
     }
 
+    func testAskingForCodesReadsTheFieldsTheHelperReads() throws {
+        let client = SRPClient(base64: false)
+        let key = SymmetricKey(size: .bits128)
+        func question(_ message: [String: Any]) throws -> [String: Any] {
+            let smsg = decode(decode(message["payload"])["SMSG"])
+            let sealed = try XCTUnwrap(client.deserialize(smsg["SDATA"] as? String ?? ""))
+            let iv = Array(sealed.suffix(16)), body = sealed.dropLast(16)
+            let box = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: iv), ciphertext: body.dropLast(16), tag: body.suffix(16))
+            return decode(String(decoding: try AES.GCM.open(box, using: key), as: UTF8.self))
+        }
+        let list = try AppleMessages.codes(host: "sso.example.test", tab: 3, client: client, key: key)
+        XCTAssertEqual(list["cmd"] as? Int, 16)
+        let asked = try question(list)
+        XCTAssertEqual(asked["ACT"] as? Int, 5, "a listing, not the codes")
+        XCTAssertEqual(asked["TYPE"] as? String, "oneTimeCodes")
+        XCTAssertEqual(asked["frameURLs"] as? [String], ["https://sso.example.test/"])
+        let one = try AppleMessages.code(host: "sso.example.test", tab: 3, client: client, key: key)
+        XCTAssertEqual(one["cmd"] as? Int, 17, "the command that puts up the Mac's prompt")
+        XCTAssertEqual(try question(one)["ACT"] as? Int, 2)
+    }
+
+    func testReadingCodes() throws {
+        let ada = AppleCode(user: "ada", domain: "example.test")
+        let codes = try AppleMessages.readCodes(["STATUS": 0, "Entries": [
+            ["username": "ada", "domain": "example.test", "source": "totp"],
+            // One that came by message is the Mac's to deliver, not these.
+            ["username": "", "domain": "example.test", "source": "messages", "guid": "made-up-guid"],
+            ["username": "bob", "domain": "example.test", "source": "sms"],
+            ["username": "no-site"],
+        ]])
+        XCTAssertEqual(codes, [ada])
+        // A listing's answer keeps no code, even handed one.
+        let handed = try AppleMessages.readCodes(["STATUS": 0, "Entry_0": ["username": "ada", "domain": "example.test", "code": "123456"]])
+        XCTAssertEqual(handed, [ada])
+        XCTAssertFalse(String(describing: handed).contains("123456"))
+        XCTAssertEqual(try AppleMessages.readCodes(["STATUS": 3]), [])
+        XCTAssertThrowsError(try AppleMessages.readCodes(["STATUS": 9])) {
+            XCTAssertEqual($0 as? ApplePasswordsError, .status(9))
+        }
+
+        func code(_ value: Any, user: String = "ada") throws -> String? {
+            try AppleMessages.readCode(["STATUS": 0, "Entries": [
+                ["username": "other", "domain": "example.test", "source": "totp", "code": "999999"],
+                ["username": user, "domain": "example.test", "source": "totp", "code": value],
+            ]], for: ada)
+        }
+        XCTAssertEqual(try code("058578"), "058578")
+        XCTAssertEqual(try code("058 578"), "058578", "as the Passwords app shows it")
+        XCTAssertEqual(try code("7GX2K"), "7GX2K", "not every code is digits")
+        XCTAssertNil(try code("123456", user: "eve"), "another account's is not this one's")
+        // Nothing that could do something once in a page.
+        for bad in ["", "123", "1234567890123", "12`34;56", "<b>12</b>", "١٢٣٤٥٦"] {
+            XCTAssertNil(try code(bad), bad)
+        }
+        XCTAssertNil(try code(123456))
+        XCTAssertNil(try AppleMessages.readCode(["STATUS": 3], for: ada))
+        XCTAssertThrowsError(try AppleMessages.readCode(["STATUS": 1], for: ada))
+    }
+
     // MARK: - which pages, which accounts
 
     func testOffersOnlyHttpsInOrdinaryTabs() {
@@ -303,6 +362,43 @@ final class ApplePasswordsTests: XCTestCase {
         XCTAssertTrue(fake.stopped)
         let after = await apple.logins(for: "accounts.example.test", tab: tab)
         XCTAssertEqual(after, [])
+    }
+
+    func testCodesListedFirstAndAskedForOnlyWhenPicked() async throws {
+        let fake = FakeHelper(code: "246810")
+        let apple = ApplePasswords(makeLink: { fake })
+        let early = await apple.codes(for: "example.test", tab: UUID())
+        XCTAssertEqual(early, [])
+        await apple.connect()
+        await apple.enter("246810")
+        let tab = UUID()
+        let listed = await apple.codes(for: "sso.example.test", tab: tab)
+        XCTAssertEqual(listed, [AppleCode(user: "ada@example.test", domain: "example.test")])
+        XCTAssertEqual(fake.commands, [16], "the list only: no prompt, no code")
+        let wanted = try XCTUnwrap(listed.first)
+        let code = await apple.code(of: wanted, host: "sso.example.test", tab: tab)
+        XCTAssertEqual(code, "135790")
+        XCTAssertEqual(fake.commands, [16, 17])
+        XCTAssertEqual(fake.asked.last?["ACT"] as? Int, 2)
+        let nobody = await apple.code(of: AppleCode(user: "nobody", domain: "example.test"), host: "sso.example.test", tab: tab)
+        XCTAssertNil(nobody)
+        apple.disconnect()
+        let after = await apple.code(of: wanted, host: "sso.example.test", tab: tab)
+        XCTAssertNil(after)
+    }
+
+    func testAHelperThatDoesntFillCodesIsNotAskedForThem() async {
+        let fake = FakeHelper(code: "246810")
+        fake.fillsCodes = false
+        let apple = ApplePasswords(makeLink: { fake })
+        await apple.connect()
+        await apple.enter("246810")
+        XCTAssertEqual(apple.state, .paired)
+        let listed = await apple.codes(for: "sso.example.test", tab: UUID())
+        let code = await apple.code(of: AppleCode(user: "ada@example.test", domain: "example.test"), host: "sso.example.test", tab: UUID())
+        XCTAssertEqual(listed, [])
+        XCTAssertNil(code)
+        XCTAssertEqual(fake.commands, [])
     }
 
     func testWrongCodeNeedsANewPairing() async {
@@ -426,6 +522,10 @@ final class ApplePasswordsTests: XCTestCase {
             XCTAssertEqual(names.map(\.user), ["ada@example.test", "bob@example.test"])
             let found = await apple.password(for: "bob@example.test", host: "www.example.test", tab: UUID())
             XCTAssertEqual(found?.password, "another-made-up-one")
+            let codes = await apple.codes(for: "www.example.test", tab: UUID())
+            XCTAssertEqual(codes.map(\.user), ["ada@example.test"])
+            let code = await apple.code(of: codes[0], host: "www.example.test", tab: UUID())
+            XCTAssertEqual(code, "135790")
             apple.disconnect()
         }
         unsetenv("APW_FAKE_BASE64")
@@ -510,6 +610,125 @@ final class ApplePairingTests: XCTestCase {
         XCTAssertFalse(fake.stopped)
     }
 
+    /// The whole way, with no page: the caret in a box for a code, the
+    /// accounts under it, a pick, the code asked for.
+    func testACodeBoxHangsItsAccountsAndAPickAsksForTheCode() async throws {
+        let fake = FakeHelper(code: "246810")
+        let browser = Browser(record: WindowRecord())
+        defer { browser.closeAll(); browser.prefs.applePasswords = false }
+        browser.applePasswords = ApplePasswords(makeLink: { fake })
+        let (tab, spot) = try page(in: browser, "https://sso.example.test/otp")
+
+        // Off: nothing asked, nothing up.
+        browser.prefs.applePasswords = false
+        tab.onField?(tab, spot, false, false, true, true)
+        XCTAssertNil(browser.suggesting)
+        XCTAssertEqual(fake.handshakes, 0)
+
+        // On, not paired: a row to connect, and the helper not yet run.
+        browser.prefs.applePasswords = true
+        tab.onField?(tab, spot, false, false, true, false)
+        tab.onField?(tab, spot, false, false, true, true)
+        XCTAssertEqual(browser.suggesting?.appleConnect, true)
+        XCTAssertEqual(browser.suggesting?.appleOffer, nil)
+        XCTAssertEqual(fake.handshakes, 0)
+
+        // Paired: the accounts, without their codes.
+        await browser.applePasswords.connect()
+        await browser.applePasswords.enter("246810")
+        tab.onField?(tab, nil, false, false, false, false)
+        XCTAssertNil(browser.suggesting?.codes.first)
+        tab.onField?(tab, spot, false, false, true, true)
+        try await settle { browser.suggesting?.codes.isEmpty == false }
+        let list = try XCTUnwrap(browser.suggesting)
+        XCTAssertEqual(list.codes.map(\.user), ["ada@example.test"])
+        XCTAssertEqual(list.logins, [])
+        XCTAssertTrue(list.wide, "a box that says so: the site's other hosts' codes come too")
+        XCTAssertEqual(list.spot, spot)
+        XCTAssertEqual(fake.commands, [16])
+
+        // A click on its way as the list came up is not a choice.
+        browser.choose(list.codes[0])
+        XCTAssertEqual(fake.commands, [16])
+        XCTAssertNotNil(browser.suggesting)
+        try await Task.sleep(nanoseconds: 550_000_000)
+        browser.choose(list.codes[0])
+        XCTAssertNil(browser.suggesting)
+        try await settle { fake.commands == [16, 17] }
+
+        // Picked: the list stays down until the caret leaves the box.
+        tab.onField?(tab, spot, false, false, true, true)
+        XCTAssertNil(browser.suggesting)
+    }
+
+    /// A box only guessed to take a code: no row of its own, and only codes
+    /// kept for this very host. The helper's account here is example.test's.
+    func testAGuessedCodeBoxGetsThisHostsCodesAloneAndNoConnectRow() async throws {
+        let fake = FakeHelper(code: "246810")
+        let browser = Browser(record: WindowRecord())
+        defer { browser.closeAll(); browser.prefs.applePasswords = false }
+        browser.applePasswords = ApplePasswords(makeLink: { fake })
+        browser.prefs.applePasswords = true
+        let (sub, spot) = try page(in: browser, "https://sso.example.test/otp")
+
+        // Not paired: nothing up, and the helper not run.
+        sub.onField?(sub, spot, false, false, false, true)
+        XCTAssertNil(browser.suggesting)
+        XCTAssertEqual(fake.handshakes, 0)
+
+        await browser.applePasswords.connect()
+        await browser.applePasswords.enter("246810")
+
+        // Another host of the site: asked, and not offered.
+        sub.onField?(sub, nil, false, false, false, false)
+        sub.onField?(sub, spot, false, false, false, true)
+        try await settle { fake.commands == [16] }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertNil(browser.suggesting)
+
+        // This very host: offered, and a pick asks for the code.
+        let (own, _) = try page(in: browser, "https://example.test/otp")
+        own.onField?(own, spot, false, false, false, true)
+        try await settle { browser.suggesting?.codes.isEmpty == false }
+        let list = try XCTUnwrap(browser.suggesting)
+        XCTAssertFalse(list.wide)
+        try await Task.sleep(nanoseconds: 550_000_000)
+        browser.choose(list.codes[0])
+        try await settle { fake.commands == [16, 16, 17] }
+    }
+
+    func testAnotherSitesCodeIsNotOfferedAndNotInAPrivateTabOrPlainHttp() async throws {
+        let fake = FakeHelper(code: "246810")
+        let browser = Browser(record: WindowRecord())
+        defer { browser.closeAll(); browser.prefs.applePasswords = false }
+        browser.applePasswords = ApplePasswords(makeLink: { fake })
+        browser.prefs.applePasswords = true
+        await browser.applePasswords.connect()
+        await browser.applePasswords.enter("246810")
+
+        // The helper's account is example.test's; this page is someone else's.
+        let (other, spot) = try page(in: browser, "https://example.net/otp")
+        other.onField?(other, spot, false, false, true, true)
+        try await settle { fake.commands == [16] }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertNil(browser.suggesting)
+
+        let (clear, _) = try page(in: browser, "http://sso.example.test/otp")
+        clear.onField?(clear, spot, false, false, true, true)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertNil(browser.suggesting)
+        XCTAssertEqual(fake.commands, [16], "plain http isn't even asked about")
+    }
+
+    private func page(in browser: Browser, _ address: String) throws -> (Tab, CGRect) {
+        let url = try XCTUnwrap(URL(string: address))
+        browser.newTab()
+        let tab = try XCTUnwrap(browser.tabs.last)
+        tab.restore(url: url, title: "Code")
+        browser.activeID = tab.id
+        return (tab, CGRect(x: 40, y: 120, width: 280, height: 30))
+    }
+
     private func settle(_ done: @MainActor () -> Bool) async throws {
         for _ in 0..<200 where !done() { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertTrue(done())
@@ -523,6 +742,9 @@ private final class FakeHelper: AppleLink {
     let code: String
     var sessionVersion = 1
     var lieAboutProof = false
+    var fillsCodes = true
+    /// The commands asked about a site, in order.
+    private(set) var commands: [Int] = []
     private(set) var handshakes = 0
     private(set) var verifications = 0
     private(set) var asked: [[String: Any]] = []
@@ -560,7 +782,7 @@ private final class FakeHelper: AppleLink {
         let mod = SRPClient.modulus, n = SRPClient.group, g = SRPClient.generator
         switch message["cmd"] as? Int {
         case 14:
-            answer(["cmd": 14, "capabilities": ["shouldUseBase64": false, "secretSessionVersion": sessionVersion]])
+            answer(["cmd": 14, "capabilities": ["shouldUseBase64": false, "secretSessionVersion": sessionVersion, "canFillOneTimeCodes": fillsCodes]])
         case 0:
             ended = true
         case 2:
@@ -603,8 +825,9 @@ private final class FakeHelper: AppleLink {
                 answer(["cmd": 2, "payload": ["QID": "m2", "PAKE": b64(["TID": tid, "MSG": 3, "ErrCode": 0,
                                                                     "HAMK": Data(hamk).hexString])]])
             }
-        case let command? where command == 4 || command == 5:
+        case let command? where [4, 5, 16, 17].contains(command):
             guard let key else { return }
+            commands.append(command)
             let payload = json(message["payload"])
             let smsg = json(payload["SMSG"])
             let sealed = [UInt8](Data(hexString: smsg["SDATA"] as! String)!)
@@ -613,7 +836,12 @@ private final class FakeHelper: AppleLink {
             let question = json(String(decoding: try AES.GCM.open(box, using: key), as: UTF8.self))
             asked.append(question)
             var reply: [String: Any] = ["STATUS": 3]
-            if command == 4 {
+            let account: [String: Any] = ["username": "ada@example.test", "domain": "example.test", "source": "totp"]
+            if command == 16, question["ACT"] as? Int == 5, question["TYPE"] as? String == "oneTimeCodes" {
+                reply = ["STATUS": 0, "Entries": [account]]
+            } else if command == 17, question["ACT"] as? Int == 2, question["TYPE"] as? String == "oneTimeCodes" {
+                reply = ["STATUS": 0, "Entries": [account.merging(["code": "135790"]) { $1 }]]
+            } else if command == 4 {
                 reply = ["STATUS": 0, "Entries": [["USR": "ada@example.test", "sites": ["example.test"]]]]
             } else if question["USR"] as? String == "ada@example.test" {
                 reply = ["STATUS": 0, "Entries": [["USR": "ada@example.test", "PWD": "made-up-secret", "sites": ["example.test"]]]]
@@ -649,7 +877,7 @@ private enum NodeHelper {
     let st = {};
     function send(o) { const d = Buffer.from(JSON.stringify(o)); const h = Buffer.alloc(4); h.writeUInt32LE(d.length); process.stdout.write(Buffer.concat([h, d])); }
     function handle(m) {
-      if (m.cmd === 14) return send({ cmd: 14, capabilities: { shouldUseBase64: B64, secretSessionVersion: 1 } });
+      if (m.cmd === 14) return send({ cmd: 14, capabilities: { shouldUseBase64: B64, secretSessionVersion: 1, canFillOneTimeCodes: true } });
       if (m.cmd === 0) return process.exit(0);
       if (m.cmd === 2) {
         const msg = JSON.parse(m.msg), p = JSON.parse(Buffer.from(msg.PAKE, "base64").toString());
@@ -670,7 +898,7 @@ private enum NodeHelper {
         st.key = K.subarray(0, 16);
         return send({ cmd: 2, payload: { QID: "m2", PAKE: Buffer.from(JSON.stringify({ TID: st.TID, MSG: 3, ErrCode: 0, HAMK: ser(H(bytes(st.A), M, K), false) })).toString("base64") } });
       }
-      if (m.cmd === 4 || m.cmd === 5) {
+      if ([4, 5, 16, 17].includes(m.cmd)) {
         const payload = JSON.parse(m.payload), smsg = JSON.parse(payload.SMSG), sealed = de(smsg.SDATA);
         const iv = sealed.subarray(sealed.length - 16), body = sealed.subarray(0, sealed.length - 16);
         const d = crypto.createDecipheriv("aes-128-gcm", st.key, iv); d.setAuthTag(body.subarray(body.length - 16));
@@ -678,6 +906,9 @@ private enum NodeHelper {
         let r = { STATUS: 3 };
         if (m.cmd === 4 && q.ACT === 5 && q.URL === "www.example.test") r = { STATUS: 0, Entry_0: { USR: "ada@example.test", sites: ["example.test"] }, Entry_1: { USR: "bob@example.test", sites: ["www.example.test"] } };
         if (m.cmd === 5 && q.ACT === 2 && q.USR === "bob@example.test") r = { STATUS: 0, Entries: [{ USR: "bob@example.test", PWD: "another-made-up-one", sites: ["www.example.test"] }] };
+        const codes = { username: "ada@example.test", domain: "example.test", source: "totp" };
+        if (m.cmd === 16 && q.ACT === 5 && q.TYPE === "oneTimeCodes" && q.frameURLs[0] === "https://www.example.test/") r = { STATUS: 0, Entry_0: codes };
+        if (m.cmd === 17 && q.ACT === 2 && q.TYPE === "oneTimeCodes") r = { STATUS: 0, Entries: [{ ...codes, code: "135790" }] };
         const riv = crypto.randomBytes(16), c = crypto.createCipheriv("aes-128-gcm", st.key, riv);
         const ct = Buffer.concat([c.update(JSON.stringify(r)), c.final(), c.getAuthTag()]);
         return send({ cmd: m.cmd, tabId: m.tabId, payload: { QID: payload.QID, SMSG: JSON.stringify({ TID: st.TID, SDATA: ser(Buffer.concat([riv, ct]), false) }) } });

@@ -36,6 +36,10 @@ struct AccountList: View {
             }
             ForEach(siteLogins) { loginRow($0) }
             ForEach(siteApple) { appleRow($0) }
+            ForEach(asked.codes) { code in
+                Row(mark: .symbol("number"), name: code.user.isEmpty ? "Verification code" : code.user,
+                    detail: code.user.isEmpty ? "Apple Passwords" : "Verification code · Apple Passwords") { browser.choose(code) }
+            }
             if asked.appleConnect {
                 Row(mark: .symbol("key.icloud"), name: "Connect Apple Passwords…",
                     detail: "Pair once with a code from your Mac") { browser.connectApplePasswords() }
@@ -95,11 +99,11 @@ struct AccountList: View {
 
     /// Nothing but the offer: no footer under it, the row says it all.
     private var offerOnly: Bool {
-        asked.appleOffer != nil && asked.logins.isEmpty && asked.passkeys.isEmpty && asked.apple.isEmpty && !asked.appleConnect
+        asked.appleOffer != nil && asked.logins.isEmpty && asked.passkeys.isEmpty && asked.apple.isEmpty && asked.codes.isEmpty && !asked.appleConnect
     }
 
     private var footer: String {
-        if asked.logins.isEmpty && asked.apple.isEmpty && !asked.appleConnect { return "Passkeys on this Mac" }
+        if asked.logins.isEmpty && asked.apple.isEmpty && asked.codes.isEmpty && !asked.appleConnect { return "Passkeys on this Mac" }
         if asked.logins.isEmpty { return "From Apple Passwords" }
         return asked.apple.isEmpty ? "From your keychain" : "From your keychain and Apple Passwords"
     }

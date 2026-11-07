@@ -25,6 +25,9 @@ import Security
 //   page of an ordinary tab. A password is asked for once you pick its
 //   account, and macOS may ask for Touch ID then. It goes into the page's
 //   own fields and is not kept.
+// - Verification codes go the same way: which accounts have one is asked for
+//   when the caret is in a box for a code, the code once you pick its account,
+//   and macOS may ask for Touch ID then. Never kept.
 // - Never in a private tab, never over plain http, never in a frame (the
 //   form script is the main frame's only), and only for the site the page is
 //   on: an account the helper keeps for another site is not offered.
@@ -137,6 +140,8 @@ final class ApplePasswords: ObservableObject {
     private var queue: [CheckedContinuation<Void, Never>] = []
     private var tabNumbers: [UUID: Int] = [:]
     private var bag = Set<AnyCancellable>()
+    /// Whether this Mac's helper says it hands out verification codes.
+    private var fillsCodes = false
 
     struct Unavailable: LocalizedError {
         let errorDescription: String?
@@ -186,6 +191,7 @@ final class ApplePasswords: ObservableObject {
                 if let version = capabilities["secretSessionVersion"] as? Int, version != 1 {
                     throw Unavailable(errorDescription: "This Mac's Passwords helper is too old")
                 }
+                fillsCodes = capabilities["canFillOneTimeCodes"] as? Bool ?? false
                 let client = SRPClient(base64: capabilities["shouldUseBase64"] as? Bool ?? false)
                 let reply = try await request(AppleMessages.start(client), timeout: 15)
                 numbers = try AppleMessages.readStart(reply, client)
@@ -280,6 +286,39 @@ final class ApplePasswords: ObservableObject {
         }
     }
 
+    /// Whose verification codes the helper keeps for `host`: nothing secret.
+    func codes(for host: String, tab: UUID, wanted: @MainActor () -> Bool = { true }) async -> [AppleCode] {
+        guard state == .paired, fillsCodes else { return [] }
+        do {
+            return try await exclusive {
+                guard wanted(), let client, let key else { return [] }
+                let reply = try await request(
+                    AppleMessages.codes(host: host, tab: number(of: tab), client: client, key: key), timeout: 8)
+                return try AppleMessages.readCodes(AppleMessages.readSealed(reply, client, key: key))
+            }
+        } catch {
+            dropIfSessionLost(error)
+            return []
+        }
+    }
+
+    /// The code of the account picked, as it stands now. macOS may ask for
+    /// Touch ID first; that can take a while, so no short timeout.
+    func code(of wanted: AppleCode, host: String, tab: UUID) async -> String? {
+        guard state == .paired, fillsCodes else { return nil }
+        do {
+            return try await exclusive {
+                guard let client, let key else { return nil }
+                let reply = try await request(
+                    AppleMessages.code(host: host, tab: number(of: tab), client: client, key: key), timeout: 120)
+                return try AppleMessages.readCode(AppleMessages.readSealed(reply, client, key: key), for: wanted)
+            }
+        } catch {
+            dropIfSessionLost(error)
+            return nil
+        }
+    }
+
     // MARK: - the line
 
     /// One question at a time: the helper's answers carry no number to tell
@@ -348,6 +387,7 @@ final class ApplePasswords: ObservableObject {
         client = nil
         numbers = nil
         key = nil
+        fillsCodes = false
         tabNumbers = [:]
     }
 

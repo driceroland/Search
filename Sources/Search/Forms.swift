@@ -49,8 +49,11 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
                     // `wide`: a box that is clearly a sign-in's, offered the
                     // accounts of the site's other hosts too; otherwise only
                     // those kept for this very host.
+                    // `code`: a box for a verification code, not a sign-in's;
+                    // `wide` then means it says so, rather than a guess.
                     tab?.fieldFocused(CGRect(x: x, y: y, width: w, height: h), passwords: body["passwords"] as? Bool ?? true,
-                                      name: body["name"] as? Bool ?? false, wide: body["wide"] as? Bool ?? true)
+                                      name: body["name"] as? Bool ?? false, wide: body["wide"] as? Bool ?? true,
+                                      code: body["code"] as? Bool ?? false)
                 } else {
                     tab?.fieldFocused(nil)
                 }
@@ -304,6 +307,57 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return null;
       }
 
+      // Which boxes a verification code from the Passwords app is offered
+      // in: one that says so, a row of boxes of one character each, or one
+      // whose words say so. A wrong guess costs little, since nothing comes
+      // up on a site with no code kept for it; the words that rule a box out
+      // still keep a discount, a card's or a postal code from asking at all.
+      // Only a box that says so gets the codes of the site's other hosts: a
+      // guess gets this host's alone. A box marked for passkeys stays theirs.
+      //
+      // The box's row: the nearest few boxes around it, all of one character.
+      function cells(el) {
+        if (!texty(el) || el.maxLength !== 1) return null;
+        var up = el.parentElement;
+        for (var i = 0; up && i < 4; i++, up = up.parentElement) {
+          var row = Array.prototype.filter.call(up.querySelectorAll('input'), function (b) { return texty(b); });
+          if (row.length < 4) continue;
+          return row.length <= 8 && row.every(function (b) { return b.maxLength === 1; }) ? row : null;
+        }
+        return null;
+      }
+      var codeWords = /otp([^a-z]|$)|(^|[^a-z])[th]?otp(code|pin|token|input|field|value)|(^|[^a-z])otc([^a-z]|$)|one[\\s_\\-]?time|(^|[^a-z0-9])[2tm]fa|two[\\s_\\-]?(factor|step)|2[\\s_\\-]?step|second[\\s_\\-]?factor|passcode|authenticator|usage unique|verif[a-z]*[\\s_\\-]?code|security[\\s_\\-]?code|auth[a-z]*[\\s_\\-]?code|login[\\s_\\-]?code|code[\\s_\\-]+(de[\\s_\\-]+|d.)?(v[e\\u00e9]rif|valid|s[e\\u00e9]curit|authentif|authentic|confirm)/;
+      var plainCode = /code([^a-z]|$)|c[o\\u00f3]digo/;
+      var otherCode = /promo|coupon|voucher|discount|gift|cadeau|r[e\\u00e9]duc|postal|post[\\s_\\-]?code|area[\\s_\\-]?code|dial[\\s_\\-]?code|country|referr|parrain|invit|affili|sponsor|captcha|barcode|backup|recovery|secours|r[e\\u00e9]cup|card|carte|siret|siren|product|produit|source|embed|snippet|license|licence|activation|serial|(^|[^a-z])(zip|pays|qr|vat|tva|tax|sku|iban|cvv|cvc|csc)/;
+      function digitsOnly(el) {
+        var kind = (el.type || 'text').toLowerCase(), mode = (el.getAttribute('inputmode') || '').toLowerCase();
+        return kind === 'tel' || kind === 'number' || mode === 'numeric' || mode === 'decimal'
+          || /\\\\d|0-9/.test(el.getAttribute('pattern') || '') || (el.maxLength >= 4 && el.maxLength <= 10);
+      }
+      function saysCode(el) { return tokens(el).indexOf('one-time-code') >= 0; }
+      function codeBox(el) {
+        if (!texty(el) || forPasskeys(el)) return false;
+        if (saysCode(el) || cells(el)) return true;
+        if (elsewhere(el) || vouched(el) || (el.type || '').toLowerCase() === 'email') return false;
+        var said = words(el);
+        if (otherCode.test(said)) return false;
+        var scope = el.form || (el.closest && el.closest('form')) || document;
+        // Not what a form's address asks: that is often a long random token.
+        if (otherForm.test(about(scope).split('?')[0]) || otherPage.test(location.pathname.toLowerCase())) return false;
+        if (el.closest && el.closest('[role="search"], form[role="search"]')) return false;
+        if (codeWords.test(said)) return true;
+        if (!plainCode.test(said)) return false;
+        // Only "code": the one thing its form asks for, and for digits or a sign-in.
+        var all = scope.querySelectorAll('input');
+        for (var i = 0; i < all.length; i++) {
+          if (all[i] !== el && texty(all[i]) && !aside(all[i])) return false;
+        }
+        return digitsOnly(el) || looksLikeSignIn(el, scope);
+      }
+      // The box a code was last offered under: a click on the list can take
+      // the caret out of it.
+      var codeAt = null;
+
       function put(box, value) {
         if (!box) return;
         var setter = Object.getOwnPropertyDescriptor(
@@ -361,6 +415,19 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           put(box, user);
           return true;
         },
+        // A verification code, into the box it was offered under: digit by
+        // digit across a row of boxes, and only if it fits.
+        code: function (value) {
+          var box = codeBox(document.activeElement) ? document.activeElement : codeAt;
+          if (!box || !box.isConnected || !codeBox(box)) return false;
+          var row = cells(box);
+          if (!row) { put(box, value); return true; }
+          if (row.length !== value.length) return false;
+          row.forEach(function (b, i) { put(b, value.charAt(i)); });
+          return true;
+        },
+        // Whether a box is offered codes, for the tests.
+        coded: function (el) { return codeBox(el || document.activeElement); },
         // Whether there is still a sign-in on the page. Asked after a
         // password went out, to tell a sign-in that took from one refused.
         hasPassword: function () { return !!pair(); },
@@ -490,25 +557,31 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       }
       // What the box the caret is in was judged to be: judged again when the
       // caret moves, not on every frame of a scroll, which only moves it.
-      var judged = { el: null, verdict: null };
+      var judged = { el: null, verdict: null, code: false, sure: false };
       function caret(scrolled) {
         var el = document.activeElement;
         // The boxes are only looked for with the caret in one: this runs on
         // every frame of every scroll, and looking goes through the whole page.
-        if (scrolled !== true || judged.el !== el) judged = { el: el, verdict: judge(el) };
+        if (scrolled !== true || judged.el !== el) {
+          var seen = judge(el);
+          var coded = !seen && codeBox(el);
+          judged = { el: el, verdict: seen, code: coded, sure: coded && saysCode(el) };
+          if (coded) codeAt = el;
+        }
         var verdict = judged.verdict;
+        var code = judged.code;
         var rect = null;
         // A first step's name box: the accounts hang from it as from a
         // name box beside a password, and a pick puts in the name alone.
         var passwords = !!verdict;
         var name = !!(verdict && verdict.name);
-        var wide = !verdict || verdict.wide;
-        if (passwords || forPasskeys(el)) {
+        var wide = code ? judged.sure : !verdict || verdict.wide;
+        if (passwords || code || forPasskeys(el)) {
           var r = el.getBoundingClientRect();
           if (r.width > 0 && r.height > 0) rect = { x: r.left, y: r.top, w: r.width, h: r.height };
         }
         var typing = editable(el);
-        var now = typing + (rect ? ' ' + passwords + ' ' + name + ' ' + wide + ' ' + rect.x + ' ' + rect.y + ' ' + rect.w + ' ' + rect.h : '');
+        var now = typing + (rect ? ' ' + passwords + ' ' + name + ' ' + wide + ' ' + code + ' ' + rect.x + ' ' + rect.y + ' ' + rect.w + ' ' + rect.h : '');
         if (scrolled === true && now === said) return;
         said = now;
         window.webkit.messageHandlers.officeForms.postMessage({
@@ -517,7 +590,8 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           rect: rect,
           passwords: passwords,
           name: name,
-          wide: wide
+          wide: wide,
+          code: code
         });
       }
 
