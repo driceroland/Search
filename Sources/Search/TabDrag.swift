@@ -288,7 +288,7 @@ final class TabDrag: ObservableObject {
         clear()
     }
 
-    private func cancel() {
+    func cancel() {
         // The monitor goes first: a drag whose tab has gone has nothing to
         // cancel, and kept, its monitor would go on asking.
         removeMonitor()
