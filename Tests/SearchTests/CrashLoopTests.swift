@@ -53,6 +53,53 @@ final class CrashLoopTests: XCTestCase {
         try await until("Try again brings the page back") { await self.alive(tab.web) }
     }
 
+    /// The half of a Split View pair that isn't focused is still on screen.
+    /// Its page dying used to leave it white, marked for a reload "when
+    /// shown", while you looked right at it.
+    func testThePairsOtherHalfComesStraightBack() async throws {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        let server = try LocalPageServer([
+            "/": .init(type: "text/html; charset=utf-8", body: "<!doctype html><title>Alive</title><p>alive</p>"),
+        ])
+        defer { server.stop() }
+        let browser = Browser(record: WindowRecord())
+        defer { browser.closeAll() }
+        let splitView = browser.prefs.splitView
+        browser.prefs.splitView = true
+        defer { browser.prefs.splitView = splitView }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let stage = NSView(frame: window.contentRect(forFrameRect: window.frame))
+        window.contentView = stage
+        // Two new tabs, each loaded before the next is asked for, since ⌘T
+        // reuses a blank one. The tab the window opened on may be the last
+        // test's, brought back with a wake still due for its old address.
+        var halves: [Search.Tab] = []
+        for x in [0, 400] {
+            browser.newTab()
+            let tab = try XCTUnwrap(browser.active)
+            tab.web.frame = NSRect(x: x, y: 0, width: 400, height: 600)
+            stage.addSubview(tab.web)
+            tab.go(to: server.url("/"))
+            try await until("the page at x \(x) loads") { await self.alive(tab.web) }
+            halves.append(tab)
+        }
+        let (left, right) = (halves[0], halves[1])
+        XCTAssertNotEqual(left.id, right.id)
+        browser.pair(right, with: left, onLeft: false)
+        browser.select(left)
+        XCTAssertEqual(browser.activeID, left.id)
+        XCTAssertEqual(browser.visibleTabIDs, [left.id, right.id])
+
+        kill(right.web)
+        try await until("the unfocused half is loaded again") { await self.alive(right.web) }
+        XCTAssertFalse(right.stale)
+        XCTAssertNil(right.failure)
+    }
+
     /// What the fix leans on: WebKit hands the reason to the private
     /// callback, and doesn't call the public one as well.
     func testWebKitSaysWhyThroughThePrivateCallback() async throws {
