@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A download cancelled while it is still stopping says "Cancelling…" in the Downloads panel, whether Cancel was pressed while it ran or while a pause was under way. It said "Pausing…", as if Cancel had paused it. Thanks [@oddharsh](https://github.com/oddharsh) ([#967](https://github.com/driceroland/Search/pull/967))
+
 - Passkeys follow the switch of the Search they run in: a build of your own started beside a release turned them off for the release's new tabs while its switch still said on. Thanks [@oddharsh](https://github.com/oddharsh) ([#737](https://github.com/driceroland/Search/pull/737))
 
 - A tab moved to a space with its own sign-ins while it played sound no longer keeps its speaker once its page is let go. It went on saying "playing sound" with nothing behind it, so it never slept or closed itself. Thanks [@oddharsh](https://github.com/oddharsh) ([#958](https://github.com/driceroland/Search/pull/958))
