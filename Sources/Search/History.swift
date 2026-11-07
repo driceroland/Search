@@ -629,18 +629,25 @@ final class History: ObservableObject {
         guard !saving, !retired else { return }
         saving = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self else { return }
-            saving = false
-            guard !retired else { return }
-            let now = Date()
-            // A cap, so the file can't grow without end. What goes is what has
-            // been visited least and longest ago.
-            let snapshot = self.visits
-            let file = self.file
-            Disk.write(file) {
-                let list = Array(snapshot.values.sorted { History.score($0, now: now) > History.score($1, now: now) }.prefix(2_000))
-                return try? JSONEncoder().encode(list)
-            }
+            self?.write(now: false)
+        }
+    }
+
+    /// Quitting: the write still waiting out `save`'s pause, made before the
+    /// process ends rather than never.
+    func flush() { write(now: true) }
+
+    private func write(now: Bool) {
+        guard saving else { return }
+        saving = false
+        guard !retired else { return }
+        let date = Date()
+        // A cap, so the file can't grow without end. What goes is what has
+        // been visited least and longest ago.
+        let snapshot = visits
+        Disk.write(file, now: now) {
+            let list = Array(snapshot.values.sorted { History.score($0, now: date) > History.score($1, now: date) }.prefix(2_000))
+            return try? JSONEncoder().encode(list)
         }
     }
 
