@@ -517,6 +517,10 @@ final class Preferences: ObservableObject {
     /// adds a command, so there is no switch. Still a property, for the
     /// code that asks and the tests that turn it off; never written.
     @Published var translatesPages = true
+    /// Empty follows the Mac's preferred language.
+    @Published var translateTarget: String {
+        didSet { store.set(translateTarget, forKey: "translate.target") }
+    }
     /// The languages whose pages are translated as they open, chosen from
     /// the translated sign's menu (never from a private tab). None at first.
     @Published var translateAlways: Set<String> {
@@ -828,6 +832,7 @@ final class Preferences: ObservableObject {
         escapeTwice = store.bool(forKey: "fullscreen.escapeTwice")
         keepsWindow = store.bool(forKey: "fullscreen.keepsWindow")
         waitsForPlay = store.bool(forKey: Preferences.waitsKey)
+        translateTarget = store.string(forKey: "translate.target") ?? ""
         translateAlways = Set(store.stringArray(forKey: PageTranslator.alwaysKey) ?? [])
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true

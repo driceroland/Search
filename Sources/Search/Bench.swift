@@ -2013,7 +2013,7 @@ final class Bench {
                 tab.setAlwaysTranslates(code, action == "always")
                 answer(state())
             default:
-                let target = (request["lang"] as? String).map(Locale.Language.init(identifier:)) ?? PageTranslator.reader
+                let target = (request["lang"] as? String).map(Locale.Language.init(identifier:)) ?? PageTranslator.preferredTarget
                 if PageTranslator.start(tab, to: target, done: { report in
                     var reply = state()
                     reply["report"] = report

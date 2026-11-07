@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Page translation stays quick on a Mac with Apple Intelligence: Search prefers the faster on-device translation model, as it did before macOS 26.4's SDK changed the default. Language pairs only the newer model supports still use it. Thanks [@2470046](https://github.com/2470046) ([#821](https://github.com/driceroland/Search/pull/821))
+
 - A tab carried past another stays under the pointer, in the column, the icon column and across the top. At every tab it passed it was thrown a place behind and glided back. Thanks [@oddharsh](https://github.com/oddharsh) ([#979](https://github.com/driceroland/Search/pull/979))
 
 - ⌘S hides and shows the column as soon as it's pressed. Each press built every row of the column four times over before the slide could start, about 150ms with 30 tabs, as long as the slide itself; it now takes about 38ms, and the column that slides away is the same one that comes back. Thanks [@oddharsh](https://github.com/oddharsh) ([#948](https://github.com/driceroland/Search/pull/948))
@@ -112,6 +114,8 @@ in [ROADMAP.md](ROADMAP.md).
 - With Settings › Appearance › Tabs show: Letters, a tab's letter is beside its title in the column and across the top, as the setting says, not only on pinned squares. Thanks [@ugozlave](https://github.com/ugozlave) ([#919](https://github.com/driceroland/Search/issues/919), [#860](https://github.com/driceroland/Search/issues/860))
 
 ### Added
+
+- Choose a page translation language in Settings › Browsing › Pages, independently of the Mac's language. System Default keeps the previous behavior; automatically translated pages use the same choice ([#747](https://github.com/driceroland/Search/issues/747)). Thanks [@2470046](https://github.com/2470046) ([#821](https://github.com/driceroland/Search/pull/821))
 
 - A video in full screen no longer takes its window with it, if you ask: with Settings › Browsing › Keep the window in use during full screen on, the window on its own desktop keeps its tabs and the folded column while the video plays on, and you can browse in other tabs. Esc over the video lands it back in its tab. Off unless turned on. Thanks [@pasteley](https://github.com/pasteley) ([#980](https://github.com/driceroland/Search/pull/980))
 
