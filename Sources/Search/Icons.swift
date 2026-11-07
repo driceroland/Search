@@ -227,9 +227,10 @@ final class Favicons {
     /// The icon an address wears, from what is already known, and nothing
     /// fetched: the one its page declared, or failing that the one the
     /// nearest page of the same site did, so a page never opened still has
-    /// its site's. In the dark, the dark variant when there is one. A
-    /// private tab (`shy`) also sees what its own pages wore; nothing else
-    /// does.
+    /// its site's. In the dark, the dark variant when there is one. In the
+    /// light, a page seen only in the dark wears that one as a last resort,
+    /// rather than its letter. A private tab (`shy`) also sees what its own
+    /// pages wore; nothing else does.
     func cached(for url: URL?, shy: Bool = false) -> NSImage? {
         guard let url, let site = Favicons.site(url) else { return nil }
         return lookup(site, page: Favicons.page(url), shy: shy)
@@ -244,7 +245,9 @@ final class Favicons {
         let key = "\(Favicons.dark) \(shy) \(site) \(page ?? "")"
         if let known = lookups[key] { return known }
         let other = site.hasPrefix("www.") ? String(site.dropFirst(4)) : "www." + site
+        let own = page.flatMap { (shy ? shyPages[site]?[$0] : nil) ?? pages[site]?[$0] }
         let found = nearest(site, page: page, shy: shy) ?? nearest(other, page: page, shy: shy)
+            ?? own.flatMap { image($0, dark: !Favicons.dark) }
         lookups[key] = found
         return found
     }
