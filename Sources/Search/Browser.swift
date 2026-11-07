@@ -5874,13 +5874,16 @@ final class Browser: NSObject, ObservableObject {
         cancelTabEdit()
         launching = false
         summoning = true
-        summonHeld = true
+        // Search Tabs… clicked in the menu raises it with ⌘ up, and no
+        // release would come to say so: the next ⌘K walked the list.
+        summonHeld = NSApp.currentEvent?.modifierFlags.contains(.command) == true
         typed = words
         editing = true
         focusRequest += 1
     }
 
-    /// True from ⌘K raising the switcher until ⌘ is let go of.
+    /// True from ⌘K raising the switcher until ⌘ is let go of; false when it
+    /// was raised with ⌘ up.
     private var summonHeld = false
 
     /// ⌘K pressed, by its key or its menu item. With ⌘ still down from the
