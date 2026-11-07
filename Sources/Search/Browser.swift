@@ -5546,7 +5546,12 @@ final class Browser: NSObject, ObservableObject {
     /// `otherwise`: the other page of a pair, tried when this one has
     /// nothing playing.
     private func lift(_ tab: Tab?, quietly: Bool, otherwise: Tab? = nil, spaceRequest: UUID? = nil) {
-        if prefs.floatStyle == .system { return picture(tab, quietly: quietly, otherwise: otherwise, spaceRequest: spaceRequest) }
+        // One floating video at a time: one still in Search's window from
+        // before picture in picture was chosen stays the only one out.
+        if prefs.floatStyle == .system {
+            guard !floater.showing else { return }
+            return picture(tab, quietly: quietly, otherwise: otherwise, spaceRequest: spaceRequest)
+        }
         // A tab just put down with ⌘W has no page to lift a video out of, and
         // asking it would only build an empty view to ask.
         guard let tab, tab.isWeb, !tab.asleep, !floater.showing else {
