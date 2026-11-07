@@ -660,6 +660,24 @@ struct SettingsPanel: View {
         case "passwords.fill": Switch(on: $prefs.fillsPasswords)
         case "passkeys": Switch(on: $prefs.passkeys)
         case "passwords.apple": Switch(on: $prefs.applePasswords)
+        case "contacts.flash": Switch(on: $prefs.flashesContacts)
+        // Turned on, macOS is asked whether Search may read Contacts; a no,
+        // or no card of yours, leaves it off and says why.
+        case "contacts.fill":
+            Switch(on: Binding(get: { prefs.fillsContacts }, set: { on in
+                guard on else { prefs.fillsContacts = false; return }
+                Task { @MainActor in
+                    guard await MeCard.shared.ask() else {
+                        browser.announce("Search may not read Contacts: System Settings › Privacy & Security › Contacts")
+                        return
+                    }
+                    guard await MeCard.shared.reload() else {
+                        browser.announce("No card of yours in Contacts: pick yours there, then Card › Make This My Card")
+                        return
+                    }
+                    prefs.fillsContacts = true
+                }
+            }))
         case "shield": Switch(on: $prefs.shielded)
         case "sites.keep": Switch(on: Binding(get: { !prefs.keepsSignIns }, set: { prefs.keepsSignIns = !$0 }))
         case "privacy.clickIDs": Switch(on: $prefs.removesClickIDs)

@@ -591,7 +591,16 @@ final class Tab: ObservableObject, Identifiable {
     /// is, in the web view's points, or nil when it has left. Then whether
     /// it goes with a password, and whether it is a first step's name box,
     /// which takes the name alone.
-    var onField: ((Tab, CGRect?, Bool, Bool, Bool) -> Void)?
+    /// Last, what else the box takes that Search can fill (Fill), if not a
+    /// sign-in.
+    var onField: ((Tab, CGRect?, Bool, Bool, Bool, Fill?) -> Void)?
+    /// A box that takes something other than a sign-in.
+    enum Fill: Equatable {
+        /// A detail on your own card in Contacts (MeCard): its kind, as
+        /// autocomplete names it ("email", "postal-code"…), and the page's
+        /// number for the box, which a pick has to find the caret still in.
+        case contact(String, box: Int)
+    }
     /// The site the sign-in was sent from — not the one it landed on —
     /// then the name and the password, and whether that page came over
     /// plain http.
@@ -1078,6 +1087,13 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: FormRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
+        // The form script looks at boxes for your card only with Fill in
+        // your contact details on.
+        if FormRelay.contacts {
+            controller.addUserScript(
+                WKUserScript(source: FormRelay.contactsOn, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
+            )
+        }
         controller.addUserScript(
             WKUserScript(source: IconRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
         )
@@ -1198,16 +1214,16 @@ final class Tab: ObservableObject, Identifiable {
     /// `wide`: clearly a sign-in's box, so accounts kept for the site's
     /// other hosts (its registrable domain) may come; otherwise only this
     /// host's own.
-    func fieldFocused(_ rect: CGRect?, passwords: Bool = true, name: Bool = false, wide: Bool = true) {
+    func fieldFocused(_ rect: CGRect?, passwords: Bool = true, name: Bool = false, wide: Bool = true, fill: Fill? = nil) {
         guard let rect else {
-            onField?(self, nil, false, false, false)
+            onField?(self, nil, false, false, false, nil)
             return
         }
         let zoom = built?.pageZoom ?? 1
         onField?(self, CGRect(
             x: rect.minX * zoom, y: rect.minY * zoom,
             width: rect.width * zoom, height: rect.height * zoom
-        ), passwords, name, wide)
+        ), passwords, name, wide, fill)
     }
 
     /// The name a sign-in that asks for it first was just sent, for the
@@ -1318,6 +1334,42 @@ final class Tab: ObservableObject, Identifiable {
         ) { result in
             done?((result as? Bool) ?? false)
         }
+    }
+
+    /// Your card's details, picked from under a box for one, into the
+    /// boxes of its form: `fields` by kind, as autocomplete names them.
+    /// `done` hears whether any box took one. `alone`: the box with the
+    /// caret only, not the rest of its form. `box`: the page's number for
+    /// the box the list hung from. `onlyOn`: the page the list was made
+    /// for, whose origin, port and all, the page has to still be. `flash`:
+    /// the boxes it fills flash in the accent colour (MeCard.tint).
+    func fillContact(_ fields: [String: String], alone: Bool = false, box: Int? = nil, onlyOn page: URL? = nil,
+                     flash: Bool = false, done: ((Bool) -> Void)? = nil) {
+        var still = ""
+        if let page {
+            guard let origin = Self.origin(of: page) else { done?(false); return }
+            still = "location.origin === `\(escape(origin))` && "
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: fields), let card = String(data: data, encoding: .utf8) else {
+            done?(false)
+            return
+        }
+        let at = box.map(String.init) ?? "null"
+        let tint = flash ? "`\(escape(MeCard.tint))`" : "null"
+        web.evaluateInSearch("\(still)window.__officeForms && window.__officeForms.contact(\(card), \(alone), \(at), \(tint)) > 0") { result in
+            done?((result as? Bool) ?? false)
+        }
+    }
+
+    /// A page's origin as the page itself gives it (location.origin):
+    /// scheme and host, and the port only when it isn't the scheme's own.
+    nonisolated static func origin(of url: URL?) -> String? {
+        guard let url, let scheme = url.scheme?.lowercased(), let host = url.host(percentEncoded: true)?.lowercased(),
+              !host.isEmpty
+        else { return nil }
+        let bracketed = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        let port = url.port.flatMap { (scheme == "https" && $0 == 443) || (scheme == "http" && $0 == 80) ? nil : $0 }
+        return "\(scheme)://\(bracketed)" + (port.map { ":\($0)" } ?? "")
     }
 
     func picked(selector: String, label: String, note: String) {

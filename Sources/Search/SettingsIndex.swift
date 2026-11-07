@@ -84,6 +84,7 @@ enum SettingsIndex {
 
         .init(id: "passwords", page: .passwords, title: "Your passwords", icon: "key"),
         .init(id: "apple", page: .passwords, title: "Apple Passwords", icon: "lock.rectangle.stack"),
+        .init(id: "forms", page: .passwords, title: "Filling in forms", icon: "character.cursor.ibeam"),
 
         .init(id: "blocking", page: .privacy, title: "Blocking", icon: "shield"),
         .init(id: "permissions", page: .privacy, title: "Site permissions", icon: "checkmark.shield"),
@@ -306,6 +307,14 @@ enum SettingsIndex {
               title: "Passwords from Apple's Passwords app", detail: "Your Passwords app's accounts under the sign-in box. Unofficial",
               more: "Search talks to the helper Apple made for its Chrome extension, as that extension. Never in private tabs.",
               keys: ["passwords.apple"], words: ["icloud keychain", "apple"]),
+        .init(id: "contacts.fill", group: "forms", icon: "person.crop.rectangle",
+              title: "Fill in your contact details", detail: "Your card in Contacts under name, email, phone and address boxes",
+              more: "A click fills the rest of the form's empty boxes too. Only your own card is read, and macOS asks first.",
+              keys: ["contacts.fill"], words: ["autofill", "address", "email", "phone", "name", "contacts", "me card"]),
+        .init(id: "contacts.flash", group: "forms", icon: "sparkles",
+              title: "Animate fill", detail: "In your accent colour, one after the other",
+              keys: ["contacts.flash"], words: ["animation", "animate", "highlight", "flash", "autofill"],
+              parent: "contacts.fill"),
 
         // Privacy
         .init(id: "shield", group: "blocking", icon: "shield.lefthalf.filled",
