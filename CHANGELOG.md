@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Going to another space with ⌃1–⌃9 or the space menu while the card for a new space is up puts the card away, as Escape does. The row changed but the card and its plus stayed, and if the card came from a tab's Move to Space › New Space…, a later Create carried that tab into the new space too. Typing "new space" in the address field now opens the card the way New Space… does. Thanks [@oddharsh](https://github.com/oddharsh) ([#951](https://github.com/driceroland/Search/pull/951))
+
 - An extension that names nativeMessaging among its optional permissions, as Bitwarden does, can talk to its app on this Mac again: it was refused every call, so its unlock with Touch ID never reached its app. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#751](https://github.com/driceroland/Search/pull/751)), and [@shahrushi2003](https://github.com/shahrushi2003) and [@2cristo7](https://github.com/2cristo7) for reporting ([#741](https://github.com/driceroland/Search/issues/741))
 
 - Close Both Pages is remembered as one, as Close Tabs Below is: one ⇧⌘T brings both pages back side by side, as the pair they were, with the keys in the page that had them. Each page used to be its own entry, so ⇧⌘T brought back one page alone, and a second ⇧⌘T the other, apart. Thanks [@ubeann](https://github.com/ubeann) ([#930](https://github.com/driceroland/Search/pull/930))

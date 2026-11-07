@@ -52,7 +52,7 @@ enum AddressCommand: CaseIterable, Equatable {
         case .settings: browser.tuning = true
         case .newTab: browser.newTab()
         case .newPrivateTab: browser.newShyTab()
-        case .newSpace: browser.makingSpace = true
+        case .newSpace: browser.askForSpace()
         case .bookmarks: browser.bookmarking = true
         case .history: browser.recalling = true
         case .downloads: browser.showDownloads()
