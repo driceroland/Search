@@ -65,6 +65,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Settings › Tabs › Links opened in front go beside their page, off unless turned on, with New tab position on After current. A plain click on a link that opens a new tab, a page's window.open on a click, or a ⇧⌘-click puts its page right after the page it came from, in the order you click, as a ⌘-click's goes, while you go back and forth between the page and the tabs it opened. Otherwise they go to the end of the row, as before. Thanks [@ubeann](https://github.com/ubeann) ([#965](https://github.com/driceroland/Search/pull/965))
+
 - What plays in another tab can show at the foot of the sidebar: its icon and title, with its pause, and a click goes to the tab. Off unless you turn it on in Settings › Appearance › Tabs. Thanks [@Tom-Boscher](https://github.com/Tom-Boscher) ([#764](https://github.com/driceroland/Search/pull/764))
 
 - Copy Address in a download's right-click menu, while it runs and once it is done, for files downloaded from now on, to hand it to another download app. Clearing history takes these addresses with it; the files stay listed. Asked for by [@ejzpan](https://github.com/ejzpan) ([#853](https://github.com/driceroland/Search/issues/853))
