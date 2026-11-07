@@ -944,6 +944,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(translateRelay, contentWorld: Web.world, name: TranslateRelay.name)
         PopupGestureRelay.install(on: controller)
         Shield.shared.protect(controller)
+        Shared.curtain.dress(controller)
         built = web
         // Set before loadAndVerify gives this view a page: a tab restored or
         // woken muted must not make its first sound while that page boots.
@@ -1325,10 +1326,16 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     /// Show one hidden thing while the pointer rests on its row in the list.
-    func peek(_ selector: String, keeping css: String) {
+    func peek(_ veil: Veil, keeping css: String) {
         web.evaluateInSearch(
-            "window.__officeVeil && window.__officeVeil.peek(`\(escape(css))`, `\(escape(selector))`)"
+            "window.__officeVeil && window.__officeVeil.peek(`\(escape(css))`, `\(escape(veil.selector))`, `\(veil.key)`)"
         )
+    }
+
+    /// Veils put back for good, shown again on the page that is up.
+    func spare(_ veils: [Veil], keeping css: String) {
+        let keys = veils.map { "`\($0.key)`" }.joined(separator: ", ")
+        web.evaluateInSearch("window.__officeVeil && window.__officeVeil.spare(`\(escape(css))`, [\(keys)])")
     }
 
     func unpeek(_ css: String) {

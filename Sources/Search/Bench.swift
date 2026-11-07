@@ -2284,6 +2284,27 @@ final class Bench {
             browser.peek(url, from: tab)
             answer(["peek": url.absoluteString])
 
+        case "veils":
+            // What is hidden on the site in front, after one of the list's
+            // own actions on it: "restore" or "peek" at SELECTOR, "unpeek",
+            // "undo" the last, or "all" back. `loading` is the stylesheet a
+            // page loading now still gets, "" once the compiled list covers
+            // the site (see Curtain.swift). Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "veils only works on a --test run"]); return }
+            let chosen = browser.hereVeils.first { $0.selector == request["selector"] as? String }
+            switch request["action"] as? String {
+            case "restore": chosen.map(browser.restore)
+            case "peek": chosen.map(browser.peek)
+            case "unpeek": browser.stopPeeking()
+            case "undo": browser.undoHiding()
+            case "all": browser.restoreAll()
+            default: break
+            }
+            answer([
+                "veils": browser.hereVeils.map(\.selector),
+                "loading": browser.curtain.loadingCSS(on: browser.hereHost),
+            ])
+
         case "pull":
             // Two fingers sideways over the page: DX points in STEPS scroll
             // events spread over MS milliseconds, with a trackpad's phases,

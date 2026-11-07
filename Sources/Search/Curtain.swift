@@ -20,6 +20,14 @@ struct Veil: Codable, Identifiable, Equatable {
     var date: Date
 
     var id: String { selector }
+
+    /// A short name for the selector, for the page to say "not this one"
+    /// (see Curtain.rule). FNV-1a, so it is the same on every launch.
+    var key: String {
+        var hash: UInt32 = 2_166_136_261
+        for byte in selector.utf8 { hash = (hash ^ UInt32(byte)) &* 16_777_619 }
+        return String(hash, radix: 36)
+    }
 }
 
 @MainActor
@@ -27,7 +35,10 @@ final class Curtain: ObservableObject {
     @Published private(set) var byHost: [String: [Veil]] = [:]
     private var saving = false
 
-    init() { load() }
+    init() {
+        load()
+        compile()
+    }
 
     func host(of url: URL?) -> String? {
         guard let host = url?.host()?.lowercased() else { return nil }
@@ -44,14 +55,14 @@ final class Curtain: ObservableObject {
         guard !list.contains(where: { $0.selector == selector }) else { return }
         list.append(Veil(selector: selector, label: label, note: note, date: Date()))
         byHost[host] = list
-        save()
+        changed()
     }
 
     /// Put one back.
     func restore(_ veil: Veil, on host: String) {
         byHost[host] = (byHost[host] ?? []).filter { $0.selector != veil.selector }
         if byHost[host]?.isEmpty == true { byHost[host] = nil }
-        save()
+        changed()
     }
 
     /// Put the last one back — ⌘Z, while you are still pointing at things.
@@ -59,13 +70,13 @@ final class Curtain: ObservableObject {
     func undo(on host: String) -> Veil? {
         guard var list = byHost[host], let last = list.popLast() else { return nil }
         byHost[host] = list.isEmpty ? nil : list
-        save()
+        changed()
         return last
     }
 
     func restoreAll(on host: String) {
         byHost[host] = nil
-        save()
+        changed()
     }
 
     /// The stylesheet for a site. Each selector stands alone in its own rule:
@@ -78,6 +89,93 @@ final class Curtain: ObservableObject {
             .filter { $0.selector != spared }
             .map { "\($0.selector) { display: none !important; }" }
             .joined(separator: "\n")
+    }
+
+    // MARK: - the compiled list
+
+    /// Every site's veils as one content rule list. WebKit hides them as
+    /// each page loads, before its first style pass, with no script in the
+    /// page. Kept apart from Shield's list, so pausing the blocker on a site
+    /// never brings back what you hid there.
+    private(set) var list: WKContentRuleList?
+    /// What `list` was compiled from. A site whose veils differ gets the
+    /// stylesheet instead (see loadingCSS).
+    private var compiled: [String: [Veil]] = [:]
+    /// Bumped on every change, so a compile that finishes after a newer
+    /// change is thrown away.
+    private var generation = 0
+    /// Every tab's controller, so a new list reaches them all.
+    private let dressed = NSHashTable<WKUserContentController>.weakObjects()
+
+    /// What a page about to load needs on top of the compiled list: this
+    /// site's whole stylesheet while the list doesn't cover it (a hide not
+    /// compiled yet, a host WebKit can't take, a compile that failed),
+    /// nothing once it does.
+    func loadingCSS(on host: String?) -> String {
+        guard let host, (compiled[host] ?? []) != veils(on: host) else { return "" }
+        return css(on: host)
+    }
+
+    /// Every tab asks for the list when it is made.
+    func dress(_ controller: WKUserContentController) {
+        dressed.add(controller)
+        if let list { controller.add(list) }
+    }
+
+    /// One veil as a rule. WebKit puts a list on a page only as it loads, and
+    /// its hide outranks any stylesheet the page has, so the selector leaves
+    /// itself a way out: a key on <html> lets this document show the element
+    /// again, put back for good or peeked at from the list.
+    static func rule(for veil: Veil, on host: String) -> [String: Any] {
+        let out = "[data-office-spare~=\"\(veil.key)\"], [data-office-peek=\"\(veil.key)\"]"
+        return [
+            "trigger": [
+                "url-filter": ".*",
+                // Exactly this site, as the stylesheet was: `*host` would
+                // reach its subdomains too.
+                "if-domain": [host, "www." + host],
+                // And only the page itself, not the frames inside it.
+                "load-context": ["top-frame"],
+            ],
+            "action": ["type": "css-display-none", "selector": ":is(\(veil.selector)):not(:is(\(out)) *)"],
+        ]
+    }
+
+    /// Any change: the old list comes off every tab at once, so a page that
+    /// loads before the new one is ready gets the stylesheet, never a list
+    /// that still hides what was just put back.
+    private func changed() {
+        generation += 1
+        if let list { dressed.allObjects.forEach { $0.remove(list) } }
+        list = nil
+        compiled = [:]
+        save()
+    }
+
+    private func compile() {
+        let mine = generation
+        // WebKit refuses a whole list over one domain that isn't lowercase
+        // ASCII; such a site keeps the stylesheet.
+        let snapshot = byHost.filter { host, _ in host.allSatisfy { $0.isASCII && !$0.isUppercase } }
+        let rules = snapshot.flatMap { host, veils in veils.map { Curtain.rule(for: $0, on: host) } }
+        guard !rules.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: rules),
+              let json = String(data: data, encoding: .utf8),
+              // In this world's own folder, not WebKit's default store: every
+              // Search shares that one, test worlds included, and each has
+              // its own hidden.json to compile under the same name.
+              let store = WKContentRuleListStore(url: Store.file("Rules"))
+        else { return }
+        // A failed compile leaves `compiled` empty, so every site keeps the
+        // stylesheet it had before this list existed.
+        store.compileContentRuleList(forIdentifier: "office-curtain", encodedContentRuleList: json) { [weak self] list, _ in
+            MainActor.assumeIsolated {
+                guard let self, mine == self.generation, let list else { return }
+                self.list = list
+                self.compiled = snapshot
+                self.dressed.allObjects.forEach { $0.add(list) }
+            }
+        }
     }
 
     // MARK: - the file
@@ -97,6 +195,7 @@ final class Curtain: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self else { return }
             saving = false
+            compile()
             let snapshot = byHost
             let file = Curtain.file
             DispatchQueue.global(qos: .utility).async {
@@ -358,10 +457,12 @@ enum Veiling {
         },
         // Show one hidden thing for as long as the pointer rests on its row.
         // The stylesheet is rebuilt without that one selector rather than
-        // fighting it with another rule, so the element comes back with the
-        // layout it actually had.
-        peek: function (css, sel) {
+        // fighting it with another rule, and the compiled list is told to
+        // let it through, so the element comes back with the layout it
+        // actually had.
+        peek: function (css, sel, key) {
           sheet('office-veil').textContent = css;
+          document.documentElement.setAttribute('data-office-peek', key);
           sheet('office-peek').textContent = sel +
             ' { outline: 2px solid rgba(23,23,23,.9) !important; outline-offset: 2px !important; }';
           try {
@@ -372,6 +473,16 @@ enum Veiling {
         unpeek: function (css) {
           sheet('office-veil').textContent = css;
           sheet('office-peek').textContent = '';
+          document.documentElement.removeAttribute('data-office-peek');
+        },
+        // Put back for good: the compiled list this page loaded with still
+        // names them, so the page is told to let them through.
+        spare: function (css, keys) {
+          sheet('office-veil').textContent = css;
+          var root = document.documentElement;
+          var have = (root.getAttribute('data-office-spare') || '').split(' ').filter(Boolean);
+          keys.forEach(function (k) { if (have.indexOf(k) < 0) have.push(k); });
+          root.setAttribute('data-office-spare', have.join(' '));
         }
       };
     })();
