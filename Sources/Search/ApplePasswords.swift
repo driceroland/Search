@@ -128,6 +128,9 @@ final class ApplePasswords: ObservableObject {
     private var client: SRPClient?
     private var numbers: (serverKey: [UInt8], salt: [UInt8])?
     private var key: SymmetricKey?
+    /// Counts the pairings dropped, so a code still being checked when its
+    /// pairing goes can tell, and leave the next one alone.
+    private var dropped = 0
     private var waiters: [Int: (id: Int, continuation: CheckedContinuation<[String: Any], Error>)] = [:]
     private var nextWaiter = 0
     private var busy = false
@@ -200,24 +203,30 @@ final class ApplePasswords: ObservableObject {
         guard state == .code, code.count == 6, let client, let numbers else { return }
         state = .checking
         trouble = nil
+        let pairing = dropped
         do {
             let proof = try await Task.detached(priority: .userInitiated) {
                 try client.prove(serverKey: numbers.serverKey, salt: numbers.salt, code: code)
             }.value
-            try await exclusive {
+            let sent = try await exclusive {
+                guard pairing == dropped else { return false }
                 let reply = try await request(AppleMessages.verify(client, proof: proof), timeout: 15)
                 try AppleMessages.readVerify(reply, client, proof: proof)
+                return true
             }
+            guard sent, pairing == dropped else { return }
             key = proof.key
             self.numbers = nil
             state = .paired
         } catch ApplePasswordsError.wrongCode {
+            guard pairing == dropped else { return }
             // The helper is done with that code: a new pairing shows a new one.
             self.numbers = nil
             self.client = nil
             state = .idle
             trouble = "That code didn't match. Connect again for a new one."
         } catch {
+            guard pairing == dropped else { return }
             fail(error, stop: true)
         }
     }
@@ -331,6 +340,7 @@ final class ApplePasswords: ObservableObject {
     }
 
     private func reset() {
+        dropped += 1
         let pending = waiters.values
         waiters = [:]
         pending.forEach { $0.continuation.resume(throwing: ApplePasswordsError.gone) }

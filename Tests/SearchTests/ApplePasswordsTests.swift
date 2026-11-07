@@ -307,6 +307,28 @@ final class ApplePasswordsTests: XCTestCase {
         XCTAssertEqual(apple.state, .paired)
     }
 
+    /// Disconnect and Connect again while a typed code is still being
+    /// worked out: that old code's answer leaves the new pairing alone.
+    @MainActor
+    func testCodeFromAPairingGoneLeavesTheNextOneAlone() async {
+        let fake = FakeHelper(code: "246810")
+        let apple = ApplePasswords(makeLink: { fake })
+        await apple.connect()
+        let stale = Task { await apple.enter("246810") }
+        while apple.state != .checking { await Task.yield() }
+        // Nothing else runs on the main actor between these two: the old
+        // code is still being worked out off it.
+        apple.disconnect()
+        await apple.connect()
+        await stale.value
+        XCTAssertEqual(apple.state, .code)
+        XCTAssertNil(apple.trouble)
+        XCTAssertEqual(fake.handshakes, 2)
+        await apple.enter("246810")
+        XCTAssertEqual(apple.state, .paired)
+        XCTAssertEqual(fake.verifications, 1)
+    }
+
     func testNotACodeIsNotSent() async {
         let fake = FakeHelper(code: "246810")
         let apple = ApplePasswords(makeLink: { fake })
