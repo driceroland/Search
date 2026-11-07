@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A page's camera, microphone, location or notifications card goes away with its page: going to another tab, or the page going elsewhere or closing, refuses it, as the screen-sharing card already did. It stayed up over the next tab, and Allow gave the page you had left what it asked for. A screen-sharing question waiting for a tab behind no longer refuses every other page's camera, location and notifications until you go to that tab.
 - A video playing in a window on another screen — a TV, a second display — no longer floats out when you work in another app on this one.
 
 - A Split View pair carried in the column or across the top comes apart only where that was shown: rest over another tab and the half that stays dims, with the same tick as a split shown over a page, and only then does letting go take the other half out. Let go a few points past the pair's own edge on its way to a new place, it used to lose the half being held with no sign it would. Thanks [@ubeann](https://github.com/ubeann) ([#887](https://github.com/driceroland/Search/pull/887))
