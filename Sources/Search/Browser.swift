@@ -3424,6 +3424,28 @@ final class Browser: NSObject, ObservableObject {
         selectableTabs.filter { selectedTabIDs.contains($0.id) }
     }
 
+    /// One of several picked: a press on it waits for the release, as a
+    /// click, rather than bringing it forward as the button goes down (see
+    /// TabPress), which would drop the others before the drag could take them.
+    func isPickedAmongOthers(_ tab: Tab) -> Bool {
+        selectedTabIDs.contains(tab.id) && visibleSelectedTabCount > 1
+    }
+
+    /// What a drag carries: the tab and its pair, or, when it is one of
+    /// several picked, every picked tab of its kind with their pairs, in the
+    /// row's order. A pin carried leaves the picked tabs where they are, and
+    /// a tab leaves the pins; the picked pins of the other shape (square or
+    /// row) stay too, as the shapes don't mix (see joins).
+    func carried(with tab: Tab) -> [Tab] {
+        let picked = pickedTabs
+        guard picked.count > 1, picked.contains(where: { $0.id == tab.id }) else {
+            return split(for: tab).map { pair in tabs.filter { pair.contains($0.id) } } ?? [tab]
+        }
+        let ids = Set(picked.filter { $0.pin == nil ? tab.pin == nil : tab.pin != nil && $0.listed == tab.listed }
+            .flatMap { split(for: $0)?.tabs ?? [$0.id] })
+        return tabs.filter { ids.contains($0.id) }
+    }
+
     /// Exactly two tabs picked, and already the two pages of one pair.
     var pickedTabsArePaired: Bool {
         let picked = pickedTabs
@@ -3527,15 +3549,24 @@ final class Browser: NSObject, ObservableObject {
         guard shown.indices.contains(index),
               let representative = split(for: tab)?.left ?? (tabs.contains(where: { $0.id == tab.id }) ? tab.id : nil),
               let from = shown.firstIndex(where: { $0.id == representative }), from != index else { return }
-        let anchor = shown[index]
-        let moving = split(for: tab).map { pair in tabs.filter { pair.contains($0.id) } } ?? [tab]
-        guard moving.allSatisfy({ ($0.pin == nil) == (anchor.pin == nil) }), joins(tab, kindOf: anchor) else { return }
+        let moving = carried(with: tab)
         let ids = Set(moving.map(\.id))
+        // The block lands beside the tab nearest the drop that stays put:
+        // with several picked, the place dropped on may be one of their own.
+        let passed = from < index ? Array(shown[(from + 1)...index].reversed()) : Array(shown[index..<from])
+        guard let anchor = passed.first(where: { !ids.contains($0.id) }),
+              moving.allSatisfy({ ($0.pin == nil) == (anchor.pin == nil) }), joins(tab, kindOf: anchor) else { return }
         var row = tabs.filter { !ids.contains($0.id) }
         guard let target = row.firstIndex(where: { $0.id == anchor.id }) else { return }
         let targetSize = split(for: anchor) == nil ? 1 : 2
         row.insert(contentsOf: moving, at: from < index ? target + targetSize : target)
+        // Picked tabs from other groups join the carried tab's, or setting
+        // the row would put each back in its own (see arrangeGroupedTabs).
+        let regrouped = prefs.usesTabGroups && tab.pin == nil
+        let previous = regrouped ? Set(moving.compactMap(\.groupID)) : []
+        if regrouped { for member in moving { member.groupID = tab.groupID } }
         tabs = row
+        for id in previous where id != tab.groupID { removeEmptyGroup(id) }
         rememberSession()
     }
 
@@ -4593,9 +4624,7 @@ final class Browser: NSObject, ObservableObject {
     func move(_ tab: Tab, toGroup target: GroupDropTarget, detaching: Bool = false) {
         guard tabs.contains(where: { $0 === tab }),
               let groupIndex = tabGroups.firstIndex(where: { $0.id == target.group }) else { return }
-        let moving = (detaching ? nil : split(for: tab)).map { pair in
-            pair.tabs.compactMap { id in tabs.first { $0.id == id } }
-        } ?? [tab]
+        let moving = detaching ? [tab] : carried(with: tab)
         guard moving.allSatisfy({ $0.pin == nil && !$0.shy && !$0.bench }) else { return }
         let ids = Set(moving.map(\.id))
         var anchor: Tab?
