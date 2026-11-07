@@ -3441,11 +3441,16 @@ final class Browser: NSObject, ObservableObject {
         setSplitFraction(pair.id, fraction: 0.5)
     }
 
-    /// The divider's menu › Close Both.
+    /// The divider's menu › Close Both. Remembered as one, as Close Tabs
+    /// Below is, so one ⇧⌘T brings both back as the pair they were (see
+    /// reopen(batch:)); closed one by one, ⇧⌘T brought back one page alone,
+    /// and a second the other, apart.
     func closeSplit() {
         guard let pair = activeSplit else { return }
         let members = pair.tabs.compactMap { id in tabs.first { $0.id == id } }
-        for tab in members { close(tab) }
+        closingTogether(.tabs) { _ in
+            for tab in members { close(tab) }
+        }
     }
 
     /// An empty page of a pair given an open tab: the tab takes its place,
