@@ -74,6 +74,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- Settings › Appearance › Motion › Save power in Low Power Mode (was Reduce animations) also lets idle tabs sleep after ten minutes at most while in Low Power Mode. Off by default. Thanks [@oddharsh](https://github.com/oddharsh) ([#745](https://github.com/driceroland/Search/pull/745))
+
 - In Split View, the page your typing, Back and ⌘F go to has a clearer line round it: two points of mid-grey, where it was one point at a little over half strength. Against a white page it stood about 2:1 in light and 1.7:1 in dark, little more than the other page's own edge; now about 3:1 in both. Thanks [@ubeann](https://github.com/ubeann) ([#938](https://github.com/driceroland/Search/pull/938))
 
 - The key that raised the address field puts it away: ⌘T again closes ⌘T's floating field, ⌘L again closes ⌘L's, and ⌘K pressed afresh closes the switcher, as Spotlight's key does. ⌘K held still steps down the list. ⌘T again used to leave the field up with what was typed cleared, ⌘L again put the address back over an edit, and ⌘K, let go, ⌘K switched to the second tab in the list. What was typed is kept: switching between ⌘T, ⌘L and ⌘K changes only where Return goes, and a ⌘T put away without opening anything comes back with its words, selected. Thanks [@ubeann](https://github.com/ubeann) ([#912](https://github.com/driceroland/Search/pull/912))
