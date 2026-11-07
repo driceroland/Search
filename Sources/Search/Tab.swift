@@ -1567,9 +1567,9 @@ final class Tab: ObservableObject, Identifiable {
 
     /// What the store page's own button should say: added, on its way, or
     /// free to add.
-    func tellStore(installed: [String], busy: String?) {
+    func tellStore(installed: [String], busy: [String]) {
         guard let built,
-              let data = try? JSONSerialization.data(withJSONObject: ["installed": installed, "busy": busy.map { $0 as Any } ?? NSNull()]),
+              let data = try? JSONSerialization.data(withJSONObject: ["installed": installed, "busy": busy]),
               let json = String(data: data, encoding: .utf8)
         else { return }
         built.evaluateInSearch("window.__officeStore && window.__officeStore.state(\(json))")

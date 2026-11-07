@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Two extensions added from the store at once each keep showing "Adding…" until they are in. The first to finish took the spinner in Settings and the store page's "Adding…" away from the other, which looked done while it was still on its way, and one that turned out already installed could leave the spinner turning for good.
 - A video playing in a window on another screen — a TV, a second display — no longer floats out when you work in another app on this one.
 
 - A Split View pair carried in the column or across the top comes apart only where that was shown: rest over another tab and the half that stays dims, with the same tick as a split shown over a page, and only then does letting go take the other half out. Let go a few points past the pair's own edge on its way to a new place, it used to lose the half being held with no sign it would. Thanks [@ubeann](https://github.com/ubeann) ([#887](https://github.com/driceroland/Search/pull/887))

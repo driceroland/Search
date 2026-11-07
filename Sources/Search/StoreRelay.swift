@@ -40,7 +40,7 @@ final class StoreRelay: NSObject, WKScriptMessageHandler {
     static let script = """
     (function () {
       if (location.hostname !== 'chromewebstore.google.com' || window.__officeStore) return;
-      var state = { installed: [], busy: null };
+      var state = { installed: [], busy: [] };
 
       function pageID() {
         var m = location.pathname.match(/\\/detail\\/(?:[^\\/]+\\/)?([a-p]{32})/);
@@ -102,7 +102,7 @@ final class StoreRelay: NSObject, WKScriptMessageHandler {
       function render(ours) {
         var id = pageID();
         var installed = !!id && state.installed.indexOf(id) >= 0;
-        var busy = !!id && state.busy === id;
+        var busy = !!id && state.busy.indexOf(id) >= 0;
         label(ours, installed ? 'Added to Search' : (busy ? 'Adding…' : 'Add to Search'));
         ours.disabled = installed || busy;
       }
@@ -175,7 +175,7 @@ extension Browser {
     /// button can say "Added to Search" or "Adding…".
     func tellStore(_ tab: Tab) {
         guard #available(macOS 15.4, *), let url = tab.address, StoreOffer.isStorePage(url) else { return }
-        tab.tellStore(installed: Extensions.shared.installed.map(\.id), busy: Extensions.shared.busy)
+        tab.tellStore(installed: Extensions.shared.installed.map(\.id), busy: Extensions.shared.busy.sorted())
     }
 
     /// And tells every store page again whenever either changes.
