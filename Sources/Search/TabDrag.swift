@@ -78,6 +78,16 @@ final class TabDrag: ObservableObject {
 
     @Published private(set) var preview: Preview?
     @Published private(set) var cancelledID: Tab.ID?
+    /// The page a carried tab is over, anywhere on it, when that page could
+    /// be split with it: its edges are shown as the places that split it
+    /// (see SplitDropHint), before the hand has reached one or stopped.
+    /// Over the middle nothing splits, and nothing used to say where would.
+    @Published private(set) var over: Over?
+
+    struct Over: Equatable {
+        let browserID: ObjectIdentifier
+        let targetID: Tab.ID
+    }
 
     private final class WeakMarker {
         weak var view: SplitDropZone.Marker?
@@ -148,6 +158,9 @@ final class TabDrag: ObservableObject {
     @discardableResult
     private func look(browser: Browser, at point: NSPoint) -> Bool {
         guard let sourceTab else { return false }
+        let page = splittablePage(browser: browser, source: sourceTab, at: point)
+        let now = page.map { Over(browserID: ObjectIdentifier(browser), targetID: $0.id) }
+        if over != now { over = now }
         let matched = match(browser: browser, source: sourceTab, at: point)
         target = matched
         if case .strip(let place) = matched {
@@ -295,6 +308,7 @@ final class TabDrag: ObservableObject {
         guard let gestureTab else { return }
         cancelledID = gestureTab.id
         preview = nil
+        over = nil
         showSeparation(nil)
         target = .cancelled
         removeMonitor()
@@ -305,6 +319,7 @@ final class TabDrag: ObservableObject {
         recheck = nil
         trail = []
         preview = nil
+        over = nil
         showSeparation(nil)
         sourceBrowser = nil
         gestureTab = nil
@@ -316,6 +331,19 @@ final class TabDrag: ObservableObject {
     private func removeMonitor() {
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
         escapeMonitor = nil
+    }
+
+    /// The page under the hand, anywhere on it, that the carried tab could
+    /// be split with.
+    private func splittablePage(browser: Browser, source: Tab, at point: NSPoint) -> Tab? {
+        guard let window = browser.window else { return nil }
+        markers = markers.filter { $0.value.view != nil }
+        return markers.values.compactMap(\.view).first { view in
+            view.kind == .stage && view.browser === browser && view.window === window
+                && !view.isHiddenOrHasHiddenAncestor
+                && view.tab.map { browser.canSplit(source, with: $0) } == true
+                && window.convertToScreen(view.convert(view.bounds, to: nil)).contains(point)
+        }?.tab
     }
 
     private func match(browser: Browser, source: Tab, at point: NSPoint) -> Drop {
