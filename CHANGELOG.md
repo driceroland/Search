@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Pages that load their own `.bundle.js` files, GitLab's among them, are no longer left half-drawn with uBlock Origin Lite installed. One of its rules blocks a site's bundles only when the server answers with an anti-adblock header; WebKit has no way to read that header, skipped it, and blocked every site's bundles. An extension's rules that depend on a response's headers are now left out. Thanks [@pasteley](https://github.com/pasteley) ([#858](https://github.com/driceroland/Search/pull/858))
+
 - A tab closed while it played video or music (YouTube, Twitch) went quiet only on screen: its sound could carry on in the background, and a stream could keep filling memory with nothing to show it in. Thanks [@BeNDYGo](https://github.com/BeNDYGo) ([#943](https://github.com/driceroland/Search/pull/943))
 
 - A WebSocket an extension's worker closes before it has connected stays closed. It could open anyway a moment later, and say so to the extension, if the browser hadn't yet heard it was asked to open when the close came; a real WebSocket never opens once it is closing. Thanks [@oddharsh](https://github.com/oddharsh) ([#969](https://github.com/driceroland/Search/pull/969))

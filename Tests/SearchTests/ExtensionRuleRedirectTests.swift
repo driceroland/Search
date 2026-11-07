@@ -111,6 +111,19 @@ final class ExtensionMisreadRulesTests: XCTestCase {
         XCTAssertFalse(ExtensionShims.misreadByWebKit(["id": 2]))
     }
 
+    /// uBlock Origin Lite's block of a site's own bundles when it answers
+    /// with an anti-adblock header: WebKit drops the header and took every
+    /// `.bundle.js`, GitLab's included.
+    func testRuleOnResponseHeadersIsMisreadWhateverItDoes() {
+        let bundles: [String: Any] = [
+            "urlFilter": ".bundle.js|", "domainType": "firstParty", "resourceTypes": ["script"],
+            "responseHeaders": [["header": "x-aabc-fp-host", "values": ["*.*.*"]]],
+        ]
+        XCTAssertTrue(ExtensionShims.misreadByWebKit(rule("block", bundles)))
+        XCTAssertTrue(ExtensionShims.misreadByWebKit(rule("allow", ["urlFilter": "||a.example^", "excludedResponseHeaders": [["header": "x-a"]]])))
+        XCTAssertFalse(ExtensionShims.misreadByWebKit(rule("block", ["urlFilter": ".bundle.js|", "domainType": "firstParty"])))
+    }
+
     func testRulesetsLoseOnlyMisreadRules() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("search-misread-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -136,5 +149,22 @@ final class ExtensionMisreadRulesTests: XCTestCase {
         ExtensionShims.dropMisreadRules(manifest, in: folder)
         let again = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("a.json"))) as? [[String: Any]])
         XCTAssertEqual(again.count, 1)
+    }
+
+    func testRulesetWithOnlyHeaderRulesIsRead() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("search-misread-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rules: [[String: Any]] = [
+            ["id": 1, "action": ["type": "block"], "condition": [
+                "urlFilter": ".bundle.js|", "responseHeaders": [["header": "x-aabc-fp-host", "values": ["*.*.*"]]],
+            ]],
+            ["id": 2, "action": ["type": "block"], "condition": ["urlFilter": "||ads.example^"]],
+        ]
+        try JSONSerialization.data(withJSONObject: rules).write(to: folder.appendingPathComponent("a.json"))
+        let manifest: [String: Any] = ["declarative_net_request": ["rule_resources": [["id": "a", "enabled": true, "path": "a.json"]]]]
+        ExtensionShims.dropMisreadRules(manifest, in: folder)
+        let a = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("a.json"))) as? [[String: Any]])
+        XCTAssertEqual(a.compactMap { $0["id"] as? Int }, [2])
     }
 }
