@@ -13,7 +13,6 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- CHANGED:A link's small window opens where you last left it, at that size; if no screen shows most of that place any more, it opens centred. Thanks [@Comradevergreen](https://github.com/Comradevergreen) ([#789](https://github.com/driceroland/Search/pull/789))
 
 - Page translation stays quick on a Mac with Apple Intelligence: Search prefers the faster on-device translation model, as it did before macOS 26.4's SDK changed the default. Language pairs only the newer model supports still use it. Thanks [@2470046](https://github.com/2470046) ([#821](https://github.com/driceroland/Search/pull/821))
 
@@ -137,6 +136,8 @@ in [ROADMAP.md](ROADMAP.md).
 - With a site put in the address field with Tab, the list offers what you searched that site for before, newest first, read from your history on this Mac and sent nowhere; the last few show before you type, and none in a private tab. A site shortcut ("yt naruto") offers the same. With Google in the field and Google your search engine, Suggestions from your search engine shows its suggestions there too; words typed to any other site never go to your engine. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#882](https://github.com/driceroland/Search/pull/882))
 
 ### Changed
+
+- A link's small window opens where you last left it, at that size; if no screen shows most of that place any more, it opens centred. Thanks [@Comradevergreen](https://github.com/Comradevergreen) ([#789](https://github.com/driceroland/Search/pull/789))
 
 - The address field's history suggestions weigh how often you go to a place against how well it matches what was typed, so a page you use every day comes before one seen once, typo or not, and a site counts the visits to its pages too. A bookmark found only through a typo comes after where you have been. Typing in a long history is faster too. Thanks [@pasteley](https://github.com/pasteley) ([#944](https://github.com/driceroland/Search/pull/944))
 
