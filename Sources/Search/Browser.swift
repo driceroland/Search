@@ -5953,6 +5953,21 @@ final class Browser: NSObject, ObservableObject {
         if siteOffer != site { siteOffer = site }
 
         (offers, ending) = placeOffers(for: typed)
+        // The empty page of a pair is there to bring a page in, and its list
+        // of open tabs goes once typing starts (SplitView's OpenTabs): the
+        // open tabs that answer to what is typed come first, as in ⌘K, so
+        // one past that list's six is a ↓ away rather than loaded again.
+        // Only here: anywhere else ⌘K is the key for open pages.
+        if let blank = active, blank.isBlank, let pair = split(for: blank) {
+            let open = openPages(matching: typed).filter { offer in
+                guard let id = offer.tab, let tab = tabs.first(where: { $0.id == id }) else { return false }
+                return !pair.contains(id) && !tab.bench && tab.shy == blank.shy
+            }
+            // A page offered as open isn't offered again as a place to load,
+            // which looks the same and would open it a second time.
+            let shown = Set(open.map(\.url))
+            offers = open + offers.filter { $0.tab != nil || !shown.contains($0.url) }
+        }
         // A row that was picked stops being the right row the moment the
         // question changes.
         picked = nil
@@ -6205,7 +6220,14 @@ final class Browser: NSObject, ObservableObject {
         if case .command(let command) = offer.kind {
             command.run(on: self)
         } else if let id = offer.tab, let tab = tabs.first(where: { $0.id == id }) {
-            select(tab)
+            // From the empty page of a pair, as Return takes it (submit):
+            // that tab comes into the pair.
+            if let blank = active, blank.isBlank, split(for: blank) != nil,
+               tab.shy == blank.shy, split(for: tab)?.contains(blank.id) != true {
+                fill(blank, with: tab)
+            } else {
+                select(tab)
+            }
         } else if launching || aside {
             open(offer.url, foreground: true, from: active)
         } else {
