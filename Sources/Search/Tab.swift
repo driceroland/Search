@@ -591,7 +591,7 @@ final class Tab: ObservableObject, Identifiable {
     /// is, in the web view's points, or nil when it has left. Then whether
     /// it goes with a password, and whether it is a first step's name box,
     /// which takes the name alone.
-    var onField: ((Tab, CGRect?, Bool, Bool, Bool) -> Void)?
+    var onField: ((Tab, CGRect?, Bool, Bool, Bool, Bool) -> Void)?
     /// The site the sign-in was sent from — not the one it landed on —
     /// then the name and the password, and whether that page came over
     /// plain http.
@@ -1198,16 +1198,18 @@ final class Tab: ObservableObject, Identifiable {
     /// `wide`: clearly a sign-in's box, so accounts kept for the site's
     /// other hosts (its registrable domain) may come; otherwise only this
     /// host's own.
-    func fieldFocused(_ rect: CGRect?, passwords: Bool = true, name: Bool = false, wide: Bool = true) {
+    /// `code`: a box for a verification code, which takes nothing of a
+    /// sign-in's.
+    func fieldFocused(_ rect: CGRect?, passwords: Bool = true, name: Bool = false, wide: Bool = true, code: Bool = false) {
         guard let rect else {
-            onField?(self, nil, false, false, false)
+            onField?(self, nil, false, false, false, false)
             return
         }
         let zoom = built?.pageZoom ?? 1
         onField?(self, CGRect(
             x: rect.minX * zoom, y: rect.minY * zoom,
             width: rect.width * zoom, height: rect.height * zoom
-        ), passwords, name, wide)
+        ), passwords, name, wide, code)
     }
 
     /// The name a sign-in that asks for it first was just sent, for the
@@ -1299,16 +1301,31 @@ final class Tab: ObservableObject, Identifiable {
     /// it is still that scheme and host: a document that changed after the
     /// last check on this side gets nothing.
     func fill(user: String, password: String, onlyOn page: URL? = nil, done: ((Bool) -> Void)? = nil) {
-        var still = ""
-        if let page {
-            guard let scheme = page.scheme?.lowercased(), let host = page.host()?.lowercased() else { done?(false); return }
-            still = "location.protocol === `\(escape(scheme)):` && location.hostname.toLowerCase() === `\(escape(host))` && "
-        }
+        guard let still = stillOn(page) else { done?(false); return }
         web.evaluateInSearch(
             "\(still)window.__officeForms && window.__officeForms.fill(`\(escape(user))`, `\(escape(password))`)"
         ) { result in
             done?((result as? Bool) ?? false)
         }
+    }
+
+    /// A verification code, into the box it was offered under, on that page
+    /// alone (see `fill`).
+    func fillCode(_ code: String, onlyOn page: URL, done: ((Bool) -> Void)? = nil) {
+        guard let still = stillOn(page) else { done?(false); return }
+        web.evaluateInSearch(
+            "\(still)window.__officeForms && window.__officeForms.code(`\(escape(code))`)"
+        ) { result in
+            done?((result as? Bool) ?? false)
+        }
+    }
+
+    /// The page's own check that it is still that scheme and host: "" for no
+    /// page to check, nil for a page that can't be checked.
+    private func stillOn(_ page: URL?) -> String? {
+        guard let page else { return "" }
+        guard let scheme = page.scheme?.lowercased(), let host = page.host()?.lowercased() else { return nil }
+        return "location.protocol === `\(escape(scheme)):` && location.hostname.toLowerCase() === `\(escape(host))` && "
     }
 
     /// A first step's name alone, picked from the accounts under its box.

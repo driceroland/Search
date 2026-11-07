@@ -761,6 +761,9 @@ final class Browser: NSObject, ObservableObject {
         /// names only, and the page host they were asked for. Set when the
         /// helper answers, after the list is up.
         var apple: [AppleLogin] = []
+        /// Under a box for a verification code: the accounts the Mac's
+        /// Passwords app keeps a code for, without the codes.
+        var codes: [AppleCode] = []
         var appleHost: String?
         /// Apple Passwords is on but not paired: a row to connect.
         var appleConnect = false
@@ -787,10 +790,10 @@ final class Browser: NSObject, ObservableObject {
     /// The page whose accounts were last looked up for the box the caret is
     /// in. The box reports where it is on every frame of a scroll so the
     /// list can follow it; the keychain is asked once per box, not per frame.
-    private var looked: (tab: Tab.ID, host: String, clear: Bool, name: Bool, wide: Bool)?
+    private var looked: (tab: Tab.ID, host: String, clear: Bool, name: Bool, wide: Bool, code: Bool)?
     /// The sign-in box the caret is in, for a list that changes while it is
     /// there: the page's passkeys arrive when they arrive.
-    private var field: (tab: Tab.ID, spot: CGRect, passwords: Bool, name: Bool)?
+    private var field: (tab: Tab.ID, spot: CGRect, passwords: Bool, name: Bool, code: Bool)?
     /// Counts the boxes Apple Passwords was asked about: an answer for a box
     /// the caret has left since is dropped.
     private var appleAsk = 0
@@ -822,7 +825,7 @@ final class Browser: NSObject, ObservableObject {
     /// Mac's passkeys for a page waiting for one, hang from the box, and go
     /// when the caret does. Nothing is filled on its own — the way Safari
     /// does it, and what a person expects.
-    private func hang(from tab: Tab, _ spot: CGRect?, passwords: Bool, name: Bool = false, wide: Bool = true) {
+    private func hang(from tab: Tab, _ spot: CGRect?, passwords: Bool, name: Bool = false, wide: Bool = true, code: Bool = false) {
         guard let spot else {
             if field?.tab == tab.id { field = nil; appleAsk += 1 }
             if looked?.tab == tab.id { looked = nil }
@@ -838,7 +841,7 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         lowering?.cancel()
-        field = (tab.id, spot, passwords, name)
+        field = (tab.id, spot, passwords, name, code)
         guard tab.id == activeID, pickedInto != tab.id,
               let host = curtain.host(of: tab.pageAddress)
         else { return }
@@ -853,14 +856,18 @@ final class Browser: NSObject, ObservableObject {
         // a box with no accounts stays without, and the keychain isn't
         // asked again until the caret leaves.
         if let looked, looked.tab == tab.id, looked.host == host, looked.clear == inTheClear, looked.name == name,
-           looked.wide == wide {
+           looked.wide == wide, looked.code == code {
             if var up = suggesting, up.tab == tab.id, up.spot != spot {
                 up.spot = spot
                 suggesting = up
             }
             return
         }
-        looked = (tab.id, host, inTheClear, name, wide)
+        looked = (tab.id, host, inTheClear, name, wide, code)
+        if code {
+            hangCodes(from: tab, spot, host: host, wide: wide)
+            return
+        }
         // Passwords only for a box that goes with one: a box for passkeys
         // alone has no password to put anywhere. A box that only might be a
         // sign-in's gets this host's own accounts, never the rest of the
@@ -912,6 +919,54 @@ final class Browser: NSObject, ObservableObject {
         suggesting = Suggesting(tab: tab.id, spot: spot, logins: known, passkeys: passkeys, host: host, clear: inTheClear,
                                 nameOnly: name, appleHost: appleHost, appleConnect: connect, appleOffer: offer, wide: wide)
         if let offer { applePasswordsOffer.shown(on: offer) }
+    }
+
+    /// The caret in a box for a verification code: the accounts the Mac's
+    /// Passwords app keeps a code for hang from it, when it is turned on.
+    /// Nothing of Search's own goes in such a box, and the offer to turn it
+    /// on stays with sign-in boxes. `wide`: the box says it takes a code, so
+    /// the site's other hosts' codes may come, and not paired yet a row offers
+    /// to connect. Otherwise it is a guess: this host's codes alone, and no
+    /// row of its own for a box that may be something else.
+    private func hangCodes(from tab: Tab, _ spot: CGRect, host: String, wide: Bool) {
+        appleAsk += 1
+        guard prefs.applePasswords, prefs.fillsPasswords,
+              let appleHost = ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy)
+        else {
+            suggesting = nil
+            return
+        }
+        let apple = applePasswords
+        // Asked only for the tab in front of you, in the window you are in.
+        // A test run has no such window, and no real helper to ask.
+        if apple.state == .paired, tab.built?.window?.isKeyWindow == true || Store.testing {
+            lookUpCodes(appleHost, in: tab, host: host, wide: wide)
+        }
+        guard wide, apple.state == .idle, applePairing?.tab != tab.id else {
+            suggesting = nil
+            return
+        }
+        suggesting = Suggesting(tab: tab.id, spot: spot, logins: [], host: host, clear: false,
+                                appleHost: appleHost, appleConnect: true)
+    }
+
+    /// Asks Apple's helper whose codes it keeps for the page, and hangs them
+    /// from the box if the caret is still in it, on the same page.
+    private func lookUpCodes(_ appleHost: String, in tab: Tab, host: String, wide: Bool) {
+        let ask = appleAsk
+        Task { [weak self] in
+            guard let keeper = self?.applePasswords else { return }
+            let found = await keeper.codes(for: appleHost, tab: tab.id) { [weak self] in
+                self?.appleAsk == ask
+            }
+            guard let self, ask == appleAsk, let field, field.tab == tab.id, field.code, tab.id == activeID,
+                  ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) == appleHost
+            else { return }
+            let codes = Array(found.filter { ApplePasswords.belongs([$0.domain], to: appleHost, wide: wide) }.prefix(5))
+            guard !codes.isEmpty else { return }
+            suggesting = Suggesting(tab: tab.id, spot: field.spot, logins: [], host: host, clear: false,
+                                    codes: codes, appleHost: appleHost, wide: wide)
+        }
     }
 
     /// Asks Apple's helper for the names it keeps for the page, and adds
@@ -984,6 +1039,38 @@ final class Browser: NSObject, ObservableObject {
             // Over https only, on that host (Tab.fill checks both in the page).
             tab.fill(user: apple.user, password: found.password, onlyOn: URL(string: "https://\(appleHost)/")) { [weak self] worked in
                 if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
+            }
+        }
+    }
+
+    /// One of the Passwords app's verification codes, picked by its account.
+    /// It is asked for now (macOS may want Touch ID), put into the page if it
+    /// is still the page it was asked for, and not kept.
+    func choose(_ code: AppleCode) {
+        lowering?.cancel()
+        guard let list = suggesting, let tab = tabs.first(where: { $0.id == list.tab }), let appleHost = list.appleHost else { return }
+        guard Date().timeIntervalSince(list.shown) > 0.5 else { return }
+        suggesting = nil
+        guard ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) == appleHost,
+              ApplePasswords.belongs([code.domain], to: appleHost, wide: list.wide),
+              let page = URL(string: "https://\(appleHost)/")
+        else { return }
+        pickedInto = tab.id
+        Task { [weak self] in
+            guard let keeper = self?.applePasswords else { return }
+            let value = await keeper.code(of: code, host: appleHost, tab: tab.id)
+            guard let self else { return }
+            guard let value else {
+                announce("Apple Passwords didn't hand that code over")
+                return
+            }
+            // Touch ID can take a while: the page must still be the one
+            // asked for, and in front.
+            guard tabs.contains(where: { $0 === tab }), tab.id == activeID,
+                  ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) == appleHost
+            else { return }
+            tab.fillCode(value, onlyOn: page) { [weak self] worked in
+                if !worked { self?.announce("Couldn't find the box for the code anymore") }
             }
         }
     }
@@ -2256,7 +2343,7 @@ final class Browser: NSObject, ObservableObject {
                       tab.id == field.tab
                 else { return }
                 looked = nil
-                hang(from: tab, field.spot, passwords: field.passwords, name: field.name)
+                hang(from: tab, field.spot, passwords: field.passwords, name: field.name, code: field.code)
             }
             .store(in: &bag)
 
@@ -5745,8 +5832,8 @@ final class Browser: NSObject, ObservableObject {
         // The caret in a sign-in box: the accounts kept for this site hang
         // from the box, and go when the caret does. Nothing is filled on
         // its own — the way Safari does it, and what a person expects.
-        tab.onField = { [weak self] tab, spot, passwords, name, wide in
-            self?.hang(from: tab, spot, passwords: passwords, name: name, wide: wide)
+        tab.onField = { [weak self] tab, spot, passwords, name, wide, code in
+            self?.hang(from: tab, spot, passwords: passwords, name: name, wide: wide, code: code)
         }
 
         tab.onCredentials = { [weak self] tab, host, user, password, clear in

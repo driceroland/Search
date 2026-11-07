@@ -303,7 +303,7 @@ enum SettingsIndex {
               title: "Offer passkeys", detail: "Touch ID or an iCloud passkey, on sites that offer one",
               keys: ["passkeys"], words: ["webauthn", "touch id"]),
         .init(id: "passwords.apple", group: "apple", icon: "applelogo",
-              title: "Passwords from Apple's Passwords app", detail: "Your Passwords app's accounts under the sign-in box. Unofficial",
+              title: "Passwords from Apple's Passwords app", detail: "Your Passwords app's accounts and verification codes under their box. Unofficial",
               more: "Search talks to the helper Apple made for its Chrome extension, as that extension. Never in private tabs.",
               keys: ["passwords.apple"], words: ["icloud keychain", "apple"]),
 

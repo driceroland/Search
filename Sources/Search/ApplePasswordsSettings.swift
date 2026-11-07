@@ -21,7 +21,7 @@ struct ApplePasswordsCard: View {
             } else {
                 Card {
                     Line("Passwords from Apple's Passwords app",
-                         "Accounts saved in the Passwords app, under the sign-in box. Unofficial: Search talks to the helper Apple made for its Chrome extension, as that extension. Never in private tabs.") {
+                         "Accounts and verification codes saved in the Passwords app, under their box. Unofficial: Search talks to the helper Apple made for its Chrome extension, as that extension. Never in private tabs.") {
                         Switch(on: $prefs.applePasswords)
                     }
                     if prefs.applePasswords {
