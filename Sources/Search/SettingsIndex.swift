@@ -173,7 +173,7 @@ enum SettingsIndex {
         // Tabs
         .init(id: "tabs.newPlace", group: "newtabs", icon: "arrow.right.to.line",
               title: "New tab position", detail: "Where a link or ⌘T's new tab goes in the row",
-              more: "After current puts a link beside the tab you're on, and ⌘T's new tab at the end. Pins stay first; a link from a group stays in it.",
+              more: "After current puts a link you ⌘-click right after its page; ⌘T's new tab and a page a link opens in front go at the end. Pins stay first; a link from a group stays in it.",
               keys: ["tabs.newPlace"], words: ["new tab", "order"]),
         .init(id: "tabs.newAfterLast", group: "newtabs", icon: "plus.rectangle.on.rectangle",
               title: "Leave a new tab when the last tab closes", detail: "Otherwise you land on a pinned tab",
