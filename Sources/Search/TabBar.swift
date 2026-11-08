@@ -728,7 +728,7 @@ private struct TabPill: View {
         // edits its letter; everything else answers the first click at
         // once. Change Letter in the menu covers the rest.
         .modifier(OneClick(double: live && pinned) {
-            guard NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+            guard TabClick.flags.intersection([.command, .shift, .option]).isEmpty else { return }
             browser.clearTabSelection()
             if live && pinned {
                 browser.goHome(tab)
@@ -739,6 +739,7 @@ private struct TabPill: View {
             }
         })
         .modifier(ModifiedTabClick { if !editing { browser.extendTabSelection(to: tab, modifiers: $0) } })
+        .modifier(OptionClick { if !editing { browser.optionClick(tab) } })
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
@@ -1624,7 +1625,8 @@ struct TabPress: ViewModifier {
     private(set) static var openedAt: TimeInterval?
 
     func body(content: Content) -> some View {
-        content.onLongPressGesture(minimumDuration: .infinity, maximumDistance: TabPress.travel, pressing: { down in
+        _ = TabClick.watching
+        return content.onLongPressGesture(minimumDuration: .infinity, maximumDistance: TabPress.travel, pressing: { down in
             pressing?.wrappedValue = down
             if !down {
                 // Given way to a drag, the button still down: what the press
@@ -1642,7 +1644,7 @@ struct TabPress: ViewModifier {
                 return
             }
             TabPress.openedAt = nil
-            guard enabled, NSEvent.modifierFlags.intersection([.command, .control, .shift]).isEmpty else { return }
+            guard enabled, TabClick.flags.intersection([.command, .control, .shift, .option]).isEmpty else { return }
             selected = !active
             if selected {
                 TabPress.openedAt = ProcessInfo.processInfo.systemUptime
@@ -1703,8 +1705,52 @@ struct ModifiedTabClick: ViewModifier {
 
     func body(content: Content) -> some View {
         content.simultaneousGesture(TapGesture().onEnded {
-            let modifiers = NSEvent.modifierFlags
+            let modifiers = TabClick.flags
             if !modifiers.intersection([.command, .shift]).isEmpty { act(modifiers) }
+        })
+    }
+}
+
+/// The keys held with the click a tab is answering, read the same way by
+/// the press, the click and the modified clicks, so they agree on a click:
+/// one with ⌥ is OptionClick's, one with ⌘ or ⇧ ModifiedTabClick's. The
+/// click's own keys, as the app was handed it: a tap gesture ends after
+/// AppKit has let go of its event, so NSApp.currentEvent is gone by then.
+/// Only a click just made counts (`fresh`); otherwise the keys held now.
+@MainActor
+enum TabClick {
+    private static var last: (flags: NSEvent.ModifierFlags, at: TimeInterval)?
+    /// How long a click's keys are its own: a press answers on the way down
+    /// and a tap on the way up, well within this.
+    static let fresh: TimeInterval = 0.5
+    /// Watching the app's left-button events, from the first tab drawn.
+    static let watching: Any? = NSEvent.addLocalMonitorForEvents(
+        matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]
+    ) { event in
+        MainActor.assumeIsolated { TabClick.last = (event.modifierFlags, event.timestamp) }
+        return event
+    }
+
+    static var flags: NSEvent.ModifierFlags {
+        if let last, ProcessInfo.processInfo.systemUptime - last.at < fresh { return last.flags }
+        return NSEvent.modifierFlags
+    }
+
+    /// For tests: no click remembered.
+    static func forget() { last = nil }
+}
+
+/// ⌥ and the click, nothing else held: Split View (Browser.optionClick).
+/// Beside the tab's other gestures, as ModifiedTabClick is, so a pin that
+/// answers only a double click still hears it once; those gestures and the
+/// press (TabPress) leave a click with ⌥ to this one.
+struct OptionClick: ViewModifier {
+    let act: () -> Void
+
+    func body(content: Content) -> some View {
+        _ = TabClick.watching
+        return content.simultaneousGesture(TapGesture().onEnded {
+            if TabClick.flags.intersection([.command, .shift, .option, .control]) == .option { act() }
         })
     }
 }

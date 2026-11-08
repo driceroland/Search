@@ -401,7 +401,7 @@ enum SettingsIndex {
               title: "Correct spelling as you type", detail: "Now in Edit › Spelling and Grammar, as in Safari",
               keys: ["autocorrect"], words: ["autocorrect", "spelling", "spell"], findOnly: true),
         .init(id: "note.split", group: "window", icon: "rectangle.split.2x1",
-              title: "Split View", detail: "Always there: drag a tab onto a page, or press ⌥⌘N",
+              title: "Split View", detail: "Always there: ⌥-click a tab, drag a tab onto a page, or press ⌥⌘N",
               keys: ["splitView"], words: ["split", "side by side"], kind: .note, findOnly: true),
         .init(id: "note.groups", group: "newtabs", icon: "folder",
               title: "Tab groups", detail: "Always there: right-click a tab › Add to New Group",
