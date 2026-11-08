@@ -22,6 +22,7 @@ in [ROADMAP.md](ROADMAP.md).
 - The Mac's system log no longer records which sites you sign in to with a passkey, private tabs included. Thanks [@pasteley](https://github.com/pasteley) ([#989](https://github.com/driceroland/Search/pull/989))
 - A PDF saved from the PDF bar, or a page saved with Save Page As…, is marked as downloaded from the internet, like any other download, so macOS checks it when first opened. Thanks [@pasteley](https://github.com/pasteley) ([#990](https://github.com/driceroland/Search/pull/990))
 - Saved names, passwords and codes are handed to the page's form filler as values, never written into the script that fills the form. Thanks [@pasteley](https://github.com/pasteley) ([#992](https://github.com/driceroland/Search/pull/992))
+- Extensions' WebSockets keep no cookies, so one extension's socket no longer sends what another's was given. Thanks [@pasteley](https://github.com/pasteley) ([#993](https://github.com/driceroland/Search/pull/993))
 
 ### Held back
 
