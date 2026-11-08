@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A PDF saved from the PDF viewer's bar, or a page saved with Save Page As…, is marked as downloaded from the internet, like any other download.
 - A space's menu says where its downloads go in one Downloads submenu: the folder in Settings or the space's own, ticked, and Choose Folder…. It showed two lines that read alike.
 
 - A muted video now floats when you go to another desktop, as it does when you go to another app; one you paused yourself still stays in its tab. Thanks [@Comradevergreen](https://github.com/Comradevergreen) ([#791](https://github.com/driceroland/Search/pull/791))

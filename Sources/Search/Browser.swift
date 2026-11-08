@@ -5456,6 +5456,7 @@ final class Browser: NSObject, ObservableObject {
             do {
                 let data = try result.get()
                 try data.write(to: file, options: .atomic)
+                Browser.markDownloaded(file)
                 self?.announce("Saved \(file.lastPathComponent)", file: file)
                 finished?(true)
             } catch {
@@ -7984,6 +7985,7 @@ extension Browser: WKDownloadDelegate {
         guard let data, let file = whereToSave(suggestedFilename ?? "") else { return }
         do {
             try data.write(to: file)
+            Browser.markDownloaded(file)
             // A private page's file is named once and listed nowhere, as in
             // `downloadDidFinish`: the list is written to disk and outlives it.
             if webView.configuration.websiteDataStore.isPersistent, anyTab(for: webView)?.shy != true {
@@ -8046,6 +8048,20 @@ extension Browser: WKDownloadDelegate {
     private static func fileName(_ name: String) -> String {
         let last = (name as NSString).lastPathComponent
         return ["", ".", "..", "/"].contains(last) ? "download" : last
+    }
+
+    /// A file written here from a page — the PDF bar's download, Save Page
+    /// As… — marked as downloaded, as WebKit marks a download's: macOS checks
+    /// it when it is first opened, as any other. No address goes with it, so
+    /// a private page's says no more than an ordinary one's.
+    nonisolated static func markDownloaded(_ file: URL) {
+        var values = URLResourceValues()
+        values.quarantineProperties = [
+            kLSQuarantineAgentNameKey as String: "Search",
+            kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload as String,
+        ]
+        var file = file
+        try? file.setResourceValues(values)
     }
 
     private func saved(_ file: URL, from source: URL?, keepsAddress: Bool = true) {
