@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Closing a window straight after using it, with ⇧⌘W or its red button, no longer takes away the pins of its space in every other window. The window waited a moment before saving its tabs, and a save that came after it had closed found no tabs and told the other windows the space had no pins. `python3 Tests/close_window_pins.py` checks it. Reported in [#750](https://github.com/driceroland/Search/issues/750). Thanks [@tobyL05](https://github.com/tobyL05) ([#983](https://github.com/driceroland/Search/pull/983))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
