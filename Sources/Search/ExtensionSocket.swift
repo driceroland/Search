@@ -22,7 +22,20 @@ enum ExtensionSocket {
 
     /// One session for every socket; each task has its connection as its
     /// own delegate.
-    private static let session = URLSession(configuration: .default, delegate: nil, delegateQueue: .main)
+    private static let session = URLSession(configuration: configuration, delegate: nil, delegateQueue: .main)
+
+    /// Nothing kept between sockets: no cookies, no cache, no saved
+    /// sign-ins. One session serves every extension and profile.
+    static var configuration: URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        return configuration
+    }
+
     /// Held from the port's opening until either end lets go.
     private static var open: [ObjectIdentifier: Connection] = [:]
 
