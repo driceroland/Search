@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A space's menu says where its downloads go in one Downloads submenu: the folder in Settings or the space's own, ticked, and Choose Folder…. It showed two lines that read alike.
+
 - A muted video now floats when you go to another desktop, as it does when you go to another app; one you paused yourself still stays in its tab. Thanks [@Comradevergreen](https://github.com/Comradevergreen) ([#791](https://github.com/driceroland/Search/pull/791))
 
 - A site's SVG icon with a dark look of its own, like ChatGPT's, wears that look when Search is dark. It was drawn in its light look, black on the dark tab bar and column. An icon kept before this update keeps its light look until it is a week old. Thanks [@oddharsh](https://github.com/oddharsh) ([#917](https://github.com/driceroland/Search/pull/917))

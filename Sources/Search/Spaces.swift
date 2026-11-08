@@ -698,13 +698,19 @@ enum SpaceMenu {
             menu.addItem(unfold)
             menu.addItem(.separator())
         }
+        // Where this space's downloads go, in one place: the folder in
+        // Settings, or one of its own.
         let folder = here.downloads.map { URL(fileURLWithPath: $0).lastPathComponent }
-        menu.addItem(item(folder.map { "Downloads to “\($0)”…" } ?? "Downloads Folder…") {
-            Ask.folder { browser.setSpaceDownloads(here.id, to: $0) }
-        })
-        if folder != nil {
-            menu.addItem(item("Downloads to the Folder in Settings") { browser.setSpaceDownloads(here.id, to: nil) })
+        let places = NSMenu()
+        places.addItem(item("Same as Settings", checked: folder == nil) { browser.setSpaceDownloads(here.id, to: nil) })
+        if let folder {
+            places.addItem(item("“\(folder)”", checked: true) {})
         }
+        places.addItem(.separator())
+        places.addItem(item("Choose Folder…") { Ask.folder { browser.setSpaceDownloads(here.id, to: $0) } })
+        let downloads = NSMenuItem(title: "Downloads", action: nil, keyEquivalent: "")
+        downloads.submenu = places
+        menu.addItem(downloads)
         if !here.isFirst, here.id != browser.homeSpaceID {
             menu.addItem(.separator())
             menu.addItem(item("Delete “\(here.name)”…") {
