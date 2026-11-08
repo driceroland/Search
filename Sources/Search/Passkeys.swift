@@ -207,7 +207,7 @@ final class Passkeys: NSObject {
         guard var waiting = conditional[key], waiting.token == token else { return }
         waiting.offered = offered
         conditional[key] = waiting
-        Passkeys.log.notice("\(offered.count, privacy: .public) offered under the field for \(waiting.rp, privacy: .public)")
+        Passkeys.log.notice("\(offered.count, privacy: .public) offered under the field for \(waiting.rp, privacy: .private)")
         Passkeys.changed(waiting.web)
     }
 
@@ -224,7 +224,7 @@ final class Passkeys: NSObject {
         Passkeys.changed(web)
         Passkeys.asked += 1
         Passkeys.last = ["kind": "get", "rp": waiting.rp, "origin": waiting.origin, "requests": 1, "conditional": true]
-        Passkeys.log.notice("picked under the field for \(waiting.rp, privacy: .public)")
+        Passkeys.log.notice("picked under the field for \(waiting.rp, privacy: .private)")
         if Store.testing {
             var reply = Passkeys.rehearsal("get", rp: waiting.rp, origin: waiting.origin, challenge: waiting.clientData.challenge)
             if waiting.body["prf"] is [String: Any] {
@@ -343,7 +343,7 @@ final class Passkeys: NSObject {
         Passkeys.asked += 1
         Passkeys.last = ["kind": kind, "rp": rp, "origin": origin, "requests": requests.count,
                          "topOrigin": clientData.topOrigin ?? "", "crossOrigin": clientData.crossOrigin == .crossOrigin]
-        Passkeys.log.notice("\(kind, privacy: .public) for \(rp, privacy: .public) from \(origin, privacy: .public)")
+        Passkeys.log.notice("\(kind, privacy: .public) for \(rp, privacy: .private) from \(origin, privacy: .private)")
         // A test run never shows the sheet: it would open on the screen of
         // whoever is working beside it. It gets a credential made up on the
         // spot instead, so the checks above and the page's side are still
