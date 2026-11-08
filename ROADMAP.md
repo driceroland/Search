@@ -102,6 +102,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Fill in your contact details** Off by default: a box for your name, email, phone or address offers your own card in Contacts, filled on a click, as Safari does. *([#925](https://github.com/driceroland/Search/pull/925))*
 - [ ] **Page loads redraw only the tab's own bar** A tab's load progress, loading state and Back/Forward are published on the tab itself, so every view watching the tab redraws through each load. Give them their own small object, as scrolling already has. *([#999](https://github.com/driceroland/Search/issues/999))*
 - [ ] **Extensions' compatibility script loads once per frame, smaller** Search's compatibility script for Chrome extensions (~229 KB) runs in every frame each extension's content scripts match, before the extension's own code. Load only the parts a frame can use, or share it between an extension's scripts. *([#997](https://github.com/driceroland/Search/issues/997))*
+- [ ] **Peek opens some links as a plain page** On big sites like Reddit, Shift-click on links in headers and on pictures opens the page itself instead of a peek. *(email)*
 
 ## Later — bigger pieces of work
 
@@ -171,6 +172,7 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **A limit on how many tabs stay awake** Tabs sleep after a set time, but nothing bounds how many stay awake or how much memory they hold, so a long session grows until macOS slows everything down. Sleep the least recently used ones past a count or a memory budget, keeping what you're looking at, playing or typing in. *([#998](https://github.com/driceroland/Search/issues/998))*
 - [ ] **mymind extension: Add to my mind** mymind's right-click Add to my mind and its toolbar button don't save the page, though you're signed in at access.mymind.com. *([#996](https://github.com/driceroland/Search/issues/996))*
 - [ ] **Apple Passwords on sign-up forms** Suggest a strong password from Apple's Passwords app on a sign-up form, and save the new name and password there. *([#991](https://github.com/driceroland/Search/issues/991))*
+- [ ] **Peek with the mouse alone** A peek from a mouse gesture, a long press or a click-and-drag on a link, for people who don't want a modifier key. Off unless chosen in Settings. *(email)*
 
 ## Pull requests to review
 
