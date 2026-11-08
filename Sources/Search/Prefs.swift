@@ -761,7 +761,7 @@ final class Preferences: ObservableObject {
         engineSuggests = store.bool(forKey: "search.suggest")
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
         showsTabShortcuts = store.bool(forKey: "tabs.shortcuts")
-        showsReading = store.object(forKey: "tabs.reading") as? Bool ?? true
+        showsReading = store.bool(forKey: "tabs.reading")
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
         // Security's advice); a choice made before stands.
         showsAddress = store.object(forKey: "tabs.address") as? Bool ?? true
