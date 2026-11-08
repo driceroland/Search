@@ -286,6 +286,12 @@ final class Passkeys: NSObject {
         guard caller.mainFrame || (sameSite && page?.scheme?.lowercased() == scheme) else {
             return refuse(answer, "NotAllowedError", "Passkeys can't be asked for from another site's frame.")
         }
+        // The page's own request comes from the page the tab has open. The
+        // frame and its origin are what the page's process says they are;
+        // the committed address is this side's own.
+        guard !caller.mainFrame || Passkeys.isPage(scheme: scheme, host: host, port: caller.origin.port, of: page) else {
+            return refuse(answer, "NotAllowedError", "The operation either timed out or was not allowed.")
+        }
         let named = kind == "create" ? (body["rp"] as? [String: Any])?["id"] as? String : body["rpId"] as? String
         let rp = (named.flatMap { $0.isEmpty ? nil : $0 } ?? host).lowercased()
         guard Passkeys.fits(rp, host) else {
@@ -593,6 +599,16 @@ final class Passkeys: NSObject {
         let address = host.contains(":") || host.allSatisfy { $0.isNumber || $0 == "." }
         guard !address, host.hasSuffix("." + rp), rp.contains("."), let suffix = publicSuffix else { return false }
         return !suffix(rp as CFString)
+    }
+
+    /// Whether an origin is the page's own: the same scheme, host and port,
+    /// a port left out being the scheme's own (an origin's 0, a URL's nil).
+    nonisolated static func isPage(scheme: String, host: String, port: Int, of page: URL?) -> Bool {
+        guard let page, let pageScheme = page.scheme?.lowercased(), let pageHost = page.host()?.lowercased() else { return false }
+        let bare = { (name: String) in name.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]")) }
+        let standard = pageScheme == "https" ? 443 : pageScheme == "http" ? 80 : 0
+        return pageScheme == scheme.lowercased() && bare(pageHost) == bare(host)
+            && (page.port ?? standard) == (port == 0 ? standard : port)
     }
 
     /// The address of the page a view shows, once it is that page's: a
