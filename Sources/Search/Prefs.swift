@@ -478,6 +478,15 @@ final class Preferences: ObservableObject {
     @Published var littleFindsTabs: Bool {
         didSet { store.set(littleFindsTabs, forKey: "links.little.tabs") }
     }
+    /// Links to chosen sites open in their space (see SpaceRoutes.swift).
+    /// Off unless asked for, and only with spaces on.
+    @Published var sendsLinksToSpaces: Bool {
+        didSet { store.set(sendsLinksToSpaces, forKey: SpaceRoutes.key) }
+    }
+    /// Which site goes to which space, for that.
+    @Published var spaceRoutes: [SpaceRoute] {
+        didSet { store.set(spaceRoutes.map(\.plist), forKey: SpaceRoutes.rulesKey) }
+    }
     /// The downloads button always in the chrome, not only while something
     /// downloads (see Fetching.swift). Off unless asked for.
     @Published var alwaysShowsDownloads: Bool {
@@ -861,6 +870,8 @@ final class Preferences: ObservableObject {
         readerFollowsLook = store.bool(forKey: "reader.follows")
         littleLinks = store.bool(forKey: "links.little")
         littleFindsTabs = store.bool(forKey: "links.little.tabs")
+        sendsLinksToSpaces = store.bool(forKey: SpaceRoutes.key)
+        spaceRoutes = (store.array(forKey: SpaceRoutes.rulesKey) ?? []).compactMap(SpaceRoute.init(plist:))
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
         downloadsOpening = store.string(forKey: "downloads.open").flatMap(DownloadsOpening.init(rawValue:)) ?? .tab

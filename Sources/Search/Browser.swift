@@ -7212,6 +7212,15 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         let beside = (webView as? PageView)?.takeBeside() == true
         let popup = windowFeatures.width != nil || windowFeatures.height != nil
             || windowFeatures.toolbarsVisibility?.boolValue == false
+        // A link clicked open in a new tab, to a site Settings sends to
+        // another space: there instead, without its opener, which is in
+        // another space's store anyway (see SpaceRoutes.swift). A window
+        // the page opens from a script, or sizes, keeps its opener here.
+        if clicked, !beside, !popup, action.navigationType == .linkActivated,
+           (action.request.httpMethod ?? "GET").uppercased() == "GET",
+           let url = action.request.url, sendToSpace(url, from: opener) {
+            return nil
+        }
         // WebKit's copy of the opener's configuration still holds the
         // opener's user content controller — its scripts and its message
         // handlers. Shared, the new tab claimed the opener's handlers as its
@@ -7337,6 +7346,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             }
             return
         }
+        // To a site Settings sends to another space: there, in front.
+        if sendToSpace(url, from: source) { return }
         open(url, foreground: foreground, from: source, mayWait: true, link: true)
     }
 

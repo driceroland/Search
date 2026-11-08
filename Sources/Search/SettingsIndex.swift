@@ -291,6 +291,12 @@ enum SettingsIndex {
               title: "Profiles in one window", detail: "Every profile's spaces in one window, switched in place",
               more: "Choosing a space of another profile brings that profile's window into this one's place, so each keeps its own sign-ins. Closing it closes them all.",
               keys: ["profiles.oneWindow"], words: ["arc", "profiles", "single window", "merge"], parent: "profiles"),
+        .init(id: "spaces.links", group: "spaces", icon: "arrow.triangle.branch",
+              title: "Send links to a space", detail: "Links to sites you choose open in their space, with its sign-ins",
+              more: "Links from other apps, and links a page in another space opens in a new tab. A site includes its subdomains. Typed addresses, links followed in their own tab and private tabs stay where they are. Right-click a tab to send its site to the space it is in.",
+              keys: [SpaceRoutes.key, SpaceRoutes.rulesKey],
+              words: ["arc", "air traffic control", "route", "routing", "rules", "domain", "site", "open in space", "default space", "links from other apps"],
+              parent: "spaces"),
         .init(id: "pins.keep", group: "pins", icon: "pin.circle",
               title: "Pins keep their site", detail: "Links elsewhere open over the pin, and ⌘W takes it back home",
               more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at.",
@@ -470,6 +476,7 @@ enum SettingsIndex {
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
         case "toolbar.left": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
+        case "spaces.links": return prefs.usesSpaces
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
@@ -484,6 +491,7 @@ enum SettingsIndex {
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
         case "profiles.oneWindow": return "Only with more than one profile"
+        case "spaces.links": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent": return "Only with the new tab in a floating field"
