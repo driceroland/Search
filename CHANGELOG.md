@@ -11,10 +11,6 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
-### Changed
-
-- The tab column draws no scroll bar when its tabs run past the window, as the tabs across the top already don't, even with macOS set to always show scroll bars. The wheel, the trackpad and the keyboard scroll it as before. Thanks [@TheOmkarBirje](https://github.com/TheOmkarBirje) ([#984](https://github.com/driceroland/Search/pull/984))
-
 ### Fixed
 
 - Closing a window straight after using it, with ⇧⌘W or its red button, no longer takes away the pins of its space in every other window. The window waited a moment before saving its tabs, and a save that came after it had closed found no tabs and told the other windows the space had no pins. `python3 Tests/close_window_pins.py` checks it. Reported in [#750](https://github.com/driceroland/Search/issues/750). Thanks [@tobyL05](https://github.com/tobyL05) ([#983](https://github.com/driceroland/Search/pull/983))
@@ -23,6 +19,10 @@ in [ROADMAP.md](ROADMAP.md).
 - A PDF saved from the PDF bar, or a page saved with Save Page As…, is marked as downloaded from the internet, like any other download, so macOS checks it when first opened. Thanks [@pasteley](https://github.com/pasteley) ([#990](https://github.com/driceroland/Search/pull/990))
 - Saved names, passwords and codes are handed to the page's form filler as values, never written into the script that fills the form. Thanks [@pasteley](https://github.com/pasteley) ([#992](https://github.com/driceroland/Search/pull/992))
 - Extensions' WebSockets keep no cookies, so one extension's socket no longer sends what another's was given. Thanks [@pasteley](https://github.com/pasteley) ([#993](https://github.com/driceroland/Search/pull/993))
+
+### Changed
+
+- The tab column draws no scroll bar when its tabs run past the window, as the tabs across the top already don't, even with macOS set to always show scroll bars. The wheel, the trackpad and the keyboard scroll it as before. Thanks [@TheOmkarBirje](https://github.com/TheOmkarBirje) ([#984](https://github.com/driceroland/Search/pull/984))
 
 ### Held back
 
