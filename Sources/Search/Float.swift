@@ -94,8 +94,8 @@ final class Float {
     static var benchScreens: [NSRect]?
 
     /// `still`: the video as it was in its tab, cut out of a picture of the
-    /// page (see `still(of:picture:page:)`), shown until the page is laid out
-    /// at this window's size.
+    /// page with the rest of it hidden (see `still(of:picture:page:)`),
+    /// shown until the page is laid out at this window's size.
     func lift(_ page: NSView, still: NSImage? = nil) {
         guard panel == nil else { return }
         self.page = page
@@ -1086,16 +1086,8 @@ enum Isolate {
       }
       if (!best) return 'none';
 
-      // Where the video's picture is, for cutting it out of a picture of the
-      // page (Float.still): inside its box as `contain` fits it, which is
-      // how a video is drawn unless the page says otherwise.
-      var r = best.getBoundingClientRect(), pic = [r.left, r.top, r.width, r.height];
-      var vw = best.videoWidth, vh = best.videoHeight;
-      if (vw && vh && r.width && r.height && getComputedStyle(best).objectFit === 'contain') {
-        var fit = Math.min(r.width / vw, r.height / vh);
-        pic = [r.left + (r.width - vw * fit) / 2, r.top + (r.height - vh * fit) / 2, vw * fit, vh * fit];
-      }
-      // And where the video was in the page, at what size of page, for the
+      var r = best.getBoundingClientRect(), vw = best.videoWidth, vh = best.videoHeight;
+      // Where the video was in the page, at what size of page, for the
       // landing to wait for (see off). Not while the last float is still
       // landing: the page isn't as it was yet, and the place it is going
       // back to is the one kept from before. And whether Twitch's chat was
@@ -1225,7 +1217,13 @@ enum Isolate {
         if (again) again.setAttribute('data-office-float', '');
       }, 250);
 
-      return { floating: true, picture: pic, page: [innerWidth, innerHeight] };
+      // Where the picture is once the rest of the page is out of the way,
+      // as large as it goes whole and in the middle, for cutting it out of a
+      // picture of the page taken then (Float.still, Browser.lift).
+      var whole = shown[0] && shown[1] ? shown : [vw, vh];
+      var by = Math.min(innerWidth / whole[0], innerHeight / whole[1]) || 0;
+      var alone = [(innerWidth - whole[0] * by) / 2, (innerHeight - whole[1] * by) / 2, whole[0] * by, whole[1] * by];
+      return { floating: true, alone: alone, page: [innerWidth, innerHeight] };
     })();
     """
 

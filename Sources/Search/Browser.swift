@@ -5906,9 +5906,9 @@ final class Browser: NSObject, ObservableObject {
         // it is asked, so the picture is of the page before anything moved.
         // Isolating only once the picture is back would be a tenth of a
         // second late, and a muted video, which WebKit stops when nobody can
-        // see it, might no longer be playing. The video's frame in the
-        // picture covers the little window, and the whole of it the tab when
-        // the video lands, each until the page has settled there.
+        // see it, might no longer be playing. The whole of the picture
+        // covers the tab when the video lands, until the page has settled
+        // there.
         //
         // At no more than a million and a bit pixels, the size of the page in
         // points or less: WebKit paints a picture of a page on the processor,
@@ -5924,32 +5924,46 @@ final class Browser: NSObject, ObservableObject {
         picture.snapshotWidth = NSNumber(value: Double(min(shape.width, most) / fine))
         var shot: NSImage??
         var found: Any??
+        var alone: NSImage??
         // Going to another tab, the stage holds on to this page, unseen,
         // until it is in the little window or has nothing to float.
         let stage = tab.web.superview as? StageView
         stage?.keep(tab.web)
-        func both() {
-            guard let shot, let found else { return }
-            lifted(tab, shot: shot, found: found, quietly: quietly, otherwise: otherwise, spaceRequest: spaceRequest)
+        func all() {
+            guard let shot, let found, let alone else { return }
+            lifted(tab, shot: shot, alone: alone, found: found, quietly: quietly, otherwise: otherwise, spaceRequest: spaceRequest)
             stage?.letGo(tab.web)
         }
         tab.web.takeSnapshot(with: picture) { image, _ in
             MainActor.assumeIsolated {
                 shot = .some(image)
-                both()
+                all()
             }
         }
         tab.web.evaluateInSearch(Isolate.on) { answer in
             MainActor.assumeIsolated {
                 found = .some(answer)
-                both()
+                all()
+            }
+        }
+        // And one of the video alone, asked for in the same breath after the
+        // isolation, for the little window's still. Cut from the first, the
+        // still carried whatever the page draws over the video, which the
+        // little window never shows: the player's controls and gradients,
+        // its watermark, captions, a dialog. The window opened on them, and
+        // they vanished as the still came off (#543). Painted with the rest
+        // of the page hidden, this one costs little.
+        tab.web.takeSnapshot(with: picture) { image, _ in
+            MainActor.assumeIsolated {
+                alone = .some(image)
+                all()
             }
         }
     }
 
     /// The page isolated, or not, and pictured as it was before: into the
     /// little window, or on to the other page of a pair.
-    private func lifted(_ tab: Tab, shot: NSImage?, found answer: Any?, quietly: Bool, otherwise: Tab?, spaceRequest: UUID? = nil) {
+    private func lifted(_ tab: Tab, shot: NSImage?, alone: NSImage?, found answer: Any?, quietly: Bool, otherwise: Tab?, spaceRequest: UUID? = nil) {
         guard let found = answer as? [String: Any], found["floating"] as? Bool == true else {
             if let otherwise { return lift(otherwise, quietly: quietly, spaceRequest: spaceRequest) }
             if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
@@ -5968,10 +5982,10 @@ final class Browser: NSObject, ObservableObject {
         floating = tab.id
         tab.floating = true
         ownFloater()
-        let still = shot.flatMap { shot in
+        let still = alone.flatMap { alone in
             Float.still(
-                of: shot,
-                picture: (found["picture"] as? [NSNumber] ?? []).map(\.doubleValue),
+                of: alone,
+                picture: (found["alone"] as? [NSNumber] ?? []).map(\.doubleValue),
                 page: (found["page"] as? [NSNumber] ?? []).map(\.doubleValue)
             )
         }
