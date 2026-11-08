@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- An HTTP or SOCKS5 proxy for the whole browser, in Settings › Privacy › Proxy, off unless you turn it on. Everything Search fetches goes through it, not only pages: favicons, address bar suggestions, copied pictures, extensions and the Web Store, the AI add-on and Search's own updates, in every space and in private tabs. A video call is the exception: WebRTC sends its own traffic over UDP, which a proxy tunnel doesn't carry, so a call can still show a site your address. Your own machine and your own network stay direct, so a local server, a NAS or a router's page still opens with it on. A proxy that can't be reached fails rather than quietly sending the request straight out, and a proxy password is kept in the keychain and removed when you turn the proxy off. Thanks [@standby2025](https://github.com/standby2025), whose [#510](https://github.com/driceroland/Search/pull/510) this is built on
+
 ### Fixed
 
 - ⌘-click on a link opens it in a new tab even on sites that handle clicks themselves. Some shops, Zara Home's for one, opened the product in the same tab, whatever key was held.

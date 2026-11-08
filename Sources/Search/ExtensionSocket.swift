@@ -21,8 +21,15 @@ enum ExtensionSocket {
     static let name = ExtensionShims.application + ".socket"
 
     /// One session for every socket; each task has its connection as its
-    /// own delegate.
-    private static let session = URLSession(configuration: configuration, delegate: nil, delegateQueue: .main)
+    /// own delegate. Made again when the proxy changes: a session holds the
+    /// configuration it was born with.
+    private static var session: URLSession {
+        ProxyNetwork.kept("extension-socket") {
+            let configuration = Self.configuration
+            ProxyNetwork.stamp(configuration)
+            return URLSession(configuration: configuration, delegate: nil, delegateQueue: .main)
+        }
+    }
 
     /// Nothing kept between sockets: no cookies, no cache, no saved
     /// sign-ins. One session serves every extension and profile.

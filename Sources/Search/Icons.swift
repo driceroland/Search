@@ -404,6 +404,9 @@ final class Favicons {
         let session = URLSession(configuration: {
             let config = URLSessionConfiguration.ephemeral
             config.timeoutIntervalForRequest = 8
+            // A favicon names the site you are on, so it goes the way the
+            // page did, private tabs included (Proxy.swift).
+            ProxyNetwork.stamp(config)
             return config
         }())
         var unanswered: [URL] = []

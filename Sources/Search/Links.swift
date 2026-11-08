@@ -111,6 +111,11 @@ final class Links: NSObject, NSApplicationDelegate {
     /// five of them meant five rebuilds of the content before the window
     /// had shown once.
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // The proxy, before anything can fetch. It is read when BrowserProxy
+        // is first asked for, and until then Search's own requests would go
+        // out directly: making a store happens to ask for it early on
+        // macOS 15.4, but on 14 the first update check can beat it.
+        MainActor.assumeIsolated { _ = BrowserProxy.shared }
         Links.watchForTrouble()
         NSAppleEventManager.shared().setEventHandler(
             self, andSelector: #selector(handle(getURL:reply:)),

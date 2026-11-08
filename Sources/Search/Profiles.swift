@@ -82,10 +82,15 @@ final class Profiles: ObservableObject {
     /// there always was; any other's is WebKit's store under the profile's
     /// own identifier.
     static func store(_ id: UUID) -> WKWebsiteDataStore {
-        if id == Profile.personalID { return Store.websites }
+        if id == Profile.personalID {
+            let shared = Store.websites
+            BrowserProxy.shared.attach(shared)
+            return shared
+        }
         if let made = stores[id] { return made }
         let made = WKWebsiteDataStore(forIdentifier: id)
         if Store.keepsSignIns { Store.followSignIns(made) } else { Store.followCookies(made) }
+        BrowserProxy.shared.attach(made)
         stores[id] = made
         return made
     }

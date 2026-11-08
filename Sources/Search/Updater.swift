@@ -357,7 +357,7 @@ final class Updater: ObservableObject {
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 12
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await ProxyNetwork.session.data(for: request),
               (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
               data.count <= limit
         else { return nil }
@@ -464,7 +464,7 @@ private enum Swap {
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 60
-        let (got, response) = try await URLSession.shared.download(for: request)
+        let (got, response) = try await ProxyNetwork.session.download(for: request)
         guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true else {
             throw Refused.download
         }
