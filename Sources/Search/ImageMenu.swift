@@ -113,15 +113,21 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
 extension Browser {
     /// For Copy Image: no cookies at all — not kept, not sent, not shared
     /// between a normal tab's copy and a private one's — nothing cached.
-    static let fetcher: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpCookieStorage = nil
-        configuration.httpShouldSetCookies = false
-        configuration.urlCache = nil
-        configuration.urlCredentialStorage = nil
-        configuration.timeoutIntervalForRequest = 30
-        return URLSession(configuration: configuration)
-    }()
+    /// Kept by Proxy.swift rather than here: a session holds the proxy it
+    /// was born with, so one made once would copy pictures directly for the
+    /// rest of the run after a proxy was turned on.
+    static var fetcher: URLSession {
+        ProxyNetwork.kept("copy-image") {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.httpCookieStorage = nil
+            configuration.httpShouldSetCookies = false
+            configuration.urlCache = nil
+            configuration.urlCredentialStorage = nil
+            configuration.timeoutIntervalForRequest = 30
+            ProxyNetwork.stamp(configuration)
+            return URLSession(configuration: configuration)
+        }
+    }
 
     /// The most a copied picture may weigh, and the most pixels it may
     /// unpack to: a small file can claim to be enormous, and it is this

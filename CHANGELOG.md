@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- An HTTP or SOCKS5 proxy for the whole browser, in Settings › Privacy › Proxy, off unless you turn it on. Everything Search fetches goes through it, not only pages: favicons, address bar suggestions, copied pictures, extensions and the Web Store, the AI add-on and Search's own updates, in every space and in private tabs. Your own machine and your own network stay direct, so a local server, a NAS or a router's page still opens with it on. A proxy that can't be reached fails rather than quietly sending the request straight out, and a proxy password is kept in the keychain and removed when you turn the proxy off. Thanks [@standby2025](https://github.com/standby2025), whose [#510](https://github.com/driceroland/Search/pull/510) this is built on
+
 ### Fixed
 
 - A sign-in the page sends from its own script is offered a place in the keychain too: a "Sign in" link that posts the form, a box styled as a button, or a page that sends itself after a moment. Still only once the next page shows it worked. Thanks [@oddharsh](https://github.com/oddharsh) ([#705](https://github.com/driceroland/Search/pull/705))

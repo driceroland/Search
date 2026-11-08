@@ -56,6 +56,7 @@ final class AIClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
         configuration.timeoutIntervalForRequest = 60
         configuration.timeoutIntervalForResource = 300
+        ProxyNetwork.stamp(configuration)
         return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }()
 

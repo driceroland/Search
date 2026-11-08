@@ -327,6 +327,11 @@ struct SettingsPanel: View {
             GroupBlock(title: "Shortcuts", icon: "command") {
                 ShortcutsPage(browser: browser, store: .shared, prefs: prefs)
             }
+        case .privacy:
+            groups(of: page)
+            GroupBlock(title: "Proxy", icon: "network") {
+                ProxySettings()
+            }
         case .extensions:
             ExtensionsPage(browser: browser)
         case .ai:
