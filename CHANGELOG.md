@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Changed
+
+- The tab column draws no scroll bar when its tabs run past the window, as the tabs across the top already don't, even with macOS set to always show scroll bars. The wheel, the trackpad and the keyboard scroll it as before. Thanks [@TheOmkarBirje](https://github.com/TheOmkarBirje) ([#984](https://github.com/driceroland/Search/pull/984))
+
 ### Fixed
 
 - Closing a window straight after using it, with ⇧⌘W or its red button, no longer takes away the pins of its space in every other window. The window waited a moment before saving its tabs, and a save that came after it had closed found no tabs and told the other windows the space had no pins. `python3 Tests/close_window_pins.py` checks it. Reported in [#750](https://github.com/driceroland/Search/issues/750). Thanks [@tobyL05](https://github.com/tobyL05) ([#983](https://github.com/driceroland/Search/pull/983))

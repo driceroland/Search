@@ -280,21 +280,15 @@ struct SideBar: View {
                             }
                         } else {
                             ScrollViewReader { proxy in
-                                // The scroll view reaches into the margin on
-                                // the right and the rows keep it inside, so the
-                                // system's bar lands in the margin beside them
-                                // rather than over the cross on the tab under the
-                                // pointer. The column's edge lies over that margin
-                                // and answers first, so the bar never fights the
-                                // resize; the wheel and the trackpad still scroll.
-                                ScrollView(.vertical) {
-                                    rows.padding(.trailing, 10)
-                                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-                                            room.drawn = $0
-                                            refit()
-                                        }
+                                // Without scroll indicators: the tab column stays quiet
+                                // and distraction-free, matching other vertical-tab browsers.
+                                // The wheel and the trackpad still scroll smoothly.
+                                ScrollView(.vertical, showsIndicators: false) {
+                                    rows.onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                                        room.drawn = $0
+                                        refit()
+                                    }
                                 }
-                                .padding(.trailing, -10)
                                 // The tab you go to is the tab you see — ⌘1–⌘9,
                                 // ⇧⌘], a link opening beside the one on screen.
                                 .onChange(of: browser.activeID) { _, id in
