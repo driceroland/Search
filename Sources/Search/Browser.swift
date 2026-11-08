@@ -3105,6 +3105,67 @@ final class Browser: NSObject, ObservableObject {
         return (made, pins, added)
     }
 
+    /// Another Chromium browser's open tabs (see ImportSession.swift), from
+    /// the snapshot read when the sheet counted them, into this space: its
+    /// pinned tabs as pins, the rest asleep at the end of the row, a grouped
+    /// tab in the group of that name, made if missing and folded as it was.
+    /// Kept whether or not tab groups are turned on, as takeAsleep keeps
+    /// Arc's folders. Nothing twice: a page already in the row, or a pin
+    /// already there, isn't added again.
+    @discardableResult
+    func takeSession(_ snapshot: SessionImport.Snapshot, from source: ImportSource? = nil, profile: String? = nil)
+        -> (pins: Int, tabs: Int, groups: Int) {
+        let all = snapshot.capped().windows.joined()
+        var brought: [URL] = []
+        var defs = Pins.defs(spaceID)
+        let had = defs
+        for page in all where page.pinned && !had.contains(where: { Browser.samePin($0, page.url) })
+            && !defs.contains(where: { $0.home == page.url.absoluteString }) {
+            let host = page.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+            defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
+                               home: page.url.absoluteString, title: page.title, name: nil))
+            brought.append(page.url)
+        }
+        let pins = defs.count - had.count
+        if pins > 0 {
+            Pins.set(spaceID, defs, from: self)
+            pinsChanged(in: spaceID)
+        }
+        var seen = Set(tabs.compactMap { ($0.pending ?? $0.address)?.absoluteString })
+        let new = all.filter { !$0.pinned && seen.insert($0.url.absoluteString).inserted }
+        var groups = tabGroups
+        var made: [SessionImport.Token: UUID] = [:]
+        func group(_ token: SessionImport.Token?) -> UUID? {
+            guard let token, let found = snapshot.groups[token] else { return nil }
+            if let id = made[token] { return id }
+            let id = groups.first(where: { $0.name == found.title })?.id ?? {
+                let fresh = TabGroup(id: UUID(), name: found.title, collapsed: found.collapsed)
+                groups.append(fresh)
+                return fresh.id
+            }()
+            made[token] = id
+            return id
+        }
+        tabs += new.map { page in
+            let tab = Tab(configuration: Web.configuration(space: spaceID))
+            prepare(tab)
+            tab.restore(url: page.url, title: page.title)
+            tab.groupID = group(page.group)
+            return tab
+        }
+        let newGroups = groups.count - tabGroups.count
+        if groups != tabGroups {
+            tabGroups = groups
+            arrangeGroupedTabs()
+        }
+        if !new.isEmpty || pins > 0 {
+            writeRow(spaceID, session(tabs, active: activeID, groups: tabGroups, splits: splits), now: true)
+        }
+        brought += new.map(\.url)
+        adoptIcons(for: brought, from: source, profile: profile)
+        return (pins, new.count, newGroups)
+    }
+
     /// The icons for what Arc's side of the import brought in, from Arc's own
     /// cache, as the bookmarks take theirs (see takeBookmarks). A pin and a
     /// tab read the icon cache as they are made, and these were made a moment

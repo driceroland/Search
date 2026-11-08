@@ -30,6 +30,9 @@ struct ImportPanel: View {
     @State private var wantsBookmarks = true
     @State private var wantsHistory = true
     @State private var wantsExtensions = false
+    /// A Chromium browser's open tabs and tab groups (see takeSession).
+    /// Off unless asked for.
+    @State private var wantsTabs = false
     /// What came from this browser before goes, and its bookmarks come
     /// fresh. Off unless asked for; passwords are never taken out.
     @State private var replaceBookmarks = false
@@ -132,7 +135,8 @@ struct ImportPanel: View {
                     } else if let source = pick {
                         Pill(bringing ? "Bringing…" : "Bring them in", filled: true) { bring(from: source) }
                             .disabled(bringing || !(wantsPasswords || wantsBookmarks || wantsHistory || (wantsExtensions && !fresh(source).isEmpty)
-                                                     || (wantsArc && arcCounts[key(source, profile(of: source))] != nil)))
+                                                     || (wantsArc && arcCounts[key(source, profile(of: source))] != nil)
+                                                     || (wantsTabs && bringsTabs(source))))
                         if bringing { Ring(size: 10) }
                     }
                     Spacer(minLength: 8)
@@ -177,6 +181,28 @@ struct ImportPanel: View {
         return browser.prefs.listsPins
             ? head + ", its pinned pages as rows under them, and the ones it filed in a folder as tabs in a group of that name"
             : head + ", its pinned tabs asleep in it"
+    }
+
+    /// Whether Arc's own spaces are coming over: they hold its tabs, which
+    /// its session file holds again, so its open tabs then stay behind.
+    private func takesArc(_ source: ImportSource) -> Bool {
+        wantsArc && arcCounts[key(source, profile(of: source))] != nil
+    }
+
+    /// Whether the open tabs switch, on, would bring anything.
+    private func bringsTabs(_ source: ImportSource) -> Bool {
+        (previews[key(source, profile(of: source))]?.session.tabs ?? 0) > 0 && !takesArc(source)
+    }
+
+    /// What the open tabs side of the import will do.
+    private func tabsDetail(_ preview: ImportSource.Preview?, _ source: ImportSource) -> String {
+        guard let session = preview?.session, session.tabs > 0 else { return "None open in \(source.name)" }
+        if takesArc(source) { return "They come with Arc's spaces; turn those off to bring its open tabs instead" }
+        func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
+        let tabs = session.found > session.tabs
+            ? "The first \(session.tabs.formatted()) of \(session.found.formatted()) tabs" : count(session.tabs, "tab")
+        let groups = session.groups.isEmpty ? "" : " in \(count(session.groups.count, "group"))"
+        return "\(tabs)\(groups) — asleep at the end of this space, pinned tabs as pins"
     }
 
     /// Safari, and browsers on this Mac with nothing where their data should
@@ -309,6 +335,13 @@ struct ImportPanel: View {
             Line("History", preview?.places == 0 ? "None in \(source.name)" : "The last \((preview.map { $0.places } ?? 3000).formatted()) places") {
                 option($wantsHistory, none: preview?.places == 0)
             }
+            // Its open tabs and tab groups, asleep at the end of this space.
+            if case .chromium = source {
+                Rule()
+                Line("Open tabs & tab groups", tabsDetail(preview, source)) {
+                    option($wantsTabs, none: !bringsTabs(source))
+                }
+            }
             // Arc's own: its spaces, what is pinned in them, its favourites.
             if let arc = arcCounts[key(source, profile(of: source))], arc.spaces + arc.pinned > 0 {
                 Rule()
@@ -362,6 +395,7 @@ struct ImportPanel: View {
         for (n, one) in [(preview.bookmarks, "bookmark"), (preview.places, "place"), (preview.passwords, "password")] where n > 0 {
             parts.append(count(n, one))
         }
+        if preview.session.found > 0 { parts.append(count(preview.session.found, "open tab")) }
         if let arc = arcCounts[key(source, profile(of: source))], arc.spaces > 0 {
             parts.append(count(arc.spaces, "space"))
         }
@@ -508,6 +542,16 @@ struct ImportPanel: View {
             func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
             said[4] = Said(ok: true, text: spaces + pins + tabs == 0 ? "Arc's spaces and pins were all here already"
                            : "\(count(spaces, "new space")), \(count(pins, "pin")), \(count(tabs, "pinned tab"))")
+        }
+        // From what was read when the sheet counted, not read again here.
+        if wantsTabs, bringsTabs(source), let session = preview?.session {
+            let got = browser.takeSession(session, from: source, profile: profile)
+            func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
+            var parts = [count(got.tabs, "open tab")]
+            if got.groups > 0 { parts.append(count(got.groups, "new group")) }
+            if got.pins > 0 { parts.append(count(got.pins, "pin")) }
+            said[5] = Said(ok: true, text: got.tabs + got.pins == 0 ? "\(source.name)'s open tabs were all here already"
+                           : parts.joined(separator: ", "))
         }
         group.notify(queue: .main) {
             bringing = false

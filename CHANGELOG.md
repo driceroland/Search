@@ -25,6 +25,10 @@ in [ROADMAP.md](ROADMAP.md).
 - Show how far you've read is off unless you turn it on, in Settings › Appearance › Tabs: a tab half filled with grey read like a page stuck loading. It stays on for anyone who turned it on themselves. Asked for by [@aminezar](https://github.com/aminezar) ([#994](https://github.com/driceroland/Search/issues/994))
 - The tab column draws no scroll bar when its tabs run past the window, as the tabs across the top already don't, even with macOS set to always show scroll bars. The wheel, the trackpad and the keyboard scroll it as before. Thanks [@TheOmkarBirje](https://github.com/TheOmkarBirje) ([#984](https://github.com/driceroland/Search/pull/984))
 
+### Added
+
+- Bring Things Over can bring the tabs a Chromium browser has open, Helium, Chrome, Brave, Edge, Arc and the others it lists: turn on Open tabs & tab groups for that browser. They come in asleep at the end of the space you're in, at most 300, its pinned tabs as pins and its tab groups as groups of the same names, folded as they were; tabs already here aren't added twice. Off unless you turn it on. Thanks [@timwuhaotian](https://github.com/timwuhaotian) ([#841](https://github.com/driceroland/Search/pull/841))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
