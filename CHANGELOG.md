@@ -11,6 +11,14 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+## 1.0.10 — 8 November 2026
+
 ### Fixed
 
 - A space's menu says where its downloads go in one Downloads submenu: the folder in Settings or the space's own, ticked, and Choose Folder…. It showed two lines that read alike.
@@ -165,12 +173,6 @@ in [ROADMAP.md](ROADMAP.md).
 - The key that raised the address field puts it away: ⌘T again closes ⌘T's floating field, ⌘L again closes ⌘L's, and ⌘K pressed afresh closes the switcher, as Spotlight's key does. ⌘K held still steps down the list. ⌘T again used to leave the field up with what was typed cleared, ⌘L again put the address back over an edit, and ⌘K, let go, ⌘K switched to the second tab in the list. What was typed is kept: switching between ⌘T, ⌘L and ⌘K changes only where Return goes, and a ⌘T put away without opening anything comes back with its words, selected. Thanks [@ubeann](https://github.com/ubeann) ([#912](https://github.com/driceroland/Search/pull/912))
 - The downloads button gives one quick pulse each time a new download starts, so a file that comes in fast still shows it began. A button just coming in has its usual scale-in instead, a resume or a retry doesn't pulse, and with Reduce Motion it holds still. Asked for by [@pasteley](https://github.com/pasteley) ([#830](https://github.com/driceroland/Search/issues/830))
 - A search's results page you have been to reads as the search it was in the address field's list, "naruto vs one piece" with Reddit beside it and the mark of a past search, instead of its address (reddit.com/search/?q=naruto%20vs%20one%20piece). It still opens that page, and an address being typed still finishes in grey as before. Your engine's page for exactly what you typed isn't shown twice. Thanks [@ubeann](https://github.com/ubeann) ([#880](https://github.com/driceroland/Search/issues/880), [#889](https://github.com/driceroland/Search/pull/889))
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
 
 ## 1.0.9 — 4 November 2026
 

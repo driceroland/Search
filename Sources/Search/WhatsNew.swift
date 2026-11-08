@@ -98,6 +98,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.10"),
         Release(version: "1.0.9"),
         Release(version: "1.0.8"),
         Release(version: "1.0.7"),
@@ -152,6 +153,37 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.10", date: "8 November 2026",
+            headline: "Site permissions in the site card, Claude in Chrome can act in Search, ⇧⌘T brings tabs back as they were, and your fixes.",
+            new: [
+                "Site Permissions in the site card: camera, microphone, location and notifications, each Ask, Allow or Block.",
+                "Codes from Apple's Passwords app under the box that asks for one.",
+                "Choose the language pages are translated into, in Settings › Browsing.",
+                "Shift-Return searches with a second engine, if you pick one in Settings › Browsing.",
+                "Copy Address in a download's right-click menu.",
+                "With a site put in the address field with Tab, what you searched there before, read from this Mac only.",
+            ],
+            better: [
+                "The address field says where Return goes, and the key that raised it puts it away.",
+                "⇧⌘T brings a tab back with its Back and Forward, and brings back Settings, History and the other pages of Search.",
+                "Turning the blocker off for one site is a switch in the site's card.",
+                "With Tabs show: Letters, a tab's letter is beside its title.",
+                "⌘S slides the column at once, and keeping a bookmark no longer stalls a window with many tabs.",
+                "Dragging one of several selected tabs carries them all.",
+                "A space's downloads folder is one Downloads submenu in its menu.",
+            ],
+            fixed: [
+                "Claude in Chrome's actions, which all failed with \"No tabs to group\".",
+                "Discord signing you out when reloaded with the column out.",
+                "A video on a TV or second display floating out when you work in another app on this screen.",
+                "A tab carried past another or a Split View pair drifting away from the pointer.",
+                "A closed tab's video or music playing on in the background.",
+                "uBlock Origin Lite leaving GitLab and similar pages half-drawn.",
+                "A waking tab shown zoomed in, and a window stuck after a video's full screen.",
+                "And many more, most from your messages and pull requests.",
+            ]
+        ),
         Notes(
             version: "1.0.9", date: "4 November 2026",
             headline: "Claude in the side panel, profiles in one window, and your fixes.",
