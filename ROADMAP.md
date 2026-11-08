@@ -40,6 +40,10 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Window stutters between screens** Dragging the window from one screen to another stutters. Needs a trace recorded on two screens. *(X)*
 - [ ] **Figma and LinkedIn feel slow** Figma blurs for a moment as you zoom in; LinkedIn's feed and profiles scroll with lag. *(email)*
 
+## Done, in the next version
+
+- [x] **Pins after closing windows quickly** Closing several windows fast can lose a pin and draw New Tab upside down. *([#750](https://github.com/driceroland/Search/issues/750))*
+
 ## Now — fixes for the next update
 
 - [ ] **Spaces sometimes don't switch** *(email)*
@@ -54,7 +58,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **iCloud Passwords keeps its pairing** On macOS 27 iCloud Passwords asks for its code again every couple of minutes; the keep-alive no longer holds. *([#610](https://github.com/driceroland/Search/issues/610))*
 - [ ] **History scrolling stutters in full screen** search://history scrolls smoothly in a window but stutters in full screen, worse with a Sidecar iPad connected. *([#730](https://github.com/driceroland/Search/issues/730))*
 - [ ] **Dusk memory on restless pages** Dusk copies style sheets again and again on pages whose styles never settle, and keeps the old copies. *([#740](https://github.com/driceroland/Search/issues/740))*
-- [ ] **Pins after closing windows quickly** Closing several windows fast can lose a pin and draw New Tab upside down. *([#750](https://github.com/driceroland/Search/issues/750))*
 
 ## Next — small additions people asked for
 
@@ -97,6 +100,8 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Open Link in Private Tab** In a link's right-click menu, after Open Link in New Tab, as the bookmarks bar already has it. *([#902](https://github.com/driceroland/Search/issues/902))*
 - [ ] **Escape stays with the page in full screen** In the window's own full screen (the green button, ⌃⌘F), one Escape takes the window out of full screen even when a site wanted it, to close its own pop-up. Safari leaves the window as it is and gives the key to the page; only a video's full screen goes at one Escape. Needs checking against Press Esc twice to leave full screen, which keeps the first press from the page. *([#981](https://github.com/driceroland/Search/issues/981))*
 - [ ] **Fill in your contact details** Off by default: a box for your name, email, phone or address offers your own card in Contacts, filled on a click, as Safari does. *([#925](https://github.com/driceroland/Search/pull/925))*
+- [ ] **Page loads redraw only the tab's own bar** A tab's load progress, loading state and Back/Forward are published on the tab itself, so every view watching the tab redraws through each load. Give them their own small object, as scrolling already has. *([#999](https://github.com/driceroland/Search/issues/999))*
+- [ ] **Extensions' compatibility script loads once per frame, smaller** Search's compatibility script for Chrome extensions (~229 KB) runs in every frame each extension's content scripts match, before the extension's own code. Load only the parts a frame can use, or share it between an extension's scripts. *([#997](https://github.com/driceroland/Search/issues/997))*
 
 ## Later — bigger pieces of work
 
@@ -163,6 +168,9 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Back and Forward kept across a relaunch** Each tab comes back after a quit with its page only; keep its Back and Forward list too, as other browsers do. *([#893](https://github.com/driceroland/Search/issues/893))*
 - [ ] **Page scripts set up once per tab** A tab removes and adds back all of Search's own page scripts on every veil or style change; set the fixed ones up once. *([#859](https://github.com/driceroland/Search/issues/859))*
 - [ ] **ChatGPT's side panel signed in** ChatGPT's panel needs its site's cookies in a frame under the extension page; waits on a WebKit fix. *([#837](https://github.com/driceroland/Search/issues/837))*
+- [ ] **A limit on how many tabs stay awake** Tabs sleep after a set time, but nothing bounds how many stay awake or how much memory they hold, so a long session grows until macOS slows everything down. Sleep the least recently used ones past a count or a memory budget, keeping what you're looking at, playing or typing in. *([#998](https://github.com/driceroland/Search/issues/998))*
+- [ ] **mymind extension: Add to my mind** mymind's right-click Add to my mind and its toolbar button don't save the page, though you're signed in at access.mymind.com. *([#996](https://github.com/driceroland/Search/issues/996))*
+- [ ] **Apple Passwords on sign-up forms** Suggest a strong password from Apple's Passwords app on a sign-up form, and save the new name and password there. *([#991](https://github.com/driceroland/Search/issues/991))*
 
 ## Pull requests to review
 
