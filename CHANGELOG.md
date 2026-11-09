@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With New tab in a floating field on, ⌘T over a tab in a group opens its tab outside the group, where ⌘T's tab goes with the setting off, at the end of the row or at the top if you chose Top. It went into the group of the tab the field was raised over, as a link opened from that page does. The same for an address typed into ⌘K over a tab in a group. Over a tab in no group both still open beside that tab, and ⌘Return from a grouped tab's address still opens in its group. `python3 Tests/newtab_floating_group.py` checks it.
 - A tab across the top can be dragged again with Tabs Give on in Settings: its press held on to the mouse however far the hand went, so the drag never began. A tab carried past either end of that row stays in sight instead of being cut off, and one carried off the row or the column goes with the pointer, as its icon and title. Thanks [@kemuri](https://github.com/kemuri) ([#1011](https://github.com/driceroland/Search/pull/1011))
 
 ### Changed
