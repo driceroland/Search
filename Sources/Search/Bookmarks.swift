@@ -1520,6 +1520,8 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
     private var folders: [ObjectIdentifier: [Bookmark]] = [:]
     /// The items put in here, among SwiftUI's own.
     fileprivate static let mark = 0x5EAC
+    /// A folder's Open All, and the line above it.
+    private static let foot = 0x5EAD
 
     func start(for browser: Browser) {
         guard self.browser == nil else { return }
@@ -1625,6 +1627,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
             menu.addItem(empty)
         }
         for item in made { menu.addItem(item) }
+        addOpenAll(to: menu, folder.children ?? [])
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
@@ -1687,7 +1690,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
             items.flatMap { item -> [(depth: Int, item: NSMenuItem)] in
                 guard let sub = item.submenu else { return [(depth, item)] }
                 menuNeedsUpdate(sub)
-                return [(depth, item)] + down(sub.items, depth + 1)
+                return [(depth, item)] + down(sub.items.filter { $0.tag != Self.foot }, depth + 1)
             }
         }
         return down(items(for: folder.children ?? []), 0)
@@ -1704,11 +1707,32 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
             menu.addItem(empty)
         }
         for item in made { menu.addItem(item) }
+        addOpenAll(to: menu, kids)
+    }
+
+    /// At the foot of a folder, as in Safari: its bookmarks, not those of
+    /// the folders in it, each in a tab of its own.
+    private func addOpenAll(to menu: NSMenu, _ kids: [Bookmark]) {
+        let urls = kids.compactMap { $0.isFolder ? nil : $0.url.flatMap(URL.init(string:)) }
+        guard urls.count > 1 else { return }
+        let line = NSMenuItem.separator()
+        line.tag = Self.foot
+        menu.addItem(line)
+        let item = NSMenuItem(title: "Open All in New Tabs", action: #selector(openAll(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = urls
+        item.tag = Self.foot
+        menu.addItem(item)
     }
 
     @objc private func open(_ item: NSMenuItem) {
         guard let url = item.representedObject as? URL else { return }
         shown?.openBookmark(url)
+    }
+
+    @objc private func openAll(_ item: NSMenuItem) {
+        guard let urls = item.representedObject as? [URL], let browser = shown else { return }
+        for url in urls { browser.open(url, foreground: false, atEnd: true, from: browser.active, mayWait: true) }
     }
 
     /// SwiftUI's delegate, with the bookmarks put in after its update.

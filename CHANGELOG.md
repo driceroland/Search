@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Open All in New Tabs at the foot of each folder in the Bookmarks menu, as in Safari, and in a folder opened from the bookmarks bar: the folder's bookmarks, each in a tab of its own. Right-clicking a folder in the bar already offered it.
+
 ### Held back
 
 Not in this version, kept on main for a later one:
