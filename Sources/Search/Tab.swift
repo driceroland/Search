@@ -618,7 +618,9 @@ final class Tab: ObservableObject, Identifiable {
     var onStoreAdd: ((Tab) -> Void)?
     /// The middle button was let go over a link. The browser opens it in a
     /// tab of its own beside this one, without leaving the page you are on.
-    var onMiddleClick: ((Tab, URL) -> Void)?
+    /// ⌘-click on a link the page would have kept for itself: the same,
+    /// in front when ⇧ was held too (see MiddleRelay).
+    var onMiddleClick: ((Tab, URL, Bool) -> Void)?
     /// A page on this Mac's link to another file, clicked: here, or in a
     /// tab of its own for target="_blank" (see MiddleRelay).
     var onFileLink: ((Tab, URL, Bool) -> Void)?
@@ -2129,6 +2131,24 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
           if (!e.defaultPrevented) window.webkit.messageHandlers.officeMiddle.postMessage({ href: href });
         }, 0);
       }, true);
+      // ⌘-click on a link: a tab of its own, whatever the page does with
+      // the click. Some shops (Zara Home's grid, for one) take every click
+      // on a product for their own router and never look at ⌘, so the page
+      // went where you were. Taken here, on the way down, before them —
+      // only a link to the web that leaves this page: a link to "#" is a
+      // button in disguise, and keeps doing what the page makes it do.
+      // ⇧ as well brings the new tab to the front, as in every browser.
+      window.addEventListener('click', function (e) {
+        if (e.button !== 0 || !e.isTrusted || !e.metaKey || e.ctrlKey || e.altKey) return;
+        var a = anchor(e);
+        if (!a || a.hasAttribute('download')) return;
+        var href = link(e);
+        if (!/^https?:/i.test(href)) return;
+        if (href.split('#')[0] === location.href.split('#')[0]) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        window.webkit.messageHandlers.officeMiddle.postMessage({ href: href, front: e.shiftKey });
+      }, true);
       // A page on this Mac linking to another file. WebKit lets a file page
       // read only its own folder, and drops a click on a link out of it
       // before Search is asked: the page stayed where it was, and only the
@@ -2203,9 +2223,10 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https"
         else { return }
+        let front = body["front"] as? Bool ?? false
         MainActor.assumeIsolated { [weak self] in
             guard let self, let tab else { return }
-            tab.onMiddleClick?(tab, url)
+            tab.onMiddleClick?(tab, url, front)
         }
     }
 }
