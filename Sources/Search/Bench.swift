@@ -422,6 +422,9 @@ final class Bench {
             }
             else if request["off"] as? Bool == true { browser.unpin(tab) }
             else if request["home"] as? Bool == true { browser.goHome(tab) }
+            // "rehome": Replace Pinned Page with Current URL, as the pin's
+            // menu does.
+            else if request["rehome"] as? Bool == true { browser.rehome(tab) }
             // "everywhere": Keep in Every Space (true) or Only in This Space
             // (false), as the pin's menu does.
             else if let everywhere = request["everywhere"] as? Bool, tab.pin != nil {
