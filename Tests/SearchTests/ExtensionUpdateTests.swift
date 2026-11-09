@@ -82,9 +82,14 @@ final class ExtensionUpdateTests: XCTestCase {
         let started = expectation(description: "First update requested")
         let response = UpdateResponse()
         URLProtocol.registerClass(UpdateProtocol.self)
+        // The update is fetched through Proxy.swift's session now, so that it
+        // can go through a proxy; a session made from a configuration sees
+        // only the classes that configuration names, not the registered ones.
+        ProxyNetwork.testProtocols = [UpdateProtocol.self]
         UpdateProtocol.response = response
         defer {
             URLProtocol.unregisterClass(UpdateProtocol.self)
+            ProxyNetwork.testProtocols = []
             UpdateProtocol.response = nil
         }
         response.started = started

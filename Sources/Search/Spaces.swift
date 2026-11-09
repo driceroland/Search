@@ -181,6 +181,7 @@ enum Spaces {
         if let made = stores[id] { return made }
         let made = WKWebsiteDataStore(forIdentifier: id)
         if Store.keepsSignIns { Store.followSignIns(made) } else { Store.followCookies(made) }
+        BrowserProxy.shared.attach(made)
         stores[id] = made
         return made
     }

@@ -46,18 +46,24 @@ final class AIClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
 
     private static let log = Logger(subsystem: "com.officecommun.search", category: "AI")
 
-    private lazy var session: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.urlCache = nil
-        configuration.httpCookieStorage = nil
-        configuration.httpShouldSetCookies = false
-        configuration.urlCredentialStorage = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
-        configuration.timeoutIntervalForRequest = 60
-        configuration.timeoutIntervalForResource = 300
-        return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-    }()
+    /// Kept between asks, and made again when the proxy changes: a session
+    /// holds the configuration it was born with, so a lazy one would go on
+    /// reaching the provider directly for the rest of the run (Proxy.swift).
+    private var session: URLSession {
+        ProxyNetwork.kept("ai") {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.urlCache = nil
+            configuration.httpCookieStorage = nil
+            configuration.httpShouldSetCookies = false
+            configuration.urlCredentialStorage = nil
+            configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
+            configuration.timeoutIntervalForRequest = 60
+            configuration.timeoutIntervalForResource = 300
+            ProxyNetwork.stamp(configuration)
+            return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        }
+    }
 
     /// Where a provider's requests may go: its own host, over https, or
     /// this Mac over plain http for the apps that run on it.

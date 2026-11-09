@@ -534,6 +534,7 @@ enum AIDownload {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 60
         configuration.timeoutIntervalForResource = 3 * 3600
+        ProxyNetwork.stamp(configuration)
         let session = URLSession(configuration: configuration, delegate: watcher, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
         let (temporary, response) = try await session.download(from: url, delegate: watcher)

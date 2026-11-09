@@ -372,6 +372,7 @@ enum ExtensionFetch {
                 // A stream of server-sent events can be quiet for long; the
                 // page ends it (abort, or its reader let go) when it wants.
                 configuration.timeoutIntervalForRequest = 24 * 3600
+                ProxyNetwork.stamp(configuration)
                 let session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
                 self.session = session
                 let task = session.dataTask(with: request)
