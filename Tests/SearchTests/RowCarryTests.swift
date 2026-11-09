@@ -121,6 +121,239 @@ final class RowCarryTests: XCTestCase {
     }
 
 
+    /// Carried down off the row across the top, the tab goes with the hand
+    /// in a window of its own, and comes back to its row on the way back.
+    /// ROW_CARRY_SHOTS: the last tab carried past the run's end, and the tab
+    /// off the row, for looking at by eye.
+    func testATabCarriedOffTheTopRowIsLifted() async throws {
+        let browser = makeBrowser()
+        browser.prefs.sidebar = false
+        browser.select(browser.tabs[4])
+        let shots = ProcessInfo.processInfo.environment["ROW_CARRY_SHOTS"]
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 1100, height: Metrics.strip),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: TabBar(browser: browser))
+        window.orderFrontRegardless()
+        windows.append(window)
+        try await settle()
+        let inside = NSPoint(x: window.frame.midX, y: window.frame.midY)
+        TabDrag.testPointer = inside
+        defer { TabDrag.testPointer = nil }
+        let y = Metrics.strip / 2
+        // The last of five, each about 150 wide after the lights.
+        let grab: CGFloat = 800
+        try await send(.leftMouseDown, at: NSPoint(x: grab, y: y), in: window)
+        for x in stride(from: grab + 3, through: grab + 90, by: 3) {
+            try await send(.leftMouseDragged, at: NSPoint(x: x, y: y), in: window)
+        }
+        XCTAssertFalse(TabLift.shared.carrying, "still on the row")
+        try shoot(window.contentView, shots, "past-the-end")
+        try await send(.leftMouseDragged, at: NSPoint(x: grab + 90, y: -40), in: window)
+        XCTAssertTrue(TabLift.shared.carrying, "off the row")
+        XCTAssertTrue(floating, "on screen")
+        let before = try XCTUnwrap(TabLift.shared.content?.window).frame.origin
+        TabDrag.testPointer = NSPoint(x: inside.x + 30, y: inside.y - 20)
+        try await send(.leftMouseDragged, at: NSPoint(x: grab + 92, y: -40), in: window)
+        let after = try XCTUnwrap(TabLift.shared.content?.window).frame.origin
+        XCTAssertEqual(after.x - before.x, 30, "with the pointer")
+        XCTAssertEqual(after.y - before.y, -20, "with the pointer")
+        TabDrag.testPointer = inside
+        try await settle()
+        try shoot(TabLift.shared.content, shots, "lifted")
+        try await send(.leftMouseDragged, at: NSPoint(x: grab + 90, y: y), in: window)
+        XCTAssertFalse(TabLift.shared.carrying, "back on the row")
+        try await send(.leftMouseDragged, at: NSPoint(x: grab + 90, y: -40), in: window)
+        try await send(.leftMouseUp, at: NSPoint(x: grab + 90, y: -40), in: window)
+        try await settle()
+        XCTAssertFalse(TabLift.shared.carrying, "put down with the button")
+        XCTAssertFalse(floating, "off the screen")
+    }
+
+    /// The row carried off can go while the button is down, and its drag
+    /// never ends. Told only through that row, the floating tab stayed over
+    /// every window after the button came up. (Checked after the release: a
+    /// row leaves by its transition, and a hidden window draws no frames.)
+    func testTheFloatingTabGoesWhenItsTabCloses() async throws {
+        let browser = makeBrowser()
+        let window = try await liftOffTheTopRow(browser)
+        let held = try XCTUnwrap(browser.tabs.first { $0.id == TabLift.shared.shown })
+        browser.closeTab(held)
+        try await settle()
+        try await send(.leftMouseUp, at: NSPoint(x: 400, y: -40), in: window)
+        try await settle()
+        XCTAssertFalse(floating, "gone with its tab")
+    }
+
+    func testTheFloatingTabGoesWhenItsRowBecomesAPairsRightHalf() async throws {
+        let browser = makeBrowser()
+        let window = try await liftOffTheTopRow(browser)
+        let held = try XCTUnwrap(browser.tabs.first { $0.id == TabLift.shared.shown })
+        let other = try XCTUnwrap(browser.tabs.first { $0.id != held.id })
+        browser.pair(held, with: other, onLeft: false)
+        try await settle()
+        try await send(.leftMouseUp, at: NSPoint(x: 400, y: -40), in: window)
+        try await settle()
+        XCTAssertFalse(floating, "gone with its row")
+    }
+
+    /// A pair is one row, and either half can be picked up: the floating tab
+    /// names the half a drop would take.
+    func testTheFloatingTabNamesThePairsHalfUnderTheHand() async throws {
+        let browser = makeBrowser()
+        let t = browser.tabs
+        browser.pair(t[2], with: t[1], onLeft: false)
+        browser.select(t[4])
+        let window = makeWindow(browser)
+        browser.window = window
+        try await settle()
+        // The pair 30–86: its second half from 58.
+        let y: CGFloat = 72
+        TabDrag.testPointer = NSPoint(x: window.frame.minX + 70, y: window.frame.minY + point(y: y, in: window).y)
+        defer { TabDrag.testPointer = nil }
+        try await send(.leftMouseDown, at: point(y: y, in: window), in: window)
+        for x in stride(from: CGFloat(73), through: browser.prefs.columnWidth + 30, by: 3) {
+            try await send(.leftMouseDragged, at: NSPoint(x: x, y: point(y: y, in: window).y), in: window)
+        }
+        XCTAssertEqual(TabLift.shared.shown, t[2].id)
+        try await send(.leftMouseUp, at: NSPoint(x: browser.prefs.columnWidth + 30, y: point(y: y, in: window).y), in: window)
+        try await settle()
+    }
+
+    /// Out of the window's side, still level with the row: letting go there
+    /// takes the tab away, so it has to show.
+    func testLeavingTheWindowLevelWithTheRowLifts() async throws {
+        let browser = makeBrowser()
+        let window = try makeTopRow(browser)
+        browser.window = window
+        try await settle()
+        let inside = NSPoint(x: window.frame.midX, y: window.frame.midY)
+        TabDrag.testPointer = inside
+        defer { TabDrag.testPointer = nil }
+        let y = Metrics.strip / 2
+        try await send(.leftMouseDown, at: NSPoint(x: 800, y: y), in: window)
+        try await send(.leftMouseDragged, at: NSPoint(x: 808, y: y), in: window)
+        XCTAssertFalse(TabLift.shared.carrying, "still in the window")
+        TabDrag.testPointer = NSPoint(x: window.frame.maxX + 100, y: inside.y)
+        try await send(.leftMouseDragged, at: NSPoint(x: 816, y: y), in: window)
+        XCTAssertTrue(TabLift.shared.carrying, "past its side")
+        TabDrag.testPointer = inside
+        try await send(.leftMouseUp, at: NSPoint(x: 816, y: y), in: window)
+        try await settle()
+    }
+
+    /// A pin can't leave its window (Browser.dragOut), so nothing says it could.
+    func testAPinCarriedOffTheRowDoesNotLift() async throws {
+        let browser = makeBrowser()
+        let pinned = browser.tabs[0]
+        browser.pin(pinned)
+        // A pin is every window's: left in, the next test's rows start lower.
+        defer { browser.unpin(pinned) }
+        let window = try makeTopRow(browser)
+        try await settle()
+        TabDrag.testPointer = NSPoint(x: window.frame.midX, y: window.frame.midY)
+        defer { TabDrag.testPointer = nil }
+        let x = Metrics.lights + (browser.prefs.usesSpaces ? SpaceDot.width + Metrics.tabGap : 0) + Metrics.pinWidth / 2
+        try await send(.leftMouseDown, at: NSPoint(x: x, y: Metrics.strip / 2), in: window)
+        for y in stride(from: Metrics.strip / 2 - 6, through: -40, by: -6) {
+            try await send(.leftMouseDragged, at: NSPoint(x: x, y: y), in: window)
+        }
+        XCTAssertEqual(CarryGuard.count, 1, "carried")
+        XCTAssertFalse(TabLift.shared.carrying)
+        try await send(.leftMouseUp, at: NSPoint(x: x, y: -40), in: window)
+        try await settle()
+    }
+
+    /// The rows are set in from the column's edges, and measured from there:
+    /// the same few points past either edge lift the tab.
+    func testTheColumnLiftsAtItsOwnEdges() async throws {
+        let browser = makeBrowser()
+        browser.select(browser.tabs[0])
+        let window = makeWindow(browser)
+        try await settle()
+        TabDrag.testPointer = NSPoint(x: window.frame.midX, y: window.frame.midY)
+        defer { TabDrag.testPointer = nil }
+        let width = browser.prefs.columnWidth
+        let y = point(y: 14, in: window).y
+        try await send(.leftMouseDown, at: NSPoint(x: 70, y: y), in: window)
+        try await send(.leftMouseDragged, at: NSPoint(x: 60, y: y), in: window)
+        try await send(.leftMouseDragged, at: NSPoint(x: -1, y: y), in: window)
+        XCTAssertFalse(TabLift.shared.carrying, "just past the left edge")
+        try await send(.leftMouseDragged, at: NSPoint(x: -10, y: y), in: window)
+        XCTAssertTrue(TabLift.shared.carrying, "well past the left edge")
+        try await send(.leftMouseDragged, at: NSPoint(x: width + 1, y: y), in: window)
+        XCTAssertFalse(TabLift.shared.carrying, "just past the right edge")
+        try await send(.leftMouseDragged, at: NSPoint(x: width + 10, y: y), in: window)
+        XCTAssertTrue(TabLift.shared.carrying, "well past the right edge")
+        try await send(.leftMouseUp, at: NSPoint(x: width + 10, y: y), in: window)
+        try await settle()
+    }
+
+    private var floating: Bool { TabLift.shared.content?.window?.isVisible == true }
+
+    private func makeTopRow(_ browser: Browser) throws -> NSWindow {
+        browser.prefs.sidebar = false
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 1100, height: Metrics.strip),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: TabBar(browser: browser))
+        window.orderFrontRegardless()
+        windows.append(window)
+        return window
+    }
+
+    /// A tab of the row across the top, carried down off it and still held.
+    private func liftOffTheTopRow(_ browser: Browser) async throws -> NSWindow {
+        let window = try makeTopRow(browser)
+        try await settle()
+        TabDrag.testPointer = NSPoint(x: window.frame.midX, y: window.frame.midY)
+        addTeardownBlock { @MainActor in TabDrag.testPointer = nil }
+        try await send(.leftMouseDown, at: NSPoint(x: 400, y: Metrics.strip / 2), in: window)
+        for y in stride(from: Metrics.strip / 2 - 6, through: -40, by: -6) {
+            try await send(.leftMouseDragged, at: NSPoint(x: 400, y: y), in: window)
+        }
+        XCTAssertTrue(floating, "lifted")
+        return window
+    }
+
+    /// With Tabs Give on, a tab across the top has a press of its own under
+    /// the drag. Holding on however far the hand went, it kept the mouse and
+    /// the drag never began.
+    func testATabCarriedAlongTheTopWhenTabsGive() async throws {
+        let browser = makeBrowser()
+        let wasGiving = browser.prefs.tabsGive
+        defer { browser.prefs.tabsGive = wasGiving }
+        browser.prefs.tabsGive = true
+        browser.prefs.sidebar = false
+        let order = browser.tabs.map(\.id)
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 1100, height: Metrics.strip),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: TabBar(browser: browser))
+        window.orderFrontRegardless()
+        windows.append(window)
+        try await settle()
+        TabDrag.testPointer = NSPoint(x: window.frame.midX, y: window.frame.midY)
+        defer { TabDrag.testPointer = nil }
+        let y = Metrics.strip / 2
+        let grab: CGFloat = 350
+        try await send(.leftMouseDown, at: NSPoint(x: grab, y: y), in: window)
+        for x in stride(from: grab + 3, through: grab + 240, by: 3) {
+            try await send(.leftMouseDragged, at: NSPoint(x: x, y: y), in: window)
+        }
+        XCTAssertEqual(CarryGuard.count, 1, "carried")
+        try await send(.leftMouseUp, at: NSPoint(x: grab + 240, y: y), in: window)
+        try await settle()
+        XCTAssertNotEqual(browser.tabs.map(\.id), order, "moved")
+    }
+
+    private func shoot(_ view: NSView?, _ folder: String?, _ name: String) throws {
+        guard let view, let folder, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        try rep.representation(using: .png, properties: [:])?
+            .write(to: URL(fileURLWithPath: "\(folder)/\(name).png"))
+    }
+
     // MARK: - helpers
 
     private func makeBrowser() -> Browser {

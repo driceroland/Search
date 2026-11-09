@@ -126,6 +126,11 @@ struct TabBar: View {
                                     .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
                                 }
                                 .scrollDisabled(!row.overflowing)
+                                // The run ends where its tabs do, so a tab
+                                // carried past either end was cut off there.
+                                // Not when it fills the row: its neighbours
+                                // would show over the lights and the doors.
+                                .scrollClipDisabled(carrying && !row.overflowing)
                                 .frame(width: row.run)
                                 .onAppear { reveal(reader, in: geo.size.width) }
                                 .onChange(of: row.overflowing) { _, _ in reveal(reader, in: geo.size.width) }
@@ -1006,6 +1011,8 @@ struct Carried: ViewModifier {
     @State private var start: CGFloat = 0
     @State private var travel: CGFloat = 0
     @State private var reordered = false
+    /// Off the row, with the hand: faint here, and carried by TabLift.
+    @State private var lifted = false
     /// Where it was drawn in `space` when it was picked up, read once by the
     /// held item alone, so the others measure nothing as the row scrolls.
     @State private var origin: CGFloat?
@@ -1062,7 +1069,7 @@ struct Carried: ViewModifier {
             .transaction { if held { $0.animation = nil } }
             .zIndex(held ? 1 : 0)
             .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
-            .opacity(held && faded ? 0.4 : 1)
+            .opacity(held && (faded || lifted) ? 0.4 : 1)
             .gesture(
                 DragGesture(minimumDistance: 5, coordinateSpace: .named(space))
                     .updating($carrying) { _, carrying, _ in carrying = true }
@@ -1079,10 +1086,15 @@ struct Carried: ViewModifier {
                         // Asked every move, so the block it left lets go
                         // of it as soon as it is elsewhere.
                         let crossed = cross?(value.location) == true
-                        if let browser, let tab, browser.prefs.splitView,
-                           TabDrag.shared.update(browser: browser, tab: tab,
-                                                 translation: value.translation) { return }
-                        if crossed { return }
+                        var splitting = false
+                        if let browser, let tab, browser.prefs.splitView {
+                            splitting = TabDrag.shared.update(browser: browser, tab: tab,
+                                                              translation: value.translation)
+                        }
+                        // After the update, which works out the half of a
+                        // pair that was picked up.
+                        lift(at: value.location)
+                        if splitting || crossed { return }
                         // A tab of a group, or one over a group, lands where
                         // it is let go (see GroupDropFrames.resolve) rather
                         // than moving along the row as it goes.
@@ -1096,6 +1108,7 @@ struct Carried: ViewModifier {
                     }
                     .onEnded { value in
                         escaped = false
+                        TabLift.shared.put()
                         // Already put down (see callOff): a press that
                         // came after can't be where it was let go.
                         guard CarryGuard.close(ticket) else { return }
@@ -1138,11 +1151,18 @@ struct Carried: ViewModifier {
                     }
             )
             .onChange(of: carrying) { _, now in if !now { callOff() } }
-            .onChange(of: held) { _, now in holding?(now) }
+            .onChange(of: held) { _, now in
+                holding?(now)
+                if !now { lifted = false }
+            }
+            // Its row gone with the button still down, by closing it or by
+            // the drop itself: nothing here will hear the rest of the drag.
+            .onDisappear { if lifted { TabLift.shared.put() } }
             .onReceive(TabDrag.shared.$cancelledID) { id in
                 guard id == tab?.id, held else { return }
                 CarryGuard.close(ticket)
                 escaped = true
+                TabLift.shared.put()
                 if let tab { TabDrag.shared.callOff(tab) }
                 _ = land?(nil)
                 if reordered { move(from) }
@@ -1179,6 +1199,28 @@ struct Carried: ViewModifier {
         return slot
     }
 
+    /// Off to the side of the row, with some slack for a hand that wanders,
+    /// or out of the window, where letting go takes the tab away: it goes on
+    /// with the pointer in a window of its own. A pin can't leave, so nothing
+    /// says it could.
+    private func lift(at location: CGPoint) {
+        guard let browser, let tab else { return }
+        let carried = TabDrag.shared.source(of: tab) ?? tab
+        guard carried.pin == nil else { return }
+        let slack: CGFloat = 8
+        let point = TabDrag.shared.pointer(in: browser)
+        // The column's rows are measured from 10 inside its edges.
+        let off = browser.isPastEdge(point) || (vertical
+            ? location.x < -10 - slack || location.x > browser.prefs.columnWidth - 10 + slack
+            : location.y < -slack || location.y > Metrics.strip + slack)
+        if off != lifted { lifted = off }
+        if off {
+            TabLift.shared.carry(carried, browser: browser, at: point)
+        } else {
+            TabLift.shared.put()
+        }
+    }
+
     /// The drag taken away without onEnded (see CarryGuard): put down where
     /// it is, nothing dropped across, the split it may have been showing
     /// let go of. After a real end, held is already false and this is nothing.
@@ -1186,6 +1228,7 @@ struct Carried: ViewModifier {
         CarryGuard.close(ticket)
         escaped = false
         guard held else { return }
+        TabLift.shared.put()
         if let browser, let tab, browser.prefs.splitView { TabDrag.shared.callOff(tab) }
         _ = land?(nil)
         withAnimation(Motion.settle) {
@@ -1704,7 +1747,10 @@ struct Pressing: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if enabled {
-            content.onLongPressGesture(minimumDuration: .infinity, maximumDistance: .infinity,
+            // Gives up once the hand travels, as TabPress does. Held on
+            // however far it went, this kept the mouse from the drag that
+            // carries the tab, which never began.
+            content.onLongPressGesture(minimumDuration: .infinity, maximumDistance: TabPress.travel,
                                        pressing: { down = $0 }, perform: {})
         } else {
             content

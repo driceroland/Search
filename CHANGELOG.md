@@ -13,6 +13,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With Tabs Give on in Settings, a tab across the top can be dragged again. Its press held on to the mouse however far the hand went, so the drag that moves the tab never began.
+
+- A tab carried past either end of the row across the top stays in sight instead of being cut off at the end of the tabs, and a tab carried off the row or the column goes with the pointer, as its icon and title.
+
 - A window opens with the keys on the page in front, so typing and the arrow keys reach it without a click. With Keyboard navigation on in the Mac's Keyboard settings, Reload took them, with a focus ring around it. Thanks [@kemuri](https://github.com/kemuri) ([#1001](https://github.com/driceroland/Search/pull/1001))
 - ⌘-click on a link opens it in a new tab even on sites that handle clicks themselves. Some shops, Zara Home's for one, opened the product in the same tab, whatever key was held.
 - The floating video no longer flickers as it pops out. Its little window opened on a picture of the video with whatever the page drew over it, the player's controls, its watermark, captions or a dialog, and those vanished a moment later as the live video took over; the picture is now of the video alone, as the window then shows it. Reported by [@Rahuletto](https://github.com/Rahuletto) ([#543](https://github.com/driceroland/Search/issues/543))

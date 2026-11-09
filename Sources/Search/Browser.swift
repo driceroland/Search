@@ -4771,14 +4771,18 @@ final class Browser: NSObject, ObservableObject {
     /// Safari. False when it was let go over this window, where the drag
     /// keeps its meaning, or can't leave (a pin).
     func dragOut(_ tab: Tab, at point: NSPoint = NSEvent.mouseLocation) -> Bool {
-        guard tab.pin == nil, !tab.bench, let window,
-              !window.frame.insetBy(dx: -12, dy: -12).contains(point)
-        else { return false }
+        guard tab.pin == nil, !tab.bench, isPastEdge(point) else { return false }
         let over = Browsers.all.first { $0 !== self && $0.isOpen && !$0.isPopup && $0.profileID == profileID && $0.window?.frame.contains(point) == true }
         guard over != nil || tabs.count > 1 else { return false }
         // After the drag has let go, not inside it.
         DispatchQueue.main.async { [weak self] in self?.moveToWindow(tab, over, at: point) }
         return true
+    }
+
+    /// Out of this window, with a little slack: a tab let go there leaves it.
+    func isPastEdge(_ point: NSPoint) -> Bool {
+        guard let window else { return false }
+        return !window.frame.insetBy(dx: -12, dy: -12).contains(point)
     }
 
     /// Out of this row, not closed: it is on its way to another window.
