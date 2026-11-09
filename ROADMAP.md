@@ -40,10 +40,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Window stutters between screens** Dragging the window from one screen to another stutters. Needs a trace recorded on two screens. *(X)*
 - [ ] **Figma and LinkedIn feel slow** Figma blurs for a moment as you zoom in; LinkedIn's feed and profiles scroll with lag. *(email)*
 
-## Done, in the next version
-
-- [x] **Pins after closing windows quickly** Closing several windows fast can lose a pin and draw New Tab upside down. *([#750](https://github.com/driceroland/Search/issues/750))*
-
 ## Now — fixes for the next update
 
 - [ ] **Spaces sometimes don't switch** *(email)*
@@ -118,7 +114,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **A picture behind the new tab** An image behind the new tab page, perhaps from Unsplash. Off unless turned on, if it ever comes. *([#447](https://github.com/driceroland/Search/issues/447))*
 - [ ] **Main process grows over days** The app's own process grew to several times its fresh size over a week of use; find what accumulates (closed windows, caches).
 - [ ] **Small windows: alone and keyed** A link small window opens alone, takes its keys, closes with a swipe back, cascades, and shows in the switcher. *([#431](https://github.com/driceroland/Search/pull/431), [#519](https://github.com/driceroland/Search/pull/519), [#474](https://github.com/driceroland/Search/pull/474), [#493](https://github.com/driceroland/Search/pull/493), [#480](https://github.com/driceroland/Search/pull/480))*
-- [ ] **Proxy for the whole browser** HTTP and SOCKS5 proxy in Settings, off by default, everything through it. *([#510](https://github.com/driceroland/Search/pull/510))*
 - [ ] **Float a whole page** Any page, not only a video, in the floating window, and meetings that float when you switch away. Off unless turned on. *([#584](https://github.com/driceroland/Search/pull/584))*
 - [ ] **One window per space** A switch so each space opens in a window of its own. *([#611](https://github.com/driceroland/Search/issues/611))*
 - [ ] **Why a tab stays awake** A small view listing which tabs sleep and why the others stay awake. Off by default. *([#624](https://github.com/driceroland/Search/issues/624), [#628](https://github.com/driceroland/Search/pull/628))*
@@ -176,7 +171,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 
 ## Pull requests to review
 
-- [ ] **Send links to a space** Links from chosen sites open in a given space, with its sign-ins, as Arc's Air Traffic Control does. *(email, [#595](https://github.com/driceroland/Search/issues/595) ×2, [#596](https://github.com/driceroland/Search/pull/596), [#721](https://github.com/driceroland/Search/issues/721), [#722](https://github.com/driceroland/Search/pull/722))*
 - [ ] **uBlock blocks from the first second after launch** Session rules set again at every launch recompile every rule, and new tabs go unblocked meanwhile. *([#711](https://github.com/driceroland/Search/pull/711))*
 - [ ] **Redraw only what changed** Typing, Find and swipes redraw only the views that show them; rows stop observing the whole browser. *([#706](https://github.com/driceroland/Search/pull/706))*
 
@@ -206,12 +200,10 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Extension side panels** Extensions that open in Chrome's side panel, like ChatGPT's and Claude's, have nowhere to open: WebKit has no side panel. *(email)*
 - [ ] **Group tabs by dropping one on another** Drop a tab onto another in the column and the two become a group. *(email)*
 - [ ] **One place for ⌘T, ⌘K and ⌘Y** New tab, the open tabs and history reached from a single field. *(email)*
-- [ ] **Open tabs from Helium** Bringing things over from Helium takes its bookmarks, history, passwords and extensions, but not the tabs it has open. *(email, [#840](https://github.com/driceroland/Search/issues/840), [#841](https://github.com/driceroland/Search/pull/841))*
 - [ ] **⌘L again closes the address** A second ⌘L puts away the address field it opened, as Esc does. *(email)*
 - [ ] **Tabs that pause, not reload** An option to keep a resting tab's page and let WebKit suspend it, off by default. *([#520](https://github.com/driceroland/Search/issues/520))*
 - [ ] **Option-Command arrows to move between tabs** *([#532](https://github.com/driceroland/Search/issues/532))*
 - [ ] **Share the screen with its sound** WebKit gives a shared screen no sound track, even when a call asks for one; it would mean capturing the sound ourselves and feeding it to the page. *([#540](https://github.com/driceroland/Search/issues/540))*
-- [ ] **Floating video flickers popping out** The video shifts and flickers as it pops out of the page. *([#543](https://github.com/driceroland/Search/issues/543), [#547](https://github.com/driceroland/Search/pull/547), [#562](https://github.com/driceroland/Search/pull/562), [#584](https://github.com/driceroland/Search/pull/584))*
 - [ ] **Float a meeting page when you switch away** *([#544](https://github.com/driceroland/Search/issues/544), [#547](https://github.com/driceroland/Search/pull/547))*
 - [ ] **CleanMyMac flags Search as unwanted** CleanMyMac's "Mac Search - PUA" is a false positive: Search is a notarised Developer ID app, and MacPaw has been told. *([#556](https://github.com/driceroland/Search/issues/556))*
 - [ ] **YouTube dislike counts don't show** Return YouTube Dislike installs but its counts never appear on YouTube; a userscript doing the same works. *([#588](https://github.com/driceroland/Search/issues/588))*
