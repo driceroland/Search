@@ -6309,7 +6309,7 @@ final class Browser: NSObject, ObservableObject {
         }
         // "red": Reddit's search, a Tab away.
         let site = prefs.searchesSites && !summoning
-            ? SiteSearch.match(typed, learnedToo: profileID == Profile.personalID) { [history] in history.visits(to: $0.map(\.host)) }
+            ? SiteSearch.match(typed, learnedToo: profileID == Profile.personalID, keywords: prefs.keywords) { [history] in history.visits(to: $0.map(\.host)) }
             : nil
         if siteOffer != site { siteOffer = site }
 
