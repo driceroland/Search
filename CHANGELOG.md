@@ -11,9 +11,17 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+## 1.0.12 — 9 November 2026
+
 ### Fixed
 
-- A tab across the top can be dragged again with Tabs Give on in Settings: its press held on to the mouse however far the hand went, so the drag never began. A tab carried past either end of that row stays in sight instead of being cut off, and one carried off the row or the column goes with the pointer, as its icon and title. Thanks [@kemuri](https://github.com/kemuri) ([#1011](https://github.com/driceroland/Search/pull/1011))
+- A tab across the top can be dragged again with Tabs give when pressed on, in Settings › Appearance › Tabs: its press held on to the mouse however far the hand went, so the drag never began and the window moved instead. A tab carried past either end of that row stays in sight instead of being cut off, and one carried off the row or the column goes with the pointer, as its icon and title. Thanks [@kemuri](https://github.com/kemuri) ([#1011](https://github.com/driceroland/Search/pull/1011))
 
 ### Changed
 
@@ -23,12 +31,6 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Your contact details under a form's boxes, from your own card in Contacts, as Safari fills them: under a box for your name, email, phone or address, a row per address, email or number on your card. A click fills that box and the form's other empty boxes you can see, keeping a shipping address and a billing one apart; a shift-click fills that box alone, and the boxes filled flash in your accent colour unless Reduce Motion is on. Boxes a page hides away get nothing. Only your card is read, held in memory and never saved, and nothing reaches the page before you pick. Off unless you turn it on in Settings › Passwords › Fill in your contact details, which is when macOS asks whether Search may read Contacts. Thanks [@kemuri](https://github.com/kemuri) ([#1010](https://github.com/driceroland/Search/pull/1010))
 - Open All in New Tabs at the foot of each folder in the Bookmarks menu, as in Safari, and in a folder opened from the bookmarks bar: the folder's bookmarks, each in a tab of its own. Right-clicking a folder in the bar already offered it.
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
 
 ## 1.0.11 — 9 November 2026
 

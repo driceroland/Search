@@ -105,6 +105,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.12"),
         Release(version: "1.0.11"),
         Release(version: "1.0.10"),
         Release(version: "1.0.9"),
@@ -161,6 +162,21 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.12", date: "9 November 2026",
+            headline: "Your contact details in forms, a tab dragged across the top again, and your fixes.",
+            new: [
+                "Your card in Contacts under a box for your name, email, phone or address, as in Safari. Turn it on in Settings › Passwords.",
+                "Open All in New Tabs at the foot of each folder in the Bookmarks menu.",
+            ],
+            better: [
+                "A tab carried off its row or column goes with the pointer.",
+                "Pages with many frames load quicker with extensions such as 1Password.",
+            ],
+            fixed: [
+                "A tab across the top that couldn't be dragged, moving the window instead, with Tabs give when pressed on.",
+            ]
+        ),
         Notes(
             version: "1.0.11", date: "9 November 2026",
             headline: "Send links to a space, a proxy for the whole browser, a quicker window with many tabs, and your fixes.",
