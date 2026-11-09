@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A window opens with the keys on the page in front, so typing and the arrow keys reach it without a click. With Keyboard navigation on in the Mac's Keyboard settings, Reload took them, with a focus ring around it. Thanks [@kemuri](https://github.com/kemuri) ([#1001](https://github.com/driceroland/Search/pull/1001))
 - ⌘-click on a link opens it in a new tab even on sites that handle clicks themselves. Some shops, Zara Home's for one, opened the product in the same tab, whatever key was held.
 - The floating video no longer flickers as it pops out. Its little window opened on a picture of the video with whatever the page drew over it, the player's controls, its watermark, captions or a dialog, and those vanished a moment later as the live video took over; the picture is now of the video alone, as the window then shows it. Reported by [@Rahuletto](https://github.com/Rahuletto) ([#543](https://github.com/driceroland/Search/issues/543))
 - Closing a window straight after using it, with ⇧⌘W or its red button, no longer takes away the pins of its space in every other window. The window waited a moment before saving its tabs, and a save that came after it had closed found no tabs and told the other windows the space had no pins. `python3 Tests/close_window_pins.py` checks it. Reported in [#750](https://github.com/driceroland/Search/issues/750). Thanks [@tobyL05](https://github.com/tobyL05) ([#983](https://github.com/driceroland/Search/pull/983))
