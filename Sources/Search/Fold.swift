@@ -87,10 +87,13 @@ extension Browser {
         // The Find bar is a pill over one corner of the page: whatever a
         // click there would land on decides. Asking the window costs far more
         // than the flags above, so only while the bar is open.
-        if finding, let frame = window.contentView?.superview,
-           let hit = frame.hitTest(frame.convert(point, from: nil)),
-           hit !== page, !hit.isDescendant(of: page) {
-            return true
+        if finding, let frame = window.contentView?.superview {
+            let screenPoint = window.convertPoint(toScreen: point)
+            let framePoint = frame.convert(screenPoint, from: nil)
+            if let hit = frame.hitTest(framePoint),
+               hit !== page, !hit.isDescendant(of: page) {
+                return true
+            }
         }
         guard folded, peeking, !frontFillsHere, let size = window.contentView?.bounds.size else { return false }
         if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
