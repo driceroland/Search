@@ -5,8 +5,9 @@ import SwiftUI
 /// page; one line per account, the name in ink and the site under it in
 /// grey; a click puts both into the form. The Mac's passkeys for a page
 /// waiting for one come first, as in Safari; a click on one brings up the
-/// Mac's sheet for it. It follows the box when the page scrolls, and goes
-/// when the caret does.
+/// Mac's sheet for it. Under a box for your name, email, phone or address,
+/// your card in Contacts, and a click fills the form. It follows the box
+/// when the page scrolls, and goes when the caret does.
 struct AccountList: View {
     @ObservedObject var browser: Browser
     let asked: Browser.Suggesting
@@ -47,9 +48,16 @@ struct AccountList: View {
             if asked.appleOffer != nil {
                 OfferRow(use: browser.useApplePasswords, never: browser.neverOfferApplePasswords)
             }
+            // A click fills the form; a shift-click, the box alone.
+            ForEach(asked.contacts) { contact in
+                Row(mark: .symbol("person.crop.circle"), name: contact.title, detail: contact.detail) {
+                    browser.choose(contact, alone: NSEvent.modifierFlags.contains(.shift))
+                }
+                .help("Fills the form. Shift-click fills only this box.")
+            }
             if !offerOnly {
             HStack(spacing: 6) {
-                Image(systemName: "key")
+                Image(systemName: contactsOnly ? "person.crop.rectangle" : "key")
                     .font(.system(size: 9, weight: .medium))
                 Text(footer)
                     .font(.system(size: 10.5))
@@ -100,9 +108,17 @@ struct AccountList: View {
     /// Nothing but the offer: no footer under it, the row says it all.
     private var offerOnly: Bool {
         asked.appleOffer != nil && asked.logins.isEmpty && asked.passkeys.isEmpty && asked.apple.isEmpty && asked.codes.isEmpty && !asked.appleConnect
+            && asked.contacts.isEmpty
+    }
+
+    /// Nothing but your card's rows.
+    private var contactsOnly: Bool {
+        !asked.contacts.isEmpty && asked.logins.isEmpty && asked.passkeys.isEmpty && asked.apple.isEmpty && asked.codes.isEmpty
+            && !asked.appleConnect
     }
 
     private var footer: String {
+        if contactsOnly { return "From your card in Contacts" }
         if asked.logins.isEmpty && asked.apple.isEmpty && asked.codes.isEmpty && !asked.appleConnect { return "Passkeys on this Mac" }
         if asked.logins.isEmpty { return "From Apple Passwords" }
         return asked.apple.isEmpty ? "From your keychain" : "From your keychain and Apple Passwords"

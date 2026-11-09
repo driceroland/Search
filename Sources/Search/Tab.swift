@@ -615,7 +615,17 @@ final class Tab: ObservableObject, Identifiable {
     /// is, in the web view's points, or nil when it has left. Then whether
     /// it goes with a password, and whether it is a first step's name box,
     /// which takes the name alone.
-    var onField: ((Tab, CGRect?, Bool, Bool, Bool, Bool) -> Void)?
+    /// Then whether it is a box for a verification code.
+    /// Last, what else the box takes that Search can fill (Fill), if not a
+    /// sign-in.
+    var onField: ((Tab, CGRect?, Bool, Bool, Bool, Bool, Fill?) -> Void)?
+    /// A box that takes something other than a sign-in.
+    enum Fill: Equatable {
+        /// A detail on your own card in Contacts (MeCard): its kind, as
+        /// autocomplete names it ("email", "postal-code"…), and the page's
+        /// number for the box, which a pick has to find the caret still in.
+        case contact(String, box: Int)
+    }
     /// The site the sign-in was sent from — not the one it landed on —
     /// then the name and the password, and whether that page came over
     /// plain http.
@@ -1097,6 +1107,11 @@ final class Tab: ObservableObject, Identifiable {
         add(KeptScroll.script, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         add(Veiling.picker, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         add(FormRelay.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
+        // The form script looks at boxes for your card only with Fill in
+        // your contact details on.
+        if FormRelay.contacts {
+            add(FormRelay.contactsOn, .atDocumentStart, mainFrameOnly: true, in: Web.world)
+        }
         add(IconRelay.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
         if AutoScroll.on {
             add(AutoScroll.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
@@ -1194,16 +1209,16 @@ final class Tab: ObservableObject, Identifiable {
     /// host's own.
     /// `code`: a box for a verification code, which takes nothing of a
     /// sign-in's.
-    func fieldFocused(_ rect: CGRect?, passwords: Bool = true, name: Bool = false, wide: Bool = true, code: Bool = false) {
+    func fieldFocused(_ rect: CGRect?, passwords: Bool = true, name: Bool = false, wide: Bool = true, code: Bool = false, fill: Fill? = nil) {
         guard let rect else {
-            onField?(self, nil, false, false, false, false)
+            onField?(self, nil, false, false, false, false, nil)
             return
         }
         let zoom = built?.pageZoom ?? 1
         onField?(self, CGRect(
             x: rect.minX * zoom, y: rect.minY * zoom,
             width: rect.width * zoom, height: rect.height * zoom
-        ), passwords, name, wide, code)
+        ), passwords, name, wide, code, fill)
     }
 
     /// The name a sign-in that asks for it first was just sent, for the
@@ -1333,6 +1348,40 @@ final class Tab: ObservableObject, Identifiable {
             if (scheme && (location.protocol !== scheme || location.hostname.toLowerCase() !== host)) return false;
             return !!(window.__officeForms && window.__officeForms.\(call));
             """, arguments: arguments) { done?(($0 as? Bool) ?? false) }
+    }
+
+    /// Your card's details, picked from under a box for one, into the
+    /// boxes of its form: `fields` by kind, as autocomplete names them.
+    /// `done` hears whether any box took one. `alone`: the box with the
+    /// caret only, not the rest of its form. `box`: the page's number for
+    /// the box the list hung from. `onlyOn`: the page the list was made
+    /// for, whose origin, port and all, the page has to still be. `flash`:
+    /// the boxes it fills flash in the accent colour (MeCard.tint).
+    func fillContact(_ fields: [String: String], alone: Bool = false, box: Int? = nil, onlyOn page: URL? = nil,
+                     flash: Bool = false, done: ((Bool) -> Void)? = nil) {
+        var origin = ""
+        if let page {
+            guard let known = Self.origin(of: page) else { done?(false); return }
+            origin = known
+        }
+        let tint: Any = flash ? MeCard.tint : NSNull()
+        web.callInSearch("""
+            if (origin && location.origin !== origin) return false;
+            return !!(window.__officeForms && window.__officeForms.contact(card, alone, box, tint) > 0);
+            """, arguments: ["origin": origin, "card": fields, "alone": alone, "box": box.map { $0 as Any } ?? NSNull(), "tint": tint]) {
+            done?(($0 as? Bool) ?? false)
+        }
+    }
+
+    /// A page's origin as the page itself gives it (location.origin):
+    /// scheme and host, and the port only when it isn't the scheme's own.
+    nonisolated static func origin(of url: URL?) -> String? {
+        guard let url, let scheme = url.scheme?.lowercased(), let host = url.host(percentEncoded: true)?.lowercased(),
+              !host.isEmpty
+        else { return nil }
+        let bracketed = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        let port = url.port.flatMap { (scheme == "https" && $0 == 443) || (scheme == "http" && $0 == 80) ? nil : $0 }
+        return "\(scheme)://\(bracketed)" + (port.map { ":\($0)" } ?? "")
     }
 
     func picked(selector: String, label: String, note: String) {

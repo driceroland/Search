@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Your contact details under a form's boxes, from your own card in Contacts, as Safari fills them: under a box for your name, email, phone or address, a row per address, email or number on your card. A click fills that box and the form's other empty boxes you can see, keeping a shipping address and a billing one apart; a shift-click fills that box alone, and the boxes filled flash in your accent colour unless Reduce Motion is on. Boxes a page hides away get nothing. Only your card is read, held in memory and never saved, and nothing reaches the page before you pick. Off unless you turn it on in Settings › Passwords › Fill in your contact details, which is when macOS asks whether Search may read Contacts. Thanks [@kemuri](https://github.com/kemuri) ([#1010](https://github.com/driceroland/Search/pull/1010))
 - Open All in New Tabs at the foot of each folder in the Bookmarks menu, as in Safari, and in a folder opened from the bookmarks bar: the folder's bookmarks, each in a tab of its own. Right-clicking a folder in the bar already offered it.
 
 ### Held back
