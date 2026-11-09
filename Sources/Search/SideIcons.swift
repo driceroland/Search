@@ -168,13 +168,14 @@ struct IconTile: View {
             browser.select(tab)
         })
         .modifier(OneClick(double: live) {
-            guard interactive, !selectedOnPress, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+            guard interactive, !selectedOnPress, TabClick.flags.intersection([.command, .shift, .option]).isEmpty else { return }
             browser.clearTabSelection()
             // The tile you're on has no room for its address: a click opens
             // the field over the page, as ⌘L does in this column.
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })
         .modifier(ModifiedTabClick { if interactive { browser.extendTabSelection(to: tab, modifiers: $0) } })
+        .modifier(OptionClick { if interactive { browser.optionClick(tab) } })
         .overlay { if interactive { MiddleClick(act: close) } }
         .onHover { over in hovering = over }
         .onAppear {

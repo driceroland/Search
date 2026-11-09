@@ -3678,6 +3678,27 @@ final class Browser: NSObject, ObservableObject {
         focusPane(tab)
     }
 
+    /// ⌥-click on a tab, in the column, across the top or on a pin (#939):
+    /// that tab beside the page on screen, as its menu's Open in Split View
+    /// does, with no setting, since nothing else answers a modifier click
+    /// on a tab. On the page on screen alone, an empty page beside it, as
+    /// ⌥⌘N. On a half of the pair on screen, that half out of the pair and
+    /// the other page left on screen, as Zen's Alt-click takes a tab out.
+    /// A tab that can't go beside it (a private tab beside one that isn't,
+    /// the bench's) is chosen as a plain click chooses it.
+    func optionClick(_ tab: Tab) {
+        clearTabSelection()
+        guard prefs.splitView, let current = active, tabs.contains(where: { $0.id == tab.id }) else { return select(tab) }
+        if let pair = activeSplit, pair.contains(tab.id) {
+            let other = pair.partner(of: tab.id).flatMap { id in tabs.first { $0.id == id } }
+            detachSplit(tab)
+            if let other { select(other) }
+            return
+        }
+        guard tab.id == current.id || canSplit(tab, with: current) else { return select(tab) }
+        openInSplit(tab)
+    }
+
     /// A tab's menu › Open in Split View: that tab beside the page on
     /// screen. Asked of the page on screen itself, an empty page beside it.
     func openInSplit(_ tab: Tab) {

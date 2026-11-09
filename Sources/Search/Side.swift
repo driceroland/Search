@@ -1044,11 +1044,12 @@ private struct PinSquare: View {
             browser.select(tab)
         })
         .modifier(OneClick(double: live) {
-            guard !selectedOnPress, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+            guard !selectedOnPress, TabClick.flags.intersection([.command, .shift, .option]).isEmpty else { return }
             browser.clearTabSelection()
             if live { browser.goHome(tab) } else { browser.select(tab) }
         })
         .modifier(ModifiedTabClick { browser.extendTabSelection(to: tab, modifiers: $0) })
+        .modifier(OptionClick { if browser.editingPin != tab.id { browser.optionClick(tab) } })
         // Put down, like ⌘W: close() is what knows a pin isn't removed.
         .overlay { MiddleClick { browser.close(tab) } }
         .onHover { hovering = $0 }
@@ -1228,11 +1229,12 @@ private struct SideRow: View {
         .modifier(Give(pressed: pressed && prefs.tabsGive))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
-            guard interactive, !selectedOnPress, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+            guard interactive, !selectedOnPress, TabClick.flags.intersection([.command, .shift, .option]).isEmpty else { return }
             browser.clearTabSelection()
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })
         .modifier(ModifiedTabClick { if interactive && !editing { browser.extendTabSelection(to: tab, modifiers: $0) } })
+        .modifier(OptionClick { if interactive && !editing { browser.optionClick(tab) } })
         .overlay { if interactive { MiddleClick(act: close) } }
         .onHover(perform: hover)
         .onAppear { if interactive { Bench.rowAppeared(tab.id, hover: hover) } }

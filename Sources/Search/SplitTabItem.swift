@@ -192,7 +192,7 @@ private struct SplitTabHalf: View {
     private var handled: some View {
         laidOut
             .modifier(OneClick(double: false) {
-                guard interactive, !stacked || !selectedOnPress, NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+                guard interactive, !stacked || !selectedOnPress, TabClick.flags.intersection([.command, .shift, .option]).isEmpty else { return }
                 browser.clearTabSelection()
                 if focused { browser.beginTabEdit(tab) }
                 else { browser.focusPane(tab) }
@@ -200,6 +200,7 @@ private struct SplitTabHalf: View {
             .modifier(ModifiedTabClick {
                 if interactive && !editing { browser.extendTabSelection(to: tab, modifiers: $0) }
             })
+            .modifier(OptionClick { if interactive && !editing { browser.optionClick(tab) } })
             .overlay {
                 if browser.selectedTabIDs.contains(tab.id) {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
