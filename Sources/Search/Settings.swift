@@ -515,6 +515,7 @@ struct SettingsPanel: View {
                         set: { layout in withAnimation(Motion.glide) { prefs.tabsLayout = layout } }
                      ))
         case "sidebar.hides": Switch(on: $prefs.sideHides)
+        case "sidebar.foldIcons": Switch(on: $prefs.foldsToIcons)
         case "layout.cards":
             Pictures(options: [(true, "As a card", AnyView(CardPicture(card: true))),
                                (false, "Edge to edge", AnyView(CardPicture(card: false)))],

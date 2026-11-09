@@ -144,6 +144,11 @@ enum SettingsIndex {
         .init(id: "sidebar.hides", group: "window", icon: "sidebar.squares.left",
               title: "Hide the column until the pointer reaches the edge", detail: "The page takes the whole window; ⌘S keeps the tabs out",
               keys: ["sidebar.hides"], words: ["auto hide", "sidebar"], parent: "tabs.layout"),
+        .init(id: "sidebar.foldIcons", group: "window", icon: "arrow.down.right.and.arrow.up.left",
+              title: "⌘S makes the column icons only", detail: "The tabs stay in sight as a narrow column of icons; ⌘S again brings the titles back",
+              more: "Off, ⌘S hides the column and the page takes the whole window.",
+              keys: ["sidebar.foldIcons"], words: ["collapse", "collapsed", "compact", "narrow", "hide sidebar", "icons only", "favicons"],
+              parent: "tabs.layout"),
         .init(id: "layout.cards", group: "window", icon: "rectangle.inset.filled",
               title: "The page as a card", detail: "A little room around the page, with rounded corners",
               more: "Off, the page reaches the window's edges and the column is white with its hairline.",
@@ -479,6 +484,7 @@ enum SettingsIndex {
         case "pages.dusk": return prefs.look != .light
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
+        case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "toolbar.left": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
         case "spaces.links": return prefs.usesSpaces
@@ -495,6 +501,7 @@ enum SettingsIndex {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
+        case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "profiles.oneWindow": return "Only with more than one profile"
         case "spaces.links": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"

@@ -161,6 +161,16 @@ final class Preferences: ObservableObject {
     @Published var sideIcons: Bool {
         didSet { store.set(sideIcons, forKey: "sidebar.icons") }
     }
+    /// ⌘S makes the column icons only, and gives it its titles back, rather
+    /// than folding it away: the tabs stay in sight (idea 620). Off unless
+    /// asked for; Settings › Appearance › Tabs.
+    @Published var foldsToIcons: Bool {
+        didSet { store.set(foldsToIcons, forKey: "sidebar.foldIcons") }
+    }
+    /// Whether ⌘S does that as things are set: with the tabs down a side,
+    /// and not with the column kept folded, where ⌘S is what brings it out
+    /// to stay (see Fold.swift).
+    var shrinks: Bool { sidebar && foldsToIcons && !sideHides }
     /// Whether the column is showing as icons now: down a side, and asked for.
     var iconColumn: Bool { sidebar && sideIcons }
     /// The column's width as drawn: fixed with icons only, pulled by its
@@ -750,6 +760,7 @@ final class Preferences: ObservableObject {
         sideHides = store.bool(forKey: "sidebar.hides")
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         sideIcons = store.bool(forKey: "sidebar.icons")
+        foldsToIcons = store.bool(forKey: "sidebar.foldIcons")
         showsPlayer = store.bool(forKey: "sidebar.player")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
@@ -965,6 +976,7 @@ final class Preferences: ObservableObject {
         take(\.sideHides, store.bool(forKey: "sidebar.hides"))
         take(\.roomyTabs, store.bool(forKey: "sidebar.roomy"))
         take(\.sideIcons, store.bool(forKey: "sidebar.icons"))
+        take(\.foldsToIcons, store.bool(forKey: "sidebar.foldIcons"))
         take(\.sideWidth, "sidebar.width", (store.object(forKey: "sidebar.width") as? Double).map { CGFloat($0) }
             .flatMap { (Metrics.sideMin...Metrics.sideMax).contains($0) ? $0 : nil }, or: Metrics.side)
         take(\.sidePanelWidth, "sidepanel.width", (store.object(forKey: "sidepanel.width") as? Double).map { CGFloat($0) }
