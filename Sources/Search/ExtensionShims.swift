@@ -43,7 +43,7 @@ enum ExtensionShims {
     nonisolated static let stamp = ".search-shim"
     /// Raised when `prepare` changes what it does to a package, so that
     /// extensions prepared before are prepared again.
-    nonisolated private static let preparation = "5"
+    nonisolated private static let preparation = "6"
     nonisolated static let version: String = {
         SHA256.hash(data: Data((script + PasskeyRelay.page + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
@@ -127,14 +127,85 @@ enum ExtensionShims {
         // it: a password manager's there keeps a reference to
         // navigator.credentials as it finds it, and that has to be Search's,
         // not WebKit's (see Passkeys.swift).
+        //
+        // Entries that run in the same place at the same time share one copy
+        // rather than each carrying its own: WebKit parses a content script
+        // once per entry per frame, and the shim is 200 KB, so a manifest
+        // with three <all_urls> entries paid for it three times in every
+        // frame of a page. Only `matches` is pooled, and only between entries
+        // that agree on everything else, so the shared copy never reaches a
+        // page the extension's own scripts would not: Catppuccin's one entry
+        // names eight forges, and would otherwise have carried the shim
+        // everywhere.
+        //
+        // An entry with nothing to share keeps the copy inside it, as before.
+        // Lifting it out would leave two entries where the manifest had one,
+        // and an entry of its own costs a page a little even when it carries
+        // nothing new.
+        //
+        // The shared entries go first, which is what puts the shim before the
+        // scripts it is there for: WebKit runs a frame's entries in manifest
+        // order within a `run_at`, in the page's own world as in an isolated
+        // one.
         if let entries = manifest["content_scripts"] as? [[String: Any]] {
-            manifest["content_scripts"] = entries.map { entry -> [String: Any] in
-                var entry = entry
-                if var js = entry["js"] as? [String] {
-                    if !js.contains(file) { js.insert(file, at: 0) }
-                    if (entry["world"] as? String)?.uppercased() == "MAIN", !js.contains(passkeys) { js.insert(passkeys, at: 0) }
-                    entry["js"] = js
+            // What an earlier preparation left: its shared entries, and its
+            // copies inside the extension's own. Both come off first, so a
+            // newer shim takes an older one's place instead of stacking on
+            // it.
+            var own: [[String: Any]] = []
+            for var entry in entries {
+                guard var js = entry["js"] as? [String] else { own.append(entry); continue }
+                if entry["css"] == nil, js == [file] || js == [passkeys, file] { continue }
+                js.removeAll { $0 == file || $0 == passkeys }
+                if js.isEmpty, entry["css"] == nil { continue }
+                entry["js"] = js
+                own.append(entry)
+            }
+
+            // Grouped by everything that decides where and when an entry
+            // runs. An unknown key counts, so a manifest Search does not
+            // understand yet groups on its own rather than being pooled on a
+            // guess.
+            func place(_ entry: [String: Any]) -> String {
+                var place = entry
+                for key in ["matches", "js", "css"] { place.removeValue(forKey: key) }
+                guard let data = try? JSONSerialization.data(withJSONObject: place, options: [.sortedKeys]),
+                      let key = String(data: data, encoding: .utf8)
+                else { return UUID().uuidString }
+                return key
+            }
+
+            var order: [String] = []
+            var pools: [String: (place: [String: Any], matches: [String], count: Int)] = [:]
+            for entry in own where entry["js"] is [String] {
+                let key = place(entry)
+                if pools[key] == nil {
+                    order.append(key)
+                    var bare = entry
+                    for name in ["matches", "js", "css"] { bare.removeValue(forKey: name) }
+                    pools[key] = (bare, [], 0)
                 }
+                pools[key]?.count += 1
+                for match in entry["matches"] as? [String] ?? [] where !(pools[key]?.matches.contains(match) ?? true) {
+                    pools[key]?.matches.append(match)
+                }
+            }
+
+            let shared = Set(order.filter { (pools[$0]?.count ?? 0) > 1 })
+            var shimmed: [[String: Any]] = []
+            for key in order where shared.contains(key) {
+                guard let pool = pools[key] else { continue }
+                var entry = pool.place
+                entry["matches"] = pool.matches
+                entry["js"] = (pool.place["world"] as? String)?.uppercased() == "MAIN" ? [passkeys, file] : [file]
+                shimmed.append(entry)
+            }
+            manifest["content_scripts"] = shimmed + own.map { entry -> [String: Any] in
+                var entry = entry
+                guard var js = entry["js"] as? [String], !shared.contains(place(entry)) else { return entry }
+                js.insert(file, at: 0)
+                if (entry["world"] as? String)?.uppercased() == "MAIN" { js.insert(passkeys, at: 0) }
+                entry["js"] = js
                 return entry
             }
         }

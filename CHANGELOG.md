@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Changed
+
+- Pages with many frames load quicker with an extension that declares several content scripts: the small script Search gives each extension is read once per frame, not once per script. With 1Password, a page with 20 frames read it 63 times. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1013](https://github.com/driceroland/Search/pull/1013))
+
 ### Added
 
 - Your contact details under a form's boxes, from your own card in Contacts, as Safari fills them: under a box for your name, email, phone or address, a row per address, email or number on your card. A click fills that box and the form's other empty boxes you can see, keeping a shipping address and a billing one apart; a shift-click fills that box alone, and the boxes filled flash in your accent colour unless Reduce Motion is on. Boxes a page hides away get nothing. Only your card is read, held in memory and never saved, and nothing reaches the page before you pick. Off unless you turn it on in Settings › Passwords › Fill in your contact details, which is when macOS asks whether Search may read Contacts. Thanks [@kemuri](https://github.com/kemuri) ([#1010](https://github.com/driceroland/Search/pull/1010))
