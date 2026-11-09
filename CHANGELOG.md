@@ -11,6 +11,14 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+## 1.0.11 — 9 November 2026
+
 ### Fixed
 
 - A window opens with the keys on the page in front, so typing and the arrow keys reach it without a click. With Keyboard navigation on in the Mac's Keyboard settings, Reload took them, with a focus ring around it. Thanks [@kemuri](https://github.com/kemuri) ([#1001](https://github.com/driceroland/Search/pull/1001))
@@ -37,12 +45,6 @@ in [ROADMAP.md](ROADMAP.md).
 - A pin's page can be changed to the one it is showing: right-click the pin and choose Replace Pinned Page with Current URL. Going back to the pinned page then goes there, in every window. Asked for in [#1002](https://github.com/driceroland/Search/issues/1002). Thanks [@tobyL05](https://github.com/tobyL05) ([#1003](https://github.com/driceroland/Search/pull/1003))
 - Bring Things Over can bring the tabs a Chromium browser has open, Helium, Chrome, Brave, Edge, Arc and the others it lists: turn on Open tabs & tab groups for that browser. They come in asleep at the end of the space you're in, at most 300, its pinned tabs as pins and its tab groups as groups of the same names, folded as they were; tabs already here aren't added twice. Off unless you turn it on. Thanks [@timwuhaotian](https://github.com/timwuhaotian) ([#841](https://github.com/driceroland/Search/pull/841))
 - Send links to a space, as Arc's Air Traffic Control does: a site, its subdomains with it, opens in the space you choose, with that space's sign-ins, when a link to it comes from another app or a page in another space opens it in a new tab; Search switches to that space. Typed addresses, links followed in their own tab and private tabs stay where they are, and a rule whose space has gone is passed over. Off unless you turn it on, in Settings › Spaces & Pins, with Spaces on; add sites there, or right-click a tab for Always Open in this space. `python3 Tests/space_links.py` checks it. Asked for in [#595](https://github.com/driceroland/Search/issues/595) and [#721](https://github.com/driceroland/Search/issues/721). Thanks [@AdityaAmitK](https://github.com/AdityaAmitK), whose [#596](https://github.com/driceroland/Search/pull/596) and [#722](https://github.com/driceroland/Search/pull/722) it is built on
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
 
 ## 1.0.10 — 8 November 2026
 
