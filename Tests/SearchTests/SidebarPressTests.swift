@@ -199,10 +199,13 @@ final class SidebarPressTests: XCTestCase {
         let window = makeWindow(root: ControlsFixture(select: { selected += 1 }, mute: {}, close: {}))
         try await settle()
         let point = NSPoint(x: 60, y: 20)
+        // Through the app's own queue, as a real click comes: which button
+        // went down is the event's, and only an event the app took off its
+        // queue says so.
         for (down, up) in [(NSEvent.EventType.rightMouseDown, NSEvent.EventType.rightMouseUp),
                            (.otherMouseDown, .otherMouseUp)] {
-            try await send(down, at: point, in: window)
-            try await send(up, at: point, in: window)
+            try await post(down, at: point, in: window)
+            try await post(up, at: point, in: window)
         }
         XCTAssertEqual(selected, 0, "Only the left button selects on press; right-click stays the menu's")
     }
@@ -338,6 +341,23 @@ final class SidebarPressTests: XCTestCase {
 
     private func settle() async throws {
         try await Task.sleep(for: .milliseconds(250))
+    }
+
+    /// As PinStuckTests posts: to this app alone, taken off the queue here.
+    private func post(_ type: NSEvent.EventType, at point: NSPoint, in window: NSWindow) async throws {
+        NSApp.postEvent(try event(type, at: point, in: window), atStart: false)
+        // Until this one is through, however many are queued before it:
+        // what earlier tests left on the queue (their windows' AppKit events,
+        // forty and more by this point of a full run) ran past a count of
+        // twenty, and the press was never sent.
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            guard let queued = NSApp.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 0.2),
+                                               inMode: .default, dequeue: true) else { break }
+            NSApp.sendEvent(queued)
+            if queued.type == type, queued.window === window { break }
+        }
+        try await Task.sleep(for: .milliseconds(30))
     }
 
     private func send(_ type: NSEvent.EventType, at point: NSPoint, in window: NSWindow, clicks: Int = 1) async throws {

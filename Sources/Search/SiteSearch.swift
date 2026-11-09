@@ -27,7 +27,11 @@ enum SiteSearch {
     /// Checked by hand on 28 Sep 2026, each opened with a word to find: the
     /// search comes back, or the site's sign-in or consent page does and
     /// goes on to it after (X, Claude, Google Maps).
-    static var builtIn: [SearchSite] {
+    ///
+    /// Made once: the field reads the list for every row on every key, and
+    /// each making asked the system for the languages and region again.
+    static var builtIn: [SearchSite] { made }
+    private static let made: [SearchSite] = {
         [
             SearchSite(name: "Google", host: "google.com", template: "https://www.google.com/search?q=%s"),
             SearchSite(name: "Reddit", host: "reddit.com", template: "https://www.reddit.com/search/?q=%s"),
@@ -48,7 +52,7 @@ enum SiteSearch {
             SearchSite(name: "Figma Community", host: "figma.com/community",
                        template: "https://www.figma.com/community/search?resource_type=mixed&sort_by=relevancy&query=%s"),
         ]
-    }
+    }()
 
     /// Wikipedia in the Mac's first language.
     private static var language: String {

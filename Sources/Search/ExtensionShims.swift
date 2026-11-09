@@ -1376,17 +1376,21 @@ enum ExtensionShims {
         // it takes a single connection: its options page stayed blank and its
         // keys did nothing. A copy applied to no object (0, null, undefined)
         // is applied to runtime. Only through apply, which is how such code
-        // calls it.
-        const apply = Function.prototype.apply;
-        try {
-          Object.defineProperty(Function.prototype, "apply", {
-            value: ({ apply(that, args) {
-              if ((that === null || (typeof that !== "object" && typeof that !== "function"))
-                  && typeof this === "function" && this.name === "getPlatformInfo") that = runtime;
-              return Reflect.apply(apply, this, [that, args]);
-            } }).apply, configurable: true, writable: true, enumerable: false,
-          });
-        } catch (e) {}
+        // calls it. Never in a content script: there it made every apply on
+        // the page's side of the extension several times slower, for a call
+        // only the extension's own pages and worker make.
+        if (!inContent) {
+          const apply = Function.prototype.apply;
+          try {
+            Object.defineProperty(Function.prototype, "apply", {
+              value: ({ apply(that, args) {
+                if ((that === null || (typeof that !== "object" && typeof that !== "function"))
+                    && typeof this === "function" && this.name === "getPlatformInfo") that = runtime;
+                return Reflect.apply(apply, this, [that, args]);
+              } }).apply, configurable: true, writable: true, enumerable: false,
+            });
+          } catch (e) {}
+        }
       }
       // Installed before the content-script return. Each passive subscription
       // is bound natively to the background that this port connected to. A

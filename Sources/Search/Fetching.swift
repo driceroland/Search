@@ -93,11 +93,13 @@ final class FetchEntry: ObservableObject, Identifiable {
     }
 
     func record(_ progress: Progress, trackFile: Bool = true) {
-        completedBytes = max(0, progress.completedUnitCount)
-        totalBytes = max(0, progress.totalUnitCount)
-        fraction = totalBytes > 0
-            ? min(1, max(0, Double(completedBytes) / Double(totalBytes)))
-            : nil
+        // Set only on a change: each one draws the download's row again.
+        let completed = max(0, progress.completedUnitCount)
+        let total = max(0, progress.totalUnitCount)
+        if completedBytes != completed { completedBytes = completed }
+        if totalBytes != total { totalBytes = total }
+        let now = total > 0 ? min(1, max(0, Double(completed) / Double(total))) : nil
+        if fraction != now { fraction = now }
         if trackFile { trackPartialFile() }
     }
 
@@ -355,7 +357,7 @@ final class Fetches: ObservableObject {
         done = false
         showing = true
         item.watch = download.progress.observe(\.fractionCompleted) { [weak self] _, _ in
-            DispatchQueue.main.async { self?.measure() }
+            DispatchQueue.main.async { self?.measureSoon() }
         }
         measure()
         return true
@@ -430,6 +432,7 @@ final class Fetches: ObservableObject {
         if let entry = operation.entry {
             guard entry.operationID == operation.operationID,
                   entry.pendingStop == action else { return nil }
+            catchUp()
             entry.recordTerminal(operation.download.progress)
             if action == .cancel { entry.discardOwnedPartialFile() }
             entry.stopped(action, data: resumeData)
@@ -524,6 +527,7 @@ final class Fetches: ObservableObject {
         // that completion decides whether this was a pause or a discard.
         if item.stopAction != nil { return nil }
         if let entry = item.entry {
+            catchUp()
             entry.recordTerminal(download.progress)
             entry.failed(error, resumeData: resumeData)
             // A private download has no row to resume it from: what it
@@ -586,6 +590,28 @@ final class Fetches: ObservableObject {
         }
         leaving = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Fetches.linger, execute: work)
+    }
+
+    /// A download's progress changes hundreds of times a second on a fast
+    /// line; the rows, the button and the Dock are brought up to date ten
+    /// times a second at most, each time with the file checked on disk. The
+    /// first change at once: it is what claims the file being written, and a
+    /// download that fails in its first moments is resumed from that file.
+    private var measuring = false
+    private func measureSoon() {
+        guard !measuring else { return }
+        measure()
+        measuring = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.measuring = false
+            self?.measure()
+        }
+    }
+
+    /// Anything a download did since the last measuring, before its end is
+    /// taken down: the end reads what was last measured.
+    private func catchUp() {
+        if measuring { measure() }
     }
 
     /// The running downloads, together, in whole percents; each file's own

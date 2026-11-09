@@ -215,20 +215,21 @@ struct SideBar: View {
 
     private var pages: some View {
         let width = prefs.columnWidth
-        let swipe = browser.spaceSwipe
+        let swipe = browser.spaceSwipeSide
+        let offset = browser.spaceSwipeOffset
         let at = spaceAt
         return ZStack(alignment: .topLeading) {
             page(at, pill: pill)
-                .offset(x: swipe)
+                .modifier(SwipeShift(offset: offset, across: true))
             // Only while the fingers are bringing one in: the one they are
             // bringing, a page's width away.
             if swipe > 0, at > 0 {
                 page(at - 1, pill: before)
-                    .offset(x: swipe - width)
+                    .modifier(SwipeShift(offset: offset, by: -width, across: true))
             }
             if swipe < 0, browser.drawsPage(after: at) {
                 page(at + 1, pill: after)
-                    .offset(x: swipe + width)
+                    .modifier(SwipeShift(offset: offset, by: width, across: true))
             }
         }
         // The pages are the column's whole width, each with its own margin.

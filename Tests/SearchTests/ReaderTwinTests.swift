@@ -99,7 +99,9 @@ final class ReaderTwinTests: XCTestCase {
         """, ["address": elsewhere.url("/twin.md").absoluteString])
         let twin = try await call(web, Reader.twin) as? [String: Any]
         XCTAssertEqual(twin?["url"] as? String, server.url("/guide.md").absoluteString)
-        XCTAssertEqual(elsewhere.requests, [], "another site is never asked")
+        // The twin it named there, never: a page of an earlier test, still
+        // about, can knock on the port this server was given.
+        XCTAssertFalse(elsewhere.requests.contains("/twin.md"), "another site is never asked")
     }
 
     func testTwinAtTheSameAddressWithMdOnTheEnd() async throws {

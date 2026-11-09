@@ -123,7 +123,26 @@ extension Browser {
         let idle = (tabs + parkedTabs)
             .filter { now.timeIntervalSince($0.touched) >= wait && awake(because: $0) == nil }
             .sorted { $0.touched < $1.touched }
-        for tab in idle { self.sleep(tab) }
+        // One after another, not all at once: each is pictured at the screen's
+        // pixels first, and under memory pressure every idle tab pictured
+        // together asked for most memory in the very moment there was least.
+        // A page that never answers holds up the rest for a moment at most.
+        var rest = idle[...]
+        func next() {
+            guard let tab = rest.popFirst() else { return }
+            // Looked at since the list was made, while the ones before it
+            // slept: not idle any more.
+            guard Date().timeIntervalSince(tab.touched) >= wait else { return next() }
+            var moved = false
+            let onward = {
+                guard !moved else { return }
+                moved = true
+                next()
+            }
+            sleep(tab) { _ in onward() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { onward() }
+        }
+        next()
     }
 
     /// The last window closed with the app running (Browsers.closing):
@@ -230,7 +249,7 @@ extension Browser {
             return
         }
         tab.unsaved { [weak self, weak tab] typed in
-            guard let self, let tab else { return }
+            guard let self, let tab else { done?("gone"); return }
             if typed {
                 done?("holding something typed")
                 return
@@ -240,7 +259,7 @@ extension Browser {
                 return
             }
             tab.snapshot { [weak self, weak tab] picture in
-                guard let self, let tab else { return }
+                guard let self, let tab else { done?("gone"); return }
                 if let reason = self.awake(because: tab) {
                     done?(reason)
                     return

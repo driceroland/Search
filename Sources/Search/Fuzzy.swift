@@ -67,9 +67,11 @@ enum Fuzzy {
         // Edit distance to the start of each word, where swapping two
         // letters counts as one. Rows are reused across words.
         let width = typed.count + allowed + 1
-        var before = [Int](repeating: 0, count: width)
-        var above = before
-        var row = before
+        // Made at the first word worth measuring: most texts have none, and
+        // this runs for every page in the history on every key.
+        var before: [Int] = []
+        var above: [Int] = []
+        var row: [Int] = []
         var start = 0
         while start < text.count {
             guard inWord(text[start]) else { start += 1; continue }
@@ -82,6 +84,11 @@ enum Fuzzy {
             guard word.count >= 2, word.count >= typed.count - allowed,
                   word[0] == typed[0] || (word[0] == typed[1] && word[1] == typed[0])
             else { continue }
+            if row.isEmpty {
+                before = [Int](repeating: 0, count: width)
+                above = before
+                row = before
+            }
             let columns = min(word.count, width - 1)
             for j in 0...columns { above[j] = j }
             var far = false

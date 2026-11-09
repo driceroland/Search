@@ -139,9 +139,20 @@ final class Browser: NSObject, ObservableObject {
         split(for: tab).map { $0.left == tab.id } ?? true
     }
 
+    /// The pairs' later pages, which stand in no place of their own: the
+    /// tabs `standsInRow` turns away, all at once, for walks of the whole row
+    /// that would otherwise look every tab up in every pair.
+    private var pairedOff: Set<Tab.ID> {
+        guard prefs.splitView else { return [] }
+        var ids = Set<Tab.ID>()
+        for pair in splits { for id in pair.tabs where id != pair.left { ids.insert(id) } }
+        return ids
+    }
+
     var displayedTabs: [Tab] {
-        guard prefs.splitView else { return tabs }
-        return tabs.filter { tab in !splits.contains { $0.contains(tab.id) && $0.left != tab.id } }
+        guard prefs.splitView, !splits.isEmpty else { return tabs }
+        let off = pairedOff
+        return tabs.filter { !off.contains($0.id) }
     }
 
     var visibleTabIDs: Set<Tab.ID> {
@@ -374,7 +385,10 @@ final class Browser: NSObject, ObservableObject {
     private var runBeforeScript: (tab: Tab.ID, run: LinkRun)?
     /// The site the list offers to search, for what has been typed so far
     /// (Settings › General › Search a site from the address field).
-    @Published private(set) var siteOffer: SearchSite?
+    private(set) var siteOffer: SearchSite? {
+        get { typing.siteOffer }
+        set { if typing.siteOffer != newValue { typing.siteOffer = newValue } }
+    }
     /// The site Tab put in the field: what is typed next searches it.
     @Published var siteChip: SearchSite? {
         didSet {
@@ -390,16 +404,33 @@ final class Browser: NSObject, ObservableObject {
     /// What is in the field. Every change re-reads the history, because the
     /// list under the field and the grey ending inside it are both just
     /// answers to this string.
-    @Published var typed = "" { didSet { guess() } }
+    ///
+    /// It and what answers it live apart, in `typing`, watched by the field
+    /// and its list alone: published here, every key typed drew the whole
+    /// window again — every row, every pin — and the menu bar with it.
+    var typed: String {
+        get { typing.typed }
+        set { typing.typed = newValue; guess() }
+    }
+    let typing = FieldState()
 
     /// This window's profile's (see Profiles.swift).
     let history: History
     /// What the field is offering, best first.
-    @Published private(set) var offers: [Suggestion] = []
+    private(set) var offers: [Suggestion] {
+        get { typing.offers }
+        set { if typing.offers != newValue { typing.offers = newValue } }
+    }
     /// The rest of the best match, drawn grey after the caret. Tab takes it.
-    @Published private(set) var ending: String?
+    private(set) var ending: String? {
+        get { typing.ending }
+        set { if typing.ending != newValue { typing.ending = newValue } }
+    }
     /// Which row the arrow keys have walked to, if any.
-    @Published var picked: Int?
+    var picked: Int? {
+        get { typing.picked }
+        set { if typing.picked != newValue { typing.picked = newValue } }
+    }
     /// Bumped when what was typed isn't an address and can't be searched for.
     @Published private(set) var refusals = 0
     /// Bumped whenever the cursor should go back into the field.
@@ -2326,7 +2357,21 @@ final class Browser: NSObject, ObservableObject {
     var parked: [UUID: Parked] = [:]
     /// How far the column's rows have followed two fingers sideways, and
     /// whether the card for a new space stands in for them (see SpaceSwipe).
-    @Published var spaceSwipe: CGFloat = 0
+    /// The distance changes with every event of the swipe, so it is kept
+    /// apart, for the views that move with it alone (SwipeShift): published
+    /// here, each event drew the whole window again, every row and the menu
+    /// bar with it. The window hears only which way it goes, which is what
+    /// decides whether a neighbour's rows are drawn.
+    let spaceSwipeOffset = SwipeOffset()
+    @Published private(set) var spaceSwipeSide = 0
+    var spaceSwipe: CGFloat {
+        get { spaceSwipeOffset.value }
+        set {
+            spaceSwipeOffset.value = newValue
+            let side = newValue > 0 ? 1 : newValue < 0 ? -1 : 0
+            if side != spaceSwipeSide { spaceSwipeSide = side }
+        }
+    }
     @Published var makingSpace = false
     /// A tab being sent into the Space being made from its context menu.
     var afterSpaceCreated: ((Space) -> Void)?
@@ -2452,9 +2497,9 @@ final class Browser: NSObject, ObservableObject {
         // Asked to stay out of the way: it starts that way (see Fold.swift).
         folded = prefs.sidebar && prefs.sideHides
 
-        // The History menu lists what the history holds, and the menu is drawn
-        // from this object's changes — so the history's are passed on.
-        history.objectWillChange
+        // The History menu lists the last few places, and the menu is drawn
+        // from this object's changes — so a change to those is passed on.
+        history.recentChanges
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &bag)
 
@@ -2537,7 +2582,11 @@ final class Browser: NSObject, ObservableObject {
         // restored tabs or warm pages from other spaces.
         guard !websitePopup else { return }
         restoreSession()
-        if prefs.usesSpaces { preloadSpaces() }
+        // After the first frame, a space a turn: the other spaces' rows are
+        // only for a swipe to show beside this one, and made here, every tab
+        // of every space was made before the window could draw (see
+        // preloadSpaces).
+        if prefs.usesSpaces { Links.onceShown { [weak self] in self?.preloadSpaces(gradually: true) } }
     }
 
     /// The floating video's buttons answer the window whose video it is:
@@ -4903,11 +4952,14 @@ final class Browser: NSObject, ObservableObject {
         guard on ?? prefs.usesTabGroups else { return }
         let representatives = displayedTabs
         let pins = representatives.filter { $0.pin != nil }
-        let grouped = tabGroups.flatMap { group in representatives.filter { self.group(of: $0) == group.id } }
-        let ungrouped = representatives.filter { $0.pin == nil && group(of: $0) == nil }
+        let buckets = grouping(representatives)
+        let grouped = tabGroups.flatMap { buckets[$0.id] ?? [] }
+        let ungrouped = buckets[nil] ?? []
+        let byID = Dictionary(tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let pairs = prefs.splitView ? Dictionary(splits.map { ($0.left, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
         let order = (pins + grouped + ungrouped).flatMap { tab -> [Tab] in
-            guard let pair = split(for: tab), pair.left == tab.id else { return [tab] }
-            return pair.tabs.compactMap { id in tabs.first { $0.id == id } }
+            guard let pair = pairs[tab.id] else { return [tab] }
+            return pair.tabs.compactMap { byID[$0] }
         }
         // Setting the row runs this again, which then finds nothing to do.
         guard !order.elementsEqual(tabs, by: { $0.id == $1.id }) else { return }
@@ -4922,14 +4974,29 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func tabs(in group: UUID?) -> [Tab] {
-        tabs.filter { $0.pin == nil && self.group(of: $0) == group }
+        grouping(tabs)[group] ?? []
+    }
+
+    /// The loose tabs among `row`, by the group each is shown in (nil for
+    /// none), in one walk of it: `group(of:)` looks through every group.
+    private func grouping(_ row: [Tab]) -> [UUID?: [Tab]] {
+        let known = Set(tabGroups.map(\.id))
+        var buckets: [UUID?: [Tab]] = [:]
+        for tab in row where tab.pin == nil {
+            let id = tab.groupID.flatMap { known.contains($0) ? $0 : nil }
+            buckets[id, default: []].append(tab)
+        }
+        return buckets
     }
 
     /// A folded group shows its name alone — and the tab you are on, if it
     /// is in there, so the page on screen always has its place in the row.
     func visibleTabs(in group: TabGroup) -> [Tab] {
-        let members = tabs(in: group.id)
-        let shown = members.filter(standsInRow)
+        visible(group, among: tabs(in: group.id), off: pairedOff)
+    }
+
+    private func visible(_ group: TabGroup, among members: [Tab], off: Set<Tab.ID>) -> [Tab] {
+        let shown = members.filter { !off.contains($0.id) }
         return group.collapsed ? shown.filter { $0.id == (activeSplit?.left ?? activeID) } : shown
     }
 
@@ -4945,9 +5012,11 @@ final class Browser: NSObject, ObservableObject {
     /// these; number shortcuts also give folded groups a place of their own.
     var shownTabs: [Tab] {
         guard prefs.usesTabGroups else { return displayedTabs }
-        return displayedTabs.filter { $0.pin != nil }
-            + tabGroups.flatMap { visibleTabs(in: $0) }
-            + tabs(in: nil).filter(standsInRow)
+        let off = pairedOff
+        let buckets = grouping(tabs)
+        return tabs.filter { $0.pin != nil && !off.contains($0.id) }
+            + tabGroups.flatMap { visible($0, among: buckets[$0.id] ?? [], off: off) }
+            + (buckets[nil] ?? []).filter { !off.contains($0.id) }
     }
 
     /// Number shortcuts count a folded group once, even while its active tab
@@ -4955,8 +5024,10 @@ final class Browser: NSObject, ObservableObject {
     var tabShortcutTargets: [(id: UUID, tab: Tab)] {
         let row = displayedTabs
         guard prefs.usesTabGroups else { return row.map { ($0.id, $0) } }
+        let off = pairedOff
+        let buckets = grouping(tabs)
         let groups = tabGroups.flatMap { group -> [(id: UUID, tab: Tab)] in
-            let members = tabs(in: group.id).filter(standsInRow)
+            let members = (buckets[group.id] ?? []).filter { !off.contains($0.id) }
             guard group.collapsed else { return members.map { ($0.id, $0) } }
             let current = active.flatMap { self.group(of: $0) == group.id ? $0 : nil }
             guard let tab = current ?? members.max(by: { $0.touched < $1.touched }) else { return [] }
@@ -4964,7 +5035,7 @@ final class Browser: NSObject, ObservableObject {
         }
         return row.filter { $0.pin != nil }.map { ($0.id, $0) }
             + groups
-            + tabs(in: nil).filter(standsInRow).map { ($0.id, $0) }
+            + (buckets[nil] ?? []).filter { !off.contains($0.id) }.map { ($0.id, $0) }
     }
 
     @Published var commandHeld = false
@@ -5511,14 +5582,27 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         tab.web.createPDF(configuration: WKPDFConfiguration()) { [weak self] result in
-            do {
-                let data = try result.get()
-                try data.write(to: file, options: .atomic)
-                self?.announce("Saved \(file.lastPathComponent)", file: file)
-                finished?(true)
-            } catch {
-                self?.announce("Couldn't export page")
-                finished?(false)
+            guard let self else { finished?(false); return }
+            keep(result, at: file, failed: "Couldn't export page", finished: finished)
+        }
+    }
+
+    /// What WebKit made of a page, written where it was asked for. Off the
+    /// main thread: a long page's PDF runs to tens of megabytes, and a folder
+    /// on a network or in iCloud can take its time.
+    private func keep(_ result: Result<Data, Error>, at file: URL, failed: String, marked: Bool = false,
+                      finished: ((Bool) -> Void)?) {
+        guard case .success(let data) = result else {
+            announce(failed)
+            finished?(false)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let wrote = (try? data.write(to: file, options: .atomic)) != nil
+            if wrote, marked { Browser.markDownloaded(file) }
+            DispatchQueue.main.async {
+                if wrote { self?.announce("Saved \(file.lastPathComponent)", file: file) } else { self?.announce(failed) }
+                finished?(wrote)
             }
         }
     }
@@ -5530,16 +5614,8 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         tab.web.createWebArchiveData { [weak self] result in
-            do {
-                let data = try result.get()
-                try data.write(to: file, options: .atomic)
-                Browser.markDownloaded(file)
-                self?.announce("Saved \(file.lastPathComponent)", file: file)
-                finished?(true)
-            } catch {
-                self?.announce("Couldn't save page")
-                finished?(false)
-            }
+            guard let self else { finished?(false); return }
+            keep(result, at: file, failed: "Couldn't save page", marked: true, finished: finished)
         }
     }
 
@@ -7078,7 +7154,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             let host = curtain.host(of: url)
             tab.arm(hiding: curtain.css(on: host), to: url)
             // And the blocker, on or off for where it is going.
-            Shield.shared.tune(webView.configuration.userContentController, for: host)
+            Shield.shared.tune(tab.contentController ?? webView.configuration.userContentController, for: host)
             // The frames that were told about the last page's darkening go
             // with it.
             tab.duskFrames.removeAll()

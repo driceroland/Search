@@ -437,3 +437,20 @@ struct NewSpaceCard: View {
         SpaceSwipe.shared.slide(browser, to: back, from: browser.spaces.count)
     }
 }
+
+/// How far a swipe between spaces has carried the rows (`Browser.spaceSwipe`).
+final class SwipeOffset: ObservableObject {
+    @Published var value: CGFloat = 0
+}
+
+/// Moves what it is put on with the swipe, `by` further, along one axis: the
+/// one view that redraws as the fingers go.
+struct SwipeShift: ViewModifier {
+    @ObservedObject var offset: SwipeOffset
+    var by: CGFloat = 0
+    var across = false
+
+    func body(content: Content) -> some View {
+        content.offset(x: across ? offset.value + by : 0, y: across ? 0 : offset.value + by)
+    }
+}

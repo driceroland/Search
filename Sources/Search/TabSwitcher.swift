@@ -115,6 +115,9 @@ final class TabSwitcher: ObservableObject {
     private var ring: [Tab.ID] { moonsLead ? moons + candidates : candidates + moons }
 
     private var previewRequests: [Tab.ID: UUID] = [:]
+    /// Tabs just left, to be pictured once the switching stops (see `left`).
+    private var leftBehind: [Tab.ID: Tab] = [:]
+    private var picturing: DispatchWorkItem?
     private var reveal: DispatchWorkItem?
     private var previewRequested = false
     private var generation = UUID()
@@ -131,7 +134,22 @@ final class TabSwitcher: ObservableObject {
     func left(_ tab: Tab, alive: Set<Tab.ID>) {
         recentIDs = [tab.id] + recentIDs.filter { $0 != tab.id && alive.contains($0) }
         prune { kept($0) }
-        if tab.isWeb { requestPreview(of: tab, gesture: nil) }
+        guard tab.isWeb else { return }
+        // Pictured a moment after the switching stops, rather than at it:
+        // the page left had to draw itself for the picture in the very frame
+        // the page arriving needed for its first, and ⌘1–⌘9 hopped along a
+        // row asked for one picture a hop.
+        leftBehind[tab.id] = tab
+        picturing?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let tabs = leftBehind.values
+            leftBehind = [:]
+            picturing = nil
+            for tab in tabs where tab.isWeb { requestPreview(of: tab, gesture: nil) }
+        }
+        picturing = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     /// The first ⌃Tab of a gesture takes the space's tabs in that order, the
@@ -176,6 +194,9 @@ final class TabSwitcher: ObservableObject {
     }
 
     private func begin(home: Tab.ID, planet: [Tab.ID], moons: [Tab.ID], moonsLead: Bool, backwards: Bool) {
+        // The tab just left, still waiting for its picture: taken now, for
+        // the card it is about to have.
+        if let picturing { picturing.perform(); picturing.cancel() }
         candidates = planet
         self.moons = Array(moons.prefix(Self.maxMoons))
         self.moonsLead = moonsLead
