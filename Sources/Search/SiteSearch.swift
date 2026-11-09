@@ -78,10 +78,11 @@ enum SiteSearch {
 
     /// The site the words typed so far begin the name of, if any, two
     /// letters at least. A built-in one by the start of its name, its
-    /// address or one of its other names; a learned one by the start of its
-    /// address only — never by the name it gives itself, which could be
-    /// anyone's ("Google", a bank's). Words with a space in them name only a
-    /// site whose name has one: "google m" is Google Maps, "red panda" nothing.
+    /// address or one of its other names; a site shortcut from Settings by
+    /// its keyword; a learned one by the start of its address only — never
+    /// by the name it gives itself, which could be anyone's ("Google", a
+    /// bank's). Words with a space in them name only a site whose name has
+    /// one: "google m" is Google Maps, "red panda" nothing.
     ///
     /// Which, when several begin that way: one the words name whole ("google",
     /// "yt"); else the one with the shortest name they begin — "goo" is Google,
@@ -92,7 +93,7 @@ enum SiteSearch {
     /// `learnedToo`: the sites learned from visits are Personal's (see
     /// Profiles.swift); another profile's window is offered the built-in
     /// ones only, so no profile's field says where another has been.
-    static func match(_ typed: String, learnedToo: Bool = true,
+    static func match(_ typed: String, learnedToo: Bool = true, keywords: [Keyword] = [],
                       visits: ([SearchSite]) -> [String: Int] = { _ in [:] }) -> SearchSite? {
         let word = typed.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
         guard word.count >= 2, !word.contains("/") else { return nil }
@@ -105,6 +106,20 @@ enum SiteSearch {
         struct Found { let site: SearchSite; let length: Int; let whole: Bool; let builtIn: Bool }
         var found: [Found] = []
         for site in builtIn {
+            let fits = names(site).filter { $0.hasPrefix(word) }
+            guard let length = fits.map(\.count).min() else { continue }
+            found.append(Found(site: site, length: length, whole: fits.contains(word), builtIn: true))
+        }
+        for keyword in keywords where Keyword.accepts(keyword.template) {
+            let key = keyword.keyword.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let host = keyword.name
+            let name = host.split(separator: ".").first.map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() } ?? key
+            let site = SearchSite(
+                name: name,
+                host: host,
+                template: keyword.template,
+                aliases: [key]
+            )
             let fits = names(site).filter { $0.hasPrefix(word) }
             guard let length = fits.map(\.count).min() else { continue }
             found.append(Found(site: site, length: length, whole: fits.contains(word), builtIn: true))

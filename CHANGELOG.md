@@ -25,6 +25,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- A site shortcut from Settings › Browsing › Searching is offered as a site chip while you type its keyword, like the built-in sites: Tab puts it in the field, and what you type next searches it. Asked for in [#1004](https://github.com/driceroland/Search/issues/1004). Thanks [@ugozlave](https://github.com/ugozlave) ([#1005](https://github.com/driceroland/Search/pull/1005))
 - Show how far you've read is off unless you turn it on, in Settings › Appearance › Tabs: a tab half filled with grey read like a page stuck loading. It stays on for anyone who turned it on themselves. Asked for by [@aminezar](https://github.com/aminezar) ([#994](https://github.com/driceroland/Search/issues/994))
 - The tab column draws no scroll bar when its tabs run past the window, as the tabs across the top already don't, even with macOS set to always show scroll bars. The wheel, the trackpad and the keyboard scroll it as before. Thanks [@TheOmkarBirje](https://github.com/TheOmkarBirje) ([#984](https://github.com/driceroland/Search/pull/984))
 
