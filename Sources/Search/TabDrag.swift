@@ -276,7 +276,7 @@ final class TabDrag: ObservableObject {
     /// is no longer current, so neither would say where the hand is.
     static var testPointer: NSPoint?
 
-    private func pointer(in browser: Browser) -> NSPoint {
+    func pointer(in browser: Browser) -> NSPoint {
         if Store.testing, let point = TabDrag.testPointer { return point }
         if let window = browser.window, let event = NSApp.currentEvent,
            event.window === window,
@@ -312,6 +312,12 @@ final class TabDrag: ObservableObject {
             self.cancel()
             return nil
         }
+    }
+
+    /// The tab a drop would take when the drag picked up `tab`: of a pair,
+    /// the half under the hand. Nil until the drag has been updated.
+    func source(of tab: Tab) -> Tab? {
+        gestureTab === tab ? sourceTab : nil
     }
 
     /// The gesture carrying `tab` was taken away mid-drag (see CarryGuard):

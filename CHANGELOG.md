@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- A tab across the top can be dragged again with Tabs Give on in Settings: its press held on to the mouse however far the hand went, so the drag never began. A tab carried past either end of that row stays in sight instead of being cut off, and one carried off the row or the column goes with the pointer, as its icon and title. Thanks [@kemuri](https://github.com/kemuri) ([#1011](https://github.com/driceroland/Search/pull/1011))
+
 ### Changed
 
 - Pages with many frames load quicker with an extension that declares several content scripts: the small script Search gives each extension is read once per frame, not once per script. With 1Password, a page with 20 frames read it 63 times. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1013](https://github.com/driceroland/Search/pull/1013))
