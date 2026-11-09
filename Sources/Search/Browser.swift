@@ -1906,6 +1906,17 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
+    /// Pin menu › Replace Pinned Page with Current URL: where the pin has
+    /// wandered becomes the page it goes home to, as Arc's pins can. The
+    /// other windows follow through pins.json (see writeSession).
+    func rehome(_ tab: Tab) {
+        guard tab.pin != nil, let here = tab.address, tab.isWeb,
+              !(tab.home.map { Browser.samePage($0, here) } ?? false) else { return }
+        objectWillChange.send()
+        tab.home = here
+        writeSession(now: true)
+    }
+
     /// The same page, give or take a trailing slash.
     static func samePage(_ one: URL, _ other: URL?) -> Bool {
         guard let other else { return false }

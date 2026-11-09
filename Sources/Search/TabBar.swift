@@ -1448,6 +1448,8 @@ struct TabMenu: View {
             } else {
                 Button("Change Letter") { browser.editLetter(tab) }
             }
+            Button("Replace Pinned Page with Current URL") { browser.rehome(tab) }
+                .disabled(!tab.isWeb || tab.home.map { Browser.samePage($0, tab.address) } ?? false)
             if browser.prefs.showsSharedPins {
                 Button(tab.everywhere ? "Only in This Space" : "Keep in Every Space") {
                     if tab.everywhere { browser.keepHere(tab) } else { browser.shareEverywhere(tab) }
