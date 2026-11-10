@@ -2649,6 +2649,42 @@ final class Bench {
                  "tabs": browser.tabs(in: group.id).map(Bench.short)] as [String: Any]
             }])
 
+        case "container":
+            // Containers (Containers.swift), as Settings and a tab's menu
+            // make and use them. Test runs only: "new" with a name, "list",
+            // "set" a tab's ("id") to one ("container", "" for none),
+            // "newtab" in one, "rename", "delete".
+            guard Store.testing else { answer(["error": "container only works on a --test run"]); return }
+            let containers = Containers.shared
+            let named = (request["container"] as? String).flatMap(UUID.init(uuidString:))
+            func list() -> [[String: Any]] {
+                containers.list.map { ["id": $0.id.uuidString, "name": $0.name, "colour": $0.colour,
+                                       "open": containers.openTabs(in: $0.id)] }
+            }
+            switch request["action"] as? String ?? "list" {
+            case "new":
+                let made = containers.add(named: request["name"] as? String ?? "Container")
+                answer(["id": made.id.uuidString, "containers": list()])
+            case "set":
+                guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+                browser.contain(tab, in: named)
+                answer(describe(tab))
+            case "newtab":
+                guard let id = named else { answer(["error": "container newtab needs a container"]); return }
+                browser.newTab(in: id)
+                answer(browser.active.map(describe) ?? [:])
+            case "rename":
+                guard let id = named, let name = request["name"] as? String else { answer(["error": "container rename needs a container and a name"]); return }
+                containers.rename(id, to: name)
+                answer(["containers": list()])
+            case "delete":
+                guard let id = named else { answer(["error": "container delete needs a container"]); return }
+                containers.delete(id)
+                answer(["containers": list(), "tabs": browser.tabs.map(describe)])
+            default:
+                answer(["containers": list()])
+            }
+
         case "tospace":
             // Move to Space from a tab's menu, to the Nth space. Test runs only.
             guard Store.testing else { answer(["error": "tospace only works on a --test run"]); return }
@@ -4447,6 +4483,10 @@ final class Bench {
             "atRestShown": browser.map { tab.id == $0.activeID && $0.editingTab != tab.id && AtRest.said(tab.restAddress, always: $0.prefs.showsAddress) != nil } ?? false,
             "asleep": tab.asleep,
             "shy": tab.shy,
+            // The container it is in, and the store it signs in with, by its
+            // identifier (see Containers.swift): "default" for WebKit's own.
+            "container": tab.container?.uuidString ?? "",
+            "store": tab.store.identifier?.uuidString ?? (tab.store.isPersistent ? "default" : "private"),
             "noisy": tab.noisy,
             "stilled": tab.stilled,
             "muted": tab.muted,
