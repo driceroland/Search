@@ -358,6 +358,8 @@ final class Tab: ObservableObject, Identifiable {
         // A new document: whatever the old one waited for under its field
         // went with it.
         if let built { Passkeys.shared.forget(built) }
+        // Its videos too: the new one says when one of its own plays.
+        playingVideo = false
         // about:blank too: a document another page wrote into (an opener
         // sending its window there, then writing) is that page's, not the
         // one before it, and is offered nothing that belonged to it.
@@ -581,6 +583,9 @@ final class Tab: ObservableObject, Identifiable {
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
     @Published var noisy = false
+    /// A video of the page's own document is playing, as the page last
+    /// said (see MediaKeys.watch). Sound or none: a muted one counts.
+    var playingVideo = false
     /// Paused from the player at the foot of the sidebar, to be played again
     /// from there (see Player.swift).
     @Published var stilled = false
