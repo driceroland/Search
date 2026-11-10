@@ -14,6 +14,8 @@ struct SearchApp: App {
     @ObservedObject private var shortcuts = ShortcutStore.shared
     /// Only for the File menu's Profile list, once there is a second one.
     @ObservedObject private var profiles = Profiles.shared
+    /// Only for the File menu's New Container Tab, once there is one.
+    @ObservedObject private var containers = Containers.shared
     /// Links from other apps, and the Dock icon.
     @NSApplicationDelegateAdaptor(Links.self) private var links
 
@@ -67,6 +69,14 @@ struct SearchApp: App {
                     .shortcut("file.newTab")
                 Button("New Private Tab") { browser.newShyTab() }
                     .shortcut("file.newPrivateTab")
+                // The containers, once there is one (see Containers.swift).
+                if !containers.list.isEmpty {
+                    Menu("New Container Tab") {
+                        ForEach(containers.list) { container in
+                            Button(container.name) { browser.newTab(in: container.id) }
+                        }
+                    }
+                }
                 Button(browser.reopenTitle) { browser.reopen() }
                     .shortcut("file.reopen")
                     .disabled(browser.ghosts.isEmpty && Browsers.lastClosedAt == nil)

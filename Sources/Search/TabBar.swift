@@ -767,6 +767,10 @@ private struct TabPill: View, Equatable {
             }
         }
         .background { ground.animation(Motion.quick, value: rowCarrying) }
+        .overlay(alignment: .bottom) {
+            // Its container, as a line along its foot (see Containers.swift).
+            ContainerMark(tab: tab, length: pinned || compact ? 10 : min(28, span * 0.3), inset: 2)
+        }
         .overlay {
             if selected {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -806,7 +810,7 @@ private struct TabPill: View, Equatable {
         .overlay { MiddleClick(act: close) }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
-        .help(pinned || compact ? tab.label : "")
+        .help(tab.withContainer(pinned || compact ? tab.label : ""))
         .animation(nil, value: hovering)
         .animation(Motion.glide, value: editing)
         .animation(Motion.glide, value: tab.pin)
@@ -1600,6 +1604,11 @@ struct TabMenu: View {
                 }
             }
             .help("Pages moved to a Space with different sign-ins reopen there.")
+        }
+        // Its own cookies and sign-ins beside the other tabs (see
+        // Containers.swift): there before the first container is, to make one.
+        if browser.containable(tab) {
+            ContainerMenu(browser: browser, tab: tab)
         }
         // Settings › Spaces & Pins › Send links to a space, from here: the
         // tab's site to the space it is in, or back out of it.

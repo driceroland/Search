@@ -1127,6 +1127,10 @@ private struct PinSquare: View, Equatable {
                     .offset(x: scale * 4 / 34, y: -scale * 4 / 34)
             }
         }
+        .overlay(alignment: .bottom) {
+            // Its container, as a line under the glyph (see Containers.swift).
+            ContainerMark(tab: tab, length: scale * 10 / 34, inset: scale * 4 / 34)
+        }
         .animation(Motion.quick, value: peek?.id)
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
         .modifier(TabPress(enabled: !lettering && !pickedAmongOthers, active: live, selected: $selectedOnPress) {
@@ -1144,7 +1148,7 @@ private struct PinSquare: View, Equatable {
         .overlay { MiddleClick { browser.close(tab) } }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
-        .help(tab.label)
+        .help(tab.withContainer(tab.label))
         .animation(nil, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))
     }
@@ -1349,6 +1353,11 @@ private struct SideRow: View, Equatable {
         .animation(Motion.quick, value: tab.translation == nil)
         .animation(Motion.quick, value: peeking)
         .background { ground.animation(Motion.quick, value: live) }
+        .overlay(alignment: .leading) {
+            // Its container, as a line in the margin before the icon (see
+            // Containers.swift).
+            ContainerMark(tab: tab, upright: true, length: (prefs.sideRow * 0.42).rounded())
+        }
         .overlay {
             if selected {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -1356,6 +1365,7 @@ private struct SideRow: View, Equatable {
                     .allowsHitTesting(false)
             }
         }
+        .help(tab.withContainer(""))
         .modifier(Shake(travel: shake))
         .modifier(Give(pressed: pressed && prefs.tabsGive))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
