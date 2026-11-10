@@ -59,6 +59,21 @@ final class ExtensionDebugger {
         /// The buttons held, as the protocol numbers them (1 left, 2 right, 4 middle).
         var held = 0
         var bag = Set<AnyCancellable>()
+        /// Page.setLifecycleEventsEnabled.
+        var lifecycle = false
+        /// Where a page's console, errors and requests, and its scripts, reach
+        /// the session (ExtensionDebuggerEvents).
+        var channel = ""
+        var relay: DebuggerRelay?
+        var sensor: WKUserScript?
+        var scripts: [WKUserScript] = []
+        var documentScripts: [String: WKUserScript] = [:]
+        var bindings: [String: WKUserScript] = [:]
+        var nextScript = 1
+        var nextException = 1
+        /// Page.startScreencast: the loop sending pictures, and the last one the extension has.
+        var casting: Task<Void, Never>?
+        var castAcked = 0
 
         init(extensionID: String, name: String, tab: Tab) {
             self.extensionID = extensionID
@@ -92,6 +107,11 @@ final class ExtensionDebugger {
         guard tab.page == nil else { return false }
         guard let address = tab.address else { return true }
         return mayDebug(address)
+    }
+
+    /// Fetch patterns that only ask to hear of documents as they arrive.
+    static func onlyFinishedDocuments(_ patterns: [[String: Any]]) -> Bool {
+        patterns.allSatisfy { $0["requestStage"] as? String == "Response" && $0["resourceType"] as? String == "Document" }
     }
 
     static func mayDebug(_ address: URL) -> Bool {
@@ -146,6 +166,7 @@ final class ExtensionDebugger {
 
     private func end(_ session: Session, reason: String?) {
         sessions[session.id] = nil
+        release(session)
         session.bag.removeAll()
         if let reason { enqueue(session.extensionID, ["session": session.id, "detach": reason]) }
         if let tab = session.tab { mark(tab) }
@@ -195,11 +216,13 @@ final class ExtensionDebugger {
             guard let self, let session, session.enabled.contains("Page") else { return }
             if loading {
                 self.emit(session, "Page.frameStartedLoading", ["frameId": session.frame])
+                self.lifecycle(session, ["init"])
             } else {
                 let stamp = Date().timeIntervalSince1970
                 self.emit(session, "Page.domContentEventFired", ["timestamp": stamp])
                 self.emit(session, "Page.loadEventFired", ["timestamp": stamp])
                 self.emit(session, "Page.frameStoppedLoading", ["frameId": session.frame])
+                self.lifecycleLoaded(session)
             }
         }.store(in: &session.bag)
     }
@@ -217,7 +240,7 @@ final class ExtensionDebugger {
                 "auxData": ["isDefault": true, "type": "default", "frameId": session.frame]]
     }
 
-    private func emit(_ session: Session, _ method: String, _ params: [String: Any]) {
+    func emit(_ session: Session, _ method: String, _ params: [String: Any]) {
         enqueue(session.extensionID, ["session": session.id, "method": method, "params": params])
     }
 
@@ -269,6 +292,7 @@ final class ExtensionDebugger {
         // Switched on and off; most have nothing to switch.
         case "Page.enable", "Runtime.enable", "DOM.enable", "Network.enable", "Log.enable":
             session.enabled.insert(domain)
+            if method == "Runtime.enable" || method == "Network.enable" { watch(session, tab) }
             if method == "Runtime.enable" {
                 emit(session, "Runtime.executionContextCreated", ["context": contextInfo(session, address: tab.address)])
             }
@@ -276,11 +300,55 @@ final class ExtensionDebugger {
         case "Page.disable", "Runtime.disable", "DOM.disable", "Network.disable", "Log.disable":
             session.enabled.remove(domain)
             return [String: Any]()
-        case "Page.setLifecycleEventsEnabled", "Page.setInterceptFileChooserDialog", "Page.stopLoading",
-             "Emulation.setFocusEmulationEnabled", "Input.cancelDragging", "Target.setAutoAttach",
-             "Target.setDiscoverTargets", "Fetch.disable", "Security.enable", "Security.disable",
-             "Performance.enable", "Performance.disable", "Runtime.runIfWaitingForDebugger":
+        case "Page.setInterceptFileChooserDialog", "Page.stopLoading",
+             "Emulation.setFocusEmulationEnabled", "Emulation.clearDeviceMetricsOverride", "Input.cancelDragging",
+             "Target.setAutoAttach", "Target.setDiscoverTargets", "Fetch.disable", "Security.enable", "Security.disable",
+             "Performance.enable", "Performance.disable", "Runtime.runIfWaitingForDebugger", "Runtime.discardConsoleEntries",
+             "Accessibility.enable", "Accessibility.disable", "DOMSnapshot.enable", "DOMSnapshot.disable":
             if method == "Page.stopLoading" { tab.stop() }
+            return [String: Any]()
+        case "Page.setLifecycleEventsEnabled":
+            session.lifecycle = params["enabled"] as? Bool ?? false
+            // A page already shown has been through its lifecycle: told as it
+            // would be from the start, so one waiting for the page to load sees it.
+            if session.lifecycle, !tab.loading {
+                lifecycle(session, ["init", "commit"])
+                lifecycleLoaded(session)
+            }
+            return [String: Any]()
+        case "Emulation.setDeviceMetricsOverride":
+            throw Failure.server("Search can't resize a tab's viewport")
+        case "Fetch.enable":
+            // Pausing requests isn't something WebKit lets a browser do. What
+            // an extension asks only to be told of finished documents it can
+            // do without; a request it means to hold or change it can't.
+            guard Self.onlyFinishedDocuments(params["patterns"] as? [[String: Any]] ?? []) else {
+                throw Failure.server("Search can't pause requests")
+            }
+            return [String: Any]()
+        case "Target.getTargets":
+            return ["targetInfos": [["targetId": "tab-" + session.frame, "type": "page", "title": tab.title,
+                                     "url": tab.address?.absoluteString ?? "about:blank", "attached": true, "canAccessOpener": false]]]
+        case "Page.addScriptToEvaluateOnNewDocument":
+            return try addScript(session, tab, params)
+        case "Page.removeScriptToEvaluateOnNewDocument":
+            try removeScript(session, tab, params)
+            return [String: Any]()
+        case "Runtime.addBinding":
+            try addBinding(session, tab, params)
+            return [String: Any]()
+        case "Runtime.removeBinding":
+            try removeBinding(session, tab, params)
+            return [String: Any]()
+        case "Page.startScreencast":
+            startScreencast(session, tab, params)
+            return [String: Any]()
+        case "Page.stopScreencast":
+            session.casting?.cancel()
+            session.casting = nil
+            return [String: Any]()
+        case "Page.screencastFrameAck":
+            session.castAcked = max(session.castAcked, params["sessionId"] as? Int ?? 0)
             return [String: Any]()
         case "Browser.getVersion":
             return ["protocolVersion": "1.3", "product": "Search", "revision": "", "userAgent": "", "jsVersion": ""]
@@ -343,11 +411,36 @@ final class ExtensionDebugger {
                         "DOM.getContentQuads": "quads", "DOM.scrollIntoViewIfNeeded": "scrollIntoView"][method] ?? ""
             let (world, context) = try inside(object: params["objectId"] as? String, session)
             return try await op(tab, world, context, name, params)
+        case "Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "DOM.getDocument", "DOM.getNodeForLocation":
+            let name = ["Accessibility.getFullAXTree": "axTree", "DOMSnapshot.captureSnapshot": "snapshot",
+                        "DOM.getDocument": "document", "DOM.getNodeForLocation": "nodeAt"][method] ?? ""
+            var asked = params
+            asked["mainFrame"] = session.frame
+            return try await op(tab, .page, 1, name, asked)
+        case "Network.getCookies":
+            let urls = (params["urls"] as? [String])?.compactMap(URL.init(string:)) ?? tab.address.map { [$0] }
+            return await cookies(tab, urls: urls)
+        case "Network.getAllCookies", "Storage.getCookies":
+            return await cookies(tab, urls: nil)
+        case "Network.setCookie":
+            return try await setCookie(tab, params)
+        case "Network.deleteCookies":
+            try await deleteCookies(tab, params)
+            return [String: Any]()
         case "DOM.getFrameOwner":
             throw Failure.server("Frame with the given id does not belong to the target.")
 
         case "Input.dispatchMouseEvent":
             try mouse(session, tab, params)
+            return [String: Any]()
+        case "Input.synthesizeScrollGesture":
+            // The distances count toward the top and the left; a wheel's, toward the bottom and the right.
+            guard let x = (params["x"] as? NSNumber)?.doubleValue, let y = (params["y"] as? NSNumber)?.doubleValue else {
+                throw Failure.invalid("x and y")
+            }
+            try mouse(session, tab, ["type": "mouseWheel", "x": x, "y": y,
+                                     "deltaX": -((params["xDistance"] as? NSNumber)?.doubleValue ?? 0),
+                                     "deltaY": -((params["yDistance"] as? NSNumber)?.doubleValue ?? 0)])
             return [String: Any]()
         case "Input.dispatchKeyEvent":
             try key(tab, params)
@@ -362,11 +455,13 @@ final class ExtensionDebugger {
 
     // MARK: - the page
 
-    private func web(_ tab: Tab) -> PageView { tab.web }
+    func web(_ tab: Tab) -> PageView { tab.web }
 
     /// An objectId begins with the number of the world that made it.
     private func inside(object objectId: String?, _ session: Session) throws -> (WKContentWorld, Int) {
-        guard let objectId, let number = objectId.split(separator: ".").first.flatMap({ Int($0) }) else {
+        // A node named by its id alone lives in the page's own world.
+        guard let objectId else { return try inside(context: nil, session) }
+        guard let number = objectId.split(separator: ".").first.flatMap({ Int($0) }) else {
             throw Failure.server("Could not find object with given id")
         }
         return try inside(context: number, session)
@@ -405,7 +500,7 @@ final class ExtensionDebugger {
         return info["WKJavaScriptExceptionMessage"] as? String ?? error.localizedDescription
     }
 
-    private func op(_ tab: Tab, _ world: WKContentWorld, _ context: Int, _ name: String, _ params: [String: Any]) async throws -> [String: Any] {
+    func op(_ tab: Tab, _ world: WKContentWorld, _ context: Int, _ name: String, _ params: [String: Any]) async throws -> [String: Any] {
         let reply = try await page(tab, world, context, body: "return await cdp.run(p.name, p.params);",
                                    payload: ["name": name, "params": params])
         return reply["result"] as? [String: Any] ?? [:]
@@ -505,7 +600,7 @@ final class ExtensionDebugger {
     /// The page as a picture, as the protocol asks: `format`, `quality`, and
     /// `clip` in the page's own pixels. One picture pixel to a page pixel
     /// (times the clip's scale), not the screen's two.
-    private func screenshot(_ tab: Tab, _ params: [String: Any]) async throws -> [String: Any] {
+    func screenshot(_ tab: Tab, _ params: [String: Any]) async throws -> [String: Any] {
         let view = web(tab)
         guard view.window != nil else { throw Failure.server("Unable to capture screenshot: the tab isn't on screen") }
         let configuration = WKSnapshotConfiguration()
@@ -562,7 +657,7 @@ final class ExtensionDebugger {
     /// A mouse event handed to the page's view, as a pointer's is, so the
     /// page sees it trusted. The view has to be in a window: a page with
     /// none is not laid out, and has nothing to click.
-    private func mouse(_ session: Session, _ tab: Tab, _ params: [String: Any]) throws {
+    func mouse(_ session: Session, _ tab: Tab, _ params: [String: Any]) throws {
         let view = web(tab)
         guard let window = view.window else { throw Failure.server("The tab isn't on screen to take input") }
         guard let type = params["type"] as? String, let x = (params["x"] as? NSNumber)?.doubleValue,

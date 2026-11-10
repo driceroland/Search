@@ -30,7 +30,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
-- Extensions that ask for the `debugger` permission, such as the ChatGPT and Claude browser extensions, can drive web pages through `chrome.debugger`: read and run script, click, type, scroll, take a screenshot and navigate. Search asks once per extension, shows a bug icon and an orange dot on the tab while one is attached, and never attaches to Search's own pages, extension pages or files.
+- Extensions that ask for the `debugger` permission, such as the ChatGPT and Claude browser extensions, can drive web pages through `chrome.debugger`: read and run script, click, type, scroll, take a screenshot and navigate. Search asks once per extension, shows a bug icon and an orange dot on the tab while one is attached, and never attaches to Search's own pages, extension pages or files. Those two extensions now also get console, error and network events, the accessibility tree and DOM snapshot, node lookup by position, scroll gestures, screencast frames, cookies and page-load events. Things WebKit gives no way to do, such as pausing requests or resizing the viewport, fail with a clear error.
 - ⌘S can make the column icons only instead of hiding it, so the tabs stay in sight; ⌘S again brings the titles back. Off unless you turn on Settings › Appearance › Tabs › ⌘S makes the column icons only. Not with the tabs across the top, nor with the column hidden until the pointer reaches the edge. Asked for by [@vincent-caetano](https://github.com/vincent-caetano) ([#1008](https://github.com/driceroland/Search/issues/1008)). Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1015](https://github.com/driceroland/Search/pull/1015))
 
 ### Changed

@@ -140,7 +140,18 @@ enum ExtensionDebuggerPage {
         return a.value;
       };
 
+      // What the page's console was given, kept so the extension can ask
+      // about it later; the oldest are let go, as a page can log forever.
+      const logged = [];
       const api = {
+        remoteArg(v) {
+          const o = remote(v, false, "console");
+          if (o.objectId) {
+            logged.push(o.objectId);
+            if (logged.length > 300) objects.delete(logged.shift());
+          }
+          return o;
+        },
         // Runs `compute`; the answer is Runtime's: a RemoteObject, or what was thrown.
         async finish(compute, o) {
           try {
@@ -222,6 +233,7 @@ enum ExtensionDebuggerPage {
               margin: grow(border, px("marginTop"), px("marginRight"), px("marginBottom"), px("marginLeft")),
               width: Math.round(r.width), height: Math.round(r.height) } };
           },
+    \#(ExtensionDebuggerTree.ops)
         },
       };
       Object.defineProperty(globalThis, key, { value: api, enumerable: false, configurable: false, writable: false });
