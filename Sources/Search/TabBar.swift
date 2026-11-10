@@ -18,6 +18,7 @@ struct TabBar: View {
     /// Which tab is under the hand, where it started, and how far it has come.
     @State private var landing = false
     @State private var groupFrames: [UUID: GroupDropFrame] = [:]
+    @State private var looseFrames = LooseFrames()
     /// A tab of the run is being carried along it (see Carried).
     @State private var carrying = false
     /// The plus only comes out when the pointer is in the row.
@@ -334,6 +335,7 @@ struct TabBar: View {
             .modifier(Carried(index: index, steps: steps, vertical: false,
                               space: "strip", onDropTab: { source, point in drop(source, at: point) },
                               groupDestination: { source, point in destination(source, at: point) },
+                              loose: group == nil && browser.prefs.usesTabGroups && tab.pin == nil ? looseFrames : nil,
                               outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
                               holding: { carrying = $0 }) {
                 if browser.prefs.usesTabGroups && tab.pin == nil {
@@ -389,7 +391,18 @@ struct TabBar: View {
     }
 
     private func drop(_ tab: Tab, at point: CGPoint) {
-        if let target = destination(tab, at: point) { browser.move(tab, toGroup: target) }
+        if let target = destination(tab, at: point) {
+            browser.move(tab, toGroup: target)
+        } else if let out = leaving(tab, at: point) {
+            browser.move(tab, outOfGroupBefore: out.before)
+        }
+    }
+
+    private func leaving(_ tab: Tab, at point: CGPoint) -> LooseDrop? {
+        guard browser.prefs.usesTabGroups, tab.pin == nil else { return nil }
+        let loose = Set(browser.tabs.filter { $0.pin == nil && browser.group(of: $0) == nil }.map(\.id))
+        return GroupDropFrames.leaving(point, frames: groupFrames, loose: looseFrames.rects.filter { loose.contains($0.key) },
+                                       groups: browser.tabGroups, source: tab.id, vertical: false)
     }
 
     /// How wide the run of tabs is: as wide as the tabs while they fit, as
@@ -986,6 +999,9 @@ struct Carried: ViewModifier {
     /// A paired item can be picked up from either half; report that source.
     var onDropTab: ((Tab, CGPoint) -> Void)? = nil
     var groupDestination: ((Tab, CGPoint) -> GroupDropTarget?)? = nil
+    /// Given to a tab in no group: where it is drawn is kept there, for a
+    /// tab carried out of a group to land beside it (#1009).
+    var loose: LooseFrames? = nil
     /// Let go outside the window: true when the tab was taken elsewhere —
     /// another window, or a new one (see Browser.dragOut).
     var outside: (() -> Bool)? = nil
@@ -1051,6 +1067,11 @@ struct Carried: ViewModifier {
                     moved = origin + travel - (vertical ? frame.minY : frame.minX)
                 }
                 return content.offset(x: vertical ? 0 : moved, y: vertical ? moved : 0)
+            }
+            .onGeometryChange(for: CGRect?.self, of: { [keeps = loose != nil, space] proxy in
+                keeps ? proxy.frame(in: .named(space)) : nil
+            }) { rect in
+                if let loose, let tab, let rect { loose.rects[tab.id] = rect }
             }
             .background {
                 if let browser, let tab, browser.prefs.usesTabGroups, let group = browser.group(of: tab) {

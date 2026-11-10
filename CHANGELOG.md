@@ -17,6 +17,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- A tab dragged out of its group and let go among the tabs in no group leaves the group and lands where it was let go, down the column and across the top. Let go past the last of them, it goes after it; anywhere along its own group, it stays. The tabs picked with it and a Split View pair go with it, and a group left empty goes, as with Remove from Group. Dragging a tab into another group works as before. `swift test --filter TabGroupDragOutTests` checks it. Asked for by [@vincent-caetano](https://github.com/vincent-caetano) ([#1009](https://github.com/driceroland/Search/issues/1009))
 - ⌘S can make the column icons only instead of hiding it, so the tabs stay in sight; ⌘S again brings the titles back. Off unless you turn on Settings › Appearance › Tabs › ⌘S makes the column icons only. Not with the tabs across the top, nor with the column hidden until the pointer reaches the edge. Asked for by [@vincent-caetano](https://github.com/vincent-caetano) ([#1008](https://github.com/driceroland/Search/issues/1008)). Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1015](https://github.com/driceroland/Search/pull/1015))
 
 ### Held back

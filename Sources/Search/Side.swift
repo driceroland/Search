@@ -30,6 +30,7 @@ struct SideBar: View {
     @Namespace private var after
 
     @State private var groupFrames: [UUID: GroupDropFrame] = [:]
+    @State private var looseFrames = LooseFrames()
 
     /// A tab carried over the pins, or a pin over the tabs, and where it
     /// would land (see PinDrop).
@@ -666,6 +667,7 @@ struct SideBar: View {
                         .modifier(Carried(index: index, steps: looseSteps, vertical: true,
                                           space: "rows", onDropTab: { source, point in drop(source, at: point) },
                                           groupDestination: { source, point in destination(source, at: point) },
+                                          loose: prefs.usesTabGroups ? looseFrames : nil,
                                           outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
                                           cross: { cross(tab, $0, from: .rows) },
                                           land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
@@ -695,7 +697,18 @@ struct SideBar: View {
     }
 
     private func drop(_ tab: Tab, at point: CGPoint) {
-        if let target = destination(tab, at: point) { browser.move(tab, toGroup: target) }
+        if let target = destination(tab, at: point) {
+            browser.move(tab, toGroup: target)
+        } else if let out = leaving(tab, at: point) {
+            browser.move(tab, outOfGroupBefore: out.before)
+        }
+    }
+
+    private func leaving(_ tab: Tab, at point: CGPoint) -> LooseDrop? {
+        guard prefs.usesTabGroups, tab.pin == nil else { return nil }
+        let loose = Set(looseTabs.map(\.id))
+        return GroupDropFrames.leaving(point, frames: groupFrames, loose: looseFrames.rects.filter { loose.contains($0.key) },
+                                       groups: browser.tabGroups, source: tab.id, vertical: true)
     }
 
     private func groupRows(_ group: TabGroup) -> some View {
