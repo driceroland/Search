@@ -194,7 +194,7 @@ extension ExtensionDebugger {
     /// The handler the page's scripts post to; made on first need, and in
     /// every world a script of the session's runs in (a world has handlers
     /// of its own).
-    private func ensureChannel(_ session: Session, _ tab: Tab, world: WKContentWorld = .page) {
+    private func ensureChannel(_ session: Session, _ tab: Tab, world: WKContentWorld) {
         if session.relay == nil {
             session.channel = "sd" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
             session.relay = DebuggerRelay(session)
@@ -204,7 +204,7 @@ extension ExtensionDebugger {
         session.relayWorlds.append(world)
     }
 
-    nonisolated static func same(_ a: WKContentWorld, _ b: WKContentWorld) -> Bool {
+    static func same(_ a: WKContentWorld, _ b: WKContentWorld) -> Bool {
         a === b || (a.name != nil && a.name == b.name)
     }
 
@@ -238,7 +238,7 @@ extension ExtensionDebugger {
     /// The console, errors and requests of the page begin to be told.
     func watch(_ session: Session, _ tab: Tab) {
         guard session.sensor == nil else { return }
-        ensureChannel(session, tab)
+        ensureChannel(session, tab, world: .page)
         session.sensor = install(ExtensionDebuggerSensor.source(channel: session.channel, key: session.key), world: .page,
                                  mainFrameOnly: true, now: true, session: session, tab: tab)
     }
