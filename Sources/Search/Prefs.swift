@@ -280,6 +280,12 @@ final class Preferences: ObservableObject {
     @Published var closeGoesBack: Bool {
         didSet { store.set(closeGoesBack, forKey: "tabs.closeGoesBack") }
     }
+    /// ⌃Tab shows a link opened behind the page right after the page, so a
+    /// quick ⌃Tab goes to it; off, the tab left last keeps that place and
+    /// the link comes next (see TabSwitcher.ordered). Off unless asked for.
+    @Published var switcherBehindFirst: Bool {
+        didSet { store.set(switcherBehindFirst, forKey: "tabs.switcherBehindFirst") }
+    }
     /// Where a new tab goes in the row. Next unless asked for.
     @Published var newTabPlace: NewTabPlace {
         didSet { store.set(newTabPlace.rawValue, forKey: "tabs.newPlace") }
@@ -782,6 +788,7 @@ final class Preferences: ObservableObject {
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
+        switcherBehindFirst = store.bool(forKey: "tabs.switcherBehindFirst")
         frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)

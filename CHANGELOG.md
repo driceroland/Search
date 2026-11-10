@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- ⌃Tab finds a link you opened behind the page — with ⌘-click, the middle button or Open Link in New Tab. Never on screen, it counted as no tab left: it came after every tab you had been on, and with ten of those it had no card at all. Now it has its card as a tab you just used: open a dozen links from one page and the newest keep their cards, the oldest go out. Turn on Settings › Tabs › ⌃Tab goes to a link opened behind to have it right after the page, so a quick ⌃Tab goes to it; off, it comes after the tab you were on before, and a quick ⌃Tab still goes back there. With Closing a tab goes back to the one before on, ⌘W still goes back to a tab you were on, never to a link you haven't looked at.
 - With New tab in a floating field on, ⌘T over a tab in a group opens its new tab outside the group, where ⌘T's tab goes with the setting off. It joined the group of the tab the field was raised over. The same for an address typed into ⌘K over a grouped tab; ⌘Return from a grouped tab's address still opens in its group. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1014](https://github.com/driceroland/Search/pull/1014))
 
 ### Added
