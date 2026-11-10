@@ -64,6 +64,28 @@ final class SpeedBenchTests: XCTestCase {
         _ = window
     }
 
+    /// A word typed into Find on Page, a key at a time, over a column of 60
+    /// tabs, with the page answering each letter as it does.
+    func testFinding() async throws {
+        let browser = makeBrowser(tabs: 60)
+        let window = host(browser)
+        let bar = NSWindow(contentRect: NSRect(x: -20_000, y: -16_000, width: 600, height: 120),
+                           styleMask: .borderless, backing: .buffered, defer: false)
+        bar.isReleasedWhenClosed = false
+        bar.contentView = NSHostingView(rootView: FindBar(browser: browser))
+        bar.orderFrontRegardless()
+        windows.append(bar)
+        try await settle()
+        browser.finding = true
+        try await settle()
+        let words = Array("github pull requests")
+        let cost = try await measure(browser, steps: words.count, label: "finding") { i in
+            browser.needle = String(words[0...i])
+        }
+        record("finding", cost)
+        _ = window
+    }
+
     /// Two fingers carrying the column to the next space, an event a frame.
     func testSpaceSwipe() async throws {
         let browser = makeBrowser(tabs: 60)
