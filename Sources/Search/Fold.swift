@@ -44,6 +44,14 @@ import SwiftUI
 extension Browser {
     /// ⌘S. The column, or the strip across the top, out of the way, or back.
     func toggleFold() {
+        // Asked to keep the tabs in sight: the column goes to icons only and
+        // back to its titles, the layout Settings calls Icons only, and is
+        // not folded away. One folded before the switch was turned on comes
+        // out first, as it always did.
+        if prefs.shrinks, !folded {
+            withAnimation(Motion.glide) { prefs.sideIcons.toggle() }
+            return
+        }
         // Only if it was out: set at all, every row of the column is built
         // again, 30 of them with 30 tabs, before the slide starts.
         if peeking { peeking = false }

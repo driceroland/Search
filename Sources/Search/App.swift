@@ -144,7 +144,9 @@ struct SearchApp: App {
                 .shortcut("view.sidebar")
                 // Folded away, not moved (see Fold.swift) — the column, or the
                 // strip across the top.
-                Button(browser.prefs.sidebar
+                Button(browser.prefs.shrinks && !browser.folded
+                       ? (browser.prefs.sideIcons ? "Show Sidebar Titles" : "Show Sidebar as Icons Only")
+                       : browser.prefs.sidebar
                        ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
                        : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
                     .shortcut("view.fold")
