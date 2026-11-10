@@ -7649,7 +7649,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         }
         // To a site Settings sends to another space: there, in front.
         if sendToSpace(url, from: source) { return }
-        open(url, foreground: foreground, from: source, mayWait: true, link: true)
+        // From a peek, which is no tab of the row: the peek is where it was
+        // opened from, so its tab is in the peek's container, or private.
+        open(url, foreground: foreground, from: source ?? opener, mayWait: true, link: true)
     }
 
     /// Anything the window can't show is something to keep instead.

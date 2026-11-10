@@ -238,6 +238,9 @@ extension Browser {
     /// A container deleted: every tab of this window in it, on screen or
     /// parked, back in its space's store.
     func leave(container id: UUID) {
+        // A peek in it is closed: kept, it would be a tab still holding the
+        // store about to be erased.
+        if peekTab?.container == id { closePeek() }
         for tab in tabs where tab.container == id { rebuild(tab, in: spaceID, container: nil) }
         for (space, row) in parked {
             for tab in row.tabs where tab.container == id { rebuild(tab, in: space, container: nil) }
