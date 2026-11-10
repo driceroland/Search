@@ -5337,9 +5337,10 @@ final class Browser: NSObject, ObservableObject {
     /// may be waiting on its page.
     @discardableResult
     func open(_ url: URL, foreground: Bool, atEnd: Bool = false, from source: Tab? = nil, mayWait: Bool = false,
-              link: Bool = false) -> Tab {
+              link: Bool = false, loose: Bool = false) -> Tab {
         if websitePopup {
-            return tabDestination.open(url, foreground: foreground, atEnd: atEnd, from: source ?? active, mayWait: mayWait, link: link)
+            return tabDestination.open(url, foreground: foreground, atEnd: atEnd, from: source ?? active, mayWait: mayWait, link: link,
+                                       loose: loose)
         }
         // One of Search's own pages, from a link, a script or another app:
         // its own tab, one of each (see InternalPages.swift).
@@ -5358,8 +5359,13 @@ final class Browser: NSObject, ObservableObject {
         prepare(tab)
         // A link opened from a grouped tab joins its group, only while groups
         // are on: turned off, they sleep, and nothing new goes into one.
-        if prefs.usesTabGroups, let source, !tab.shy, !tab.bench { tab.groupID = source.groupID }
-        tabs.insert(tab, at: atEnd ? tabs.count : link ? placeForLink(from: source) : placeForNew())
+        // `loose`: the floating new tab or ⌘K's, which is ⌘T's tab and came
+        // from no page. Raised over a grouped tab it went into that group,
+        // where a blank ⌘T's tab never did; it goes where that one goes.
+        let joins = prefs.usesTabGroups && !loose && !tab.shy && !tab.bench
+        if joins, let source { tab.groupID = source.groupID }
+        let apart = loose && prefs.usesTabGroups && source.map { group(of: $0) != nil } == true
+        tabs.insert(tab, at: atEnd ? tabs.count : link ? placeForLink(from: source) : apart ? placeForFront() : placeForNew())
         if link, !atEnd, !foreground || frontLinksBeside { noteLink(tab, from: source) }
         if mayWait, !foreground, prefs.lazyTabs, page == nil {
             tab.restore(url: url, title: "")
@@ -6775,7 +6781,7 @@ final class Browser: NSObject, ObservableObject {
                 select(tab)
             }
         } else if launching || aside {
-            open(offer.url, foreground: true, from: active)
+            open(offer.url, foreground: true, from: active, loose: true)
         } else {
             (active ?? tabs.first)?.go(to: offer.url)
         }
@@ -6885,7 +6891,7 @@ final class Browser: NSObject, ObservableObject {
         picked = nil
         if launching {
             // The floating new tab, as Return: a tab of its own.
-            open(url, foreground: true, from: active)
+            open(url, foreground: true, from: active, loose: true)
         } else {
             (active ?? tabs.first)?.go(to: url)
         }
@@ -6968,7 +6974,7 @@ final class Browser: NSObject, ObservableObject {
             // The floating new tab: what was typed gets a tab of its own, and
             // the page the field was raised over stays as it was. The same for
             // ⌘K, whose field looks no different.
-            open(url, foreground: true, from: active)
+            open(url, foreground: true, from: active, loose: true)
         } else if aside {
             // Opened behind the page by hand, as a ⌘-clicked link is: it may
             // wait to load (Settings › Tabs › Load background tabs…).
