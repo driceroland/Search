@@ -28,12 +28,15 @@ enum Session {
         /// Silenced by hand from the tab's speaker or menu. False in sessions
         /// written before tabs could keep it.
         var muted: Bool = false
+        /// The container it is in (see Containers.swift). Nil for none; one
+        /// deleted since reads as none when the tab is made.
+        var container: UUID? = nil
         /// A closed window's tab's own history, held while ⇧⌘T can still
         /// bring the window back (Windows.closed). Never written: it can
         /// hold what was typed into the page, and is left out of the keys.
         var keepsake: Browser.Keepsake? = nil
 
-        enum CodingKeys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted }
+        enum CodingKeys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, container }
     }
 
     struct Shape: Codable {
@@ -139,7 +142,7 @@ enum Session {
 // key it isn't asked for. In extensions, so the memberwise initialisers stay.
 
 extension Session.Entry {
-    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted }
+    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, container }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -154,6 +157,7 @@ extension Session.Entry {
         letGo = try? c.decodeIfPresent(Date.self, forKey: .letGo)
         listed = try? c.decodeIfPresent(Bool.self, forKey: .listed)
         muted = (try? c.decodeIfPresent(Bool.self, forKey: .muted)) ?? false
+        container = try? c.decodeIfPresent(UUID.self, forKey: .container)
     }
 }
 

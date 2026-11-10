@@ -25,6 +25,27 @@ struct PinDef: Codable, Equatable {
     /// A row, not a square (see Tab.listed). Nil rather than false, so a
     /// pins file with no rows in it is written as it always was.
     var listed: Bool? = nil
+    /// The container it is in (see Containers.swift), the same in every
+    /// window and every space that shows it. Nil for none.
+    var container: UUID? = nil
+}
+
+// Read leniently, as the session's tabs are: a container an older or newer
+// version wrote oddly is no container, never a pins file that won't read.
+// In an extension, so the memberwise initialiser stays.
+extension PinDef {
+    private enum Keys: String, CodingKey { case id, letter, home, title, name, listed, container }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        letter = try c.decode(String.self, forKey: .letter)
+        home = try c.decode(String.self, forKey: .home)
+        title = try c.decode(String.self, forKey: .title)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        listed = try? c.decodeIfPresent(Bool.self, forKey: .listed)
+        container = try? c.decodeIfPresent(UUID.self, forKey: .container)
+    }
 }
 
 @MainActor
@@ -69,7 +90,7 @@ enum Pins {
             let defs = Session.read(space: space.id).tabs.compactMap { entry -> PinDef? in
                 guard let letter = entry.pin else { return nil }
                 return PinDef(id: entry.pinID ?? UUID(), letter: letter, home: entry.home ?? entry.url,
-                              title: entry.title, name: entry.name)
+                              title: entry.title, name: entry.name, container: entry.container)
             }
             if !defs.isEmpty { bySpace[space.id] = defs }
         }

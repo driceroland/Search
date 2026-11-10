@@ -2368,6 +2368,8 @@ final class Browser: NSObject, ObservableObject {
         var front = false
         /// Silenced by hand when it closed, so it comes back the same way.
         var muted = false
+        /// The container it was in (see Containers.swift): it comes back there.
+        var container: UUID? = nil
         /// The page's own history when it closed (Tab.keepsake): ⇧⌘T puts
         /// it back with Back, Forward and where it was scrolled to, as Safari
         /// and Chrome do. Held only here, gone with the ghost.
@@ -3015,7 +3017,8 @@ final class Browser: NSObject, ObservableObject {
             if tab.pinID == nil { tab.pinID = UUID() }
             return PinDef(id: tab.pinID ?? UUID(), letter: letter,
                           home: (tab.home ?? tab.pending ?? tab.address)?.absoluteString ?? "",
-                          title: tab.title, name: tab.name, listed: tab.listed ? true : nil)
+                          title: tab.title, name: tab.name, listed: tab.listed ? true : nil,
+                          container: tab.container)
         }
     }
 
@@ -3037,11 +3040,14 @@ final class Browser: NSObject, ObservableObject {
                 ?? pinned.first { $0.pinID == nil && $0.pin == def.letter && ($0.home?.absoluteString ?? "") == def.home }
                 ?? pinned.first { $0.pinID == nil }
             let tab: Tab
+            // The pin's container, in every window (see Containers.swift).
+            let container = Containers.shared.known(def.container)
             if let found {
                 pinned.removeAll { $0 === found }
                 tab = found
+                if tab.container != container { rebuild(tab, in: space, container: container) }
             } else {
-                tab = Tab(configuration: Web.configuration(space: space))
+                tab = Tab(configuration: Web.configuration(space: space, container: container))
                 prepare(tab)
                 tab.restore(url: URL(string: def.home) ?? URL(string: "about:blank")!, title: def.title, name: def.name)
             }
@@ -3560,6 +3566,7 @@ final class Browser: NSObject, ObservableObject {
                 letGo: tab.pin == nil ? tab.letGo : nil,
                 listed: tab.pin != nil && tab.listed ? true : nil,
                 muted: tab.muted,
+                container: tab.container,
                 // Asked for only when the window goes: reading it for every
                 // tab at every save would be work for nothing.
                 keepsake: keeping ? tab.keepsake.map(Keepsake.init) : nil
@@ -3643,7 +3650,7 @@ final class Browser: NSObject, ObservableObject {
     /// does, as a new tab beside the other page. Anything else is itself.
     private func splittable(_ tab: Tab) -> Tab {
         guard tab.pin != nil, let url = tab.address ?? tab.home else { return tab }
-        let copy = Tab(configuration: Web.configuration(space: spaceID))
+        let copy = Tab(configuration: Web.configuration(space: spaceID, container: tab.container))
         prepare(copy)
         tabs.insert(copy, at: tabs.count)
         copy.go(to: url)
@@ -3696,7 +3703,7 @@ final class Browser: NSObject, ObservableObject {
         let current = splittable(shown)
         let right = Tab(shy: current.shy,
                         configuration: current.shy ? Web.configuration(shy: true, store: current.store)
-                            : Web.configuration(space: spaceID))
+                            : Web.configuration(space: spaceID, container: current.container))
         prepare(right)
         right.groupID = current.groupID
         guard let index = tabs.firstIndex(where: { $0.id == current.id }) else { return }
@@ -4080,7 +4087,8 @@ final class Browser: NSObject, ObservableObject {
         }
         // Reuse an empty tab at the chosen position, clearing its draft:
         // repeated ⌘T must not leave a row of identical empty tabs.
-        if let blank = tabs.last(where: { $0.isBlank && !$0.bench && !$0.shy && split(for: $0) == nil }) {
+        // Not one in a container: ⌘T's tab is in none.
+        if let blank = tabs.last(where: { $0.isBlank && !$0.bench && !$0.shy && $0.container == nil && split(for: $0) == nil }) {
             placeBlank(blank)
             if activeID != blank.id { leaving() }
             activeID = blank.id
@@ -4550,7 +4558,7 @@ final class Browser: NSObject, ObservableObject {
         for ghost in members.reversed() {
             // One of Search's own pages opened again since: it stays the one.
             if let own = InternalPage(url: ghost.url), pageTab(own.kind) != nil { continue }
-            let tab = Tab(configuration: Web.configuration(space: spaceID))
+            let tab = Tab(configuration: Web.configuration(space: spaceID, container: ghost.container))
             prepare(tab)
             let group = regroup(ghost)
             tab.groupID = group.id
@@ -4594,7 +4602,7 @@ final class Browser: NSObject, ObservableObject {
             show(own)
             return
         }
-        let tab = Tab(configuration: Web.configuration(space: spaceID))
+        let tab = Tab(configuration: Web.configuration(space: spaceID, container: ghost.container))
         prepare(tab)
         let group = regroup(ghost)
         tab.groupID = group.id
@@ -4645,7 +4653,7 @@ final class Browser: NSObject, ObservableObject {
         guard !tab.shy, let url = tab.address ?? tab.page?.url else { return }
         ghosts.append(Ghost(url: url, title: tab.title, index: index, groupID: tab.groupID,
                             partner: partner, onLeft: onLeft, was: tab.id, batch: batching?.id,
-                            kind: batching?.kind ?? .clear, muted: tab.muted,
+                            kind: batching?.kind ?? .clear, muted: tab.muted, container: tab.container,
                             keepsake: tab.keepsake.map(Keepsake.init)))
         // Twelve steps back, a Clear counting as one: its tabs come back
         // together or not at all, however many there were.
@@ -4682,7 +4690,8 @@ final class Browser: NSObject, ObservableObject {
             guard let self, let tab, self.finishMove(tab, toSpace: id) else { return }
             then?()
         }
-        guard !tab.shy, tab.store !== Spaces.store(for: id) else {
+        // A container tab takes its container along, and its sign-ins.
+        guard !tab.shy, tab.store !== Web.store(space: id, container: tab.container) else {
             complete()
             return
         }
@@ -4723,12 +4732,13 @@ final class Browser: NSObject, ObservableObject {
             guard let self, self.spaceID == from else { return }
             self.finishGroupMove(group, members.filter { tab in self.tabs.contains { $0.id == tab.id } }, to: destination)
         }
-        let store = Spaces.store(for: target)
-        guard members.contains(where: { !$0.shy && $0.store !== store }) else { return complete() }
+        // A container tab keeps its store wherever it goes.
+        let changes = { (tab: Tab) in !tab.shy && tab.store !== Web.store(space: target, container: tab.container) }
+        guard members.contains(where: changes) else { return complete() }
         // Any page with something typed and not sent, asked once.
         var unsaved = false
         let asked = DispatchGroup()
-        for tab in members where !tab.shy && tab.store !== store {
+        for tab in members where changes(tab) {
             asked.enter()
             tab.unsaved { if $0 { unsaved = true }; asked.leave() }
         }
@@ -5402,10 +5412,12 @@ final class Browser: NSObject, ObservableObject {
         let page = Browser.extensionConfiguration(for: url)
         // A new tab is in this window's space, with its sign-ins — not the
         // space of whichever window is in front, when this one is behind it.
+        // From a container tab, in its container, as a private tab's are
+        // private (see Containers.swift); not the field's own, which is ⌘T's.
         let tab = if let source, source.shy, page == nil {
             Tab(shy: true, configuration: Web.configuration(shy: true, store: source.store))
         } else {
-            Tab(configuration: page ?? Web.configuration(space: spaceID))
+            Tab(configuration: page ?? Web.configuration(space: spaceID, container: loose ? nil : source?.container))
         }
         prepare(tab)
         // A link opened from a grouped tab joins its group, only while groups
@@ -5449,7 +5461,7 @@ final class Browser: NSObject, ObservableObject {
             Tab(shy: true, bench: tab.bench, configuration: page
                 ?? Web.configuration(shy: true, store: tab.store.isPersistent ? nil : tab.store))
         } else {
-            Tab(bench: tab.bench, configuration: page ?? Web.configuration(space: spaceID))
+            Tab(bench: tab.bench, configuration: page ?? Web.configuration(space: spaceID, container: tab.container))
         }
         // Preserve the sign-in popup's link to the page that opened it —
         // and, since a website can now start the swap, what you made of the
@@ -5653,6 +5665,37 @@ final class Browser: NSObject, ObservableObject {
         announce("A tab that keeps nothing")
     }
 
+    /// File › New Container Tab: an empty tab in that container, in front,
+    /// its field ready, as ⌘T's is.
+    func newTab(in container: UUID) {
+        guard !websitePopup, Containers.shared.known(container) != nil else { return }
+        let tab = Tab(configuration: Web.configuration(space: spaceID, container: container))
+        prepare(tab)
+        tabs.insert(tab, at: placeForFront())
+        leaving()
+        activeID = tab.id
+        summoning = false
+        typed = ""
+        editing = false
+        focusRequest += 1
+        rememberSession()
+    }
+
+    /// A page in a new tab of a container, in front: a container's own
+    /// service worker opening a window (see Notifications.swift).
+    @discardableResult
+    func open(_ url: URL, in container: UUID) -> Tab {
+        let tab = Tab(configuration: Web.configuration(space: spaceID, container: container))
+        prepare(tab)
+        tabs.insert(tab, at: placeForNew())
+        tab.go(to: url)
+        leaving()
+        activeID = tab.id
+        editing = false
+        typed = ""
+        return tab
+    }
+
     /// ⌘D. The same page, beside itself.
     func duplicate() {
         guard let url = active?.address else { return }
@@ -5811,7 +5854,7 @@ final class Browser: NSObject, ObservableObject {
             // wherever it had been taken since.
             let home = Browser.home(of: entry, at: saved)
             let url = prefs.pinsGoHome ? home ?? saved : saved
-            let tab = Tab(configuration: Web.configuration(space: space))
+            let tab = Tab(configuration: Web.configuration(space: space, container: entry.container))
             prepare(tab)
             tab.restore(url: url, title: url == saved ? entry.title : url.host ?? "", name: entry.name,
                         state: url == saved ? entry.keepsake?.state : nil)
@@ -8518,7 +8561,7 @@ extension Browser {
             }
         } else {
             if let blank = active, blank.isBlank, !blank.shy, !blank.bench, blank.pin == nil,
-               blank.draft.isEmpty, typed.isEmpty {
+               blank.container == nil, blank.draft.isEmpty, typed.isEmpty {
                 tab = blank
             } else {
                 tab = Tab(configuration: Web.configuration(space: spaceID))

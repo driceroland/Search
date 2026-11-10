@@ -43,6 +43,8 @@ final class ScriptTab: NSObject {
         if tab.committed != nil, let page = tab.built { return page.title ?? "" }
         return tab.title
     }
+    /// The container it is in (see Containers.swift), by name.
+    @MainActor @objc var scriptContainer: String? { tab.containerName }
 
     override var objectSpecifier: NSScriptObjectSpecifier? {
         guard let window, let container = window.objectSpecifier,

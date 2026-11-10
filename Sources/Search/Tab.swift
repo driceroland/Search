@@ -83,16 +83,23 @@ enum Web {
 
     /// `space`: the space the tab belongs to, when it is not the one on
     /// screen — a parked row made ahead of time (see Spaces.swift).
+    /// `container`: the container the tab is in (see Containers.swift),
+    /// whose store it uses whatever its space; nil, or one deleted since,
+    /// for none.
     /// `store`: a shy tab's own, for one opened from it — a link followed
     /// out of a private page is still signed in to whatever that page was.
-    static func configuration(shy: Bool = false, space: UUID? = nil, store: WKWebsiteDataStore? = nil) -> WKWebViewConfiguration {
+    static func configuration(shy: Bool = false, space: UUID? = nil, container: UUID? = nil,
+                              store: WKWebsiteDataStore? = nil) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         // The real store, not the ephemeral one: staying signed in between
         // launches is the difference between a browser and a preview pane. A
         // shy tab gets its own store, which exists only while it does — its own
         // cookies, its own sign-ins, and nothing left behind when it closes.
-        // With spaces on, each space's tabs share a store of that space's.
-        config.websiteDataStore = store ?? (shy ? .nonPersistent() : MainActor.assumeIsolated { Spaces.store(for: space ?? Spaces.current) })
+        // With spaces on, each space's tabs share a store of that space's;
+        // a container's tabs, its own, in any space.
+        config.websiteDataStore = store ?? (shy ? .nonPersistent() : MainActor.assumeIsolated {
+            Web.store(space: space ?? Spaces.current, container: container)
+        })
         // A private tab's store is made right here and is in no list, so the
         // proxy is put on it here too, or a private tab alone would go direct.
         if shy { let own = config.websiteDataStore; MainActor.assumeIsolated { BrowserProxy.shared.attach(own) } }
@@ -1541,11 +1548,18 @@ final class Tab: ObservableObject, Identifiable {
         discard()
     }
 
-    /// A page moved to another space must use that space's cookies. WebKit
-    /// binds the store when the view is made, so keep its restorable state
-    /// and build the view again with the destination's store.
+    /// A page moved to another space must use that space's cookies — unless
+    /// it is in a container, which it takes with it (see Containers.swift).
+    /// WebKit binds the store when the view is made, so keep its restorable
+    /// state and build the view again with the destination's store.
     func rehome(in space: UUID) {
-        guard !shy, !bench, store !== Spaces.store(for: space) else { return }
+        rehome(in: space, container: container)
+    }
+
+    /// The same, into a container, or out of one with nil: the tab menu's
+    /// Container (see Browser.contain).
+    func rehome(in space: UUID, container: UUID?) {
+        guard !shy, !bench, store !== Web.store(space: space, container: container) else { return }
         if let built {
             memory = built.isLoading ? nil : built.interactionState
             pending = address ?? built.url
@@ -1553,7 +1567,7 @@ final class Tab: ObservableObject, Identifiable {
             cover = nil
             discard()
         }
-        configuration = Web.configuration(space: space)
+        configuration = Web.configuration(space: space, container: container)
     }
 
     /// Settings › Videos wait for a click, changed: the page's next view
