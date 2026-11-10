@@ -1606,8 +1606,9 @@ struct TabMenu: View {
             .help("Pages moved to a Space with different sign-ins reopen there.")
         }
         // Its own cookies and sign-ins beside the other tabs (see
-        // Containers.swift): there before the first container is, to make one.
-        if browser.containable(tab) {
+        // Containers.swift), with Settings › Spaces & Pins › Containers on:
+        // there before the first container is, to make one.
+        if browser.prefs.usesContainers, browser.containable(tab) {
             ContainerMenu(browser: browser, tab: tab)
         }
         // Settings › Spaces & Pins › Send links to a space, from here: the

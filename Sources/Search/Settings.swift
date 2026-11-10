@@ -668,7 +668,7 @@ struct SettingsPanel: View {
         case "spaces": Switch(on: $prefs.usesSpaces)
         case "profiles": Pill("New Profile…") { ProfileMenu.askNew() }
         case "profiles.oneWindow": Switch(on: $prefs.profilesInOneWindow)
-        case "containers": Pill("New Container…") { ContainerMenu.askNew() }
+        case "containers": Switch(on: $prefs.usesContainers)
         case "spaces.links": Switch(on: $prefs.sendsLinksToSpaces)
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
@@ -796,7 +796,7 @@ struct SettingsPanel: View {
                     .under()
             }
         case "containers":
-            if !searched {
+            if !searched, prefs.usesContainers {
                 ContainerList()
                     .under()
             }

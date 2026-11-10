@@ -18,9 +18,11 @@ import WebKit
 // private. Private tabs and the bench's never are.
 //
 // History, bookmarks and passwords stay the profile's, as with spaces.
-// Until the first container is made, the only thing that shows is the tab
-// menu's Container submenu and the row in Settings › Spaces & Pins that
-// makes one.
+//
+// Off unless turned on in Settings › Spaces & Pins. Until then nothing of
+// it shows; on, the tab menu has its Container submenu, which makes the
+// first one. Turned off again, the tabs already in a container stay in it,
+// mark and all, and nothing is erased: only the menus go.
 
 struct Container: Codable, Identifiable, Equatable {
     var id: UUID
@@ -248,8 +250,8 @@ extension Browser {
 // MARK: - the menus
 
 /// The tab menu's Container submenu: No Container, each container with the
-/// tab's checked, then New Container…. There even before the first one is
-/// made, with only New Container… in it, so the feature is found from a tab.
+/// tab's checked, then New Container…. With Containers on, there even
+/// before the first one is made, with only New Container… in it.
 struct ContainerMenu: View {
     @ObservedObject var browser: Browser
     @ObservedObject var tab: Tab
@@ -343,12 +345,16 @@ extension Tab {
 
 // MARK: - Settings
 
-/// Settings › Spaces & Pins, under Containers: each one with its colour,
-/// Rename… and Delete….
+/// Settings › Spaces & Pins, under Containers once it is on: New
+/// Container…, then each one with its colour, Rename… and Delete….
 struct ContainerList: View {
     @ObservedObject private var containers = Containers.shared
 
     var body: some View {
+        Rule()
+        Line("New container", "Or right-click a tab › Container") {
+            Pill("New Container…") { ContainerMenu.askNew() }
+        }
         ForEach(containers.list) { container in
             Rule()
             Line(container.name, detail(container)) {

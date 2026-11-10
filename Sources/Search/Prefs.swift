@@ -628,6 +628,13 @@ final class Preferences: ObservableObject {
     @Published var usesSpaces: Bool {
         didSet { store.set(usesSpaces, forKey: "spaces") }
     }
+    /// Containers (see Containers.swift): tabs side by side, each with its
+    /// own sign-ins. Off unless asked for. Turned off, the tabs already in
+    /// one stay in it and keep their mark, and nothing is erased: only the
+    /// menus that put a tab in one go.
+    @Published var usesContainers: Bool {
+        didSet { store.set(usesContainers, forKey: "containers") }
+    }
     /// Profiles in one window (see OneWindow.swift): a space of another
     /// profile, chosen, brings that profile's window into this one's place.
     /// Off unless asked for; turned off, the windows tucked away come out.
@@ -857,6 +864,7 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
+        usesContainers = store.bool(forKey: "containers")
         profilesInOneWindow = store.bool(forKey: "profiles.oneWindow")
         listsPins = store.bool(forKey: "pins.list")
         // "Pins keep their site" is one switch over two keys (see

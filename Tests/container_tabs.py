@@ -103,7 +103,7 @@ def named():
 def main():
     t = sv.T()
     try:
-        sv.setup(**{"start.fresh": False, "spaces": True})
+        sv.setup(**{"start.fresh": False, "spaces": True, "containers": True})
         sv.launch()
         sv.cmd({"do": "ui", "confirm": True})
 
