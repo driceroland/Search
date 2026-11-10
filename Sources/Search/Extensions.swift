@@ -1388,6 +1388,7 @@ final class Extensions: NSObject, ObservableObject {
         let allowed = Extensions.mayGoPrivate(context)
         guard context.hasAccessToPrivateData != allowed else { return }
         context.hasAccessToPrivateData = allowed
+        if !allowed { ExtensionDebugger.shared.recheck(extension: id) }
         // WebKit takes a tab's privacy from its window, and a window here
         // holds both kinds, so the extension is told of private tabs here:
         // opened when it is let in, closed when it is shut out, which also

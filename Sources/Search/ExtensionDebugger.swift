@@ -47,14 +47,22 @@ final class ExtensionDebugger {
         let extensionID: String
         let name: String
         weak var tab: Tab?
+        weak var context: WKWebExtensionContext?
         let tabID: Tab.ID
+        /// The name the page helper has on the page's global object: made up
+        /// for this session, so no page and no other session knows it.
+        let key = "sh" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         /// The domains switched on with `<Domain>.enable`.
         var enabled: Set<String> = []
-        /// Worlds made by Page.createIsolatedWorld, by execution context id.
+        /// Worlds made by Page.createIsolatedWorld, by execution context id,
+        /// and the names they were asked for.
         var isolated: [Int: WKContentWorld] = [:]
+        var contextNames: [Int: String] = [:]
         var nextContext = 2
         /// Counts the documents the tab has shown while attached.
         var loader = 1
+        /// Tab.commits when the last document was told of.
+        var commits = 0
         var pointer = CGPoint.zero
         /// The buttons held, as the protocol numbers them (1 left, 2 right, 4 middle).
         var held = 0
@@ -65,24 +73,28 @@ final class ExtensionDebugger {
         /// the session (ExtensionDebuggerEvents).
         var channel = ""
         var relay: DebuggerRelay?
+        /// The worlds the relay is the handler in.
+        var relayWorlds: [WKContentWorld] = []
         var sensor: WKUserScript?
         var scripts: [WKUserScript] = []
         var documentScripts: [String: WKUserScript] = [:]
-        var bindings: [String: WKUserScript] = [:]
+        var bindings: [Binding] = []
         var nextScript = 1
         var nextException = 1
         /// Page.startScreencast: the loop sending pictures, and the last one the extension has.
         var casting: Task<Void, Never>?
         var castAcked = 0
 
-        init(extensionID: String, name: String, tab: Tab) {
+        init(extensionID: String, name: String, tab: Tab, context: WKWebExtensionContext?, commits: Int) {
             self.extensionID = extensionID
             self.name = name
             self.tab = tab
+            self.context = context
             self.tabID = tab.id
+            self.commits = commits
         }
         var frame: String { tabID.uuidString.replacingOccurrences(of: "-", with: "") }
-        var loaderID: String { frame + String(format: "%04d", loader) }
+        var loaderID: String { ExtensionDebugger.loaderID(frame: frame, loader) }
     }
 
     /// What has happened for one extension and not yet been asked for.
@@ -119,9 +131,51 @@ final class ExtensionDebugger {
         return ["http", "https"].contains(scheme) || address.absoluteString.lowercased() == "about:blank"
     }
 
+    /// Why a session has to end, as chrome.debugger.onDetach words it, or nil
+    /// when the tab is still one it may debug. Asked again on every command
+    /// and whenever the tab moves: the tab can go from a page it may debug
+    /// to one it may not (history, a link, a redirect), and a private tab's
+    /// extension can be shut out after it attached.
+    static func detachReason(private shy: Bool, access: Bool, ownPage: Bool, addresses: [URL?]) -> String? {
+        if shy && !access { return "canceled_by_user" }
+        if ownPage { return "target_closed" }
+        if addresses.contains(where: { $0.map { !mayDebug($0) } ?? false }) { return "target_closed" }
+        return nil
+    }
+
+    private func violation(_ session: Session, _ tab: Tab) -> String? {
+        Self.detachReason(private: tab.shy, access: session.context?.hasAccessToPrivateData == true, ownPage: tab.page != nil,
+                          addresses: [tab.address, tab.committed, tab.built?.url])
+    }
+
+    /// An extension lost something it attached with (private tabs): sessions
+    /// that are no longer allowed end.
+    func recheck(extension id: String) {
+        for session in sessions.values where session.extensionID == id {
+            if let tab = session.tab, let reason = violation(session, tab) { end(session, reason: reason) }
+        }
+    }
+
+    nonisolated static func loaderID(frame: String, _ number: Int) -> String { frame + String(format: "%04d", number) }
+
+    /// Whether two addresses are one document: the same but for a fragment.
+    nonisolated static func sameDocument(_ from: URL?, _ to: URL) -> Bool {
+        guard let from, var a = URLComponents(url: from, resolvingAgainstBaseURL: false),
+              var b = URLComponents(url: to, resolvingAgainstBaseURL: false), b.fragment != nil || a.fragment != nil else { return false }
+        a.fragment = nil
+        b.fragment = nil
+        return a == b
+    }
+
+    /// The name of a world only this extension's session can ask for: two
+    /// extensions (or two sessions) asking for "agent" get two worlds.
+    nonisolated static func worldName(extensionID: String, sessionID: String, name: String) -> String {
+        "search.debugger.\(extensionID).\(sessionID).\(name.isEmpty ? "world" : name)"
+    }
+
     func attach(to tab: Tab, context: WKWebExtensionContext, owner: Extensions) async throws -> [String: Any] {
         let id = context.uniqueIdentifier
-        guard Self.mayDebug(tab) else {
+        guard Self.mayDebug(tab), !tab.shy || context.hasAccessToPrivateData else {
             throw ExtensionShims.Unsupported(what: "Cannot access a chrome:// URL")
         }
         if let known = sessions.values.first(where: { $0.extensionID == id && $0.tabID == tab.id }) {
@@ -134,9 +188,11 @@ final class ExtensionDebugger {
             allowed.insert(id)
         }
         // The page may have gone elsewhere while the sheet was up.
-        guard Self.mayDebug(tab) else { throw ExtensionShims.Unsupported(what: "Cannot access a chrome:// URL") }
+        guard Self.mayDebug(tab), !tab.shy || context.hasAccessToPrivateData else {
+            throw ExtensionShims.Unsupported(what: "Cannot access a chrome:// URL")
+        }
 
-        let session = Session(extensionID: id, name: context.webExtension.displayName ?? "An extension", tab: tab)
+        let session = Session(extensionID: id, name: context.webExtension.displayName ?? "An extension", tab: tab, context: context, commits: tab.commits)
         sessions[session.id] = session
         follow(session, tab)
         mark(tab)
@@ -168,7 +224,10 @@ final class ExtensionDebugger {
         sessions[session.id] = nil
         release(session)
         session.bag.removeAll()
-        if let reason { enqueue(session.extensionID, ["session": session.id, "detach": reason]) }
+        if let reason {
+            emit(session, "Inspector.detached", ["reason": reason])
+            enqueue(session.extensionID, ["session": session.id, "detach": reason])
+        }
         if let tab = session.tab { mark(tab) }
     }
 
@@ -198,25 +257,34 @@ final class ExtensionDebugger {
     // MARK: - what the page does, told
 
     private func follow(_ session: Session, _ tab: Tab) {
-        tab.$address.removeDuplicates().dropFirst().sink { [weak self, weak session] address in
-            guard let self, let session else { return }
-            session.loader += 1
-            session.isolated.removeAll()
-            if session.enabled.contains("Runtime") {
-                self.emit(session, "Runtime.executionContextsCleared", [:])
-            }
-            if session.enabled.contains("Page") {
-                self.emit(session, "Page.frameNavigated", ["frame": self.frameInfo(session, url: address?.absoluteString ?? "")])
-            }
-            if session.enabled.contains("Runtime") {
-                self.emit(session, "Runtime.executionContextCreated", ["context": self.contextInfo(session, address: address)])
+        // Where the tab is going or has arrived: a page the extension may not
+        // debug ends the session, wherever it came from.
+        tab.$address.sink { [weak self, weak session] address in
+            guard let self, let session, let address, !Self.mayDebug(address) else { return }
+            self.end(session, reason: "target_closed")
+        }.store(in: &session.bag)
+        tab.$page.sink { [weak self, weak session] page in
+            guard let self, let session, page != nil else { return }
+            self.end(session, reason: "target_closed")
+        }.store(in: &session.bag)
+        // A document arrived (Tab.didCommit sets `committed`, after counting
+        // it). `committed` also moves, with no new document, for a fragment
+        // or history.pushState: that is the same document at a new address.
+        tab.$committed.dropFirst().sink { [weak self, weak session, weak tab] address in
+            guard let self, let session, let tab, let address else { return }
+            if !Self.mayDebug(address) { self.end(session, reason: "target_closed"); return }
+            if tab.commits != session.commits {
+                session.commits = tab.commits
+                self.documentCommitted(session, address)
+            } else if session.enabled.contains("Page") {
+                self.emit(session, "Page.navigatedWithinDocument", ["frameId": session.frame, "url": address.absoluteString])
             }
         }.store(in: &session.bag)
         tab.$loading.removeDuplicates().dropFirst().sink { [weak self, weak session] loading in
             guard let self, let session, session.enabled.contains("Page") else { return }
             if loading {
                 self.emit(session, "Page.frameStartedLoading", ["frameId": session.frame])
-                self.lifecycle(session, ["init"])
+                self.lifecycle(session, ["init"], loader: session.loader + 1)
             } else {
                 let stamp = Date().timeIntervalSince1970
                 self.emit(session, "Page.domContentEventFired", ["timestamp": stamp])
@@ -225,6 +293,30 @@ final class ExtensionDebugger {
                 self.lifecycleLoaded(session)
             }
         }.store(in: &session.bag)
+    }
+
+    /// A new document: the old one's execution contexts are gone, whatever
+    /// its address, and the new one has its own.
+    private func documentCommitted(_ session: Session, _ address: URL) {
+        let gone = [1] + session.isolated.keys.sorted()
+        let before = session.loader
+        session.loader += 1
+        session.isolated.removeAll()
+        session.contextNames.removeAll()
+        dropContextBindings(session)
+        if session.enabled.contains("Runtime") {
+            for id in gone {
+                emit(session, "Runtime.executionContextDestroyed", [
+                    "executionContextId": id, "executionContextUniqueId": Self.loaderID(frame: session.frame, before) + ".\(id)"])
+            }
+            emit(session, "Runtime.executionContextsCleared", [:])
+        }
+        if session.enabled.contains("Page") {
+            emit(session, "Page.frameNavigated", ["frame": frameInfo(session, url: address.absoluteString)])
+        }
+        if session.enabled.contains("Runtime") {
+            emit(session, "Runtime.executionContextCreated", ["context": contextInfo(session, address: address)])
+        }
     }
 
     private func frameInfo(_ session: Session, url: String) -> [String: Any] {
@@ -284,6 +376,10 @@ final class ExtensionDebugger {
 
     func send(session id: String, extensionID: String, method: String, params: [String: Any], sessionId: String) async throws -> Any {
         guard let session = sessions[id], session.extensionID == extensionID, let tab = session.tab else {
+            throw ExtensionShims.Unsupported(what: "Debugger is not attached to the tab.")
+        }
+        if let reason = violation(session, tab) {
+            end(session, reason: reason)
             throw ExtensionShims.Unsupported(what: "Debugger is not attached to the tab.")
         }
         if !sessionId.isEmpty { throw Failure(code: -32001, message: "Session with given id not found.") }
@@ -365,8 +461,10 @@ final class ExtensionDebugger {
             let name = (params["worldName"] as? String) ?? ""
             let context = session.nextContext
             session.nextContext += 1
-            let world = WKContentWorld.world(name: "search.debugger." + (name.isEmpty ? "world" : name))
+            let world = isolatedWorld(session, name)
             session.isolated[context] = world
+            session.contextNames[context] = name
+            bindContext(session, tab, context: context, name: name)
             if session.enabled.contains("Runtime") {
                 emit(session, "Runtime.executionContextCreated", ["context": [
                     "id": context, "origin": "", "name": name, "uniqueId": session.loaderID + ".\(context)",
@@ -384,6 +482,8 @@ final class ExtensionDebugger {
             guard let entry = params["entryId"] as? Int, let list = tab.built?.backForwardList else { throw Failure.invalid("entryId") }
             let items = list.backList + (list.currentItem.map { [$0] } ?? []) + list.forwardList
             guard items.indices.contains(entry) else { throw Failure.server("No entry with passed id") }
+            // History reaches pages the session could not have attached to.
+            guard Self.mayDebug(items[entry].url) else { throw Failure.server("Cannot navigate to invalid URL") }
             tab.go(to: items[entry])
             return [String: Any]()
         case "Page.getLayoutMetrics":
@@ -399,24 +499,27 @@ final class ExtensionDebugger {
             return try await callFunction(session, tab, params)
         case "Runtime.releaseObject":
             let (world, context) = try inside(object: params["objectId"] as? String, session)
-            return try await op(tab, world, context, "release", params)
+            return try await op(session, tab, world, context, "release", params)
         case "Runtime.releaseObjectGroup":
             for (context, world) in [(1, WKContentWorld.page)] + session.isolated.map({ ($0.key, $0.value) }) {
-                _ = try await op(tab, world, context, "releaseGroup", params)
+                _ = try await op(session, tab, world, context, "releaseGroup", params)
             }
             return [String: Any]()
 
         case "DOM.describeNode", "DOM.resolveNode", "DOM.getBoxModel", "DOM.getContentQuads", "DOM.scrollIntoViewIfNeeded":
             let name = ["DOM.describeNode": "describeNode", "DOM.resolveNode": "resolveNode", "DOM.getBoxModel": "boxModel",
                         "DOM.getContentQuads": "quads", "DOM.scrollIntoViewIfNeeded": "scrollIntoView"][method] ?? ""
+            if method == "DOM.resolveNode", params["objectId"] == nil, let wanted = (params["executionContextId"] as? NSNumber)?.intValue, wanted != 1 {
+                return try await resolve(session, tab, params, in: wanted)
+            }
             let (world, context) = try inside(object: params["objectId"] as? String, session)
-            return try await op(tab, world, context, name, params)
+            return try await op(session, tab, world, context, name, params)
         case "Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot", "DOM.getDocument", "DOM.getNodeForLocation":
             let name = ["Accessibility.getFullAXTree": "axTree", "DOMSnapshot.captureSnapshot": "snapshot",
                         "DOM.getDocument": "document", "DOM.getNodeForLocation": "nodeAt"][method] ?? ""
             var asked = params
             asked["mainFrame"] = session.frame
-            return try await op(tab, .page, 1, name, asked)
+            return try await op(session, tab, .page, 1, name, asked)
         case "Network.getCookies":
             let urls = (params["urls"] as? [String])?.compactMap(URL.init(string:)) ?? tab.address.map { [$0] }
             return await cookies(tab, urls: urls)
@@ -455,6 +558,22 @@ final class ExtensionDebugger {
 
     // MARK: - the page
 
+    /// The world of a context the session made, under a name no other
+    /// extension or session can ask for.
+    func isolatedWorld(_ session: Session, _ name: String) -> WKContentWorld {
+        .world(name: Self.worldName(extensionID: session.extensionID, sessionID: session.id, name: name))
+    }
+
+    /// DOM.resolveNode into a context other than the page's own: the node is
+    /// named by where it is in the document, which every world shares.
+    private func resolve(_ session: Session, _ tab: Tab, _ params: [String: Any], in context: Int) async throws -> [String: Any] {
+        let (world, number) = try inside(context: context, session)
+        let located = try await op(session, tab, .page, 1, "nodePath", params)
+        var asked = params
+        asked["path"] = located["path"]
+        return try await op(session, tab, world, number, "resolvePath", asked)
+    }
+
     func web(_ tab: Tab) -> PageView { tab.web }
 
     /// An objectId begins with the number of the world that made it.
@@ -476,21 +595,24 @@ final class ExtensionDebugger {
 
     /// Runs `body` in a world, after the helper. What it answers is the
     /// helper's JSON: `{"result": …}` or `{"error": {code, message}}`.
-    private func page(_ tab: Tab, _ world: WKContentWorld, _ context: Int, body: String, payload: [String: Any]) async throws -> [String: Any] {
+    private func page(_ session: Session, _ tab: Tab, _ world: WKContentWorld, _ context: Int, body: String, payload: [String: Any]) async throws -> [String: Any] {
         var full = payload
         full["tag"] = context
         let text = String(decoding: try JSONSerialization.data(withJSONObject: full), as: UTF8.self)
         let answer: Any?
         do {
-            answer = try await web(tab).callAsyncJavaScript(ExtensionDebuggerPage.prelude + body, arguments: ["payload": text],
+            answer = try await web(tab).callAsyncJavaScript(ExtensionDebuggerPage.prelude(key: session.key) + body, arguments: ["payload": text],
                                                             in: nil, contentWorld: world)
         } catch {
             throw Failure.server(Self.scriptMessage(error))
         }
+        // Whatever the page's own script made of the helper, only JSON text
+        // that parses counts, and a number is read as the number it is.
         guard let json = answer as? String, let parsed = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
         else { throw Failure.server("The page gave no answer") }
         if let error = parsed["error"] as? [String: Any] {
-            throw Failure(code: error["code"] as? Int ?? -32000, message: error["message"] as? String ?? "")
+            throw Failure(code: (error["code"] as? NSNumber).flatMap { Self.whole($0.doubleValue) } ?? -32000,
+                          message: error["message"] as? String ?? "")
         }
         return parsed
     }
@@ -500,8 +622,8 @@ final class ExtensionDebugger {
         return info["WKJavaScriptExceptionMessage"] as? String ?? error.localizedDescription
     }
 
-    func op(_ tab: Tab, _ world: WKContentWorld, _ context: Int, _ name: String, _ params: [String: Any]) async throws -> [String: Any] {
-        let reply = try await page(tab, world, context, body: "return await cdp.run(p.name, p.params);",
+    func op(_ session: Session, _ tab: Tab, _ world: WKContentWorld, _ context: Int, _ name: String, _ params: [String: Any]) async throws -> [String: Any] {
+        let reply = try await page(session, tab, world, context, body: "return await cdp.run(p.name, p.params);",
                                    payload: ["name": name, "params": params])
         return reply["result"] as? [String: Any] ?? [:]
     }
@@ -520,7 +642,7 @@ final class ExtensionDebugger {
         for (body, awaits) in attempts {
             if awaits { options["awaitPromise"] = true }
             do {
-                let reply = try await page(tab, world, context, body: body, payload: ["expression": expression, "options": options])
+                let reply = try await page(session, tab, world, context, body: body, payload: ["expression": expression, "options": options])
                 return reply
             } catch let failure as Failure where failure.message.hasPrefix("SyntaxError") {
                 last = ["result": ["type": "object", "subtype": "error", "className": "SyntaxError", "description": failure.message],
@@ -544,7 +666,7 @@ final class ExtensionDebugger {
         options["objectId"] = params["objectId"] as? String
         options["arguments"] = params["arguments"] as? [[String: Any]] ?? []
         do {
-            let reply = try await page(tab, found.0, found.1, body: "return await cdp.callOn((\n\(declaration)\n), p.options);",
+            let reply = try await page(session, tab, found.0, found.1, body: "return await cdp.callOn((\n\(declaration)\n), p.options);",
                                        payload: ["options": options])
             return reply
         } catch let failure as Failure where failure.message.hasPrefix("SyntaxError") {
@@ -561,12 +683,15 @@ final class ExtensionDebugger {
     }
 
     private func layoutMetrics(_ session: Session, _ tab: Tab) async throws -> [String: Any] {
-        let reply = try await op(tab, .page, 1, "viewport", [:])
-        let width = reply["clientWidth"] as? Double ?? 0, height = reply["clientHeight"] as? Double ?? 0
-        let innerWidth = reply["innerWidth"] as? Double ?? width, innerHeight = reply["innerHeight"] as? Double ?? height
-        let x = reply["scrollX"] as? Double ?? 0, y = reply["scrollY"] as? Double ?? 0
-        let contentWidth = reply["scrollWidth"] as? Double ?? width, contentHeight = reply["scrollHeight"] as? Double ?? height
-        let layout: [String: Any] = ["pageX": Int(x), "pageY": Int(y), "clientWidth": Int(width), "clientHeight": Int(height)]
+        let reply = try await op(session, tab, .page, 1, "viewport", [:])
+        // The page's script wrote these numbers, or could have: each is read
+        // as a finite number in range, or not at all.
+        let width = Self.finite(reply["clientWidth"]) ?? 0, height = Self.finite(reply["clientHeight"]) ?? 0
+        let innerWidth = Self.finite(reply["innerWidth"]) ?? width, innerHeight = Self.finite(reply["innerHeight"]) ?? height
+        let x = Self.finite(reply["scrollX"]) ?? 0, y = Self.finite(reply["scrollY"]) ?? 0
+        let contentWidth = Self.finite(reply["scrollWidth"]) ?? width, contentHeight = Self.finite(reply["scrollHeight"]) ?? height
+        let layout: [String: Any] = ["pageX": Self.whole(x), "pageY": Self.whole(y),
+                                     "clientWidth": Self.whole(width), "clientHeight": Self.whole(height)]
         let visual: [String: Any] = ["offsetX": 0, "offsetY": 0, "pageX": x, "pageY": y,
                                      "clientWidth": innerWidth, "clientHeight": innerHeight, "scale": 1, "zoom": 1]
         let content: [String: Any] = ["x": 0, "y": 0, "width": contentWidth, "height": contentHeight]
@@ -574,15 +699,46 @@ final class ExtensionDebugger {
                 "cssLayoutViewport": layout, "cssVisualViewport": visual, "cssContentSize": content]
     }
 
+    /// A number that can be trusted to convert: finite, and kept within a
+    /// range no page or screen reaches. Anything else is not a number here.
+    nonisolated static func finite(_ value: Any?) -> Double? {
+        guard let number = (value as? NSNumber)?.doubleValue, number.isFinite else { return nil }
+        return min(max(number, -1e9), 1e9)
+    }
+
+    /// A whole number from any Double, without the trap `Int(_:)` has for NaN
+    /// and for what is out of range.
+    nonisolated static func whole(_ value: Double) -> Int {
+        value.isFinite ? Int(min(max(value, -1e9), 1e9)) : 0
+    }
+
+    /// What came from a page, as JSON can carry it: a number that is NaN or
+    /// infinite, a key that is not a string, or anything but text, numbers,
+    /// lists and records becomes null, so serialising it can't raise.
+    nonisolated static func plain(_ value: Any, depth: Int = 0) -> Any {
+        guard depth < 64 else { return NSNull() }
+        switch value {
+        case let number as NSNumber:
+            if CFGetTypeID(number) == CFBooleanGetTypeID() { return number }
+            return number.doubleValue.isFinite ? number : NSNull()
+        case let text as String: return text
+        case let list as [Any]: return list.map { plain($0, depth: depth + 1) }
+        case let record as [String: Any]: return record.mapValues { plain($0, depth: depth + 1) }
+        default: return NSNull()
+        }
+    }
+
     private func navigate(_ session: Session, _ tab: Tab, _ params: [String: Any]) throws -> [String: Any] {
         guard let text = params["url"] as? String, let url = URL(string: text) else { throw Failure.invalid("url") }
         // Not onto Search's own pages, an extension's, or a file: the same
         // line as for attaching.
         guard Self.mayDebug(url) else { throw Failure.server("Cannot navigate to invalid URL") }
-        session.loader += 1
-        let loader = session.loaderID
+        // The loader is counted where the document arrives (follow), not here:
+        // this is the number it will have. A move within the document has no
+        // loader of its own.
+        let sameDocument = Self.sameDocument(tab.address, url)
         tab.go(to: url)
-        return ["frameId": session.frame, "loaderId": loader]
+        return sameDocument ? ["frameId": session.frame] : ["frameId": session.frame, "loaderId": Self.loaderID(frame: session.frame, session.loader + 1)]
     }
 
     private func history(_ tab: Tab) -> [String: Any] {
@@ -608,15 +764,16 @@ final class ExtensionDebugger {
         var scale = 1.0
         var width = Double(view.bounds.width), height = Double(view.bounds.height)
         if let clip = params["clip"] as? [String: Any],
-           let x = clip["x"] as? Double, let y = clip["y"] as? Double,
-           let w = clip["width"] as? Double, let h = clip["height"] as? Double, w > 0, h > 0 {
+           let x = Self.finite(clip["x"]), let y = Self.finite(clip["y"]),
+           let w = Self.finite(clip["width"]), let h = Self.finite(clip["height"]), w > 0, h > 0 {
             configuration.rect = CGRect(x: x, y: y, width: w, height: h)
-            scale = clip["scale"] as? Double ?? 1
+            scale = min(max(Self.finite(clip["scale"]) ?? 1, 0.01), 8)
             width = w
             height = h
         }
         guard width > 0, height > 0 else { throw Failure.server("Unable to capture screenshot") }
-        let pixels = (width: max(1, Int((width * scale).rounded())), height: max(1, Int((height * scale).rounded())))
+        let pixels = (width: min(16384, max(1, Self.whole((width * scale).rounded()))),
+                      height: min(16384, max(1, Self.whole((height * scale).rounded()))))
         configuration.snapshotWidth = NSNumber(value: Double(pixels.width))
         let image: NSImage
         do { image = try await view.takeSnapshot(configuration: configuration) }
@@ -660,8 +817,8 @@ final class ExtensionDebugger {
     func mouse(_ session: Session, _ tab: Tab, _ params: [String: Any]) throws {
         let view = web(tab)
         guard let window = view.window else { throw Failure.server("The tab isn't on screen to take input") }
-        guard let type = params["type"] as? String, let x = (params["x"] as? NSNumber)?.doubleValue,
-              let y = (params["y"] as? NSNumber)?.doubleValue else { throw Failure.invalid("type, x and y") }
+        guard let type = params["type"] as? String, let x = Self.finite(params["x"]),
+              let y = Self.finite(params["y"]) else { throw Failure.invalid("type, x and y") }
         let local = NSPoint(x: x, y: view.isFlipped ? y : view.bounds.height - y)
         let spot = view.convert(local, to: nil)
         let flags = Self.modifiers((params["modifiers"] as? NSNumber)?.intValue ?? 0)
@@ -714,19 +871,19 @@ final class ExtensionDebugger {
                 view.mouseMoved(with: event)
             }
         case "mouseWheel":
-            let dx = (params["deltaX"] as? NSNumber)?.doubleValue ?? 0, dy = (params["deltaY"] as? NSNumber)?.doubleValue ?? 0
+            let dx = Self.finite(params["deltaX"]) ?? 0, dy = Self.finite(params["deltaY"]) ?? 0
             // Where the pointer is, in the screen's own terms: an event made
             // here has no window, so AppKit takes this point as the page's.
             let onScreen = window.convertPoint(toScreen: spot)
             let over = CGPoint(x: onScreen.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - onScreen.y)
             func scroll(_ phase: Int64, _ x: Double, _ y: Double) {
                 guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
-                                       wheel1: Int32(-y), wheel2: Int32(-x), wheel3: 0) else { return }
+                                       wheel1: Int32(Self.whole(-y)), wheel2: Int32(Self.whole(-x)), wheel3: 0) else { return }
                 cg.location = over
                 cg.setIntegerValueField(CGEventField(rawValue: 88)!, value: 1)  // kCGScrollWheelEventIsContinuous
                 cg.setIntegerValueField(CGEventField(rawValue: 99)!, value: phase)  // kCGScrollWheelEventScrollPhase
-                cg.setIntegerValueField(CGEventField(rawValue: 96)!, value: Int64(-y))  // kCGScrollWheelEventPointDeltaAxis1
-                cg.setIntegerValueField(CGEventField(rawValue: 97)!, value: Int64(-x))  // kCGScrollWheelEventPointDeltaAxis2
+                cg.setIntegerValueField(CGEventField(rawValue: 96)!, value: Int64(Self.whole(-y)))  // kCGScrollWheelEventPointDeltaAxis1
+                cg.setIntegerValueField(CGEventField(rawValue: 97)!, value: Int64(Self.whole(-x)))  // kCGScrollWheelEventPointDeltaAxis2
                 if let event = NSEvent(cgEvent: cg) { view.scrollWheel(with: event) }
             }
             scroll(1, 0, 0)
@@ -761,38 +918,66 @@ final class ExtensionDebugger {
         return (codes[character] ?? 0, characters)
     }
 
-    /// A key pressed or let go on the page's view. A key with text types it.
+    /// Keys whose press does something with no character to type.
+    nonisolated static let commandKeys: Set<String> = [
+        "Backspace", "Delete", "Escape", "ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", "Home", "End", "PageUp", "PageDown",
+    ]
+
+    /// What one Input.dispatchKeyEvent does, as Chrome's four types mean it:
+    /// `keyDown` is a key going down, and types its `text` if it has any;
+    /// `rawKeyDown` is the key going down and nothing more; `char` types its
+    /// `text` and is no key; `keyUp` lets the key go. So a character is typed
+    /// once by `keyDown` with text, or by `rawKeyDown` then `char`.
+    struct KeyPlan: Equatable {
+        var event: (code: UInt16, characters: String, base: String, down: Bool)?
+        var insert: String?
+        static func == (a: KeyPlan, b: KeyPlan) -> Bool {
+            a.insert == b.insert && a.event?.code == b.event?.code && a.event?.characters == b.event?.characters && a.event?.down == b.event?.down
+        }
+    }
+
+    nonisolated static func keyPlan(type: String, key: String, text: String?) -> KeyPlan? {
+        let typed = text?.isEmpty == false ? text : nil
+        let info = keyCode(key: key, text: text)
+        switch type {
+        case "char":
+            return KeyPlan(event: nil, insert: typed)
+        case "keyUp":
+            return KeyPlan(event: info.map { ($0.code, $0.characters, $0.characters, false) }, insert: nil)
+        case "keyDown", "rawKeyDown":
+            guard let info else { return KeyPlan(event: nil, insert: type == "keyDown" ? typed : nil) }
+            if type == "keyDown", let typed { return KeyPlan(event: (info.code, typed, info.characters, true), insert: nil) }
+            // The view types what its key event carries, so a press that
+            // types nothing carries nothing, unless it is a command.
+            return KeyPlan(event: (info.code, commandKeys.contains(key) ? info.characters : "", info.characters, true), insert: nil)
+        default:
+            return nil
+        }
+    }
+
+    /// A key pressed or let go on the page's view.
     private func key(_ tab: Tab, _ params: [String: Any]) throws {
         let view = web(tab)
         guard let window = view.window else { throw Failure.server("The tab isn't on screen to take input") }
         guard let type = params["type"] as? String else { throw Failure.invalid("type") }
         let flags = Self.modifiers((params["modifiers"] as? NSNumber)?.intValue ?? 0)
         let text = params["text"] as? String
-        let name = params["key"] as? String ?? text ?? ""
-        guard let info = Self.keyCode(key: name, text: text) else {
-            // A key with no place on this keyboard still types its text.
-            if type == "keyDown" || type == "char", let text, !text.isEmpty { Task { try? await insert(tab, text) } }
-            return
+        guard let plan = Self.keyPlan(type: type, key: params["key"] as? String ?? text ?? "", text: text) else {
+            throw Failure.invalid("type")
         }
-        let kind: NSEvent.EventType
-        switch type {
-        case "keyDown", "rawKeyDown": kind = .keyDown
-        case "keyUp": kind = .keyUp
-        case "char":
-            if let text { Task { try? await insert(tab, text) } }
-            return
-        default: throw Failure.invalid("type")
+        if let press = plan.event {
+            guard let event = NSEvent.keyEvent(
+                with: press.down ? .keyDown : .keyUp, location: .zero, modifierFlags: flags,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                characters: press.characters, charactersIgnoringModifiers: press.base,
+                isARepeat: params["autoRepeat"] as? Bool ?? false, keyCode: press.code
+            ) else { return }
+            if (window.firstResponder as? NSView)?.isDescendant(of: view) != true {
+                window.makeFirstResponder(view)
+            }
+            if press.down { view.keyDown(with: event) } else { view.keyUp(with: event) }
         }
-        let characters = (text?.isEmpty == false ? text : nil) ?? info.characters
-        guard let event = NSEvent.keyEvent(
-            with: kind, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
-            windowNumber: window.windowNumber, context: nil, characters: kind == .keyDown && type == "rawKeyDown" && text == nil ? info.characters : characters,
-            charactersIgnoringModifiers: info.characters, isARepeat: params["autoRepeat"] as? Bool ?? false, keyCode: info.code
-        ) else { return }
-        if !(window.firstResponder is NSView && (window.firstResponder as? NSView)?.isDescendant(of: view) == true) {
-            window.makeFirstResponder(view)
-        }
-        if kind == .keyDown { view.keyDown(with: event) } else { view.keyUp(with: event) }
+        if let typed = plan.insert { Task { try? await insert(tab, typed) } }
     }
 
     /// Text typed as one piece, as an input method hands it over.

@@ -20,14 +20,15 @@ final class DebuggerRelay: NSObject, WKScriptMessageHandler {
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let session, let body = message.body as? [String: Any] else { return }
         let main = message.frameInfo.isMainFrame
-        MainActor.assumeIsolated { ExtensionDebugger.shared.pageMessage(session, body, fromMainFrame: main) }
+        let world = message.world
+        MainActor.assumeIsolated { ExtensionDebugger.shared.pageMessage(session, body, from: world, fromMainFrame: main) }
     }
 }
 
 enum ExtensionDebuggerSensor {
     /// Watches the console, uncaught errors, fetch and XMLHttpRequest, the
     /// resources a page loads and the page itself, for one session.
-    static func source(channel: String) -> String {
+    static func source(channel: String, key: String) -> String {
         #"""
         (function () {
           const channel = \#(literal(channel));
@@ -38,7 +39,7 @@ enum ExtensionDebuggerSensor {
           Object.defineProperty(window, mark, { value: true });
           const post = handler.postMessage.bind(handler);
           const send = (m) => { try { post(m); } catch (e) {} };
-          const cdp = (\#(ExtensionDebuggerPage.source))(1);
+          const cdp = (\#(ExtensionDebuggerPage.source(key: key)))(1);
 
           const frames = (stack, skip) => String(stack || "").split("\n").slice(skip).map((line) => {
             const m = /^(.*?)@(.*?):(\d+):(\d+)$/.exec(line.trim());
@@ -190,20 +191,28 @@ enum ExtensionDebuggerSensor {
 extension ExtensionDebugger {
     private func controller(_ tab: Tab) -> WKUserContentController { web(tab).configuration.userContentController }
 
-    /// The handler the page's scripts post to; made on first need.
-    private func ensureChannel(_ session: Session, _ tab: Tab) {
-        guard session.relay == nil else { return }
-        session.channel = "sd" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-        let relay = DebuggerRelay(session)
-        session.relay = relay
-        controller(tab).add(relay, contentWorld: .page, name: session.channel)
+    /// The handler the page's scripts post to; made on first need, and in
+    /// every world a script of the session's runs in (a world has handlers
+    /// of its own).
+    private func ensureChannel(_ session: Session, _ tab: Tab, world: WKContentWorld = .page) {
+        if session.relay == nil {
+            session.channel = "sd" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            session.relay = DebuggerRelay(session)
+        }
+        guard let relay = session.relay, !session.relayWorlds.contains(where: { Self.same($0, world) }) else { return }
+        controller(tab).add(relay, contentWorld: world, name: session.channel)
+        session.relayWorlds.append(world)
+    }
+
+    nonisolated static func same(_ a: WKContentWorld, _ b: WKContentWorld) -> Bool {
+        a === b || (a.name != nil && a.name == b.name)
     }
 
     /// A script that runs in every document the tab loads from now on, and
     /// in the one it shows if `now`.
     @discardableResult
     func install(_ source: String, world: WKContentWorld, mainFrameOnly: Bool, now: Bool, session: Session, tab: Tab) -> WKUserScript {
-        ensureChannel(session, tab)
+        ensureChannel(session, tab, world: world)
         let script = WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: mainFrameOnly, in: world)
         controller(tab).addUserScript(script)
         session.scripts.append(script)
@@ -230,8 +239,8 @@ extension ExtensionDebugger {
     func watch(_ session: Session, _ tab: Tab) {
         guard session.sensor == nil else { return }
         ensureChannel(session, tab)
-        session.sensor = install(ExtensionDebuggerSensor.source(channel: session.channel), world: .page, mainFrameOnly: true,
-                                 now: true, session: session, tab: tab)
+        session.sensor = install(ExtensionDebuggerSensor.source(channel: session.channel, key: session.key), world: .page,
+                                 mainFrameOnly: true, now: true, session: session, tab: tab)
     }
 
     /// Everything a session put on its tab.
@@ -240,11 +249,14 @@ extension ExtensionDebugger {
         session.casting = nil
         guard let tab = session.tab, session.relay != nil else { return }
         uninstall(session.scripts, session: session, tab: tab)
-        controller(tab).removeScriptMessageHandler(forName: session.channel, contentWorld: .page)
+        for world in session.relayWorlds {
+            controller(tab).removeScriptMessageHandler(forName: session.channel, contentWorld: world)
+        }
+        session.relayWorlds = []
         session.relay = nil
         session.sensor = nil
         session.documentScripts = [:]
-        session.bindings = [:]
+        session.bindings = []
     }
 
     // MARK: Page.addScriptToEvaluateOnNewDocument, Runtime.addBinding
@@ -252,7 +264,7 @@ extension ExtensionDebugger {
     func addScript(_ session: Session, _ tab: Tab, _ params: [String: Any]) throws -> [String: Any] {
         guard let source = params["source"] as? String else { throw Failure.invalid("source") }
         let name = params["worldName"] as? String ?? ""
-        let world: WKContentWorld = name.isEmpty ? .page : .world(name: "search.debugger." + name)
+        let world: WKContentWorld = name.isEmpty ? .page : isolatedWorld(session, name)
         let script = install(source, world: world, mainFrameOnly: false, now: params["runImmediately"] as? Bool == true,
                              session: session, tab: tab)
         let identifier = String(session.nextScript)
@@ -269,26 +281,92 @@ extension ExtensionDebugger {
         uninstall([script], session: session, tab: tab)
     }
 
+    /// A binding and where it was asked to be: in one context
+    /// (`executionContextId`), in the contexts of a name
+    /// (`executionContextName`), or, with neither, in the page's own context
+    /// and every one the session makes.
+    struct Binding {
+        let name: String
+        let context: Int?
+        let contextName: String?
+        var scripts: [WKUserScript] = []
+        var worlds: [WKContentWorld] = []
+
+        /// Whether it goes into a context, which is `id`, and was asked for as `named`.
+        func applies(to id: Int, named: String) -> Bool {
+            if let context { return context == id }
+            if let contextName { return id != 1 && contextName == named }
+            return true
+        }
+    }
+
+    /// The world of a context the session can name.
+    private func world(of context: Int, _ session: Session) -> WKContentWorld? {
+        context == 1 ? .page : session.isolated[context]
+    }
+
+    /// A world keeps the binding's script across documents, so it takes one copy.
+    private func put(_ binding: inout Binding, into world: WKContentWorld, _ session: Session, _ tab: Tab) {
+        guard !binding.worlds.contains(where: { Self.same($0, world) }) else { return }
+        ensureChannel(session, tab, world: world)
+        binding.worlds.append(world)
+        binding.scripts.append(install(ExtensionDebuggerSensor.binding(channel: session.channel, name: binding.name),
+                                       world: world, mainFrameOnly: true, now: true, session: session, tab: tab))
+    }
+
     func addBinding(_ session: Session, _ tab: Tab, _ params: [String: Any]) throws {
         guard let name = params["name"] as? String, !name.isEmpty else { throw Failure.invalid("name") }
-        guard session.bindings[name] == nil else { return }
-        ensureChannel(session, tab)
-        session.bindings[name] = install(ExtensionDebuggerSensor.binding(channel: session.channel, name: name), world: .page,
-                                         mainFrameOnly: false, now: true, session: session, tab: tab)
+        let id = (params["executionContextId"] as? NSNumber)?.intValue
+        let contextName = params["executionContextName"] as? String
+        if id != nil && contextName != nil {
+            throw Failure.server("executionContextId and executionContextName are mutually exclusive")
+        }
+        if let id, world(of: id, session) == nil { throw Failure.server("Cannot find context with specified id") }
+        guard !session.bindings.contains(where: { $0.name == name && $0.context == id && $0.contextName == contextName }) else { return }
+        var binding = Binding(name: name, context: id, contextName: contextName)
+        for context in [1] + session.isolated.keys.sorted() where binding.applies(to: context, named: session.contextNames[context] ?? "") {
+            if let world = world(of: context, session) { put(&binding, into: world, session, tab) }
+        }
+        session.bindings.append(binding)
+    }
+
+    /// A context the session just made gets the bindings that were asked for
+    /// every context of its name.
+    func bindContext(_ session: Session, _ tab: Tab, context: Int, name: String) {
+        guard let world = world(of: context, session) else { return }
+        for index in session.bindings.indices where session.bindings[index].context == nil
+            && session.bindings[index].applies(to: context, named: name) {
+            put(&session.bindings[index], into: world, session, tab)
+        }
+    }
+
+    /// The contexts of the old document are gone, and the bindings asked for
+    /// one of them alone with them.
+    func dropContextBindings(_ session: Session) {
+        guard let tab = session.tab else { return }
+        let gone = session.bindings.filter { $0.context.map { $0 != 1 } ?? false }
+        uninstall(gone.flatMap(\.scripts), session: session, tab: tab)
+        session.bindings.removeAll { $0.context.map { $0 != 1 } ?? false }
     }
 
     func removeBinding(_ session: Session, _ tab: Tab, _ params: [String: Any]) throws {
         guard let name = params["name"] as? String else { throw Failure.invalid("name") }
-        guard let script = session.bindings.removeValue(forKey: name) else { return }
-        uninstall([script], session: session, tab: tab)
+        let gone = session.bindings.filter { $0.name == name }
+        guard !gone.isEmpty else { return }
+        uninstall(gone.flatMap(\.scripts), session: session, tab: tab)
+        session.bindings.removeAll { $0.name == name }
         let view = web(tab)
-        Task { _ = try? await view.evaluateJavaScript("delete window[\(ExtensionDebuggerSensor.literal(name))];", in: nil, contentWorld: .page) }
+        let remove = "delete window[\(ExtensionDebuggerSensor.literal(name))];"
+        let worlds = [WKContentWorld.page] + session.isolated.values
+        Task { for world in worlds { _ = try? await view.evaluateJavaScript(remove, in: nil, contentWorld: world) } }
     }
 
     // MARK: what the page says
 
-    func pageMessage(_ session: Session, _ body: [String: Any], fromMainFrame: Bool) {
-        guard session.tab != nil, let kind = body["k"] as? String else { return }
+    func pageMessage(_ session: Session, _ message: [String: Any], from world: WKContentWorld, fromMainFrame: Bool) {
+        // What a page posts is the page's to make up: only text, numbers,
+        // lists and records go on, so what is told can always be written out.
+        guard session.tab != nil, let body = Self.plain(message) as? [String: Any], let kind = body["k"] as? String else { return }
         let milliseconds = body["at"] as? Double ?? Date().timeIntervalSince1970 * 1000
         switch kind {
         case "console" where session.enabled.contains("Runtime"):
@@ -306,8 +384,14 @@ extension ExtensionDebugger {
             if let frames = body["stack"] as? [[String: Any]], !frames.isEmpty { details["stackTrace"] = ["callFrames": frames] }
             emit(session, "Runtime.exceptionThrown", ["timestamp": milliseconds, "exceptionDetails": details])
         case "binding" where session.enabled.contains("Runtime"):
-            guard let name = body["name"] as? String, session.bindings[name] != nil else { return }
-            emit(session, "Runtime.bindingCalled", ["name": name, "payload": body["payload"] as? String ?? "", "executionContextId": 1])
+            // Said by the world the binding is in: that is the context, and a
+            // binding is heard only where it was put.
+            guard fromMainFrame, let name = body["name"] as? String,
+                  let context = ([1] + session.isolated.keys).first(where: { id in
+                      self.world(of: id, session).map { Self.same($0, world) } ?? false }),
+                  session.bindings.contains(where: { $0.name == name && $0.applies(to: context, named: session.contextNames[context] ?? "") })
+            else { return }
+            emit(session, "Runtime.bindingCalled", ["name": name, "payload": body["payload"] as? String ?? "", "executionContextId": context])
         case "net" where session.enabled.contains("Network") && fromMainFrame:
             network(session, body, seconds: milliseconds / 1000)
         default:
@@ -347,11 +431,12 @@ extension ExtensionDebugger {
 
     // MARK: Page.lifecycleEvent
 
-    func lifecycle(_ session: Session, _ names: [String]) {
+    func lifecycle(_ session: Session, _ names: [String], loader: Int? = nil) {
         guard session.lifecycle else { return }
         let stamp = Date().timeIntervalSince1970
+        let loaderID = loader.map { Self.loaderID(frame: session.frame, $0) } ?? session.loaderID
         for name in names {
-            emit(session, "Page.lifecycleEvent", ["frameId": session.frame, "loaderId": session.loaderID, "name": name, "timestamp": stamp])
+            emit(session, "Page.lifecycleEvent", ["frameId": session.frame, "loaderId": loaderID, "name": name, "timestamp": stamp])
         }
     }
 

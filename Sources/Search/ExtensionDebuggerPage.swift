@@ -12,9 +12,20 @@ enum ExtensionDebuggerPage {
     /// A function expression; called with the number of the world it is in,
     /// it gives the helper. Called again in a world that has one, it gives
     /// that one back.
-    static let source = #"""
+    ///
+    /// The page's own script shares the world the helper is in when it is
+    /// the page's world, so the helper is held on a property named for the
+    /// session (a name only Search made up), and it and its operations are
+    /// frozen: a page can neither find it by a name it knows nor swap one of
+    /// its operations for its own. What it gives back is still read as the
+    /// page's word (see ExtensionDebugger.page).
+    static func source(key: String) -> String {
+        template.replacingOccurrences(of: "__KEY__", with: ExtensionDebuggerSensor.literal(key))
+    }
+
+    private static let template = #"""
     (function (tag) {
-      const key = Symbol.for("search.debugger");
+      const key = __KEY__;
       if (globalThis[key]) return globalThis[key];
       const objects = new Map(), nodeIds = new WeakMap(), nodes = new Map();
       let next = 0, nextNode = 0;
@@ -201,6 +212,30 @@ enum ExtensionDebuggerPage {
             return { node: out };
           },
           resolveNode(p) { return { object: remote(nodeFor(p), false, p.objectGroup) }; },
+          // Where a node is in the document, as steps any world can follow
+          // (a child's place, or -1 for a host's open shadow root), and the
+          // way back to it.
+          nodePath(p) {
+            const path = [];
+            let node = nodeFor(p);
+            while (node.nodeType !== 9) {
+              const parent = node.parentNode;
+              if (parent) path.unshift(Array.prototype.indexOf.call(parent.childNodes, node));
+              else if (node.nodeType === 11 && node.host) path.unshift(-1);
+              else throw new Failure("Node is detached from document");
+              node = parent || node.host;
+            }
+            if (node !== document) throw new Failure("Node is in another frame");
+            return { path };
+          },
+          resolvePath(p) {
+            let node = document;
+            for (const step of p.path) {
+              node = step === -1 ? node.shadowRoot : node.childNodes[step];
+              if (!node) throw new Failure("Could not find node with given id");
+            }
+            return { object: remote(node, false, p.objectGroup) };
+          },
           scrollIntoView(p) {
             const node = nodeFor(p);
             const el = node.nodeType === 1 ? node : node.parentElement;
@@ -236,6 +271,8 @@ enum ExtensionDebuggerPage {
     \#(ExtensionDebuggerTree.ops)
         },
       };
+      Object.freeze(api.ops);
+      Object.freeze(api);
       Object.defineProperty(globalThis, key, { value: api, enumerable: false, configurable: false, writable: false });
       return api;
     })
@@ -243,5 +280,5 @@ enum ExtensionDebuggerPage {
 
     /// The start of every call into a page: the helper, and what Swift sent
     /// (as `p`).
-    static let prelude = "const p = JSON.parse(payload);\nconst cdp = \(source)(p.tag);\n"
+    static func prelude(key: String) -> String { "const p = JSON.parse(payload);\nconst cdp = \(source(key: key))(p.tag);\n" }
 }

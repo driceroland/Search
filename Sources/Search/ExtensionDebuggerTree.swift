@@ -258,6 +258,7 @@ enum ExtensionDebuggerTree {
                 currentSourceURL: { index: [], value: [] }, originURL: { index: [], value: [] } };
               const layout = { nodeIndex: [], styles: [], bounds: [], text: [], stackingContexts: { index: [] }, paintOrders: [],
                 offsetRects: [], scrollRects: [], clientRects: [], blendedBackgroundColors: [], textColorOpacities: [] };
+              const textBoxes = { layoutIndex: [], bounds: [], start: [], length: [] };
               const visit = (node, parent, shadow) => {
                 const i = nodes.nodeName.length;
                 nodes.parentIndex.push(parent);
@@ -267,7 +268,29 @@ enum ExtensionDebuggerTree {
                 nodes.backendNodeId.push(backend(node));
                 nodes.attributes.push(node.attributes ? [].concat(...[...node.attributes].map((a) => [str(a.name), str(a.value)])) : []);
                 if (shadow) { nodes.shadowRootType.index.push(i); nodes.shadowRootType.value.push(str(shadow)); }
-                if (node.nodeType === 3) { nodes.textValue.index.push(i); nodes.textValue.value.push(str(node.nodeValue)); }
+                if (node.nodeType === 3) {
+                  nodes.textValue.index.push(i); nodes.textValue.value.push(str(node.nodeValue));
+                  // The text that is drawn: one box around the lines it takes.
+                  let box = null;
+                  try {
+                    const range = doc.createRange();
+                    range.selectNodeContents(node);
+                    const rect = range.getBoundingClientRect();
+                    if (range.getClientRects().length > 0 && (rect.width || rect.height)) box = rect;
+                  } catch (e) {}
+                  if (box) {
+                    textBoxes.layoutIndex.push(layout.nodeIndex.length);
+                    textBoxes.bounds.push([box.left + sx, box.top + sy, box.width, box.height]);
+                    textBoxes.start.push(0);
+                    textBoxes.length.push(node.nodeValue.length);
+                    layout.nodeIndex.push(i);
+                    layout.bounds.push([box.left + sx, box.top + sy, box.width, box.height]);
+                    layout.text.push(str(node.nodeValue));
+                    let style = [];
+                    if (names.length && node.parentElement) { const cs = getComputedStyle(node.parentElement); for (const n of names) style.push(str(cs.getPropertyValue(n))); }
+                    layout.styles.push(style);
+                  }
+                }
                 if (node.nodeType === 1) {
                   const tag = node.localName;
                   if (tag === "input" || tag === "textarea" || tag === "select") { nodes.inputValue.index.push(i); nodes.inputValue.value.push(str(node.value)); }
@@ -301,7 +324,7 @@ enum ExtensionDebuggerTree {
               const root = doc.documentElement;
               documents[slot] = { documentURL: str(doc.URL), title: str(doc.title), baseURL: str(doc.baseURI),
                 contentLanguage: str(root ? root.lang : ""), encodingName: str(doc.characterSet), publicId: str(""), systemId: str(""),
-                frameId: str(frameId), nodes, layout, scrollOffsetX: sx, scrollOffsetY: sy,
+                frameId: str(frameId), nodes, layout, textBoxes, scrollOffsetX: sx, scrollOffsetY: sy,
                 contentWidth: root ? root.scrollWidth : 0, contentHeight: root ? root.scrollHeight : 0 };
               return slot;
             };

@@ -41,7 +41,7 @@ final class ExtensionDebuggerTests: XCTestCase {
         let context = try XCTUnwrap(JSContext())
         // The helper looks at DOM classes; a bare engine has none.
         context.evaluateScript("class Node {}; class Element extends Node {}")
-        let helper = try XCTUnwrap(context.evaluateScript(ExtensionDebuggerPage.source + "('t')"))
+        let helper = try XCTUnwrap(context.evaluateScript(ExtensionDebuggerPage.source(key: "k") + "('t')"))
         context.setObject(helper, forKeyedSubscript: "cdp" as NSString)
 
         func answer(_ script: String) throws -> [String: Any] {
@@ -122,7 +122,7 @@ final class ExtensionDebuggerTests: XCTestCase {
             class XMLHttpRequest { open() {} send() {} addEventListener() {} }
             class ErrorEvent {}
             """)
-        context.evaluateScript(ExtensionDebuggerSensor.source(channel: "chan"))
+        context.evaluateScript(ExtensionDebuggerSensor.source(channel: "chan", key: "k"))
         XCTAssertNil(failure)
 
         context.evaluateScript("console.log('hi', 1)")
@@ -136,7 +136,7 @@ final class ExtensionDebuggerTests: XCTestCase {
         XCTAssertEqual(arguments.last?["value"] as? Int, 1)
 
         // Run twice, the page is watched once.
-        context.evaluateScript(ExtensionDebuggerSensor.source(channel: "chan"))
+        context.evaluateScript(ExtensionDebuggerSensor.source(channel: "chan", key: "k"))
         context.evaluateScript("console.log('again')")
         XCTAssertEqual(context.evaluateScript("posted.length").toInt32(), 2)
     }
@@ -146,7 +146,7 @@ final class ExtensionDebuggerTests: XCTestCase {
         var failure: String?
         context.exceptionHandler = { _, error in failure = error?.toString() }
         context.evaluateScript("var window = this;")
-        context.evaluateScript(ExtensionDebuggerSensor.source(channel: "none"))
+        context.evaluateScript(ExtensionDebuggerSensor.source(channel: "none", key: "k"))
         context.evaluateScript(ExtensionDebuggerSensor.binding(channel: "none", name: "bridge"))
         XCTAssertNil(failure)
         XCTAssertTrue(context.evaluateScript("typeof bridge").toString() == "undefined")
@@ -165,5 +165,175 @@ final class ExtensionDebuggerTests: XCTestCase {
         context.evaluateScript("try { bridge(42) } catch (e) { var refused = e instanceof TypeError }")
         XCTAssertEqual(context.evaluateScript("refused").toBool(), true)
         XCTAssertEqual(context.evaluateScript("posted.length").toInt32(), 1)
+    }
+
+    // MARK: where a session may stay
+
+    func testASessionEndsWhereATabLeavesDebuggablePages() throws {
+        let web = try XCTUnwrap(URL(string: "https://example.com/"))
+        let file = try XCTUnwrap(URL(string: "file:///etc/hosts"))
+        XCTAssertNil(ExtensionDebugger.detachReason(private: false, access: false, ownPage: false, addresses: [web, nil, web]))
+        // History, a link or a redirect took the tab to a file.
+        XCTAssertEqual(ExtensionDebugger.detachReason(private: false, access: false, ownPage: false, addresses: [web, file]), "target_closed")
+        XCTAssertEqual(ExtensionDebugger.detachReason(private: false, access: false, ownPage: true, addresses: [web]), "target_closed")
+        // A private tab, once its extension is shut out of them.
+        XCTAssertNil(ExtensionDebugger.detachReason(private: true, access: true, ownPage: false, addresses: [web]))
+        XCTAssertEqual(ExtensionDebugger.detachReason(private: true, access: false, ownPage: false, addresses: [web]), "canceled_by_user")
+    }
+
+    func testWorldsBelongToOneExtensionAndSession() {
+        let a = ExtensionDebugger.worldName(extensionID: "ext-a", sessionID: "s1", name: "agent")
+        XCTAssertNotEqual(a, ExtensionDebugger.worldName(extensionID: "ext-b", sessionID: "s1", name: "agent"))
+        XCTAssertNotEqual(a, ExtensionDebugger.worldName(extensionID: "ext-a", sessionID: "s2", name: "agent"))
+        XCTAssertEqual(a, ExtensionDebugger.worldName(extensionID: "ext-a", sessionID: "s1", name: "agent"))
+    }
+
+    func testLoadersAreCountedByDocumentsNotBySteps() throws {
+        XCTAssertEqual(ExtensionDebugger.loaderID(frame: "f", 2), "f0002")
+        let page = try XCTUnwrap(URL(string: "https://example.com/a?x=1"))
+        XCTAssertTrue(ExtensionDebugger.sameDocument(page, try XCTUnwrap(URL(string: "https://example.com/a?x=1#top"))))
+        XCTAssertTrue(ExtensionDebugger.sameDocument(try XCTUnwrap(URL(string: "https://example.com/a#one")), try XCTUnwrap(URL(string: "https://example.com/a#two"))))
+        XCTAssertFalse(ExtensionDebugger.sameDocument(page, page), "a reload to the same address is a new document")
+        XCTAssertFalse(ExtensionDebugger.sameDocument(page, try XCTUnwrap(URL(string: "https://example.com/b#top"))))
+        XCTAssertFalse(ExtensionDebugger.sameDocument(nil, page))
+    }
+
+    // MARK: keys
+
+    /// What a run of key events types and presses, as the plan says.
+    private func run(_ events: [(type: String, key: String, text: String?)]) -> (typed: String, presses: [String]) {
+        var typed = "", presses: [String] = []
+        for event in events {
+            guard let plan = ExtensionDebugger.keyPlan(type: event.type, key: event.key, text: event.text) else { continue }
+            if let press = plan.event, press.down { typed += press.characters; presses.append("down") }
+            if let press = plan.event, !press.down { presses.append("up") }
+            if let text = plan.insert { typed += text }
+        }
+        return (typed, presses)
+    }
+
+    func testEachKeySequenceTypesACharacterOnce() {
+        // Chrome's own: keyDown with text; rawKeyDown then char; either then keyUp.
+        XCTAssertEqual(run([("keyDown", "Q", "Q"), ("keyUp", "Q", nil)]).typed, "Q")
+        XCTAssertEqual(run([("rawKeyDown", "Q", nil), ("char", "Q", "Q"), ("keyUp", "Q", nil)]).typed, "Q")
+        XCTAssertEqual(run([("rawKeyDown", "q", "q"), ("char", "q", "q"), ("keyUp", "q", nil)]).typed, "q")
+        XCTAssertEqual(run([("keyDown", "9", "9"), ("keyUp", "9", nil), ("keyDown", " ", " "), ("keyUp", " ", nil)]).typed, "9 ")
+        // A key with no place on the keyboard still types its text, once.
+        XCTAssertEqual(run([("keyDown", "é", "é"), ("keyUp", "é", nil)]).typed, "é")
+        XCTAssertEqual(run([("rawKeyDown", "é", nil), ("char", "é", "é"), ("keyUp", "é", nil)]).typed, "é")
+        // Down with no text types nothing; a command key still acts.
+        XCTAssertEqual(run([("keyDown", "a", nil), ("keyUp", "a", nil)]).typed, "")
+        XCTAssertEqual(ExtensionDebugger.keyPlan(type: "rawKeyDown", key: "Backspace", text: nil)?.event?.characters, "\u{7f}")
+        XCTAssertNil(ExtensionDebugger.keyPlan(type: "nonsense", key: "a", text: nil))
+    }
+
+    // MARK: what a page says
+
+    func testNumbersFromAPageNeverTrap() {
+        XCTAssertEqual(ExtensionDebugger.whole(1e100), 1_000_000_000)
+        XCTAssertEqual(ExtensionDebugger.whole(-1e100), -1_000_000_000)
+        XCTAssertEqual(ExtensionDebugger.whole(.nan), 0)
+        XCTAssertEqual(ExtensionDebugger.whole(.infinity), 0)
+        XCTAssertEqual(ExtensionDebugger.whole(12.9), 12)
+        XCTAssertEqual(ExtensionDebugger.finite(NSNumber(value: 1e100)), 1e9)
+        XCTAssertNil(ExtensionDebugger.finite(NSNumber(value: Double.nan)))
+        XCTAssertNil(ExtensionDebugger.finite("12"))
+        XCTAssertNil(ExtensionDebugger.finite(nil))
+    }
+
+    func testWhatAPagePostsCanAlwaysBeWrittenOut() throws {
+        let posted: [String: Any] = ["k": "net", "status": Double.nan, "headers": ["a": [1, Double.infinity, "x", Date()]],
+                                     "ok": true, "n": 2]
+        let clean = try XCTUnwrap(ExtensionDebugger.plain(posted) as? [String: Any])
+        let data = try JSONSerialization.data(withJSONObject: clean)
+        let back = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertTrue(back["status"] is NSNull)
+        XCTAssertEqual(back["ok"] as? Bool, true)
+        XCTAssertEqual(back["n"] as? Int, 2)
+        XCTAssertEqual((back["headers"] as? [String: Any])?["a"] as? NSArray, [1, NSNull(), "x", NSNull()])
+    }
+
+    func testAPageCannotSwapTheHelperOrFindItByAKnownName() throws {
+        let context = try XCTUnwrap(JSContext())
+        context.evaluateScript("class Node {}; class Element extends Node {}; 'use strict';")
+        let source = ExtensionDebuggerPage.source(key: "shk3y")
+        context.evaluateScript("var first = \(source)('t'); var second = \(source)('t');")
+        XCTAssertEqual(context.evaluateScript("first === second").toBool(), true)
+        // The page's own script, in the same world, swapping an operation or the helper.
+        context.evaluateScript("try { first.ops.viewport = () => ({clientWidth: 1e100}); } catch (e) {}")
+        context.evaluateScript("try { globalThis.shk3y = {}; } catch (e) {}")
+        context.evaluateScript("try { Object.defineProperty(globalThis, 'shk3y', { value: {} }); } catch (e) {}")
+        XCTAssertEqual(context.evaluateScript("globalThis.shk3y === first").toBool(), true)
+        XCTAssertEqual(context.evaluateScript("typeof first.ops.viewport").toString(), "function")
+        XCTAssertEqual(context.evaluateScript("Object.isFrozen(first) && Object.isFrozen(first.ops)").toBool(), true)
+        // Another session's helper is another object.
+        XCTAssertEqual(context.evaluateScript("\(ExtensionDebuggerPage.source(key: "other"))('t') !== first").toBool(), true)
+        // Not under the name every earlier version used.
+        XCTAssertEqual(context.evaluateScript("globalThis[Symbol.for('search.debugger')] === undefined").toBool(), true)
+    }
+
+    // MARK: bindings
+
+    func testBindingsGoWhereTheyWereAskedAndNowhereElse() {
+        typealias Binding = ExtensionDebugger.Binding
+        let everywhere = Binding(name: "b", context: nil, contextName: nil)
+        XCTAssertTrue(everywhere.applies(to: 1, named: ""))
+        XCTAssertTrue(everywhere.applies(to: 2, named: "agent"))
+        let one = Binding(name: "b", context: 2, contextName: nil)
+        XCTAssertTrue(one.applies(to: 2, named: "agent"))
+        XCTAssertFalse(one.applies(to: 1, named: ""))
+        XCTAssertFalse(one.applies(to: 3, named: "agent"))
+        let named = Binding(name: "b", context: nil, contextName: "agent")
+        XCTAssertTrue(named.applies(to: 4, named: "agent"))
+        XCTAssertFalse(named.applies(to: 4, named: "other"))
+        XCTAssertFalse(named.applies(to: 1, named: "agent"), "the page's own context has no name to ask for")
+    }
+
+    // MARK: cookies, snapshots
+
+    func testAnHTTPOnlyCookieStaysHTTPOnly() throws {
+        let params: [String: Any] = ["name": "sid", "value": "1", "url": "https://example.com/", "httpOnly": true]
+        let cookie = try XCTUnwrap(try ExtensionDebugger.cookie(from: params))
+        XCTAssertTrue(cookie.isHTTPOnly)
+        XCTAssertTrue(cookie.isSecure)
+        XCTAssertFalse(try XCTUnwrap(try ExtensionDebugger.cookie(from: ["name": "a", "value": "b", "domain": "example.com"])).isHTTPOnly)
+        XCTAssertThrowsError(try ExtensionDebugger.cookie(from: ["name": "a"]))
+    }
+
+    func testSnapshotsCarryTheirTextBoxes() throws {
+        let context = try XCTUnwrap(JSContext())
+        // A page of one paragraph: just enough for the snapshot to walk.
+        context.evaluateScript("""
+            class Node {}; class Element extends Node {}
+            const rect = { left: 8, top: 10, width: 120, height: 18, right: 128, bottom: 28 };
+            const text = Object.assign(new Node(), { nodeType: 3, nodeName: "#text", nodeValue: "hello", childNodes: [] });
+            const para = Object.assign(new Element(), { nodeType: 1, nodeName: "P", localName: "p", nodeValue: null, childNodes: [text],
+              attributes: [], hasAttribute: () => false, getClientRects: () => [rect], getBoundingClientRect: () => rect, shadowRoot: null });
+            const html = Object.assign(new Element(), { nodeType: 1, nodeName: "HTML", localName: "html", nodeValue: null, childNodes: [para],
+              attributes: [], hasAttribute: () => false, getClientRects: () => [rect], getBoundingClientRect: () => rect, shadowRoot: null,
+              lang: "en", scrollWidth: 800, scrollHeight: 600 });
+            var document = { nodeType: 9, nodeName: "#document", nodeValue: null, childNodes: [html], documentElement: html,
+              URL: "https://example.com/", title: "t", baseURI: "https://example.com/", characterSet: "UTF-8",
+              defaultView: { scrollX: 0, scrollY: 0 },
+              createRange: () => ({ selectNodeContents() {}, getBoundingClientRect: () => rect, getClientRects: () => [rect] }) };
+            para.parentNode = html; text.parentNode = para; html.parentNode = document;
+            var scrollX = 0, scrollY = 0, getComputedStyle = () => ({ getPropertyValue: () => "" });
+            """)
+        let helper = try XCTUnwrap(context.evaluateScript(ExtensionDebuggerPage.source(key: "k") + "('t')"))
+        context.setObject(helper, forKeyedSubscript: "cdp" as NSString)
+        context.evaluateScript("var out; (async () => { out = await cdp.run('snapshot', {mainFrame: 'f', computedStyles: []}); })();")
+        for _ in 0..<5 where context.objectForKeyedSubscript("out").isUndefined { context.evaluateScript("0") }
+        let text = try XCTUnwrap(context.objectForKeyedSubscript("out").toString())
+        let reply = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let result = try XCTUnwrap(reply["result"] as? [String: Any], text)
+        let document = try XCTUnwrap((result["documents"] as? [[String: Any]])?.first)
+        let boxes = try XCTUnwrap(document["textBoxes"] as? [String: Any])
+        for field in ["layoutIndex", "bounds", "start", "length"] {
+            XCTAssertEqual((boxes[field] as? [Any])?.count, 1, field)
+        }
+        let layout = try XCTUnwrap(document["layout"] as? [String: Any])
+        XCTAssertEqual((layout["nodeIndex"] as? [Any])?.count, 3)
+        XCTAssertEqual((layout["text"] as? [Any])?.count, 3)
+        XCTAssertEqual((layout["styles"] as? [Any])?.count, 3)
     }
 }

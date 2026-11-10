@@ -2250,7 +2250,7 @@ enum ExtensionShims {
           if (attached.has(tabId)) return attached.get(tabId);
           const tab = await tabOf(tabId);
           const found = (await native("debugger.attached", [[placeOf(tab, await frames())]]))[0];
-          if (found) attached.set(tabId, found);
+          if (found) { attached.set(tabId, found); poll(); }
           return found || null;
         };
         const notAttached = (tabId) => new Error("Debugger is not attached to the tab with id: " + tabId + ".");

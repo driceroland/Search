@@ -349,7 +349,12 @@ final class Tab: ObservableObject, Identifiable {
     /// A tab with no view (asleep, restored) has only its address to say.
     var restAddress: URL? { built == nil ? address : committed }
 
+    /// Documents this tab has committed. A reload to the same address is
+    /// one more; a fragment or history.pushState is none (ExtensionDebugger).
+    private(set) var commits = 0
+
     func didCommit() {
+        commits += 1
         popupGesture.clear()
         // What the old page was refused went with it.
         if !blockedPopups.isEmpty { blockedPopups = [] }

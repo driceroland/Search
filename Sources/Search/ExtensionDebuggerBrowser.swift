@@ -42,17 +42,37 @@ extension ExtensionDebugger {
         return out
     }
 
-    func setCookie(_ tab: Tab, _ params: [String: Any]) async throws -> [String: Any] {
-        guard let name = params["name"] as? String, let value = params["value"] as? String else { throw Failure.invalid("name and value") }
+    /// The cookie Network.setCookie describes, or nil when it describes none.
+    nonisolated static func cookie(from params: [String: Any]) throws -> HTTPCookie? {
+        guard let name = params["name"] as? String, let value = params["value"] as? String else {
+            throw Failure.invalid("name and value")
+        }
         let address = (params["url"] as? String).flatMap(URL.init(string:))
         guard let domain = (params["domain"] as? String) ?? address?.host else { throw Failure.invalid("url or domain") }
         var properties: [HTTPCookiePropertyKey: Any] = [.name: name, .value: value, .domain: domain,
                                                         .path: params["path"] as? String ?? "/"]
         if params["secure"] as? Bool == true || address?.scheme == "https" && params["secure"] == nil { properties[.secure] = "TRUE" }
-        if let expires = params["expires"] as? Double, expires > 0 { properties[.expires] = Date(timeIntervalSince1970: expires) }
-        if let site = params["sameSite"] as? String, site != "None" { properties[.sameSitePolicy] = site }
-        guard let cookie = HTTPCookie(properties: properties) else { return ["success": false] }
-        await store(tab).setCookie(cookie)
+        if params["httpOnly"] as? Bool == true { properties[HTTPCookiePropertyKey("HttpOnly")] = "TRUE" }
+        if let expires = Self.finite(params["expires"]), expires > 0 { properties[.expires] = Date(timeIntervalSince1970: expires) }
+        if let site = params["sameSite"] as? String, site != "None" { properties[.sameSitePolicy] = site.lowercased() }
+        return HTTPCookie(properties: properties)
+    }
+
+    func setCookie(_ tab: Tab, _ params: [String: Any]) async throws -> [String: Any] {
+        guard let cookie = try Self.cookie(from: params) else { return ["success": false] }
+        let wantsHTTPOnly = params["httpOnly"] as? Bool == true
+        // A cookie that is HTTP-only must stay so; one that can't is refused,
+        // not set as a cookie the page's script could read.
+        guard !wantsHTTPOnly || cookie.isHTTPOnly else { throw Failure.server("Search can't set an HTTP-only cookie") }
+        let store = store(tab)
+        await store.setCookie(cookie)
+        if wantsHTTPOnly {
+            let stored = await store.allCookies().first { $0.name == cookie.name && $0.domain == cookie.domain && $0.path == cookie.path }
+            if stored?.isHTTPOnly != true {
+                await store.deleteCookie(cookie)
+                throw Failure.server("Search can't set an HTTP-only cookie")
+            }
+        }
         return ["success": true]
     }
 
@@ -91,7 +111,7 @@ extension ExtensionDebugger {
                     if let picture = try? await self.screenshot(tab, shot), let data = picture["data"] as? String, data != last {
                         last = data
                         number += 1
-                        let view = (try? await self.op(tab, .page, 1, "viewport", [:])) ?? [:]
+                        let view = (try? await self.op(session, tab, .page, 1, "viewport", [:])) ?? [:]
                         self.emit(session, "Page.screencastFrame", [
                             "data": data, "sessionId": number,
                             "metadata": ["offsetTop": 0, "pageScaleFactor": 1, "deviceWidth": Double(size.width), "deviceHeight": Double(size.height),
