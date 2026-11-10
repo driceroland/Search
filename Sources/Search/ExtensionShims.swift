@@ -2229,9 +2229,86 @@ enum ExtensionShims {
           getCapturedTabs: (cb) => { if (cb) cb([]); else return Promise.resolve([]); }, onStatusChanged: event() });
       }
       put2("pageCapture", { saveAsMHTML: refuse("pageCapture.saveAsMHTML") });
-      put2("debugger", { attach: refuse("debugger.attach"), detach: refuse("debugger.detach"),
-        sendCommand: refuse("debugger.sendCommand"), getTargets: (cb) => { if (cb) cb([]); else return Promise.resolve([]); },
-        onEvent: event(), onDetach: event() });
+      // chrome.debugger: the DevTools protocol for a tab, carried out by the
+      // browser (ExtensionDebugger.swift). What happens in the page comes
+      // back through a long poll, which runs while a tab is attached.
+      if (declares("debugger") && !inContent) {
+        const attached = new Map();
+        const onEvent = event(), onDetach = event();
+        let polling = false;
+        const answer = (promise, callback) => {
+          if (typeof callback !== "function") return promise;
+          promise.then((value) => callback(value), (error) => withLastError(error, callback));
+        };
+        const tabIdOf = (target) => {
+          if (target && Number.isInteger(target.tabId)) return target.tabId;
+          if (target && typeof target.targetId === "string" && /^tab-\d+$/.test(target.targetId)) return Number(target.targetId.slice(4));
+          throw new Error("Either tabId, extensionId or targetId must be specified");
+        };
+        const tabOf = (tabId) => chrome.tabs.get(tabId).catch(() => { throw new Error("No tab with given id " + tabId + "."); });
+        const sessionOf = async (tabId) => {
+          if (attached.has(tabId)) return attached.get(tabId);
+          const tab = await tabOf(tabId);
+          const found = (await native("debugger.attached", [[placeOf(tab, await frames())]]))[0];
+          if (found) attached.set(tabId, found);
+          return found || null;
+        };
+        const notAttached = (tabId) => new Error("Debugger is not attached to the tab with id: " + tabId + ".");
+        const tell = (listeners, ...args) => {
+          for (const f of [...listeners]) { try { f(...args); } catch (e) { console.error(e); } }
+        };
+        const poll = async () => {
+          if (polling) return;
+          polling = true;
+          try {
+            while (attached.size) {
+              let items;
+              try { items = await native("debugger.poll", [20]); }
+              catch (e) { await new Promise((r) => setTimeout(r, 1000)); continue; }
+              for (const item of items || []) {
+                const entry = [...attached].find(([, session]) => session === item.session);
+                if (!entry) continue;
+                const source = { tabId: entry[0] };
+                if (item.detach) { attached.delete(entry[0]); tell(onDetach.listeners, source, item.detach); }
+                else tell(onEvent.listeners, source, item.method, item.params);
+              }
+            }
+          } finally { polling = false; }
+        };
+        put2("debugger", {
+          attach: (target, version, callback) => answer((async () => {
+            const tabId = tabIdOf(target);
+            if (await sessionOf(tabId)) throw new Error("Another debugger is already attached to the tab with id: " + tabId + ".");
+            const reply = await native("debugger.attach", [placeOf(await tabOf(tabId), await frames())]);
+            attached.set(tabId, reply.session);
+            poll();
+          })(), typeof version === "function" ? version : callback),
+          detach: (target, callback) => answer((async () => {
+            const tabId = tabIdOf(target);
+            const session = await sessionOf(tabId);
+            if (!session) throw notAttached(tabId);
+            attached.delete(tabId);
+            await native("debugger.detach", [session]);
+          })(), callback),
+          sendCommand: (target, method, params, callback) => {
+            if (typeof params === "function") { callback = params; params = undefined; }
+            return answer((async () => {
+              const tabId = tabIdOf(target);
+              const session = await sessionOf(tabId);
+              if (!session) throw notAttached(tabId);
+              return native("debugger.send", [session, method, params || {}, (target && target.sessionId) || ""]);
+            })(), callback);
+          },
+          getTargets: (callback) => answer((async () => {
+            const tabs = await chrome.tabs.query({});
+            const known = await frames();
+            const flags = tabs.length ? await native("debugger.attached", [tabs.map((t) => placeOf(t, known))]) : [];
+            return tabs.map((t, i) => ({ type: "page", id: "tab-" + t.id, tabId: t.id, title: t.title || "",
+              url: t.url || "", attached: !!flags[i], faviconUrl: t.favIconUrl || "" }));
+          })(), callback),
+          onEvent, onDetach,
+        });
+      }
       put2("gcm", { register: refuse("gcm.register"), unregister: refuse("gcm.unregister"), send: refuse("gcm.send"),
         onMessage: event(), onMessagesDeleted: event(), onSendError: event() });
       put2("instanceID", { getID: refuse("instanceID.getID"), getToken: refuse("instanceID.getToken"),
@@ -4148,6 +4225,7 @@ enum ExtensionShims {
         "system.memory": "system.memory",
         "system.storage": "system.storage",
         "system.display": "system.display",
+        "debugger": "debugger",
     ]
 
     /// The family a call belongs to, as `gates` names it: `system.*` are
@@ -4462,6 +4540,27 @@ enum ExtensionShims {
                 if case .page(let shown, _, _) = browser.sidePanel, shown == id { browser.closeSidePanel() }
             }
             return nil
+
+        // MARK: debugger — the DevTools protocol for a tab, carried out here
+        case "debugger.attach":
+            guard let tab = located(first, context: context, owner: owner) else { throw Unsupported(what: "No tab with given id.") }
+            return try await ExtensionDebugger.shared.attach(to: tab, context: context, owner: owner)
+        case "debugger.attached":
+            return (first as? [Any] ?? []).map { place -> Any in
+                ExtensionDebugger.shared.session(on: located(place, context: context, owner: owner), for: id) ?? NSNull()
+            }
+        case "debugger.detach":
+            ExtensionDebugger.shared.detach(first as? String ?? "", extensionID: id)
+            return nil
+        case "debugger.send":
+            guard args.count >= 3, let session = first as? String, let method = args[1] as? String else {
+                throw Unsupported(what: "Debugger is not attached to the tab.")
+            }
+            return try await ExtensionDebugger.shared.send(session: session, extensionID: id, method: method,
+                                                           params: args[2] as? [String: Any] ?? [:],
+                                                           sessionId: args.count > 3 ? args[3] as? String ?? "" : "")
+        case "debugger.poll":
+            return await ExtensionDebugger.shared.poll(extensionID: id, seconds: (first as? NSNumber)?.doubleValue ?? 20)
 
         // MARK: offscreen — a page with a DOM for a worker that has none
         // MARK: capture — a stream id for the worker's chooseDesktopMedia

@@ -604,6 +604,8 @@ final class Tab: ObservableObject, Identifiable {
     @Published var muted = false
     /// An extension is recording from this tab's page (see RecordingIndicator).
     @Published var recording = false
+    /// The extensions debugging this tab's page, by name (ExtensionDebugger).
+    @Published var debuggedBy: [String] = []
 
     /// Not `web`: a tab asleep is muted without being woken, and hears of
     /// it when its page is built again.

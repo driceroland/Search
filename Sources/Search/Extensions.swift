@@ -656,6 +656,9 @@ final class Extensions: NSObject, ObservableObject {
     @discardableResult
     private func unload(_ id: String, replacingContext: Bool = true) -> Bool {
         loadTickets[id, default: 0] += 1
+        // Taken up again, switched off or removed: what it was allowed to
+        // debug is asked about again. A worker only restarting keeps it.
+        if replacingContext { ExtensionDebugger.shared.detachAll(extension: id) }
         guard let context = contexts[id] else { return false }
         var unloaded = false
         do { try controller.unload(context); unloaded = true } catch {}
@@ -1517,6 +1520,16 @@ final class Extensions: NSObject, ObservableObject {
             "“\(name)” wants to record your screen or a window.",
             detail: "macOS will ask what to share. Search remembers your answer for \(name); Settings › Extensions takes it back.",
             icon: context.webExtension.icon(for: CGSize(width: 64, height: 64)), yes: "Continue", no: "Don't Allow")
+    }
+
+    /// Debugging a tab (chrome.debugger): asked once for each extension each
+    /// time Search starts, naming it. While it lasts the tab's row says so.
+    func ask(debugging context: WKWebExtensionContext) async -> Bool {
+        let name = context.webExtension.displayName ?? "An extension"
+        return await ask(
+            "“\(name)” wants to debug your tabs.",
+            detail: "It can read and change what's on a page, click and type in it, and take its picture, as the browser's developer tools can. A tab it is debugging is marked in its row. Search asks again the next time it starts.",
+            icon: context.webExtension.icon(for: CGSize(width: 64, height: 64)), yes: "Allow", no: "Don't Allow")
     }
 
     func ask(_ question: String, detail: String, context: WKWebExtensionContext) async -> Bool {

@@ -1256,6 +1256,13 @@ private struct SideRow: View, Equatable {
                             .foregroundStyle(colour.opacity(0.8))
                             .help("Recording")
                     }
+                    if !tab.debuggedBy.isEmpty {
+                        // An extension is driving this page (ExtensionDebugger).
+                        Image(systemName: "ladybug")
+                            .font(.system(size: 10))
+                            .foregroundStyle(colour.opacity(0.8))
+                            .help("Debugged by \(tab.debuggedBy.joined(separator: ", "))")
+                    }
                     // A window the page asked for was refused (BlockedPopups).
                     PopupSign(browser: browser, tab: tab, colour: colour)
                     // The page is translated (Translate.swift).

@@ -75,6 +75,7 @@ enum IconTiles {
         var marks: [String] = []
         if tab.shy { marks.append("Private") }
         if tab.recording { marks.append("Recording") }
+        if !tab.debuggedBy.isEmpty { marks.append("Debugged by " + tab.debuggedBy.joined(separator: ", ")) }
         if !tab.loading && tab.muted { marks.append("Muted") } else if !tab.loading && tab.noisy { marks.append("Playing sound") }
         if !marks.isEmpty { lines.append(marks.joined(separator: " · ")) }
         return lines.joined(separator: "\n")
@@ -146,6 +147,14 @@ struct IconTile: View {
                     .overlay(Circle().strokeBorder(Palette.ground, lineWidth: 1))
                     .padding(4)
                     .allowsHitTesting(false)
+            } else if !tab.debuggedBy.isEmpty {
+                // An extension is driving this page (ExtensionDebugger).
+                Circle()
+                    .fill(Color(nsColor: .systemOrange))
+                    .frame(width: 6, height: 6)
+                    .overlay(Circle().strokeBorder(Palette.ground, lineWidth: 1))
+                    .padding(4)
+                    .allowsHitTesting(false)
             } else if browser.peekFrom == tab.id, let page = browser.peekTab {
                 PeekBadge(page: page, size: 12).padding(1)
             }
@@ -211,6 +220,7 @@ struct IconTile: View {
         .animation(Motion.quick, value: tab.loading)
         .animation(Motion.quick, value: speaker)
         .animation(Motion.quick, value: tab.recording)
+        .animation(Motion.quick, value: tab.debuggedBy)
         .transition(.scale(scale: 0.9).combined(with: .opacity))
     }
 
