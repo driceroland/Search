@@ -1524,16 +1524,22 @@ struct TabMenu: View {
     @ViewBuilder
     private var singleMenu: some View {
         if browser.prefs.usesTabGroups && tab.pin == nil && !tab.shy && !tab.bench {
+            // Right-clicked among tabs picked in the column: all of them, as
+            // a drag onto a group takes them (see carried).
+            let moving = browser.carried(with: tab)
             Menu("Move to Group") {
-                Button("New Group") { browser.addTabGroup(containing: tab) }
+                Button("New Group") {
+                    let id = browser.addTabGroup(containing: tab)
+                    for other in moving where other !== tab { browser.move(other, toGroup: id) }
+                }
                 if !browser.tabGroups.isEmpty { Divider() }
                 ForEach(browser.tabGroups) { group in
-                    Button(group.name) { browser.move(tab, toGroup: group.id) }
-                        .disabled(tab.groupID == group.id)
+                    Button(group.name) { for each in moving { browser.move(each, toGroup: group.id) } }
+                        .disabled(moving.allSatisfy { $0.groupID == group.id })
                 }
-                if tab.groupID != nil {
+                if moving.contains(where: { $0.groupID != nil }) {
                     Divider()
-                    Button("Remove from Group") { browser.move(tab, toGroup: nil) }
+                    Button("Remove from Group") { for each in moving { browser.move(each, toGroup: nil) } }
                 }
             }
         }
