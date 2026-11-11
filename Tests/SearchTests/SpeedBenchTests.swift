@@ -128,6 +128,34 @@ final class SpeedBenchTests: XCTestCase {
         _ = window
     }
 
+    /// Something in the window that no tab's row shows: the downloads card
+    /// hung and taken down, over a column of 60 tabs.
+    func testUnrelatedChange() async throws {
+        let browser = makeBrowser(tabs: 60)
+        let window = host(browser)
+        try await settle()
+        let cost = try await measure(browser, steps: 60, label: "unrelated") { i in
+            browser.downloadsHanging = i.isMultiple(of: 2)
+        }
+        browser.downloadsHanging = false
+        record("unrelatedChange", cost)
+        _ = window
+    }
+
+    /// A tab picked with ⌘ and let go again: what the rows do show.
+    func testPicking() async throws {
+        let browser = makeBrowser(tabs: 60)
+        let window = host(browser)
+        try await settle()
+        let tab = browser.tabs[30]
+        let cost = try await measure(browser, steps: 60, label: "picking") { _ in
+            browser.extendTabSelection(to: tab, modifiers: .command)
+        }
+        browser.clearTabSelection()
+        record("picking", cost)
+        _ = window
+    }
+
     /// What the field asks the history for on each key, alone.
     func testRanking() throws {
         let browser = makeBrowser(tabs: 1)
