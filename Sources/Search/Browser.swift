@@ -5006,6 +5006,27 @@ final class Browser: NSObject, ObservableObject {
         writeSession(now: true)
     }
 
+    /// Carried out of its group and let go among the tabs in none (#1009):
+    /// in front of `loose`, or after the last of them. What goes with it
+    /// goes too, as into a group: the tabs picked with it, a pair whole. A
+    /// group left empty goes, as with Remove from Group.
+    func move(_ tab: Tab, outOfGroupBefore loose: Tab.ID?) {
+        guard prefs.usesTabGroups, tabs.contains(where: { $0 === tab }) else { return }
+        let moving = carried(with: tab)
+        guard moving.allSatisfy({ $0.pin == nil && !$0.shy && !$0.bench }),
+              moving.contains(where: { group(of: $0) != nil }) else { return }
+        let ids = Set(moving.map(\.id))
+        var row = tabs.filter { !ids.contains($0.id) }
+        let insertion = loose.flatMap { id in row.firstIndex { $0.id == id && $0.pin == nil && group(of: $0) == nil } }
+            ?? row.count
+        let previous = Set(moving.compactMap(\.groupID))
+        for member in moving { member.groupID = nil }
+        row.insert(contentsOf: moving, at: insertion)
+        tabs = row
+        for id in previous { removeEmptyGroup(id) }
+        writeSession(now: true)
+    }
+
     /// Reorder only among peers in the displayed section. The underlying
     /// tab row remains flat for keyboard shortcuts and the top strip.
     func move(_ tab: Tab, within group: UUID?, to index: Int) {
