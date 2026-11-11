@@ -7466,6 +7466,17 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         tab.popup = popup
         tab.opener = from
         if clicked { opener.popupGesture.opened(tab.id) }
+        // A small window's page opening another (X's links out, by way of
+        // t.co): a small window of its own, a step down from this one, not a
+        // tab in the browser's window, which came forward over it (#1041).
+        // A window the page sizes still opens as Settings says below.
+        if !behind, !beside, !(prefs.popupWindows && (windowFeatures.width != nil || windowFeatures.height != nil)),
+           LittleWindow.holding(opener.id) != nil {
+            prepare(tab)
+            if let url = action.request.url { tab.setAddressOptimistically(url) }
+            LittleWindow.show(tab, for: self)
+            return tab.web
+        }
         if prefs.popupWindows, windowFeatures.width != nil || windowFeatures.height != nil {
             let sourceSpace = parked.first { $0.value.tabs.contains { $0 === opener } }?.key ?? spaceID
             let popup = Browser(record: WindowRecord(space: sourceSpace), websitePopup: true)

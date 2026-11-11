@@ -41,6 +41,12 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         let tab = Tab(configuration: Web.configuration(space: browser.spaceID))
         browser.prepare(tab)
         tab.go(to: url)
+        show(tab, for: browser, front: front)
+    }
+
+    /// A page already made for it: a new window a small window's page asked
+    /// for (see Browser's createWebViewWith), which WebKit loads itself.
+    static func show(_ tab: Tab, for browser: Browser, front: Bool = true) {
         // Not in the row until kept: extensions are told of it here, as of a
         // peek (see Extensions.openedAside).
         if #available(macOS 15.4, *) { Extensions.shared.openedAside(tab) }
