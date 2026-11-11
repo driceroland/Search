@@ -183,6 +183,10 @@ final class Extensions: NSObject, ObservableObject {
         // extension's pages keep what they store where the browser does —
         // and a test run's apart from the real one's.
         views.websiteDataStore = Store.websites
+        // The tabs' pool (see Web.pool). Without it each background page
+        // WebKit makes for a worker got a pool of its own, started cold on
+        // the main thread as the worker woke, the window stuck meanwhile.
+        views.processPool = Web.pool
         // The same user agent as the web tabs, to the letter. WebKit gives
         // workers the user agent of the last page that loaded and, when it
         // differs, stops the running workers to apply it — and extension
