@@ -91,7 +91,14 @@ final class History: ObservableObject {
     /// title counting its unread mail, say — drew every window and the menu
     /// bar again for a list that was the same.
     let recentChanges = PassthroughSubject<Void, Never>()
-    private var recentShown: [Trace]?
+    /// What the menu was last drawn from: which places, in order, and whether
+    /// each had a title yet (an untitled one shows its address). Not the
+    /// title itself: one that keeps ticking is the same list for the menu.
+    private struct Shown: Equatable {
+        let key: String
+        let titled: Bool
+    }
+    private var recentShown: [Shown]?
     private var recentQueued = false
     private func noteRecent() {
         guard !recentQueued else { return }
@@ -99,7 +106,7 @@ final class History: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             recentQueued = false
-            let now = recent()
+            let now = recent().map { Shown(key: $0.key, titled: !$0.title.isEmpty) }
             guard now != recentShown else { return }
             recentShown = now
             recentChanges.send()
@@ -110,7 +117,10 @@ final class History: ObservableObject {
     /// into the address field included — and sorting the whole history for
     /// it each time cost more than everything else a key press does.
     private var recentCache: [Trace]?
-    private var saving = false
+    /// Something in memory the file doesn't have yet.
+    private var owed = false
+    /// A write waiting out `save`'s pause.
+    private var pausing = false
     /// Visits counted at most: far more than anyone makes, and room to add.
     static let mostVisits = 1_000_000_000
     /// These are derived once when a visit enters memory. Suggestions run on
@@ -327,7 +337,8 @@ final class History: ObservableObject {
         // The last few places stay worked out: only this one's title changed.
         // Unless it was a front door with no title, which the list leaves
         // out until it has one: then it may belong in it now.
-        let joins = seen.title.isEmpty && pageText[key]?.homepage == true
+        let first = seen.title.isEmpty
+        let joins = first && pageText[key]?.homepage == true
         seen.title = title
         let cached = joins ? nil : recentCache
         visits[key] = seen
@@ -337,7 +348,11 @@ final class History: ObservableObject {
                 : trace
         }
         remember(seen)
-        save()
+        // Only the title a page lands with is written at once. One that keeps
+        // changing after it — an inbox counting its mail — would rewrite the
+        // whole file each time, so it waits for the next visit's write, or
+        // for quitting.
+        if first { save() } else { owed = true }
     }
 
     func forget() {
@@ -672,20 +687,23 @@ final class History: ObservableObject {
     /// Coalesced: a busy minute of browsing writes the file once, not thirty
     /// times, and never on the main thread.
     private func save() {
-        guard !saving, !retired else { return }
-        saving = true
+        owed = true
+        guard !pausing, !retired else { return }
+        pausing = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.pausing = false
             self?.write(now: false)
         }
     }
 
-    /// Quitting: the write still waiting out `save`'s pause, made before the
+    /// Quitting: whatever the file doesn't have yet — the write still waiting
+    /// out `save`'s pause, a title that changed since — made before the
     /// process ends rather than never.
     func flush() { write(now: true) }
 
     private func write(now: Bool) {
-        guard saving else { return }
-        saving = false
+        guard owed else { return }
+        owed = false
         guard !retired else { return }
         let date = Date()
         // A cap, so the file can't grow without end. What goes is what has

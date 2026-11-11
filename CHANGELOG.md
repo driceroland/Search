@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A page whose title keeps changing, such as an inbox counting its unread mail, no longer rewrites the whole history file each time it ticks over, nor redraws every tab and the menu bar when it is among the History menu's last few places. History writes a page's first title at once, and a later one with the next visit, or when Search quits ([#1043](https://github.com/driceroland/Search/issues/1043))
 - With New tab in a floating field on, ⌘T over a tab in a group opens its new tab outside the group, where ⌘T's tab goes with the setting off. It joined the group of the tab the field was raised over. The same for an address typed into ⌘K over a grouped tab; ⌘Return from a grouped tab's address still opens in its group. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1014](https://github.com/driceroland/Search/pull/1014))
 
 ### Added
