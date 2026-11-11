@@ -691,7 +691,8 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘⇧M. Whatever is making noise in this tab stops making noise.
     func pauseMedia() {
         guard let tab = active else { return }
-        tab.web.pauseAllMediaPlayback()
+        // An empty handler, not nil: see Tab.discard (#1031).
+        tab.web.pauseAllMediaPlayback {}
         announce("Paused")
     }
 
@@ -1824,10 +1825,10 @@ final class Browser: NSObject, ObservableObject {
                   let url = web.url, let scheme = url.scheme, let host = url.host(),
                   Browser.origin(scheme, host, url.port ?? 0) == origin else { continue }
             if kind == .camera || kind == .cameraAndMicrophone {
-                web.setCameraCaptureState(.none, completionHandler: nil)
+                web.setCameraCaptureState(.none) {}
             }
             if kind == .microphone || kind == .cameraAndMicrophone {
-                web.setMicrophoneCaptureState(.none, completionHandler: nil)
+                web.setMicrophoneCaptureState(.none) {}
             }
         }
     }

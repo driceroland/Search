@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Closing a tab or a window no longer crashes Search on some versions of macOS 14 and 15: WebKit called an empty callback as it put the page's media away. Reported by [@wagonza](https://github.com/wagonza) and [@ubeann](https://github.com/ubeann) ([#1031](https://github.com/driceroland/Search/issues/1031))
 - With New tab in a floating field on, ⌘T over a tab in a group opens its new tab outside the group, where ⌘T's tab goes with the setting off. It joined the group of the tab the field was raised over. The same for an address typed into ⌘K over a grouped tab; ⌘Return from a grouped tab's address still opens in its group. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1014](https://github.com/driceroland/Search/pull/1014))
 
 ### Added
