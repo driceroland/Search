@@ -1587,8 +1587,22 @@ final class Extensions: NSObject, ObservableObject {
         let pinned: Bool
     }
 
-    /// The list behind the puzzle button.
-    @Published var menuOpen = false
+    /// The window whose list behind the puzzle button is open. One flag for
+    /// every window had each window's puzzle hold its own popover to it: a
+    /// click in the list closed the others' as a click outside them, and
+    /// that, through the flag, the list clicked in, before its row or pin
+    /// had done anything. With a window per profile, every click.
+    @Published var menuOwner: ObjectIdentifier?
+    /// Whether a list is open, in any window; set on, the window in front's.
+    var menuOpen: Bool {
+        get { menuOwner != nil }
+        set { menuOwner = newValue ? Extensions.menuKey(browser) : nil }
+    }
+    /// A window's key for menuOwner, or one for a list with no window (the
+    /// bench's picture).
+    static func menuKey(_ browser: Browser?) -> ObjectIdentifier {
+        browser.map(ObjectIdentifier.init) ?? ObjectIdentifier(Extensions.self)
+    }
     /// Where a popup hangs when its extension isn't pinned: the puzzle button.
     static let menuAnchor = "__menu"
 
@@ -2181,11 +2195,16 @@ private struct ExtensionButtons: View {
                         .background(Anchor(id: button.id, browser: browser))
                         .contextMenu { ExtensionActions(id: button.id, name: button.name, extensions: extensions) }
                 }
-                Door(icon: "puzzlepiece.extension", on: extensions.menuOpen, help: "Extensions") {
-                    extensions.menuOpen.toggle()
+                let key = Extensions.menuKey(browser)
+                Door(icon: "puzzlepiece.extension", on: extensions.menuOwner == key, help: "Extensions") {
+                    extensions.menuOwner = extensions.menuOwner == key ? nil : key
                 }
                 .background(Anchor(id: Extensions.menuAnchor, browser: browser))
-                .popover(isPresented: $extensions.menuOpen, arrowEdge: edge) {
+                // This window's list only: closing, it lets go of the flag
+                // only if the flag is still its own.
+                .popover(isPresented: Binding(get: { extensions.menuOwner == key },
+                                              set: { if !$0, extensions.menuOwner == key { extensions.menuOwner = nil } }),
+                         arrowEdge: edge) {
                     ExtensionMenu(browser: browser, extensions: extensions)
                 }
             }

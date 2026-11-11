@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With more than one window open, a click in the puzzle button's list of extensions opens the extension or pins it, where it only closed the list: every window's list followed one shared switch, and the click closed them all.
 - Waking an extension's worker no longer starts WebKit afresh on the main thread, which could hold the window still for seconds. Reported by [@aminezar](https://github.com/aminezar) ([#1037](https://github.com/driceroland/Search/issues/1037))
 - Native helpers an extension starts, 1Password's for one, are stopped when the extension's worker starts again, where each new worker left the last one's running: dozens in an afternoon. Reported by [@aminezar](https://github.com/aminezar) ([#1036](https://github.com/driceroland/Search/issues/1036))
 - With the column hidden until the pointer reaches the edge, swiping to another profile's space keeps the column out while the pointer is on it.
