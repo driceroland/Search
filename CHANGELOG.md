@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- ⌃Tab, ⌘T and ⌘1–⌘9 on a video playing full screen leave full screen and do what they say, where before they acted on the window behind it unseen. Reported by [@hmehrafarin](https://github.com/hmehrafarin) ([#1042](https://github.com/driceroland/Search/issues/1042))
 - A link that opens a new window from a page in a small window (X's links out, for one) opens in a small window of its own, not as a tab in the main window. Reported by [@hmehrafarin](https://github.com/hmehrafarin) ([#1041](https://github.com/driceroland/Search/issues/1041))
 - Swiping to a space with more tabs than the column shows keeps its pins and space buttons in place: the column no longer grows past the window for the length of the swipe and jumps. Reported by [@lightsound](https://github.com/lightsound) ([#1024](https://github.com/driceroland/Search/issues/1024))
 - ⌃Tab finds a link you opened behind the page, with ⌘-click, the middle button or Open Link in New Tab: it has its card as a tab you just used, where before it came after every tab you had been on and, past nine, had none. Turn on Settings › Tabs › ⌃Tab goes to a link opened behind to have it right after the page. Thanks [@heychintan](https://github.com/heychintan) ([#1027](https://github.com/driceroland/Search/pull/1027), [#1028](https://github.com/driceroland/Search/issues/1028))

@@ -1184,6 +1184,13 @@ struct ContentView: View {
                 guard browser.prefs.escapeTwice else { return event }
                 return FullScreenEscape.shared.passes(event, to: page) ? event : nil
             }
+            // ⌃Tab, ⌘T and ⌘1–⌘9 on a page filling the screen act on the
+            // window behind it, as they did, and also end the page's full
+            // screen as its own button does: the key says the video is being
+            // left, and the tab they went to was there only after Esc (#1042).
+            if let page = ContentView.pageFillingScreen(event), ContentView.movesTab(event) {
+                page.evaluateInSearch("if (document.fullscreenElement) document.exitFullscreen(); void 0")
+            }
             // A key typed while the field is on its way is the field's (holdKey),
             // Escape in a full-screen window included.
             if browser.holdKey(event) { return nil }
@@ -1238,6 +1245,15 @@ struct ContentView: View {
         let fills = page.fullscreenState != .notInFullscreen
             || Browsers.all.contains { $0.tabs.contains { $0.immersed && $0.built === page } }
         return fills ? page : nil
+    }
+
+    /// A key that goes to another tab or a new one: the switcher's, ⌘T,
+    /// ⌘1 through ⌘9.
+    private static func movesTab(_ event: NSEvent) -> Bool {
+        if ShortcutStore.shared.recentSwitch(event) != nil { return true }
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else { return false }
+        if let number = digits[event.keyCode] { return number != 0 }
+        return event.shortcutCharacters == "t"
     }
 
     /// The same handling the key monitor gives an event, for the bench to
