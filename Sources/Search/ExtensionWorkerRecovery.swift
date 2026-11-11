@@ -118,6 +118,8 @@ final class ExtensionWorkerRecovery {
               backgrounds[id]?.view !== view else { return }
         let background = Background(view)
         backgrounds[id] = background
+        // The worker before this one is gone, and its hosts with it.
+        ExtensionNative.stopWorkerHosts(of: id)
         createdWorker(id, lifetime: background.lifetime)
     }
 
