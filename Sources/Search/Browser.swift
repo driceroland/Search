@@ -5254,7 +5254,7 @@ final class Browser: NSObject, ObservableObject {
         guard let activeID else { return }
         tabSwitcher.partners = switcherPartners
         tabSwitcher.step(row: tabs.filter(standsInRow).map(\.id), current: activeSplit?.left ?? activeID,
-                         backwards: backwards, moons: LittleWindow.stacked)
+                         backwards: backwards, moons: LittleWindow.stacked, behindFirst: prefs.switcherBehindFirst)
     }
 
     /// A pair once, under its first page, pictured with its other one.
@@ -5265,7 +5265,8 @@ final class Browser: NSObject, ObservableObject {
     /// The row as the switcher's grid shows it, for a small window's
     /// switcher to show as its planet (see TabSwitcher.ordered).
     var switcherPlanet: [Tab.ID] {
-        tabSwitcher.ordered(row: tabs.filter(standsInRow).map(\.id), current: activeSplit?.left ?? activeID)
+        tabSwitcher.ordered(row: tabs.filter(standsInRow).map(\.id), current: activeSplit?.left ?? activeID,
+                            behindFirst: prefs.switcherBehindFirst)
     }
 
     /// A letter pressed on a card while a switcher is up (see
@@ -5884,6 +5885,10 @@ final class Browser: NSObject, ObservableObject {
 
     /// A link just opened behind `source`: the next one goes after it.
     private func noteLink(_ tab: Tab, from source: Tab?) {
+        // Every link opened behind passes here — ⌘-click, the middle button,
+        // Open Link in New Tab — so ⌃Tab finds it here too. One opened in
+        // front is on screen, and takes its place when it is left.
+        tabSwitcher.openedBehind(tab.id)
         guard let source, tabs.contains(where: { $0.id == source.id }) else { return }
         let earlier = linkRun.flatMap { $0.opener == source.id ? $0.opened : nil } ?? []
         linkRun = LinkRun(opener: source.id, last: tab.id, opened: earlier.union([tab.id]))

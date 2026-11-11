@@ -41,6 +41,13 @@ final class TabSwitcher: ObservableObject {
     /// The tabs left, latest first, in every space: going back to a space
     /// finds its order where it was. Kept only while the switcher is on.
     private var recentIDs: [Tab.ID] = []
+    /// The grid's order: the tabs left and the links opened behind the page,
+    /// latest first: of a dozen links opened from one page, the newest keep
+    /// their cards and the oldest go out. A link never on screen was never
+    /// left, and fell after every tab left, past the tenth card.
+    /// Apart from `recentIDs` so that `lastLeft`, which closing a tab and a
+    /// pin's number go back to, still names only tabs you were on.
+    private var usedIDs: [Tab.ID] = []
     @Published private(set) var candidates: [Tab.ID] = []
     /// The small windows (Little.swift), the one in front first: out of the
     /// grid, beside it, as a moon is beside its planet. They aren't the
@@ -133,6 +140,7 @@ final class TabSwitcher: ObservableObject {
     /// Tabs that are gone fall out, and only the ten latest keep a picture.
     func left(_ tab: Tab, alive: Set<Tab.ID>) {
         recentIDs = [tab.id] + recentIDs.filter { $0 != tab.id && alive.contains($0) }
+        usedIDs = [tab.id] + usedIDs.filter { $0 != tab.id && alive.contains($0) }
         prune { kept($0) }
         guard tab.isWeb else { return }
         // Pictured a moment after the switching stops, rather than at it:
@@ -157,10 +165,10 @@ final class TabSwitcher: ObservableObject {
     /// before this one: a quick press goes back to the last tab, and the
     /// next comes back again. ⇧ starts from the far end, which is the last
     /// moon when there are any: the walk is one ring, grid then moons.
-    func step(row: [Tab.ID], current: Tab.ID, backwards: Bool, moons: [Tab.ID] = []) {
+    func step(row: [Tab.ID], current: Tab.ID, backwards: Bool, moons: [Tab.ID] = [], behindFirst: Bool = false) {
         guard active else {
             guard row.contains(current) else { return }
-            let planet = ordered(row: row, current: current)
+            let planet = ordered(row: row, current: current, behindFirst: behindFirst)
             begin(home: current, planet: planet, moons: moons.filter { !planet.contains($0) },
                   moonsLead: false, backwards: backwards)
             return
@@ -183,14 +191,22 @@ final class TabSwitcher: ObservableObject {
         walk(backwards: backwards)
     }
 
-    /// A row's tabs as the grid shows them: the one on screen, the ones left
-    /// latest first, then the rest in the row's order; ten at most.
-    func ordered(row: [Tab.ID], current: Tab.ID?) -> [Tab.ID] {
+    /// A row's tabs as the grid shows them: the one on screen, the tabs left
+    /// and the links opened behind, latest first, then the rest in the row's
+    /// order; ten at most. Without `behindFirst` (Settings › Tabs) the last
+    /// tab left keeps the second card, so a quick ⌃Tab still goes back to it.
+    func ordered(row: [Tab.ID], current: Tab.ID?, behindFirst: Bool) -> [Tab.ID] {
         let valid = Set(row)
+        let back = behindFirst ? [] : recentIDs.first { $0 != current && valid.contains($0) }.map { [$0] } ?? []
         var seen: Set<Tab.ID> = []
-        return Array(([current].compactMap { $0 } + recentIDs + row)
+        return Array(([current].compactMap { $0 } + back + usedIDs + row)
             .filter { valid.contains($0) && seen.insert($0).inserted }
             .prefix(10))
+    }
+
+    /// A link just opened behind the page: the latest in the grid.
+    func openedBehind(_ id: Tab.ID) {
+        usedIDs = [id] + usedIDs.filter { $0 != id }
     }
 
     private func begin(home: Tab.ID, planet: [Tab.ID], moons: [Tab.ID], moonsLead: Bool, backwards: Bool) {
@@ -306,6 +322,7 @@ final class TabSwitcher: ObservableObject {
     func reset() {
         cancel()
         recentIDs = []
+        usedIDs = []
         previewRequests = [:]
         if !previews.isEmpty { previews = [:] }
     }
