@@ -7225,10 +7225,12 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             decisionHandler(.cancel)
             return
         }
+        // From popupTab, not tab(for:): a peek or a small window is not in
+        // the row, and a link from a private one must open private too.
         if action.navigationType == .linkActivated,
            ["http", "https"].contains(scheme),
            action.modifierFlags.contains(.command) {
-            openClicked(url, foreground: action.modifierFlags.contains(.shift), from: tab(for: webView), view: webView)
+            openClicked(url, foreground: action.modifierFlags.contains(.shift), from: popupTab(for: webView), view: webView)
             decisionHandler(.cancel)
             return
         }

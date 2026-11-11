@@ -13,6 +13,9 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A link ⌘-clicked inside a peek of a private tab opens in a private tab, as one from the private tab itself does.
+- An extension reads your installed fonts, or your Mac's processor, memory and displays, only if it asked for `fontSettings` or that `system.*` permission, as in Chrome.
+- With Settings › Let a script drive Search on, `./bench little` and `./bench probe` leave private tabs out outside a test run, as `./bench tabs` already did.
 - With New tab in a floating field on, ⌘T over a tab in a group opens its new tab outside the group, where ⌘T's tab goes with the setting off. It joined the group of the tab the field was raised over. The same for an address typed into ⌘K over a grouped tab; ⌘Return from a grouped tab's address still opens in its group. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1014](https://github.com/driceroland/Search/pull/1014))
 
 ### Added
