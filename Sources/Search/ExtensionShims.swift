@@ -4143,7 +4143,19 @@ enum ExtensionShims {
         "power": "power",
         "tts": "tts",
         "tabGroups": "tabGroups",
+        "fontSettings": "fontSettings",
+        "system.cpu": "system.cpu",
+        "system.memory": "system.memory",
+        "system.storage": "system.storage",
+        "system.display": "system.display",
     ]
+
+    /// The family a call belongs to, as `gates` names it: `system.*` are
+    /// each their own permission in Chrome, so they keep two parts.
+    static func family(of api: String) -> String {
+        let parts = api.split(separator: ".")
+        return parts.prefix(parts.first == "system" ? 2 : 1).joined(separator: ".")
+    }
 
     /// What this extension asked for: the names in its manifest and any
     /// optional ones granted since. The checks inside the shim are a
@@ -4226,7 +4238,7 @@ enum ExtensionShims {
         if api == "tabs.describe", !context.hasPermission(.tabs) {
             throw Unsupported(what: "The extension never asked for \u{201C}tabs\u{201D}")
         }
-        if let needed = gates[String(api.prefix(while: { $0 != "." }))], !allowed(id, context: context).contains(needed) {
+        if let needed = gates[family(of: api)], !allowed(id, context: context).contains(needed) {
             throw Unsupported(what: "The extension never asked for \u{201C}\(needed)\u{201D}")
         }
 
