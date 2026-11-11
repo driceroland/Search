@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With the column hidden until the pointer reaches the edge, swiping to another profile's space keeps the column out while the pointer is on it.
 - ⌃Tab, ⌘T and ⌘1–⌘9 on a video playing full screen leave full screen and do what they say, where before they acted on the window behind it unseen. Reported by [@hmehrafarin](https://github.com/hmehrafarin) ([#1042](https://github.com/driceroland/Search/issues/1042))
 - A link that opens a new window from a page in a small window (X's links out, for one) opens in a small window of its own, not as a tab in the main window. Reported by [@hmehrafarin](https://github.com/hmehrafarin) ([#1041](https://github.com/driceroland/Search/issues/1041))
 - Swiping to a space with more tabs than the column shows keeps its pins and space buttons in place: the column no longer grows past the window for the length of the swipe and jumps. Reported by [@lightsound](https://github.com/lightsound) ([#1024](https://github.com/driceroland/Search/issues/1024))

@@ -132,7 +132,11 @@ extension Browsers {
         current.tucked = true
         next.shut = false
         next.folded = current.folded
-        next.peeking = false
+        // A folded column that was out stays out: the pointer that brought
+        // it is still on it, after a swipe to another profile above all, and
+        // put away here it waited for the pointer to go back to the edge.
+        // The new window's own watch takes it in once the pointer leaves.
+        next.peeking = current.folded && current.peeking
         guard let window = next.window else {
             becameKey(next)
             return
