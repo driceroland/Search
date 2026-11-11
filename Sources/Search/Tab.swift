@@ -1124,6 +1124,10 @@ final class Tab: ObservableObject, Identifiable {
         // Every frame: a swipe over an embedded map is the map's, and only the
         // map's own document can say so.
         add(Swipe.watch, .atDocumentStart, mainFrameOnly: false, in: Web.world)
+        if #available(macOS 15.4, *),
+           Extensions.shared.contexts.values.contains(where: { $0.hasPermission(.contextMenus) }) {
+            add(ImageRelay.keepMenu, .atDocumentStart, mainFrameOnly: false, in: Web.world)
+        }
         add(ImageRelay.watch, .atDocumentStart, mainFrameOnly: false, in: Web.world)
         // Every frame, in Search's world: a paused video gives the media keys
         // back (see MediaKeys.swift).
