@@ -112,6 +112,9 @@ extension Browser {
 struct Fold: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
+    /// The column's width while its edge is held, for the page beside it
+    /// (see HeldEdges).
+    var onDrag: (CGFloat?) -> Void = { _ in }
 
     /// The column going back in, a moment after the pointer left it.
     @State private var leaving: DispatchWorkItem?
@@ -205,7 +208,7 @@ struct Fold: View {
                     // it does beside the page's card (see CardEdge), or its
                     // own white where the page is no card.
                     // Away exactly when the lights are, which ride with it.
-                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards)
+                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: onDrag)
                         .frame(maxHeight: .infinity, alignment: .top)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
                                              strength: browser.folded && browser.peeking ? 1 : 0))

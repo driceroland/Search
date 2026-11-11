@@ -4766,7 +4766,7 @@ private final class LayoutRecord {
 /// Each pass of the main run loop, from waking to going back to sleep, in
 /// milliseconds: the ones that carried a pointer move ("hoversweep") apart
 /// from the rest (timers, animation, anything else).
-private final class LoopClock: @unchecked Sendable {
+final class LoopClock: @unchecked Sendable {
     private(set) var marked: [Double] = []
     private(set) var unmarked: [Double] = []
     private var woke: CFAbsoluteTime = 0

@@ -31,6 +31,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- Pulling the column's edge, or the side panel's, saves the width once, when the edge is let go, instead of at every step of the pull, which every open window redrew for. Thanks [@oddharsh](https://github.com/oddharsh) ([#1035](https://github.com/driceroland/Search/pull/1035))
 - Leaving a tab with a paused video no longer floats it: the float is for a video that is playing. Thanks [@oddharsh](https://github.com/oddharsh) ([#1034](https://github.com/driceroland/Search/pull/1034))
 - A tab's row in the column, a pin and a tab across the top redraw only when something of their own changes, not with every change to the window. Thanks [@oddharsh](https://github.com/oddharsh) ([#1033](https://github.com/driceroland/Search/pull/1033))
 - Typing into Find redraws only the find bar, not every tab in the column. Thanks [@oddharsh](https://github.com/oddharsh) ([#1032](https://github.com/driceroland/Search/pull/1032))
