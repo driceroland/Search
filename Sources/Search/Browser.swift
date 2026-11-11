@@ -496,22 +496,50 @@ final class Browser: NSObject, ObservableObject {
         }
         set { Store.settings.set(newValue.rawValue, forKey: "settings.page") }
     }
+    /// What is looked for and what the page answered, kept apart in
+    /// `seeking` for the find bar alone to watch: published here, every
+    /// letter typed into Find drew the whole window again, every row and pin.
+    let seeking = FindState()
     // The same words written back (the field does, as it appears) aren't
     // a Next: Return and the buttons ask for that themselves.
-    @Published var needle = "" {
-        didSet { if !resettingFind, oldValue != needle { look(forward: true) } }
+    var needle: String {
+        get { seeking.needle }
+        set {
+            let old = seeking.needle
+            seeking.needle = newValue
+            if !resettingFind, old != newValue { look(forward: true) }
+        }
     }
-    @Published var matchCase = false {
-        didSet { if !resettingFind, oldValue != matchCase { look(forward: true) } }
+    var matchCase: Bool {
+        get { seeking.matchCase }
+        set {
+            let old = seeking.matchCase
+            seeking.matchCase = newValue
+            if !resettingFind, old != newValue { look(forward: true) }
+        }
     }
-    @Published var wholeWords = false {
-        didSet { if !resettingFind, oldValue != wholeWords { look(forward: true) } }
+    var wholeWords: Bool {
+        get { seeking.wholeWords }
+        set {
+            let old = seeking.wholeWords
+            seeking.wholeWords = newValue
+            if !resettingFind, old != newValue { look(forward: true) }
+        }
     }
     /// Set when the page doesn't hold what was asked for.
-    @Published private(set) var missed = false
-    @Published private(set) var findFocus = 0
+    private(set) var missed: Bool {
+        get { seeking.missed }
+        set { seeking.missed = newValue }
+    }
+    private(set) var findFocus: Int {
+        get { seeking.focus }
+        set { seeking.focus = newValue }
+    }
     /// The count and which match is current, as the page last answered.
-    @Published private(set) var findResult: PageFind.Result?
+    private(set) var findResult: PageFind.Result? {
+        get { seeking.result }
+        set { seeking.result = newValue }
+    }
 
     private let pageFind = PageFind()
     private struct FindSpec: Equatable {
