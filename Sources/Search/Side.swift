@@ -235,7 +235,12 @@ struct SideBar: View {
         }
         // The pages are the column's whole width, each with its own margin.
         .padding(.horizontal, -10)
-        .frame(maxHeight: .infinity, alignment: .top)
+        // The room there is, and never more: another space's rows, drawn
+        // whole while they pass, run on past the foot rather than making the
+        // column taller than the window. With no minimum, a long space coming
+        // in made it so, and the column, centred, lost its top and its foot
+        // until the swipe was done (#1024).
+        .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
     }
 
     /// One space's page: the rows on screen, another space's rows as they
