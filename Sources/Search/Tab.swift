@@ -349,7 +349,12 @@ final class Tab: ObservableObject, Identifiable {
     /// A tab with no view (asleep, restored) has only its address to say.
     var restAddress: URL? { built == nil ? address : committed }
 
+    /// Documents this tab has committed. A reload to the same address is
+    /// one more; a fragment or history.pushState is none (ExtensionDebugger).
+    private(set) var commits = 0
+
     func didCommit() {
+        commits += 1
         popupGesture.clear()
         // What the old page was refused went with it.
         if !blockedPopups.isEmpty { blockedPopups = [] }
@@ -604,6 +609,8 @@ final class Tab: ObservableObject, Identifiable {
     @Published var muted = false
     /// An extension is recording from this tab's page (see RecordingIndicator).
     @Published var recording = false
+    /// The extensions debugging this tab's page, by name (ExtensionDebugger).
+    @Published var debuggedBy: [String] = []
 
     /// Not `web`: a tab asleep is muted without being woken, and hears of
     /// it when its page is built again.
