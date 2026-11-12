@@ -2974,7 +2974,11 @@ enum ExtensionShims {
         // the tabs it was made with are put first in the answer, their
         // indexes left true: an extension takes tabs[0] for the one it made
         // (Claude in Chrome groups it, and a pin can't be grouped, #872).
-        if (chrome.windows && typeof chrome.windows.create === "function") {
+        // Not in a website's frame: there windows.create goes through the
+        // worker (see `embedded`), and a stand-in built here on WebKit's own
+        // would take that one's place and call WebKit directly, which ends
+        // the website's process (Affinity Pathfinder's sign-in).
+        if (!embedded && chrome.windows && typeof chrome.windows.create === "function") {
           const ns = chrome.windows;
           const create = ns.create.bind(ns);
           const ours = (...args) => {

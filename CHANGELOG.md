@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- An extension's page in a website's frame can open a window again, as Affinity Pathfinder's sign-in does from its panel: since #872 the stand-in for windows.create made for Claude in Chrome took the place of the one a website's frame gets, which asks the extension's worker, so the panel called WebKit's own and WebKit ended the website's process. A website's frame keeps its own. `python3 Tests/embedded_windows.py` checks it.
 - Move to Group in a tab's right-click menu moves every tab picked with it, as dragging them onto a group does, where it moved only the tab clicked.
 - An extension's right-click items for a picture, Are.na's Add to Are.na for one, show on pictures that aren't links: with an extension that adds such items, the page keeps WebKit's menu there, whose Copy Image and Download Image are Search's own.
 - With more than one window open, a click in the puzzle button's list of extensions opens the extension or pins it, where it only closed the list: every window's list followed one shared switch, and the click closed them all.
