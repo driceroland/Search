@@ -91,6 +91,35 @@ final class HistoryCapTests: XCTestCase {
         XCTAssertTrue(left.hosts.isEmpty)
     }
 
+    /// A page opened a minute ago scores about 1, under any older page that
+    /// was visited twice. Cutting by score alone threw it out of the History
+    /// window and the field mid-session, where it had stayed until a restart.
+    func testThePageJustOpenedSurvivesTheCut() throws {
+        let history = fresh()
+        defer { history.retire() }
+        // Exactly the cap and the slack of places each visited three times:
+        // every one outranks a first visit.
+        for i in 0..<(History.cap + History.slack) {
+            history.take(site(i), title: "Old \(i)", count: 3, last: Date().addingTimeInterval(-86_400))
+        }
+        XCTAssertEqual(held(history).visits.count, History.cap + History.slack, "no cut yet: nothing is over the slack")
+
+        let fresh = URL(string: "https://fresh.example/")!
+        history.record(fresh, title: "Fresh")
+
+        let now = held(history)
+        XCTAssertEqual(now.visits.count, History.cap, "the cut brings memory back to the cap")
+        XCTAssertTrue(now.visits.contains(History.identity(for: fresh)), "the page just opened is held")
+        XCTAssertTrue(now.text.contains(History.identity(for: fresh)))
+        XCTAssertTrue(now.prefixes.contains("fresh.example"))
+        XCTAssertTrue(now.hosts.contains("fresh.example"))
+        XCTAssertEqual(history.recent().first?.title, "Fresh", "it heads the History menu")
+        XCTAssertEqual(history.everything().first?.url, fresh, "and the History window")
+        XCTAssertEqual(history.suggestions(for: "fresh.exa").first?.url, fresh, "and the field knows it")
+        XCTAssertEqual(now.text, now.visits)
+        XCTAssertEqual(now.hosts.count, now.visits.count)
+    }
+
     func testWhatIsKeptStillRanksTheWayItDid() {
         let history = fresh()
         defer { history.retire() }

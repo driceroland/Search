@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A session that runs for days keeps about the 2,000 places in memory that the history file keeps, the latest ones always among them, where memory held every page it had seen and the address field searched all of them on every key.
 - A tab in a group whose page is put away, with the minus at the end of its row or ⌘W, dims, as a pinned tab put down does. The row looked just as it had, so the minus seemed to do nothing, and a second click closed the tab.
 - A shortcut set to an arrow moves the caret while one is in a text field, and runs the command only when nothing is being typed. Back on ⌘← and Forward on ⌘→ went back and forward in the address field, a panel, and a box on the page; so did any command on ⌘ or ⌥ with an arrow, ⇧ included for selecting. ⌘T, ⌘W and the other letter shortcuts are unchanged. ([#1064](https://github.com/driceroland/Search/issues/1064))
 - Dusk no longer holds ever more memory on a page that keeps replacing its style sheets, where a page's process grew to several gigabytes and restarted in a loop. Dusk's dark copy of a sheet goes as soon as the page takes the sheet out, where every copy was kept until the page went quiet, which such a page never does; and a page that still swaps sheets past a generous budget is darkened by the filter instead, until it is reloaded. Reported by [@2cristo7](https://github.com/2cristo7) ([#740](https://github.com/driceroland/Search/issues/740))
@@ -22,7 +23,6 @@ in [ROADMAP.md](ROADMAP.md).
 - With Profiles in one window on, switching to another profile and quitting no longer opens a second, empty window at the next launch (#1060).
 - A long address that history completes in the address field keeps the start in view, so what you typed and the site stay visible; it used to scroll to the end (#1055).
 - Settings, History and the other pages of Search draw their symbols in English on a Mac set to another language: the Tabs heading's icon read 大小 in Chinese (#1049).
-- A session that runs for days keeps the same 2,000 places in memory that the history file keeps, where memory held every page it had seen and the address field searched all of them on every key.
 - Move to Group in a tab's right-click menu moves every tab picked with it, as dragging them onto a group does, where it moved only the tab clicked.
 - An extension's right-click items for a picture, Are.na's Add to Are.na for one, show on pictures that aren't links: with an extension that adds such items, the page keeps WebKit's menu there, whose Copy Image and Download Image are Search's own.
 - With more than one window open, a click in the puzzle button's list of extensions opens the extension or pins it, where it only closed the list: every window's list followed one shared switch, and the click closed them all.

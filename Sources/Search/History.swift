@@ -123,11 +123,13 @@ final class History: ObservableObject {
     private var pausing = false
     /// Visits counted at most: far more than anyone makes, and room to add.
     static let mostVisits = 1_000_000_000
-    /// Places kept, in the file and in memory: the most visited and the latest.
+    /// Places kept: in the file, and in memory once a session has run long
+    /// enough to be cut (see `prune`).
     nonisolated static let cap = 2_000
     /// How far memory may run past `cap` before it is cut back to it, so a
     /// busy day's browsing sorts the history once every few hundred pages
-    /// and not once for each.
+    /// and not once for each. Also how many of the newest places the cut
+    /// keeps whatever they score.
     static let slack = 250
     /// These are derived once when a visit enters memory. Suggestions run on
     /// every keystroke, so neither URL parsing nor address formatting belongs
@@ -319,21 +321,27 @@ final class History: ObservableObject {
         save()
     }
 
-    /// The file keeps `cap` places (see `write`), and so does memory, once it
-    /// is `slack` past it: otherwise a session that never restarts holds, and
-    /// the field scans on every key, every page it has ever seen. What goes is
-    /// what the file would have left out — the lowest `score` — with its text
-    /// and its share of every prefix, so memory is what a restart would load.
+    /// Memory is cut back to `cap` places once it is `slack` past it: otherwise
+    /// a session that never restarts holds, and the field scans on every key,
+    /// every page it has ever seen. The newest `slack` places stay whatever
+    /// they score — a page opened a minute ago scores about 1, under any older
+    /// page visited twice, and it must not leave the History window and the
+    /// field while it is still the page you are on. The rest of the cap goes
+    /// to the highest `score`, the order the file keeps (see `write`, which
+    /// holds the file to the top `cap` alone). What goes takes its text and
+    /// its share of every prefix with it.
     private func prune() {
         guard visits.count > History.cap + History.slack else { return }
         let now = Date()
-        let dropped = Set(
-            visits.values
-                .sorted { History.score($0, now: now) > History.score($1, now: now) }
-                .dropFirst(History.cap)
-                .map(\.key)
-        )
-        visits = visits.filter { !dropped.contains($0.key) }
+        let newest = visits.values.sorted { $0.last > $1.last }.prefix(History.slack)
+        var kept = Set(newest.map(\.key))
+        let best = visits.values
+            .filter { !kept.contains($0.key) }
+            .sorted { History.score($0, now: now) > History.score($1, now: now) }
+            .prefix(History.cap - History.slack)
+        kept.formUnion(best.map(\.key))
+        let dropped = Set(visits.keys).subtracting(kept)
+        visits = visits.filter { kept.contains($0.key) }
         for key in dropped {
             if let old = pageText.removeValue(forKey: key) { credit(old, by: -old.weight) }
         }
@@ -745,8 +753,9 @@ final class History: ObservableObject {
         guard !retired else { return }
         let date = Date()
         // A cap, so the file can't grow without end. What goes is what has
-        // been visited least and longest ago. Memory may be a little over it
-        // (see `prune`), so the file still cuts to it itself.
+        // been visited least and longest ago. Memory also keeps its newest
+        // places through a session (see `prune`), so the file cuts to the cap
+        // by score on its own.
         let snapshot = visits
         Disk.write(file, now: now) {
             let list = Array(snapshot.values.sorted { History.score($0, now: date) > History.score($1, now: date) }.prefix(History.cap))
