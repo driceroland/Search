@@ -141,6 +141,55 @@ def main():
         opened = sv.cmd({"do": "eval", "id": tab, "js": CHAT_OPEN})["value"]
         t.ok("twitch-chat: returning opens the chat folded away while floating", shut is False and opened is True, (shut, opened))
         sv.sp("close", id=tab)
+
+        # The mark on the video is defended (Isolate.on): put back when a
+        # player takes it off or rebuilds itself, and looked for when
+        # something changes — not four times a second, changed or not. The
+        # looks are counted in Search's own world, where the script runs.
+        tab = sv.sp("open", url=f"{base}/plain.html")["resultID"]
+        # Only a playing video is marked: floated once it plays.
+        playing = "(function(){var v=document.querySelector('video');return !!v&&!v.paused&&v.readyState>=2})()"
+        for _ in range(40):
+            if sv.cmd({"do": "eval", "id": tab, "js": playing})["value"] is True: break
+            time.sleep(0.25)
+        sv.cmd({"do": "eval", "id": tab, "js": isolate, "world": "search"})
+        marked = "!!document.querySelector('video[data-office-float]')"
+        count = "window.__looks"
+        sv.cmd({"do": "eval", "id": tab, "world": "search", "js": """(function () {
+          window.__looks = 0;
+          var look = Document.prototype.querySelector;
+          Document.prototype.querySelector = function (selector) {
+            if (selector === '[data-office-float]') window.__looks++;
+            return look.apply(this, arguments);
+          };
+          return true;
+        })()"""})
+        t.ok("the video is marked as it floats", sv.cmd({"do": "eval", "id": tab, "js": marked})["value"] is True)
+        time.sleep(5)
+        looks = sv.cmd({"do": "eval", "id": tab, "world": "search", "js": count})["value"]
+        print(f"  looks at the mark in five seconds: {looks}")
+        t.ok("a page that doesn't change is looked at a few times in five seconds, not twenty", looks is not None and looks <= 6, looks)
+        sv.cmd({"do": "eval", "id": tab, "js": "document.querySelector('video').removeAttribute('data-office-float'); 1"})
+        time.sleep(1)
+        t.ok("a mark taken off is put back", sv.cmd({"do": "eval", "id": tab, "js": marked})["value"] is True)
+        # A player rebuilding itself: the old video gone, a new one playing.
+        sv.cmd({"do": "eval", "id": tab, "js": """(function () {
+          var old = document.querySelector('video'), next = document.createElement('video');
+          next.muted = true; next.playsInline = true; next.setAttribute('style', old.getAttribute('style') || '');
+          next.srcObject = document.querySelector('canvas').captureStream(25);
+          old.parentNode.replaceChild(next, old);
+          next.play();
+          return 1;
+        })()"""})
+        time.sleep(1.5)
+        t.ok("a video that replaces it is marked", sv.cmd({"do": "eval", "id": tab, "js": marked})["value"] is True)
+        sv.cmd({"do": "eval", "id": tab, "js": restore, "world": "search"})
+        time.sleep(1.5)
+        settled = sv.cmd({"do": "eval", "id": tab, "world": "search", "js": count})["value"]
+        time.sleep(3)
+        t.ok("back in its tab, nothing looks any more", sv.cmd({"do": "eval", "id": tab, "world": "search", "js": count})["value"] == settled, settled)
+        t.ok("and the mark is gone", sv.cmd({"do": "eval", "id": tab, "js": "!document.querySelector('[data-office-float]')"})["value"] is True)
+        sv.sp("close", id=tab)
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)
