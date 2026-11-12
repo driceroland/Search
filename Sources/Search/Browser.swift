@@ -8103,7 +8103,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // at the wrong size.
         tab.applyRememberedZoom()
         // A tab waking from sleep: the new document is in, and a moment
-        // after it is on screen the picture of the old one can go.
+        // after it is on screen the picture of the old one can go. Its first
+        // frame takes it off sooner (see Tab.build); this is for the page
+        // that has none, or whose first frame comes later than this.
         tab.uncover(after: 0.45)
     }
 
