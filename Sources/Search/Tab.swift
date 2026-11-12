@@ -358,6 +358,8 @@ final class Tab: ObservableObject, Identifiable {
         // A new document: whatever the old one waited for under its field
         // went with it.
         if let built { Passkeys.shared.forget(built) }
+        // Its videos too: the new one says when one of its own plays.
+        playingVideo = false
         // about:blank too: a document another page wrote into (an opener
         // sending its window there, then writing) is that page's, not the
         // one before it, and is offered nothing that belonged to it.
@@ -581,6 +583,9 @@ final class Tab: ObservableObject, Identifiable {
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
     @Published var noisy = false
+    /// A video of the page's own document is playing, as the page last
+    /// said (see MediaKeys.watch). Sound or none: a muted one counts.
+    var playingVideo = false
     /// Paused from the player at the foot of the sidebar, to be played again
     /// from there (see Player.swift).
     @Published var stilled = false
@@ -1119,6 +1124,10 @@ final class Tab: ObservableObject, Identifiable {
         // Every frame: a swipe over an embedded map is the map's, and only the
         // map's own document can say so.
         add(Swipe.watch, .atDocumentStart, mainFrameOnly: false, in: Web.world)
+        if #available(macOS 15.4, *),
+           Extensions.shared.contexts.values.contains(where: { $0.hasPermission(.contextMenus) }) {
+            add(ImageRelay.keepMenu, .atDocumentStart, mainFrameOnly: false, in: Web.world)
+        }
         add(ImageRelay.watch, .atDocumentStart, mainFrameOnly: false, in: Web.world)
         // Every frame, in Search's world: a paused video gives the media keys
         // back (see MediaKeys.swift).
@@ -1993,7 +2002,7 @@ final class Tab: ObservableObject, Identifiable {
         let frames = !media.frames.isEmpty
         built.evaluateJavaScript(Player.still, in: nil, in: Web.world) { [weak self] result in
             if !frames, ((try? result.get()) as? Int ?? 0) == 0 { self?.stilled = false }
-            built.pauseAllMediaPlayback()
+            built.pauseAllMediaPlayback {}
         }
     }
 
@@ -2065,11 +2074,14 @@ final class Tab: ObservableObject, Identifiable {
         web.onImage = nil
         web.onSearch = nil
         web.stopLoading()
-        web.setAllMediaPlaybackSuspended(true, completionHandler: nil)
-        web.closeAllMediaPresentations(completionHandler: nil)
+        // Every handler below is an empty closure rather than nil: some WebKit
+        // builds (seen on macOS 14 and 15) call the handler without checking it,
+        // so closing a tab crashed inside closeAllMediaPresentations (#1031).
+        web.setAllMediaPlaybackSuspended(true) {}
+        web.closeAllMediaPresentations {}
         // Detaching a view doesn't end capture or playback while something still holds it.
-        web.setCameraCaptureState(.none, completionHandler: nil)
-        web.setMicrophoneCaptureState(.none, completionHandler: nil)
+        web.setCameraCaptureState(.none) {}
+        web.setMicrophoneCaptureState(.none) {}
         web.navigationDelegate = nil
         web.uiDelegate = nil
         web.removeFromSuperview()

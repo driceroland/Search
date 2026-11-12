@@ -472,6 +472,8 @@ struct ContentView: View {
     @State private var immersionRevision = 0
     /// The window's width, for a side panel that leaves the page some room.
     @State private var across: CGFloat = 0
+    /// The column's and the side panel's widths while their edges are held.
+    @StateObject private var edges = HeldEdges()
 
 
     /// The window: room at the top, one stage for the page, and the row when
@@ -592,11 +594,14 @@ struct ContentView: View {
     private var chrome: CGSize {
         let bar = barShown ? BookmarksBar.height : 0
         if cards {
-            return CGSize(width: sidebar ? browser.prefs.columnWidth : Metrics.cardGap,
+            return CGSize(width: sidebar ? sideWidth : Metrics.cardGap,
                           height: barShown ? bar : Metrics.cardGap)
         }
-        return CGSize(width: sidebar ? browser.prefs.columnWidth : 0, height: band + bar)
+        return CGSize(width: sidebar ? sideWidth : 0, height: band + bar)
     }
+
+    /// The column's width: the setting, or where its edge is while held.
+    private var sideWidth: CGFloat { edges.side ?? browser.prefs.columnWidth }
 
     /// The page as a card on the window's ground: with the tabs down the
     /// side, the column out or folded away, the switch on, and neither the
@@ -617,7 +622,7 @@ struct ContentView: View {
     /// The side panel's width as drawn: as you left it, or narrower in a
     /// window too narrow to keep 320 points of page beside it.
     private var panelWidth: CGFloat {
-        let asked = browser.prefs.sidePanelWidth
+        let asked = edges.panel ?? browser.prefs.sidePanelWidth
         guard across > 0 else { return asked }
         let left = across - chrome.width - farGap * 2 - 320
         return max(240, min(asked, left))
@@ -631,7 +636,7 @@ struct ContentView: View {
 
     private var sidePanel: some View {
         SidePanelBeside(browser: browser, prefs: browser.prefs, onLeft: sideOnRight,
-                        card: cards, width: panelWidth)
+                        card: cards, width: panelWidth, onDrag: { [edges] in edges.panel = $0 })
             .padding(.top, chrome.height)
             .padding(.bottom, farGap)
             .padding(sideOnRight ? .leading : .trailing, farGap)
@@ -725,8 +730,8 @@ struct ContentView: View {
                 // Centred on the page, not on the window. The column of tabs
                 // is not what the field is standing over, and dimming it along
                 // with the page says otherwise.
-                .padding(.leading, sidebar && !sideOnRight ? browser.prefs.columnWidth : 0)
-                .padding(.trailing, sidebar && sideOnRight ? browser.prefs.columnWidth : 0)
+                .padding(.leading, sidebar && !sideOnRight ? sideWidth : 0)
+                .padding(.trailing, sidebar && sideOnRight ? sideWidth : 0)
         }
     }
 
@@ -792,7 +797,9 @@ struct ContentView: View {
         window_
             // The column folded away, and out again at the edge (see Fold.swift).
             .overlay(alignment: sideOnRight ? .trailing : .leading) {
-                if fullscreenTab == nil { Fold(browser: browser, prefs: browser.prefs) }
+                if fullscreenTab == nil {
+                    Fold(browser: browser, prefs: browser.prefs, onDrag: { [edges] in edges.side = $0 })
+                }
             }
             .overlay(alignment: .bottom) { bars }
             .overlay {
@@ -829,6 +836,12 @@ struct ContentView: View {
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             .onChange(of: browser.prefs.columnWidth) { _, _ in
+                DispatchQueue.main.async { Lights.refresh(window); measureLights() }
+            }
+            // On the right, the lights sit in the column's corner, which
+            // moves with its edge.
+            .onChange(of: edges.side) { _, _ in
+                guard sideOnRight else { return }
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             // Stepping away to another app: macOS draws its own resting
@@ -1102,9 +1115,10 @@ struct ContentView: View {
         // height, in both modes, without a toolbar's rounder corners — see
         // Lights.swift. The column's first row is the strip's height too, so
         // its three doors sit on the lights' line.
+        let edges = self.edges
         Lights.keep(window, centreX: { window in
             browser.prefs.sidebar && browser.prefs.sidePosition == .right
-                ? window.frame.width - browser.prefs.columnWidth + Lights.centre.x
+                ? window.frame.width - (edges.side ?? browser.prefs.columnWidth) + Lights.centre.x
                 : Lights.centre.x
         }, vertical: { _ in browser.prefs.iconColumn }) { measureLights() }
         DispatchQueue.main.async { measureLights() }
@@ -1184,6 +1198,13 @@ struct ContentView: View {
                 guard browser.prefs.escapeTwice else { return event }
                 return FullScreenEscape.shared.passes(event, to: page) ? event : nil
             }
+            // ⌃Tab, ⌘T and ⌘1–⌘9 on a page filling the screen act on the
+            // window behind it, as they did, and also end the page's full
+            // screen as its own button does: the key says the video is being
+            // left, and the tab they went to was there only after Esc (#1042).
+            if let page = ContentView.pageFillingScreen(event), ContentView.movesTab(event) {
+                page.evaluateInSearch("if (document.fullscreenElement) document.exitFullscreen(); void 0")
+            }
             // A key typed while the field is on its way is the field's (holdKey),
             // Escape in a full-screen window included.
             if browser.holdKey(event) { return nil }
@@ -1238,6 +1259,15 @@ struct ContentView: View {
         let fills = page.fullscreenState != .notInFullscreen
             || Browsers.all.contains { $0.tabs.contains { $0.immersed && $0.built === page } }
         return fills ? page : nil
+    }
+
+    /// A key that goes to another tab or a new one: the switcher's, ⌘T,
+    /// ⌘1 through ⌘9.
+    private static func movesTab(_ event: NSEvent) -> Bool {
+        if ShortcutStore.shared.recentSwitch(event) != nil { return true }
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else { return false }
+        if let number = digits[event.keyCode] { return number != 0 }
+        return event.shortcutCharacters == "t"
     }
 
     /// The same handling the key monitor gives an event, for the bench to

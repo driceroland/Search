@@ -56,7 +56,9 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
         // pictures, and every one of them a link to open in a new tab. Its
         // Copy Image and Download Image are told which picture they are for,
         // to be this app's (PageView), or that there is none.
-        if (src && !linked(e)) {
+        // An extension with right-click items keeps WebKit's menu too: its
+        // items for a picture are only ever in WebKit's (see keepMenu).
+        if (src && !linked(e) && !window.__officeImagesKeep) {
           e.preventDefault();
           relay.postMessage({ src: src });
         } else {
@@ -75,6 +77,11 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
       }
     })();
     """
+
+    /// Set ahead of `watch` while an extension may put items in a page's
+    /// right-click menu (contextMenus): WebKit adds them to its own menu
+    /// only, and this app's picture menu would leave them out.
+    static let keepMenu = "window.__officeImagesKeep = true;"
 
     func userContentController(
         _ controller: WKUserContentController,

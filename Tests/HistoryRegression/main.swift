@@ -433,6 +433,31 @@ private func testTitlesPathsAndSlipsFillWhatTheAddressLeaves() {
     Checks.expect(github.contains { $0.key == "github.com" }, "a known site with a slip should be offered, got \(github.map(\.key))")
 }
 
+/// A title that keeps changing — an inbox counting its mail — waits for the
+/// next write instead of making one; the first title a page lands with doesn't.
+@MainActor
+private func testTitleChurnWaitsForTheNextWrite() {
+    Store.use("title-churn")
+    let file = Store.file("history.json")
+    let history = History()
+    let inbox = url("https://mail.example.test/inbox")
+    history.record(inbox, title: "")
+    _ = savedFile()
+    try? FileManager.default.removeItem(at: file)
+
+    history.retitle(inbox, "(1) Inbox")
+    Checks.expect(savedFile().contains("(1) Inbox"), "a page's first title should be written")
+    try? FileManager.default.removeItem(at: file)
+
+    history.retitle(inbox, "(2) Inbox")
+    history.retitle(inbox, "(3) Inbox")
+    Checks.expect(savedFile().isEmpty, "a title changing again should not rewrite the file")
+
+    history.flush()
+    let quit = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+    Checks.expect(quit.contains("(3) Inbox"), "quitting should write the latest title")
+}
+
 @main
 private struct HistoryRegression {
     @MainActor
@@ -447,6 +472,7 @@ private struct HistoryRegression {
         testLegacyCreditsMoveToTheOriginTheirPagesUsed()
         testCompletionFinishesWWWSitesWithoutTheirWWW()
         testTitlesPathsAndSlipsFillWhatTheAddressLeaves()
+        testTitleChurnWaitsForTheNextWrite()
 
         guard Checks.failures.isEmpty else {
             fputs("\(Checks.failures.count) History regression assertion(s) failed.\n", stderr)

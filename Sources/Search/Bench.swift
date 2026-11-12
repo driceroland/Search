@@ -872,8 +872,11 @@ final class Bench {
             } else {
                 out["responderIsAddress"] = false
             }
-            // What the address field shows, typed and offered ending alike.
-            out["fieldText"] = Bench.addressField(in: (browser.window ?? Links.window)?.contentView)?.stringValue ?? ""
+            // What the address field shows, typed and offered ending alike;
+            // over a private tab, only in a test run, as in `tabs`.
+            let hidden = { (tab: Tab?) in !Store.testing && tab?.shy == true }
+            out["fieldText"] = hidden(browser.active) ? ""
+                : Bench.addressField(in: (browser.window ?? Links.window)?.contentView)?.stringValue ?? ""
             // What the empty field asks for, and its name for VoiceOver.
             let shown = Bench.addressField(in: (browser.window ?? Links.window)?.contentView)
             out["placeholder"] = shown?.placeholderAttributedString?.string ?? shown?.placeholderString ?? ""
@@ -910,7 +913,7 @@ final class Bench {
                 return FrameRate.prefersNear60(preferences)
             }
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
-            out["peek"] = browser.peekTab?.address?.absoluteString ?? ""
+            out["peek"] = hidden(browser.peekTab) ? "" : browser.peekTab?.address?.absoluteString ?? ""
             out["peekFrom"] = browser.peekFrom?.uuidString ?? ""
             // The size the peek's page is drawn at (see Tab.applyRememberedZoom).
             out["peekZoom"] = Double(browser.peekTab?.built?.pageZoom ?? 0)
@@ -3413,8 +3416,10 @@ final class Bench {
                 "said": LittleWindow.all.last?.said ?? "",
                 "zoom": LittleWindow.all.last?.tab.built.map { Double($0.pageZoom) } ?? 0,
                 "failures": LittleWindow.all.map { $0.tab.failure ?? "" },
-                "tabs": browser.tabs.map { ($0.pin != nil ? "PIN " : "") + ($0.address?.host() ?? "blank") },
-                "active": browser.active?.address?.host() ?? "",
+                // Private tabs left out of a real run's, as in `tabs`.
+                "tabs": browser.tabs.filter { Store.testing || !$0.shy }
+                    .map { ($0.pin != nil ? "PIN " : "") + ($0.address?.host() ?? "blank") },
+                "active": browser.active.flatMap { Store.testing || !$0.shy ? $0.address?.host() : nil } ?? "",
             ])
 
         case "site":
@@ -4761,7 +4766,7 @@ private final class LayoutRecord {
 /// Each pass of the main run loop, from waking to going back to sleep, in
 /// milliseconds: the ones that carried a pointer move ("hoversweep") apart
 /// from the rest (timers, animation, anything else).
-private final class LoopClock: @unchecked Sendable {
+final class LoopClock: @unchecked Sendable {
     private(set) var marked: [Double] = []
     private(set) var unmarked: [Double] = []
     private var woke: CFAbsoluteTime = 0

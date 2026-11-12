@@ -127,7 +127,9 @@ extension Browser {
 /// The sign beside a tab's title while its page has had a window refused:
 /// quiet, the size of the other marks there, and gone with the page.
 struct PopupSign: View {
-    @ObservedObject var browser: Browser
+    /// Handed on to the list it opens, which watches it; the sign itself,
+    /// in every tab's row, shows only the tab's.
+    let browser: Browser
     @ObservedObject var tab: Tab
     var colour: Color = Palette.muted
     /// Drawn open, for a picture of it (tests).

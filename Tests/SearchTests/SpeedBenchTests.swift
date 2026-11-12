@@ -64,6 +64,28 @@ final class SpeedBenchTests: XCTestCase {
         _ = window
     }
 
+    /// A word typed into Find on Page, a key at a time, over a column of 60
+    /// tabs, with the page answering each letter as it does.
+    func testFinding() async throws {
+        let browser = makeBrowser(tabs: 60)
+        let window = host(browser)
+        let bar = NSWindow(contentRect: NSRect(x: -20_000, y: -16_000, width: 600, height: 120),
+                           styleMask: .borderless, backing: .buffered, defer: false)
+        bar.isReleasedWhenClosed = false
+        bar.contentView = NSHostingView(rootView: FindBar(browser: browser))
+        bar.orderFrontRegardless()
+        windows.append(bar)
+        try await settle()
+        browser.finding = true
+        try await settle()
+        let words = Array("github pull requests")
+        let cost = try await measure(browser, steps: words.count, label: "finding") { i in
+            browser.needle = String(words[0...i])
+        }
+        record("finding", cost)
+        _ = window
+    }
+
     /// Two fingers carrying the column to the next space, an event a frame.
     func testSpaceSwipe() async throws {
         let browser = makeBrowser(tabs: 60)
@@ -104,6 +126,97 @@ final class SpeedBenchTests: XCTestCase {
         }
         record("backgroundTitle", cost)
         _ = window
+    }
+
+    /// Something in the window that no tab's row shows: the downloads card
+    /// hung and taken down, over a column of 60 tabs.
+    func testUnrelatedChange() async throws {
+        let browser = makeBrowser(tabs: 60)
+        let window = host(browser)
+        try await settle()
+        let cost = try await measure(browser, steps: 60, label: "unrelated") { i in
+            browser.downloadsHanging = i.isMultiple(of: 2)
+        }
+        browser.downloadsHanging = false
+        record("unrelatedChange", cost)
+        _ = window
+    }
+
+    /// A tab picked with ⌘ and let go again: what the rows do show.
+    func testPicking() async throws {
+        let browser = makeBrowser(tabs: 60)
+        let window = host(browser)
+        try await settle()
+        let tab = browser.tabs[30]
+        let cost = try await measure(browser, steps: 60, label: "picking") { _ in
+            browser.extendTabSelection(to: tab, modifiers: .command)
+        }
+        browser.clearTabSelection()
+        record("picking", cost)
+        _ = window
+    }
+
+    /// The column's edge pulled out and back in one of two whole windows of
+    /// 60 tabs each, a mouse event a frame. Counted: the settings published
+    /// and written while it is held, and the rows of both windows built.
+    /// Timed: each main run-loop pass that carried a step (LoopClock).
+    func testColumnEdge() async throws {
+        let prefs = Shared.prefs
+        prefs.sideIcons = false
+        prefs.sideHides = false
+        prefs.sideWidth = Metrics.side
+        var edgeWindows: [NSWindow] = []
+        for n in 0..<2 {
+            let browser = makeBrowser(tabs: 60)
+            browser.folded = false
+            browser.welcoming = false
+            let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000 + CGFloat(n) * 1000, width: 1200, height: 800),
+                                  styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: ContentView(browser: browser))
+            browser.window = window
+            window.orderFrontRegardless()
+            windows.append(window)
+            edgeWindows.append(window)
+        }
+        try await settle()
+
+        var published = 0
+        var written = 0
+        let watch = prefs.objectWillChange.sink { published += 1 }
+        let writes = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .sink { _ in written += 1 }
+        defer { watch.cancel(); writes.cancel() }
+        Bench.bodies = [:]
+        let clock = LoopClock()
+        clock.start()
+
+        let window = edgeWindows[0]
+        let y = window.frame.height / 2
+        let grab = NSPoint(x: prefs.sideWidth - 3, y: y)
+        let steps = 60
+        send(.leftMouseDown, at: grab, in: window)
+        try await Task.sleep(for: .milliseconds(16))
+        for step in 1...steps {
+            // Out 2 points a step for the first half, back in for the second.
+            let out = CGFloat(step <= steps / 2 ? step : steps - step) * 2
+            clock.mark()
+            send(.leftMouseDragged, at: NSPoint(x: grab.x + out + 2, y: y), in: window)
+            try await Task.sleep(for: .milliseconds(16))
+        }
+        let publishedHeld = published
+        let writtenHeld = written
+        send(.leftMouseUp, at: NSPoint(x: grab.x + 2, y: y), in: window)
+        try await settle()
+        clock.stop()
+
+        var values = Dictionary(uniqueKeysWithValues: LoopClock.summary(clock.marked).map { ("stepMs." + $0, $1) })
+        values["publishedWhileHeld"] = Double(publishedHeld)
+        values["writtenWhileHeld"] = Double(writtenHeld)
+        values["written"] = Double(written)
+        values["rowsPerStep"] = Double(Bench.bodies["row"] ?? 0) / Double(steps)
+        record("columnEdge", values)
+        prefs.sideWidth = Metrics.side
     }
 
     /// What the field asks the history for on each key, alone.
@@ -292,6 +405,15 @@ final class SpeedBenchTests: XCTestCase {
         field.orderFrontRegardless()
         windows.append(field)
         return window
+    }
+
+    private func send(_ type: NSEvent.EventType, at point: NSPoint, in window: NSWindow) {
+        guard let event = NSEvent.mouseEvent(
+            with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+            pressure: type == .leftMouseUp ? 0 : 1
+        ) else { return XCTFail("no \(type) event") }
+        window.sendEvent(event)
     }
 
     private func settle() async throws {

@@ -18,6 +18,7 @@ struct TabBar: View {
     /// Which tab is under the hand, where it started, and how far it has come.
     @State private var landing = false
     @State private var groupFrames: [UUID: GroupDropFrame] = [:]
+    @State private var looseFrames = LooseFrames()
     /// A tab of the run is being carried along it (see Carried).
     @State private var carrying = false
     /// The plus only comes out when the pointer is in the row.
@@ -334,6 +335,7 @@ struct TabBar: View {
             .modifier(Carried(index: index, steps: steps, vertical: false,
                               space: "strip", onDropTab: { source, point in drop(source, at: point) },
                               groupDestination: { source, point in destination(source, at: point) },
+                              loose: group == nil && browser.prefs.usesTabGroups && tab.pin == nil ? looseFrames : nil,
                               outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
                               holding: { carrying = $0 }) {
                 if browser.prefs.usesTabGroups && tab.pin == nil {
@@ -389,7 +391,18 @@ struct TabBar: View {
     }
 
     private func drop(_ tab: Tab, at point: CGPoint) {
-        if let target = destination(tab, at: point) { browser.move(tab, toGroup: target) }
+        if let target = destination(tab, at: point) {
+            browser.move(tab, toGroup: target)
+        } else if let out = leaving(tab, at: point) {
+            browser.move(tab, outOfGroupBefore: out.before)
+        }
+    }
+
+    private func leaving(_ tab: Tab, at point: CGPoint) -> LooseDrop? {
+        guard browser.prefs.usesTabGroups, tab.pin == nil else { return nil }
+        let loose = Set(browser.tabs.filter { $0.pin == nil && browser.group(of: $0) == nil }.map(\.id))
+        return GroupDropFrames.leaving(point, frames: groupFrames, loose: looseFrames.rects.filter { loose.contains($0.key) },
+                                       groups: browser.tabGroups, source: tab.id, vertical: false)
     }
 
     /// How wide the run of tabs is: as wide as the tabs while they fit, as
@@ -654,10 +667,11 @@ enum Rewind {
     }
 }
 
-private struct TabPill: View {
+/// It doesn't watch the Browser, as a row in the column doesn't (SideRow).
+private struct TabPill: View, Equatable {
     @Environment(\.tabShortcutNumbers) private var shortcutNumbers
     @Environment(\.rowCarrying) private var rowCarrying
-    @ObservedObject var browser: Browser
+    let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
     let live: Bool
@@ -666,12 +680,40 @@ private struct TabPill: View {
     let room: CGFloat
     let pill: Namespace.ID
     let close: () -> Void
+    /// Its address being typed in the pill.
+    private let editing: Bool
+    /// Its letter being changed, pinned.
+    private let lettering: Bool
+    private let selected: Bool
+    /// Bumped when what was typed in a tab can't be gone to (see Shake).
+    private let refusals: Int
+
+    init(browser: Browser, prefs: Preferences, tab: Tab, live: Bool, width: CGFloat, room: CGFloat,
+         pill: Namespace.ID, close: @escaping () -> Void) {
+        self.browser = browser
+        self.prefs = prefs
+        self.tab = tab
+        self.live = live
+        self.width = width
+        self.room = room
+        self.pill = pill
+        self.close = close
+        editing = browser.editingTab == tab.id
+        lettering = browser.editingPin == tab.id
+        selected = browser.selectedTabIDs.contains(tab.id)
+        refusals = browser.refusals
+    }
+
+    /// The close action is left out: it closes the same tab every time.
+    static func == (a: TabPill, b: TabPill) -> Bool {
+        a.browser === b.browser && a.prefs === b.prefs && a.tab === b.tab && a.live == b.live
+            && a.width == b.width && a.room == b.room && a.pill == b.pill && a.editing == b.editing
+            && a.lettering == b.lettering && a.selected == b.selected && a.refusals == b.refusals
+    }
 
     @State private var hovering = false
     @State private var shake: CGFloat = 0
     @State private var pressed = false
-
-    private var editing: Bool { browser.editingTab == tab.id }
     private var pinned: Bool { tab.pin != nil && !editing }
     /// Too narrow for a title: the site's mark alone, the title in the
     /// tooltip. A cross on something this small would be what a click to
@@ -698,7 +740,7 @@ private struct TabPill: View {
         Group {
             if pinned {
                 Group {
-                    if browser.editingPin == tab.id {
+                    if lettering {
                         PinField(browser: browser, tab: tab)
                     } else if let number = shortcutNumbers[tab.id] {
                         TabShortcutNumber(number: number)
@@ -726,7 +768,7 @@ private struct TabPill: View {
         }
         .background { ground.animation(Motion.quick, value: rowCarrying) }
         .overlay {
-            if browser.selectedTabIDs.contains(tab.id) {
+            if selected {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
                     .allowsHitTesting(false)
@@ -768,7 +810,7 @@ private struct TabPill: View {
         .animation(nil, value: hovering)
         .animation(Motion.glide, value: editing)
         .animation(Motion.glide, value: tab.pin)
-        .onChange(of: browser.refusals) { _, _ in
+        .onChange(of: refusals) { _, _ in
             guard editing else { return }
             shake = 0
             withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
@@ -926,7 +968,7 @@ private struct TabPill: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .matchedGeometryEffect(id: "live", in: pill)
-        } else if browser.selectedTabIDs.contains(tab.id) {
+        } else if selected {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.wash)
         } else if hovering {
@@ -986,6 +1028,9 @@ struct Carried: ViewModifier {
     /// A paired item can be picked up from either half; report that source.
     var onDropTab: ((Tab, CGPoint) -> Void)? = nil
     var groupDestination: ((Tab, CGPoint) -> GroupDropTarget?)? = nil
+    /// Given to a tab in no group: where it is drawn is kept there, for a
+    /// tab carried out of a group to land beside it (#1009).
+    var loose: LooseFrames? = nil
     /// Let go outside the window: true when the tab was taken elsewhere —
     /// another window, or a new one (see Browser.dragOut).
     var outside: (() -> Bool)? = nil
@@ -1051,6 +1096,11 @@ struct Carried: ViewModifier {
                     moved = origin + travel - (vertical ? frame.minY : frame.minX)
                 }
                 return content.offset(x: vertical ? 0 : moved, y: vertical ? moved : 0)
+            }
+            .onGeometryChange(for: CGRect?.self, of: { [keeps = loose != nil, space] proxy in
+                keeps ? proxy.frame(in: .named(space)) : nil
+            }) { rect in
+                if let loose, let tab, let rect { loose.rects[tab.id] = rect }
             }
             .background {
                 if let browser, let tab, browser.prefs.usesTabGroups, let group = browser.group(of: tab) {
@@ -1474,16 +1524,22 @@ struct TabMenu: View {
     @ViewBuilder
     private var singleMenu: some View {
         if browser.prefs.usesTabGroups && tab.pin == nil && !tab.shy && !tab.bench {
+            // Right-clicked among tabs picked in the column: all of them, as
+            // a drag onto a group takes them (see carried).
+            let moving = browser.carried(with: tab)
             Menu("Move to Group") {
-                Button("New Group") { browser.addTabGroup(containing: tab) }
+                Button("New Group") {
+                    let id = browser.addTabGroup(containing: tab)
+                    for other in moving where other !== tab { browser.move(other, toGroup: id) }
+                }
                 if !browser.tabGroups.isEmpty { Divider() }
                 ForEach(browser.tabGroups) { group in
-                    Button(group.name) { browser.move(tab, toGroup: group.id) }
-                        .disabled(tab.groupID == group.id)
+                    Button(group.name) { for each in moving { browser.move(each, toGroup: group.id) } }
+                        .disabled(moving.allSatisfy { $0.groupID == group.id })
                 }
-                if tab.groupID != nil {
+                if moving.contains(where: { $0.groupID != nil }) {
                     Divider()
-                    Button("Remove from Group") { browser.move(tab, toGroup: nil) }
+                    Button("Remove from Group") { for each in moving { browser.move(each, toGroup: nil) } }
                 }
             }
         }
