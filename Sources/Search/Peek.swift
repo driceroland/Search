@@ -274,7 +274,7 @@ struct PeekSkeleton: View {
         .allowsHitTesting(false)
         .task {
             try? await Task.sleep(for: .milliseconds(150))
-            withAnimation(.easeOut(duration: 0.2)) { shown = true }
+            withAnimation(Motion.timed(.easeOut(duration: 0.2))) { shown = true }
             guard !Motion.reduced else { return }
             withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: false)) { sweep = true }
         }

@@ -30,6 +30,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Reduce animations makes everything in Search's interface happen at once: the tab ⌘1–⌘9 picks is lit and shown with no glide, a space, a panel or a page's first frame comes without sliding or fading, for Search alone and whatever Reduce Motion in System Settings says. Off unless you turn on Settings › Appearance › Motion › Reduce animations.
 - ⌘S can make the column icons only instead of hiding it, so the tabs stay in sight; ⌘S again brings the titles back. Off unless you turn on Settings › Appearance › Tabs › ⌘S makes the column icons only. Not with the tabs across the top, nor with the column hidden until the pointer reaches the edge. Asked for by [@vincent-caetano](https://github.com/vincent-caetano) ([#1008](https://github.com/driceroland/Search/issues/1008)). Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1015](https://github.com/driceroland/Search/pull/1015))
 
 ### Changed

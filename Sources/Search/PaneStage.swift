@@ -893,7 +893,7 @@ extension PaneStage {
             let slot = slots[index]
             slot.alphaValue = 0
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = reduced ? 0.15 : 0.3
+                context.duration = Motion.seconds(reduced ? 0.15 : 0.3)
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 slot.animator().alphaValue = 1
             }
@@ -907,7 +907,7 @@ extension PaneStage {
         }
         let fade = { [weak self] in
             NSAnimationContext.runAnimationGroup({ context in
-                context.duration = reduced ? 0.15 : 0.12
+                context.duration = Motion.seconds(reduced ? 0.15 : 0.12)
                 for (view, _) in moving { view.animator().alphaValue = 0 }
             }, completionHandler: { [weak self] in
                 MainActor.assumeIsolated {
@@ -917,7 +917,7 @@ extension PaneStage {
             })
         }
         // Under Reduce Motion nothing travels: the old pictures dissolve
-        // into the new layout.
+        // into the new layout. With Reduce animations, not even that.
         guard !reduced else { return fade() }
         NSAnimationContext.runAnimationGroup({ context in
             // Search's glide, as near as a curve comes to its spring:

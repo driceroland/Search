@@ -535,6 +535,7 @@ struct SettingsPanel: View {
         case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
         case "motion.light": Switch(on: $prefs.lightMotion)
+        case "motion.instant": Switch(on: $prefs.instantMotion)
         case "note.split": Always()
         default: EmptyView()
         }

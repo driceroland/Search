@@ -465,6 +465,14 @@ final class Preferences: ObservableObject {
     @Published var lightMotion: Bool {
         didSet { store.set(lightMotion, forKey: Motion.lightKey) }
     }
+    /// Every transition immediate, whatever the Mac's Reduce Motion says
+    /// (see Motion.instant). Off unless turned on.
+    @Published var instantMotion: Bool {
+        didSet {
+            store.set(instantMotion, forKey: Motion.instantKey)
+            Motion.instant = instantMotion
+        }
+    }
     /// The modifier chosen in Settings › Shortcuts; Shift-click by default.
     @Published var peekClick: PeekClick {
         didSet { store.set(peekClick.rawValue, forKey: "links.peekClick") }
@@ -922,6 +930,9 @@ final class Preferences: ObservableObject {
         fastPages = fast
         FrameRate.mode = fast
         lightMotion = store.bool(forKey: Motion.lightKey)
+        let instant = store.bool(forKey: Motion.instantKey)
+        instantMotion = instant
+        Motion.instant = instant
         // Left behind by the Web Inspector's switch, from before it was
         // always there.
         store.removeObject(forKey: "inspector")
@@ -991,6 +1002,7 @@ final class Preferences: ObservableObject {
         take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
+        take(\.instantMotion, store.bool(forKey: Motion.instantKey))
         take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))
         take(\.bookmarksBar, store.bool(forKey: "bookmarks.bar"))
         take(\.alwaysShowsDownloads, store.bool(forKey: "downloads.button"))

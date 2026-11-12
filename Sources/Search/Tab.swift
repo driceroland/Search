@@ -2765,7 +2765,7 @@ final class PageView: WKWebView {
         unpainted = false
         onFirstFrame?()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
+            context.duration = Motion.seconds(0.12)
             animator().alphaValue = 1
         }
     }

@@ -94,7 +94,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         popover.contentViewController = host
         popover.contentSize = stage.frame.size
         popover.behavior = .transient
-        popover.animates = true
+        popover.animates = !Motion.instant
         popover.delegate = self
 
         self.web = web
@@ -149,7 +149,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         web.frame = NSRect(origin: .zero, size: popover?.contentSize ?? stage.bounds.size)
         web.autoresizingMask = [.width, .height]
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
+            context.duration = Motion.seconds(0.12)
             web.animator().alphaValue = 1
         }
     }

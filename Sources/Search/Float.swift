@@ -288,7 +288,7 @@ final class Float {
         guard let cover else { return }
         self.cover = nil
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.12
+            context.duration = Motion.seconds(0.12)
             cover.animator().alphaValue = 0
         }, completionHandler: {
             cover.removeFromSuperview()
@@ -439,12 +439,12 @@ final class Float {
         private func fade(to value: CGFloat) {
             near = value > 0
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.16
+                context.duration = Motion.seconds(0.16)
                 buttons.forEach { $0.animator().alphaValue = value }
                 line.animator().alphaValue = value
             }
             CATransaction.begin()
-            CATransaction.setAnimationDuration(0.16)
+            CATransaction.setAnimationDuration(Motion.seconds(0.16))
             scrim.opacity = Swift.Float(value)
             CATransaction.commit()
         }
