@@ -16,7 +16,12 @@ one in no container, one in “Work”, one in “Uni”. Checked:
 - moved to a space with sign-ins of its own, a container tab keeps its
   container and its cookie;
 - deleting a container puts its tabs back in no container, with no
-  container's cookie.
+  container's cookie;
+- a container is its own profile's: a second profile's window lists none of
+  Personal's and can't put a tab in one, nor Personal a tab in the second
+  profile's; Sign out of everything in Personal signs Personal's container
+  out and leaves the other profile's signed in; deleting the profile
+  deletes its containers and no other's.
 
 Nothing here makes, shows or brings forward a window.
 """
@@ -68,23 +73,28 @@ class H(BaseHTTPRequestHandler):
 sv.srv.RequestHandlerClass = H
 
 
-def box(**f): return sv.cmd({"do": "container", **f})
-def tabs(): return sv.cmd({"do": "tabs"})["tabs"]
-def tab(id): return next((x for x in tabs() if x["id"] == id), None)
+def c(req, window=None):
+    """A command to the first window, or the Nth."""
+    return sv.cmd({**req, "window": window} if window else req)
 
 
-def go(id, path):
+def box(window=None, **f): return c({"do": "container", **f}, window)
+def tabs(window=None): return c({"do": "tabs"}, window)["tabs"]
+def tab(id, window=None): return next((x for x in tabs(window) if x["id"] == id), None)
+
+
+def go(id, path, window=None):
     """The tab on screen at path, loaded."""
-    sv.cmd({"do": "select", "id": id})
-    sv.cmd({"do": "go", "id": id, "url": f"{sv.BASE}{path}"})
-    sv.cmd({"do": "wait", "id": id, "seconds": 10})
+    c({"do": "select", "id": id}, window)
+    c({"do": "go", "id": id, "url": f"{sv.BASE}{path}"}, window)
+    c({"do": "wait", "id": id, "seconds": 10}, window)
     time.sleep(0.3)
 
 
-def who(id):
+def who(id, window=None):
     """Which cookie the site was sent in that tab."""
-    go(id, "/show")
-    text = sv.cmd({"do": "text", "id": id})["text"]
+    go(id, "/show", window)
+    text = c({"do": "text", "id": id}, window)["text"]
     return text.strip().removeprefix("who=")
 
 
@@ -214,6 +224,61 @@ def main():
             pins = json.load(open(f"{sv.SUPPORT}/pins.json"))
             kept = [p for defs in pins.values() for p in defs if "pin=uni" in p["home"]]
             t.ok("pins.json says no container for it now", [p.get("container") for p in kept] == [None], kept)
+
+        # A second profile: a container is its own profile's alone.
+        sv.cmd({"do": "space", "action": "go", "index": 1})
+        time.sleep(0.8)
+        other = sv.cmd({"do": "profile", "action": "new", "name": "Client"})["id"]
+        sv.cmd({"do": "profile", "action": "window", "name": "Client"})
+        time.sleep(1.5)
+        shown = [x for x in sv.cmd({"do": "windows"})["windows"] if x["shown"]]
+        t.ok("the second profile's window is off screen", not shown, shown)
+        if shown:
+            sys.exit("a window reached the screen: stopped")
+        t.ok("it lists none of Personal's containers", box(window=2)["containers"] == [], box(window=2))
+        theirs = c({"do": "split", "action": "open", "url": f"{sv.BASE}/show"}, 2)["resultID"]
+        time.sleep(1)
+        box(window=2, action="set", id=theirs, container=work)
+        time.sleep(0.5)
+        t.ok("a tab of the second profile can't be put in Personal's container",
+             tab(theirs, 2)["container"] == "", tab(theirs, 2))
+        client = box(window=2, action="new", name="Client")["id"]
+        listed = ([x["name"] for x in box()["containers"]], [x["name"] for x in box(window=2)["containers"]])
+        t.ok("a container made there is listed there alone", listed == (["Work"], ["Client"]), listed)
+        box(window=2, action="set", id=theirs, container=client)
+        time.sleep(0.5)
+        t.ok("…and takes that profile's tab", tab(theirs, 2)["container"] == client, tab(theirs, 2))
+        go(theirs, "/set?v=client", 2)
+        mine = insert("mine")
+        time.sleep(1)
+        box(action="set", id=mine, container=client)
+        time.sleep(0.5)
+        t.ok("a Personal tab can't be put in the second profile's container", tab(mine)["container"] == "", tab(mine))
+        box(action="set", id=mine, container=work)
+        time.sleep(0.5)
+        go(mine, "/set?v=work")
+        seen = (who(mine), who(theirs, 2))
+        t.ok("each profile's container is signed in", seen == ("work", "client"), seen)
+        saved = {x["name"]: x.get("profile") for x in json.load(open(f"{sv.SUPPORT}/containers.json"))}
+        t.ok("containers.json says whose each is, and nothing for Personal's",
+             saved == {"Work": None, "Client": other}, saved)
+
+        # Sign out of everything, in Personal's window: Personal's alone.
+        sv.cmd({"do": "profile", "action": "signout"})
+        time.sleep(1)
+        t.ok("Sign out of everything in Personal signs its container out", who(mine) == "none", who(mine))
+        t.ok("…and leaves the second profile's container signed in", who(theirs, 2) == "client", who(theirs, 2))
+
+        # The profile deleted: its containers go with it.
+        erasing = sv.cmd({"do": "profile", "action": "delete", "name": "Client"})["erasing"]
+        time.sleep(1)
+        left = [x["name"] for x in json.load(open(f"{sv.SUPPORT}/containers.json"))]
+        t.ok("deleting the profile deletes its containers and no other's", left == ["Work"], left)
+        t.ok("…and Personal's tab is still in Work", tab(mine)["container"] == work, tab(mine))
+        stores = sv.cmd({"do": "space", "action": "list", "records": True}).get("stores", [])
+        t.ok("…its container's store removed or being removed",
+             client.upper() not in [s.upper() for s in stores] or client.upper() in [e.upper() for e in erasing],
+             (stores, erasing))
     finally:
         t.done()
         sv.finish()

@@ -84,9 +84,38 @@ final class ContainersTests: XCTestCase {
 
     func testAContainerThatDoesNotExistIsNone() {
         let gone = UUID()
-        XCTAssertNil(Containers.shared.known(gone))
-        XCTAssertNil(Containers.shared.known(nil))
-        XCTAssertNil(Containers.store(gone), "no store is made for a container that isn't there")
+        XCTAssertNil(Containers.shared.known(gone, in: Profile.personalID))
+        XCTAssertNil(Containers.shared.known(nil, in: Profile.personalID))
+        XCTAssertNil(Containers.store(gone, in: Profile.personalID), "no store is made for a container that isn't there")
+    }
+
+    func testAContainerIsItsOwnProfilesAlone() throws {
+        let other = UUID()
+        let mine = Containers.shared.add(named: "Work", in: Profile.personalID)
+        let theirs = Containers.shared.add(named: "Client", in: other)
+        defer {
+            Containers.shared.delete(mine.id)
+            Containers.shared.delete(theirs.id)
+        }
+        XCTAssertEqual(Containers.shared.list(of: Profile.personalID).map(\.id), [mine.id])
+        XCTAssertEqual(Containers.shared.list(of: other).map(\.id), [theirs.id])
+        XCTAssertEqual(mine.colour, theirs.colour, "each profile's first container wears the first colour")
+        XCTAssertNil(Containers.shared.known(theirs.id, in: Profile.personalID), "another profile's container is none here")
+        XCTAssertNil(Containers.shared.known(mine.id, in: other))
+        XCTAssertNil(Containers.store(theirs.id, in: Profile.personalID), "and no tab here gets its store")
+
+        // Personal's is written as it was before containers had a profile,
+        // and a file from then reads as Personal's.
+        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: Store.file("containers.json"))) as? [[String: Any]])
+        XCTAssertNil(raw.first { $0["name"] as? String == "Work" }?["profile"])
+        XCTAssertEqual(raw.first { $0["name"] as? String == "Client" }?["profile"] as? String, other.uuidString)
+        let older = try JSONDecoder().decode(Container.self, from: JSONSerialization.data(
+            withJSONObject: ["id": UUID().uuidString, "name": "Older", "colour": 1]))
+        XCTAssertEqual(older.profileID, Profile.personalID)
+
+        // A profile deleted takes its containers, and no other's.
+        Containers.shared.forget(profile: other)
+        XCTAssertEqual(Containers.read().map(\.id), [mine.id])
     }
 
     func testARowSavedWithADeletedContainerComesBackInItsSpace() throws {
@@ -107,14 +136,14 @@ final class ContainersTests: XCTestCase {
 
     func testMakingRenamingAndDeletingAContainer() throws {
         let file = Store.file("containers.json")
-        let work = Containers.shared.add(named: "  Work ")
-        let study = Containers.shared.add(named: "Study")
+        let work = Containers.shared.add(named: "  Work ", in: Profile.personalID)
+        let study = Containers.shared.add(named: "Study", in: Profile.personalID)
         defer {
             Containers.shared.delete(work.id)
             Containers.shared.delete(study.id)
         }
         XCTAssertEqual(work.name, "Work")
-        XCTAssertEqual(Containers.shared.known(work.id), work.id)
+        XCTAssertEqual(Containers.shared.known(work.id, in: Profile.personalID), work.id)
         XCTAssertNotEqual(work.colour, study.colour, "each new container wears a colour of its own")
         XCTAssertNotEqual(work.colour, 0, "slate, the colour of nothing in particular, comes last")
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
@@ -127,7 +156,7 @@ final class ContainersTests: XCTestCase {
         XCTAssertTrue(Spaces.colours.indices.contains(Containers.shared.container(study.id)?.colour ?? -1))
 
         Containers.shared.delete(work.id)
-        XCTAssertNil(Containers.shared.known(work.id), "a deleted container is none from now on")
+        XCTAssertNil(Containers.shared.known(work.id, in: Profile.personalID), "a deleted container is none from now on")
         XCTAssertEqual(Containers.read().map(\.id), [study.id])
         Containers.shared.delete(study.id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "no containers is no file, as before there were any")

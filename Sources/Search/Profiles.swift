@@ -170,6 +170,7 @@ final class Profiles: ObservableObject {
             if space.sharesSignIns != true { Spaces.erase(space.id) }
         }
         Pins.forgetShared(of: id)
+        Containers.shared.forget(profile: id)
         Spaces.eraseStore(Profiles.stores.removeValue(forKey: id), id: id)
         Profiles.histories.removeValue(forKey: id)?.retire()
         Profiles.bookmarkLists.removeValue(forKey: id)?.retire()

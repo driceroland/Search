@@ -303,7 +303,7 @@ enum SettingsIndex {
               keys: ["profiles.oneWindow"], words: ["arc", "profiles", "single window", "merge"], parent: "profiles"),
         .init(id: "containers", group: "spaces", icon: "square.on.square",
               title: "Containers", detail: "Tabs side by side, each with its own sign-ins",
-              more: "A tab in a container keeps its own cookies, sign-ins and site storage in any space: two accounts on one site, next to each other. Right-click a tab › Container to put it in one; links it opens stay there. History, bookmarks and passwords are shared. Turned off, tabs already in a container stay in it.",
+              more: "A tab in a container keeps its own cookies, sign-ins and site storage in any space: two accounts on one site, next to each other. Right-click a tab › Container to put it in one; links it opens stay there. History, bookmarks and passwords are shared. Each profile has containers of its own. Turned off, tabs already in a container stay in it.",
               keys: ["containers"], words: ["container", "containers", "multi-account", "accounts", "identity", "sign in twice", "two accounts", "cookies", "firefox", "zen"]),
         .init(id: "spaces.links", group: "spaces", icon: "arrow.triangle.branch",
               title: "Send links to a space", detail: "Links to sites you choose open in their space, with its sign-ins",

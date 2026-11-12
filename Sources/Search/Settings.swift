@@ -797,7 +797,7 @@ struct SettingsPanel: View {
             }
         case "containers":
             if !searched, prefs.usesContainers {
-                ContainerList()
+                ContainerList(profile: browser.profileID)
                     .under()
             }
         case "spaces.links":

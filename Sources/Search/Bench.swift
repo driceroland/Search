@@ -2658,12 +2658,12 @@ final class Bench {
             let containers = Containers.shared
             let named = (request["container"] as? String).flatMap(UUID.init(uuidString:))
             func list() -> [[String: Any]] {
-                containers.list.map { ["id": $0.id.uuidString, "name": $0.name, "colour": $0.colour,
+                containers.list(of: browser.profileID).map { ["id": $0.id.uuidString, "name": $0.name, "colour": $0.colour,
                                        "open": containers.openTabs(in: $0.id)] }
             }
             switch request["action"] as? String ?? "list" {
             case "new":
-                let made = containers.add(named: request["name"] as? String ?? "Container")
+                let made = containers.add(named: request["name"] as? String ?? "Container", in: browser.profileID)
                 answer(["id": made.id.uuidString, "containers": list()])
             case "set":
                 guard let tab = find(request, in: browser) else { answer(missing(request)); return }
@@ -3527,6 +3527,10 @@ final class Bench {
             case "delete":
                 guard let named else { answer(["error": "no such profile"]); return }
                 profiles.delete(named.id)
+            case "signout":
+                // Sign out of everything, as Clear Browsing Data's button does:
+                // this window's profile's sites, and no other's.
+                browser.clearSites()
             case "history":
                 // This window's profile's history, newest first.
                 answer(["profile": profiles.profile(browser.profileID).name,

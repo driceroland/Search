@@ -3041,7 +3041,7 @@ final class Browser: NSObject, ObservableObject {
                 ?? pinned.first { $0.pinID == nil }
             let tab: Tab
             // The pin's container, in every window (see Containers.swift).
-            let container = Containers.shared.known(def.container)
+            let container = Containers.shared.known(def.container, in: profileID)
             if let found {
                 pinned.removeAll { $0 === found }
                 tab = found
@@ -5668,7 +5668,7 @@ final class Browser: NSObject, ObservableObject {
     /// File › New Container Tab: an empty tab in that container, in front,
     /// its field ready, as ⌘T's is.
     func newTab(in container: UUID) {
-        guard !websitePopup, Containers.shared.known(container) != nil else { return }
+        guard !websitePopup, Containers.shared.known(container, in: profileID) != nil else { return }
         let tab = Tab(configuration: Web.configuration(space: spaceID, container: container))
         prepare(tab)
         tabs.insert(tab, at: placeForFront())

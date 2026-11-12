@@ -131,10 +131,11 @@ final class SiteNotifications: NSObject {
             guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), !Store.testing else { return completionHandler(nil) }
             // A window whose space signs in with the worker's store: the page
             // it opens must be the same person's, not the front window's. A
-            // container's worker opens its page in that container, in the
-            // window in front (see Containers.swift).
+            // container's worker opens its page in that container, in a
+            // window of the container's profile (see Containers.swift).
             let container = Containers.id(of: store)
-            let fits = Browsers.all.filter { !$0.isPopup && (container != nil || Spaces.store(for: $0.spaceID) === store) }
+            let home = Containers.shared.container(container)?.profileID
+            let fits = Browsers.all.filter { !$0.isPopup && (container != nil ? $0.profileID == home : Spaces.store(for: $0.spaceID) === store) }
             guard let browser = fits.first(where: { $0 === Browsers.front && $0.isOpen }) ?? fits.last(where: \.isOpen) ?? fits.first
             else { return completionHandler(nil) }
             let tab = container.map { browser.open(url, in: $0) } ?? browser.open(url, foreground: true)

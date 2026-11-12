@@ -17,7 +17,10 @@ import WebKit
 // from a container tab are in the same container, as a private tab's are
 // private. Private tabs and the bench's never are.
 //
-// History, bookmarks and passwords stay the profile's, as with spaces.
+// A container belongs to the profile it was made in (see Profiles.swift),
+// as a space does: another profile's windows list none of it, no tab of
+// theirs can be in it, and clearing their sites leaves it be. History and
+// bookmarks stay the profile's, as with spaces.
 //
 // Off unless turned on in Settings › Spaces & Pins. Until then nothing of
 // it shows; on, the tab menu has its Container submenu, which makes the
@@ -29,7 +32,11 @@ struct Container: Codable, Identifiable, Equatable {
     var name: String
     /// Which of `Spaces.colours`.
     var colour: Int
+    /// The profile it belongs to (see Profiles.swift); nil for Personal, as
+    /// a space's is.
+    var profile: UUID?
 
+    var profileID: UUID { profile ?? Profile.personalID }
     var tint: Color { Spaces.colours[Containers.colourIndex(colour)] }
 }
 
@@ -37,10 +44,13 @@ struct Container: Codable, Identifiable, Equatable {
 final class Containers: ObservableObject {
     static let shared = Containers()
 
-    /// Every container, in the order they were made.
+    /// Every profile's containers, in the order they were made.
     @Published private(set) var list: [Container]
 
     private init() { list = Containers.read() }
+
+    /// One profile's: what its windows' menus and Settings list.
+    func list(of profile: UUID) -> [Container] { list.filter { $0.profileID == profile } }
 
     /// One there is, by its id.
     func container(_ id: UUID?) -> Container? {
@@ -48,9 +58,12 @@ final class Containers: ObservableObject {
         return list.first { $0.id == id }
     }
 
-    /// An id that still names a container, or nil: a container saved with a
-    /// tab or a pin and deleted since reads as none.
-    func known(_ id: UUID?) -> UUID? { container(id)?.id }
+    /// An id that still names a container of that profile, or nil: one
+    /// saved with a tab or a pin and deleted since reads as none, and so
+    /// does another profile's, whatever a file says.
+    func known(_ id: UUID?, in profile: UUID) -> UUID? {
+        container(id).flatMap { $0.profileID == profile ? $0.id : nil }
+    }
 
     /// A colour's index, in range whatever a file says.
     nonisolated static func colourIndex(_ colour: Int) -> Int {
@@ -86,10 +99,11 @@ final class Containers: ObservableObject {
     /// told by which of these objects it holds.
     private static var stores: [UUID: WKWebsiteDataStore] = [:]
 
-    /// The store a container's tabs use, set up as a space's own is; nil for
-    /// no container, or one that no longer exists.
-    static func store(_ id: UUID?) -> WKWebsiteDataStore? {
-        guard let id = shared.known(id) else { return nil }
+    /// The store a container's tabs use in a window of that profile, set up
+    /// as a space's own is; nil for no container, one that no longer
+    /// exists, or another profile's.
+    static func store(_ id: UUID?, in profile: UUID) -> WKWebsiteDataStore? {
+        guard let id = shared.known(id, in: profile) else { return nil }
         if let made = stores[id] { return made }
         let made = WKWebsiteDataStore(forIdentifier: id)
         if Store.keepsSignIns { Store.followSignIns(made) } else { Store.followCookies(made) }
@@ -107,20 +121,26 @@ final class Containers: ObservableObject {
     /// The container stores made so far, for Spaces.everyStore.
     static var madeStores: [WKWebsiteDataStore] { Array(stores.values) }
 
-    /// Every container's store, made now if it wasn't: for clearing what
-    /// sites left, which must reach a container no tab has opened this run.
-    static var everyStore: [WKWebsiteDataStore] { shared.list.compactMap { store($0.id) } }
+    /// A profile's containers' stores, made now if they weren't: for
+    /// clearing what sites left, which must reach a container no tab has
+    /// opened this run.
+    static func stores(of profile: UUID) -> [WKWebsiteDataStore] {
+        shared.list(of: profile).compactMap { store($0.id, in: profile) }
+    }
 
     // MARK: - making, renaming, deleting
 
-    /// A new container, in the first colour no container wears yet.
+    /// A new container of that profile, in the first colour none of the
+    /// profile's wears yet.
     @discardableResult
-    func add(named name: String) -> Container {
-        let used = Set(list.map { Containers.colourIndex($0.colour) })
+    func add(named name: String, in profile: UUID) -> Container {
+        let mine = list(of: profile)
+        let used = Set(mine.map { Containers.colourIndex($0.colour) })
         // Slate last: it is the colour of nothing in particular.
         let colour = (Array(1..<Spaces.colours.count) + [0]).first { !used.contains($0) }
-            ?? (list.count % (Spaces.colours.count - 1)) + 1
-        let made = Container(id: UUID(), name: name.trimmingCharacters(in: .whitespacesAndNewlines), colour: colour)
+            ?? (mine.count % (Spaces.colours.count - 1)) + 1
+        let made = Container(id: UUID(), name: name.trimmingCharacters(in: .whitespacesAndNewlines), colour: colour,
+                             profile: profile == Profile.personalID ? nil : profile)
         list.append(made)
         write()
         return made
@@ -153,6 +173,11 @@ final class Containers: ObservableObject {
         Spaces.eraseStore(Containers.stores.removeValue(forKey: id), id: id)
     }
 
+    /// A profile deleted: its containers go with it, their stores erased.
+    func forget(profile: UUID) {
+        for container in list(of: profile) { delete(container.id) }
+    }
+
     /// How many tabs are open in it, in every window, for Settings.
     func openTabs(in id: UUID) -> Int {
         Browsers.all.reduce(0) { count, browser in
@@ -169,10 +194,12 @@ final class Containers: ObservableObject {
 }
 
 extension Web {
-    /// The store a tab uses: its container's, whatever space it is in, or
-    /// else its space's.
+    /// The store a tab uses: its container's, whatever space of the
+    /// container's profile it is in, or else its space's. The one place a
+    /// tab's store is chosen, so no file can put a tab in another profile's
+    /// container.
     @MainActor static func store(space: UUID, container: UUID?) -> WKWebsiteDataStore {
-        Containers.store(container) ?? Spaces.store(for: space)
+        Containers.store(container, in: Spaces.profile(of: space)) ?? Spaces.store(for: space)
     }
 }
 
@@ -193,7 +220,7 @@ extension Browser {
     /// container's cookies, or its space's for none, as Move to Space does
     /// — asking first only when the page holds unsaved form entries.
     func contain(_ tab: Tab, in container: UUID?) {
-        let container = Containers.shared.known(container)
+        let container = Containers.shared.known(container, in: profileID)
         guard containable(tab), tab.container != container, space(holding: tab) != nil else { return }
         let complete: () -> Void = { [weak self, weak tab] in
             guard let self, let tab, let space = self.space(holding: tab) else { return }
@@ -262,10 +289,11 @@ struct ContainerMenu: View {
 
     var body: some View {
         Menu("Container") {
-            if !containers.list.isEmpty {
+            let mine = containers.list(of: browser.profileID)
+            if !mine.isEmpty {
                 Toggle("No Container", isOn: Binding(get: { tab.container == nil },
                                                      set: { if $0 { browser.contain(tab, in: nil) } }))
-                ForEach(containers.list) { container in
+                ForEach(mine) { container in
                     Toggle(isOn: Binding(get: { tab.container == container.id },
                                          set: { if $0 { browser.contain(tab, in: container.id) } })) {
                         Label {
@@ -278,17 +306,18 @@ struct ContainerMenu: View {
                 Divider()
             }
             Button("New Container…") {
-                ContainerMenu.askNew { made in browser.contain(tab, in: made.id) }
+                ContainerMenu.askNew(in: browser.profileID) { made in browser.contain(tab, in: made.id) }
             }
         }
     }
 
-    /// Its name, then the container; `then` with it, once made.
-    static func askNew(then: ((Container) -> Void)? = nil) {
+    /// Its name, then the container, made in that profile; `then` with it,
+    /// once made.
+    static func askNew(in profile: UUID, then: ((Container) -> Void)? = nil) {
         Ask.name("New Container",
                  detail: "Tabs in it have their own cookies and sign-ins, in whatever space they are. History, bookmarks and passwords are shared.",
                  placeholder: "Work", confirm: "Create") { name in
-            let made = Containers.shared.add(named: name)
+            let made = Containers.shared.add(named: name, in: profile)
             then?(made)
         }
     }
@@ -349,16 +378,19 @@ extension Tab {
 // MARK: - Settings
 
 /// Settings › Spaces & Pins, under Containers once it is on: New
-/// Container…, then each one with its colour, Rename… and Delete….
+/// Container…, then each of the window's profile's with its colour,
+/// Rename… and Delete….
 struct ContainerList: View {
+    /// The profile of the window Settings is open in.
+    let profile: UUID
     @ObservedObject private var containers = Containers.shared
 
     var body: some View {
         Rule()
         Line("New container", "Or right-click a tab › Container") {
-            Pill("New Container…") { ContainerMenu.askNew() }
+            Pill("New Container…") { ContainerMenu.askNew(in: profile) }
         }
-        ForEach(containers.list) { container in
+        ForEach(containers.list(of: profile)) { container in
             Rule()
             Line(container.name, detail(container)) {
                 HStack(spacing: 10) {

@@ -70,9 +70,10 @@ struct SearchApp: App {
                 Button("New Private Tab") { browser.newShyTab() }
                     .shortcut("file.newPrivateTab")
                 // The containers, once there is one (see Containers.swift).
-                if browser.prefs.usesContainers, !containers.list.isEmpty {
+                let mine = containers.list(of: browser.profileID)
+                if browser.prefs.usesContainers, !mine.isEmpty {
                     Menu("New Container Tab") {
-                        ForEach(containers.list) { container in
+                        ForEach(mine) { container in
                             Button(container.name) { browser.newTab(in: container.id) }
                         }
                     }

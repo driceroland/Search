@@ -193,15 +193,15 @@ enum Spaces {
         [Store.websites] + Profiles.madeStores + stores.values + Containers.madeStores
     }
 
-    /// The stores one profile's tabs use: its own, its spaces' own, and the
-    /// containers', which a tab of any profile may be in.
+    /// The stores one profile's tabs use: its own, its spaces' own, and its
+    /// containers' (see Containers.swift).
     @MainActor static func stores(of profile: UUID) -> [WKWebsiteDataStore] {
         var found: [WKWebsiteDataStore] = [Profiles.store(profile)]
         for space in read(profile: profile) {
             let store = store(for: space.id)
             if !found.contains(where: { $0 === store }) { found.append(store) }
         }
-        return found + Containers.everyStore
+        return found + Containers.stores(of: profile)
     }
 
     /// A space's store and everything in it, gone. What it holds — cookies,
