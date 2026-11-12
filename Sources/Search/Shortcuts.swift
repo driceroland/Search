@@ -73,6 +73,17 @@ struct KeyCombo: Codable, Hashable {
     /// A key alone, or with only ⇧, is typing — never a shortcut.
     var isUsable: Bool { command || option || control || isFunctionKey }
 
+    /// A key the text system uses to move or select, so a command bound to
+    /// it stands aside while the caret is in a field. ⌘ and an arrow is the
+    /// line or the document; ⌥ and an arrow is a word or a paragraph; ⇧
+    /// selects. A letter shortcut is not one of these: ⌘T and ⌘W stay the
+    /// browser's while you type.
+    var movesCaret: Bool {
+        let arrow = key == "left" || key == "right" || key == "up" || key == "down"
+        guard arrow, !control else { return false }
+        return (command && !option) || (option && !command)
+    }
+
     var swiftUI: KeyboardShortcut? {
         let equivalent: KeyEquivalent
         switch key {

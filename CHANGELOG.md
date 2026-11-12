@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A shortcut set to an arrow moves the caret while one is in a text field, and runs the command only when nothing is being typed. Back on ⌘← and Forward on ⌘→ went back and forward in the address field, a panel, and a box on the page; so did any command on ⌘ or ⌥ with an arrow, ⇧ included for selecting. ⌘T, ⌘W and the other letter shortcuts are unchanged. ([#1064](https://github.com/driceroland/Search/issues/1064))
 - With New tab in a floating field on, ⌘T over a tab in a group opens its new tab outside the group, where ⌘T's tab goes with the setting off. It joined the group of the tab the field was raised over. The same for an address typed into ⌘K over a grouped tab; ⌘Return from a grouped tab's address still opens in its group. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1014](https://github.com/driceroland/Search/pull/1014))
 
 ### Added
