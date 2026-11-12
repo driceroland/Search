@@ -1294,9 +1294,9 @@ struct ContentView: View {
     /// menu run the command in the same breath.
     private func silenceCaretEquivalents() -> [(NSMenuItem, String, NSEvent.ModifierFlags)] {
         guard let main = NSApp.mainMenu else { return [] }
-        let arrows: Set<String> = [
+        let arrows = Set([
             NSLeftArrowFunctionKey, NSRightArrowFunctionKey, NSUpArrowFunctionKey, NSDownArrowFunctionKey,
-        ].map { String(UnicodeScalar($0)!) }
+        ].map { String(UnicodeScalar($0)!) })
         var stolen: [(NSMenuItem, String, NSEvent.ModifierFlags)] = []
         func walk(_ menu: NSMenu) {
             for item in menu.items {
