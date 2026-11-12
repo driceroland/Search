@@ -1153,7 +1153,7 @@ enum ExtensionShims {
       // Pathfinder — has them found this way instead. A framed page says it
       // is there as it starts, and that it is going as it goes.
       const framedPages = new Map();
-      let ownFrame = null;
+      let ownFrame = null, sharedWrites = Promise.resolve();
       if (embedded && runtime && typeof Object.getPrototypeOf(runtime).sendMessage === "function") {
         const say = (here) => Promise.resolve(Object.getPrototypeOf(runtime).sendMessage.call(runtime, { __searchFramed: here }));
         ownFrame = say(true).then((r) => r && typeof r.tabId === "number" && typeof r.frameId === "number" ? r : null, () => null);
@@ -1283,6 +1283,23 @@ enum ExtensionShims {
             if (message && message.__searchFramed === false) frames.delete(sender.frameId);
             else frames.set(sender.frameId, Date.now());
             if (frames.size) framedPages.set(tab, frames); else framedPages.delete(tab);
+          }
+          // A framed page's localStorage change, into the copy its other
+          // pages share (see sharedKey): the worker writes them one at a time.
+          if (internalMessages && !local && message && message.__searchFramedStorage && sender && sender.id === runtime.id) {
+            if (!background) { setTimeout(() => respond(undefined), 10000); return true; }
+            const { by, ops } = message.__searchFramedStorage;
+            if (!fromOwnPages(sender) || !Array.isArray(ops)) { respond(false); return; }
+            sharedWrites = sharedWrites.then(async () => {
+              const all = await chrome.storage.local.get(sharedKey);
+              const values = { ...((all && all[sharedKey] && all[sharedKey].values) || {}) };
+              for (const op of ops) {
+                if (op && op.clear) { for (const key of Object.keys(values)) delete values[key]; }
+                else if (op && typeof op.key === "string") { if (typeof op.value === "string") values[op.key] = op.value; else delete values[op.key]; }
+              }
+              await chrome.storage.local.set({ [sharedKey]: { by: String(by), values } });
+            }).then(() => respond(true), () => respond(false));
+            return true;
           }
           if (internalMessages && !local && message && typeof message.__searchFramed === "boolean" && sender && sender.id === runtime.id) {
             if (!background) { setTimeout(() => respond(undefined), 10000); return true; }
@@ -1495,6 +1512,47 @@ enum ExtensionShims {
             });
           } catch (e) {}
         }
+      }
+      // Where framed pages share their localStorage (see below, at
+      // `embedded && localArea`), hidden from the extension: content scripts
+      // included, so this comes before they return.
+      const sharedKey = "__searchFramedLocalStorage";
+      const localArea = chrome.storage && chrome.storage.local;
+      if (localArea && typeof localArea.get === "function") {
+        const get = localArea.get.bind(localArea);
+        put(localArea, "get", (keys, callback) => {
+          if (typeof keys === "function") { callback = keys; keys = null; }
+          const p = Promise.resolve(get(keys === undefined ? null : keys)).then((all) => {
+            if (all && (keys === null || keys === undefined) && sharedKey in all) { all = { ...all }; delete all[sharedKey]; }
+            return all;
+          });
+          if (!callback) return p;
+          p.then(callback, (error) => withLastError(error, callback));
+        });
+        const hide = (ev, withArea) => {
+          if (!ev || typeof ev.addListener !== "function") return;
+          const add = ev.addListener.bind(ev), remove = ev.removeListener.bind(ev), has = ev.hasListener.bind(ev);
+          const wrapped = new WeakMap();
+          put(ev, "addListener", (listener) => {
+            if (typeof listener !== "function") return add(listener);
+            let w = wrapped.get(listener);
+            if (!w) {
+              w = (changes, area) => {
+                if (changes && sharedKey in changes && (!withArea || area === "local")) {
+                  changes = { ...changes }; delete changes[sharedKey];
+                  if (!Object.keys(changes).length) return;
+                }
+                return listener(changes, area);
+              };
+              wrapped.set(listener, w);
+            }
+            return add(w);
+          });
+          put(ev, "removeListener", (listener) => remove(wrapped.get(listener) || listener));
+          put(ev, "hasListener", (listener) => has(wrapped.get(listener) || listener));
+        };
+        hide(chrome.storage.onChanged, true);
+        hide(localArea.onChanged, false);
       }
       // Installed before the content-script return. Each passive subscription
       // is bound natively to the background that this port connected to. A
@@ -2557,6 +2615,89 @@ enum ExtensionShims {
         if (!store || typeof store.set !== "function") continue;
         const set = store.set.bind(store);
         put(store, "set", (items, ...rest) => set(items && typeof items === "object" && Object.getPrototypeOf(items) !== Object.prototype ? Object.assign({}, items) : items, ...rest));
+      }
+      // One localStorage for the extension's pages framed in websites, as
+      // Chrome keeps: WebKit keeps a framed page's storage per website, so
+      // Affinity Pathfinder, which keeps its sign-in there, was signed in on
+      // one company's site and signed out on every other. What such a page
+      // writes is kept in the extension's own storage too (sharedKey,
+      // written by the worker one change at a time, hidden from the
+      // extension); a framed page takes it as it opens — and opens again
+      // if it had already read something older — and hears every change
+      // after, with the storage event Chrome would fire.
+      if (embedded && localArea && runtime && root.localStorage && root.Storage) {
+        const ls = root.localStorage, proto = Storage.prototype;
+        const real = { get: proto.getItem, set: proto.setItem, remove: proto.removeItem, clear: proto.clear };
+        const send = (message) => Promise.resolve(Object.getPrototypeOf(runtime).sendMessage.call(runtime, message));
+        const writer = Math.random().toString(36).slice(2);
+        const readEarly = new Set(), early = [], mine = new Map();
+        let ready = false;
+        const share = (ops) => {
+          if (!ready) { early.push(...ops); return; }
+          for (const op of ops) if (op.key !== undefined) mine.set(op.key, (mine.get(op.key) || 0) + 1);
+          const settle = () => { for (const op of ops) if (op.key !== undefined) { const n = mine.get(op.key) - 1; if (n > 0) mine.set(op.key, n); else mine.delete(op.key); } };
+          send({ __searchFramedStorage: { by: writer, ops } }).then(settle, settle);
+        };
+        proto.getItem = function (key) { if (this === ls && !ready) readEarly.add(String(key)); return real.get.apply(this, arguments); };
+        proto.setItem = function (key, value) {
+          const result = real.set.apply(this, arguments);
+          if (this === ls) share([{ key: String(key), value: String(value) }]);
+          return result;
+        };
+        proto.removeItem = function (key) {
+          const result = real.remove.apply(this, arguments);
+          if (this === ls) share([{ key: String(key), value: null }]);
+          return result;
+        };
+        proto.clear = function () {
+          const result = real.clear.apply(this, arguments);
+          if (this === ls) share([{ clear: true }]);
+          return result;
+        };
+        // Into this website's copy, as another page of the extension changed
+        // it: a storage event for each key that differs.
+        const take = (values, before) => {
+          const changed = [];
+          for (const key of Object.keys(before || {})) {
+            if (!(key in values) && !mine.has(key) && real.get.call(ls, key) !== null) {
+              const old = real.get.call(ls, key); real.remove.call(ls, key); changed.push([key, old, null]);
+            }
+          }
+          for (const [key, value] of Object.entries(values)) {
+            if (mine.has(key) || typeof value !== "string") continue;
+            const old = real.get.call(ls, key);
+            if (old !== value) { real.set.call(ls, key, value); changed.push([key, old, value]); }
+          }
+          return changed;
+        };
+        Promise.resolve(localArea.get(sharedKey)).then((all) => {
+          const kept = all && all[sharedKey];
+          const changed = kept && kept.values ? take(kept.values, null) : [];
+          ready = true;
+          // The page already read one of them as it was here: it opens again,
+          // with the extension's — once, should that keep happening.
+          if (changed.some(([key]) => readEarly.has(key))) {
+            let last = 0;
+            try { last = Number(sessionStorage.getItem("__searchFramedReload")) || 0; } catch (e) {}
+            if (Date.now() - last > 10000) {
+              try { sessionStorage.setItem("__searchFramedReload", String(Date.now())); } catch (e) {}
+              location.reload();
+              return;
+            }
+          }
+          if (early.length) share(early.splice(0));
+        }, () => { ready = true; if (early.length) share(early.splice(0)); });
+        if (chrome.storage.onChanged) {
+          Object.getPrototypeOf(chrome.storage.onChanged).addListener.call(chrome.storage.onChanged, (changes, area) => {
+            const change = area === "local" && changes && changes[sharedKey];
+            if (!change || !ready) return;
+            const now = change.newValue || { values: {} }, before = change.oldValue || { values: {} };
+            if (now.by === writer) return;
+            for (const [key, old, value] of take(now.values || {}, before.values || {})) {
+              try { root.dispatchEvent(new StorageEvent("storage", { key, oldValue: old, newValue: value, url: location.href, storageArea: ls })); } catch (e) {}
+            }
+          });
+        }
       }
       fill("scripting", {
         ExecutionWorld: { ISOLATED: "ISOLATED", MAIN: "MAIN", USER_SCRIPT: "USER_SCRIPT" },
