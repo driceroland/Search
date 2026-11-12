@@ -1146,6 +1146,19 @@ enum ExtensionShims {
       }
       // The tab an extension's framed page is in, asked once (see __searchToFrame).
       let ownTab = null;
+      // The extension's own pages framed in websites' tabs, as its worker
+      // has heard from them: tab → frame → when. The worker hands a tab's
+      // message to those frames too (see alsoFramed), and finds them with
+      // webNavigation; an extension that didn't ask for it — Affinity
+      // Pathfinder — has them found this way instead. A framed page says it
+      // is there as it starts, and that it is going as it goes.
+      const framedPages = new Map();
+      let ownFrame = null;
+      if (embedded && runtime && typeof Object.getPrototypeOf(runtime).sendMessage === "function") {
+        const say = (here) => Promise.resolve(Object.getPrototypeOf(runtime).sendMessage.call(runtime, { __searchFramed: here }));
+        ownFrame = say(true).then((r) => r && typeof r.tabId === "number" && typeof r.frameId === "number" ? r : null, () => null);
+        try { root.addEventListener("pagehide", () => { say(false).catch(() => {}); }); } catch (e) {}
+      }
       // Who has something to say about a message, told between the
       // extension's worker and its own pages on a channel they share (one
       // origin): each says, as soon as its listeners have run, whether it
@@ -1261,6 +1274,21 @@ enum ExtensionShims {
         const listeners = new Set();
         let attached = false;
         const dispatch = function (message, sender, respond, local = false) {
+          // The worker notes each of the extension's pages framed in a
+          // website's tab that it hears from (see framedPages), and the
+          // page's word that it is there, or going.
+          if (internalMessages && !local && background && fromOwnPages(sender) && sender.tab
+            && typeof sender.tab.id === "number" && typeof sender.frameId === "number" && sender.frameId > 0) {
+            const tab = sender.tab.id, frames = framedPages.get(tab) || new Map();
+            if (message && message.__searchFramed === false) frames.delete(sender.frameId);
+            else frames.set(sender.frameId, Date.now());
+            if (frames.size) framedPages.set(tab, frames); else framedPages.delete(tab);
+          }
+          if (internalMessages && !local && message && typeof message.__searchFramed === "boolean" && sender && sender.id === runtime.id) {
+            if (!background) { setTimeout(() => respond(undefined), 10000); return true; }
+            respond(sender.tab && typeof sender.frameId === "number" ? { tabId: sender.tab.id, frameId: sender.frameId } : null);
+            return;
+          }
           if (!local && !background && !relaying && fromOwnPages(sender)) {
             const k = relayKey(message);
             if (k && pending(heardRelayed, k)) { count(heardRelayed, k, -1); return; }
@@ -1295,13 +1323,18 @@ enum ExtensionShims {
           // it pass without answering, as it would a message not for it.
           if (message && message.__searchToFrame) {
             const to = message.__searchToFrame;
-            if (!embedded || !(to.urls || []).includes(location.href)) {
+            const byAddress = embedded && (to.urls || []).includes(location.href);
+            const byFrame = embedded && !byAddress && Array.isArray(to.frames) && !!ownFrame;
+            if (!byAddress && !byFrame) {
               if (!background) setTimeout(() => sendResponse(undefined), 10000);
               return background ? undefined : true;
             }
             if (!ownTab) ownTab = Promise.resolve(runtime.sendMessage({ __searchCall: { space: "tabs", method: "getCurrent", args: [] } }))
               .then((reply) => reply && reply.value ? reply.value.id : null, () => null);
-            ownTab.then((id) => {
+            const mine = byFrame
+              ? ownFrame.then((own) => own && to.frames.includes(own.frameId) ? own.tabId : null)
+              : ownTab;
+            mine.then((id) => {
               if (id !== to.tabId) return setTimeout(() => sendResponse(undefined), 10000);
               let kept = false;
               for (const listener of [...listeners]) {
@@ -1813,14 +1846,22 @@ enum ExtensionShims {
       // from either wins.
       const alsoFramed = (answer, tabId, message, options) => {
         const nav = chrome.webNavigation;
-        if (!nav || typeof nav.getAllFrames !== "function" || typeof tabId !== "number") return answer;
+        if (typeof tabId !== "number") return answer;
         const own = runtime.getURL("");
         const wanted = options && typeof options.frameId === "number" ? options.frameId : null;
-        const framed = Promise.resolve(nav.getAllFrames({ tabId })).then((frames) => {
-          const urls = (frames || []).filter((f) => f.url && f.url.startsWith(own) && f.frameId !== 0 && (wanted === null || f.frameId === wanted)).map((f) => f.url);
-          if (!urls.length) return undefined;
-          return Object.getPrototypeOf(runtime).sendMessage.call(runtime, { __searchToFrame: { tabId, urls, message } });
-        }, () => undefined);
+        const hand = (envelope) => Object.getPrototypeOf(runtime).sendMessage.call(runtime, { __searchToFrame: { tabId, ...envelope, message } });
+        let framed;
+        if (nav && typeof nav.getAllFrames === "function") {
+          framed = Promise.resolve(nav.getAllFrames({ tabId })).then((frames) => {
+            const urls = (frames || []).filter((f) => f.url && f.url.startsWith(own) && f.frameId !== 0 && (wanted === null || f.frameId === wanted)).map((f) => f.url);
+            if (!urls.length) return undefined;
+            return hand({ urls });
+          }, () => undefined);
+        } else {
+          const ids = [...(framedPages.get(tabId) || new Map()).keys()].filter((id) => wanted === null || id === wanted);
+          if (!ids.length) return answer;
+          framed = Promise.resolve(hand({ frames: ids }));
+        }
         return new Promise((resolve, reject) => {
           let left = 2, failure = null;
           const none = () => { if (--left === 0) failure ? reject(failure) : resolve(undefined); };
