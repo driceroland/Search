@@ -123,6 +123,12 @@ final class History: ObservableObject {
     private var pausing = false
     /// Visits counted at most: far more than anyone makes, and room to add.
     static let mostVisits = 1_000_000_000
+    /// Places kept, in the file and in memory: the most visited and the latest.
+    nonisolated static let cap = 2_000
+    /// How far memory may run past `cap` before it is cut back to it, so a
+    /// busy day's browsing sorts the history once every few hundred pages
+    /// and not once for each.
+    static let slack = 250
     /// These are derived once when a visit enters memory. Suggestions run on
     /// every keystroke, so neither URL parsing nor address formatting belongs
     /// in that loop.
@@ -241,7 +247,14 @@ final class History: ObservableObject {
     }
 
     private func credit(_ text: PageText, by weight: Double) {
-        for prefix in text.trail { weights[prefix, default: 0] += weight }
+        for prefix in text.trail {
+            let had = weights[prefix] ?? 0
+            let now = had + weight
+            // Taking the last page's share back out leaves nothing, or a
+            // crumb of rounding, and either way the prefix is no longer
+            // anyone's: left in, every address ever visited keeps a key here.
+            weights[prefix] = now > had * 1e-9 ? now : nil
+        }
     }
 
     private func forgetText(for key: String) {
@@ -302,7 +315,31 @@ final class History: ObservableObject {
             )
         }
         if let seen = visits[key] { remember(seen, url: url) }
+        prune()
         save()
+    }
+
+    /// The file keeps `cap` places (see `write`), and so does memory, once it
+    /// is `slack` past it: otherwise a session that never restarts holds, and
+    /// the field scans on every key, every page it has ever seen. What goes is
+    /// what the file would have left out — the lowest `score` — with its text
+    /// and its share of every prefix, so memory is what a restart would load.
+    private func prune() {
+        guard visits.count > History.cap + History.slack else { return }
+        let now = Date()
+        let dropped = Set(
+            visits.values
+                .sorted { History.score($0, now: now) > History.score($1, now: now) }
+                .dropFirst(History.cap)
+                .map(\.key)
+        )
+        visits = visits.filter { !dropped.contains($0.key) }
+        for key in dropped {
+            if let old = pageText.removeValue(forKey: key) { credit(old, by: -old.weight) }
+        }
+        // Once, not as each page goes: asking whether another page still has
+        // the host, for each of a few hundred, would scan the rest each time.
+        visitedHosts = Set(pageText.values.lazy.map(\.host).filter { !$0.isEmpty })
     }
 
     /// Somewhere another browser has been. Counted as it was counted there,
@@ -325,6 +362,7 @@ final class History: ObservableObject {
             visits[key] = visit
             remember(visit, url: url)
         }
+        prune()
     }
 
     /// After a batch of `take`s.
@@ -707,10 +745,11 @@ final class History: ObservableObject {
         guard !retired else { return }
         let date = Date()
         // A cap, so the file can't grow without end. What goes is what has
-        // been visited least and longest ago.
+        // been visited least and longest ago. Memory may be a little over it
+        // (see `prune`), so the file still cuts to it itself.
         let snapshot = visits
         Disk.write(file, now: now) {
-            let list = Array(snapshot.values.sorted { History.score($0, now: date) > History.score($1, now: date) }.prefix(2_000))
+            let list = Array(snapshot.values.sorted { History.score($0, now: date) > History.score($1, now: date) }.prefix(History.cap))
             return try? JSONEncoder().encode(list)
         }
     }
