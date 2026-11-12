@@ -1970,14 +1970,58 @@ enum ExtensionShims {
           // Read as the worker starts: Claude's lists its colours in a class.
           Color: { GREY: "grey", BLUE: "blue", RED: "red", YELLOW: "yellow", GREEN: "green",
             PINK: "pink", PURPLE: "purple", CYAN: "cyan", ORANGE: "orange" } });
+      // A port to the browser for as long as something here listens for an
+      // event WebKit lacks: the browser speaks on it when there is news
+      // (ExtensionWatch.swift), where this used to ask every few seconds.
+      // WebKit drops what a worker posts on a port only just opened, so the
+      // hello is said again until the browser answers it, and once more
+      // when the browser says the port has arrived ("ready"). `heard` is
+      // given what comes after: the answer to the hello, once — news may
+      // have come before it did — and then the news.
+      const watching = (name, hello, heard) => {
+        let port = null;
+        const start = () => {
+          if (port || !runtime || typeof runtime.connectNative !== "function") return;
+          let mine;
+          try { mine = runtime.connectNative(name); } catch (e) { return; }
+          port = mine;
+          let answered = false, tries = 0;
+          const greet = () => { try { mine.postMessage(hello()); } catch (e) {} };
+          const again = () => {
+            if (answered || port !== mine || tries++ >= 20) return;
+            greet();
+            setTimeout(again, 100 * Math.min(tries, 5));
+          };
+          mine.onMessage.addListener((m) => {
+            // Its own hello, sent back: what a worker posts in a port's first
+            // moments can come to its own listeners instead of the browser
+            // (see the note on ports to an app), and is no answer.
+            if (port !== mine || !m || typeof m !== "object" || m.listen) return;
+            if (m.ready) { if (!answered) greet(); return; }
+            if (m.listening && answered) return;
+            answered = true;
+            heard(m);
+          });
+          mine.onDisconnect.addListener(() => { if (port === mine) port = null; });
+          again();
+        };
+        const stop = () => {
+          const old = port;
+          port = null;
+          if (old) try { old.disconnect(); } catch (e) {}
+        };
+        // Said again to a port already open (the interval changed).
+        const update = () => { if (port) try { port.postMessage(hello()); } catch (e) {} };
+        return { start, stop, update, isOpen: () => !!port };
+      };
       // Groups change in Search's hands, where no event reaches the
-      // extension: while it listens, they are asked for every few seconds
+      // extension: while it listens, the browser says when they have changed
       // and what changed is told as Chrome tells it — and at once after the
       // extension changes one itself.
       let groupsChanged = () => {};
       if (chrome.tabGroups && chrome.tabGroups.onCreated && chrome.tabGroups.onCreated.listeners) {
         const groups = chrome.tabGroups, told = ["onCreated", "onRemoved", "onUpdated"];
-        let known = null, timer = null;
+        let known = null;
         // What an update changes; the order of the keys is the browser's.
         const shape = (g) => JSON.stringify([g.title, g.collapsed, g.color]);
         const tell = (name, group) => {
@@ -1997,13 +2041,23 @@ enum ExtensionShims {
             known = next;
           }, () => {});
         };
+        // Whatever the browser says, its answer to the hello included, is
+        // a reason to look: the groups are asked for and compared as before.
+        const line = watching("search.groups", () => ({ listen: true, worker }), () => groupsChanged());
         for (const name of told) {
-          const add = groups[name].addListener;
+          const { addListener: add, removeListener: remove } = groups[name];
           groups[name].addListener = (f) => {
             add(f);
-            if (timer) return;
+            if (line.isOpen()) return;
             groupsChanged();
-            timer = setInterval(groupsChanged, 3000);
+            line.start();
+          };
+          // Nobody left to tell: the port goes, and what was known with it.
+          groups[name].removeListener = (f) => {
+            remove(f);
+            if (told.some((n) => groups[n].listeners.size)) return;
+            line.stop();
+            known = null;
           };
         }
         put(groups, "update", (id, props, callback) => {
@@ -2053,21 +2107,30 @@ enum ExtensionShims {
       define("idle", ["queryState", "getAutoLockDelay"], [],
         { IdleState: { ACTIVE: "active", IDLE: "idle", LOCKED: "locked" } });
       if (chrome.idle && !chrome.idle.onStateChanged) {
-        // Asked every so often while anyone listens, the way Chrome
-        // notices on its own.
-        const changed = event(), add = changed.addListener;
-        let every = 60, state = "active", timer = null;
-        changed.addListener = (f) => {
-          add(f);
-          if (timer) return;
-          timer = setInterval(() => native("idle.queryState", [every]).then((now) => {
-            if (now === state) return;
-            state = now;
-            for (const g of changed.listeners) try { g(now); } catch (e) { setTimeout(() => { throw e; }); }
-          }).catch(() => {}), 15000);
+        // Told by the browser while anyone listens, the way Chrome notices
+        // on its own: when the Mac has been quiet for the detection
+        // interval, locks, or is used again (ExtensionWatch.swift).
+        const changed = event(), { addListener: add, removeListener: remove } = changed;
+        let every = 60, state = "active";
+        const line = watching("search.idle", () => ({ listen: true, worker, every }), (m) => {
+          if (typeof m.state !== "string" || m.state === state) return;
+          state = m.state;
+          for (const g of changed.listeners) try { g(m.state); } catch (e) { setTimeout(() => { throw e; }); }
+        });
+        changed.addListener = (f) => { add(f); line.start(); };
+        // The last one gone, the port goes with it, and the browser stops
+        // looking. A listener back starts from active, as the first did.
+        changed.removeListener = (f) => {
+          remove(f);
+          if (changed.listeners.size) return;
+          line.stop();
+          state = "active";
         };
         put(chrome.idle, "onStateChanged", changed);
-        put(chrome.idle, "setDetectionInterval", (seconds) => { every = Math.max(15, Number(seconds) || 60); });
+        put(chrome.idle, "setDetectionInterval", (seconds) => {
+          every = Math.max(15, Number(seconds) || 60);
+          line.update();
+        });
       }
       define("power", ["requestKeepAwake", "releaseKeepAwake", "reportActivity"]);
       define("browsingData",
@@ -4137,7 +4200,7 @@ enum ExtensionShims {
     /// The groups an extension is shown: never one without a tab. The same
     /// with groups off in Settings, where they are kept without a heading
     /// in the column (see the tab groups cases in `run`).
-    private static func listedGroups(_ browser: Browser) -> [TabGroup] {
+    static func listedGroups(_ browser: Browser) -> [TabGroup] {
         browser.tabGroups.filter { !browser.tabs(in: $0.id).isEmpty }
     }
 
@@ -4901,11 +4964,7 @@ enum ExtensionShims {
 
         // MARK: idle
         case "idle.queryState":
-            let threshold = (first as? Double) ?? 60
-            if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
-               session["CGSSessionScreenIsLocked"] as? Bool == true { return "locked" }
-            let quiet = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-            return quiet >= threshold ? "idle" : "active"
+            return ExtensionWatch.idleState(threshold: (first as? Double) ?? 60)
         case "idle.getAutoLockDelay":
             return 0
 
