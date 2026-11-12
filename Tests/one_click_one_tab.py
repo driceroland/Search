@@ -116,19 +116,26 @@ def case(t, name, path, expect, wait=2.5, behind=False, **extra):
     page = sv.page(path)
     before = tabs()
     tap(page, **extra)
+    note = sv.cmd({"do": "probe"})["announcement"]
+    until = time.monotonic() + 1
+    while behind and not note and time.monotonic() < until:
+        time.sleep(0.05)
+        note = sv.cmd({"do": "probe"})["announcement"]
+    t.ok(f"{name}: toast only for a background tab", note == ("Opened in a new tab" if behind else ""), note)
     new = count_new(before, wait)
     t.ok(f"{name}: one new tab", [urlparse(x["url"]).path for x in new] == [f"/opened-{expect}"],
          [urlparse(x["url"]).path for x in new])
     if behind:
         t.ok(f"{name}: it stays behind", new and not any(x["active"] for x in new),
              [(urlparse(x["url"]).path, x["active"]) for x in new])
+        t.ok(f"{name}: toast goes away", not sv.cmd({"do": "probe"})["announcement"])
     return page
 
 
 def main():
     t = sv.T()
     try:
-        sv.setup(); sv.launch()
+        sv.setup(sidebar=True, **{"sidebar.hides": True}); sv.launch()
         case(t, "anchor target=_blank", "anchor", "anchor")
         case(t, "window.open only", "wopen", "wopen")
         case(t, "anchor + window.open, same address (Gmail)", "gmail", "gmail")
@@ -136,12 +143,16 @@ def main():
         case(t, "href swapped to a redirect on mousedown", "gmail-rewrite", "gmailw")
         case(t, "async POST to _blank after a click (#509)", "post", "post", wait=4)
         case(t, "⌘-click a plain link", "plain", "plain", behind=True, mods=["cmd"])
+        case(t, "⌘⇧-click a plain link", "plain", "plain", mods=["cmd", "shift"])
         case(t, "⌘-click on the Gmail pattern", "gmail", "gmail", behind=True, mods=["cmd"])
         case(t, "⌘-click, the page opening through a redirect", "gmail-redirect", "gmailr", behind=True, mods=["cmd"])
         case(t, "middle-click a plain link", "plain", "plain", behind=True, button="middle")
         case(t, "middle-click, the page opening on auxclick", "gmail-aux", "gmaila", behind=True, button="middle")
         # And the next click still opens its one tab.
         case(t, "a click after all that", "anchor", "anchor")
+        page = sv.page("plain")
+        sv.cmd({"do": "linkmenu", "id": page, "x": 80, "y": 60, "pick": "Open Link in New Tab"})
+        t.ok("Open Link in New Tab: shows a toast", sv.cmd({"do": "probe"})["announcement"] == "Opened in a new tab")
     finally:
         t.done(); sv.finish()
     return 1 if t.failed else 0

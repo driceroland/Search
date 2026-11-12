@@ -849,6 +849,7 @@ final class Bench {
                 "bookmarkCount": browser.bookmarks.count,
                 "import": browser.bringingIn != nil,
                 "field": browser.editing,
+                "announcement": browser.announcement ?? "",
                 "suggesting": browser.suggesting != nil,
                 "offering": browser.offering != nil,
                 "modal": NSApp.modalWindow.map { "\(type(of: $0)) “\($0.title)”" } ?? "",

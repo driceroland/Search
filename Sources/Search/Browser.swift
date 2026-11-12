@@ -5429,6 +5429,7 @@ final class Browser: NSObject, ObservableObject {
             editing = false
             typed = ""
         }
+        if link, !foreground { announce("Opened in a new tab") }
         return tab
     }
 
@@ -7569,6 +7570,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // Returning the view is what makes it the target. WebKit loads the
         // request into it itself when the action carries one.
         if let url = action.request.url { tab.setAddressOptimistically(url) }
+        if behind || beside, !destination.visibleTabIDs.contains(tab.id) {
+            destination.announce("Opened in a new tab")
+        }
         return tab.web
     }
 
@@ -7602,6 +7606,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
                 tabs.insert(tab, at: placeForLink(from: source))
                 if !foreground || frontLinksBeside { noteLink(tab, from: source) }
             }
+            if !foreground, !visibleTabIDs.contains(tab.id) { announce("Opened in a new tab") }
             return
         }
         // To a site Settings sends to another space: there, in front.
