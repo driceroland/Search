@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Dusk no longer holds ever more memory on a page that keeps replacing its style sheets, where a page's process grew to several gigabytes and restarted in a loop. Dusk's dark copy of a sheet goes as soon as the page takes the sheet out, where every copy was kept until the page went quiet, which such a page never does; and a page that still swaps sheets past a generous budget is darkened by the filter instead, until it is reloaded. Reported by [@2cristo7](https://github.com/2cristo7) ([#740](https://github.com/driceroland/Search/issues/740))
 - Move to Group in a tab's right-click menu moves every tab picked with it, as dragging them onto a group does, where it moved only the tab clicked.
 - An extension's right-click items for a picture, Are.na's Add to Are.na for one, show on pictures that aren't links: with an extension that adds such items, the page keeps WebKit's menu there, whose Copy Image and Download Image are Search's own.
 - With more than one window open, a click in the puzzle button's list of extensions opens the extension or pins it, where it only closed the list: every window's list followed one shared switch, and the click closed them all.
