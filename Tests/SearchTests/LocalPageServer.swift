@@ -9,12 +9,15 @@ final class LocalPageServer {
         var status = "200 OK"
         var type: String
         var body: String
+        var withoutLength = false
+        var slowly = false
     }
 
     private let socket: Int32
     private let source: DispatchSourceRead
     private let lock = NSLock()
     private var asked: [String] = []
+    private var sentBodies: [String: Int] = [:]
     private var stopped = false
     private let pages: [String: Page]
     let port: UInt16
@@ -75,6 +78,12 @@ final class LocalPageServer {
         return asked
     }
 
+    func bytesSent(_ path: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return sentBodies[path] ?? 0
+    }
+
     func stop() {
         lock.lock()
         let first = !stopped
@@ -122,9 +131,21 @@ final class LocalPageServer {
         let body = Data(page.body.utf8)
         let head = "HTTP/1.1 \(page.status)\r\n"
             + "Content-Type: \(page.type)\r\n"
-            + "Content-Length: \(body.count)\r\n"
+            + (page.withoutLength ? "" : "Content-Length: \(body.count)\r\n")
             + "Connection: close\r\n\r\n"
-        _ = send(client, Data(head.utf8) + body)
+        guard send(client, Data(head.utf8)) else { return }
+        if !page.slowly {
+            _ = send(client, body)
+            return
+        }
+        for start in stride(from: 0, to: body.count, by: 16 * 1024) {
+            let end = min(start + 16 * 1024, body.count)
+            guard send(client, body.subdata(in: start..<end)) else { return }
+            lock.lock()
+            sentBodies[path] = end
+            lock.unlock()
+            usleep(1000)
+        }
     }
 
     private func send(_ client: Int32, _ data: Data) -> Bool {
