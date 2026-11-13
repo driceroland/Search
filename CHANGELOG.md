@@ -13,6 +13,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A peek stays with the tab it was opened from. Leaving that tab and coming back finds it still there. Escape, its cross, or closing the tab puts it away.
+- Back, Forward, Previous Tab and Next Tab in a small window act on that window: back and forward in its page, and previous and next among the small windows, where they changed the tab in the window behind.
 - A tab in a group whose page is put away, with the minus at the end of its row or ⌘W, dims, as a pinned tab put down does. The row looked just as it had, so the minus seemed to do nothing, and a second click closed the tab.
 - A shortcut set to an arrow moves the caret while one is in a text field, and runs the command only when nothing is being typed. Back on ⌘← and Forward on ⌘→ went back and forward in the address field, a panel, and a box on the page; so did any command on ⌘ or ⌥ with an arrow, ⇧ included for selecting. ⌘T, ⌘W and the other letter shortcuts are unchanged. ([#1064](https://github.com/driceroland/Search/issues/1064))
 - Dusk no longer holds ever more memory on a page that keeps replacing its style sheets, where a page's process grew to several gigabytes and restarted in a loop. Dusk's dark copy of a sheet goes as soon as the page takes the sheet out, where every copy was kept until the page went quiet, which such a page never does; and a page that still swaps sheets past a generous budget is darkened by the filter instead, until it is reloaded. Reported by [@2cristo7](https://github.com/2cristo7) ([#740](https://github.com/driceroland/Search/issues/740))
@@ -39,11 +41,13 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Open in Small Window, in a tab's menu and the Tabs menu, puts that tab in the small window a link from another app uses: the page as it is, beside the window, and Open in Search (⌘O) puts it back in the row. Closing the small window closes the tab. Quitting, or a relaunch, brings the page back in the row.
 - Reduce animations makes everything in Search's interface happen at once: the tab ⌘1–⌘9 picks is lit and shown with no glide, a space, a panel or a page's first frame comes without sliding or fading, for Search alone and whatever Reduce Motion in System Settings says. Off unless you turn on Settings › Appearance › Motion › Reduce animations.
 - ⌘S can make the column icons only instead of hiding it, so the tabs stay in sight; ⌘S again brings the titles back. Off unless you turn on Settings › Appearance › Tabs › ⌘S makes the column icons only. Not with the tabs across the top, nor with the column hidden until the pointer reaches the edge. Asked for by [@vincent-caetano](https://github.com/vincent-caetano) ([#1008](https://github.com/driceroland/Search/issues/1008)). Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1015](https://github.com/driceroland/Search/pull/1015))
 
 ### Changed
 
+- The Web Inspector takes Chrome's colors, light or dark with the Mac. The tabs are a flat strip with the open one underlined, and the selected row, the type and the syntax colors follow DevTools. The panels themselves, and the tools in them, stay Web Inspector's.
 - Waking a tab that slept, with ⌘1–⌘9 or a click, brings its page up sooner: the page is asked for as its view reaches the window, not when a timer next looks, and the picture of the page as it was left comes off a moment after the new one has drawn, where it stayed up for half a second after the page arrived whatever the page had done. A page that draws late still has it off at half a second.
 - A page whose title keeps changing, such as an inbox counting its unread mail, no longer rewrites the whole history file each time it ticks over. History writes a page's first title at once, and a later one with the next visit or when Search quits. Thanks [@D3OXY](https://github.com/D3OXY) ([#1043](https://github.com/driceroland/Search/issues/1043), [#1044](https://github.com/driceroland/Search/pull/1044))
 - Pulling the column's edge, or the side panel's, saves the width once, when the edge is let go, instead of at every step of the pull, which every open window redrew for. Thanks [@oddharsh](https://github.com/oddharsh) ([#1035](https://github.com/driceroland/Search/pull/1035))

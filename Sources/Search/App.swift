@@ -303,6 +303,10 @@ struct SearchApp: App {
                 Button("Duplicate Tab") { browser.duplicate() }
                     .shortcut("tabs.duplicate")
                     .disabled(!(browser.active?.isWeb ?? false))
+                Button("Open in Small Window") {
+                    if let tab = browser.active { browser.openInLittleWindow(tab) }
+                }
+                    .disabled(browser.active?.pin != nil || browser.active?.bench == true || !(browser.active?.isWeb ?? false))
                 Button("Copy Address") { browser.copyAddress() }
                     .shortcut("tabs.copyAddress")
                     .disabled(!(browser.active?.isWeb ?? false))
@@ -1377,7 +1381,7 @@ struct ContentView: View {
         return !browser.welcoming &&
             !browser.reviewing && !browser.bookmarksOpen &&
             !browser.veiling && !browser.summoning && !browser.makingSpace &&
-            browser.peekTab == nil && browser.editingTab == nil &&
+            !browser.peekInFront && browser.editingTab == nil &&
             browser.asking == nil && browser.offering == nil && browser.suggesting == nil
     }
 
@@ -1391,8 +1395,20 @@ struct ContentView: View {
         // there is its Cancel: taken here, it closed the panel under it and
         // left the question up, with Return still on its first button.
         if event.window?.sheetParent != nil || NSApp.modalWindow != nil { return false }
-        // A small window's keys are its own (see Little.swift).
-        if let little = LittleWindow.owning(event.window) { return little.take(event) }
+        // A small window's keys are its own (see Little.swift). An arrow
+        // bound to a command, while the caret is in a field there, is the
+        // field's: the menu would otherwise run it on the window behind.
+        if let little = LittleWindow.owning(event.window) {
+            if little.take(event) { return true }
+            if let combo = KeyCombo(event: event), combo.movesCaret,
+               little.tab.typing || little.tab.built?.inputContext != nil {
+                let stolen = silenceCaretEquivalents()
+                if !stolen.isEmpty {
+                    DispatchQueue.main.async { [stolen] in self.restoreCaretEquivalents(stolen) }
+                }
+            }
+            return false
+        }
         // A popup window: ⌘W closes it, not a tab of the
         // window menus act on. New tabs return to its browser; Escape
         // dismisses its permission question.
@@ -1452,7 +1468,7 @@ struct ContentView: View {
                 browser.cancelTabEdit()
                 return true
             }
-            if browser.peekTab != nil {
+            if browser.peekInFront {
                 browser.closePeek()
                 return true
             }
@@ -1536,7 +1552,7 @@ struct ContentView: View {
         if event.keyCode == 36 || event.keyCode == 76,
            flags.intersection([.command, .shift, .option, .control]) == .command
             || (browser.prefs.splitView && flags.intersection([.command, .shift, .option, .control]) == [.command, .option]),
-           let peek = browser.peekTab, !peek.typing, peek.built?.inputContext == nil {
+           browser.peekInFront, let peek = browser.peekTab, !peek.typing, peek.built?.inputContext == nil {
             browser.keepPeek(beside: flags.contains(.option))
             return true
         }

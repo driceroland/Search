@@ -453,6 +453,20 @@ final class Extensions: NSObject, ObservableObject {
                 inTransit[id] = (key, oldOrders)
                 continue
             }
+            // Lifted into a small window (Little.swift): still a page, just
+            // not in the row. Told of as one with no window, the way a peek
+            // is, once the row has let it go.
+            if let little = LittleWindow.holding(id) {
+                if let adapter = adapters[id] {
+                    for context in contexts.values where context.openTabs.contains(adapter) {
+                        context.didCloseTab(adapter, windowIsClosing: false)
+                    }
+                }
+                adapters[id] = nil
+                watching[id] = nil
+                openedAside(little.tab)
+                continue
+            }
             if let adapter = adapters[id] {
                 for context in contexts.values where context.openTabs.contains(adapter) {
                     context.didCloseTab(adapter, windowIsClosing: false)

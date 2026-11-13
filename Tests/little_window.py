@@ -51,6 +51,22 @@ saved = subprocess.run(["pbpaste"], capture_output=True).stdout
 try:
     sv.setup(); sv.launch()
 
+    # A tab already in the row, lifted into a small window, then kept back.
+    page = f"{sv.BASE}/aside"
+    opened = sv.cmd({"do": "open", "url": page})
+    time.sleep(1.5)
+    st = sv.cmd({"do": "little", "what": "lift", "id": opened["id"]})
+    t.ok("a tab opens in a small window", page in st["littles"], st)
+    row = sv.cmd({"do": "tabs"})["tabs"]
+    t.ok("and leaves the row", all(page not in (item.get("url"), item.get("page"), item.get("view")) for item in row), row)
+    sv.cmd({"do": "little", "what": "keep"})
+    time.sleep(0.5)
+    st = little("look")
+    row = sv.cmd({"do": "tabs"})["tabs"]
+    back = next((item for item in row if page in (item.get("url"), item.get("page"), item.get("view"))), None)
+    t.ok("Open in Search puts it back in the row", st["littles"] == [] and back is not None, (st["littles"], row))
+    if back: sv.cmd({"do": "close", "id": back["id"]})
+
     # ⌘⇧C: this page's address, said at the window's foot — not the tab
     # behind it in the browser's window, which the menu would copy.
     little(f"{sv.BASE}/copied"); time.sleep(2)
@@ -71,7 +87,27 @@ try:
     press(29, "0", "cmd")
     t.ok("⌘0 puts it back", abs(little("look")["zoom"] - 1) < 0.01, little("look")["zoom"])
 
+    # Back stays in this window, and previous/next tab walk the small
+    # windows. Neither changes the tab in the window behind.
+    active = little("look")["activeID"]
+    press(30, "]", "cmd", "shift")
+    t.ok("one small window: next tab leaves the row", little("look")["activeID"] == active, little("look"))
+    sv.cmd({"do": "little", "what": "go", "url": f"{sv.BASE}/onward"}); time.sleep(1.5)
+    t.ok("the small window went on to another page", little("look")["littles"][-1].endswith("/onward"), little("look"))
+    press(33, "[", "cmd"); time.sleep(0.6)
+    st = little("look")
+    t.ok("⌘[ goes back in the small window", st["littles"][-1].endswith("/copied"), st)
+    t.ok("⌘[ leaves the tab behind", st["activeID"] == active, st)
+    little(f"{sv.BASE}/second"); time.sleep(1.2)
+    press(30, "]", "cmd", "shift")
+    st = little("look")
+    t.ok("⇧⌘] brings the other small window forward", st["fronted"].endswith("/copied"), st)
+    t.ok("⇧⌘] leaves the tab behind", st["activeID"] == active, st)
+    press(13, "w", "cmd"); time.sleep(0.3)
+    little("close"); time.sleep(0.3)
+
     # ⌘W and Escape close it; the browser's row is as it was.
+    little(f"{sv.BASE}/closing"); time.sleep(1.2)
     tabs = little("look")["tabs"]
     press(13, "w", "cmd")
     st = little("look")
@@ -86,6 +122,21 @@ try:
     little("keep"); time.sleep(0.5)
     st = little("look")
     t.ok("Open in Search moves the page into the row", "127.0.0.1" in st["tabs"] and st["littles"] == [], st)
+
+    # A shift-click's peek stays with the tab it was opened from.
+    under = sv.cmd({"do": "open", "url": f"{sv.BASE}/under"})
+    other = sv.cmd({"do": "open", "url": f"{sv.BASE}/beside"})
+    time.sleep(1)
+    sv.cmd({"do": "select", "id": under["id"]})
+    sv.cmd({"do": "peek", "url": f"{sv.BASE}/peeked"}); time.sleep(0.8)
+    t.ok("a peek opens over its tab", sv.cmd({"do": "probe"})["peek"].endswith("/peeked"))
+    sv.cmd({"do": "select", "id": other["id"]}); time.sleep(0.4)
+    t.ok("another tab leaves the peek open", sv.cmd({"do": "probe"})["peek"].endswith("/peeked"))
+    sv.cmd({"do": "select", "id": under["id"]}); time.sleep(0.4)
+    t.ok("coming back, the peek is still there", sv.cmd({"do": "probe"})["peek"].endswith("/peeked"))
+    sv.cmd({"do": "peek", "url": "close"}); time.sleep(0.3)
+    sv.cmd({"do": "close", "id": under["id"]})
+    sv.cmd({"do": "close", "id": other["id"]})
 
     # Three windows, each with a page, written down; then a launch made by a
     # small window's link. Every window stays, off screen, and nothing is
