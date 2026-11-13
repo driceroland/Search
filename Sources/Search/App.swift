@@ -1328,6 +1328,38 @@ struct ContentView: View {
             || browser.active?.built?.inputContext != nil
     }
 
+    /// Menu items wearing a caret key — ⌘ or ⌥ with an arrow — set aside for
+    /// one press so the field can have it. Put back on the next turn, after
+    /// this event has been delivered: restoring before then would let the
+    /// menu run the command in the same breath.
+    private func silenceCaretEquivalents() -> [(NSMenuItem, String, NSEvent.ModifierFlags)] {
+        guard let main = NSApp.mainMenu else { return [] }
+        let arrows = Set([
+            NSLeftArrowFunctionKey, NSRightArrowFunctionKey, NSUpArrowFunctionKey, NSDownArrowFunctionKey,
+        ].map { String(UnicodeScalar($0)!) })
+        var stolen: [(NSMenuItem, String, NSEvent.ModifierFlags)] = []
+        func walk(_ menu: NSMenu) {
+            for item in menu.items {
+                if let submenu = item.submenu { walk(submenu) }
+                let mask = item.keyEquivalentModifierMask
+                let commandOnly = mask.contains(.command) && !mask.contains(.option) && !mask.contains(.control)
+                let optionOnly = mask.contains(.option) && !mask.contains(.command) && !mask.contains(.control)
+                guard arrows.contains(item.keyEquivalent), commandOnly || optionOnly else { continue }
+                stolen.append((item, item.keyEquivalent, mask))
+                item.keyEquivalent = ""
+            }
+        }
+        walk(main)
+        return stolen
+    }
+
+    private func restoreCaretEquivalents(_ stolen: [(NSMenuItem, String, NSEvent.ModifierFlags)]) {
+        for (item, key, mask) in stolen {
+            item.keyEquivalent = key
+            item.keyEquivalentModifierMask = mask
+        }
+    }
+
     /// Whether the caret is in the window's address field: its field editor
     /// answers to the field, and the field to AddressField (Omnibox.swift).
     private static func inAddressField(_ window: NSWindow) -> Bool {
@@ -1487,7 +1519,8 @@ struct ContentView: View {
         // Keep split focus ahead of WebKit's arrow-key handling. Its panes
         // remain native first responders, so the menu shortcut alone would
         // never see ⌃⌘→ on a page.
-        if browser.prefs.splitView, browser.activeSplit != nil, let combo = KeyCombo(event: event) {
+        if browser.prefs.splitView, browser.activeSplit != nil, let combo = KeyCombo(event: event),
+           !(combo.movesCaret && caretIn(event)) {
             let store = ShortcutStore.shared
             if combo == store.key(for: "tabs.focusLeftPane") { browser.focusPane(onLeft: true); return true }
             if combo == store.key(for: "tabs.focusRightPane") { browser.focusPane(onLeft: false); return true }
@@ -1562,6 +1595,18 @@ struct ContentView: View {
                 if Command.split.contains(command.id), !browser.prefs.splitView { return false }
                 if Command.ai.contains(command.id), !browser.prefs.ai { return false }
                 if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
+                // An arrow the text system uses moves the caret, whichever
+                // command wears it — Back on ⌘←, or anything else on ⌘↑ or
+                // ⌥→. The menu wears the same key, so it is taken off for
+                // this press and the event goes on to the field. A letter
+                // shortcut is not one of these and still runs.
+                if combo.movesCaret, caretIn(event) {
+                    let stolen = silenceCaretEquivalents()
+                    if !stolen.isEmpty {
+                        DispatchQueue.main.async { [stolen] in self.restoreCaretEquivalents(stolen) }
+                    }
+                    return false
+                }
                 command.run(browser)
                 return true
             }
