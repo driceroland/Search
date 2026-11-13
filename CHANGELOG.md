@@ -39,11 +39,13 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Your own styles for a site, off unless you turn it on in Settings › Browsing: CSS you write for the site you're on, from View › Style This Site…, applied before the page draws. The panel stays open when the page reloads, and shows the other site's sheet when you go to another site. A web address or an imported sheet in it is left out, so nothing is fetched. Nothing leaves this Mac.
 - Reduce animations makes everything in Search's interface happen at once: the tab ⌘1–⌘9 picks is lit and shown with no glide, a space, a panel or a page's first frame comes without sliding or fading, for Search alone and whatever Reduce Motion in System Settings says. Off unless you turn on Settings › Appearance › Motion › Reduce animations.
 - ⌘S can make the column icons only instead of hiding it, so the tabs stay in sight; ⌘S again brings the titles back. Off unless you turn on Settings › Appearance › Tabs › ⌘S makes the column icons only. Not with the tabs across the top, nor with the column hidden until the pointer reaches the edge. Asked for by [@vincent-caetano](https://github.com/vincent-caetano) ([#1008](https://github.com/driceroland/Search/issues/1008)). Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1015](https://github.com/driceroland/Search/pull/1015))
 
 ### Changed
 
+- The Web Inspector takes Chrome's colors, light or dark with the Mac. The tabs are a flat strip with the open one underlined, and the selected row, the type and the syntax colors follow DevTools. The panels themselves, and the tools in them, stay Web Inspector's.
 - Waking a tab that slept, with ⌘1–⌘9 or a click, brings its page up sooner: the page is asked for as its view reaches the window, not when a timer next looks, and the picture of the page as it was left comes off a moment after the new one has drawn, where it stayed up for half a second after the page arrived whatever the page had done. A page that draws late still has it off at half a second.
 - A page whose title keeps changing, such as an inbox counting its unread mail, no longer rewrites the whole history file each time it ticks over. History writes a page's first title at once, and a later one with the next visit or when Search quits. Thanks [@D3OXY](https://github.com/D3OXY) ([#1043](https://github.com/driceroland/Search/issues/1043), [#1044](https://github.com/driceroland/Search/pull/1044))
 - Pulling the column's edge, or the side panel's, saves the width once, when the edge is let go, instead of at every step of the pull, which every open window redrew for. Thanks [@oddharsh](https://github.com/oddharsh) ([#1035](https://github.com/driceroland/Search/pull/1035))
