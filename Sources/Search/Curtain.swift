@@ -139,18 +139,20 @@ final class VeilRelay: NSObject, WKScriptMessageHandler {
 
 enum Veiling {
     /// A stylesheet put in before the document has a body, so nothing is ever
-    /// seen arriving and then leaving.
-    static func style(_ css: String) -> String {
+    /// seen arriving and then leaving. `id` is another sheet of ours (the
+    /// site's own styles): the two never share an element, so putting one
+    /// back doesn't take the other with it.
+    static func style(_ css: String, id: String = "office-veil") -> String {
         let escaped = css
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "`", with: "\\`")
             .replacingOccurrences(of: "$", with: "\\$")
         return """
         (function () {
-          var sheet = document.getElementById('office-veil');
+          var sheet = document.getElementById('\(id)');
           if (!sheet) {
             sheet = document.createElement('style');
-            sheet.id = 'office-veil';
+            sheet.id = '\(id)';
             (document.head || document.documentElement).appendChild(sheet);
           }
           sheet.textContent = `\(escaped)`;

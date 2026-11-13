@@ -737,8 +737,29 @@ final class Browser: NSObject, ObservableObject {
     @Published var reviewing = false {
         didSet { if !reviewing { stopPeeking() } }
     }
+    /// True while the site's own styles are being edited.
+    @Published var styling = false
 
     var hereHost: String? { curtain.host(of: active?.address) }
+    /// The site a style is kept for: a web page, named without www.
+    var styleHost: String? { Dusk.host(of: active?.address) }
+
+    /// View › Style This Site…. The switch is Settings › Browsing; off, this
+    /// opens it instead of a panel about a feature that isn't on.
+    func styleThisSite() {
+        guard prefs.siteStyles else {
+            settingsPage = .browsing
+            tuning = true
+            announce("Turn on your own styles in Settings › Browsing")
+            return
+        }
+        guard styleHost != nil else {
+            announce("Styles work on websites")
+            return
+        }
+        reviewing = false
+        styling = true
+    }
     var hereVeils: [Veil] { curtain.veils(on: hereHost) }
 
     /// ⌘⇧H. Point at anything on the page and it goes, for good, on this site.
