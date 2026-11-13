@@ -2846,8 +2846,17 @@ final class Bench {
             // wheel or a click would, on screens made up far off the real
             // ones: where a flick, a pull at a side, a dock and a click on
             // the sliver leave it. Test runs only, with the window off every
-            // screen (after `film float`), and nothing shown.
+            // screen (after `film float`, or `float` with action `up`), and
+            // nothing shown.
             guard Store.testing else { answer(["error": "float only works on a --test run"]); return }
+            if request["action"] as? String == "up" {
+                // The window itself, off every screen, with no video to find:
+                // the button and the size are what is under test.
+                Float.benchAway = NSPoint(x: -20000, y: -20000)
+                browser.floater.lift(NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 247)))
+                answer(["showing": browser.floater.showing])
+                return
+            }
             guard Float.benchAway != nil,
                   let panel = NSApp.windows.first(where: { "\(type(of: $0))" == "Panel" && $0.isVisible }),
                   let controls = panel.contentView?.subviews.first(where: { "\(type(of: $0))" == "Controls" })
@@ -2862,7 +2871,8 @@ final class Bench {
                 }
                 let x = Int((f.minX - first.minX).rounded()), y = Int((f.minY - first.minY).rounded())
                 let shown = Int((f.intersection(first).width / f.width * 100).rounded())
-                return ["x": x, "y": y, "width": Int(f.width), "height": Int(f.height), "screens": made, "shown": shown]
+                let buttons = controls.subviews.compactMap { $0 as? NSButton }.filter { !$0.isHidden }.count
+                return ["x": x, "y": y, "width": Int(f.width), "height": Int(f.height), "screens": made, "shown": shown, "buttons": buttons]
             }
             // Where it goes on its way, every few milliseconds for a second
             // and a bit: how far out it swings, and where it comes to rest.
@@ -2939,6 +2949,12 @@ final class Bench {
                 guard args.count == 2, let e = scroll(CGVector(dx: args[0], dy: args[1]), phase: 0, continuous: false)
                 else { answer(["error": "float wheel DX DY"]); return }
                 controls.scrollWheel(with: e)
+                follow { answer($0) }
+            case "offer":
+                Float.minimizes = request["on"] as? Bool ?? true
+                answer(state())
+            case "minimize":
+                Float.shown?.benchTuck()
                 follow { answer($0) }
             case "click":
                 let middle = NSPoint(x: panel.frame.width / 2, y: panel.frame.height / 2)

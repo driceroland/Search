@@ -558,6 +558,14 @@ final class Preferences: ObservableObject {
             Float.flicks = floatFlicks
         }
     }
+    /// A button on the floating video tucks it into a corner (see Float.swift).
+    /// Off unless asked for.
+    @Published var floatMinimizes: Bool {
+        didSet {
+            store.set(floatMinimizes, forKey: "float.minimize")
+            Float.minimizes = floatMinimizes
+        }
+    }
     /// A video playing floats out when another app comes to the front, and
     /// back when Search does (see Browser.appLeft). Off unless asked for.
     @Published var floatsAway: Bool {
@@ -890,6 +898,9 @@ final class Preferences: ObservableObject {
         let flicks = store.object(forKey: "float.flicks") as? Bool ?? true
         floatFlicks = flicks
         Float.flicks = flicks
+        let minimizes = store.bool(forKey: "float.minimize")
+        floatMinimizes = minimizes
+        Float.minimizes = minimizes
         floatsAway = store.bool(forKey: "float.away")
         floatsOnLeave = store.object(forKey: "float.leave") as? Bool ?? true
         panelSite = store.string(forKey: "panel.site") ?? ""
