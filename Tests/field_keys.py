@@ -84,6 +84,18 @@ def main():
         press("l")
         t.ok("and a fresh ⌘L still puts it away", not state()["up"], state())
 
+        press("t"); press("t", held=True)
+        s = state()
+        t.ok("⌘T held down: its first repeat leaves the field up", s["up"] and s["tabs"] == start["tabs"], s)
+        press("t", held=True)
+        s = state()
+        t.ok("and so does its next", s["up"] and s["tabs"] == start["tabs"], s)
+        press("t")
+        t.ok("and a fresh ⌘T still puts it away", not state()["up"], state())
+        press("t", held=True)
+        s = state()
+        t.ok("held on, its repeat leaves the field down", not s["up"] and s["tabs"] == start["tabs"], s)
+
         press("l")
         s = state()
         t.ok("⌘L brings the page's address when nothing was typed", s["typed"].endswith("/bravo"), s)
