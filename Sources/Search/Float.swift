@@ -60,6 +60,16 @@ final class Float {
     /// along (Settings › General). Off unless asked for.
     static var flicks = false
 
+    /// A button that tucks the window into a corner (Settings › Browsing).
+    /// Off unless asked for. The window up now hears a change at once.
+    static weak var shown: Float?
+    static var minimizes = false {
+        didSet { shown?.controls?.offerMinimize(minimizes) }
+    }
+
+    /// The minimize button, pressed with no pointer. For the bench.
+    func benchTuck() { controls?.benchMinimize() }
+
     /// Where a flick sends the window, a margin in from the edges of
     /// `area`. A swipe clearly both ways — between about 22° and 68° — takes
     /// it to the corner it points at; a straighter one along its stronger
@@ -200,6 +210,7 @@ final class Float {
         panel.contentView = ground
         panel.orderFrontRegardless()
         self.panel = panel
+        Float.shown = self
 
         // Off once the page has drawn a frame at the window's size with the
         // video alone in it, and never later than the limit: a page that
@@ -258,6 +269,7 @@ final class Float {
     /// window is kept as it was, not as the sliver it is.
     private var restingFrame: NSRect? {
         guard let panel else { return nil }
+        if let home = controls?.tuckedFrom { return home }
         guard let home = controls?.dockedFrom else { return panel.frame }
         return NSRect(origin: home, size: panel.frame.size)
     }
@@ -273,6 +285,7 @@ final class Float {
         keeping = []
         ticker?.invalidate()
         ticker = nil
+        if Float.shown === self { Float.shown = nil }
         (page as? WKWebView)?.allowsMagnification = true
         page?.removeFromSuperview()
         page = nil
@@ -317,7 +330,8 @@ final class Float {
     }
 
     /// What a small window of video needs, and nothing else: a way out, a way
-    /// back, a way to stop it, and a way to step over the bit you missed.
+    /// back, and, when Settings asks, a way to tuck it small. A way to stop
+    /// it, and a way to step over the bit you missed.
     ///
     /// Out of sight until the pointer is over the window — the whole point of
     /// this window is the picture.
@@ -337,6 +351,7 @@ final class Float {
         }
 
         private let close = NSButton()
+        private let tuck = NSButton()
         private let back = NSButton()
         private let pause = NSButton()
         private let rewind = NSButton()
@@ -362,6 +377,8 @@ final class Float {
             layer?.addSublayer(scrim)
 
             dress(close, "xmark", 11, round: 15, action: #selector(pressedClose))
+            dress(tuck, "minus", 11, round: 15, action: #selector(pressedMinimize))
+            tuck.isHidden = !Float.minimizes
             dress(back, "arrow.up.forward", 12, round: 15, action: #selector(pressedReturn))
             dress(rewind, "gobackward.15", 15, round: 19, action: #selector(pressedRewind))
             dress(pause, "pause.fill", 17, round: 25, action: #selector(pressedPause))
@@ -375,7 +392,7 @@ final class Float {
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError() }
 
-        private var buttons: [NSButton] { [close, back, rewind, pause, forward] }
+        private var buttons: [NSButton] { [close, tuck, back, rewind, pause, forward] }
 
         private func dress(
             _ button: NSButton,
@@ -411,6 +428,7 @@ final class Float {
             CATransaction.commit()
 
             close.frame = NSRect(x: 14, y: bounds.height - 44, width: 30, height: 30)
+            tuck.frame = NSRect(x: 52, y: bounds.height - 44, width: 30, height: 30)
             back.frame = NSRect(x: bounds.width - 44, y: bounds.height - 44, width: 30, height: 30)
 
             let middle = bounds.midY - 25
@@ -459,7 +477,7 @@ final class Float {
         override func hitTest(_ point: NSPoint) -> NSView? {
             let inside = convert(point, from: superview)
             if near {
-                for button in buttons where button.frame.contains(inside) {
+                for button in buttons where !button.isHidden && button.frame.contains(inside) {
                     return button
                 }
             }
@@ -840,6 +858,70 @@ final class Float {
                 NSRect(x: spot.x, y: spot.y, width: wide, height: tall),
                 display: false
             )
+        }
+
+        /// The frame before it was tucked, so closing remembers that size,
+        /// and a click on the button brings it back.
+        private(set) var tuckedFrom: NSRect?
+        private var tuckedMin: NSSize?
+
+        /// The minimize button, when Settings has it on. Off, and already
+        /// tucked: it comes back out, and the button goes.
+        func offerMinimize(_ on: Bool) {
+            tuck.isHidden = !on
+            if !on, tuckedFrom != nil { untuck() }
+        }
+
+        /// For the bench, which has no pointer: the button's own action.
+        func benchMinimize() {
+            offerMinimize(true)
+            pressedMinimize()
+        }
+
+        private func tuckAway() {
+            guard let window, tuckedFrom == nil, window.frame.width > 230 else { return }
+            tuckedFrom = window.frame
+            tuckedMin = window.minSize
+            let wide: CGFloat = 220
+            let tall = wide * window.frame.height / max(window.frame.width, 1)
+            window.minSize = NSSize(width: wide, height: tall)
+            var target = NSRect(x: window.frame.maxX - wide, y: window.frame.minY, width: wide, height: tall)
+            if let area {
+                target.origin.x = min(max(area.minX, target.minX), area.maxX - wide)
+                target.origin.y = min(max(area.minY, target.minY), area.maxY - tall)
+            }
+            tuck.image = glyph("plus", 11)
+            hideTransport(true)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.18
+                window.animator().setFrame(target, display: false)
+            }
+        }
+
+        private func untuck() {
+            guard let window, let home = tuckedFrom else { return }
+            let min = tuckedMin ?? NSSize(width: 260, height: 146)
+            tuckedFrom = nil
+            tuckedMin = nil
+            tuck.image = glyph("minus", 11)
+            hideTransport(false)
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.18
+                window.animator().setFrame(home, display: false)
+            }, completionHandler: {
+                window.minSize = min
+            })
+        }
+
+        private func hideTransport(_ hide: Bool) {
+            rewind.isHidden = hide
+            pause.isHidden = hide
+            forward.isHidden = hide
+            line.isHidden = hide
+        }
+
+        @objc private func pressedMinimize() {
+            if tuckedFrom != nil { untuck() } else { tuckAway() }
         }
 
         @objc private func pressedClose() { onClose?() }
