@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Settings, History and the other pages of Search draw their symbols in English on a Mac set to another language: the Tabs heading's icon read 大小 in Chinese (#1049).
 - Move to Group in a tab's right-click menu moves every tab picked with it, as dragging them onto a group does, where it moved only the tab clicked.
 - An extension's right-click items for a picture, Are.na's Add to Are.na for one, show on pictures that aren't links: with an extension that adds such items, the page keeps WebKit's menu there, whose Copy Image and Download Image are Search's own.
 - With more than one window open, a click in the puzzle button's list of extensions opens the extension or pins it, where it only closed the list: every window's list followed one shared switch, and the click closed them all.

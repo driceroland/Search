@@ -124,6 +124,10 @@ struct InternalPageView: View {
     var body: some View {
         content
             .environment(\.asTab, true)
+            // In English, as the words are: symbols the Mac draws per
+            // language (textformat.size) came out as 大小 for someone whose
+            // Mac is in Chinese (#1049). The region stays theirs.
+            .environment(\.locale, Locale(languageCode: .english, languageRegion: Locale.current.region))
             // Its own state for each kind: History's search box doesn't
             // follow you into Downloads.
             .id(page.kind)
