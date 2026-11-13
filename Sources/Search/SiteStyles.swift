@@ -187,12 +187,30 @@ final class SiteStyles: ObservableObject {
 /// shows that site's sheet. A moment with no address is still this site.
 struct StylePanel: View {
     @ObservedObject var browser: Browser
+
+    var body: some View {
+        // The page's own address, not the window's: a reload of this tab
+        // keeps the words, and another site is another address.
+        if let tab = browser.active {
+            StyleEditor(browser: browser, tab: tab)
+                .id(tab.id)
+        }
+    }
+}
+
+/// One site's sheet. It watches that tab, so a new address on it is seen
+/// even when the window itself has nothing new to say.
+private struct StyleEditor: View {
+    @ObservedObject var browser: Browser
+    @ObservedObject var tab: Tab
     @State private var text = ""
     /// The site the words on screen belong to.
     @State private var shown: String?
 
+    private var host: String? { Dusk.host(of: tab.address) }
+
     var body: some View {
-        Plate(browser.styleHost ?? shown ?? "This page", width: 420, close: { browser.styling = false }) {
+        Plate(host ?? shown ?? "This page", width: 420, close: { browser.styling = false }) {
             VStack(alignment: .leading, spacing: 8) {
                 Caption("CSS for this site, applied before the page draws. A web address or an imported sheet is left out, so nothing is fetched.")
                 TextEditor(text: $text)
@@ -206,13 +224,13 @@ struct StylePanel: View {
             HStack(spacing: 8) {
                 Pill("Remove") { remove() }
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                              && SiteStyles.shared.css(on: browser.styleHost) == nil)
+                              && SiteStyles.shared.css(on: host) == nil)
                 Spacer()
                 Pill("Save", filled: true) { save() }
             }
         }
-        .onAppear { show(browser.styleHost) }
-        .onChange(of: browser.styleHost) { _, host in show(host) }
+        .onAppear { show(host) }
+        .onChange(of: host) { _, next in show(next) }
     }
 
     /// A reload keeps this sheet. No address for a moment is still this
@@ -224,7 +242,7 @@ struct StylePanel: View {
     }
 
     private func save() {
-        guard let host = browser.styleHost else { return }
+        guard let host else { return }
         let cleaned = SiteStyles.shared.save(text, on: host)
         text = cleaned.css
         SiteStyles.shared.applyOpen()
@@ -242,7 +260,7 @@ struct StylePanel: View {
     }
 
     private func remove() {
-        guard let host = browser.styleHost else { return }
+        guard let host else { return }
         SiteStyles.shared.remove(on: host)
         text = ""
         SiteStyles.shared.applyOpen()
