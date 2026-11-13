@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- An extension's page in a website's frame can open a window again, as Affinity Pathfinder's sign-in does from its panel: since #872 the stand-in for windows.create made for Claude in Chrome took the place of the one a website's frame gets, which asks the extension's worker, so the panel called WebKit's own and WebKit ended the website's process. A website's frame keeps its own. `python3 Tests/embedded_windows.py` checks it.
 - A pin you put down shows its icon in the ⌃Tab switcher, not the page it had before, and its row no longer offers a − (#1050).
 - With Profiles in one window on, switching to another profile and quitting no longer opens a second, empty window at the next launch (#1060).
 - A long address that history completes in the address field keeps the start in view, so what you typed and the site stay visible; it used to scroll to the end (#1055).
