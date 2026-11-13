@@ -71,6 +71,9 @@
                                        test run: the tab groups; a tab into a new group, into one by name,
                                        or out of its group; a group folded or opened, or closed with its tabs
     ./bench tospace ID N               test run: Move to Space, the tab to the Nth space
+    ./bench container [new NAME|set ID [CONTAINER]|newtab CONTAINER|rename CONTAINER NAME|delete CONTAINER]
+                                       test run: the containers, a new one, a tab put in one (or in none),
+                                       a new tab in one, one renamed or deleted
     ./bench popups ID [open N|allow]   the windows a tab's page was refused and its site; test run: open the
                                        Nth newest as the sign would, or Always Allow its site
     ./bench popups sites | remove SITE the sites allowed to open pop-ups; test run: remove one
@@ -435,6 +438,14 @@ def main(argv):
     elif verb == "tospace":
         if len(args) != 2: sys.exit("usage: bench tospace ID N")
         request["id"], request["index"] = args[0], int(args[1])
+    elif verb == "container":
+        usage = "usage: bench container [new NAME|set ID [CONTAINER]|newtab CONTAINER|rename CONTAINER NAME|delete CONTAINER]"
+        if not args: request["action"] = "list"
+        elif args[0] == "new" and len(args) == 2: request["action"], request["name"] = "new", args[1]
+        elif args[0] == "set" and len(args) in (2, 3): request["action"], request["id"], request["container"] = "set", args[1], args[2] if len(args) == 3 else ""
+        elif args[0] in ("newtab", "delete") and len(args) == 2: request["action"], request["container"] = args[0], args[1]
+        elif args[0] == "rename" and len(args) == 3: request["action"], request["container"], request["name"] = "rename", args[1], args[2]
+        else: sys.exit(usage)
     elif verb == "field":
         if not args or any(a not in ("type", "go") for a in args[1:]): sys.exit("usage: bench field TEXT [type] [go]")
         request["text"] = args[0]

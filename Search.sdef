@@ -50,6 +50,9 @@
             <property name="name" code="pnam" type="text" access="r" description="The title of the tab's page.">
                 <cocoa key="name"/>
             </property>
+            <property name="container" code="tCtn" type="text" access="r" description="The name of the container the tab is in; missing value when it is in none.">
+                <cocoa key="scriptContainer"/>
+            </property>
         </class>
     </suite>
 </dictionary>

@@ -24,6 +24,7 @@ It was built by a design studio that spends its whole day in a browser and was t
 - **Tabs that stay out of the way.** Pin the pages you keep open all day and they shrink to a letter or their icon. Tabs from your last session come back instantly and cost nothing until you click them. `⌘K` lists your open tabs by name.
 - **Keep an important site running.** Enable Keep selected sites awake in Settings › Tabs, then choose Keep This Site Awake in the site card. It prevents sleeping and automatic closure, even under memory pressure, at the cost of more memory. Private choices last only in that tab; manual closing still works.
 - **Two pages side by side.** Turn on Split View in Settings › Tabs, then drag a tab onto a page or choose Tabs › Split Current Page. Drag the divider to resize the panes; the outlined pane receives page commands. Pairs and their widths come back with their Space, including after a restart.
+- **Two accounts on one site, side by side.** Turn on Containers in Settings › Spaces & Pins, then right-click a tab › Container › New Container…: that tab gets its own cookies and sign-ins, in whatever space it is, and keeps them across restarts. Two Outlook tabs next to each other, one signed in to work and one to university. Links it opens stay in its container; pins keep theirs. Manage them in Settings › Spaces & Pins.
 - **Reading mode.** `⇧⌘R` strips a page down to the article.
 - **Hide anything, for good.** `⇧⌘H`, then click a cookie banner, a newsletter overlay, a rail of "related" nonsense — it goes, and it is still gone on that site next time, before the page has drawn a single frame.
 - **An ad blocker that runs before the page.** Third-party trackers and ad networks are stopped at the network level, so there is nothing to render and nothing to slow down. On by default, off per site if something breaks.
@@ -54,8 +55,9 @@ On purpose:
 | Anything else | Nowhere. There is no server. | — |
 
 A **private tab** (`⇧⌘N`) has its own cookie jar and leaves nothing behind when it closes.
+A **container tab** has a cookie jar of its own too, one per container, kept on this Mac like the rest; deleting the container erases it.
 
-Apps you allow in System Settings › Privacy & Security › Automation can read the address and title of your tabs with AppleScript, and the name of the space and profile each window is in; private tabs are never shown, and a window with one in front shows neither name.
+Apps you allow in System Settings › Privacy & Security › Automation can read the address and title of your tabs and the container each is in with AppleScript, and the name of the space and profile each window is in; private tabs are never shown, and a window with one in front shows neither name.
 
 ## Keyboard
 

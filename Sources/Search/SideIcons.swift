@@ -74,6 +74,7 @@ enum IconTiles {
         if let address { lines.append(address.lead + address.name + address.tail) }
         var marks: [String] = []
         if tab.shy { marks.append("Private") }
+        if let name = tab.containerName { marks.append(name) }
         if tab.recording { marks.append("Recording") }
         if !tab.loading && tab.muted { marks.append("Muted") } else if !tab.loading && tab.noisy { marks.append("Playing sound") }
         if !marks.isEmpty { lines.append(marks.joined(separator: " · ")) }
@@ -152,6 +153,10 @@ struct IconTile: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if speaker { CornerSpeaker(tab: tab) }
+        }
+        .overlay(alignment: .bottom) {
+            // Its container, as a line under the icon (see Containers.swift).
+            ContainerMark(tab: tab, length: 9, inset: 3)
         }
         .background { if !half { ground.animation(Motion.quick, value: live) } }
         .overlay {

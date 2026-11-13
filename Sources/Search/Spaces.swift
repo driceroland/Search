@@ -186,21 +186,22 @@ enum Spaces {
         return made
     }
 
-    /// The shared store and every space's own made so far. Not a private
-    /// tab's: each has a store of its own, out of this list on purpose, so
-    /// tracking prevention stays on there whatever the switch says.
+    /// The shared store and every space's and container's own made so far.
+    /// Not a private tab's: each has a store of its own, out of this list on
+    /// purpose, so tracking prevention stays on there whatever the switch says.
     @MainActor static var everyStore: [WKWebsiteDataStore] {
-        [Store.websites] + Profiles.madeStores + stores.values
+        [Store.websites] + Profiles.madeStores + stores.values + Containers.madeStores
     }
 
-    /// The stores one profile's tabs use: its own and its spaces' own.
+    /// The stores one profile's tabs use: its own, its spaces' own, and its
+    /// containers' (see Containers.swift).
     @MainActor static func stores(of profile: UUID) -> [WKWebsiteDataStore] {
         var found: [WKWebsiteDataStore] = [Profiles.store(profile)]
         for space in read(profile: profile) {
             let store = store(for: space.id)
             if !found.contains(where: { $0 === store }) { found.append(store) }
         }
-        return found
+        return found + Containers.stores(of: profile)
     }
 
     /// A space's store and everything in it, gone. What it holds — cookies,

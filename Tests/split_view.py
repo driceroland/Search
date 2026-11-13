@@ -67,9 +67,10 @@ def stores():
     """The WebKit stores this world's runs made, where WebKit keeps them and
     named as the app names them (Store.probeStore, Spaces.store): its
     websites', its extensions', and one for each of its spaces with sign-ins
-    of its own, read from its own list of spaces and of spaces it was still
-    erasing. Only those: a real Search's spaces keep their stores beside
-    them, and a store is never guessed at by its look."""
+    of its own and each of its containers, read from its own lists of
+    spaces, profiles and containers and of stores it was still erasing.
+    Only those: a real Search's spaces keep their stores beside them, and a
+    store is never guessed at by its look."""
     h = 2166136261
     for byte in W.encode(): h = ((h ^ byte) * 16777619) & 0xFFFFFFFF
     probe = lambda kind: f"5E4C{h >> 16:04X}-{h & 0xFFFF:04X}-4000-8000-{kind:012X}"
@@ -82,6 +83,11 @@ def stores():
     # Each profile but Personal has a store under its own id (Profiles.store).
     try:
         ids += [p["id"] for p in json.load(open(f"{SUPPORT}/profiles.json")) if p.get("id") != PERSONAL]
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    # And each container under its own (Containers.store).
+    try:
+        ids += [c["id"] for c in json.load(open(f"{SUPPORT}/containers.json"))]
     except (OSError, ValueError, TypeError, KeyError):
         pass
     erasing = subprocess.run(["defaults", "read", SUITE, "spaces.erasing"], capture_output=True, text=True).stdout
@@ -98,10 +104,11 @@ REAL = f"{HOME}/Library/Application Support/Search"
 FIRST_SPACE = "00000000-0000-0000-0000-000000000001"
 PERSONAL = "00000000-0000-0000-0000-0000000000A1"
 def guarded():
-    """Store ids no wipe removes, whatever stores() names: every space of the
-    real Search's own list, and the first space's fixed id. A wrong hash, or
-    a test world's list holding a real space's id, then never reaches a real
-    space's sign-ins: rm -rf runs in the folder where those live."""
+    """Store ids no wipe removes, whatever stores() names: every space,
+    profile and container of the real Search's own lists, and the first
+    space's fixed id. A wrong hash, or a test world's list holding a real
+    space's id, then never reaches a real space's sign-ins: rm -rf runs in
+    the folder where those live."""
     ids = {FIRST_SPACE, PERSONAL.lower()}
     try:
         ids |= {str(uuid.UUID(space["id"])) for space in json.load(open(f"{REAL}/spaces.json"))}
@@ -109,6 +116,10 @@ def guarded():
         pass
     try:
         ids |= {str(uuid.UUID(p["id"])) for p in json.load(open(f"{REAL}/profiles.json"))}
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        pass
+    try:
+        ids |= {str(uuid.UUID(c["id"])) for c in json.load(open(f"{REAL}/containers.json"))}
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         pass
     return ids

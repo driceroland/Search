@@ -241,7 +241,7 @@ struct SiteCard: View {
     private var front: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let url = tab.pageAddress {
-                Header(title: SiteCard.site(url))
+                Header(title: SiteCard.site(url), container: Containers.shared.container(tab.container))
             }
             if let safety {
                 Row(safety.title, submenu: true) { deeper = true }
@@ -672,18 +672,27 @@ struct SiteCard: View {
         }
     }
 
-    /// The site's name over the lines, as a menu's section header is drawn.
+    /// The site's name over the lines, as a menu's section header is drawn;
+    /// a container tab's says the container after it, by its dot.
     private struct Header: View {
         let title: String
+        var container: Container? = nil
 
         var body: some View {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                .lineLimit(1)
-                .padding(.leading, MenuMetrics.text)
-                .padding(.trailing, MenuMetrics.trailing)
-                .frame(height: MenuMetrics.row, alignment: .leading)
+            HStack(spacing: 5) {
+                Text(title)
+                if let container {
+                    Circle().fill(container.tint).frame(width: 6, height: 6)
+                        .padding(.leading, 3)
+                    Text(container.name)
+                }
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+            .lineLimit(1)
+            .padding(.leading, MenuMetrics.text)
+            .padding(.trailing, MenuMetrics.trailing)
+            .frame(height: MenuMetrics.row, alignment: .leading)
         }
     }
 

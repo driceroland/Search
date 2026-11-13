@@ -158,7 +158,9 @@ extension Browser {
     /// A link a page opens in a new tab, opened in front in the space a rule
     /// sends it to. False when no rule sends it out of the page's space.
     func sendToSpace(_ url: URL, from source: Tab?) -> Bool {
-        guard !isPopup, let source, !source.shy, let space = SpaceRoutes.space(for: url) else { return false }
+        // A container tab's links stay in its container (see Containers.swift).
+        guard !isPopup, let source, !source.shy, source.container == nil,
+              let space = SpaceRoutes.space(for: url) else { return false }
         let here = parked.first { $0.value.tabs.contains { $0 === source } }?.key ?? spaceID
         guard space.id != here, let target = SpaceRoutes.window(for: space, from: self) else { return false }
         target.open(url, foreground: true)
