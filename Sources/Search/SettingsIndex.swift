@@ -179,6 +179,10 @@ enum SettingsIndex {
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
               keys: [Motion.lightKey], words: ["battery", "animations", "motion"]),
+        .init(id: "motion.instant", group: "motion", icon: "bolt",
+              title: "Reduce animations", detail: "Switching tabs, spaces and panels happens at once, without sliding or fading",
+              more: "For Search alone, whatever Reduce Motion in System Settings says. The tab ⌘1–⌘9 picks is lit at once, and the page shows at once.",
+              keys: [Motion.instantKey], words: ["animations", "motion", "instant", "faster", "reduce motion", "transitions"]),
 
         // Tabs
         .init(id: "tabs.newPlace", group: "newtabs", icon: "arrow.right.to.line",

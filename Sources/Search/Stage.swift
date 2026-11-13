@@ -87,7 +87,7 @@ struct Page: View {
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
         .animation(Motion.quick, value: tab.reader)
-        .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
+        .animation(Motion.timed(.easeOut(duration: 0.2)), value: tab.cover == nil)
     }
 }
 
@@ -121,7 +121,7 @@ struct Swiping: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
         }
-        .animation(.easeOut(duration: 0.16), value: pull == nil)
+        .animation(Motion.timed(.easeOut(duration: 0.16)), value: pull == nil)
     }
 }
 
@@ -170,7 +170,7 @@ private struct Disc: View {
         .offset(x: (pull.back ? 1 : -1) * (10 + reach * 0.2 + (pull.going ? 12 : 0)))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pull.back ? .leading : .trailing)
         .allowsHitTesting(false)
-        .animation(.easeOut(duration: 0.22), value: pull.going)
+        .animation(Motion.timed(.easeOut(duration: 0.22)), value: pull.going)
     }
 }
 
@@ -219,8 +219,8 @@ private struct HistoryList: View {
         .offset(x: (pull.back ? 1 : -1) * (10 + reach * 0.2), y: slide)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pull.back ? .leading : .trailing)
         .allowsHitTesting(false)
-        .animation(.spring(response: 0.22, dampingFraction: 0.9), value: pull.picked)
-        .animation(.easeOut(duration: 0.26), value: pull.going)
+        .animation(Motion.timed(.spring(response: 0.22, dampingFraction: 0.9)), value: pull.picked)
+        .animation(Motion.timed(.easeOut(duration: 0.26)), value: pull.going)
     }
 
     @ViewBuilder

@@ -957,7 +957,7 @@ final class Tab: ObservableObject, Identifiable {
             // see-through, and the window's ground would show between them.
             // The half second after the commit (see Browser.didCommit) is
             // for a page that never says.
-            self?.uncover(after: PageView.fadeIn)
+            self?.uncover(after: Motion.seconds(PageView.fadeIn))
         }
         web.holdForFirstFrame()
         painted = !web.unpainted
@@ -2812,7 +2812,7 @@ final class PageView: WKWebView {
         unpainted = false
         onFirstFrame?()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = PageView.fadeIn
+            context.duration = Motion.seconds(PageView.fadeIn)
             animator().alphaValue = 1
         }
     }
