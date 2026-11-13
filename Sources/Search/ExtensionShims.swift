@@ -1153,12 +1153,23 @@ enum ExtensionShims {
       // Pathfinder — has them found this way instead. A framed page says it
       // is there as it starts, and that it is going as it goes.
       const framedPages = new Map();
-      let ownFrame = null;
+      let ownFrame = null, sharedWrites = Promise.resolve();
       if (embedded && runtime && typeof Object.getPrototypeOf(runtime).sendMessage === "function") {
         const say = (here) => Promise.resolve(Object.getPrototypeOf(runtime).sendMessage.call(runtime, { __searchFramed: here }));
         ownFrame = say(true).then((r) => r && typeof r.tabId === "number" && typeof r.frameId === "number" ? r : null, () => null);
         try { root.addEventListener("pagehide", () => { say(false).catch(() => {}); }); } catch (e) {}
       }
+      // Whether a framed page's tab is private, asked of the browser (WebKit
+      // takes privacy from a window, which here holds both kinds: see
+      // `privacy` below). Not known counts as private.
+      const inPrivateTab = async (tab) => {
+        if (!tab || typeof tab.id !== "number") return true;
+        try {
+          if (!(await native("tabs.private", []))) return false;
+          const answers = await native("tabs.private", [[placeOf(tab, await frames())]]);
+          return !Array.isArray(answers) || answers[0] !== false;
+        } catch (e) { return true; }
+      };
       // Who has something to say about a message, told between the
       // extension's worker and its own pages on a channel they share (one
       // origin): each says, as soon as its listeners have run, whether it
@@ -1283,6 +1294,37 @@ enum ExtensionShims {
             if (message && message.__searchFramed === false) frames.delete(sender.frameId);
             else frames.set(sender.frameId, Date.now());
             if (frames.size) framedPages.set(tab, frames); else framedPages.delete(tab);
+          }
+          // A framed page's localStorage (see sharedKey): the copy its other
+          // pages share, as it opens, and its batches of changes after,
+          // which the worker writes one at a time, and only when they change
+          // something. A page in a private tab takes no part: it keeps its
+          // own, as before.
+          if (internalMessages && !local && message && message.__searchFramedStorage && sender && sender.id === runtime.id) {
+            if (!background) { setTimeout(() => respond(undefined), 10000); return true; }
+            const { by, ops, read } = message.__searchFramedStorage;
+            if (!fromOwnPages(sender) || (!read && !Array.isArray(ops))) { respond(false); return; }
+            inPrivateTab(sender.tab).then((shy) => {
+              if (shy) return read ? { private: true } : false;
+              if (read) return readShared().then((kept) => ({ values: (kept && kept.values) || {} }));
+              const write = sharedWrites.then(async () => {
+                const kept = await readShared();
+                const values = Object.assign(Object.create(null), (kept && kept.values) || {});
+                let changed = false;
+                for (const op of ops) {
+                  if (op && op.clear) { for (const key of Object.keys(values)) { delete values[key]; changed = true; } }
+                  else if (op && typeof op.key === "string") {
+                    if (typeof op.value === "string") { if (values[op.key] !== op.value) { values[op.key] = op.value; changed = true; } }
+                    else if (op.key in values) { delete values[op.key]; changed = true; }
+                  }
+                }
+                if (changed) await chrome.storage.local.set({ [sharedKey]: { by: String(by), values } });
+                return true;
+              });
+              sharedWrites = write.catch(() => {});
+              return write;
+            }).then(respond, () => respond(false));
+            return true;
           }
           if (internalMessages && !local && message && typeof message.__searchFramed === "boolean" && sender && sender.id === runtime.id) {
             if (!background) { setTimeout(() => respond(undefined), 10000); return true; }
@@ -1495,6 +1537,68 @@ enum ExtensionShims {
             });
           } catch (e) {}
         }
+      }
+      // Where framed pages share their localStorage (see below, at
+      // `embedded && localArea`), hidden from the extension: content scripts
+      // included, so this comes before they return.
+      const sharedKey = "__searchFramedLocalStorage";
+      const localArea = chrome.storage && chrome.storage.local;
+      // The copy itself, for the worker only (see `__searchFramedStorage`).
+      let readShared = async () => undefined;
+      if (localArea && typeof localArea.get === "function") {
+        const get = localArea.get.bind(localArea);
+        readShared = () => Promise.resolve(get(sharedKey)).then((all) => all ? all[sharedKey] : undefined);
+        const answer = (p, callback) => {
+          if (typeof callback !== "function") return p;
+          p.then(callback, (error) => withLastError(error, callback));
+        };
+        put(localArea, "get", (keys, callback) => {
+          if (typeof keys === "function") { callback = keys; keys = null; }
+          return answer(Promise.resolve(get(keys === undefined ? null : keys)).then((all) => {
+            if (all && typeof all === "object" && sharedKey in all) { all = { ...all }; delete all[sharedKey]; }
+            return all;
+          }), callback);
+        });
+        if (typeof localArea.getKeys === "function") {
+          const getKeys = localArea.getKeys.bind(localArea);
+          put(localArea, "getKeys", (callback) => answer(Promise.resolve(getKeys())
+            .then((keys) => Array.isArray(keys) ? keys.filter((key) => key !== sharedKey) : keys), callback));
+        }
+        if (typeof localArea.getBytesInUse === "function") {
+          const bytes = localArea.getBytesInUse.bind(localArea);
+          put(localArea, "getBytesInUse", (keys, callback) => {
+            if (typeof keys === "function") { callback = keys; keys = null; }
+            if (keys === null || keys === undefined) {
+              return answer(Promise.all([bytes(null), bytes(sharedKey)]).then(([all, hidden]) => Math.max(0, (all || 0) - (hidden || 0))), callback);
+            }
+            const asked = (Array.isArray(keys) ? keys : [keys]).filter((key) => key !== sharedKey);
+            return answer(asked.length ? Promise.resolve(bytes(asked)) : Promise.resolve(0), callback);
+          });
+        }
+        const hide = (ev, withArea) => {
+          if (!ev || typeof ev.addListener !== "function") return;
+          const add = ev.addListener.bind(ev), remove = ev.removeListener.bind(ev), has = ev.hasListener.bind(ev);
+          const wrapped = new WeakMap();
+          put(ev, "addListener", (listener) => {
+            if (typeof listener !== "function") return add(listener);
+            let w = wrapped.get(listener);
+            if (!w) {
+              w = (changes, area) => {
+                if (changes && sharedKey in changes && (!withArea || area === "local")) {
+                  changes = { ...changes }; delete changes[sharedKey];
+                  if (!Object.keys(changes).length) return;
+                }
+                return listener(changes, area);
+              };
+              wrapped.set(listener, w);
+            }
+            return add(w);
+          });
+          put(ev, "removeListener", (listener) => remove(wrapped.get(listener) || listener));
+          put(ev, "hasListener", (listener) => has(wrapped.get(listener) || listener));
+        };
+        hide(chrome.storage.onChanged, true);
+        hide(localArea.onChanged, false);
       }
       // Installed before the content-script return. Each passive subscription
       // is bound natively to the background that this port connected to. A
@@ -2557,6 +2661,105 @@ enum ExtensionShims {
         if (!store || typeof store.set !== "function") continue;
         const set = store.set.bind(store);
         put(store, "set", (items, ...rest) => set(items && typeof items === "object" && Object.getPrototypeOf(items) !== Object.prototype ? Object.assign({}, items) : items, ...rest));
+      }
+      // One localStorage for the extension's pages framed in websites, as
+      // Chrome keeps: WebKit keeps a framed page's storage per website, so
+      // Affinity Pathfinder, which keeps its sign-in there, was signed in on
+      // one company's site and signed out on every other. What such a page
+      // writes is kept in the extension's own storage too (sharedKey,
+      // written by the worker, hidden from the extension), in batches: a
+      // quarter of a second after the first change at most, and as the page
+      // goes. A framed page takes that copy from the worker as it opens —
+      // and opens again if it had already read something older — and hears
+      // every change after, with the storage event Chrome would fire. A page
+      // in a private tab, or one the worker doesn't answer, keeps its own.
+      if (embedded && localArea && runtime && root.localStorage && root.Storage) {
+        const ls = root.localStorage, proto = Storage.prototype;
+        const real = { get: proto.getItem, set: proto.setItem, remove: proto.removeItem, clear: proto.clear };
+        const send = (message) => Promise.resolve(Object.getPrototypeOf(runtime).sendMessage.call(runtime, message));
+        const writer = Math.random().toString(36).slice(2);
+        const readEarly = new Set(), mine = new Map();
+        const own = (o, key) => Object.prototype.hasOwnProperty.call(o, key);
+        let ready = false, off = false, queued = [], counted = [], timer = null;
+        const flush = () => {
+          clearTimeout(timer); timer = null;
+          if (!ready || off || !queued.length) return;
+          const ops = queued, keys = counted;
+          queued = []; counted = [];
+          const settle = () => { for (const key of keys) { const n = mine.get(key) - 1; if (n > 0) mine.set(key, n); else mine.delete(key); } };
+          send({ __searchFramedStorage: { by: writer, ops } }).then(settle, settle);
+        };
+        const share = (op) => {
+          if (off) return;
+          if (op.clear) queued = [op];
+          else {
+            queued = queued.filter((o) => o.key !== op.key); queued.push(op);
+            mine.set(op.key, (mine.get(op.key) || 0) + 1); counted.push(op.key);
+          }
+          if (ready && !timer) timer = setTimeout(flush, 250);
+        };
+        try { root.addEventListener("pagehide", flush); } catch (e) {}
+        proto.getItem = function (key) { if (this === ls && !ready) readEarly.add(String(key)); return real.get.apply(this, arguments); };
+        proto.setItem = function (key, value) {
+          const result = real.set.apply(this, arguments);
+          if (this === ls) share({ key: String(key), value: String(value) });
+          return result;
+        };
+        proto.removeItem = function (key) {
+          const result = real.remove.apply(this, arguments);
+          if (this === ls) share({ key: String(key), value: null });
+          return result;
+        };
+        proto.clear = function () {
+          const result = real.clear.apply(this, arguments);
+          if (this === ls) share({ clear: true });
+          return result;
+        };
+        // Into this website's copy, as another page of the extension changed
+        // it: a storage event for each key that differs.
+        const take = (values, before) => {
+          const changed = [];
+          for (const key of Object.keys(before || {})) {
+            if (!own(values, key) && !mine.has(key) && real.get.call(ls, key) !== null) {
+              const old = real.get.call(ls, key); real.remove.call(ls, key); changed.push([key, old, null]);
+            }
+          }
+          for (const [key, value] of Object.entries(values)) {
+            if (mine.has(key) || typeof value !== "string") continue;
+            const old = real.get.call(ls, key);
+            if (old !== value) { real.set.call(ls, key, value); changed.push([key, old, value]); }
+          }
+          return changed;
+        };
+        const keepOwn = () => { off = true; queued = []; counted = []; mine.clear(); };
+        send({ __searchFramedStorage: { read: true } }).then((answer) => {
+          if (!answer || answer.private || !answer.values) { keepOwn(); return; }
+          const changed = take(answer.values, null);
+          ready = true;
+          // The page already read one of them as it was here: it opens again,
+          // with the extension's — once, should that keep happening.
+          if (changed.some(([key]) => readEarly.has(key))) {
+            let last = 0;
+            try { last = Number(sessionStorage.getItem("__searchFramedReload")) || 0; } catch (e) {}
+            if (Date.now() - last > 10000) {
+              try { sessionStorage.setItem("__searchFramedReload", String(Date.now())); } catch (e) {}
+              location.reload();
+              return;
+            }
+          }
+          flush();
+        }, keepOwn);
+        if (chrome.storage.onChanged) {
+          Object.getPrototypeOf(chrome.storage.onChanged).addListener.call(chrome.storage.onChanged, (changes, area) => {
+            const change = area === "local" && changes && changes[sharedKey];
+            if (!change || !ready || off) return;
+            const now = change.newValue || { values: {} }, before = change.oldValue || { values: {} };
+            if (now.by === writer) return;
+            for (const [key, old, value] of take(now.values || {}, before.values || {})) {
+              try { root.dispatchEvent(new StorageEvent("storage", { key, oldValue: old, newValue: value, url: location.href, storageArea: ls })); } catch (e) {}
+            }
+          });
+        }
       }
       fill("scripting", {
         ExecutionWorld: { ISOLATED: "ISOLATED", MAIN: "MAIN", USER_SCRIPT: "USER_SCRIPT" },
@@ -4869,7 +5072,9 @@ enum ExtensionShims {
             guard let places = first as? [Any] else {
                 return Browsers.all.contains { $0.tabs.contains { $0.shy && owner.seen($0, for: context) } }
             }
-            return places.map { located($0, context: context, owner: owner)?.shy == true }
+            // A place that finds no tab says so (null), for a caller that
+            // has to count "not known" as private (see inPrivateTab).
+            return places.map { place -> Any in located(place, context: context, owner: owner).map { $0.shy } ?? NSNull() }
         case "tabs.move", "tabs.discard", "tabs.activate":
             guard let tab = located(first, context: context, owner: owner), let browser = owner.browser(of: tab) else { throw Unsupported(what: "No tab there") }
             let visible = owner.visibleTabs(of: browser, for: context)
