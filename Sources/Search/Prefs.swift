@@ -510,6 +510,14 @@ final class Preferences: ObservableObject {
     @Published var littleFindsTabs: Bool {
         didSet { store.set(littleFindsTabs, forKey: "links.little.tabs") }
     }
+    /// CSS you write for a site (see SiteStyles). Off unless asked for.
+    @Published var siteStyles: Bool {
+        didSet {
+            store.set(siteStyles, forKey: "styles.sites")
+            SiteStyles.on = siteStyles
+            SiteStyles.shared.applyOpen()
+        }
+    }
     /// Links to chosen sites open in their space (see SpaceRoutes.swift).
     /// Off unless asked for, and only with spaces on.
     @Published var sendsLinksToSpaces: Bool {
@@ -907,6 +915,9 @@ final class Preferences: ObservableObject {
         readerFollowsLook = store.bool(forKey: "reader.follows")
         littleLinks = store.bool(forKey: "links.little")
         littleFindsTabs = store.bool(forKey: "links.little.tabs")
+        let styles = store.bool(forKey: "styles.sites")
+        siteStyles = styles
+        SiteStyles.on = styles
         sendsLinksToSpaces = store.bool(forKey: SpaceRoutes.key)
         spaceRoutes = (store.array(forKey: SpaceRoutes.rulesKey) ?? []).compactMap(SpaceRoute.init(plist:))
         bookmarksBar = store.bool(forKey: "bookmarks.bar")

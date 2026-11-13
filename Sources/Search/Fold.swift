@@ -91,7 +91,7 @@ extension Browser {
         // What comes over the whole window: the ⌃Tab switcher, the hidden
         // elements' list (a click beside it puts it away), Welcome and
         // What's New.
-        if tabSwitcher.visible || reviewing || welcoming || newsShowing { return true }
+        if tabSwitcher.visible || reviewing || styling || welcoming || newsShowing { return true }
         // The Find bar is a pill over one corner of the page: whatever a
         // click there would land on decides. Asking the window costs far more
         // than the flags above, so only while the bar is open.

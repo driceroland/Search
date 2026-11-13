@@ -284,6 +284,10 @@ enum SettingsIndex {
               title: "Pages at 120 Hz", detail: "Smoother scrolling on screens that can. On power spares the battery",
               more: "Animations and scrolling in pages at up to 120 frames a second, instead of 60 as in Safari.",
               keys: ["pages.120.mode", "pages.120"], words: ["promotion", "frame rate", "fps", "smooth", "120"]),
+        .init(id: "styles.sites", group: "pages", icon: "paintbrush",
+              title: "Your own styles for a site", detail: "CSS you write for a site, applied before the page draws",
+              more: "View › Style This Site… writes it. A web address or an imported sheet is left out, so nothing is fetched. Nothing leaves this Mac.",
+              keys: ["styles.sites"], words: ["css", "style", "stylesheet", "boost", "arc", "custom css"]),
 
         // Spaces & Pins
         .init(id: "arc.setup", group: "arc", icon: "wand.and.stars",
