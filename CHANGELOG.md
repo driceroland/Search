@@ -44,6 +44,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- History reads and prepares its file away from the window, so a long history no longer holds up the first window opening.
 - Waking a tab that slept, with ⌘1–⌘9 or a click, brings its page up sooner: the page is asked for as its view reaches the window, not when a timer next looks, and the picture of the page as it was left comes off a moment after the new one has drawn, where it stayed up for half a second after the page arrived whatever the page had done. A page that draws late still has it off at half a second.
 - A page whose title keeps changing, such as an inbox counting its unread mail, no longer rewrites the whole history file each time it ticks over. History writes a page's first title at once, and a later one with the next visit or when Search quits. Thanks [@D3OXY](https://github.com/D3OXY) ([#1043](https://github.com/driceroland/Search/issues/1043), [#1044](https://github.com/driceroland/Search/pull/1044))
 - Pulling the column's edge, or the side panel's, saves the width once, when the edge is let go, instead of at every step of the pull, which every open window redrew for. Thanks [@oddharsh](https://github.com/oddharsh) ([#1035](https://github.com/driceroland/Search/pull/1035))
