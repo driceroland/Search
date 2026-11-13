@@ -1091,6 +1091,16 @@ struct ContentView: View {
         // Off screen at once, while a link's small window keeps the browser's
         // windows away (see Browsers.keepAway).
         Browsers.putAway()
+        // Tucked behind another profile's window before it had one: SwiftUI's
+        // window, whose browser a relaunch tucks (Browsers.restore runs as
+        // the scene appears, before this) when another profile was on screen
+        // at quit. Nothing could order it out then, so it goes now, as a
+        // tucked window opened by hand never comes in (#1060).
+        if browser.tucked {
+            window.animationBehavior = .none
+            window.isExcludedFromWindowsMenu = true
+            window.orderOut(nil)
+        }
         window.tabbingMode = .disallowed
         // Light or dark is the app's to say (Settings › Appearance); the
         // window only has to be the ground colour that goes with it.

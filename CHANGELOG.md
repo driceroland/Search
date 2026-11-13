@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With Profiles in one window on, switching to another profile and quitting no longer opens a second, empty window at the next launch (#1060).
 - A long address that history completes in the address field keeps the start in view, so what you typed and the site stay visible; it used to scroll to the end (#1055).
 - Settings, History and the other pages of Search draw their symbols in English on a Mac set to another language: the Tabs heading's icon read 大小 in Chinese (#1049).
 - Move to Group in a tab's right-click menu moves every tab picked with it, as dragging them onto a group does, where it moved only the tab clicked.
