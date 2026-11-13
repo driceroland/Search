@@ -16,7 +16,11 @@ wherever they are framed.
 - with both open, a change on one reaches the other as Chrome's would: its
   localStorage says the new value and a `storage` event says so;
 - a removal goes everywhere too;
-- the extension's own chrome.storage shows nothing of how it is done.
+- a burst of changes is written as a batch or two, not once per setItem;
+- a panel in a private tab keeps its own localStorage: it reads nothing the
+  others wrote, and what it writes reaches none of them;
+- the extension's own chrome.storage shows nothing of how it is done: not in
+  get(null), getKeys() or getBytesInUse().
 """
 import json
 import sys
@@ -63,7 +67,21 @@ addEventListener("message", (e) => {
   if (asked.go === "set") { localStorage.setItem("token", asked.value); tell({ set: asked.value }); }
   if (asked.go === "remove") { localStorage.removeItem("token"); tell({ removed: true }); }
   if (asked.go === "read") tell({ read: localStorage.getItem("token") });
-  if (asked.go === "all") chrome.storage.local.get(null).then((all) => tell({ all: Object.keys(all) }));
+  if (asked.go === "burst") { for (let i = 0; i < 40; i++) localStorage.setItem("token", "burst-" + i); tell({ burst: true }); }
+  if (asked.go === "all") Promise.all([
+    chrome.storage.local.get(null),
+    typeof chrome.storage.local.getKeys === "function" ? chrome.storage.local.getKeys() : null,
+    chrome.storage.local.getBytesInUse(null),
+  ]).then(([all, keys, bytes]) => tell({ all: Object.keys(all), keys, bytes }));
+});
+// How many times the copy the panels share is written, seen past the shim's
+// hiding (the shim's own way in), for the batching check.
+window.writes = 0;
+Object.getPrototypeOf(chrome.storage.onChanged).addListener.call(chrome.storage.onChanged, (changes, area) => {
+  if (area === "local" && changes && "__searchFramedLocalStorage" in changes) window.writes++;
+});
+addEventListener("message", (e) => {
+  if ((e.data || {}).go === "writes") tell({ writes: window.writes });
 });
 """,
 }
@@ -145,11 +163,39 @@ def main():
         said = until(one, lambda s: "read" in s)
         t.ok("a removal on one site goes everywhere", {"read": None} in said, said)
 
+        ask(one, go="writes")
+        before = next((s["writes"] for s in until(one, lambda s: "writes" in s) if "writes" in s), None)
+        ask(two, go="burst")
+        said = until(one, lambda s: "event" in s and s["event"].get("newValue") == "burst-39")
+        t.ok("a burst of 40 changes on one site reaches the other as its last value",
+             {"event": {"key": "token", "newValue": "burst-39"}} in said, said)
+        time.sleep(1)
+        ask(one, go="writes")
+        after = next((s["writes"] for s in until(one, lambda s: "writes" in s) if "writes" in s), None)
+        t.ok("…written as a batch or two, not once per setItem",
+             before is not None and after is not None and 1 <= after - before <= 2, (before, after))
+
+        ext = next(e for e in sv.cmd({"do": "extensions"})["extensions"] if e.get("name") == "Framed storage")
+        sv.cmd({"do": "ext-private", "id": ext["id"], "on": True})
+        shy = sv.cmd({"do": "open", "url": f"http://127.0.0.1:{PORT}/", "private": True})["id"]
+        said = until(shy, lambda s: "opened" in s, within=15)
+        time.sleep(1.5)
+        said = told(shy)
+        t.ok("a panel in a private tab reads nothing the others wrote",
+             any("opened" in s for s in said) and not any(s.get("opened") for s in said), said)
+        ask(shy, go="set", value="private-secret")
+        until(shy, lambda s: "set" in s)
+        time.sleep(1.5)
+        ask(one, go="read")
+        said = until(one, lambda s: "read" in s)
+        t.ok("…and what it writes reaches no other panel", {"read": "burst-39"} in said and not any("event" in s for s in said), said)
+
         ask(one, go="all")
         said = until(one, lambda s: "all" in s)
-        keys = next((s["all"] for s in said if "all" in s), None)
-        t.ok("the extension's chrome.storage shows nothing of it", keys == [], said)
-        for x in (one, two): sv.cmd({"do": "close", "id": x})
+        seen = next((s for s in said if "all" in s), {})
+        t.ok("the extension's chrome.storage shows nothing of it",
+             seen.get("all") == [] and seen.get("keys") in ([], None) and seen.get("bytes") == 0, said)
+        for x in (one, two, shy): sv.cmd({"do": "close", "id": x})
     finally:
         srv.shutdown(); srv.server_close(); folder.cleanup()
         t.done(); sv.finish()
