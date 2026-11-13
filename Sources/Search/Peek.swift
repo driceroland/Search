@@ -13,8 +13,13 @@ import WebKit
 // it there, with nothing loaded twice.
 
 extension Browser {
+    /// Shown over the tab it was opened from. Another tab hides it; coming
+    /// back to that tab shows it again. It is closed only on purpose.
+    var peekInFront: Bool { peekTab != nil && peekFrom == activeID }
+
     /// A modified click on a link, from a tab in the row.
     func peek(_ url: URL, from tab: Tab) {
+        if peekTab != nil { closePeek() }
         if tab.pin != nil, let host = url.host()?.lowercased() { tab.peeked = (Vault.registrable(host), Date()) }
         // On the window's space, as the other new tabs are, so a peek has the
         // same sign-ins as the tab it came from rather than the front
@@ -37,7 +42,7 @@ extension Browser {
     /// the site go as they always have, so moving about Gmail or Notion
     /// stays in the pin.
     func peeksFromPin(_ url: URL, in tab: Tab, on page: URL?) -> Bool {
-        guard prefs.pinsPeek, tab.pin != nil, peekTab == nil, Browser.peekable(url),
+        guard prefs.pinsPeek, tab.pin != nil, !peekInFront, Browser.peekable(url),
               let there = url.host()?.lowercased(),
               let here = page?.host()?.lowercased()
         else { return false }
@@ -55,6 +60,7 @@ extension Browser {
     /// so the page loads into it and the one that asked keeps it as its
     /// opener. The click was checked before (see createWebViewWith).
     func peekWindow(_ configuration: WKWebViewConfiguration, from tab: Tab, going url: URL) -> Tab {
+        if peekTab != nil { closePeek() }
         let page = Tab(shy: tab.shy, configuration: configuration)
         prepare(page)
         page.opener = tab.id
@@ -120,13 +126,13 @@ struct PeekLayer: View {
         ZStack {
             // The dimming only fades. Grown and shrunk with the panel, its
             // edges travelled across the window as it came (Drice, 24 Sep 2026).
-            if browser.peekTab != nil {
+            if browser.peekInFront {
                 Color.black.opacity(0.22)
                     .contentShape(Rectangle())
                     .onTapGesture { browser.closePeek() }
                     .transition(.opacity)
             }
-            if let tab = browser.peekTab {
+            if browser.peekInFront, let tab = browser.peekTab {
                 PeekPanel(browser: browser, tab: tab)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }

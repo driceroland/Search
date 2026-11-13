@@ -1,8 +1,9 @@
 import SwiftUI
 
-// A small window for a link from another app: the page, and a thin line over
-// it with the site, Open in Search and nothing else — to read and close, or
-// to keep. Arc calls it Little Arc; the idea came to Search as #227.
+// A small window for a link from another app, and for a tab you already
+// have (Open in Small Window): the page, and a thin line over it with the
+// site, Open in Search and nothing else — to read and close, or to keep.
+// Arc calls it Little Arc; the idea came to Search as #227.
 //
 // Off unless asked for, in Settings › General: a link from Mail opens in the
 // browser's window, as it always has, for anyone who hasn't chosen this.
@@ -21,6 +22,10 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     private static var open: [LittleWindow] = []
 
     let tab: Tab
+    /// Taken out of the row, rather than opened for a link. A quit puts it back.
+    private(set) var lifted = false
+    /// The space it was lifted from, so a later space doesn't inherit it.
+    private(set) var liftedSpace: UUID?
     /// The browser it was opened for: the planet for ⌃Tab when no window is in front.
     private weak var browser: Browser?
     private let window: NSWindow
@@ -45,12 +50,16 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     }
 
     /// A page already made for it: a new window a small window's page asked
-    /// for (see Browser's createWebViewWith), which WebKit loads itself.
-    static func show(_ tab: Tab, for browser: Browser, front: Bool = true) {
+    /// for (see Browser's createWebViewWith), which WebKit loads itself, or
+    /// a tab lifted out of the row (`lifted`).
+    static func show(_ tab: Tab, for browser: Browser, front: Bool = true, lifted: Bool = false) {
         // Not in the row until kept: extensions are told of it here, as of a
-        // peek (see Extensions.openedAside).
-        if #available(macOS 15.4, *) { Extensions.shared.openedAside(tab) }
+        // peek (see Extensions.openedAside). A tab lifted from the row is
+        // told once the row has let it go (Extensions.follow), not twice.
+        if #available(macOS 15.4, *), !lifted { Extensions.shared.openedAside(tab) }
         let little = LittleWindow(tab: tab, browser: browser)
+        little.lifted = lifted
+        little.liftedSpace = lifted ? browser.spaceID : nil
         // A step down and in from the newest one on screen, so that five
         // links from Mail are five windows you can see are there, not one
         // on top of four.
@@ -86,6 +95,13 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// The small window a tab is the page of, if it is one's.
     static func holding(_ id: Tab.ID) -> LittleWindow? {
         open.first { $0.tab.id == id }
+    }
+
+    /// Tabs lifted out of this window's row. A quit writes them back into
+    /// it (see Browser.writeSession); a link from another app is not one
+    /// of them, and goes when its window does.
+    static func parked(beside browser: Browser, space: UUID) -> [Tab] {
+        open.filter { $0.lifted && $0.liftedSpace == space && $0.browser === browser }.map(\.tab)
     }
 
     /// The small windows' tabs as the Mac stacks their windows, the one in
@@ -212,11 +228,11 @@ final class LittleWindow: NSObject, NSWindowDelegate {
 
     /// Its keys, before the browser's: ⌃Tab goes to the other small
     /// windows, ⌘O keeps it, Escape and ⌘W close it, and the page's own
-    /// commands — copying its address, reloading it, zooming it — act on
-    /// this page, on whatever keys Settings › Shortcuts gives them.
-    /// Left to the menus, they acted on the browser's tab, in a window
-    /// behind this one or none, and said so there if anywhere. Everything
-    /// else is the page's.
+    /// commands — copying its address, reloading it, zooming it, back and
+    /// forward, previous and next among the small windows — act on this
+    /// page, on whatever keys Settings › Shortcuts gives them. Left to the
+    /// menus, they acted on the browser's tab, in a window behind this one
+    /// or none, and said so there if anywhere. Everything else is the page's.
     func take(_ event: NSEvent) -> Bool {
         if let combo = KeyCombo(event: event) {
             let keys = ShortcutStore.shared
@@ -229,6 +245,14 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             if combo == keys.key(for: "view.zoomIn") { tab.magnify(by: 1.1); return true }
             if combo == keys.key(for: "view.zoomOut") { tab.magnify(by: 1 / 1.1); return true }
             if combo == keys.key(for: "view.actualSize") { tab.resetZoom(); return true }
+            // An arrow the text system uses moves the caret in this page.
+            if combo.movesCaret, tab.typing || tab.built?.inputContext != nil { return false }
+            if combo == keys.key(for: "tabs.back") { tab.back(); return true }
+            if combo == keys.key(for: "tabs.forward") { tab.forward(); return true }
+            // Previous and next tab walk the small windows, not the row
+            // in the window behind this one.
+            if combo == keys.key(for: "tabs.next") { step(1); return true }
+            if combo == keys.key(for: "tabs.previous") { step(-1); return true }
         }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.shortcutCharacters
@@ -286,6 +310,16 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             return true
         }
         return false
+    }
+
+    /// Previous and next tab, while this window has the keys: the other
+    /// small windows. One window has nowhere to go, and the row behind
+    /// stays where it is either way.
+    private func step(_ direction: Int) {
+        let ids = LittleWindow.stacked
+        guard ids.count > 1, let here = ids.firstIndex(of: tab.id) else { return }
+        let index = ((here + direction) % ids.count + ids.count) % ids.count
+        LittleWindow.holding(ids[index])?.front()
     }
 
     /// A letter pressed on this window's card in a switcher (see
@@ -378,10 +412,19 @@ final class LittleWindow: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         if !cascaded { rememberFrame() }
+        // Quitting writes a lifted page back into the row (see
+        // Browser.writeSession). Taking it off the list here would forget it.
+        if Browsers.quitting { return }
         if LittleWindow.switcher.home == tab.id { LittleWindow.switcher.cancel() }
         tab.leave = nil
-        if !kept { tab.close() }
+        let home = browser
+        let wasLifted = lifted
+        let space = liftedSpace
+        // Out of the list before the session is written, so a closed one
+        // isn't put back into the row.
         LittleWindow.open.removeAll { $0 === self }
+        if !kept { tab.close() }
+        if wasLifted, !kept, let space { home?.dropLifted(tab, from: space) }
     }
 }
 

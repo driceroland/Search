@@ -83,7 +83,7 @@ extension Browser {
     /// hears nothing of the pointer there (see PageView.underCover).
     func covers(_ page: NSView, at point: NSPoint) -> Bool {
         guard let window, page.window === window else { return false }
-        if let peek = peekTab, peek.built !== page { return true }
+        if peekInFront, let peek = peekTab, peek.built !== page { return true }
         // The address field raised over the page in front, by ⌘L or by ⌘T's
         // floating field, dims all of that page and only that page: with
         // Split View on, the other pane is still there to point at.

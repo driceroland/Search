@@ -3391,6 +3391,18 @@ final class Bench {
             case "close": LittleWindow.all.last?.close()
             case "state": break
             case "look": break
+            case "go":
+                guard let text = request["url"] as? String, let url = URL(string: text) else {
+                    answer(["error": "little go needs an address"]); return
+                }
+                LittleWindow.all.last?.tab.go(to: url)
+            case "lift":
+                // A tab already in the row, into a small window (see
+                // Browser.openInLittleWindow). `id` is the bench's short id.
+                guard let tab = find(request, in: browser) ?? browser.active else {
+                    answer(["error": "no tab to lift"]); return
+                }
+                browser.openInLittleWindow(tab)
             default:
                 guard let text = request["what"] as? String, let url = URL(string: text) else { answer(["error": "little needs a url, keep or close"]); return }
                 LittleWindow.show(url, for: browser, front: false)

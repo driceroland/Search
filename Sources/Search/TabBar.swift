@@ -1653,6 +1653,8 @@ struct TabMenu: View {
                     }
                 }
             }
+            Button("Open in Small Window") { browser.openInLittleWindow(tab) }
+                .disabled(!tab.isWeb || tab.isBlank)
         }
         Divider()
         Button("Rename") { browser.beginTabRename(tab) }
