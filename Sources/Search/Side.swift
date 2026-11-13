@@ -1179,6 +1179,8 @@ private struct SideRow: View, Equatable {
     private let refusals: Int
     /// Its cross is a minus: closing it puts its page away (Browser.putsAway).
     private let putsAway: Bool
+    /// In a group, with groups on: a page put away from it stays a row there.
+    private let grouped: Bool
 
     init(browser: Browser, prefs: Preferences, tab: Tab, live: Bool, pill: Namespace.ID,
          close: @escaping () -> Void, interactive: Bool = true) {
@@ -1195,6 +1197,7 @@ private struct SideRow: View, Equatable {
         peek = browser.peekFrom == tab.id ? browser.peekTab : nil
         refusals = browser.refusals
         putsAway = browser.putsAway(tab)
+        grouped = prefs.usesTabGroups && browser.group(of: tab) != nil
     }
 
     /// The close action is left out: it closes the same tab every time.
@@ -1203,6 +1206,7 @@ private struct SideRow: View, Equatable {
             && a.pill == b.pill && a.interactive == b.interactive && a.editing == b.editing
             && a.selected == b.selected && a.pickedAmongOthers == b.pickedAmongOthers
             && a.peek === b.peek && a.refusals == b.refusals && a.putsAway == b.putsAway
+            && a.grouped == b.grouped
     }
 
     @State private var hovering = false
@@ -1224,6 +1228,12 @@ private struct SideRow: View, Equatable {
     /// the address on the tab you're on).
     private var rest: AtRest? { live && !editing ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
     private var atRest: Bool { rest != nil }
+    /// A grouped tab holding no page — put away with its minus (Browser.putAway),
+    /// put to sleep, or not opened since launch: the row stays, dimmed as a
+    /// pin put down is, so the minus is seen to have done something.
+    /// Read from the tab here, not when the column made the row: the column
+    /// isn't drawn again when one of its tabs lets its page go.
+    private var putAway: Bool { grouped && tab.asleep && !live }
 
     var body: some View {
         let _ = Bench.count("row")
@@ -1236,7 +1246,8 @@ private struct SideRow: View, Equatable {
                     // The site's icon, or with Letters its letter: beside the
                     // title either way, as Settings says (#919).
                     if !tab.isBlank {
-                        Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15)
+                        Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15,
+                             dim: putAway)
                     }
                     if tab.bench {
                         // A script's tab, not yours.
@@ -1325,7 +1336,7 @@ private struct SideRow: View, Equatable {
                         // A pinned row is put down, not closed (see
                         // Browser.close), and says so, as Arc's does; so is
                         // a grouped tab's page while it is open (closeTab).
-                        Image(systemName: tab.pin != nil || putsAway ? "minus" : "xmark")
+                        Image(systemName: tab.pin != nil || (putsAway && !tab.asleep) ? "minus" : "xmark")
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(Palette.muted)
                             .frame(width: 15, height: 15)
@@ -1412,7 +1423,8 @@ private struct SideRow: View, Equatable {
 
     private var colour: Color {
         if live { return Palette.ink }
-        return hovering ? Palette.ink.opacity(0.7) : Palette.muted
+        let colour = hovering ? Palette.ink.opacity(0.7) : Palette.muted
+        return putAway ? colour.opacity(0.45) : colour
     }
 }
 
