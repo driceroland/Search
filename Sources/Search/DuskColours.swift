@@ -211,6 +211,22 @@ enum DuskColours {
       // made. What such a sheet colours is read off the elements it lands on
       // instead (see paint).
       var twins = new Map();
+      // A page whose styles never settle would cost a twin for every sheet it
+      // ever shows, and the whole of one again for every rule it adds. So a
+      // page has a budget: how many twins it may hold at once, how much twin
+      // text it may hold at once, and how much twin text it may cost in all,
+      // which is what churn adds up to while the first two stay small. Past
+      // any of them the colours give up on the page for good (see giveUp) and
+      // it is left to the filter, as on a Mac that can't do colours. Real
+      // pages are well inside: Bulma's 763 KB of CSS twins to 670 thousand
+      // characters, Primer's 1.3 MB to 266 thousand.
+      var LIMIT = { sheets: 2000, held: 8e6, made: 48e6 };
+      var made = 0, over = false;
+      var held = function () {
+        var n = 0;
+        twins.forEach(function (t) { if (t.text) n += t.text.length; });
+        return n;
+      };
       var ground = new CSSStyleSheet(), marks = new CSSStyleSheet();
       ground.disabled = marks.disabled = true;
       // While our sheets come and go under the page (to measure it, or to
@@ -247,8 +263,10 @@ enum DuskColours {
       };
 
       var twinOf = function (s) {
+        if (over) return;
         var t = twins.get(s);
         if (!t) {
+          if (twins.size >= LIMIT.sheets) { over = true; return; }
           t = { sheet: new CSSStyleSheet(), count: -1, text: null };
           t.sheet.disabled = !showing;
           twins.set(s, t);
@@ -266,6 +284,10 @@ enum DuskColours {
         var media = s.media && s.media.mediaText;
         if (text && media && media !== 'all') text = '@media ' + media + '{' + text + '}';
         if (text !== t.text) {
+          // Before it is parsed, which is where the memory goes.
+          var now = held() - (t.text ? t.text.length : 0) + text.length;
+          if (now > LIMIT.held || made + text.length > LIMIT.made) { over = true; return; }
+          made += text.length;
           t.text = text;
           t.sheet.replaceSync(text);
         }
@@ -297,7 +319,9 @@ enum DuskColours {
         + sides.map(function (side) {
           return '[' + PAINT + '~="' + side[4] + '"]:not(#office-dusk):not(#office-dusk){' + side[1] + ':var(--office-dusk-' + side[4] + ') !important}';
         }).join('');
-      var given = {};
+      // What the ground says as of the last time it was written whole, and
+      // nothing once a rule has been put in after (see marker).
+      var given = {}, grounded = null;
       var legacy = [['bgcolor', 'background-color', BG], ['text', 'color', FG], ['color', 'color', FG],
                     ['fill', 'fill', FG], ['stroke', 'stroke', FG]];
       var legacyFind = '[bgcolor], body[text], font[color], svg[fill], svg [fill], svg [stroke]';
@@ -313,6 +337,7 @@ enum DuskColours {
           var match = '[' + l[0] + '="' + v.replace(/["\\]/g, '\\$&') + '"]';
           given[key] = { match: match, rule: ':where(' + match + '){' + l[1] + ':' + l[2](colour) + '}' };
           try { ground.insertRule(given[key].rule, ground.cssRules.length); } catch (e) {}
+          grounded = null;
         });
       };
 
@@ -320,17 +345,22 @@ enum DuskColours {
       // marked with the twin's number, and the twin is a rule for that
       // mark. Elements with the same colours share one.
       var marker = function (attr, sheet) {
-        var numbered = {}, count = 0;
+        // `written`: what the sheet says as of the last prune, nothing once a
+        // rule has been put in after it.
+        var numbered = {}, count = 0, written = '';
         var put = function (el, decls) {
           if (!decls) { if (el.hasAttribute(attr)) el.removeAttribute(attr); return; }
           var n = numbered[decls];
           if (!n) {
             n = numbered[decls] = String(++count);
             sheet.insertRule('[' + attr + '="' + n + '"]{' + decls + '}', sheet.cssRules.length);
+            written = null;
           }
           if (el.getAttribute(attr) !== n) el.setAttribute(attr, n);
         };
-        // Only the numbers some element still carries, in any root.
+        // Only the numbers some element still carries, in any root. A sheet
+        // is rewritten only when it says something else: even with what it
+        // already says, that has the page's whole style worked out again.
         var prune = function () {
           var text = '';
           Object.keys(numbered).forEach(function (decls) {
@@ -338,7 +368,7 @@ enum DuskColours {
             if (anywhere(sel)) text += sel + '{' + decls + '}';
             else delete numbered[decls];
           });
-          sheet.replaceSync(text);
+          if (text !== written) { written = text; sheet.replaceSync(text); }
         };
         return { put: put, prune: prune, count: function () { return Object.keys(numbered).length; } };
       };
@@ -473,7 +503,7 @@ enum DuskColours {
       };
 
       var markups = function (top) {
-        if (!top || top.nodeType !== 1 && top.nodeType !== 11) return;
+        if (over || !top || top.nodeType !== 1 && top.nodeType !== 11) return;
         var t = performance.now();
         if (top.nodeType === 1) {
           if (top.tagName === 'IMG') lookAt(top);
@@ -489,6 +519,7 @@ enum DuskColours {
       // The page's scheme dark: its default colours, its form controls and
       // its scrollbars, which no rule of its own ever names.
       ground.replaceSync(base);
+      grounded = base;
 
       // Ours after all of the page's, in the page's order: the ground first,
       // then each sheet's twin, then the elements' own.
@@ -520,16 +551,40 @@ enum DuskColours {
         shadows(sr);
       };
 
+      // The twin of a sheet the page has taken out or replaced goes with it,
+      // as it is noticed rather than when the page has gone quiet: a page
+      // that swaps its sheets all the time never does, and each twin held the
+      // sheet it was made from as well. `present`: every sheet there is now.
+      // The twins leave `twins` at once, so they count for nothing against
+      // the budget, but stay ours until the roots have been placed (which
+      // takes them out of the roots) and `release` has let them go: a sheet
+      // that isn't ours is taken for the page's, and kept.
+      var forget = function (present) {
+        var gone = [];
+        twins.forEach(function (t, s) { if (!present.has(s)) { twins.delete(s); gone.push(t.sheet); } });
+        return gone;
+      };
+      var release = function (gone) { gone.forEach(function (s) { mine.delete(s); }); };
+      var current = function () {
+        var present = new Set();
+        roots.forEach(function (r) { sources(r).forEach(function (s) { present.add(s); }); });
+        return present;
+      };
+
       var refresh = function () {
-        if (!started) return;
+        if (!started || over) return;
         took.refreshes++;
         var t = performance.now();
         // A root whose host has left the page goes with it.
         roots = roots.filter(function (r) { return r === doc || r.host.isConnected; });
+        var gone = forget(current());
         roots.forEach(function (root) {
+          if (over) return;
           sources(root).forEach(twinOf);
-          place(root);
+          if (!over) place(root);
         });
+        if (over) return giveUp(gone);
+        release(gone);
         spent += performance.now() - t;
         if (!readyAt) {
           readyAt = performance.now();
@@ -542,17 +597,16 @@ enum DuskColours {
       // took out, the marks no element carries, and the attribute colours
       // no element has.
       var prune = function () {
-        var present = new Set();
-        roots.forEach(function (r) { sources(r).forEach(function (s) { present.add(s); }); });
-        twins.forEach(function (t, s) { if (!present.has(s)) { twins.delete(s); mine.delete(t.sheet); } });
+        var gone = forget(current());
         roots.forEach(place);
+        release(gone);
         styled.prune();
         var text = base;
         Object.keys(given).forEach(function (key) {
           if (anywhere(given[key].match)) text += given[key].rule;
           else delete given[key];
         });
-        ground.replaceSync(text);
+        if (text !== grounded) { grounded = text; ground.replaceSync(text); }
       };
 
       // Watched for a while, not for the page's life: from the start until
@@ -563,6 +617,7 @@ enum DuskColours {
       // new sheet, and a sheet's load.
       var observers = [], ticker = 0, until = 0, awake = false, SPELL = 10000;
       var wake = function () {
+        if (over) return;
         until = performance.now() + SPELL;
         if (awake) return;
         awake = true;
@@ -574,12 +629,36 @@ enum DuskColours {
           refresh();
         }, 1000);
       };
-      var rest = function () {
+      var unwatch = function () {
         awake = false;
         clearInterval(ticker);
         observers.forEach(function (o) { o.disconnect(); });
         observers = [];
+      };
+      var rest = function () {
+        unwatch();
         prune();
+      };
+
+      // The page's styles never settle (see LIMIT): everything of ours goes
+      // from it, and nothing is watched or made for it again. The page script
+      // is told, and puts the filter where the colours were in the same go.
+      var giveUp = function (gone) {
+        unwatch();
+        if (head) head.disconnect();
+        quietly(function () { own().forEach(function (s) { s.disabled = true; }); });
+        showing = false;
+        twins.forEach(function (t) { gone.push(t.sheet); });
+        twins.clear();
+        // Not even the disabled sheets stay in the page's roots.
+        roots.forEach(function (root) {
+          root.adoptedStyleSheets = root.adoptedStyleSheets.filter(function (s) { return !mine.has(s) || others.indexOf(s) >= 0; });
+        });
+        release(gone);
+        marks.replaceSync('');
+        ground.replaceSync('');
+        grounded = '';
+        if (onReady) onReady();
       };
 
       var changed = function (records) {
@@ -661,6 +740,7 @@ enum DuskColours {
         observers.push(o);
       };
 
+      var head = null;
       var start = function (ready) {
         if (started) return;
         started = true;
@@ -669,17 +749,21 @@ enum DuskColours {
         shadows(doc);
         wake();
         // A new sheet in the <head> wakes it again, for the page's life.
-        if (doc.head) new MutationObserver(function (records) {
-          if (records.some(function (r) { return r.target.nodeName === 'STYLE' || [].some.call(r.addedNodes, function (n) { return n.nodeName === 'STYLE' || n.nodeName === 'LINK'; }); })) {
-            refresh();
-            wake();
-          }
-        }).observe(doc.head, { childList: true, subtree: true, characterData: true });
+        if (doc.head) {
+          head = new MutationObserver(function (records) {
+            if (records.some(function (r) { return r.target.nodeName === 'STYLE' || [].some.call(r.addedNodes, function (n) { return n.nodeName === 'STYLE' || n.nodeName === 'LINK'; }); })) {
+              refresh();
+              wake();
+            }
+          });
+          head.observe(doc.head, { childList: true, subtree: true, characterData: true });
+        }
         if (doc.readyState !== 'complete') addEventListener('load', function () { wake(); refresh(); if (showing) paint([doc.body]); }, { once: true });
         refresh();
         // A <link> is only a sheet once it has loaded, and a picture can
         // only be looked at once it has.
         doc.addEventListener('load', function (e) {
+          if (over) return;
           if (e.target.nodeName === 'LINK') refresh();
           if (e.target.nodeName === 'IMG') lookAt(e.target);
         }, true);
@@ -693,9 +777,11 @@ enum DuskColours {
 
       return {
         start: start,
-        ready: function () { return readyAt > 0; },
+        ready: function () { return readyAt > 0 && !over; },
         started: function () { return started; },
         showing: function () { return showing; },
+        // Given up on this page, for good (see LIMIT): the filter's now.
+        over: function () { return over; },
         show: function (on) {
           if (on === showing) return;
           showing = on;
@@ -706,7 +792,7 @@ enum DuskColours {
         },
         // The page has moved to another address of its own: watched again.
         again: function () {
-          if (!started) return;
+          if (!started || over) return;
           wake();
           refresh();
           markups(doc.body);
@@ -726,7 +812,8 @@ enum DuskColours {
         stats: function () {
           var n = 0;
           twins.forEach(function (t) { if (t.text) n += t.sheet.cssRules.length; });
-          return { sheets: twins.size, twins: n, marked: styled.count(), painted: doc.querySelectorAll('[' + PAINT + ']').length, unreadable: unreadable,
+          return { sheets: twins.size, twins: n, text: held(), made: made, over: over,
+                   marked: styled.count(), painted: doc.querySelectorAll('[' + PAINT + ']').length, unreadable: unreadable,
                    ms: Math.round(spent), shadows: roots.length - 1, watching: awake,
                    took: { twins: Math.round(took.twins), paint: Math.round(took.paint), paints: took.paints,
                            markups: Math.round(took.markups), refreshes: took.refreshes,

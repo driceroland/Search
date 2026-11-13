@@ -12,7 +12,8 @@ import WebKit
 // never touched. The twins take a moment to make, and until they are ready,
 // or on a Mac whose WebKit can't do relative colours (before macOS 15), the
 // page is turned over with a CSS filter on its root and the pictures on it
-// are turned back.
+// are turned back. A page whose styles never settle would cost more twins
+// than it is worth, and is left to the filter once it has used its budget.
 //
 // Whether a site needs it is measured, never read off what the site says:
 // plenty declare `color-scheme: light dark` and only mean their form
@@ -231,7 +232,7 @@ final class Dusk: ObservableObject {
       var sheet = new CSSStyleSheet();
       // The page in its own colours, made dark: null where the browser
       // can't, or where it is kept to the filter by hand.
-      var paint = config.mode === 'filter' ? null : (/*COLOURS*/)(doc, [sheet]);
+      var paint = config.mode === 'filter' ? null : (/*COLOURS*/)(doc, [sheet]), gaveUp = null;
       // Whether the filter is what shows now: until the colours are ready,
       // and on its own without them.
       var filtering = false, written = '';
@@ -262,6 +263,16 @@ final class Dusk: ObservableObject {
       var apply = function () {
         var was = shown;
         shown = wanted();
+        // The colours gave up on a page whose styles never settle (see
+        // DuskColours): it is the filter's from here on, as where the browser
+        // can't do colours. Turned over, a site's own dark look comes out
+        // light, so its theme is watched, and it is measured again under it.
+        if (paint && paint.over()) {
+          gaveUp = paint.stats();
+          paint = null;
+          watchTheme(root);
+          soon();
+        }
         // The colours once they are ready; the filter before, from the first
         // frame, so the page is never seen white while they are made. Both
         // change here, in one go, so no frame falls between them.
@@ -609,7 +620,7 @@ final class Dusk: ObservableObject {
         if (!ready()) { soon(); return; }
         if (doc.body !== watchedBody && !paint) {
           watchedBody = doc.body;
-          themes.observe(watchedBody, { attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode', 'data-mode'] });
+          watchTheme(watchedBody);
         }
         if (!config.on || !scheme.matches || framed && !topOn) { apply(); return; }
         // Once the page shows in its own colours, it isn't measured again.
@@ -637,9 +648,12 @@ final class Dusk: ObservableObject {
         themed = true;
         soon();
       });
+      var watchTheme = function (el) {
+        themes.observe(el, { attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode', 'data-mode'] });
+      };
       // Only the filter needs it: turned over, a site's own dark look comes
       // out light.
-      if (!paint) themes.observe(root, { attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode', 'data-mode'] });
+      if (!paint) watchTheme(root);
       // And a page that draws itself after it loads, as an app does: its
       // look is only there once it has drawn. Watched until a few seconds
       // after the load, when it has.
@@ -674,7 +688,7 @@ final class Dusk: ObservableObject {
         state: function () {
           return { native: native, shown: shown, mode: !shown ? 'none' : filtering ? 'filter' : 'colours',
                    kept: doc.querySelectorAll('[' + KEEP + ']').length, passes: passes, ms: Math.round(spent),
-                   colours: paint ? paint.stats() : null };
+                   colours: paint ? paint.stats() : gaveUp };
         }
       };
 
