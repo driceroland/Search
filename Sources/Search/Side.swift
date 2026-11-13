@@ -1224,6 +1224,8 @@ private struct SideRow: View, Equatable {
     /// the address on the tab you're on).
     private var rest: AtRest? { live && !editing ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
     private var atRest: Bool { rest != nil }
+    /// A pin already put down has nothing left to put down: no minus (#1050).
+    private var closable: Bool { tab.pin == nil || !tab.asleep }
 
     var body: some View {
         let _ = Bench.count("row")
@@ -1309,7 +1311,7 @@ private struct SideRow: View, Equatable {
         // doesn't jump on each row the pointer passes.
         .mask {
             ZStack {
-                Rectangle().opacity(hovering && !editing && !status ? 0 : 1)
+                Rectangle().opacity(hovering && closable && !editing && !status ? 0 : 1)
                 HStack(spacing: 0) {
                     Rectangle()
                     LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
@@ -1321,7 +1323,7 @@ private struct SideRow: View, Equatable {
         .overlay(alignment: .trailing) {
             if !editing {
                 ZStack {
-                    if hovering {
+                    if hovering && closable {
                         // A pinned row is put down, not closed (see
                         // Browser.close), and says so, as Arc's does; so is
                         // a grouped tab's page while it is open (closeTab).
@@ -1338,7 +1340,7 @@ private struct SideRow: View, Equatable {
                     Color.clear
                         .frame(width: 30, height: prefs.sideRow)
                         .contentShape(Rectangle())
-                        .onTapGesture { if hovering { close() } }
+                        .onTapGesture { if hovering && closable { close() } }
                 }
                 .padding(.trailing, 7)
             }

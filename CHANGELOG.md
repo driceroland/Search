@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A pin you put down shows its icon in the ⌃Tab switcher, not the page it had before, and its row no longer offers a − (#1050).
 - With Profiles in one window on, switching to another profile and quitting no longer opens a second, empty window at the next launch (#1060).
 - A long address that history completes in the address field keeps the start in view, so what you typed and the site stay visible; it used to scroll to the end (#1055).
 - Settings, History and the other pages of Search draw their symbols in English on a Mac set to another language: the Tabs heading's icon read 大小 in Chinese (#1049).
