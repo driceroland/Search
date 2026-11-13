@@ -679,6 +679,11 @@ struct AddressField: NSViewRepresentable {
             let length = field.stringValue.count
             guard start <= length else { return }
             editor.selectedRange = NSRange(location: start, length: length - start)
+            // The start in view, not the end: selecting a long completion
+            // scrolled the field to its last characters, hiding what was
+            // typed and the site it goes to (#1055). The ending stays
+            // selected, so the next key still replaces it.
+            editor.scrollRangeToVisible(NSRange(location: 0, length: 0))
         }
 
         func control(
