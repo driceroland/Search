@@ -435,6 +435,18 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
                 looks: ["lum('body','backgroundColor') < 0.05", "lum('#p','color') > 0.3",
                         "(function () { var r = document.styleSheets[0].cssRules; return r[0].style.cssText + '|' + r[1].cssRules[0].style.cssText === document.documentElement.dataset.before; })()",
                         "(function () { window.__officeDusk.update({ on: false }); var r = document.styleSheets[0].cssRules; return r[0].style.cssText + '|' + r[1].cssRules[0].style.cssText === document.documentElement.dataset.before && lum('body','backgroundColor') > 0.9; })()"]),
+        // Under the filter, a dark part drawn by a ::before, and one that a
+        // class makes dark after the load, are kept as the site made them;
+        // and one a class makes light again is let go, or it would be kept
+        // light, turned back, on a darkened page.
+        Fixture(name: "filter-dark-later", html: """
+            <style>body{background:#fff;color:#111}.bar,.gone{height:60px}.bar.stuck,.gone{background:#1b1b1b;color:#fff}.gone.off{background:transparent;color:#111}
+            .pin{position:relative;height:60px}.pin::before{content:'';position:absolute;inset:0;z-index:-1;background:#1b1b1b}
+            .dot{position:relative}.dot::before{content:'';position:absolute;left:0;width:6px;height:6px;background:#111}</style>
+            <div id=pin class=pin>Pin</div><div id=bar class=bar>Bar</div><div id=gone class=gone>Gone</div>
+            <p id=dot class=dot>A light page with a small dark bullet, enough writing to read light.</p>
+            <script>setTimeout(function () { document.getElementById('bar').classList.add('stuck'); document.getElementById('gone').classList.add('off'); }, 400);</script>
+            """, dark: false, shown: true, kept: ["#bar", "#pin"], turned: ["#gone", "#dot"], mode: "filter", settle: 1.0),
         Fixture(name: "known-light-from-start", html: "<style>body{background:#fff}</style>" + card,
                 dark: false, shown: true, seen: ["known-light-from-start.test": false]),
     ]
