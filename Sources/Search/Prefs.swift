@@ -110,6 +110,13 @@ final class Preferences: ObservableObject {
         didSet { store.set(navigationLeft, forKey: "toolbar.left") }
     }
 
+    /// The tab strip only a few points taller than its tabs, where it is
+    /// otherwise a toolbar's height (Metrics.strip). With the tabs across the
+    /// top; off unless asked for.
+    @Published var compactStrip: Bool {
+        didSet { store.set(compactStrip, forKey: "tabs.compact") }
+    }
+
     /// A local socket a script can drive the browser through, in tabs of its
     /// own. Off unless asked for — in Settings, which is also what leaves
     /// the mark it needs at launch (see Bench.Consent).
@@ -748,6 +755,7 @@ final class Preferences: ObservableObject {
 
     init() {
         navigationLeft = store.bool(forKey: "toolbar.left")
+        compactStrip = store.bool(forKey: "tabs.compact")
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
         // The Mac's own unless asked otherwise — a Mac in dark mode expects
@@ -988,6 +996,7 @@ final class Preferences: ObservableObject {
     func reread() {
         take(\.look, "look", store.string(forKey: "look").flatMap(Look.init), or: .system)
         take(\.navigationLeft, store.bool(forKey: "toolbar.left"))
+        take(\.compactStrip, store.bool(forKey: "tabs.compact"))
         take(\.sidebar, "sidebar", store.object(forKey: "sidebar") as? Bool, or: store.string(forKey: "manner") == "side")
         take(\.sidePosition, "sidebar.position", store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init),
              or: .left)

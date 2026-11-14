@@ -524,6 +524,11 @@ struct SettingsPanel: View {
                         set: { on in withAnimation(Motion.glide) { prefs.cards = on } }
                      ))
         case "toolbar.left": Switch(on: $prefs.navigationLeft)
+        case "tabs.compact":
+            Switch(on: Binding(
+                get: { prefs.compactStrip },
+                set: { on in withAnimation(Motion.glide) { prefs.compactStrip = on } }
+            ))
         case "sidebar.roomy":
             Switch(on: Binding(
                 get: { prefs.roomyTabs },

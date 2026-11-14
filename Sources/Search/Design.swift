@@ -149,8 +149,12 @@ enum Metrics {
     /// The tab strip. The window's title bar is grown to match it so the
     /// traffic lights come down with the tabs — otherwise giving the row room
     /// to breathe just leaves it sitting below three buttons it used to line
-    /// up with.
-    static let strip: CGFloat = 52
+    /// up with. Shorter tab bar, with the tabs across the top, takes it down
+    /// to a few points above and below the 28-point tabs: a strip, not a
+    /// toolbar. The column keeps the full band, as its first row shares it.
+    @MainActor static var strip: CGFloat {
+        Shared.prefs.compactStrip && !Shared.prefs.sidebar ? 36 : 52
+    }
     /// With the tabs down the side the page is a card: this far from the
     /// window's edges (and from the column, folded away), and its corners
     /// this round.

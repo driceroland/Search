@@ -832,6 +832,10 @@ struct ContentView: View {
                 // The ground the page's card sits on, or the page's own.
                 window?.backgroundColor = cards ? Palette.NS.frame : Palette.NS.ground
             }
+            // The lights sit on the strip's middle, which moves with its height.
+            .onChange(of: browser.prefs.compactStrip) { _, _ in
+                DispatchQueue.main.async { Lights.refresh(window); measureLights() }
+            }
             .onChange(of: browser.prefs.sidePosition) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }

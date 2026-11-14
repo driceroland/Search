@@ -16,8 +16,8 @@ import AppKit
 final class Lights: NSObject {
     /// Where the close button's centre goes, from the window's top-left: where
     /// a unified toolbar put it, which Metrics.lights and sideLights are
-    /// measured from.
-    static let centre = CGPoint(x: 26, y: 26)
+    /// measured from. Down the strip's middle, however tall it is.
+    static var centre: CGPoint { CGPoint(x: 26, y: Metrics.strip / 2) }
 
     private static var kept: [ObjectIdentifier: Lights] = [:]
 
