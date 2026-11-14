@@ -415,6 +415,16 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
             <html class=cdn-root><link rel=stylesheet href="test-other://cdn/sheet.css"><p id=text>Plain writing</p></html>
             """, dark: false, shown: true,
                 looks: ["lum('#text','color') > 0.4", "lum('html','backgroundColor') < 0.05"], settle: 1.0, served: true),
+        // An unread sheet's ground on a ::before, there from the start, and
+        // on one that only comes with a class the page adds later, as eBay's
+        // header does when it sticks to the top: both taken dark.
+        Fixture(name: "colours-unreadable-pseudo", html: """
+            <link rel=stylesheet href="test-other://cdn/sheet.css"><style>body{background:#fff}</style>
+            <div id=pin class=cdn-pin>Pinned</div><div id=bar class=cdn-bar>Header</div>
+            <script>setTimeout(function () { document.getElementById('bar').classList.add('cdn-stuck'); }, 400);</script>
+            """, dark: false, shown: true,
+                looks: ["lum('#pin','backgroundColor','::before') < 0.05", "lum('#bar','backgroundColor','::before') < 0.05",
+                        "lum('#bar','color','::before') > 0.4"], settle: 1.0, served: true),
         // The site's own rules are never touched: darkened or let go, each
         // says what the page read before anything was darkened.
         Fixture(name: "colours-leave-the-site-alone", html: """
@@ -464,8 +474,8 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
       for (var i = 0; i < parts.length; i++) { var el = at.querySelector(parts[i]); at = i < parts.length - 1 ? el.shadowRoot : el; }
       return at;
     };
-    var lum = function (sel, prop) {
-      pen.clearRect(0, 0, 1, 1); pen.fillStyle = 'rgba(0,0,0,0)'; pen.fillStyle = getComputedStyle(find(sel))[prop];
+    var lum = function (sel, prop, pseudo) {
+      pen.clearRect(0, 0, 1, 1); pen.fillStyle = 'rgba(0,0,0,0)'; pen.fillStyle = getComputedStyle(find(sel), pseudo || null)[prop];
       pen.fillRect(0, 0, 1, 1); var d = pen.getImageData(0, 0, 1, 1).data;
       return 0.2126 * lin(d[0]) + 0.7152 * lin(d[1]) + 0.0722 * lin(d[2]);
     };
@@ -596,7 +606,7 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
 /// Serves a served fixture's page (test-page://) and a stylesheet from
 /// another origin (test-other://), as a CDN's is to the page.
 private final class OtherOrigin: NSObject, WKURLSchemeHandler {
-    static let css = ".cdn{background:#fff;color:#111;border:2px solid #ddd}.cdn-card{background:#f4f4f4}.cdn-page{background:#fff;color:#1d1e1c}.cdn-same{color:#1d1e1c}.cdn-pills>a{color:#000 !important;background:#fff !important}html.cdn-root{background:#fff;color:#222}"
+    static let css = ".cdn{background:#fff;color:#111;border:2px solid #ddd}.cdn-card{background:#f4f4f4}.cdn-page{background:#fff;color:#1d1e1c}.cdn-same{color:#1d1e1c}.cdn-pills>a{color:#000 !important;background:#fff !important}html.cdn-root{background:#fff;color:#222}.cdn-pin,.cdn-bar{position:relative}.cdn-pin::before,.cdn-bar.cdn-stuck::before{content:'';position:absolute;inset:0;z-index:-1;background:#fff;color:#111}"
     static var page = ""
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url else { return }
