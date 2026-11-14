@@ -310,6 +310,10 @@ enum DuskColours {
       // they start as, which is no colour of its own.
       var htmlSides = sides.filter(function (side) { return side[0] !== 'fill' && side[0] !== 'stroke'; });
       var inherited = { color: true, fill: true, stroke: true };
+      // A ::before or ::after can't carry a property of its own, but it
+      // inherits its element's: its dark colour goes on the element, under
+      // the pseudo's name, and a rule for the pseudo puts it to use.
+      var pseudos = ['before', 'after'];
       var base = ':root { color-scheme: dark !important; }'
         + '[data-office-dusk-over] { --office-dusk-keep: 1; }'
         + 'img[data-office-dusk-icon] { filter: invert(1) hue-rotate(180deg) !important; }'
@@ -318,6 +322,11 @@ enum DuskColours {
         // the unread sheet's with !important and a longer selector can't win.
         + sides.map(function (side) {
           return '[' + PAINT + '~="' + side[4] + '"]:not(#office-dusk):not(#office-dusk){' + side[1] + ':var(--office-dusk-' + side[4] + ') !important}';
+        }).join('')
+        + pseudos.map(function (p) {
+          return htmlSides.map(function (side) {
+            return '[' + PAINT + '~="' + p + side[4] + '"]:not(#office-dusk):not(#office-dusk)::' + p + '{' + side[1] + ':var(--office-dusk-' + p + side[4] + ') !important}';
+          }).join('');
         }).join('');
       // What the ground says as of the last time it was written whole, and
       // nothing once a rule has been put in after (see marker).
@@ -404,6 +413,7 @@ enum DuskColours {
       };
       var paint = function (tops) {
         if (!unreadable) return;
+        roots.forEach(watchClasses);
         var t = performance.now(), writing = 0;
         var all = [];
         tops.forEach(function (top) {
@@ -427,6 +437,17 @@ enum DuskColours {
             if (!untwinned(v)) return;
             if (inherited[side[0]] && parent && parent[side[0]] === v) later.push(side);
             else parts.push([side[4], side[2](v)]);
+          });
+          // Writing the pseudo only inherits from its element is the
+          // element's, and goes with it.
+          pseudos.forEach(function (p) {
+            var its = getComputedStyle(el, '::' + p);
+            if (its.content === 'none' || its.content === 'normal') return;
+            htmlSides.forEach(function (side) {
+              if (side[3] && parseFloat(its[side[3]]) === 0) return;
+              var v = its[side[0]];
+              if (untwinned(v) && !(inherited[side[0]] && v === mine[side[0]])) parts.push([p + side[4], side[2](v)]);
+            });
           });
           if (parts.length) found.push([el, parts]);
           if (later.length) unsure.push([el, later]);
@@ -645,6 +666,7 @@ enum DuskColours {
       // is told, and puts the filter where the colours were in the same go.
       var giveUp = function (gone) {
         unwatch();
+        classes.disconnect();
         if (head) head.disconnect();
         quietly(function () { own().forEach(function (s) { s.disabled = true; }); });
         showing = false;
@@ -732,6 +754,36 @@ enum DuskColours {
           toPaint = [];
           if (showing && batch.length) paint(batch);
         }, 300);
+      };
+      // A class the page sets brings in whatever an unread sheet gives it,
+      // long after the page is no longer watched: eBay's header turns
+      // white as it sticks to the top. So on a page with such a sheet, an
+      // element whose classes change is read again, for the page's life,
+      // before the frame is drawn. What a readable sheet colours has its
+      // twin already, and computes to oklch, so is passed over unread.
+      var restyled = [], restyling = false, classed = new WeakSet();
+      var classes = new MutationObserver(function (records) {
+        if (!showing) return;
+        records.forEach(function (r) { restyled.push(r.target); });
+        if (restyling) return;
+        restyling = true;
+        var frame = 0, timer = 0;
+        var go = function () {
+          cancelAnimationFrame(frame);
+          clearTimeout(timer);
+          if (!restyling) return;
+          restyling = false;
+          var batch = restyled.filter(function (n) { return n.isConnected; });
+          restyled = [];
+          if (showing && batch.length) paint(batch);
+        };
+        frame = requestAnimationFrame(go);
+        timer = setTimeout(go, 100);
+      });
+      var watchClasses = function (root) {
+        if (classed.has(root)) return;
+        classed.add(root);
+        classes.observe(root, { attributes: true, subtree: true, attributeFilter: ['class'] });
       };
       var watch = function (root) {
         var o = new MutationObserver(changed);

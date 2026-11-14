@@ -278,6 +278,11 @@ final class Dusk: ObservableObject {
         // change here, in one go, so no frame falls between them.
         var painted = shown && !!paint && paint.ready();
         filtering = shown && !painted;
+        if (filtering !== classWatch) {
+          classWatch = filtering;
+          if (filtering) classes.observe(root, { attributes: true, subtree: true, attributeFilter: ['class'] });
+          else classes.disconnect();
+        }
         // The filter's sheet only while it shows: a page it doesn't darken
         // has none of ours in it.
         if (filtering) attach();
@@ -499,11 +504,25 @@ final class Dusk: ObservableObject {
           // colours: another picture within it, say.
           return filtering ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
         }
-        if (filtering && light(style.backgroundColor) === false) {
+        if (filtering && dark(el, style)) {
           pending.push([el, 'dark']);
           return NodeFilter.FILTER_REJECT;
         }
         return NodeFilter.FILTER_SKIP;
+      };
+      // A dark part under the filter: its own ground, or one a ::before or
+      // ::after lays under at least half of it, as a header drawn that way
+      // is. A small one is a bullet or an icon and goes with the text.
+      var dark = function (el, style) {
+        if (light(style.backgroundColor) === false) return true;
+        var area = el.offsetWidth * el.offsetHeight;
+        if (area < big) return false;
+        for (var i = 0; i < 2; i++) {
+          var its = getComputedStyle(el, i ? '::after' : '::before');
+          if (its.content === 'none' || its.content === 'normal' || light(its.backgroundColor) !== false) continue;
+          if (parseFloat(its.width) * parseFloat(its.height) >= area * 0.5) return true;
+        }
+        return false;
       };
       var scan = function (top) {
         if (!top || top.nodeType !== 1 || filtering && top.closest('[' + KEEP + ']')) return;
@@ -585,6 +604,39 @@ final class Dusk: ObservableObject {
         // what comes late is taken as it comes (see gather).
         setTimeout(function () { if (shown && filtering) everything(); }, 2000);
         watchKept();
+      });
+
+      // Under the filter, a class the page sets later can make a part dark,
+      // or light again, as a header does when it sticks to the top: what it
+      // lands on is looked at again before the frame is drawn, for as long
+      // as the filter shows. A mark it no longer earns goes, or a part gone
+      // light would be turned back, light, on a darkened page.
+      var reclassed = [], reclassing = false, classWatch = false;
+      var classes = new MutationObserver(function (records) {
+        if (!shown || !filtering || !scanned) return;
+        records.forEach(function (r) { reclassed.push(r.target); });
+        if (reclassing) return;
+        reclassing = true;
+        var frame = 0, timer = 0;
+        var go = function () {
+          cancelAnimationFrame(frame);
+          clearTimeout(timer);
+          if (!reclassing) return;
+          reclassing = false;
+          var batch = new Set(reclassed);
+          reclassed = [];
+          if (!shown || !filtering) return;
+          var t = performance.now();
+          batch.forEach(function (el) {
+            if (!el.isConnected) return;
+            if (el.getAttribute(KEEP) === 'dark' && !dark(el, getComputedStyle(el))) el.removeAttribute(KEEP);
+            scan(el);
+          });
+          settle();
+          spent += performance.now() - t;
+        };
+        frame = requestAnimationFrame(go);
+        timer = setTimeout(go, 100);
       });
 
       // A page is ready to be read once it has a body and the stylesheets in
