@@ -198,6 +198,9 @@ enum ExtensionWatch {
     static let groupsPort = ExtensionShims.application + ".groups"
     static let idlePort = ExtensionShims.application + ".idle"
 
+    // Every window's groups, as tabGroups.query lists them. Private tabs are
+    // never in a group today; if that ever changes, leave private windows out
+    // here and in query alike.
     static let groups = GroupWatch(
         read: { Set(Browsers.all.flatMap(ExtensionShims.listedGroups).map { GroupWatch.Shape(id: $0.id, name: $0.name, collapsed: $0.collapsed) }) },
         soon: { work in DispatchQueue.main.async { MainActor.assumeIsolated { work() } } })

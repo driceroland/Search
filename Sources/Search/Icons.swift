@@ -336,8 +336,10 @@ final class Favicons {
     }
 
     private func remember(_ image: NSImage, as ident: String) {
-        let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        let cost = cg.map { $0.bytesPerRow * $0.height } ?? 128 * 128 * 8
+        // From the file's own pixel size: asking for a CGImage here would
+        // decode every icon on the main thread as it comes in.
+        let pixels = image.representations.map { $0.pixelsWide * $0.pixelsHigh }.max() ?? 0
+        let cost = pixels > 0 ? pixels * 4 : 128 * 128 * 8
         memory.setObject(image, forKey: ident as NSString, cost: cost)
     }
 
