@@ -857,15 +857,23 @@ struct SettingsPanel: View {
             .padding(.trailing, 14)
             .padding(.bottom, 6)
         }
-        ForEach(prefs.keywords) { entry in
+        // The one being changed is up in the editor, not here as well.
+        ForEach(prefs.keywords.filter { $0.id != draft?.id }) { entry in
             HStack(spacing: 8) {
-                Text(entry.keyword)
-                    .frame(width: 50, alignment: .leading)
-                Text("→").foregroundStyle(Palette.muted)
-                Text(entry.template)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Clicked, a saved shortcut opens in the editor to be
+                // changed, rather than deleted and written again.
+                HStack(spacing: 8) {
+                    Text(entry.keyword)
+                        .frame(width: 50, alignment: .leading)
+                    Text("→").foregroundStyle(Palette.muted)
+                    Text(entry.template)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { draft = entry }
+                .help("Click to change")
                 Button {
                     prefs.keywords.removeAll { $0.id == entry.id }
                 } label: {
@@ -889,7 +897,8 @@ struct SettingsPanel: View {
     /// only exists once its address is one it's safe to send words to.
     private var draftProblem: String? {
         guard let draft else { return nil }
-        return Keyword.problem(word: draft.keyword, template: draft.template, among: prefs.keywords)
+        return Keyword.problem(word: draft.keyword, template: draft.template,
+                               among: prefs.keywords.filter { $0.id != draft.id })
     }
 
     private var keywordDetail: String {
@@ -902,10 +911,17 @@ struct SettingsPanel: View {
 
     private func saveDraft() {
         guard let current = draft, draftProblem == nil else { return }
-        prefs.keywords.append(Keyword(
+        let saved = Keyword(
+            id: current.id,
             keyword: current.keyword.trimmingCharacters(in: .whitespacesAndNewlines),
             template: current.template.trimmingCharacters(in: .whitespacesAndNewlines)
-        ))
+        )
+        // One being changed keeps its place in the list.
+        if let index = prefs.keywords.firstIndex(where: { $0.id == saved.id }) {
+            prefs.keywords[index] = saved
+        } else {
+            prefs.keywords.append(saved)
+        }
         draft = nil
     }
 
