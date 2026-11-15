@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With the window on a display other than the Mac's first one, extensions find the tab they name again: a private tab reads `incognito: true` to an extension let into private tabs, and tabs.move, tabs.discard and the other calls that find a tab by its place work. WebKit gives a window's frame turned over by the height of the window's own screen, and Search turned it back by the first screen's.
 - A side panel's page goes with its window when the window closes for good, instead of staying in memory unseen.
 - Site icons no longer keep growing in memory as you browse, and an unusually large icon stops downloading rather than filling memory before it is turned away. Clearing History lets their cached pictures go too; open tabs keep theirs.
 - A session that runs for days keeps about the 2,000 places in memory that the history file keeps, the latest ones always among them, where memory held every page it had seen and the address field searched all of them on every key.
