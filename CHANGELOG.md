@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- The pointer is an arrow over the strip you drag the window by, where it could stay a text cursor from the page (#1094).
 - The ⌃Tab switcher no longer offers pins you put down or grouped tabs you put away (#1092).
 - A tab in a group whose page is put away, with the minus at the end of its row or ⌘W, dims, as a pinned tab put down does. The row looked just as it had, so the minus seemed to do nothing, and a second click closed the tab.
 - A shortcut set to an arrow moves the caret while one is in a text field, and runs the command only when nothing is being typed. Back on ⌘← and Forward on ⌘→ went back and forward in the address field, a panel, and a box on the page; so did any command on ⌘ or ⌥ with an arrow, ⇧ included for selecting. ⌘T, ⌘W and the other letter shortcuts are unchanged. ([#1064](https://github.com/driceroland/Search/issues/1064))

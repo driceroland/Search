@@ -725,9 +725,9 @@ struct DragStrip: NSViewRepresentable {
     }
 
     private final class Strip: NSView {
-        var reserved: CGFloat = 0
-        var below: CGFloat = 0
-        var trailing: CGFloat = 0
+        var reserved: CGFloat = 0 { didSet { if reserved != oldValue { aimCursor() } } }
+        var below: CGFloat = 0 { didSet { if below != oldValue { aimCursor() } } }
+        var trailing: CGFloat = 0 { didSet { if trailing != oldValue { aimCursor() } } }
         var onDoubleClick: (() -> Void)?
 
         private var pressed: NSEvent?
@@ -779,9 +779,24 @@ struct DragStrip: NSViewRepresentable {
             window.isMovable = count == 0
         }
 
+        /// A title bar's pointer is the arrow. The strip had no say in it,
+        /// so the I-beam a page or a field last set came along onto the
+        /// title bar and stayed through the whole drag of the window (#1094).
+        /// Only over the run the strip takes clicks in (see hitTest).
+        override func resetCursorRects() {
+            let room = NSRect(x: reserved, y: 0,
+                              width: max(0, bounds.width - trailing - reserved),
+                              height: max(0, bounds.height - below))
+            guard room.width > 0, room.height > 0 else { return }
+            addCursorRect(room, cursor: .arrow)
+        }
+
+        private func aimCursor() { window?.invalidateCursorRects(for: self) }
+
         override func mouseDown(with event: NSEvent) {
             pressed = event
             moved = false
+            NSCursor.arrow.set()
         }
 
         /// Here the window is let go for the one drag, handed to the system's
