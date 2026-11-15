@@ -5283,18 +5283,21 @@ final class Browser: NSObject, ObservableObject {
     func switchTabs(backwards: Bool) {
         guard let activeID else { return }
         tabSwitcher.partners = switcherPartners
-        tabSwitcher.step(row: switcherRow, current: activeSplit?.left ?? activeID,
+        let row = switcherRow
+        let current = activeSplit?.left ?? activeID
+        let start = row.contains(current) ? current : (tabSwitcher.lastLeft(among: Set(row), other: current) ?? row.first)
+        guard let start else { return }
+        tabSwitcher.step(row: row, current: start,
                          backwards: backwards, moons: LittleWindow.stacked, behindFirst: prefs.switcherBehindFirst)
     }
 
-    /// The row's tabs the switcher offers: not a pin put down, nor a grouped
-    /// tab put away, which hold no page and are drawn dimmed in the column as
-    /// closed (#1092). The tab you're on stays, whatever it is.
-    private var switcherRow: [Tab.ID] {
+    /// The row's tabs the switcher offers: unpinned tabs that stand in the
+    /// row, not a grouped tab put away (#1092, #1108).
+    var switcherRow: [Tab.ID] {
         let current = activeSplit?.left ?? activeID
         return tabs.filter { tab in
-            standsInRow(tab) && (tab.id == current || !tab.asleep
-                || (tab.pin == nil && !(prefs.usesTabGroups && group(of: tab) != nil)))
+            standsInRow(tab) && tab.pin == nil && (tab.id == current || !tab.asleep
+                || !(prefs.usesTabGroups && group(of: tab) != nil))
         }.map(\.id)
     }
 
