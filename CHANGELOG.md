@@ -53,6 +53,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- The floating video's window asks the page how far through the video is only while the pointer is over it, where it asked twice a second behind your back, and the page's check that the video is still the one floating runs when the page changes or a video starts playing, and every two seconds, where it ran four times a second.
 - An extension listening for tab group changes, or for the Mac going idle, is told when it happens, where Search had it ask for the groups every 3 seconds and for idleness every 15, for as long as it listened, each ask waking its worker. With nothing listening, nothing runs.
 - History reads and prepares its file away from the window, so a long history no longer holds up the first window opening.
 - Waking a tab that slept, with ⌘1–⌘9 or a click, brings its page up sooner: the page is asked for as its view reaches the window, not when a timer next looks, and the picture of the page as it was left comes off a moment after the new one has drawn, where it stayed up for half a second after the page arrived whatever the page had done. A page that draws late still has it off at half a second.

@@ -194,6 +194,9 @@ final class Float {
             }
         }
         controls.onSkip = { [weak self] seconds in self?.onSkip?(seconds) }
+        // Brought up to date as the pointer arrives, being asked for only
+        // while it is there.
+        controls.onEnter = { [weak self] in self?.refreshControls() }
         ground.addSubview(controls)
         self.controls = controls
 
@@ -226,11 +229,19 @@ final class Float {
                     return
                 }
 
-                self.onProgress? { through, playing in
-                    self.controls?.progress = through
-                    self.controls?.playing = playing
-                }
+                // The bar and the pause button are drawn only while the
+                // pointer is over the window: asked then, not every half
+                // second for a page nobody is looking at.
+                if self.controls?.isNear == true { self.refreshControls() }
             }
+        }
+    }
+
+    /// How far through the video is, and whether it plays, for the controls.
+    private func refreshControls() {
+        onProgress? { [weak self] through, playing in
+            self?.controls?.progress = through
+            self?.controls?.playing = playing
         }
     }
 
@@ -326,6 +337,7 @@ final class Float {
         var onReturn: (() -> Void)?
         var onPlayPause: (() -> Void)?
         var onSkip: ((Double) -> Void)?
+        var onEnter: (() -> Void)?
 
         var playing = true {
             didSet { pause.image = glyph(playing ? "pause.fill" : "play.fill", 17) }
@@ -344,6 +356,8 @@ final class Float {
         private let scrim = CAGradientLayer()
         private let line = Line()
         private var near = false
+        /// Whether the pointer is over the window, where the controls show.
+        var isNear: Bool { near }
 
         override init(frame: NSRect) {
             super.init(frame: frame)
@@ -433,7 +447,10 @@ final class Float {
             )
         }
 
-        override func mouseEntered(with event: NSEvent) { fade(to: 1) }
+        override func mouseEntered(with event: NSEvent) {
+            fade(to: 1)
+            onEnter?()
+        }
         override func mouseExited(with event: NSEvent) { fade(to: 0) }
 
         private func fade(to value: CGFloat) {
@@ -1198,10 +1215,15 @@ enum Isolate {
       // turns pure black while still holding a perfectly live page. That is the
       // black rectangle, and it is not an orphaned window at all.
       //
-      // So the mark is put back on whatever is playing now, four times a
-      // second, for as long as the page is out.
+      // So the mark is put back on whatever is playing now, for as long as
+      // the page is out: when a video starts to play, within a quarter of a
+      // second of the page's elements changing or the mark being taken off
+      // (a player rebuilding itself does both), and every two seconds for a
+      // page that does neither. It was every quarter of a second whether
+      // anything had changed or not.
+      if (window.__officeFloatUnwatch) window.__officeFloatUnwatch();
       clearInterval(window.__officeFloatWatch);
-      window.__officeFloatWatch = setInterval(function () {
+      var remark = function () {
         if (document.querySelector('[data-office-float]')) return;
         var again = null, most = 0;
         var all = document.querySelectorAll('video');
@@ -1215,7 +1237,23 @@ enum Isolate {
           }
         }
         if (again) again.setAttribute('data-office-float', '');
-      }, 250);
+      };
+      var queued = null;
+      var changes = new MutationObserver(function () {
+        if (!queued) queued = setTimeout(function () { queued = null; remark(); }, 250);
+      });
+      changes.observe(document.documentElement, {
+        childList: true, subtree: true, attributes: true, attributeFilter: ['data-office-float']
+      });
+      // Media events don't bubble: caught on the way down.
+      document.addEventListener('playing', remark, true);
+      window.__officeFloatWatch = setInterval(remark, 2000);
+      window.__officeFloatUnwatch = function () {
+        changes.disconnect();
+        clearTimeout(queued);
+        document.removeEventListener('playing', remark, true);
+        window.__officeFloatUnwatch = null;
+      };
 
       // Where the picture is once the rest of the page is out of the way,
       // as large as it goes whole and in the middle, for cutting it out of a
@@ -1316,6 +1354,7 @@ enum Isolate {
         // Floated again in the meantime: that is the float's now.
         if (window.__officeFloatLanding !== landing) return;
         window.__officeFloatLanding = null;
+        if (window.__officeFloatUnwatch) window.__officeFloatUnwatch();
         clearInterval(window.__officeFloatWatch);
         window.__officeFloatWatch = null;
         root.classList.remove('office-floating');
