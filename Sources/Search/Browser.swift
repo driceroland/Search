@@ -4164,6 +4164,8 @@ final class Browser: NSObject, ObservableObject {
         // wake is this the other case, one whose page quietly died while you
         // were elsewhere, which revive() checks for on its own.
         if !tab.wake() { tab.revive() }
+        // Show the page now rather than after SwiftUI's update (see PaneStage.show(now:)).
+        if activeSplit == nil, let window { PaneStage.stages.object(forKey: window)?.show(now: tab) }
         if let pair = activeSplit,
            let other = tabs.first(where: { $0.id == (pair.left == tab.id ? pair.right : pair.left) }),
            !other.isBlank, !other.wake() { other.revive() }

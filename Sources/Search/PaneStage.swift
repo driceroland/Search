@@ -543,6 +543,27 @@ final class PaneStage: NSView {
         watchClicks()
     }
 
+    /// Keeps `stages` pointing only at the window the stage is in.
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if let window, Self.stages.object(forKey: window) === self { Self.stages.removeObject(forKey: window) }
+        if let newWindow { Self.stages.setObject(self, forKey: newWindow) }
+    }
+
+    /// Each window's stage, so a tab switch can reach it before SwiftUI does.
+    static let stages = NSMapTable<NSWindow, PaneStage>.weakToWeakObjects()
+
+    /// Puts the picked tab on the stage right away instead of waiting for
+    /// SwiftUI to update the whole window. WebKit paints the page meanwhile,
+    /// and both still reach the screen in the same frame. Only one page
+    /// replacing another is handled here. Everything else is left to SwiftUI.
+    func show(now tab: Tab) {
+        guard window != nil, tabs.count == 1, split == nil, immersedID == nil, page(tab) != nil else { return }
+        apply([tab], split: nil, focused: tab.id)
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+    }
+
     // MARK: - the page under the pointer
 
     override func updateTrackingAreas() {
