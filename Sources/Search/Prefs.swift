@@ -510,7 +510,7 @@ final class Preferences: ObservableObject {
     @Published var littleFindsTabs: Bool {
         didSet { store.set(littleFindsTabs, forKey: "links.little.tabs") }
     }
-    /// CSS you write for a site (see SiteStyles). Off unless asked for.
+    /// Color, type, and code for a site (see SiteStyles). Off unless asked for.
     @Published var siteStyles: Bool {
         didSet {
             store.set(siteStyles, forKey: "styles.sites")

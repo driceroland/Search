@@ -216,7 +216,7 @@ struct SearchApp: App {
                 }
                 if browser.prefs.siteStyles {
                     Divider()
-                    Button("Style This Site…") { browser.styleThisSite() }
+                    Button("Customize Site…") { browser.styleThisSite() }
                         .shortcut("view.style")
                         .disabled(browser.styleHost == nil)
                 }
@@ -779,9 +779,13 @@ struct ContentView: View {
         }
         if browser.styling {
             ZStack(alignment: .topTrailing) {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture { browser.styling = false }
+                // While you're hiding things, a click has to reach the page.
+                // Otherwise it only closes the panel.
+                if !browser.veiling {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { browser.styling = false }
+                }
                 StylePanel(browser: browser)
                     .padding(.top, Metrics.strip + 8)
                     .padding(.trailing, 14)
