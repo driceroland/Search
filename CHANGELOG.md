@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Site icons no longer keep growing in memory as you browse, and an unusually large icon stops downloading rather than filling memory before it is turned away. Clearing History lets their cached pictures go too; open tabs keep theirs.
 - A session that runs for days keeps about the 2,000 places in memory that the history file keeps, the latest ones always among them, where memory held every page it had seen and the address field searched all of them on every key.
 - A peek waiting for its page no longer keeps the window busy drawing its loading light, even if the page never finishes loading.
 - Copy Address and Print in the card under the address, and Settings' own text, show the keys you set in Settings › Keyboard & Mouse, where they showed the default ones.
