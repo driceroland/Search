@@ -15,6 +15,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - With New tab in a floating field on, ⌘T over a tab in a group opens its new tab outside the group, where ⌘T's tab goes with the setting off. It joined the group of the tab the field was raised over. The same for an address typed into ⌘K over a grouped tab; ⌘Return from a grouped tab's address still opens in its group. Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1014](https://github.com/driceroland/Search/pull/1014))
 
+### Changed
+
+- The Web Inspector takes Chrome's colors. The tabs are a flat strip with the open one underlined, and the selected row, the type and the syntax colors follow DevTools. It follows the Mac, light or dark, and Settings › Appearance › Keep the Web Inspector dark keeps the tools dark while Search is light. The panels themselves, and the tools in them, stay Web Inspector's. ([#1101](https://github.com/driceroland/Search/issues/1101))
+
 ### Added
 
 - ⌘S can make the column icons only instead of hiding it, so the tabs stay in sight; ⌘S again brings the titles back. Off unless you turn on Settings › Appearance › Tabs › ⌘S makes the column icons only. Not with the tabs across the top, nor with the column hidden until the pointer reaches the edge. Asked for by [@vincent-caetano](https://github.com/vincent-caetano) ([#1008](https://github.com/driceroland/Search/issues/1008)). Thanks [@Chahine-tech](https://github.com/Chahine-tech) ([#1015](https://github.com/driceroland/Search/pull/1015))

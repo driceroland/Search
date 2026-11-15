@@ -135,6 +135,10 @@ enum SettingsIndex {
               title: "Darken pages that stay light", detail: "Pages with no dark look of their own are darkened too",
               more: "Sites with a dark look of their own already follow it. ⇧⌘D for the site you're on, ⌥⇧⌘D to pause everywhere.",
               keys: ["pages.dusk"], words: ["dark", "dusk", "night"], parent: "look"),
+        .init(id: "inspector.dark", group: "theme", icon: "moon.stars",
+              title: "Keep the Web Inspector dark", detail: "The tools stay dark while Search is light",
+              more: "Off, the inspector follows Appearance, light or dark with the Mac.",
+              keys: ["inspector.dark"], words: ["devtools", "inspect", "console"], parent: "look"),
         .init(id: "tabs.layout", group: "window", icon: "sidebar.left",
               title: "Tabs", detail: "Across the top of the window, down a side as a column, or as icons only",
               more: "Icons only is a narrow column of each tab's icon, the title in a tooltip. Nothing grows under the pointer.",
@@ -482,6 +486,7 @@ enum SettingsIndex {
     @MainActor static func applies(_ item: SettingsItem, _ prefs: Preferences) -> Bool {
         switch item.id {
         case "pages.dusk": return prefs.look != .light
+        case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
@@ -499,6 +504,7 @@ enum SettingsIndex {
     static func needs(_ item: SettingsItem) -> String {
         switch item.id {
         case "pages.dusk": return "Only while Search isn't set to Light"
+        case "inspector.dark": return "Only while Search isn't set to Dark"
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"

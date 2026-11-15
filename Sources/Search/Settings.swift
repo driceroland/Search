@@ -508,6 +508,7 @@ struct SettingsPanel: View {
                 (look, look == .system ? "Auto" : look.title, AnyView(LookPicture(look: look)))
             }, selection: $prefs.look)
         case "pages.dusk": Switch(on: $prefs.darkensPages)
+        case "inspector.dark": Switch(on: $prefs.inspectorDark)
         case "tabs.layout":
             Pictures(options: TabsLayout.allCases.map { ($0, $0.title, AnyView(LayoutPicture(layout: $0))) },
                      selection: Binding(
