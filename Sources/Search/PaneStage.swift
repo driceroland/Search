@@ -541,6 +541,22 @@ final class PaneStage: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         watchClicks()
+        if let window { Self.stages.setObject(self, forKey: window) }
+    }
+
+    /// Each window's stage, for a switch to reach before SwiftUI does.
+    static let stages = NSMapTable<NSWindow, PaneStage>.weakToWeakObjects()
+
+    /// The tab just picked, on the stage at once (Browser.select), rather
+    /// than after SwiftUI's pass over the whole window: WebKit paints the
+    /// page while that pass runs, and both still reach the screen in the
+    /// same frame. One page in place of one only; anything else is left
+    /// to SwiftUI.
+    func show(now tab: Tab) {
+        guard window != nil, tabs.count == 1, split == nil, immersedID == nil, page(tab) != nil else { return }
+        apply([tab], split: nil, focused: tab.id)
+        needsLayout = true
+        layoutSubtreeIfNeeded()
     }
 
     // MARK: - the page under the pointer
