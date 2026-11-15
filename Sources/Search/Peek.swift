@@ -229,19 +229,20 @@ struct PeekBadge: View {
 /// the window's own greys, with a light passing over it. Quick pages never
 /// show it: it comes in only after a moment.
 ///
-/// Cheap on purpose. The shapes are drawn once into a single layer, and the
-/// light is one gradient sliding across it under a mask, so each frame of
-/// the animation moves a layer and redraws nothing. Without motion, as the
-/// Mac's accessibility settings can ask, it is still.
+/// The light is moved by Core Animation: a perpetual SwiftUI animation lays
+/// out the window every frame, even if the page never finishes loading.
+/// Without motion, as the Mac's accessibility settings can ask, it is still.
 struct PeekSkeleton: View {
+    /// Unset in the app so the Mac's setting is read as the bones appear.
+    var reducedMotion: Bool? = nil
+
     /// The light: a step above the shapes' grey toward the ground in light,
     /// and away from it in dark, so it reads as a sheen in both.
-    static let light = Color(nsColor: NSColor(name: nil) { appearance in
+    static let light = NSColor(name: nil) { appearance in
         NSColor(white: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 0.225 : 0.975, alpha: 1)
-    })
+    }
 
     @State private var shown = false
-    @State private var sweep = false
 
     var body: some View {
         GeometryReader { geo in
@@ -250,23 +251,13 @@ struct PeekSkeleton: View {
                 Palette.ground
                 if shown {
                     ZStack {
-                        Bones(width: width).foregroundStyle(Palette.wash)
-                        if !Motion.reduced {
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .clear, location: 0),
-                                    .init(color: PeekSkeleton.light, location: 0.5),
-                                    .init(color: .clear, location: 1),
-                                ],
-                                startPoint: .leading, endPoint: .trailing
-                            )
-                            .frame(width: geo.size.width * 0.6)
-                            .offset(x: (sweep ? 1 : -1) * geo.size.width * 0.8)
-                            .mask(Bones(width: width))
+                        Bones(width: width).foregroundStyle(Palette.wash).drawingGroup()
+                        if !(reducedMotion ?? Motion.reduced) {
+                            PeekSweep()
+                                .mask(Bones(width: width))
                         }
                     }
                     .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                    .drawingGroup()
                     .transition(.opacity)
                 }
             }
@@ -275,8 +266,6 @@ struct PeekSkeleton: View {
         .task {
             try? await Task.sleep(for: .milliseconds(150))
             withAnimation(Motion.timed(.easeOut(duration: 0.2))) { shown = true }
-            guard !Motion.reduced else { return }
-            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: false)) { sweep = true }
         }
     }
 
@@ -319,6 +308,65 @@ struct PeekSkeleton: View {
 
         private func bar(_ length: CGFloat, _ height: CGFloat) -> some View {
             Capsule().frame(width: max(0, length), height: height)
+        }
+    }
+}
+
+/// A light passing over the bones, without waking SwiftUI for each frame.
+struct PeekSweep: NSViewRepresentable {
+    func makeNSView(context: Context) -> SweepView { SweepView() }
+    func updateNSView(_ view: SweepView, context: Context) {}
+
+    final class SweepView: NSView {
+        private let gradient = CAGradientLayer()
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            gradient.startPoint = CGPoint(x: 0, y: 0.5)
+            gradient.endPoint = CGPoint(x: 1, y: 0.5)
+            gradient.locations = [0, 0.5, 1]
+            layer?.addSublayer(gradient)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                let light = PeekSkeleton.light
+                gradient.colors = [light.withAlphaComponent(0).cgColor, light.cgColor, light.withAlphaComponent(0).cgColor]
+            }
+        }
+
+        override func layout() {
+            super.layout()
+            let sizeChanged = gradient.bounds.size != CGSize(width: bounds.width * 0.6, height: bounds.height)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            gradient.frame = CGRect(x: bounds.width * 0.2, y: 0, width: bounds.width * 0.6, height: bounds.height)
+            CATransaction.commit()
+            if sizeChanged { animate() }
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            viewDidChangeEffectiveAppearance()
+            animate()
+        }
+
+        private func animate() {
+            gradient.removeAnimation(forKey: "sweep")
+            guard window != nil, bounds.width > 0 else { return }
+            let sweep = CABasicAnimation(keyPath: "position.x")
+            sweep.fromValue = bounds.width * -0.3
+            sweep.toValue = bounds.width * 1.3
+            sweep.duration = 1.3
+            sweep.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            sweep.repeatCount = .infinity
+            gradient.add(sweep, forKey: "sweep")
         }
     }
 }
