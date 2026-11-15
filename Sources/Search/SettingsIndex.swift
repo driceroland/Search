@@ -270,7 +270,7 @@ enum SettingsIndex {
               more: "It goes back into its tab when you return, and stays put while its window is still in view on another screen. ⇧⌘P still floats one by hand.",
               keys: ["float.leave", "float.away"], words: ["pip", "picture in picture", "switch apps"], kind: .wide),
         .init(id: "float.minimize", group: "video", icon: "minus.circle",
-              title: "Minimize the floating video", detail: "A button tucks Search's window small. The same button brings it back",
+              title: "Minimize the floating video", detail: "A button tucks the floating video small. The same button brings it back",
               keys: ["float.minimize"], words: ["minimize", "pip", "collapse", "small"]),
         .init(id: "media.click", group: "video", icon: "play.slash",
               title: "Videos wait for a click", detail: "Videos don't start by themselves, even without sound",
