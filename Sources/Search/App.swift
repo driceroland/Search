@@ -1683,7 +1683,9 @@ struct ContentView: View {
 
         switch key {
         case "t" where !shifted:
-            browser.launch()
+            // Held down, the field stays as the press left it: its repeats
+            // would put it away and raise it again, over and over.
+            if !event.isARepeat { browser.launch() }
         case "t" where shifted:
             browser.reopen()
         case "c" where shifted:
