@@ -2807,14 +2807,25 @@ final class PageView: WKWebView {
 
     /// In, quickly: the page is there, and the fade only covers the frame
     /// between WebKit laying it out and putting it on screen.
+    ///
+    /// Once that frame has reached this window, not when WebKit reports
+    /// it: the page is drawn in its own process and arrives a few frames
+    /// later, and fading in before then showed the view's blank white.
     func showFirstFrame() {
         guard unpainted else { return }
         unpainted = false
-        onFirstFrame?()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Motion.seconds(PageView.fadeIn)
-            animator().alphaValue = 1
+        let show = { [weak self] in
+            guard let self else { return }
+            self.onFirstFrame?()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Motion.seconds(PageView.fadeIn)
+                self.animator().alphaValue = 1
+            }
         }
+        let presented = NSSelectorFromString("_doAfterNextPresentationUpdate:")
+        guard responds(to: presented) else { return show() }
+        typealias After = @convention(c) (AnyObject, Selector, @escaping @convention(block) () -> Void) -> Void
+        unsafeBitCast(method(for: presented), to: After.self)(self, presented, show)
     }
 
     /// How long the page takes to fade in, and so how long a picture over it
