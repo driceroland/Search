@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A custom search engine copied from another browser with {searchTerms}, or typed without https://, is used instead of falling back to Google.
 - The pointer is an arrow over the strip you drag the window by, where it could stay a text cursor from the page (#1094).
 - The ⌃Tab switcher no longer offers pins you put down or grouped tabs you put away (#1092).
 - A tab in a group whose page is put away, with the minus at the end of its row or ⌘W, dims, as a pinned tab put down does. The row looked just as it had, so the minus seemed to do nothing, and a second click closed the tab.
