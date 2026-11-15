@@ -25,6 +25,7 @@ final class FollowFileTests: XCTestCase {
         XCTAssertEqual(read, [
             "look", "navigationLeft", "sidebar", "sidePosition", "sideHides", "roomyTabs", "sideIcons", "sideWidth",
             "sidePanelWidth", "cards", "glyph", "tabsGive", "showsTabShortcuts", "bookmarksBar", "alwaysShowsDownloads",
+            "foldsToIcons", "instantMotion",
         ])
     }
 
