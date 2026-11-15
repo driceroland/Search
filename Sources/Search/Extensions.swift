@@ -413,6 +413,11 @@ final class Extensions: NSObject, ObservableObject {
                     guard let self, let browser else { return }
                     activated(from: pair.0, to: pair.1, in: browser)
                 },
+            // A group made, renamed, folded, moved or removed: the extensions
+            // listening for tab groups are told, where they used to ask.
+            browser.$tabGroups
+                .dropFirst()
+                .sink { _ in ExtensionWatch.groups.changed() },
         ]
     }
 
@@ -431,6 +436,7 @@ final class Extensions: NSObject, ObservableObject {
             watching[id] = nil
         }
         if let window = windows.removeValue(forKey: key) { controller.didCloseWindow(window) }
+        ExtensionWatch.groups.changed()
     }
 
     /// A window came to the front (windows.onFocusChanged).
@@ -505,6 +511,8 @@ final class Extensions: NSObject, ObservableObject {
             }
         }
         orders[key] = ids
+        // A tab opened or closed can make a group or end one.
+        ExtensionWatch.groups.changed()
     }
 
     /// A page you see that is in no window's row: a peek (Peek.swift), or
@@ -560,6 +568,9 @@ final class Extensions: NSObject, ObservableObject {
             tab.$address.dropFirst().removeDuplicates().sink { _ in changed(.URL) },
             tab.$loading.dropFirst().removeDuplicates().sink { _ in changed(.loading) },
             tab.$pin.dropFirst().map { $0 != nil }.removeDuplicates().sink { _ in changed(.pinned) },
+            // Into a group or out of one: a group shows to an extension
+            // only while it has a tab.
+            tab.$groupID.dropFirst().removeDuplicates().sink { _ in ExtensionWatch.groups.changed() },
         ]
     }
 
@@ -1956,6 +1967,10 @@ extension Extensions: WKWebExtensionControllerDelegate {
         }
         if port.applicationIdentifier == ExtensionSocket.name {
             ExtensionSocket.connect(port, from: extensionContext.uniqueIdentifier)
+            return
+        }
+        if port.applicationIdentifier == ExtensionWatch.groupsPort || port.applicationIdentifier == ExtensionWatch.idlePort {
+            try ExtensionWatch.connect(port, from: extensionContext)
             return
         }
         // The port a worker's shim opens only to find what ports share; it
