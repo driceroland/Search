@@ -370,6 +370,11 @@ final class SidePanelPages: NSObject {
         bound[ObjectIdentifier(browser)]?[tab]
     }
 
+    /// A window gone for good: none of its tabs will bring a panel back.
+    func forget(in browser: Browser) {
+        bound[ObjectIdentifier(browser)] = nil
+    }
+
     /// An extension gone: its panels with it.
     func forget(_ id: String) {
         for browser in Browsers.all {

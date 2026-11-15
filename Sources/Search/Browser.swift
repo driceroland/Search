@@ -3532,6 +3532,8 @@ final class Browser: NSObject, ObservableObject {
         if floating != nil { land(covering: false) }
         if pictured != nil { unpicture() }
         if peekTab != nil { closePeek() }
+        closeSidePanel()
+        SidePanelPages.shared.forget(in: self)
         for tab in tabs + parkedTabs { tab.close() }
         parked = [:]
         splits = []
