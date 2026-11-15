@@ -287,14 +287,14 @@ enum SettingsIndex {
         .init(id: "pageZoom", group: "pages", icon: "plus.magnifyingglass",
               title: "Page zoom", detail: "Where every site starts. ⌘+ and ⌘− are kept for each site",
               keys: ["pageZoom"], words: ["zoom", "size", "scale"]),
+        .init(id: "styles.sites", group: "pages", icon: "paintbrush",
+              title: "Customize sites", detail: "Color, type, and code for the site you're on",
+              more: "View › Customize Site, or right-click a tab. Kept on this Mac. A web address in the CSS is left out.",
+              keys: ["styles.sites"], words: ["css", "style", "stylesheet", "boost", "arc", "custom css", "javascript", "font", "color", "colour", "customize"]),
         .init(id: "pages.120", group: "pages", icon: "speedometer",
               title: "Pages at 120 Hz", detail: "Smoother scrolling on screens that can. On power spares the battery",
               more: "Animations and scrolling in pages at up to 120 frames a second, instead of 60 as in Safari.",
               keys: ["pages.120.mode", "pages.120"], words: ["promotion", "frame rate", "fps", "smooth", "120"]),
-        .init(id: "styles.sites", group: "pages", icon: "paintbrush",
-              title: "Your own styles for a site", detail: "CSS you write for a site, applied before the page draws",
-              more: "View › Style This Site… writes it. A web address or an imported sheet is left out, so nothing is fetched. Nothing leaves this Mac.",
-              keys: ["styles.sites"], words: ["css", "style", "stylesheet", "boost", "arc", "custom css"]),
 
         // Spaces & Pins
         .init(id: "arc.setup", group: "arc", icon: "wand.and.stars",

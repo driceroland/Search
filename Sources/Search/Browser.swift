@@ -737,24 +737,25 @@ final class Browser: NSObject, ObservableObject {
     @Published var reviewing = false {
         didSet { if !reviewing { stopPeeking() } }
     }
-    /// True while the site's own styles are being edited.
+    /// True while this site's look is being edited.
     @Published var styling = false
 
     var hereHost: String? { curtain.host(of: active?.address) }
     /// The site a style is kept for: a web page, named without www.
     var styleHost: String? { Dusk.host(of: active?.address) }
 
-    /// View › Style This Site…. The switch is Settings › Browsing; off, this
-    /// opens it instead of a panel about a feature that isn't on.
+    /// View › Customize Site…, and the same item in a tab's menu. The switch
+    /// is Settings › Browsing › Pages; off, this opens it instead of a panel
+    /// about a feature that isn't on.
     func styleThisSite() {
         guard prefs.siteStyles else {
             settingsPage = .browsing
             tuning = true
-            announce("Turn on your own styles in Settings › Browsing")
+            announce("Turn on Customize sites in Settings › Browsing › Pages")
             return
         }
         guard styleHost != nil else {
-            announce("Styles work on websites")
+            announce("This works on websites.")
             return
         }
         reviewing = false

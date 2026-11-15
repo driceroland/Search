@@ -48,4 +48,44 @@ final class SiteStylesTests: XCTestCase {
         XCTAssertEqual(cleaned.css.count, SiteStyles.limit)
         XCTAssertTrue(cleaned.shortened)
     }
+
+    func testArrangesARule() {
+        XCTAssertEqual(
+            SiteStyles.arranged("body { background: #fff; color: #111; }"),
+            "body {\n  background: #fff;\n  color: #111;\n}"
+        )
+        let nested = "@media (max-width: 600px) { body { color: red; } }"
+        XCTAssertEqual(SiteStyles.arranged(SiteStyles.arranged(nested)), SiteStyles.arranged(nested))
+        let quoted = SiteStyles.arranged(".a { background: url(\"not)a.png\"); color: red }")
+        XCTAssertTrue(quoted.contains("url(\"not)a.png\")"))
+        XCTAssertEqual(SiteStyles.arranged(quoted), quoted)
+    }
+
+    func testArrangesJavaScript() {
+        XCTAssertEqual(
+            SiteStyles.arrangedScript("function hello() { const x = 1; return x; }"),
+            "function hello() {\n  const x = 1;\n  return x;\n}"
+        )
+        XCTAssertEqual(
+            SiteStyles.arrangedScript("for (let i = 0; i < 3; i++) { console.log(i); }"),
+            "for (let i = 0; i < 3; i++) {\n  console.log(i);\n}"
+        )
+        let quoted = SiteStyles.arrangedScript("const s = \"a;{b}\";")
+        XCTAssertTrue(quoted.contains("\"a;{b}\""))
+        XCTAssertEqual(SiteStyles.arrangedScript(quoted), quoted)
+        let pattern = SiteStyles.arrangedScript("const r = /a{1,2}/g;")
+        XCTAssertTrue(pattern.contains("/a{1,2}/g"))
+        XCTAssertEqual(SiteStyles.arrangedScript(pattern), pattern)
+    }
+
+    func testComposedKeepsAColorAndDropsAWebAddress() {
+        var look = SiteLook()
+        look.text = "#112233"
+        look.css = "a { background: url(https://evil.example/a.png) }"
+        let sheet = SiteStyles.composed(look)
+        XCTAssertTrue(sheet.contains("color: #112233"))
+        XCTAssertFalse(sheet.contains("evil"))
+        look.on = false
+        XCTAssertTrue(SiteStyles.composed(look).isEmpty)
+    }
 }

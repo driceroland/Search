@@ -150,7 +150,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Todoist and Clockify extensions** *(email)*
 - [ ] **Dia pins and spaces import** *(email)*
 - [ ] **Full screen on ⌃⌘F** *(email)*
-- [ ] **Your own CSS and JS for a site, like Arc's Boosts** Built in, no extension needed; edit what you wrote; off by default *(email)*
 - [ ] **Bigger text in the sidebar** Sidebar tab titles feel small; no way to size them *(email)*
 - [ ] **A button to dock or float the sidebar** As ⌘S does, from the sidebar itself *([#852](https://github.com/driceroland/Search/issues/852))*
 - [ ] **One live pin shared by every space** A pin kept in every space could be one tab, the same page and playback in each space, rather than a copy per space. As an option. *([#875](https://github.com/driceroland/Search/issues/875))*

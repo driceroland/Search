@@ -1196,12 +1196,18 @@ final class Tab: ObservableObject, Identifiable {
         if !css.isEmpty {
             add(Veiling.style(css), .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
-        // The site's own styles, the main frame only: an embedded frame is
-        // some other page. Off, or a site with nothing written, adds none
-        // (see SiteStyles).
-        if SiteStyles.on, let host = Dusk.host(of: url ?? pageAddress),
-           let sheet = SiteStyles.shared.css(on: host), !sheet.isEmpty {
-            add(Veiling.style(sheet, id: SiteStyles.element), .atDocumentStart, mainFrameOnly: true, in: Web.world)
+        // This site's own look, the main frame only: an embedded frame is
+        // some other page. Off, or a site with nothing set, adds none.
+        // The JavaScript waits until the page has loaded and runs in the
+        // page's own world, so it can change the page; it is not run again
+        // when a color changes (see SiteStyles).
+        if SiteStyles.on, let host = Dusk.host(of: url ?? pageAddress) {
+            if let sheet = SiteStyles.shared.css(on: host), !sheet.isEmpty {
+                add(Veiling.style(sheet, id: SiteStyles.element), .atDocumentStart, mainFrameOnly: true, in: Web.world)
+            }
+            if let source = SiteStyles.shared.script(on: host) {
+                add(source, .atDocumentEnd, mainFrameOnly: true, in: .page)
+            }
         }
         // The same scripts as the document before's, the usual case, are
         // left where they are: taken out and put back, every one was sent to

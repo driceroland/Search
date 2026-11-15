@@ -1667,6 +1667,13 @@ struct TabMenu: View {
             browser.beginTabEdit(tab)
         }
         .disabled(tab.isBlank || tab.address == nil || tab.pin != nil)
+        if browser.prefs.siteStyles {
+            Button("Customize Site…") {
+                if browser.activeID != tab.id { browser.select(tab) }
+                browser.styleThisSite()
+            }
+            .disabled(!tab.isWeb)
+        }
         Button("Copy Address") {
             browser.select(tab)
             browser.copyAddress()
