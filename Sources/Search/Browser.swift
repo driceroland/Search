@@ -5281,8 +5281,19 @@ final class Browser: NSObject, ObservableObject {
     func switchTabs(backwards: Bool) {
         guard let activeID else { return }
         tabSwitcher.partners = switcherPartners
-        tabSwitcher.step(row: tabs.filter(standsInRow).map(\.id), current: activeSplit?.left ?? activeID,
+        tabSwitcher.step(row: switcherRow, current: activeSplit?.left ?? activeID,
                          backwards: backwards, moons: LittleWindow.stacked, behindFirst: prefs.switcherBehindFirst)
+    }
+
+    /// The row's tabs the switcher offers: not a pin put down, nor a grouped
+    /// tab put away, which hold no page and are drawn dimmed in the column as
+    /// closed (#1092). The tab you're on stays, whatever it is.
+    private var switcherRow: [Tab.ID] {
+        let current = activeSplit?.left ?? activeID
+        return tabs.filter { tab in
+            standsInRow(tab) && (tab.id == current || !tab.asleep
+                || (tab.pin == nil && !(prefs.usesTabGroups && group(of: tab) != nil)))
+        }.map(\.id)
     }
 
     /// A pair once, under its first page, pictured with its other one.
@@ -5293,7 +5304,7 @@ final class Browser: NSObject, ObservableObject {
     /// The row as the switcher's grid shows it, for a small window's
     /// switcher to show as its planet (see TabSwitcher.ordered).
     var switcherPlanet: [Tab.ID] {
-        tabSwitcher.ordered(row: tabs.filter(standsInRow).map(\.id), current: activeSplit?.left ?? activeID,
+        tabSwitcher.ordered(row: switcherRow, current: activeSplit?.left ?? activeID,
                             behindFirst: prefs.switcherBehindFirst)
     }
 
