@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Copy Address and Print in the card under the address, and Settings' own text, show the keys you set in Settings › Keyboard & Mouse, where they showed the default ones.
 - A saved site shortcut can be edited: click it in Settings to change it, where it had to be deleted and added again.
 - A custom search engine copied from another browser with {searchTerms}, or typed without https://, is used instead of falling back to Google.
 - The pointer is an arrow over the strip you drag the window by, where it could stay a text cursor from the page (#1094).

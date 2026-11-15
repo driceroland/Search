@@ -323,6 +323,30 @@ final class ShortcutStore: ObservableObject {
 
     func isChanged(_ id: String) -> Bool { changed[id] != nil }
 
+    /// Words that name a key, with each key moved in Settings › Shortcuts
+    /// said as it is now: "⌘S keeps the tabs out" once the fold is on ⌥⌘S.
+    /// Whole keys only, so ⇧⌘S is never read as ⌘S; a key taken away
+    /// altogether is left as written.
+    func relabel(_ text: String) -> String {
+        guard !changed.isEmpty, text.contains(where: { "⌃⌥⇧⌘".contains($0) }) else { return text }
+        var moved: [String: String] = [:]
+        for command in Command.all where changed[command.id] != nil {
+            guard let was = command.defaultKey?.display, let now = key(for: command.id)?.display, now != was else { continue }
+            moved[was] = now
+        }
+        guard !moved.isEmpty else { return text }
+        let whole = NSRange(text.startIndex..., in: text)
+        var out = text
+        for match in ShortcutStore.keyWords.matches(in: text, range: whole).reversed() {
+            guard let range = Range(match.range, in: text), let now = moved[String(text[range])] else { continue }
+            out.replaceSubrange(range, with: now)
+        }
+        return out
+    }
+
+    /// A key as menus write it: its modifiers, then the key (see KeyCombo.display).
+    private static let keyWords = try! NSRegularExpression(pattern: "[⌃⌥⇧⌘]+(?:Space|[^\\s⌃⌥⇧⌘])")
+
     /// A press of the recent-tabs switcher's key, and whether it walks back:
     /// its key as set, or the same with ⇧ added. Nil for any other key.
     func recentSwitch(_ event: NSEvent) -> Bool? {

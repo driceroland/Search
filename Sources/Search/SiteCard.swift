@@ -246,9 +246,9 @@ struct SiteCard: View {
             if let safety {
                 Row(safety.title, submenu: true) { deeper = true }
             }
-            Row("Copy Address", keys: "⇧⌘C") { after { browser.copyAddress() } }
+            Row("Copy Address", keys: ShortcutStore.shared.key(for: "tabs.copyAddress")?.display ?? "") { after { browser.copyAddress() } }
             Separator()
-            Row("Print…", keys: "⌘P") { after { browser.printPage() } }
+            Row("Print…", keys: ShortcutStore.shared.key(for: "file.print")?.display ?? "") { after { browser.printPage() } }
             zoom
             blocker
             if let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {

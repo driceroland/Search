@@ -20,6 +20,8 @@ struct SettingsPanel: View {
 
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shield = Shield.shared
+    /// The keys rows name, as Settings › Shortcuts has them now.
+    @ObservedObject private var shortcuts = ShortcutStore.shared
     @State private var isDefault = Links.isDefault
     /// A site shortcut being written, kept out of Preferences until it's saved.
     @State private var draft: Keyword?
@@ -364,9 +366,9 @@ struct SettingsPanel: View {
         let counts = SettingsIndex.applies(item, prefs)
         return SettingRow(
             icon: item.icon,
-            title: title(of: item),
-            detail: counts ? detail(of: item) : SettingsIndex.needs(item),
-            more: counts ? item.more : nil,
+            title: shortcuts.relabel(title(of: item)),
+            detail: shortcuts.relabel(counts ? detail(of: item) : SettingsIndex.needs(item)),
+            more: counts ? item.more.map(shortcuts.relabel) : nil,
             wide: item.kind == .wide,
             lit: lit == item.id
         ) {
