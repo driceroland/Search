@@ -2337,6 +2337,39 @@ final class Browser: NSObject, ObservableObject {
     /// and the History menu can offer them by name.
     @Published private(set) var ghosts: [Ghost] = []
 
+    /// The close ⌘Z may undo (Settings › Tabs › ⌘Z reopens a closed tab):
+    /// one only, and only while it is still the last thing done. Any key or
+    /// click after it lets it go (ContentView.take, watchKeys); so does the
+    /// row or the tab in front changing some other way, a swipe or a page
+    /// opening a tab of its own, which `scene` catches. One for the whole
+    /// app: a close in one window, then something done in another, isn't
+    /// the last thing done any more.
+    struct LastClose {
+        weak var browser: Browser?
+        let ghost: Ghost.ID
+        /// The row and the tab in front just after the close, read once it
+        /// has settled.
+        var scene: [Tab.ID]?
+    }
+    static var lastClose: LastClose?
+
+    /// What `LastClose.scene` compares: the tab in front, then the row.
+    private var closeScene: [Tab.ID] { [activeID].compactMap { $0 } + tabs.map(\.id) }
+
+    /// Whether ⌘Z brings back a close: the one made last here, with nothing
+    /// done since, not even a window closed.
+    var canUndoClose: Bool {
+        guard let last = Browser.lastClose, last.browser === self, let ghost = ghosts.last, ghost.id == last.ghost,
+              (Browsers.lastClosedAt ?? .distantPast) <= ghost.at else { return false }
+        return last.scene == nil || last.scene == closeScene
+    }
+
+    /// ⌘Z, just after a close: what ⇧⌘T would bring back, once.
+    func undoClose() {
+        Browser.lastClose = nil
+        reopen()
+    }
+
     /// Groups closed with Close Group, kept while a tab they held can still
     /// come back with ⌘⇧T: the first one back brings its group back too,
     /// named as it was and where it was among the others.
@@ -4649,6 +4682,16 @@ final class Browser: NSObject, ObservableObject {
                             partner: partner, onLeft: onLeft, was: tab.id, batch: batching?.id,
                             kind: batching?.kind ?? .clear, muted: tab.muted,
                             keepsake: tab.keepsake.map(Keepsake.init)))
+        // ⌘Z's to undo, while it stays the last thing done. The row is read
+        // once the close is through: a tab in front still to be chosen, a
+        // bulk close's other tabs still to go.
+        if let id = ghosts.last?.id {
+            Browser.lastClose = LastClose(browser: self, ghost: id)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, Browser.lastClose?.ghost == id else { return }
+                Browser.lastClose?.scene = self.closeScene
+            }
+        }
         // Twelve steps back, a Clear counting as one: its tabs come back
         // together or not at all, however many there were.
         var steps = Set<UUID>()

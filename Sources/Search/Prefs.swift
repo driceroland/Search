@@ -287,6 +287,11 @@ final class Preferences: ObservableObject {
     @Published var closeGoesBack: Bool {
         didSet { store.set(closeGoesBack, forKey: "tabs.closeGoesBack") }
     }
+    /// ⌘Z reopens the tab just closed, as in Safari, while closing it is
+    /// still the last thing done (Browser.lastClose). Off unless asked for.
+    @Published var undoReopensTab: Bool {
+        didSet { store.set(undoReopensTab, forKey: "tabs.undoReopens") }
+    }
     /// ⌃Tab shows a link opened behind the page right after the page, so a
     /// quick ⌃Tab goes to it; off, the tab left last keeps that place and
     /// the link comes next (see TabSwitcher.ordered). Off unless asked for.
@@ -812,6 +817,7 @@ final class Preferences: ObservableObject {
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
+        undoReopensTab = store.bool(forKey: "tabs.undoReopens")
         switcherBehindFirst = store.bool(forKey: "tabs.switcherBehindFirst")
         frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
