@@ -345,8 +345,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     /// first. Never a private tab, nor one a script opened. Three at most.
     private func openTabs(matching typed: String, for target: Browser) -> [Suggestion] {
         var found: [Suggestion] = []
-        let windows = [target] + Browsers.all.reversed().filter { $0 !== target }
-        for browser in windows where browser.isOpen && !browser.isPopup && browser.profileID == target.profileID {
+        for browser in windows(for: target) {
             for offer in browser.openPages(matching: typed, front: true) {
                 guard let id = offer.tab, let tab = browser.tabs.first(where: { $0.id == id }),
                       !tab.shy, !tab.bench else { continue }
@@ -355,6 +354,25 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
             }
         }
         return found
+    }
+
+    /// The tab that already has `url`, among the same tabs as the rows
+    /// (openTabs) but not only the three listed: Return goes there rather
+    /// than opening the page a second time.
+    private func openTab(for url: URL, in target: Browser) -> (owner: Browser, id: Tab.ID)? {
+        for browser in windows(for: target) {
+            if let tab = browser.tabs.first(where: { !$0.shy && !$0.bench && Browser.samePage(url, $0.address) }) {
+                return (browser, tab.id)
+            }
+        }
+        return nil
+    }
+
+    /// The windows of the profile the field was raised for, the one in
+    /// front first.
+    private func windows(for target: Browser) -> [Browser] {
+        ([target] + Browsers.all.reversed().filter { $0 !== target })
+            .filter { $0.isOpen && !$0.isPopup && $0.profileID == target.profileID }
     }
 
     // MARK: - going there
@@ -377,9 +395,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         if let chosen, let id = chosen.tab,
            let owner = Browsers.all.first(where: { browser in browser.tabs.contains { $0.id == id } }) {
             dismiss(keeping: false)
-            Browsers.bringBack()
-            owner.bringForward(id)
-            Self.bringUp(owner)
+            go(to: id, in: owner)
             comeForward()
             return
         }
@@ -412,10 +428,21 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
             let browser = Browsers.ensureWindow()
             browser.show(page)
             Self.bringUp(browser)
+        } else if let open = openTab(for: url, in: target) {
+            // Already open — typed out, finished by the grey ending, or a row
+            // lower than the open pages reach: that tab, not a second one.
+            go(to: open.id, in: open.owner)
         } else {
             Links.land(url)
         }
         comeForward()
+    }
+
+    /// A tab already open, in its window, on screen.
+    private func go(to id: Tab.ID, in owner: Browser) {
+        Browsers.bringBack()
+        owner.bringForward(id)
+        Self.bringUp(owner)
     }
 
     private func comeForward() { Links.comeForward(lookedAt: true) }

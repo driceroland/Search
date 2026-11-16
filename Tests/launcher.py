@@ -73,6 +73,21 @@ try:
     t.ok("Return on it goes to that tab", s["up"] is False and s["active"] == plain, s)
     t.ok("…with no tab opened for it", len(s["tabs"]) == count, (count, len(s["tabs"])))
 
+    # Typed out, nothing picked: the tab that has it, never a private one.
+    la("fire")
+    la("type", text=f"{sv.BASE}/launcher-secret")
+    s = la("submit")
+    again = [x for x in s["tabs"] if x["address"].endswith("/launcher-secret")]
+    front = next((x for x in again if x["id"] == s["active"]), {})
+    t.ok("an address open only in a private tab gets an ordinary tab of its own",
+         len(s["tabs"]) == count + 1 and len(again) == 2 and front.get("private") is False, s["tabs"])
+    count = len(s["tabs"])
+    la("fire")
+    la("type", text=f"{sv.BASE}/launcher-plain")
+    s = la("submit")
+    t.ok("an address already open, typed out, goes to its tab",
+         s["up"] is False and s["active"] == plain and len(s["tabs"]) == count, s)
+
     la("fire")
     la("type", text="kept words")
     s = la("escape")
