@@ -282,9 +282,11 @@ struct SearchApp: App {
                     let rows = browser.prefs.showsPinRows
                     if tab.pin == nil {
                         Button("Pin Tab") { browser.pin(tab) }
+                            .shortcut("tabs.pin")
                             .disabled(!tab.isWeb || tab.shy)
                         if rows {
                             Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
+                                .shortcut("tabs.pinRow")
                                 .disabled(!tab.isWeb || tab.shy)
                         }
                     } else {
@@ -295,6 +297,7 @@ struct SearchApp: App {
                             Button("Change Letter") { browser.editLetter(tab) }
                         }
                         Button("Unpin Tab") { browser.unpin(tab) }
+                            .shortcut(rows && tab.listed ? "tabs.pinRow" : "tabs.pin")
                     }
                 }
                 Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }

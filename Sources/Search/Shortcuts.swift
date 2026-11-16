@@ -252,6 +252,17 @@ struct Command: Identifiable {
             guard browser.prefs.splitView, let tab = browser.active else { return }
             browser.detachSplit(tab)
         },
+        // No key until you give one: either unpins a pinned tab, as ⌥⌘N
+        // takes away the split it made. With the rows off every pin is a
+        // square, and so is the row's.
+        Command("tabs.pin", "Pin Tab", .tabs, nil) { browser in
+            guard let tab = browser.active else { return }
+            if tab.pin != nil { browser.unpin(tab) } else if tab.isWeb { browser.pin(tab) }
+        },
+        Command("tabs.pinRow", "Pin Tab as Row", .tabs, nil) { browser in
+            guard let tab = browser.active else { return }
+            if tab.pin != nil { browser.unpin(tab) } else if tab.isWeb { browser.pin(tab, listed: browser.prefs.showsPinRows) }
+        },
         Command("tabs.rename", "Rename Tab", .tabs, nil) { browser in
             if let tab = browser.active { browser.beginTabRename(tab) }
         },

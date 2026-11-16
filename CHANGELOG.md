@@ -50,6 +50,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Pin Tab and Pin Tab as Row can have keys of their own, in Settings › Keyboard & Mouse. On a pinned tab, either key unpins it; with pins as rows off, Pin Tab as Row pins a square. No key until you give one.
 - Shorter tab bar, in Settings › Appearance › Window: with the tabs across the top, the bar is only a few points taller than its tabs, 36 points where it is 52, and leaves the rest to the page. The window's three buttons stay on the row's middle. Off unless turned on.
 - Minimize the floating video, off unless you turn it on in Settings › Browsing. A button tucks the window into a corner, and a click on that button brings it back. Close, and the arrow back to the tab, stay as they are.
 - Reduce animations makes everything in Search's interface happen at once: the tab ⌘1–⌘9 picks is lit and shown with no glide, a space, a panel or a page's first frame comes without sliding or fading, for Search alone and whatever Reduce Motion in System Settings says. Off unless you turn on Settings › Appearance › Motion › Reduce animations.
