@@ -33,8 +33,11 @@ enum Reader {
         "#office-reader h1{font:600 30px/1.24 -apple-system,BlinkMacSystemFont,sans-serif;",
         "margin:0 0 8px;letter-spacing:-0.01em}",
         "#office-reader .office-from{font:400 12px/1 -apple-system,sans-serif;color:var(--r-quiet);",
-        "margin:0 0 40px;text-transform:uppercase;letter-spacing:.06em}",
-        "#office-reader p{margin:0 0 1.35em}",
+        "margin:0 0 40px;text-transform:uppercase;letter-spacing:.06em;text-align:start;hyphens:manual}",
+        // WebKit can choose line breaks across the paragraph to avoid short
+        // last lines and uneven spacing. Older engines keep normal wrapping.
+        "#office-reader p{margin:0 0 1.35em;text-align:justify;text-align-last:start;",
+        "-webkit-hyphens:auto;hyphens:auto;text-wrap:pretty}",
         "#office-reader img,#office-reader video,#office-reader iframe{max-width:100%;",
         "height:auto;border-radius:6px;margin:1.6em 0;display:block}",
         // A photo, a touch dimmer on dark, so it doesn't glare.
