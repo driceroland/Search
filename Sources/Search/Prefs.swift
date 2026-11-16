@@ -293,6 +293,11 @@ final class Preferences: ObservableObject {
     @Published var switcherBehindFirst: Bool {
         didSet { store.set(switcherBehindFirst, forKey: "tabs.switcherBehindFirst") }
     }
+    /// The ⌃Tab switcher leaves out pinned tabs, showing only regular open
+    /// tabs (see Browser.switcherRow). Off unless asked for (#1110).
+    @Published var switcherLeavesOutPins: Bool {
+        didSet { store.set(switcherLeavesOutPins, forKey: "tabs.switcherLeavesOutPins") }
+    }
     /// Where a new tab goes in the row. Next unless asked for.
     @Published var newTabPlace: NewTabPlace {
         didSet { store.set(newTabPlace.rawValue, forKey: "tabs.newPlace") }
@@ -813,6 +818,7 @@ final class Preferences: ObservableObject {
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
         switcherBehindFirst = store.bool(forKey: "tabs.switcherBehindFirst")
+        switcherLeavesOutPins = store.bool(forKey: "tabs.switcherLeavesOutPins")
         frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)

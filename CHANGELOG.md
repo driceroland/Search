@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Settings › Tabs can exclude pinned tabs from the ⌃Tab switcher: with it turned on, the switcher displays only regular unpinned tabs ([#1110](https://github.com/driceroland/Search/issues/1110)).
 - With New tab in a floating field on, ⌘T held down leaves the field as the press left it, up or put away. Each of the key's repeats put the field away or raised it again, so it flickered and stayed wherever the count left it.
 - With the window on a display other than the Mac's first one, extensions find the tab they name again: a private tab reads `incognito: true` to an extension let into private tabs, and tabs.move, tabs.discard and the other calls that find a tab by its place work. WebKit gives a window's frame turned over by the height of the window's own screen, and Search turned it back by the first screen's.
 - A side panel's page goes with its window when the window closes for good, instead of staying in memory unseen.
