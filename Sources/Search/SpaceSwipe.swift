@@ -1,5 +1,59 @@
 import SwiftUI
 
+/// A sideways gesture must not change how far down the outgoing column is.
+/// Keep the native clip position until the swipe settles. This also catches
+/// AppKit adjusting the scroll view during a live trackpad scroll session.
+@MainActor
+final class SpaceSwipeScroll {
+    private weak var browser: Browser?
+    private weak var scroll: NSScrollView?
+    private let space: UUID
+    private let origin: NSPoint
+    private var observation: NSObjectProtocol?
+    private var restoring = false
+
+    init?(browser: Browser) {
+        guard let root = browser.window?.contentView else { return nil }
+        func column(in view: NSView) -> NSScrollView? {
+            if let scroll = view as? NSScrollView {
+                let frame = scroll.convert(scroll.bounds, to: root)
+                let width = browser.prefs.columnWidth
+                let atEdge = browser.prefs.sidePosition == .right
+                    ? frame.minX >= root.bounds.width - width - 1 : frame.maxX <= width + 1
+                if atEdge, frame.width <= width + 1, frame.height > 60 { return scroll }
+            }
+            for child in view.subviews {
+                if let found = column(in: child) { return found }
+            }
+            return nil
+        }
+        guard let scroll = column(in: root) else { return nil }
+        self.browser = browser
+        self.scroll = scroll
+        space = browser.spaceID
+        origin = scroll.contentView.bounds.origin
+        scroll.contentView.postsBoundsChangedNotifications = true
+        observation = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.restore() }
+        }
+    }
+
+    private func restore() {
+        guard !restoring, browser?.spaceID == space, let scroll,
+              scroll.contentView.bounds.origin != origin else { return }
+        restoring = true
+        scroll.contentView.scroll(to: origin)
+        scroll.reflectScrolledClipView(scroll.contentView)
+        restoring = false
+    }
+
+    deinit {
+        if let observation { NotificationCenter.default.removeObserver(observation) }
+    }
+}
+
 // Spaces, paged through: in the column, two fingers sideways go from one to
 // the next, the rows following them, as in Arc; in the bar across the top,
 // the same up and down, the row of tabs following them — or a mouse wheel's
@@ -284,6 +338,7 @@ final class SpaceSwipe {
                     browser.makingSpace = true
                 } else {
                     browser.makingSpace = false
+                    browser.spaceSwipeLanding = browser.spaces[target].id
                     browser.switchSpace(to: browser.spaces[target].id)
                 }
                 browser.spaceSwipe = 0

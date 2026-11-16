@@ -2429,10 +2429,21 @@ final class Browser: NSObject, ObservableObject {
     /// bar with it. The window hears only which way it goes, which is what
     /// decides whether a neighbour's rows are drawn.
     let spaceSwipeOffset = SwipeOffset()
+    private var spaceSwipeScroll: SpaceSwipeScroll?
+    /// The live column replaces a preview at its top, without then
+    /// recentering the selected tab. A direct space switch still reveals it.
+    var spaceSwipeLanding: UUID?
     @Published private(set) var spaceSwipeSide = 0
     var spaceSwipe: CGFloat {
         get { spaceSwipeOffset.value }
         set {
+            // Capture before publishing the first sideways movement: AppKit
+            // may adjust the clip view as SwiftUI moves the column.
+            if newValue != 0, spaceSwipeOffset.value == 0, prefs.sidebar {
+                spaceSwipeScroll = SpaceSwipeScroll(browser: self)
+            } else if newValue == 0 {
+                spaceSwipeScroll = nil
+            }
             spaceSwipeOffset.value = newValue
             let side = newValue > 0 ? 1 : newValue < 0 ? -1 : 0
             if side != spaceSwipeSide { spaceSwipeSide = side }

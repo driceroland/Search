@@ -65,6 +65,11 @@ struct SideBar: View {
         var drawn: CGFloat = 0
     }
 
+    private struct ColumnSelection: Equatable {
+        var space: UUID
+        var tab: Tab.ID?
+    }
+
     /// A tab's line: taller with roomier tabs turned on.
     private var rowHeight: CGFloat { prefs.sideRow }
     /// The column's width: the setting, or where the edge is while it is held.
@@ -260,28 +265,29 @@ struct SideBar: View {
         let swipe = browser.spaceSwipeSide
         let offset = browser.spaceSwipeOffset
         let at = spaceAt
-        return ZStack(alignment: .topLeading) {
-            page(at, pill: pill)
-                .modifier(SwipeShift(offset: offset, across: true))
-            // Only while the fingers are bringing one in: the one they are
-            // bringing, a page's width away.
-            if swipe > 0, at > 0 {
-                page(at - 1, pill: before)
-                    .modifier(SwipeShift(offset: offset, by: -width, across: true))
+        return page(at, pill: pill)
+            .modifier(SwipeShift(offset: offset, across: true))
+            .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
+            // A neighbour is only a picture passing through this page's
+            // room. In a ZStack its size could change the outgoing page's
+            // layout, refit its scroll view and move the rows under the hand.
+            .overlay(alignment: .topLeading) {
+                // Only while the fingers are bringing one in: the one they
+                // are bringing, a page's width away.
+                if swipe > 0, at > 0 {
+                    page(at - 1, pill: before)
+                        .modifier(SwipeShift(offset: offset, by: -width, across: true))
+                }
+                if swipe < 0, browser.drawsPage(after: at) {
+                    page(at + 1, pill: after)
+                        .modifier(SwipeShift(offset: offset, by: width, across: true))
+                }
             }
-            if swipe < 0, browser.drawsPage(after: at) {
-                page(at + 1, pill: after)
-                    .modifier(SwipeShift(offset: offset, by: width, across: true))
-            }
-        }
-        // The pages are the column's whole width, each with its own margin.
-        .padding(.horizontal, -10)
-        // The room there is, and never more: another space's rows, drawn
-        // whole while they pass, run on past the foot rather than making the
-        // column taller than the window. With no minimum, a long space coming
-        // in made it so, and the column, centred, lost its top and its foot
-        // until the swipe was done (#1024).
-        .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
+            // The pages are the column's whole width, each with its own margin.
+            .padding(.horizontal, -10)
+            // Tall incoming previews draw at their natural height. Keep both
+            // moving pages inside the tab viewport, above the player and foot.
+            .clipped()
     }
 
     /// One space's page: the rows on screen, another space's rows as they
@@ -339,8 +345,8 @@ struct SideBar: View {
                                 }
                                 // The tab you go to is the tab you see — ⌘1–⌘9,
                                 // ⇧⌘], a link opening beside the one on screen.
-                                .onChange(of: browser.activeID) { _, id in
-                                    guard let id else { return }
+                                .onChange(of: ColumnSelection(space: browser.spaceID, tab: browser.activeID)) { old, next in
+                                    guard old.space == next.space, let id = next.tab else { return }
                                     let representative = browser.activeSplit?.left ?? id
                                     // Without the glide on a test run: a hidden
                                     // probe's window draws no frames, and the
@@ -354,12 +360,20 @@ struct SideBar: View {
                                 // scroll could be dropped and the tab you were on
                                 // left out of sight.
                                 .onAppear {
-                                    guard let id = browser.activeID else { return }
+                                    guard browser.spaceSwipeLanding != browser.spaceID,
+                                          let id = browser.activeID else { return }
+                                    let space = browser.spaceID
                                     DispatchQueue.main.async {
+                                        guard browser.spaceID == space,
+                                              browser.spaceSwipeLanding != space else { return }
                                         proxy.scrollTo(browser.activeSplit?.left ?? id, anchor: .center)
                                     }
                                 }
                             }
+                            // A newly live column starts at the same top as
+                            // its preview, rather than inheriting the outgoing
+                            // scroll view's offset.
+                            .id(browser.spaceID)
                         }
                     }
                     // The whole room under the pins, and never more, to be
@@ -407,6 +421,8 @@ struct SideBar: View {
 
     /// What the column last measured, for the bench (`columnscroll`). Test runs only.
     @MainActor static var measured: [String: CGFloat] = [:]
+    @MainActor static var groupRowFrames: [Bool: [UUID: CGRect]] = [:]
+    @MainActor static var groupRowSamples: [UUID: [CGRect]] = [:]
 
     /// Another space's rows, drawn with the same pieces as this one's so the
     /// two read as one column while they pass — and nothing to press until
@@ -428,35 +444,61 @@ struct SideBar: View {
                 }
                 .padding(.bottom, 10)
             }
-            VStack(spacing: SideBar.gap) {
-                ForEach(listed) { tab in
-                    if icons {
-                        IconTile(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
-                                 pill: pill, close: {}, interactive: false)
-                    } else {
-                        SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
-                                pill: pill, close: {}, interactive: false)
+            // Mirror `rows`: listed pins, the nested group/loose stacks,
+            // then New Tab. Flattening these changes the gaps at handoff,
+            // especially the empty member stack under a folded group.
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(spacing: SideBar.gap) {
+                    ForEach(listed) { tab in
+                        if icons {
+                            IconTile(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
+                                     pill: pill, close: {}, interactive: false)
+                        } else {
+                            SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
+                                    pill: pill, close: {}, interactive: false)
+                        }
                     }
                 }
-                // Its groups, folded as they were left (see Parked.drawn).
-                ForEach(groups) { drawn in
-                    GroupHeading(browser: browser, group: drawn.group, compact: icons)
-                    ForEach(drawn.tabs) { tab in
-                        rowItem(tab, tabs: row.tabs, splits: row.splits, activeID: row.active,
-                                interactive: false, pill: pill, close: {})
+                .padding(.bottom, listed.isEmpty ? 0 : SideBar.gap)
+                VStack(spacing: SideBar.gap) {
+                    ForEach(groups) { drawn in
+                        GroupHeading(browser: browser, group: drawn.group, compact: icons)
+                            .modifier(ColumnGroupMeasure(id: drawn.group.id, preview: true))
+                        if !drawn.tabs.isEmpty {
+                            VStack(spacing: SideBar.gap) {
+                                ForEach(drawn.tabs) { tab in
+                                    rowItem(tab, tabs: row.tabs, splits: row.splits, activeID: row.active,
+                                            interactive: false, pill: pill, close: {})
+                                        .padding(.leading, icons ? 0 : 14)
+                                        .modifier(ColumnGroupMeasure(id: tab.id, preview: true))
+                                }
+                            }
+                            .overlay(alignment: .leading) {
+                                if icons && !drawn.tabs.isEmpty {
+                                    IconGroupBracket(folded: drawn.group.collapsed).offset(x: -6)
+                                }
+                            }
+                        }
+                    }
+                    if showsLine(kept: pins.count + listed.count + groups.count, listed: listed.count, loose: rest.count) {
+                        KeepLine(clears: false) {}
+                    }
+                    if !rest.isEmpty {
+                        VStack(spacing: SideBar.gap) {
+                            ForEach(rest) { tab in
+                                rowItem(tab, tabs: row.tabs, splits: row.splits, activeID: row.active,
+                                        interactive: false, pill: pill, close: {})
+                            }
+                        }
                     }
                 }
-                // Under the groups, as on screen.
-                if showsLine(kept: pins.count + listed.count + groups.count, listed: listed.count, loose: rest.count) {
-                    KeepLine(clears: false) {}
-                }
-                ForEach(rest) { tab in
-                    rowItem(tab, tabs: row.tabs, splits: row.splits, activeID: row.active,
-                            interactive: false, pill: pill, close: {})
-                }
+                newTab
             }
-            newTab
+            // A preview can be taller than the viewport. It must not squeeze
+            // its nested stacks to fit while the live column would scroll.
+            .fixedSize(horizontal: false, vertical: true)
         }
+        .coordinateSpace(name: "column")
         .allowsHitTesting(false)
     }
 
@@ -485,10 +527,8 @@ struct SideBar: View {
         // A pair is two lines (see SplitTabItem).
         let pairs = rows.filter { browser.split(for: $0) != nil }.count
         let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
-        // A folded group showing none of its tabs still has its empty stack
-        // of them under its heading, and the gap after it.
+        // Collapsed folders with no visible tabs have only their heading.
         let headings = CGFloat(grouped.count) * (heading + SideBar.gap)
-            + CGFloat(grouped.filter(\.isEmpty).count) * SideBar.gap
         let loose = CGFloat(rows.count) * (rowHeight + SideBar.gap) + CGFloat(pairs) * rowHeight + headings
         return listBlock + loose + rowHeight + 8
     }
@@ -682,7 +722,12 @@ struct SideBar: View {
             if prefs.usesTabGroups {
                 ForEach(browser.tabGroups) { group in
                     GroupHeading(browser: browser, group: group, dragSpace: "rows", compact: icons)
-                    groupRows(group)
+                        .modifier(ColumnGroupMeasure(id: group.id, preview: false))
+                    // Don't insert an empty member stack for a collapsed
+                    // folder: SwiftUI can count it as another spacing slot.
+                    if !browser.visibleTabs(in: group).isEmpty || crossing?.target == .group(group.id) {
+                        groupRows(group)
+                    }
                 }
             }
             // See the grid: the drag is measured in the column's space, not
@@ -766,6 +811,7 @@ struct SideBar: View {
                         activeID: browser.activeID, interactive: true, pill: pill,
                         close: { browser.closeTab(tab) })
                     .padding(.leading, icons ? 0 : 14)
+                    .modifier(ColumnGroupMeasure(id: tab.id, preview: false))
                     .modifier(Carried(index: index, steps: memberSteps, vertical: true,
                                       space: "rows", onDropTab: { source, point in drop(source, at: point) },
                                       groupDestination: { source, point in destination(source, at: point) },
@@ -1721,5 +1767,22 @@ struct PinCarried: ViewModifier {
         let point = CGPoint(x: start.midX + travel.width, y: start.midY + travel.height)
         func distance(_ cell: CGRect) -> CGFloat { hypot(cell.midX - point.x, cell.midY - point.y) }
         return cells.indices.min { distance(cells[$0]) < distance(cells[$1]) } ?? from
+    }
+}
+
+/// Geometry for the swipe regression check, absent from normal builds' layout.
+private struct ColumnGroupMeasure: ViewModifier {
+    let id: UUID
+    let preview: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if Store.testing {
+            content.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                SideBar.groupRowFrames[preview, default: [:]][id] = $0
+                if !preview { SideBar.groupRowSamples[id, default: []].append($0) }
+            }
+        } else {
+            content
+        }
     }
 }

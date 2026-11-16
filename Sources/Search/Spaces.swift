@@ -339,6 +339,7 @@ extension Browser {
             makingSpace = false
         }
         guard id != spaceID else { return }
+        if spaceSwipeLanding != id { spaceSwipeLanding = nil }
         cancelTabEdit()
         let returningVideo = parked[id].map { row in
             guard let active = row.active else { return false }
