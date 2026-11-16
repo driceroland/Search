@@ -114,6 +114,12 @@ try:
     left, right = pair_and_a_peek()
     sv.sp("focus", id=left); time.sleep(0.4)
     t.ok("off: the other page of a pair puts the peek away", not peeked(probe()), probe()["peekFrom"])
+    # Off too: its tab moved to another window, the peek goes rather than
+    # staying over the next tab.
+    sv.sp("focus", id=right); time.sleep(0.3)
+    sv.cmd({"do": "peek", "url": f"{sv.BASE}/peeked"}); until(lambda: probe()["peekShown"])
+    sv.sp("moveWindow", id=right); time.sleep(0.6)
+    t.ok("off: its tab moved to another window, the peek goes", not peeked(probe()), probe()["peekFrom"])
 
     # On: the peek waits for its tab.
     sv.setup(**{"links.peek.stays": True, "spaces": True}); sv.launch()
@@ -205,7 +211,12 @@ try:
     t.ok("on: hidden, nothing is asked over this tab", probe()["asking"] == "", probe()["asking"])
     select(home)
     t.ok("on: back in front, it asks for the microphone", until(lambda: "microphone" in probe()["asking"]), probe()["asking"])
-    sv.cmd({"do": "answer", "with": "no"}); until(lambda: probe()["asking"] == "")
+    # Hidden with its question up: the question goes, rather than staying
+    # over the next tab as if that tab asked.
+    select(away)
+    t.ok("on: hidden, its microphone question goes", until(lambda: probe()["asking"] == ""), probe()["asking"])
+    select(home)
+    t.ok("on: and isn't asked again over it", probe()["asking"] == "", probe()["asking"])
 
     # Hidden, it goes on to another site, which WebKit may give a process of
     # its own: that page's media is held too. It doesn't load, and a play()
@@ -224,6 +235,17 @@ try:
     in_peek("document.getElementById('a').play(); 0")
     t.ok("on: and plays when the page asks", until(lambda: played() > 0.5, 5), played())
 
+    # A new peek from another tab: only one at a time, so the hidden one goes.
+    select(away)
+    sv.cmd({"do": "peek", "url": f"{sv.BASE}/second-peek"}); until(lambda: probe()["peekShown"])
+    st = probe()
+    t.ok("on: a new peek takes the hidden one's place",
+         st["peek"].endswith("/second-peek") and st["peekFrom"].lower().startswith(away.lower()), st["peekFrom"])
+    select(home)
+    t.ok("on: and nothing is over the tab the first came from", not probe()["peekShown"], probe()["peekShown"])
+    sv.cmd({"do": "peek", "url": "close"})
+    sv.cmd({"do": "peek", "url": f"{sv.BASE}/peeked"}); until(lambda: probe()["peekShown"])
+
     # The setting turned off with the peek hidden: it goes, rather than
     # coming back over another tab.
     select(away)
@@ -231,6 +253,25 @@ try:
     sv.cmd({"do": "ui", "peekstays": False}); time.sleep(0.4)
     st = probe()
     t.ok("turned off: the hidden peek goes, and none comes over this tab", not peeked(st) and not st["peekShown"], st["peekFrom"])
+
+    # Groups: a grouped tab put away (⌘W, or the row's cross) takes its
+    # hidden peek with it, rather than keeping it for when it is opened.
+    sv.setup(**{"links.peek.stays": True, "tabs.groups": True}); sv.launch()
+    grouped, other = sv.page("grouped"), sv.page("other")
+    sv.cmd({"do": "group", "id": grouped, "new": True, "name": "Work"})
+    select(grouped)
+    sv.cmd({"do": "peek", "url": f"{sv.BASE}/peeked"}); until(lambda: probe()["peekShown"])
+    select(other)
+    sv.sp("closeTab", id=grouped); time.sleep(0.4)
+    t.ok("groups: its tab put away, the hidden peek goes", not peeked(probe()), probe()["peekFrom"])
+
+    # Kept from the other page of a pair, beside (⌥⌘↩): paired with the
+    # page it came from, not the one in front.
+    left, right = pair_and_a_peek()
+    sv.sp("focus", id=left); time.sleep(0.4)
+    sv.cmd({"do": "ui", "peeklink": "beside"}); time.sleep(0.6)
+    pairs = sv.sp("state")["splits"]
+    t.ok("kept beside: paired with the page it came from", any(right in p["tabs"] and left not in p["tabs"] for p in pairs), pairs)
 finally:
     t.done(); sv.finish()
 sys.exit(1 if t.failed else 0)

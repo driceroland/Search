@@ -527,7 +527,7 @@ enum SettingsIndex {
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent": return "Only with the new tab in a floating field"
         case "links.little.tabs": return "Only with links from other apps in a small window"
-        case "links.peek.stays": return "Only with Peek at a link, or pins keeping their site, on"
+        case "links.peek.stays": return "Only when links or pins open peeks"
         default: return "Only with the tabs down a side"
         }
     }

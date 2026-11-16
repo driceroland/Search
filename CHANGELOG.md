@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Closing or moving the tab a peek was opened from closes the peek. When that tab was the only one, or moved to another window or space, the peek stayed over the next tab.
 - With New tab in a floating field on, ⌘T held down leaves the field as the press left it, up or put away. Each of the key's repeats put the field away or raised it again, so it flickered and stayed wherever the count left it.
 - With the window on a display other than the Mac's first one, extensions find the tab they name again: a private tab reads `incognito: true` to an extension let into private tabs, and tabs.move, tabs.discard and the other calls that find a tab by its place work. WebKit gives a window's frame turned over by the height of the window's own screen, and Search turned it back by the first screen's.
 - A side panel's page goes with its window when the window closes for good, instead of staying in memory unseen.
@@ -50,7 +51,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
-- A peek can stay with the tab it was opened from, off unless you turn on Settings › Keyboard & Mouse › Peek stays with its tab. Another tab hides it and coming back shows it, where another tab put it away. While hidden, its video and sound wait, and so does a question it asks; both go on when it is back. Escape, its cross, closing that tab, moving it to another window or space, or turning the setting off puts it away, as does a new peek: there is one at a time.
+- A peek can stay with the tab it was opened from: another tab hides it, and coming back shows it. Off unless you turn on Settings › Keyboard & Mouse › Peek stays with its tab. While it is hidden, its video, sound, camera and microphone wait, and so does any question it asks. Escape, its cross, or closing, moving or putting away its tab closes it, as does going to another space. Only one peek is open at a time: a new one closes a hidden one.
 - Shorter tab bar, in Settings › Appearance › Window: with the tabs across the top, the bar is only a few points taller than its tabs, 36 points where it is 52, and leaves the rest to the page. The window's three buttons stay on the row's middle. Off unless turned on.
 - Minimize the floating video, off unless you turn it on in Settings › Browsing. A button tucks the window into a corner, and a click on that button brings it back. Close, and the arrow back to the tab, stay as they are.
 - Reduce animations makes everything in Search's interface happen at once: the tab ⌘1–⌘9 picks is lit and shown with no glide, a space, a panel or a page's first frame comes without sliding or fading, for Search alone and whatever Reduce Motion in System Settings says. Off unless you turn on Settings › Appearance › Motion › Reduce animations.

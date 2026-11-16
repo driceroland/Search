@@ -1821,6 +1821,12 @@ final class Browser: NSObject, ObservableObject {
         settleCapture()
     }
 
+    /// A camera or microphone question up for this page alone, answered no:
+    /// a peek gone out of sight, whose question would pass for another tab's.
+    func settleCapture(for tab: Tab) {
+        if decideTab?.id == tab.id { settleCapture() }
+    }
+
     private func settleCapture() {
         let pending = decide
         decide = nil
@@ -2791,14 +2797,11 @@ final class Browser: NSObject, ObservableObject {
             .sink { [weak self] in self?.sharedPinsChanged() }
             .store(in: &bag)
         // Peek stays with its tab turned off: a peek hidden behind another
-        // tab goes, as that tab would have put it away. Left, it came back
-        // over whatever tab was in front.
+        // tab goes at once, as that tab would have put it away. Left, it
+        // would come back over whatever tab is in front.
         prefs.$peekStays
             .dropFirst()
             .sink { [weak self] on in
-                // Off: a peek hidden behind another tab goes, at once, as
-                // that tab would have put it away. Left, it came over
-                // whatever tab was in front.
                 guard let self, !on, let from = peekFrom, !visibleTabIDs.contains(from) else { return }
                 closePeek()
             }
@@ -4254,6 +4257,8 @@ final class Browser: NSObject, ObservableObject {
     /// pin does, so this is where it was, not where it was when grouped.
     func putAway(_ tab: Tab) {
         guard tabs.contains(where: { $0.id == tab.id }) else { return }
+        // Its page goes, and its peek, hidden or not, with it.
+        if peekFrom == tab.id { closePeek() }
         detachSplit(tab)
         heldDialogs.removeValue(forKey: tab.id)?.forEach { $0.dismiss() }
         dropQuestions(for: tab.id)
@@ -4800,7 +4805,7 @@ final class Browser: NSObject, ObservableObject {
               let index = tabs.firstIndex(where: { $0.id == tab.id })
         else { return false }
         if let web = tab.built { cancelDisplay(for: web) }
-        // Nor to another space.
+        // Its peek, hidden or not, doesn't follow it to another space.
         if peekFrom == tab.id { closePeek() }
         let partner = split(for: tab).flatMap { pair in tabs.first { $0.id == pair.partner(of: tab.id) } }
         detachSplit(tab)
@@ -7948,7 +7953,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             // still waiting is refused rather than queued behind it.
             guard !permissionBusy else { return decisionHandler(.deny) }
             decide = decisionHandler
-            decideTab = tab(for: webView)
+            // A peek's own page, which isn't in the row: its question goes
+            // when it does, or when it is hidden (see followPeek).
+            decideTab = tab(for: webView) ?? (peekTab?.built === webView ? peekTab : nil)
             askedAbout = shy ? "" : key
             askedRevision = shy ? nil : revision
             asking = CaptureAsk(host: host, wants: wants)

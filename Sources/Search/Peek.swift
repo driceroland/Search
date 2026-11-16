@@ -23,15 +23,29 @@ extension Browser {
         return visibleTabIDs.contains(peekFrom)
     }
 
-    /// A peek hidden behind another tab (see peekInFront) doesn't play to
-    /// nobody: its video and sound wait, and go on from where they were when
-    /// it is in front again, as does a question it asked meanwhile (see
-    /// ask(from:)). Told whenever the tab in front, the pairs, Split View or
-    /// the setting changes.
+    /// A peek hidden behind another tab (see peekInFront) is out of sight,
+    /// so it plays and hears nothing: its video and sound wait, its camera
+    /// and microphone are muted, and all of it goes on when it is in front
+    /// again, with any question it asked meanwhile (see ask(from:)). A
+    /// camera or microphone question already up for it is answered no:
+    /// left over the tab in front, it would pass for that tab's. Told
+    /// whenever the tab in front, the pairs, Split View or the setting
+    /// changes.
     func followPeek() {
         guard let page = peekTab else { return }
-        page.built?.setAllMediaPlaybackSuspended(!peekInFront) {}
-        if peekInFront, let held = heldDialogs.removeValue(forKey: page.id) {
+        let shown = peekInFront
+        if let web = page.built {
+            web.setAllMediaPlaybackSuspended(!shown) {}
+            // A view out of its window goes on capturing (see Tab.close).
+            // Search mutes capture nowhere else, so unmuting gives back
+            // only what this took.
+            let from: WKMediaCaptureState = shown ? .muted : .active
+            let to: WKMediaCaptureState = shown ? .active : .muted
+            if web.cameraCaptureState == from { web.setCameraCaptureState(to) {} }
+            if web.microphoneCaptureState == from { web.setMicrophoneCaptureState(to) {} }
+        }
+        if !shown { settleCapture(for: page) }
+        if shown, let held = heldDialogs.removeValue(forKey: page.id) {
             DispatchQueue.main.async { held.forEach { $0.present() } }
         }
     }
@@ -112,6 +126,7 @@ extension Browser {
             peekFrom = nil
         }
         heldDialogs.removeValue(forKey: page.id)?.forEach { $0.dismiss() }
+        settleCapture(for: page)
         page.close()
     }
 
@@ -120,11 +135,13 @@ extension Browser {
     /// the page and what it linked to, side by side.
     func keepPeek(beside: Bool = false) {
         guard let page = peekTab else { return }
-        let from = active
+        // The tab it was opened from, which in a pair need not be the one
+        // in front: kept, it goes beside that one, in its group.
+        let from = peekFrom.flatMap { id in tabs.first { $0.id == id } } ?? active
         let place = placeForNew()
         // Kept from a grouped tab, it joins that group, as a link opened
         // from there does (see open).
-        if prefs.usesTabGroups, !page.shy, let from = active { page.groupID = from.groupID }
+        if prefs.usesTabGroups, !page.shy, let from { page.groupID = from.groupID }
         withAnimation(Motion.quick) {
             peekTab = nil
             peekFrom = nil
