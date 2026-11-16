@@ -398,6 +398,9 @@ enum SettingsIndex {
               title: "Peek at a link", detail: "Its page opens in a panel over the one you're reading",
               more: "Escape puts it away; the other button keeps it as a tab.",
               keys: ["links.peek", "links.peekClick"], words: ["preview", "shift click", "peek"]),
+        .init(id: "links.peek.stays", group: "mouse", icon: "eye.slash",
+              title: "Peek stays with its tab", detail: "Another tab hides it, and coming back shows it; its page keeps playing",
+              keys: ["links.peek.stays"], words: ["peek", "keep peek", "switch tabs"], parent: "links.peek"),
         .init(id: "autoscroll", group: "mouse", icon: "arrow.up.and.down.circle",
               title: "Scroll with the middle button", detail: "Click the wheel, then move the mouse to scroll, as on Windows",
               keys: ["autoscroll"], words: ["middle click", "autoscroll", "wheel"]),
@@ -506,6 +509,7 @@ enum SettingsIndex {
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
+        case "links.peek.stays": return prefs.peeksLinks
         default: return true
         }
     }
@@ -523,6 +527,7 @@ enum SettingsIndex {
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent": return "Only with the new tab in a floating field"
         case "links.little.tabs": return "Only with links from other apps in a small window"
+        case "links.peek.stays": return "Only with Peek at a link on"
         default: return "Only with the tabs down a side"
         }
     }

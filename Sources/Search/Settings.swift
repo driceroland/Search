@@ -739,6 +739,7 @@ struct SettingsPanel: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .fixedSize()
+        case "links.peek.stays": Switch(on: $prefs.peekStays)
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "swipe.history": Switch(on: $prefs.holdsHistory)
         case "note.switcher": Always()

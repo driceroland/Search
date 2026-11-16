@@ -3731,7 +3731,9 @@ final class Browser: NSObject, ObservableObject {
         guard tabs.contains(where: { $0.id == tab.id }) else { return }
         if let pair = split(for: tab), activeSplit?.id == pair.id {
             guard activeID != tab.id else { return }
-            if peekTab != nil { closePeek() }
+            // Both pages of the pair are on screen: a peek that stays with
+            // its tab stays over either.
+            if peekTab != nil, !prefs.peekStays { closePeek() }
             // Find stays open with what it was looking for, and looks in
             // this page instead (see activeID).
             cancelTabEdit()
@@ -3996,7 +3998,7 @@ final class Browser: NSObject, ObservableObject {
         // Spotlight's does. What was typed waits for the next ⌘T (see
         // dismiss()). It used to stay up with what was typed cleared.
         if launching { putAway(); return }
-        guard prefs.floatingNewTab, let tab = active, !tab.isBlank, peekTab == nil else {
+        guard prefs.floatingNewTab, let tab = active, !tab.isBlank, !peekInFront else {
             newTab()
             return
         }
@@ -4137,8 +4139,10 @@ final class Browser: NSObject, ObservableObject {
             tabGroups[index].collapsed = false
             writeSession(now: true)
         }
-        // A peek is over the tab it was opened from; another tab puts it away.
-        if peekTab != nil, tab.id != activeID { closePeek() }
+        // A peek is over the tab it was opened from; another tab puts it
+        // away, or, with Peek stays with its tab on, hides it until that tab
+        // is back (see peekInFront).
+        if peekTab != nil, tab.id != activeID, !prefs.peekStays { closePeek() }
         // Before ⌘K is put away below: its words were for finding a tab, not
         // a draft for the blank one it was pressed on.
         if tab.id != activeID, !summoning, let here = active, here.isBlank { here.draft = typed }
@@ -4192,7 +4196,7 @@ final class Browser: NSObject, ObservableObject {
             typed = ""
             return
         }
-        if peekTab != nil { closePeek() }
+        if peekInFront { closePeek() }
         else if closePanel() { return }
         else if !pickedTabs.isEmpty { closePickedTabs() }
         else if let tab = active { closeTab(tab) }
@@ -4268,6 +4272,8 @@ final class Browser: NSObject, ObservableObject {
     /// behind; closing that blank tab closes the window.
     func close(_ tab: Tab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        // Its peek, hidden or not, goes with it.
+        if peekFrom == tab.id { closePeek() }
         let pair = split(for: tab)
         let partner = pair.flatMap { pair in tabs.first { $0.id == pair.partner(of: tab.id) } }
         detachSplit(tab)
@@ -7142,7 +7148,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     // A peek has the page in front; the tab underneath stays where it was.
-    func reload(fromOrigin: Bool = false) { (peekTab ?? active)?.reload(fromOrigin: fromOrigin) }
+    func reload(fromOrigin: Bool = false) { ((peekInFront ? peekTab : nil) ?? active)?.reload(fromOrigin: fromOrigin) }
     func back() { active?.back() }
     func forward() { active?.forward() }
 }
@@ -7273,7 +7279,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         if prefs.peeksLinks, action.navigationType == .linkActivated,
            ["http", "https"].contains(scheme),
            action.modifierFlags.intersection([.shift, .command, .option, .control]) == prefs.peekClick.flags,
-           let from = tab(for: webView), peekTab == nil {
+           let from = tab(for: webView), !peekInFront {
             decisionHandler(.cancel)
             DispatchQueue.main.async { [weak self] in self?.peek(url, from: from) }
             return
@@ -7499,7 +7505,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // pop-ups, takes the tab path as before. A window sized by the page,
         // "Sign in with…", is left alone, as is a modified click, and so is
         // anything that isn't a web page (about:blank, data:, blob:).
-        if clicked, !behind, !beside, !popup, prefs.pinsPeek, peekTab == nil, opener.pin != nil,
+        if clicked, !behind, !beside, !popup, prefs.pinsPeek, !peekInFront, opener.pin != nil,
            [.linkActivated, .other].contains(action.navigationType),
            action.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty,
            let url = action.request.url, Browser.peekable(url) {

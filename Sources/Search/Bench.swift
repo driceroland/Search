@@ -915,6 +915,8 @@ final class Bench {
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
             out["peek"] = hidden(browser.peekTab) ? "" : browser.peekTab?.address?.absoluteString ?? ""
             out["peekFrom"] = browser.peekFrom?.uuidString ?? ""
+            // Over the page now, or hidden while its tab is not (see peekInFront).
+            out["peekShown"] = browser.peekInFront
             // The size the peek's page is drawn at (see Tab.applyRememberedZoom).
             out["peekZoom"] = Double(browser.peekTab?.built?.pageZoom ?? 0)
             out["fetching"] = ["showing": browser.fetches.showing, "fraction": browser.fetches.fraction ?? -1, "done": browser.fetches.done]
