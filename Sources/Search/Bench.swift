@@ -4290,6 +4290,8 @@ final class Bench {
             },
             "held": browser.heldDialogs.mapValues(\.count).reduce(into: [String: Int]()) { out, entry in
                 if let tab = browser.tabs.first(where: { $0.id == entry.key }) { out[Bench.short(tab)] = entry.value }
+                // A peek hidden behind another tab waits too (see Browser.ask).
+                if entry.key == browser.peekTab?.id { out["peek"] = entry.value }
             },
             "paneFrames": browser.tabs.compactMap { tab -> [String: Any]? in
                 guard let web = tab.built, let window = browser.window, web.window === window else { return nil }

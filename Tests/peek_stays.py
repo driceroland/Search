@@ -31,11 +31,12 @@ t = sv.T()
 
 
 def tone():
-    """Four seconds of a quiet tone, as a WAV: something that plays."""
+    """Twenty seconds of a quiet tone, as a WAV: something that plays, and
+    doesn't come round to its start again while the test watches."""
     out = io.BytesIO()
     with wave.open(out, "wb") as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000)
-        w.writeframes(b"".join(struct.pack("<h", int(800 * math.sin(i / 8000 * 2 * math.pi * 440))) for i in range(32000)))
+        w.writeframes(b"".join(struct.pack("<h", int(800 * math.sin(i / 8000 * 2 * math.pi * 440))) for i in range(160000)))
     return out.getvalue()
 
 
@@ -47,7 +48,7 @@ class Media(BaseHTTPRequestHandler):
         if self.path == "/tone.wav":
             body, kind = Media.WAV, "audio/wav"
         else:
-            body, kind = b"<!doctype html><title>media</title><audio id=a loop muted src=/tone.wav></audio>", "text/html"
+            body, kind = b"<!doctype html><title>media</title><audio id=a muted src=/tone.wav></audio>", "text/html"
         self.send_response(200); self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
@@ -57,7 +58,8 @@ class Media(BaseHTTPRequestHandler):
 media = ThreadingHTTPServer(("127.0.0.1", 0), Media)
 threading.Thread(target=media.serve_forever, daemon=True).start()
 MEDIA = f"http://127.0.0.1:{media.server_port}/media"
-def played(): return float(sv.cmd({"do": "peek", "js": "(document.getElementById('a') || {}).currentTime || 0"})["value"] or 0)
+def in_peek(js): return sv.cmd({"do": "peek", "js": js}).get("value")
+def played(): return float(in_peek("(document.getElementById('a') || {}).currentTime || 0") or 0)
 
 
 def probe(): return sv.cmd({"do": "probe"})
@@ -163,20 +165,35 @@ try:
     select(left)
     t.ok("on: back on the pair, it is in front again", probe()["peekShown"], probe())
 
-    # A hidden peek's sound waits, and goes on from there when it is back.
+    # A hidden peek's media waits, and goes on from there when it is back.
+    # Without followPeek's suspend, the time ran on by 1.5 s while hidden:
+    # a hidden peek's view, out of the window, is not held still by WebKit.
     home = sv.cmd({"do": "open", "url": f"{sv.BASE}/home"})["id"]
     away = sv.cmd({"do": "open", "url": f"{sv.BASE}/away"})["id"]; time.sleep(0.8)
     select(home)
     sv.cmd({"do": "peek", "url": MEDIA})
     until(lambda: probe()["peekShown"])
-    until(lambda: sv.cmd({"do": "peek", "js": "(document.getElementById('a') || {}).readyState || 0"})["value"] >= 2, 6)
-    sv.cmd({"do": "peek", "js": "document.getElementById('a').play(); 0"})
-    t.ok("on: the peek's sound plays in front", until(lambda: played() > 0.5, 5), played())
+    t.ok("on: the peek's media loads", until(lambda: (in_peek("(document.getElementById('a') || {}).readyState || 0") or 0) >= 2, 6))
+    in_peek("document.getElementById('a').play(); 0")
+    t.ok("on: the peek's media plays in front", until(lambda: played() > 0.5, 5), played())
     select(away); time.sleep(0.5)
     hidden = played(); time.sleep(1.5)
-    t.ok("on: hidden, its sound waits", abs(played() - hidden) < 0.2, (hidden, played()))
+    t.ok("on: hidden, its media waits", abs(played() - hidden) < 0.2, (hidden, played()))
     select(home)
-    t.ok("on: back in front, it plays on from there", until(lambda: played() > hidden + 0.5, 5), (hidden, played()))
+    first = played()
+    t.ok("on: back in front, from where it was, not the start", first >= hidden - 0.1, (hidden, first))
+    t.ok("on: and it plays on", until(lambda: played() > hidden + 0.5, 5), (hidden, played()))
+
+    # A question the hidden peek asks waits for it, rather than coming up
+    # over another tab as that tab's.
+    select(away)
+    asked = len(probe()["dialogs"])
+    in_peek("setTimeout(function () { alert('from the peek') }, 100); 0")
+    t.ok("on: hidden, its alert is held", until(lambda: sv.sp("state")["held"].get("peek") == 1), sv.sp("state")["held"])
+    t.ok("on: and not shown over this tab", len(probe()["dialogs"]) == asked, probe()["dialogs"])
+    select(home)
+    t.ok("on: back in front, it asks", until(lambda: len(probe()["dialogs"]) == asked + 1), probe()["dialogs"])
+    t.ok("on: and nothing is left held", "peek" not in sv.sp("state")["held"], sv.sp("state")["held"])
 
     # The setting turned off with the peek hidden: it goes, rather than
     # coming back over another tab.

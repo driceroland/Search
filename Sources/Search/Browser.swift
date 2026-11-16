@@ -2795,12 +2795,20 @@ final class Browser: NSObject, ObservableObject {
         // over whatever tab was in front.
         prefs.$peekStays
             .dropFirst()
-            .filter { !$0 }
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                guard let self, let from = peekFrom, !visibleTabIDs.contains(from) else { return }
+            .sink { [weak self] on in
+                // Off: a peek hidden behind another tab goes, at once, as
+                // that tab would have put it away. Left, it came over
+                // whatever tab was in front.
+                guard let self, !on, let from = peekFrom, !visibleTabIDs.contains(from) else { return }
                 closePeek()
             }
+            .store(in: &bag)
+        // What is on screen, read once the setting has changed: a peek
+        // hidden or shown by it plays or waits (see followPeek).
+        prefs.$peekStays.dropFirst().map { _ in () }
+            .merge(with: prefs.$splitView.dropFirst().map { _ in () })
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.followPeek() }
             .store(in: &bag)
         prefs.$usesTabGroups
             .dropFirst()
@@ -4792,6 +4800,8 @@ final class Browser: NSObject, ObservableObject {
               let index = tabs.firstIndex(where: { $0.id == tab.id })
         else { return false }
         if let web = tab.built { cancelDisplay(for: web) }
+        // Nor to another space.
+        if peekFrom == tab.id { closePeek() }
         let partner = split(for: tab).flatMap { pair in tabs.first { $0.id == pair.partner(of: tab.id) } }
         detachSplit(tab)
 
@@ -4895,6 +4905,8 @@ final class Browser: NSObject, ObservableObject {
     /// Out of this row, not closed: it is on its way to another window.
     private func detach(_ tab: Tab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        // Its peek, hidden or not, doesn't follow it to another window.
+        if peekFrom == tab.id { closePeek() }
         if let web = tab.built { cancelDisplay(for: web) }
         let partner = split(for: tab).flatMap { pair in tabs.first { $0.id == pair.partner(of: tab.id) } }
         detachSplit(tab)

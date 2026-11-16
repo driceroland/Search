@@ -509,7 +509,7 @@ enum SettingsIndex {
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
-        case "links.peek.stays": return prefs.peeksLinks
+        case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
         default: return true
         }
     }
@@ -527,7 +527,7 @@ enum SettingsIndex {
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent": return "Only with the new tab in a floating field"
         case "links.little.tabs": return "Only with links from other apps in a small window"
-        case "links.peek.stays": return "Only with Peek at a link on"
+        case "links.peek.stays": return "Only with Peek at a link, or pins keeping their site, on"
         default: return "Only with the tabs down a side"
         }
     }

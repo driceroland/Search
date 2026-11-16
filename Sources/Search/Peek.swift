@@ -25,11 +25,15 @@ extension Browser {
 
     /// A peek hidden behind another tab (see peekInFront) doesn't play to
     /// nobody: its video and sound wait, and go on from where they were when
-    /// it is in front again. Told whenever the tab in front, or the pair on
-    /// screen, changes.
+    /// it is in front again, as does a question it asked meanwhile (see
+    /// ask(from:)). Told whenever the tab in front, the pairs, Split View or
+    /// the setting changes.
     func followPeek() {
-        guard let page = peekTab?.built else { return }
-        page.setAllMediaPlaybackSuspended(!peekInFront) {}
+        guard let page = peekTab else { return }
+        page.built?.setAllMediaPlaybackSuspended(!peekInFront) {}
+        if peekInFront, let held = heldDialogs.removeValue(forKey: page.id) {
+            DispatchQueue.main.async { held.forEach { $0.present() } }
+        }
     }
 
     /// A modified click on a link, from a tab in the row.
@@ -107,6 +111,7 @@ extension Browser {
             peekTab = nil
             peekFrom = nil
         }
+        heldDialogs.removeValue(forKey: page.id)?.forEach { $0.dismiss() }
         page.close()
     }
 
