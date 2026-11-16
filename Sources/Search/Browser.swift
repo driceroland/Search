@@ -754,6 +754,10 @@ final class Browser: NSObject, ObservableObject {
             announce("Turn on Customize sites in Settings › Browsing › Pages")
             return
         }
+        guard active?.shy != true else {
+            announce("Not in a private tab.")
+            return
+        }
         guard styleHost != nil else {
             announce("This works on websites.")
             return

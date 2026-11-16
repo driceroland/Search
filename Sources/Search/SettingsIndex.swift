@@ -289,7 +289,7 @@ enum SettingsIndex {
               keys: ["pageZoom"], words: ["zoom", "size", "scale"]),
         .init(id: "styles.sites", group: "pages", icon: "paintbrush",
               title: "Customize sites", detail: "Color, type, and code for the site you're on",
-              more: "View › Customize Site, or right-click a tab. Kept on this Mac. A web address in the CSS is left out.",
+              more: "View › Customize Site, or right-click a tab. Kept on this Mac. Not in a private tab.",
               keys: ["styles.sites"], words: ["css", "style", "stylesheet", "boost", "arc", "custom css", "javascript", "font", "color", "colour", "customize"]),
         .init(id: "pages.120", group: "pages", icon: "speedometer",
               title: "Pages at 120 Hz", detail: "Smoother scrolling on screens that can. On power spares the battery",

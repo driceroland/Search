@@ -61,21 +61,10 @@ final class SiteStylesTests: XCTestCase {
         XCTAssertEqual(SiteStyles.arranged(quoted), quoted)
     }
 
-    func testArrangesJavaScript() {
-        XCTAssertEqual(
-            SiteStyles.arrangedScript("function hello() { const x = 1; return x; }"),
-            "function hello() {\n  const x = 1;\n  return x;\n}"
-        )
-        XCTAssertEqual(
-            SiteStyles.arrangedScript("for (let i = 0; i < 3; i++) { console.log(i); }"),
-            "for (let i = 0; i < 3; i++) {\n  console.log(i);\n}"
-        )
-        let quoted = SiteStyles.arrangedScript("const s = \"a;{b}\";")
-        XCTAssertTrue(quoted.contains("\"a;{b}\""))
-        XCTAssertEqual(SiteStyles.arrangedScript(quoted), quoted)
-        let pattern = SiteStyles.arrangedScript("const r = /a{1,2}/g;")
-        XCTAssertTrue(pattern.contains("/a{1,2}/g"))
-        XCTAssertEqual(SiteStyles.arrangedScript(pattern), pattern)
+    func testKeepsAScriptAsTyped() {
+        XCTAssertEqual(SiteStyles.keptScript("let a = 1\nlet b = 2"), "let a = 1\nlet b = 2")
+        XCTAssertEqual(SiteStyles.keptScript("return /a/"), "return /a/")
+        XCTAssertEqual(SiteStyles.keptScript("  \n let a = 1 \n"), "let a = 1")
     }
 
     func testComposedKeepsAColorAndDropsAWebAddress() {

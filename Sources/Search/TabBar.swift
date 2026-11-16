@@ -1672,7 +1672,7 @@ struct TabMenu: View {
                 if browser.activeID != tab.id { browser.select(tab) }
                 browser.styleThisSite()
             }
-            .disabled(!tab.isWeb)
+            .disabled(!tab.isWeb || tab.shy)
         }
         Button("Copy Address") {
             browser.select(tab)

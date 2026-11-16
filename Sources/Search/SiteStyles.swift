@@ -11,16 +11,16 @@ import WebKit
 // draws, the way something you've hidden does (see Curtain), and the
 // JavaScript runs once the page has loaded, in the page's own world, so it
 // can change that page. Both are kept on this Mac in styles.json. Closing
-// the panel keeps them; there is no account and nothing is sent anywhere.
+// the panel keeps them. A private tab never writes one: the panel stays closed.
 //
 // The first version of the file stored a site's CSS as a string. That still
 // reads, as a look with only that CSS.
 //
 // CSS is put in as text, so it can't close the style element and run as
-// script. An imported sheet, or a web address in url(), is left out: either
-// one would fetch from somewhere else, and Search doesn't fetch on a page's
-// behalf except the page you asked for. Laying the CSS out never changes
-// what that keeps — `clean` is the gate, and `arranged` only adds whitespace.
+// script. An imported sheet, or a web address written plainly in url(), is
+// left out. That is not everything a page can ask for: a script you save
+// runs in the page. JavaScript is stored as you typed it. Laying the CSS
+// out only adds whitespace, and only after `clean`.
 
 @MainActor
 final class SiteStyles: ObservableObject {
@@ -90,21 +90,23 @@ final class SiteStyles: ObservableObject {
         revise(on: host) { $0.on = on }
     }
 
-    /// The CSS and JavaScript, after anything that would fetch has been taken
-    /// out of the CSS. A look with nothing left is forgotten.
+    /// The CSS and JavaScript. A web address written plainly in the CSS is
+    /// left out. The JavaScript is kept as typed. A look with nothing left
+    /// is forgotten.
     @discardableResult
     func keepCode(css raw: String, script rawScript: String, on host: String) -> Cleaned {
         var look = byHost[host] ?? SiteLook()
         let cleaned = Self.clean(raw)
         look.css = cleaned.css.isEmpty ? "" : Self.arranged(cleaned.css)
-        look.script = Self.laidOut(rawScript)
+        look.script = Self.keptScript(rawScript)
         store(look, on: host)
         applyOpen()
         return cleaned
     }
 
     /// A look read from a file you picked. Its CSS goes through the same
-    /// gate as CSS you typed. Its JavaScript waits for the next load.
+    /// gate as CSS you typed. Its JavaScript is not stored: the panel holds
+    /// that until you save it, so an imported script is read before it runs.
     func replace(_ raw: SiteLook, on host: String) {
         var look = raw
         look.text = Self.hex(look.text)
@@ -114,7 +116,7 @@ final class SiteStyles: ObservableObject {
         look.name = String(look.name.prefix(80)).trimmingCharacters(in: .whitespacesAndNewlines)
         let cleaned = Self.clean(look.css)
         look.css = cleaned.css.isEmpty ? "" : Self.arranged(cleaned.css)
-        look.script = Self.laidOut(look.script)
+        look.script = byHost[host]?.script ?? ""
         store(look, on: host)
         applyOpen()
     }
@@ -262,213 +264,14 @@ final class SiteStyles: ObservableObject {
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The same JavaScript, with a line for each statement. A string, a
-    /// comment, a template and a regular expression are left as they are,
-    /// and doing it twice changes nothing. No library: it only walks the
-    /// text.
-    static func arrangedScript(_ source: String) -> String {
-        let chars = Array(source)
-        var index = 0
-        var out = ""
-        var depth = 0
-        var paren = 0
-        var quote: Character?
-        var escaped = false
-        var template = false
-        var expr = 0
-        var lineComment = false
-        var blockComment = false
-
-        func indent() -> String { String(repeating: "  ", count: max(depth, 0)) }
-        func trimTail() {
-            while let last = out.last, last == " " || last == "\t" { out.removeLast() }
-        }
-        func lastCode() -> Character? {
-            for character in out.reversed() where character != " " && character != "\n" && character != "\t" {
-                return character
-            }
-            return nil
-        }
-        func nextNonSpace(_ from: Int) -> Character? {
-            var cursor = from
-            while cursor < chars.count, chars[cursor] == " " || chars[cursor] == "\n" || chars[cursor] == "\t" || chars[cursor] == "\r" {
-                cursor += 1
-            }
-            return cursor < chars.count ? chars[cursor] : nil
-        }
-        func nextWord(_ from: Int) -> String {
-            var cursor = from
-            while cursor < chars.count, chars[cursor] == " " || chars[cursor] == "\n" || chars[cursor] == "\t" || chars[cursor] == "\r" {
-                cursor += 1
-            }
-            var word = ""
-            while cursor < chars.count, chars[cursor].isLetter { word.append(chars[cursor]); cursor += 1 }
-            return word
-        }
-        func canStartRegex(_ previous: Character?) -> Bool {
-            guard let previous else { return true }
-            if previous.isLetter || previous.isNumber || previous == ")" || previous == "]" { return false }
-            return true
-        }
-
-        while index < chars.count {
-            let character = chars[index]
-            if lineComment {
-                if character == "\n" {
-                    lineComment = false
-                    trimTail()
-                    out += "\n" + indent()
-                } else {
-                    out.append(character)
-                }
-                index += 1
-                continue
-            }
-            if blockComment {
-                out.append(character)
-                if character == "/", index > 0, chars[index - 1] == "*" { blockComment = false }
-                index += 1
-                continue
-            }
-            if let open = quote {
-                out.append(character)
-                if escaped { escaped = false }
-                else if character == "\\" { escaped = true }
-                else if character == open { quote = nil }
-                index += 1
-                continue
-            }
-            if template && expr == 0 {
-                out.append(character)
-                if escaped { escaped = false }
-                else if character == "\\" { escaped = true }
-                else if character == "`" { template = false }
-                else if character == "$", index + 1 < chars.count, chars[index + 1] == "{" {
-                    out.append("{")
-                    index += 2
-                    expr = 1
-                    continue
-                }
-                index += 1
-                continue
-            }
-            if character == "/", index + 1 < chars.count, chars[index + 1] == "/" {
-                lineComment = true
-                trimTail()
-                if let last = out.last, last != "\n" { out.append(" ") }
-                out.append(character)
-                index += 1
-                continue
-            }
-            if character == "/", index + 1 < chars.count, chars[index + 1] == "*" {
-                blockComment = true
-                out.append(character)
-                index += 1
-                continue
-            }
-            if character == "\"" || character == "'" {
-                quote = character
-                escaped = false
-                out.append(character)
-                index += 1
-                continue
-            }
-            if character == "`" {
-                template = true
-                escaped = false
-                out.append(character)
-                index += 1
-                continue
-            }
-            if character == "/", expr == 0, canStartRegex(lastCode()) {
-                out.append(character)
-                index += 1
-                var slashEscaped = false
-                var inClass = false
-                while index < chars.count {
-                    let token = chars[index]
-                    out.append(token)
-                    index += 1
-                    if slashEscaped { slashEscaped = false; continue }
-                    if token == "\\" { slashEscaped = true; continue }
-                    if token == "[" { inClass = true }
-                    if token == "]" { inClass = false }
-                    if token == "/" && !inClass { break }
-                    if token == "\n" { break }
-                }
-                continue
-            }
-            switch character {
-            case "(":
-                paren += 1
-                out.append(character)
-            case ")":
-                paren = max(paren - 1, 0)
-                out.append(character)
-            case "{":
-                if expr > 0 {
-                    expr += 1
-                    out.append(character)
-                } else {
-                    trimTail()
-                    let tight = out.last == "(" || out.last == "}" || out.last == "]"
-                    out += (tight ? "" : " ") + "{\n"
-                    depth += 1
-                    out += indent()
-                }
-            case "}":
-                if expr > 1 {
-                    expr -= 1
-                    out.append(character)
-                } else if expr == 1 {
-                    expr = 0
-                    out.append(character)
-                } else {
-                    trimTail()
-                    while out.last == "\n" || out.last == " " { out.removeLast() }
-                    depth = max(depth - 1, 0)
-                    out += "\n" + indent() + "}"
-                    let word = nextWord(index + 1)
-                    let next = nextNonSpace(index + 1)
-                    if word == "else" || word == "catch" || word == "finally" || word == "while" {
-                        out += " "
-                    } else if next == ";" || next == ")" || next == "," || next == "." || next == "}" {
-                    } else if next != nil {
-                        out += "\n" + indent()
-                    }
-                }
-            case ";":
-                trimTail()
-                out.append(";")
-                if paren == 0 && expr == 0 {
-                    out += "\n" + indent()
-                }
-            case ",":
-                trimTail()
-                out.append(",")
-                if paren == 0 && expr == 0 && depth > 0 {
-                    out += "\n" + indent()
-                } else {
-                    out.append(" ")
-                }
-            case "\n", "\r", "\t", " ":
-                if let last = out.last, last != " ", last != "\n" { out.append(" ") }
-            default:
-                out.append(character)
-            }
-            index += 1
-        }
-        trimTail()
-        while out.hasSuffix("\n") { out.removeLast() }
-        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// As typed, cut to `limit` if a pasted library ran past it. Not laid
+    /// out: turning a line break into a space is a different program.
+    static func keptScript(_ raw: String) -> String {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count > limit else { return text }
+        return String(text.prefix(limit))
     }
 
-    /// Laid out, then cut to `limit` if a pasted library ran past it.
-    private static func laidOut(_ raw: String) -> String {
-        let arranged = arrangedScript(raw.trimmingCharacters(in: .whitespacesAndNewlines))
-        guard arranged.count > limit else { return arranged }
-        return String(arranged.prefix(limit))
-    }
 
     /// The sheet the page gets: the color and type first, then the CSS you
     /// wrote. The color and type are marked important so a site's own rules
@@ -710,9 +513,17 @@ struct StylePanel: View {
     @ObservedObject var browser: Browser
 
     var body: some View {
-        if let tab = browser.active {
-            StyleEditor(browser: browser, tab: tab)
-                .id(tab.id)
+        Group {
+            if let tab = browser.active, !tab.shy {
+                StyleEditor(browser: browser, tab: tab)
+                    .id(tab.id)
+            }
+        }
+        .onChange(of: browser.activeID) { _, _ in
+            guard browser.active?.shy == true else { return }
+            browser.stopPeeking()
+            if browser.veiling { browser.toggleHiding() }
+            browser.styling = false
         }
     }
 }
@@ -756,7 +567,7 @@ private struct StyleEditor: View {
 
     private var codeDirty: Bool {
         let cssSame = SiteStyles.arranged(cssDraft) == SiteStyles.arranged(look.css)
-        let scriptSame = SiteStyles.arrangedScript(scriptDraft) == SiteStyles.arrangedScript(look.script)
+        let scriptSame = scriptDraft.trimmingCharacters(in: .whitespacesAndNewlines) == look.script
         return !cssSame || !scriptSame
     }
 
@@ -837,9 +648,8 @@ private struct StyleEditor: View {
         } foot: {
             HStack(spacing: 8) {
                 Word("viewfinder", "Inspect") { browser.toggleInspector() }
-                Word("textformat", "Format") {
-                    if language == .css { cssDraft = SiteStyles.arranged(cssDraft) }
-                    else { scriptDraft = SiteStyles.arrangedScript(scriptDraft) }
+                if language == .css {
+                    Word("textformat", "Format") { cssDraft = SiteStyles.arranged(cssDraft) }
                 }
                 Spacer()
                 Pill("Save", filled: true) { saveCode() }
@@ -1184,7 +994,7 @@ private struct StyleEditor: View {
         if let shown {
             let previous = styles.look(on: shown)
             let cssSame = SiteStyles.arranged(cssDraft) == SiteStyles.arranged(previous.css)
-            let scriptSame = SiteStyles.arrangedScript(scriptDraft) == SiteStyles.arrangedScript(previous.script)
+            let scriptSame = scriptDraft.trimmingCharacters(in: .whitespacesAndNewlines) == previous.script
             if !cssSame || !scriptSame {
                 browser.announce("Changes to \(shown) weren't saved.")
             }
@@ -1192,7 +1002,7 @@ private struct StyleEditor: View {
         shown = host
         let next = styles.look(on: host)
         cssDraft = SiteStyles.arranged(next.css)
-        scriptDraft = SiteStyles.arrangedScript(next.script)
+        scriptDraft = next.script
         nameDraft = next.name
         renaming = false
         note = nil
@@ -1217,7 +1027,7 @@ private struct StyleEditor: View {
         let message = savedMessage(cleaned, scriptCut: scriptCut, emptied: kept.isBlank)
         let next = kept.script.trimmingCharacters(in: .whitespacesAndNewlines)
         let previous = before.trimmingCharacters(in: .whitespacesAndNewlines)
-        let changed = SiteStyles.arrangedScript(next) != SiteStyles.arrangedScript(previous)
+        let changed = next != previous
         guard kept.on, changed, !next.isEmpty else {
             browser.announce(message)
             return
@@ -1281,9 +1091,15 @@ private struct StyleEditor: View {
             browser.announce("Couldn't read that file.")
             return
         }
+        let script = SiteStyles.keptScript(look.script)
         styles.replace(look, on: host)
         shown = nil
         show(host)
+        guard !script.isEmpty, script != styles.look(on: host).script else { return }
+        scriptDraft = script
+        language = .javaScript
+        pane = .code
+        browser.announce("Read the JavaScript, then save it.")
     }
 
     /// What this site has taken off the page. Resting on a line outlines that

@@ -218,7 +218,7 @@ struct SearchApp: App {
                     Divider()
                     Button("Customize Site…") { browser.styleThisSite() }
                         .shortcut("view.style")
-                        .disabled(browser.styleHost == nil)
+                        .disabled(browser.styleHost == nil || browser.active?.shy == true)
                 }
                 Divider()
                 Button("Hide Elements…") { browser.toggleHiding() }
