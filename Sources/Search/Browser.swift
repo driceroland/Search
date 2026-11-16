@@ -53,7 +53,10 @@ final class Browser: NSObject, ObservableObject {
     /// Tabs picked with Command or Shift. The active page remains where it is.
     @Published private(set) var selectedTabIDs: Set<Tab.ID> = []
     private var selectionAnchor: Tab.ID?
-    @Published private(set) var splits: [TabSplit] = []
+    @Published private(set) var splits: [TabSplit] = [] {
+        // A pair taken apart can leave a peek's tab off screen.
+        didSet { if peekTab != nil { followPeek() } }
+    }
     /// Named tab sections in the current space, in display order.
     @Published var tabGroups: [TabGroup] = []
     @Published var editingGroupID: UUID?
@@ -74,6 +77,7 @@ final class Browser: NSObject, ObservableObject {
             }
             guard oldValue != activeID else { return }
             cameFrom = (oldValue, ProcessInfo.processInfo.systemUptime)
+            followPeek()
             // Going to another tab ends a page's run of links (see
             // placeForLink) — but with links opened in front beside their
             // page, not going between the page and the tabs it opened: each
@@ -2785,6 +2789,18 @@ final class Browser: NSObject, ObservableObject {
             .merge(with: prefs.$usesSpaces.dropFirst().map { _ in () })
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.sharedPinsChanged() }
+            .store(in: &bag)
+        // Peek stays with its tab turned off: a peek hidden behind another
+        // tab goes, as that tab would have put it away. Left, it came back
+        // over whatever tab was in front.
+        prefs.$peekStays
+            .dropFirst()
+            .filter { !$0 }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, let from = peekFrom, !visibleTabIDs.contains(from) else { return }
+                closePeek()
+            }
             .store(in: &bag)
         prefs.$usesTabGroups
             .dropFirst()

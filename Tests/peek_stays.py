@@ -10,9 +10,17 @@ has. On: another tab hides it, coming back shows it, and ⌘W on the other tab
 closes that tab, not the hidden peek. Closing the peek's own tab, or going to
 another space, puts it away, so its page doesn't keep running out of sight.
 In Split View the peek stays while either page of its pair is on screen.
+A hidden peek's media waits, and plays on from there when it is back in
+front; the setting turned off puts a hidden peek away.
 """
+import io
+import math
+import struct
 import sys
+import threading
 import time
+import wave
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -20,6 +28,36 @@ import split_view as sv  # noqa: E402
 
 sv.use("peek-stays")
 t = sv.T()
+
+
+def tone():
+    """Four seconds of a quiet tone, as a WAV: something that plays."""
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000)
+        w.writeframes(b"".join(struct.pack("<h", int(800 * math.sin(i / 8000 * 2 * math.pi * 440))) for i in range(32000)))
+    return out.getvalue()
+
+
+class Media(BaseHTTPRequestHandler):
+    """A page with a looping sound on it, played by the test, muted."""
+    WAV = tone()
+
+    def do_GET(self):
+        if self.path == "/tone.wav":
+            body, kind = Media.WAV, "audio/wav"
+        else:
+            body, kind = b"<!doctype html><title>media</title><audio id=a loop muted src=/tone.wav></audio>", "text/html"
+        self.send_response(200); self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+
+    def log_message(self, *a): pass
+
+
+media = ThreadingHTTPServer(("127.0.0.1", 0), Media)
+threading.Thread(target=media.serve_forever, daemon=True).start()
+MEDIA = f"http://127.0.0.1:{media.server_port}/media"
+def played(): return float(sv.cmd({"do": "peek", "js": "(document.getElementById('a') || {}).currentTime || 0"})["value"] or 0)
 
 
 def probe(): return sv.cmd({"do": "probe"})
@@ -124,6 +162,29 @@ try:
     t.ok("on: a tab out of the pair hides it", peeked(st) and not st["peekShown"], st)
     select(left)
     t.ok("on: back on the pair, it is in front again", probe()["peekShown"], probe())
+
+    # A hidden peek's sound waits, and goes on from there when it is back.
+    home = sv.cmd({"do": "open", "url": f"{sv.BASE}/home"})["id"]
+    away = sv.cmd({"do": "open", "url": f"{sv.BASE}/away"})["id"]; time.sleep(0.8)
+    select(home)
+    sv.cmd({"do": "peek", "url": MEDIA})
+    until(lambda: probe()["peekShown"])
+    until(lambda: sv.cmd({"do": "peek", "js": "(document.getElementById('a') || {}).readyState || 0"})["value"] >= 2, 6)
+    sv.cmd({"do": "peek", "js": "document.getElementById('a').play(); 0"})
+    t.ok("on: the peek's sound plays in front", until(lambda: played() > 0.5, 5), played())
+    select(away); time.sleep(0.5)
+    hidden = played(); time.sleep(1.5)
+    t.ok("on: hidden, its sound waits", abs(played() - hidden) < 0.2, (hidden, played()))
+    select(home)
+    t.ok("on: back in front, it plays on from there", until(lambda: played() > hidden + 0.5, 5), (hidden, played()))
+
+    # The setting turned off with the peek hidden: it goes, rather than
+    # coming back over another tab.
+    select(away)
+    t.ok("on: hidden again", peeked(probe()) and not probe()["peekShown"], probe()["peekFrom"])
+    sv.cmd({"do": "ui", "peekstays": False}); time.sleep(0.4)
+    st = probe()
+    t.ok("turned off: the hidden peek goes, and none comes over this tab", not peeked(st) and not st["peekShown"], st["peekFrom"])
 finally:
     t.done(); sv.finish()
 sys.exit(1 if t.failed else 0)

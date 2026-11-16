@@ -489,8 +489,9 @@ final class Preferences: ObservableObject {
         didSet { store.set(peeksLinks, forKey: "links.peek") }
     }
     /// A peek stays with the tab it was opened from: another tab hides it,
-    /// and coming back shows it (see Browser.peekInFront). Its page keeps
-    /// running while hidden, sound and all, so off unless asked for.
+    /// and coming back shows it (see Browser.peekInFront). Its page stays
+    /// loaded while hidden, its video and sound paused (Browser.followPeek).
+    /// A change to how a peek goes away, so off unless asked for.
     @Published var peekStays: Bool {
         didSet { store.set(peekStays, forKey: "links.peek.stays") }
     }

@@ -399,7 +399,7 @@ enum SettingsIndex {
               more: "Escape puts it away; the other button keeps it as a tab.",
               keys: ["links.peek", "links.peekClick"], words: ["preview", "shift click", "peek"]),
         .init(id: "links.peek.stays", group: "mouse", icon: "eye.slash",
-              title: "Peek stays with its tab", detail: "Another tab hides it, and coming back shows it; its page keeps playing",
+              title: "Peek stays with its tab", detail: "Another tab hides it, with its video and sound paused, and coming back shows it",
               keys: ["links.peek.stays"], words: ["peek", "keep peek", "switch tabs"], parent: "links.peek"),
         .init(id: "autoscroll", group: "mouse", icon: "arrow.up.and.down.circle",
               title: "Scroll with the middle button", detail: "Click the wheel, then move the mouse to scroll, as on Windows",

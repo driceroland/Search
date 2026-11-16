@@ -2401,6 +2401,17 @@ final class Bench {
                 answer(["peek": ""])
                 return
             }
+            // "js": run in the peek's page, in front or hidden.
+            if let js = request["js"] as? String {
+                guard let page = browser.peekTab?.built else { answer(["error": "no peek"]); return }
+                page.evaluateJavaScript(js) { value, error in
+                    MainActor.assumeIsolated {
+                        if let error { answer(["error": error.localizedDescription]); return }
+                        answer(["value": Bench.plain(value)])
+                    }
+                }
+                return
+            }
             guard let tab = browser.active, let text = request["url"] as? String, let url = URL(string: text)
             else { answer(["error": "peek needs a tab in front and an address"]); return }
             browser.peek(url, from: tab)
@@ -3679,6 +3690,9 @@ final class Bench {
             // the window going there: a test run never takes the screen.
             if let on = request["fullscreen"] as? Bool, Store.testing { browser.fullScreen = on }
             if let on = request["peek"] as? Bool { browser.peeking = on }
+            // Settings › Keyboard & Mouse › Peek stays with its tab, moved as
+            // its switch moves it.
+            if let on = request["peekstays"] as? Bool { browser.prefs.peekStays = on }
             // A peek at a link (Peek.swift): its two buttons.
             if let what = request["peeklink"] as? String {
                 if what == "keep" { browser.keepPeek() }

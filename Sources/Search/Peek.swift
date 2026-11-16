@@ -23,6 +23,15 @@ extension Browser {
         return visibleTabIDs.contains(peekFrom)
     }
 
+    /// A peek hidden behind another tab (see peekInFront) doesn't play to
+    /// nobody: its video and sound wait, and go on from where they were when
+    /// it is in front again. Told whenever the tab in front, or the pair on
+    /// screen, changes.
+    func followPeek() {
+        guard let page = peekTab?.built else { return }
+        page.setAllMediaPlaybackSuspended(!peekInFront) {}
+    }
+
     /// A modified click on a link, from a tab in the row.
     func peek(_ url: URL, from tab: Tab) {
         if peekTab != nil { closePeek() }
