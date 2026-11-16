@@ -195,6 +195,35 @@ try:
     t.ok("on: back in front, it asks", until(lambda: len(probe()["dialogs"]) == asked + 1), probe()["dialogs"])
     t.ok("on: and nothing is left held", "peek" not in sv.sp("state")["held"], sv.sp("state")["held"])
 
+    # The microphone, asked for while hidden: asked over another tab, the
+    # question would pass for that tab's. WebKit itself holds a page's
+    # request while the page is out of sight; either way, it is asked only
+    # over the peek, once it is back.
+    select(away)
+    in_peek("navigator.mediaDevices.getUserMedia({audio: true}).catch(function () {}); 0")
+    time.sleep(1.5)
+    t.ok("on: hidden, nothing is asked over this tab", probe()["asking"] == "", probe()["asking"])
+    select(home)
+    t.ok("on: back in front, it asks for the microphone", until(lambda: "microphone" in probe()["asking"]), probe()["asking"])
+    sv.cmd({"do": "answer", "with": "no"}); until(lambda: probe()["asking"] == "")
+
+    # Hidden, it goes on to another site, which WebKit may give a process of
+    # its own: that page's media is held too. It doesn't load, and a play()
+    # is refused, until the peek is back in front.
+    elsewhere = MEDIA.replace("127.0.0.1", "localhost")
+    def ready(): return in_peek("(document.getElementById('a') || {}).readyState || 0") or 0
+    select(away)
+    in_peek(f"location.href = '{elsewhere}'; 0")
+    t.ok("on: hidden, it went on to another site",
+         until(lambda: (in_peek("location.host + '|' + document.readyState") or "").startswith("localhost") and
+               (in_peek("document.readyState") == "complete"), 8), in_peek("location.href"))
+    in_peek("document.getElementById('a').play().catch(function () {}); 0"); time.sleep(1.5)
+    t.ok("on: the new page's media is held while hidden", played() < 0.2 and ready() < 2, (played(), ready()))
+    select(home)
+    t.ok("on: back in front, it loads", until(lambda: ready() >= 2, 6), ready())
+    in_peek("document.getElementById('a').play(); 0")
+    t.ok("on: and plays when the page asks", until(lambda: played() > 0.5, 5), played())
+
     # The setting turned off with the peek hidden: it goes, rather than
     # coming back over another tab.
     select(away)
