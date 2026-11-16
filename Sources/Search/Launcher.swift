@@ -629,3 +629,97 @@ private struct LauncherField: NSViewRepresentable {
         }
     }
 }
+
+// MARK: - Settings
+
+/// The launcher's key, chosen in Settings: click, then press it. Empty until
+/// chosen, with Spotlight's key, ⇧, one click away; ⌫ takes it away.
+struct LauncherKeyBox: View {
+    @ObservedObject var prefs: Preferences
+    @ObservedObject private var launcher = Launcher.shared
+
+    @State private var listening = false
+    @State private var monitor: Any?
+    @State private var note: String?
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let refusal = launcher.refusal, !listening {
+                Text(refusal)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.red.opacity(0.8))
+                    .lineLimit(1)
+            }
+            if prefs.launcherKey == nil, !listening {
+                Pill("Use \(LauncherKey.suggested.combo.display)") { prefs.launcherKey = .suggested }
+            }
+            Button(action: listen) {
+                Text(label)
+                    .font(.system(size: 12))
+                    .foregroundStyle(listening || prefs.launcherKey != nil ? Palette.ink : Palette.muted)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .frame(minWidth: 64, minHeight: 24)
+                    .background(listening || hovering ? Palette.hover : Palette.ground,
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(listening ? Palette.ink.opacity(0.4) : Palette.hairline, lineWidth: 1)
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Click, then press the key. ⌫ takes it away")
+            .onHover { hovering = $0 }
+            .onDisappear(perform: stop)
+        }
+    }
+
+    private var label: String {
+        if let note { return note }
+        if listening { return "Type a shortcut" }
+        return prefs.launcherKey?.combo.display ?? "None"
+    }
+
+    private func listen() {
+        guard !listening else { return stop() }
+        listening = true
+        note = nil
+        // Search's own keys stand aside while one is typed here, and so
+        // does the launcher's (see Launcher.wants).
+        ShortcutStore.shared.recording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            take(event)
+            return nil
+        }
+    }
+
+    private func take(_ event: NSEvent) {
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if event.keyCode == 53, flags.isEmpty { return stop() }
+        if [51, 117].contains(event.keyCode), flags.isEmpty {
+            prefs.launcherKey = nil
+            return stop()
+        }
+        guard let combo = KeyCombo(event: event) else { return }
+        guard combo.isUsable else { return say("Add ⌘, ⌥ or ⌃") }
+        guard !KeyCombo.isReserved(combo) else { return say("Can’t be used") }
+        prefs.launcherKey = LauncherKey(combo: combo, code: event.keyCode)
+        stop()
+    }
+
+    /// Why that key won't do, for a moment, still listening.
+    private func say(_ text: String) {
+        note = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { if note == text { note = nil } }
+    }
+
+    private func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        listening = false
+        note = nil
+        ShortcutStore.shared.recording = false
+    }
+}

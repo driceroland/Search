@@ -745,6 +745,8 @@ struct SettingsPanel: View {
         case "links.peek.stays": Switch(on: $prefs.peekStays)
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "swipe.history": Switch(on: $prefs.holdsHistory)
+        case "launcher.on": Switch(on: $prefs.launcher)
+        case "launcher.key": LauncherKeyBox(prefs: prefs)
         case "note.switcher": Always()
         case "updates.version": versionControl
         case "updates.auto": Switch(on: $prefs.installsUpdates)

@@ -91,6 +91,7 @@ enum SettingsIndex {
         .init(id: "clear", page: .privacy, title: "Clear", icon: "trash"),
 
         .init(id: "mouse", page: .keyboard, title: "Mouse and trackpad", icon: "computermouse"),
+        .init(id: "anywhere", page: .keyboard, title: "From any app", icon: "macwindow.on.rectangle"),
 
         .init(id: "updates", page: .about, title: "Updates", icon: "arrow.triangle.2.circlepath"),
         .init(id: "developer", page: .about, title: "Developer", icon: "hammer"),
@@ -421,6 +422,14 @@ enum SettingsIndex {
               title: "Hold a swipe to pick from history", detail: "Keep your fingers down after a swipe back to pick a page",
               more: "Swipe back or forward and keep your fingers down: the pages that way appear, and moving up or down picks one.",
               keys: ["swipe.history"], words: ["gesture", "trackpad", "back"]),
+        .init(id: "launcher.on", group: "anywhere", icon: "rectangle.and.text.magnifyingglass",
+              title: "Open the address field from any app", detail: "A key of your own raises it over the app you're in, as Spotlight does",
+              more: "Return opens what you typed in a new tab of Search's window in front, or goes to the tab that already has it, and brings Search forward. Escape, a click outside or the key again puts it away and leaves you where you were. With a window of Search's in front, the key is left to the page: ⌘L is the field there.",
+              keys: ["launcher.on", "launcher.key"],
+              words: ["spotlight", "launcher", "global", "hotkey", "shortcut", "quick search", "raycast", "alfred", "anywhere"]),
+        .init(id: "launcher.key", group: "anywhere", icon: "keyboard",
+              title: "Key", detail: "Press it in any app to bring the address field up",
+              keys: ["launcher.key"], words: ["hotkey", "global shortcut", "shift command space"], parent: "launcher.on"),
 
         // About
         .init(id: "updates.version", group: "updates", icon: "arrow.down.app",
@@ -524,6 +533,7 @@ enum SettingsIndex {
         case "newtab.recent": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
         case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
+        case "launcher.key": return prefs.launcher
         default: return true
         }
     }
@@ -543,6 +553,7 @@ enum SettingsIndex {
         case "newtab.recent": return "Only with the new tab in a floating field"
         case "links.little.tabs": return "Only with links from other apps in a small window"
         case "links.peek.stays": return "Only when links or pins open peeks"
+        case "launcher.key": return "Only with the address field from any app on"
         default: return "Only with the tabs down a side"
         }
     }
