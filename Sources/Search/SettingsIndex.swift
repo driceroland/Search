@@ -144,6 +144,11 @@ enum SettingsIndex {
         .init(id: "sidebar.hides", group: "window", icon: "sidebar.squares.left",
               title: "Hide the column until the pointer reaches the edge", detail: "The page takes the whole window; ⌘S keeps the tabs out",
               keys: ["sidebar.hides"], words: ["auto hide", "sidebar"], parent: "tabs.layout"),
+        .init(id: "sidebar.atOnce", group: "window", icon: "hare",
+              title: "Show the hidden column at once", detail: "No pause at the edge, and a little room past the column before it goes",
+              more: "Off, the column waits for the pointer to settle at the edge, so a hand on its way to a Dock on that side doesn't bring it out.",
+              keys: ["sidebar.atOnce"], words: ["delay", "wait", "instant", "faster", "auto hide", "sidebar", "arc", "zen"],
+              parent: "tabs.layout"),
         .init(id: "sidebar.foldIcons", group: "window", icon: "arrow.down.right.and.arrow.up.left",
               title: "⌘S makes the column icons only", detail: "The tabs stay in sight as a narrow column of icons; ⌘S again brings the titles back",
               more: "Off, ⌘S hides the column and the page takes the whole window.",
@@ -500,6 +505,7 @@ enum SettingsIndex {
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
+        case "sidebar.atOnce": return prefs.sidebar && prefs.sideHides
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
         case "spaces.links": return prefs.usesSpaces
@@ -517,6 +523,7 @@ enum SettingsIndex {
         case "toolbar.left", "tabs.compact": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
+        case "sidebar.atOnce": return "Only with the column hidden until the pointer reaches the edge"
         case "profiles.oneWindow": return "Only with more than one profile"
         case "spaces.links": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"

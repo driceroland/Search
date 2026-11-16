@@ -144,6 +144,10 @@ struct Fold: View {
     /// good comes out. Long enough to cross the edge, short enough not to be
     /// waited for.
     private static let dwell: TimeInterval = 0.15
+    /// With Preferences.sideAtOnce, how far past its own edge, over the page,
+    /// the pointer still counts as on the column: a hand drifting off a tab's
+    /// row on the way to another doesn't send it back in.
+    private static let slack: CGFloat = 24
 
     var body: some View {
         ZStack(alignment: onRight ? .topTrailing : .topLeading) {
@@ -366,7 +370,7 @@ struct Fold: View {
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
             let onWindow = top == window.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
-            let reach = prefs.sidebar ? prefs.columnWidth : Metrics.strip
+            let reach = prefs.sidebar ? prefs.columnWidth + (prefs.sideAtOnce ? Fold.slack : 0) : Metrics.strip
             // An extension's popup hangs from its button in the column: the
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).
@@ -387,8 +391,12 @@ struct Fold: View {
         } else if overshot {
             // Off the window, so whatever is under the pointer isn't it. The
             // wait starts again with every move: the column comes once the
-            // pointer stops, not while it is on its way somewhere else.
-            arrive(resting: true)
+            // pointer stops, not while it is on its way somewhere else. Up
+            // against the screen's own edge, with no display beyond, it has
+            // nowhere else to be going.
+            let further = NSPoint(x: screen.x + (onRight ? 1 : -1), y: screen.y)
+            let pinned = !NSScreen.screens.contains { NSMouseInRect(further, $0.frame, false) }
+            arrive(resting: true, pinned: pinned)
         } else {
             pass()
         }
@@ -397,7 +405,12 @@ struct Fold: View {
     /// The pointer on the edge: out at once, or after the dwell when the
     /// column is folded for good, and always for the strip, whose edge is
     /// the way to the menu bar, and for the pointer just past the edge.
-    private func arrive(resting: Bool = false) {
+    /// Asked to come at once (Preferences.sideAtOnce), the column skips the
+    /// dwell at the window's edge, and just past it once the pointer is
+    /// pinned against the screen's edge; a pointer only passing through to a
+    /// display beyond still has to stop first. The strip keeps its wait.
+    private func arrive(resting: Bool = false, pinned: Bool = false) {
+        if prefs.sideAtOnce, prefs.sidebar, !resting || pinned { return peek(true) }
         guard resting || !prefs.sidebar || prefs.sideHides else { return peek(true) }
         pass()
         let coming = DispatchWorkItem {

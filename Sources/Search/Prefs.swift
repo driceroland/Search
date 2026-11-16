@@ -157,6 +157,13 @@ final class Preferences: ObservableObject {
     @Published var sideHides: Bool {
         didSet { store.set(sideHides, forKey: "sidebar.hides") }
     }
+    /// The hidden column comes out the moment the pointer is at the edge, with
+    /// no wait for it to settle, and stays out a little past its own edge on
+    /// the way back in, as Arc's and Zen's do (see Fold.swift). Off unless
+    /// asked for: the wait is there for a Dock on the column's side.
+    @Published var sideAtOnce: Bool {
+        didSet { store.set(sideAtOnce, forKey: "sidebar.atOnce") }
+    }
     /// Taller lines and larger titles in the column, for anyone who finds
     /// the default hard to read (#570). Off unless asked for.
     @Published var roomyTabs: Bool {
@@ -788,6 +795,7 @@ final class Preferences: ObservableObject {
             ?? (store.string(forKey: "manner") == "side")
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
+        sideAtOnce = store.bool(forKey: "sidebar.atOnce")
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         sideIcons = store.bool(forKey: "sidebar.icons")
         foldsToIcons = store.bool(forKey: "sidebar.foldIcons")
