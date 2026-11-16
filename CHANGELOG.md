@@ -13,7 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- Back, Forward, Previous Tab and Next Tab in a small window act on that window: back and forward in its page, and previous and next among the small windows, where they changed the tab in the window behind. An arrow shortcut, while you type in that window, moves the caret.
+- In a small window, Back and Forward go back and forward in its page, and Previous Tab and Next Tab go to the other small windows. They changed the tab in the browser's window behind it. ⌘[ and ⌘] reach the page first, so an editor in it can outdent and indent; and with a command moved to an arrow key (Back on ⌘←), that key moves the caret while you type.
 - With New tab in a floating field on, ⌘T held down leaves the field as the press left it, up or put away. Each of the key's repeats put the field away or raised it again, so it flickered and stayed wherever the count left it.
 - With the window on a display other than the Mac's first one, extensions find the tab they name again: a private tab reads `incognito: true` to an extension let into private tabs, and tabs.move, tabs.discard and the other calls that find a tab by its place work. WebKit gives a window's frame turned over by the height of the window's own screen, and Search turned it back by the first screen's.
 - A side panel's page goes with its window when the window closes for good, instead of staying in memory unseen.
@@ -51,7 +51,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
-- Open in Small Window, in a tab's menu and the Tabs menu, puts that tab in the small window a link from another app uses: the page as it is, beside the window, and Open in Search (⌘O) puts it back in the row. Closing the small window, with ⌘W or its button, closes the tab, and ⇧⌘T brings it back; Escape stays the page's. Quitting, or a relaunch, brings the page back in the row, out of any group it was in. Not for a private tab. Only with Settings › General › Open links from other apps in a small window turned on. ([#874](https://github.com/driceroland/Search/issues/874))
+- Open in Small Window, in a tab's menu and the Tabs menu, puts the tab in the small window that links from other apps use, beside the browser's window. Open in Search (⌘O) puts it back in the row. Closing the small window closes the tab, and ⇧⌘T brings it back; after a quit it is back in its space's row. Not for a pin or a private tab. Only with Settings › General › Open links from other apps in a small window on. ([#874](https://github.com/driceroland/Search/issues/874))
 - Shorter tab bar, in Settings › Appearance › Window: with the tabs across the top, the bar is only a few points taller than its tabs, 36 points where it is 52, and leaves the rest to the page. The window's three buttons stay on the row's middle. Off unless turned on.
 - Minimize the floating video, off unless you turn it on in Settings › Browsing. A button tucks the window into a corner, and a click on that button brings it back. Close, and the arrow back to the tab, stay as they are.
 - Reduce animations makes everything in Search's interface happen at once: the tab ⌘1–⌘9 picks is lit and shown with no glide, a space, a panel or a page's first frame comes without sliding or fading, for Search alone and whatever Reduce Motion in System Settings says. Off unless you turn on Settings › Appearance › Motion › Reduce animations.

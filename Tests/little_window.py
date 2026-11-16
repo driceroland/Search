@@ -137,13 +137,13 @@ try:
     active = little("look")["activeID"]
     t.ok("the row behind has two tabs", len(sv.cmd({"do": "tabs"})["tabs"]) >= 2, sv.cmd({"do": "tabs"}))
     press(30, "]", "cmd", "shift")
-    t.ok("one small window: next tab leaves the row", little("look")["activeID"] == active, little("look"))
+    t.ok("one small window: next tab keeps the row's tab", little("look")["activeID"] == active, little("look"))
     sv.cmd({"do": "little", "what": "go", "url": f"{sv.BASE}/onward"}); time.sleep(1.5)
     t.ok("the small window went on to another page", little("look")["littles"][-1].endswith("/onward"), little("look"))
     press(33, "[", "cmd"); time.sleep(0.6)
     st = little("look")
     t.ok("⌘[ goes back in the small window", st["littles"][-1].endswith("/copied"), st)
-    t.ok("⌘[ leaves the tab behind on its page", st["activeID"] == active and front_url().endswith("/behind-two"), (st, front_url()))
+    t.ok("⌘[ keeps the browser's tab on its page", st["activeID"] == active and front_url().endswith("/behind-two"), (st, front_url()))
     # A page that uses ⌘[ itself gets it first, as in the browser's window:
     # the editor outdents, and the small window doesn't go back.
     sv.cmd({"do": "little", "what": "go", "url": EDITOR})
@@ -160,6 +160,18 @@ try:
     until(lambda: sv.cmd({"do": "little", "what": "js", "js": "location.pathname == '/plain' && document.readyState == 'complete'"}).get("value") is True)
     sv.cmd({"do": "little", "what": "key", "chars": "[", "code": 33})
     t.ok("⌘[ a page leaves unused is Back", until(lambda: little("look")["pages"][-1] == EDITOR), little("look")["pages"])
+    def loaded(path): return sv.cmd({"do": "little", "what": "js", "js": f"location.pathname == '{path}' && document.readyState == 'complete'"}).get("value") is True
+    sv.cmd({"do": "little", "what": "js", "js": "document.activeElement.blur(); 0"})
+    sv.cmd({"do": "little", "what": "key", "chars": "]", "code": 30})
+    t.ok("⌘] a page leaves unused is Forward", until(lambda: loaded("/plain")), little("look")["pages"])
+    # Pressed twice before WebKit answers the first: both stay this
+    # window's, and the browser's tab stays where it was. (WebKit takes two
+    # Backs that close together as one.)
+    sv.cmd({"do": "little", "what": "go", "url": f"{sv.BASE}/plain-two"}); until(lambda: loaded("/plain-two"))
+    sv.cmd({"do": "little", "what": "key", "chars": "[", "code": 33})
+    sv.cmd({"do": "little", "what": "key", "chars": "[", "code": 33})
+    t.ok("⌘[ twice quickly goes back here", until(lambda: not little("look")["pages"][-1].endswith("/plain-two")), little("look")["pages"])
+    t.ok("and keeps the browser's tab on its page", front_url().endswith("/behind-two"), front_url())
 
     # Three small windows: next and previous go round them in the order
     # they were opened, from the newest, which has the keys.
@@ -169,7 +181,7 @@ try:
     press(30, "]", "cmd", "shift")
     st = little("look")
     t.ok("⇧⌘] from the newest goes round to the first", st["fronted"] == first, st)
-    t.ok("⇧⌘] leaves the tab behind", st["activeID"] == active, st)
+    t.ok("⇧⌘] keeps the browser's tab", st["activeID"] == active, st)
     press(33, "[", "cmd", "shift")
     t.ok("⇧⌘[ goes the other way, to the one before", little("look")["fronted"].endswith("/second"), little("look"))
     for _ in range(3): little("close"); time.sleep(0.3)
@@ -366,6 +378,46 @@ try:
     sv.launch()
     st = windows()
     t.ok("relaunch: back in the second window's row", any(other in w["tabs"] for w in st["windows"]), st["windows"])
+
+    # A pin is the row's, and stays there.
+    pinned = real(f"{sv.BASE}/pinned"); time.sleep(0.8)
+    sv.cmd({"do": "pin", "id": pinned})
+    sv.cmd({"do": "little", "what": "lift", "id": pinned}); time.sleep(0.5)
+    t.ok("a pin is not lifted", little("look")["littles"] == [] and pinned in [x["id"] for x in sv.cmd({"do": "tabs"})["tabs"]],
+         little("look")["littles"])
+
+    # The window it came from closes while another stays open: the other
+    # keeps it, so a quit still writes it down.
+    if len(windows()["windows"]) < 2: windows(action="new")
+    windows(action="front", n=2); time.sleep(0.5)
+    open_before = len(windows()["windows"])
+    orphan = f"{sv.BASE}/orphan"
+    windows(action="link", url=orphan)
+    until(lambda: orphan in windows()["windows"][1]["tabs"])
+    second = windows()["windows"][1]
+    sv.cmd({"do": "little", "what": "lift", "id": second["ids"][second["tabs"].index(orphan)]}); time.sleep(0.5)
+    windows(action="close", n=2)
+    t.ok("its window closed: the small window stays",
+         until(lambda: len(windows()["windows"]) == open_before - 1) and little("look")["littles"] == [orphan],
+         (open_before, len(windows()["windows"]), little("look")["littles"]))
+    t.ok("and the window that stayed wrote it down", orphan in json.dumps(records()) + json.dumps(sv.session()),
+         (records(), sv.session()))
+    sv.quit(); sv.launch()
+    t.ok("after a quit, it is in the window that stayed", any(orphan in w["tabs"] for w in windows()["windows"]), windows()["windows"])
+
+    # Its space deleted while it is out: a quit writes it into the space on
+    # screen, not into a space that is gone.
+    sv.setup(**{"spaces": True}); sv.launch()
+    sv.cmd({"do": "space", "action": "new", "name": "Gone"}); time.sleep(0.5)
+    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
+    stray = f"{sv.BASE}/stray"
+    lifted = real(stray); time.sleep(1.2)
+    sv.cmd({"do": "little", "what": "lift", "id": lifted}); time.sleep(0.5)
+    sv.cmd({"do": "space", "action": "delete"}); time.sleep(1)
+    t.ok("its space deleted: the small window stays", little("look")["littles"] == [stray], little("look")["littles"])
+    sv.quit(); sv.launch()
+    t.ok("after a quit, it is in the space on screen", stray in [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]],
+         sv.cmd({"do": "tabs"})["tabs"])
 
     # Back moved to ⌘← in Settings › Shortcuts: while you type in a small
     # window, ⌘← moves the caret to the start of the line, and the window

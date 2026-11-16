@@ -4907,6 +4907,14 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// Whether Open in Small Window can take this tab: a page of the row,
+    /// not a pin (the row's), not a private tab, and a bench tab only on a
+    /// test run. The menus ask this too, so they agree with what it does.
+    func liftable(_ tab: Tab) -> Bool {
+        !isPopup && tab.pin == nil && !tab.shy && tab.isWeb && (!tab.bench || Store.testing)
+            && tabs.contains { $0.id == tab.id }
+    }
+
     /// A lifted tab's small window closed: ⇧⌘T brings it back, at the end
     /// of the row, as it would a tab closed there.
     func rememberLifted(_ tab: Tab) { remember(tab, at: tabs.count) }
@@ -4915,8 +4923,7 @@ final class Browser: NSObject, ObservableObject {
     /// the page as it is, beside this window. Open in Search puts it back.
     /// A pin stays: it is the row's. A bench tab only on a test run.
     func openInLittleWindow(_ tab: Tab) {
-        guard !isPopup, tab.pin == nil, !tab.shy, tab.isWeb, !tab.isBlank, tabs.contains(where: { $0.id == tab.id }) else { return }
-        guard !tab.bench || Store.testing else { return }
+        guard liftable(tab) else { return }
         // A tab asleep, or not yet woken since launch, has only its address:
         // the small window draws the page, so the page is loaded first.
         if !tab.wake() { tab.revive() }

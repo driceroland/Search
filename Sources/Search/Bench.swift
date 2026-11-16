@@ -3417,6 +3417,7 @@ final class Bench {
                 // ⌘ and a key on the newest one's page, as the app hands it
                 // on: the small windows' key monitor, then the page. A hidden
                 // window is never key, so a posted press would go elsewhere.
+                // The menu bar is left out: what it would do is not checked.
                 guard let little = LittleWindow.all.last, let page = little.tab.built,
                       let chars = request["chars"] as? String, let code = request["code"] as? Int,
                       let event = NSEvent.keyEvent(

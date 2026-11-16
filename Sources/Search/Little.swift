@@ -24,7 +24,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     let tab: Tab
     /// Taken out of the row, rather than opened for a link. A quit puts it back.
     private(set) var lifted = false
-    /// The space it was lifted from, so a later space doesn't inherit it.
+    /// The space it was lifted from: a quit writes it back there, not into
+    /// whatever space is on screen then.
     private(set) var liftedSpace: UUID?
     /// The browser it was opened for: the planet for ⌃Tab when no window is in front.
     private weak var browser: Browser?
@@ -104,7 +105,26 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// it (see Browser.writeSession); a link from another app is not one
     /// of them, and goes when its window does.
     static func parked(beside browser: Browser, space: UUID) -> [Tab] {
-        open.filter { $0.lifted && $0.liftedSpace == space && $0.browser === browser }.map(\.tab)
+        open.filter { $0.browser === browser && $0.space(in: browser) == space }.map(\.tab)
+    }
+
+    /// The space a lifted tab is written into: the one it came from, or the
+    /// one on screen once that space has been deleted.
+    private func space(in browser: Browser) -> UUID? {
+        guard lifted, let liftedSpace else { return nil }
+        return browser.spaces.contains { $0.id == liftedSpace } ? liftedSpace : browser.spaceID
+    }
+
+    /// The browser window a tab was lifted from is closing, with another of
+    /// its profile still open: that one keeps the tab now, so a quit still
+    /// writes it down, and ⇧⌘T after closing it still finds a row.
+    static func rehome(from leaving: Browser, to heir: Browser) {
+        for little in open where little.browser === leaving {
+            little.browser = heir
+            if let space = little.liftedSpace, !heir.spaces.contains(where: { $0.id == space }) {
+                little.liftedSpace = heir.spaceID
+            }
+        }
     }
 
     /// The small windows' tabs as the Mac stacks their windows, the one in
@@ -216,10 +236,10 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         tab.onZoom = { [weak note] _, value in note?.say("\(Int((value * 100).rounded()))%") }
     }
 
-    /// Its own key monitor. A browser window's (see ContentView.watchKeys)
-    /// hands it these too, but a link that launched the app has no browser
-    /// window to lend one any more, and ⌘W went on to close a tab in a
-    /// window nobody could see.
+    /// Its own key monitor, the only one that handles a small window's keys.
+    /// A browser window's (ContentView.watchKeys) leaves them alone: a link
+    /// that launched the app has no browser window at all, and a key the
+    /// page should have first was gone before it got there.
     private static var keys: Any?
 
     private static func watchKeys() {
@@ -241,17 +261,22 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// in the browser's window (ContentView.pageFirst): an editor outdents
     /// and indents with them. WebKit sends one the page leaves unused back
     /// through the app, and then it is this window's Back or Forward.
-    private static var passed: NSEvent?
+    /// Several, as PageView.handed keeps: pressed twice before WebKit
+    /// answered, the first came back as a stranger and went to the menu,
+    /// which ran Back in the browser's window.
+    private static var passed: [NSEvent] = []
 
     private func pageFirst(_ event: NSEvent) -> Bool {
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
               let key = event.charactersIgnoringModifiers, key == "[" || key == "]",
               let page = tab.built, window.firstResponder === page else { return false }
-        if let passed = LittleWindow.passed, PageView.same(passed, event) {
-            LittleWindow.passed = nil
+        if let index = LittleWindow.passed.firstIndex(where: { PageView.same($0, event) }) {
+            LittleWindow.passed.remove(at: index)
             return false
         }
-        LittleWindow.passed = event
+        // One the page used never comes back: none older than two seconds.
+        LittleWindow.passed.removeAll { event.timestamp - $0.timestamp > 2 }
+        LittleWindow.passed.append(event)
         return true
     }
 
@@ -460,18 +485,17 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         if Browsers.quitting { return }
         if LittleWindow.switcher.home == tab.id { LittleWindow.switcher.cancel() }
         tab.leave = nil
-        let home = browser
-        let wasLifted = lifted
-        let space = liftedSpace
+        let owner = browser
+        let from = owner.flatMap { self.space(in: $0) }
         // Out of the list before the session is written, so a closed one
         // isn't put back into the row.
         LittleWindow.open.removeAll { $0 === self }
         // Closed, a lifted tab is a tab closed: ⇧⌘T brings it back.
-        if wasLifted, !kept { home?.rememberLifted(tab) }
+        if lifted, !kept { owner?.rememberLifted(tab) }
         if !kept { tab.close() }
         // Kept, it is in the row on screen, maybe another space's: the one
         // it came from still forgets it, or a relaunch would bring it twice.
-        if wasLifted, let space { home?.dropLifted(tab, from: space) }
+        if let from { owner?.dropLifted(tab, from: from) }
     }
 }
 

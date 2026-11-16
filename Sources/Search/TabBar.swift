@@ -1655,7 +1655,7 @@ struct TabMenu: View {
             }
             if browser.prefs.littleLinks {
                 Button("Open in Small Window") { browser.openInLittleWindow(tab) }
-                    .disabled(!tab.isWeb || tab.isBlank || tab.shy)
+                    .disabled(!browser.liftable(tab))
             }
         }
         Divider()

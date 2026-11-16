@@ -309,8 +309,7 @@ struct SearchApp: App {
                     Button("Open in Small Window") {
                         if let tab = browser.active { browser.openInLittleWindow(tab) }
                     }
-                        .disabled(browser.active?.pin != nil || browser.active?.bench == true || browser.active?.shy == true
-                            || !(browser.active?.isWeb ?? false))
+                        .disabled(!(browser.active.map(browser.liftable) ?? false))
                 }
                 Button("Copy Address") { browser.copyAddress() }
                     .shortcut("tabs.copyAddress")
@@ -1192,8 +1191,8 @@ struct ContentView: View {
             }
             // Every window has a monitor, and every monitor hears every key:
             // each takes only its own window's, and the one in front takes
-            // those of windows that aren't a browser's (a panel, the little
-            // window).
+            // those of windows that aren't a browser's (a panel). A small
+            // window's are its own (LittleWindow.watchKeys).
             guard mine(event) else { return event }
             guard event.type == .keyDown else {
                 let held = browser.prefs.showsTabShortcuts && event.modifierFlags.contains(.command)
@@ -1405,8 +1404,8 @@ struct ContentView: View {
         // left the question up, with Return still on its first button.
         if event.window?.sheetParent != nil || NSApp.modalWindow != nil { return false }
         // A small window's keys are its own monitor's (LittleWindow.watchKeys),
-        // there with or without a browser window. Taken here as well, a key
-        // the page should have first was already gone.
+        // there with or without a browser window. Taken here too, ⌘[ was
+        // gone before the page had it.
         if LittleWindow.owning(event.window) != nil { return false }
         // A popup window: ⌘W closes it, not a tab of the
         // window menus act on. New tabs return to its browser; Escape

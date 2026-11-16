@@ -32,9 +32,9 @@ enum Session {
         /// bring the window back (Windows.closed). Never written: it can
         /// hold what was typed into the page, and is left out of the keys.
         var keepsake: Browser.Keepsake? = nil
-        /// The tab, in a small window (Browser.openInLittleWindow), this
-        /// page was taken out of the row as. Closing that window takes out
-        /// this entry and no other: two tabs can have the same address.
+        /// The id of the tab this entry is, while it sits in a small window
+        /// (Browser.openInLittleWindow). Closing that window takes out this
+        /// entry and no other: two tabs can have the same address.
         var lifted: UUID? = nil
 
         enum CodingKeys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, lifted }

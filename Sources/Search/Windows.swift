@@ -391,6 +391,12 @@ enum Browsers {
             if closed.count > 10 { closed.removeFirst(closed.count - 10) }
         }
         all.removeAll { $0 === browser }
+        // Its tabs in small windows (Open in Small Window) stay open: another
+        // window of the profile keeps them, and writes them down now.
+        if let heir = all.first(where: { $0.isOpen && !$0.isPopup && $0.profileID == browser.profileID }) {
+            LittleWindow.rehome(from: browser, to: heir)
+            heir.writeSession(now: true)
+        }
         if #available(macOS 15.4, *) { Extensions.shared.detach(browser) }
         browser.closeAll()
         ContentView.forget(browser)
