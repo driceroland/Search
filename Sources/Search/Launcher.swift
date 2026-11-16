@@ -379,8 +379,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
             dismiss(keeping: false)
             Browsers.bringBack()
             owner.bringForward(id)
-            if let window = owner.window, window.isMiniaturized { window.deminiaturize(nil) }
-            Browsers.show(owner)
+            Self.bringUp(owner)
             comeForward()
             return
         }
@@ -388,7 +387,9 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         // A command is only ever on top, and there it is what Return does.
         if case .command(let command) = (chosen ?? offers.first)?.kind {
             dismiss(keeping: false)
-            command.run(on: Browsers.ensureWindow())
+            let browser = Browsers.ensureWindow()
+            command.run(on: browser)
+            Self.bringUp(browser)
             comeForward()
             return
         }
@@ -408,7 +409,9 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         dismiss(keeping: false)
         // search://settings and the rest: the page's own tab, one of each.
         if let page = InternalPage(url: url) {
-            Browsers.ensureWindow().show(page)
+            let browser = Browsers.ensureWindow()
+            browser.show(page)
+            Self.bringUp(browser)
         } else {
             Links.land(url)
         }
@@ -416,6 +419,15 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     private func comeForward() { Links.comeForward(lookedAt: true) }
+
+    /// The window what was asked for went to, on screen: out of the Dock
+    /// first, since bringing a window to the front doesn't take it out
+    /// (#95). With its only window there, Settings, Search's own pages and
+    /// the commands opened in it and left nothing to see.
+    static func bringUp(_ browser: Browser) {
+        if let window = browser.window, window.isMiniaturized { window.deminiaturize(nil) }
+        Browsers.show(browser)
+    }
 }
 
 /// Takes the keys without bringing Search in front of the app it is over.
