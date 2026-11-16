@@ -155,7 +155,11 @@ final class Links: NSObject, NSApplicationDelegate {
         // among it — goes (Security).
         DispatchQueue.global(qos: .utility).async { ImportFile.sweepScratch() }
         Trim.start()
-        MainActor.assumeIsolated { Shared.prefs.followFile() }
+        MainActor.assumeIsolated {
+            Shared.prefs.followFile()
+            // The address field from any app, once asked for (Launcher.swift).
+            Launcher.shared.start()
+        }
         let plain = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
         guard !plain else { return }
         DispatchQueue.main.async {
@@ -297,10 +301,14 @@ final class Links: NSObject, NSApplicationDelegate {
     /// apps built on Electron, left Search behind them. So if Search still
     /// isn't in front a moment later, it asks again the way it did before
     /// macOS 14.
+    ///
+    /// `lookedAt`: a test world opened to be looked at (./fresh.sh, with no
+    /// script driving it) comes forward too — the launcher's Return there is
+    /// how the launcher is tried by hand. Never one the bench drives.
     @MainActor
-    private static func comeForward() {
+    static func comeForward(lookedAt: Bool = false) {
         // Never a test run's: a probe started hidden stays off every screen.
-        guard !Store.testing else { return }
+        guard !Store.testing || (lookedAt && !Launcher.benchDriven) else { return }
         guard #available(macOS 14, *) else {
             NSApp.activate(ignoringOtherApps: true)
             return

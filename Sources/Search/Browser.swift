@@ -6891,11 +6891,13 @@ final class Browser: NSObject, ObservableObject {
 
     /// What is open, most recently looked at first, filtered by what has been
     /// typed. On an empty field this is the whole point of the summon: it is
-    /// the tab strip, except you read it only when you ask for it.
-    private func openPages(matching typed: String) -> [Suggestion] {
+    /// the tab strip, except you read it only when you ask for it. Not the
+    /// tab in front, which ⌘K is pressed over — unless `front`: the address
+    /// field raised from another app (Launcher.swift) is pressed over none.
+    func openPages(matching typed: String, front: Bool = false) -> [Suggestion] {
         let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
         return tabs
-            .filter { $0.id != activeID && !$0.isBlank }
+            .filter { (front || $0.id != activeID) && !$0.isBlank }
             .filter { tab in
                 guard !needle.isEmpty else { return true }
                 let address = tab.address.map { Address.pretty($0) } ?? ""

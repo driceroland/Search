@@ -1193,6 +1193,11 @@ struct ContentView: View {
             // each takes only its own window's, and the one in front takes
             // those of windows that aren't a browser's (a panel, the little
             // window).
+            // The address field raised from another app answers its own keys
+            // (Launcher.swift): taken here, Escape would put away what is up
+            // in the window behind it, ⌘W close a tab there, and a key typed
+            // while this window's field is on its way be held for it.
+            if Launcher.owns(event.window) { return event }
             guard mine(event) else { return event }
             guard event.type == .keyDown else {
                 let held = browser.prefs.showsTabShortcuts && event.modifierFlags.contains(.command)
@@ -1417,6 +1422,8 @@ struct ContentView: View {
         if event.window?.sheetParent != nil || NSApp.modalWindow != nil { return false }
         // A small window's keys are its own (see Little.swift).
         if let little = LittleWindow.owning(event.window) { return little.take(event) }
+        // Nor the address field raised from another app's (Launcher.swift).
+        if Launcher.owns(event.window) { return false }
         // A popup window: ⌘W closes it, not a tab of the
         // window menus act on. New tabs return to its browser; Escape
         // dismisses its permission question.
