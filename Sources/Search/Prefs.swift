@@ -449,6 +449,26 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// Chrome's colors on the Web Inspector (see Inspector.swift). Off
+    /// unless asked for, so the inspector stays as it comes.
+    @Published var inspectorChrome: Bool {
+        didSet {
+            store.set(inspectorChrome, forKey: "inspector.chrome")
+            guard inspectorChrome != oldValue else { return }
+            Browser.coatOpenInspectors()
+        }
+    }
+
+    /// The Web Inspector stays dark while Search is light. Off, it follows
+    /// Appearance. Off unless asked for.
+    @Published var inspectorDark: Bool {
+        didSet {
+            store.set(inspectorDark, forKey: "inspector.dark")
+            guard inspectorDark != oldValue else { return }
+            Browser.coatOpenInspectors()
+        }
+    }
+
     /// A click of the wheel scrolls the page as on Windows (see AutoScroll.swift).
     /// Off unless asked for.
     @Published var autoScroll: Bool {
@@ -937,6 +957,8 @@ final class Preferences: ObservableObject {
         let dusk = store.bool(forKey: "pages.dusk")
         darkensPages = dusk
         Dusk.shared.on = dusk
+        inspectorChrome = store.bool(forKey: "inspector.chrome")
+        inspectorDark = store.bool(forKey: "inspector.dark")
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls

@@ -50,6 +50,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Chrome's colors in the Web Inspector, off unless you turn it on in Settings › Appearance › Light and dark: a flat tab strip with the open tab underlined, and DevTools' colors for the selected row, the type and the code. The panels, the icons and the tools stay Web Inspector's. Keep the Web Inspector dark, beside it and off unless asked for, keeps the tools dark while Search is light; the row is there only while Search isn't set to Dark. Either one reaches an inspector already open, from the View menu or from Inspect Element in the page's own menu. ([#1129](https://github.com/driceroland/Search/issues/1129))
 - Shorter tab bar, in Settings › Appearance › Window: with the tabs across the top, the bar is only a few points taller than its tabs, 36 points where it is 52, and leaves the rest to the page. The window's three buttons stay on the row's middle. Off unless turned on.
 - Minimize the floating video, off unless you turn it on in Settings › Browsing. A button tucks the window into a corner, and a click on that button brings it back. Close, and the arrow back to the tab, stay as they are.
 - Reduce animations makes everything in Search's interface happen at once: the tab ⌘1–⌘9 picks is lit and shown with no glide, a space, a panel or a page's first frame comes without sliding or fading, for Search alone and whatever Reduce Motion in System Settings says. Off unless you turn on Settings › Appearance › Motion › Reduce animations.

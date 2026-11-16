@@ -2404,6 +2404,13 @@ final class PageView: WKWebView {
             item.target = self
             item.action = #selector(searchSelection(_:))
         }
+        // Inspect Element is WebKit's own, from this menu rather than the
+        // View menu. Handed on, and then the coat, if one was asked for.
+        if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierInspectElement" }) {
+            inspectItem = (item.target, item.action)
+            item.target = self
+            item.action = #selector(inspectFromPage(_:))
+        }
     }
 
     /// Translate Page to <your language>, or Show Original once it is:
@@ -2451,6 +2458,15 @@ final class PageView: WKWebView {
     })(document)
     """
     private var webSearch: (target: AnyObject?, action: Selector?) = (nil, nil)
+
+    /// WebKit's Inspect Element, handed on so the inspector's coat follows.
+    private var inspectItem: (target: AnyObject?, action: Selector?) = (nil, nil)
+
+    @objc private func inspectFromPage(_ item: NSMenuItem) {
+        guard let action = inspectItem.action else { return }
+        NSApp.sendAction(action, to: inspectItem.target, from: item)
+        browser?.dressInspector(of: self)
+    }
 
     /// WebKit's Open Link in New Window, handed on once the tab it makes is
     /// marked to stay behind. WebKit asks for that tab a moment later, from
