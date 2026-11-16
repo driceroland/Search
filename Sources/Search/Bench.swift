@@ -3451,6 +3451,46 @@ final class Bench {
                 "active": browser.active.flatMap { Store.testing || !$0.shy ? $0.address?.host() : nil } ?? "",
             ])
 
+        case "launcher":
+            // The address field from any app (Launcher.swift), in its model
+            // alone: on a run the bench drives the key is never asked of
+            // macOS and the panel never shown. "fire" is the key pressed.
+            guard Store.testing else { answer(["error": "launcher only works on a --test run"]); return }
+            let launcher = Launcher.shared
+            let prefs = Shared.prefs
+            switch request["action"] as? String ?? "state" {
+            case "on": prefs.launcher = request["on"] as? Bool ?? true
+            // ⇧⌘Space, as Settings offers it, or "none".
+            case "key": prefs.launcherKey = (request["key"] as? String) == "none" ? nil : .suggested
+            case "fire": launcher.toggle()
+            case "type": launcher.type(request["text"] as? String ?? "")
+            case "pick": launcher.picked = request["index"] as? Int
+            case "submit": launcher.submit()
+            case "escape": launcher.dismiss()
+            case "state": break
+            default:
+                answer(["error": "launcher takes on, key, fire, type, pick, submit, escape or state"])
+                return
+            }
+            // A turn later, once the switch's and the key's sinks have run.
+            DispatchQueue.main.async {
+                let front = Browsers.front ?? browser
+                answer([
+                    "on": prefs.launcher,
+                    "key": prefs.launcherKey?.combo.display ?? "",
+                    "wants": launcher.wants,
+                    "registered": HotKey.isSet,
+                    "up": launcher.up,
+                    "typed": launcher.typed,
+                    "offers": launcher.offers.map { ["url": $0.url.absoluteString, "open": $0.tab != nil, "kind": "\($0.kind)"] },
+                    // The window's own field, which the launcher's never shows in.
+                    "editing": front.editing,
+                    "windows": Browsers.all.filter { $0.isOpen && !$0.isPopup }.count,
+                    "tabs": front.tabs.map { ["id": Bench.short($0), "address": $0.address?.absoluteString ?? "", "private": $0.shy] },
+                    "active": front.active.map { Bench.short($0) } ?? "",
+                ])
+            }
+
         case "site":
             // The site card for the tab on screen, or one step in on its
             // connection, drawn off screen (see SiteCard.swift).
