@@ -309,7 +309,8 @@ struct SearchApp: App {
                     Button("Open in Small Window") {
                         if let tab = browser.active { browser.openInLittleWindow(tab) }
                     }
-                        .disabled(browser.active?.pin != nil || browser.active?.bench == true || !(browser.active?.isWeb ?? false))
+                        .disabled(browser.active?.pin != nil || browser.active?.bench == true || browser.active?.shy == true
+                            || !(browser.active?.isWeb ?? false))
                 }
                 Button("Copy Address") { browser.copyAddress() }
                     .shortcut("tabs.copyAddress")
@@ -1407,6 +1408,12 @@ struct ContentView: View {
         // bound to a command, while the caret is in a field there, is the
         // field's: the menu would otherwise run it on the window behind.
         if let little = LittleWindow.owning(event.window) {
+            // ⌘[ and ⌘] reach the page first, as in the browser's window
+            // (see pageFirst): an editor indents with them. Handed back
+            // unused, they are this window's Back and Forward.
+            if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+               let key = event.charactersIgnoringModifiers, key == "[" || key == "]",
+               pageFirst(event, key: key, shifted: false) { return false }
             if little.take(event) { return true }
             if let combo = KeyCombo(event: event), combo.movesCaret,
                little.tab.typing || little.tab.built?.inputContext != nil {

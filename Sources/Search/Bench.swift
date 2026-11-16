@@ -745,6 +745,7 @@ final class Bench {
                         "shown": b.window?.isVisible ?? false, "files": b.usesFiles,
                         "away": Browsers.isAway(b.window),
                         "space": b.space.name, "tabs": b.tabs.map { $0.address?.absoluteString ?? "" },
+                        "ids": b.tabs.map(Bench.short),
                         "profile": Profiles.shared.profile(b.profileID).name,
                         "spaces": b.spaces.map(\.name),
                         "stores": b.tabs.map { $0.store.identifier?.uuidString ?? "default" },
@@ -3414,11 +3415,12 @@ final class Bench {
                 LittleWindow.all.last?.tab.go(to: url)
             case "lift":
                 // A tab already in the row, into a small window (see
-                // Browser.openInLittleWindow). `id` is the bench's short id.
-                guard let tab = find(request, in: browser) ?? browser.active else {
-                    answer(["error": "no tab to lift"]); return
-                }
-                browser.openInLittleWindow(tab)
+                // Browser.openInLittleWindow). `id` is the bench's short id,
+                // looked for in every window, lifted by the window it is in.
+                let found = request["id"] == nil ? browser.active.map { (browser, $0) }
+                    : Browsers.all.lazy.compactMap { owner in self.find(request, in: owner).map { (owner, $0) } }.first
+                guard let (owner, tab) = found else { answer(["error": "no tab to lift"]); return }
+                owner.openInLittleWindow(tab)
             default:
                 guard let text = request["what"] as? String, let url = URL(string: text) else { answer(["error": "little needs a url, keep or close"]); return }
                 LittleWindow.show(url, for: browser, front: false)
@@ -3441,6 +3443,8 @@ final class Bench {
                 "activeID": browser.activeID.map { String($0.uuidString.prefix(8)).lowercased() } ?? "",
                 "fronted": address(LittleWindow.fronted),
                 "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" },
+                // What each one's view has loaded: a tab only waiting to wake has none.
+                "pages": LittleWindow.all.map { $0.tab.built?.url?.absoluteString ?? "" },
                 "said": LittleWindow.all.last?.said ?? "",
                 "zoom": LittleWindow.all.last?.tab.built.map { Double($0.pageZoom) } ?? 0,
                 "failures": LittleWindow.all.map { $0.tab.failure ?? "" },

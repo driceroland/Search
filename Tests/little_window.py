@@ -32,6 +32,21 @@ def press(code, chars, *mods): sv.cmd({"do": "press", "code": code, "chars": cha
 def paste(): return subprocess.run(["pbpaste"], capture_output=True, text=True).stdout
 def windows(**f): return sv.cmd({"do": "windows", **f})
 def records(): return json.load(open(f"{sv.SUPPORT}/windows.json"))
+def real(url):
+    """A tab as a person opens one: a bench tab is never written down."""
+    before = {x["id"] for x in sv.cmd({"do": "tabs"})["tabs"]}
+    sv.cmd({"do": "ui", "show": url})
+    for _ in range(50):
+        new = [x["id"] for x in sv.cmd({"do": "tabs"})["tabs"] if x["id"] not in before]
+        if new: return new[0]
+        time.sleep(0.1)
+    raise RuntimeError(f"no tab for {url}")
+def until(check, seconds=5):
+    for _ in range(int(seconds * 10)):
+        if check(): return True
+        time.sleep(0.1)
+    return False
+def front_url(): return next((x["url"] for x in sv.cmd({"do": "tabs"})["tabs"] if x["active"]), "")
 def kept_rows(): return [u for r in records()[1:] for shape in r.get("rows", {}).values() for u in json.dumps(shape).split('"') if u.startswith(sv.BASE)]
 
 
@@ -94,8 +109,13 @@ try:
     t.ok("⌘0 puts it back", abs(little("look")["zoom"] - 1) < 0.01, little("look")["zoom"])
 
     # Back stays in this window, and previous/next tab walk the small
-    # windows. Neither changes the tab in the window behind.
+    # windows. Neither changes the tab in the window behind, which has a
+    # page to go back to and a second tab to go to, so either would show.
+    sv.cmd({"do": "ui", "go": f"{sv.BASE}/behind-one"}); until(lambda: front_url().endswith("/behind-one"))
+    sv.cmd({"do": "ui", "go": f"{sv.BASE}/behind-two"}); until(lambda: front_url().endswith("/behind-two"))
+    sv.cmd({"do": "open", "url": f"{sv.BASE}/row-second"}); time.sleep(0.5)
     active = little("look")["activeID"]
+    t.ok("the row behind has two tabs", len(sv.cmd({"do": "tabs"})["tabs"]) >= 2, sv.cmd({"do": "tabs"}))
     press(30, "]", "cmd", "shift")
     t.ok("one small window: next tab leaves the row", little("look")["activeID"] == active, little("look"))
     sv.cmd({"do": "little", "what": "go", "url": f"{sv.BASE}/onward"}); time.sleep(1.5)
@@ -103,14 +123,18 @@ try:
     press(33, "[", "cmd"); time.sleep(0.6)
     st = little("look")
     t.ok("⌘[ goes back in the small window", st["littles"][-1].endswith("/copied"), st)
-    t.ok("⌘[ leaves the tab behind", st["activeID"] == active, st)
+    t.ok("⌘[ leaves the tab behind on its page", st["activeID"] == active and front_url().endswith("/behind-two"), (st, front_url()))
+    # Three small windows: next and previous go round them in the order
+    # they were opened, from the newest, which has the keys.
     little(f"{sv.BASE}/second"); time.sleep(1.2)
+    little(f"{sv.BASE}/third"); time.sleep(1.2)
     press(30, "]", "cmd", "shift")
     st = little("look")
-    t.ok("⇧⌘] brings the other small window forward", st["fronted"].endswith("/copied"), st)
+    t.ok("⇧⌘] from the newest goes round to the first", st["fronted"].endswith("/copied"), st)
     t.ok("⇧⌘] leaves the tab behind", st["activeID"] == active, st)
-    press(13, "w", "cmd"); time.sleep(0.3)
-    little("close"); time.sleep(0.3)
+    press(33, "[", "cmd", "shift")
+    t.ok("⇧⌘[ goes the other way, to the one before", little("look")["fronted"].endswith("/second"), little("look"))
+    for _ in range(3): little("close"); time.sleep(0.3)
 
     # ⌘W and Escape close it; the browser's row is as it was.
     little(f"{sv.BASE}/closing"); time.sleep(1.2)
@@ -200,15 +224,6 @@ try:
     # window takes that tab's entry out of the space's file, and not a tab
     # with the same address left in the row there (Browser.dropLifted).
     def entries(space): return [e for e in sv.session(space)["tabs"] if e["url"].startswith(sv.BASE)]
-    def real(url):
-        """A tab as a person opens one: a bench tab is never written down."""
-        before = {x["id"] for x in sv.cmd({"do": "tabs"})["tabs"]}
-        sv.cmd({"do": "ui", "show": url})
-        for _ in range(50):
-            new = [x["id"] for x in sv.cmd({"do": "tabs"})["tabs"] if x["id"] not in before]
-            if new: return new[0]
-            time.sleep(0.1)
-        raise RuntimeError(f"no tab for {url}")
     def twins(space): return [e for e in entries(space) if e["url"] == twin]
     sv.setup(**{"spaces": True, "links.little": True}); sv.launch()
     sv.cmd({"do": "space", "action": "new", "name": "Two"}); time.sleep(0.5)
@@ -246,6 +261,34 @@ try:
     t.ok("kept: in the row of the space on screen", lone in row, row)
     t.ok("and out of the file of the space it came from", all(e["url"] != lone for e in entries(two)), entries(two))
 
+    # Lifted from a space that is then loaded from disk again: the row
+    # doesn't make a second tab of it while it is in its small window.
+    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
+    dup = f"{sv.BASE}/once"
+    once = real(dup); time.sleep(1.2)
+    sv.cmd({"do": "little", "what": "lift", "id": once}); time.sleep(0.5)
+    sv.cmd({"do": "ui", "spaces": False}); time.sleep(0.8)
+    sv.cmd({"do": "ui", "spaces": True}); time.sleep(0.5)
+    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(1)
+    row = [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]]
+    t.ok("its space loaded again: not in the row while it is out", dup not in row, row)
+    little("keep"); time.sleep(0.8)
+    row = [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]]
+    t.ok("kept: in the row once", row.count(dup) == 1, row)
+
+    # A lifted tab is yours: Escape is the page's, and closed it comes back
+    # with ⇧⌘T.
+    gone = f"{sv.BASE}/reopened"
+    lifted = real(gone); time.sleep(1.2)
+    sv.cmd({"do": "little", "what": "lift", "id": lifted}); time.sleep(0.5)
+    press(53, "\x1b")
+    t.ok("Escape leaves a lifted tab's window open", little("look")["littles"] == [gone], little("look"))
+    press(13, "w", "cmd")
+    t.ok("⌘W closes it", until(lambda: little("look")["littles"] == []), little("look"))
+    sv.cmd({"do": "press", "code": 17, "chars": "t", "mods": ["cmd", "shift"]})
+    t.ok("⇧⌘T brings it back in the row", until(lambda: gone in [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]]),
+         sv.cmd({"do": "tabs"}))
+
     # A quit with a tab lifted: the relaunch has it in its row again.
     sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
     back = real(f"{sv.BASE}/comeback"); time.sleep(1.5)
@@ -255,6 +298,36 @@ try:
     row = [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]]
     t.ok("quit with a tab lifted: back in its space's row after a relaunch",
          f"{sv.BASE}/comeback" in row and little("look")["littles"] == [], row)
+
+    # After a relaunch a tab in the background only waits to wake: lifted,
+    # its page is loaded, not a blank window.
+    sleepy = next((x for x in sv.cmd({"do": "tabs"})["tabs"] if x.get("url") == f"{sv.BASE}/comeback"), None)
+    t.ok("the tab back from the quit is asleep", sleepy is not None and sleepy["asleep"] and not sleepy["active"], sleepy)
+    if sleepy:
+        sv.cmd({"do": "little", "what": "lift", "id": sleepy["id"]})
+        t.ok("lifted asleep: the small window loads its page",
+             until(lambda: little("look")["pages"] == [f"{sv.BASE}/comeback"], 6), little("look"))
+        little("close"); time.sleep(0.3)
+
+    # A second window's lifted tab, through a quit: a window after the
+    # first keeps its rows in windows.json (Windows.save), and the page is
+    # written there too. Small windows off here, so the link is a tab in
+    # the window in front; the bench lifts it all the same.
+    sv.setup(); sv.launch()
+    windows(action="new"); windows(action="front", n=2); time.sleep(0.5)
+    other = f"{sv.BASE}/second-window"
+    windows(action="link", url=other)
+    t.ok("the page is in the second window",
+         until(lambda: other in windows()["windows"][1]["tabs"]), windows()["windows"])
+    second = windows()["windows"][1]
+    sv.cmd({"do": "little", "what": "lift", "id": second["ids"][second["tabs"].index(other)]}); time.sleep(0.5)
+    t.ok("lifted out of the second window", other not in windows()["windows"][1]["tabs"], windows()["windows"])
+
+    sv.quit()
+    t.ok("quit: the second window's record has the lifted page", other in kept_rows(), records())
+    sv.launch()
+    st = windows()
+    t.ok("relaunch: back in the second window's row", any(other in w["tabs"] for w in st["windows"]), st["windows"])
 finally:
     subprocess.run(["pbcopy"], input=saved)
     t.done(); sv.finish()

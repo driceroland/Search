@@ -60,6 +60,9 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         let little = LittleWindow(tab: tab, browser: browser)
         little.lifted = lifted
         little.liftedSpace = lifted ? browser.spaceID : nil
+        // A tab from the row has its own history: back from its first page
+        // goes nowhere, as in the row, rather than closing the window.
+        if lifted { tab.leave = nil }
         // A step down and in from the newest one on screen, so that five
         // links from Mail are five windows you can see are there, not one
         // on top of four.
@@ -301,7 +304,9 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             switcher.cancel()
             if event.keyCode == 53 { return true }
         }
-        if event.keyCode == 53 && flags.isEmpty || key == "w" && flags == .command {
+        // Escape is a link's way out. A lifted tab is one of yours, and a
+        // page's own Escape closing it lost it: ⌘W or the window's button.
+        if event.keyCode == 53 && flags.isEmpty && !lifted || key == "w" && flags == .command {
             window.performClose(nil)
             return true
         }
@@ -316,7 +321,9 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// small windows. One window has nowhere to go, and the row behind
     /// stays where it is either way.
     private func step(_ direction: Int) {
-        let ids = LittleWindow.stacked
+        // In the order they were opened: by their stacking, the one just
+        // left is always next, and with three the third is never reached.
+        let ids = LittleWindow.open.map(\.tab.id)
         guard ids.count > 1, let here = ids.firstIndex(of: tab.id) else { return }
         let index = ((here + direction) % ids.count + ids.count) % ids.count
         LittleWindow.holding(ids[index])?.front()
@@ -423,6 +430,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         // Out of the list before the session is written, so a closed one
         // isn't put back into the row.
         LittleWindow.open.removeAll { $0 === self }
+        // Closed, a lifted tab is a tab closed: ⇧⌘T brings it back.
+        if wasLifted, !kept { home?.rememberLifted(tab) }
         if !kept { tab.close() }
         // Kept, it is in the row on screen, maybe another space's: the one
         // it came from still forgets it, or a relaunch would bring it twice.

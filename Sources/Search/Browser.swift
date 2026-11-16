@@ -3487,10 +3487,16 @@ final class Browser: NSObject, ObservableObject {
             let saved = readRow(space.id)
             if !saved.tabs.isEmpty { rows[space.id.uuidString] = saved }
         }
-        rows[spaceID.uuidString] = session(tabs, active: activeID, groups: tabGroups, splits: splits, keeping: keeping)
+        // Tabs lifted into small windows, as writeSession writes them: in a
+        // window after the first, its rows are its record (Windows.save).
+        // Not for a window going away (`keeping`): ⇧⌘T bringing it back
+        // would bring them twice.
+        func aside(_ space: UUID, _ row: [Tab]) -> [Tab] { keeping ? [] : lifted(from: space, besides: row) }
+        rows[spaceID.uuidString] = session(tabs, active: activeID, groups: tabGroups, splits: splits, keeping: keeping,
+                                           aside: aside(spaceID, tabs))
         for (space, row) in parked {
             rows[space.uuidString] = session(row.tabs, active: row.active, groups: row.groups ?? readRow(space).groups,
-                                             splits: row.splits, keeping: keeping)
+                                             splits: row.splits, keeping: keeping, aside: aside(space, row.tabs))
         }
         return rows
     }
@@ -4901,12 +4907,19 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// A lifted tab's small window closed: ⇧⌘T brings it back, at the end
+    /// of the row, as it would a tab closed there.
+    func rememberLifted(_ tab: Tab) { remember(tab, at: tabs.count) }
+
     /// Into the small window a link from another app uses (see Little.swift):
     /// the page as it is, beside this window. Open in Search puts it back.
     /// A pin stays: it is the row's. A bench tab only on a test run.
     func openInLittleWindow(_ tab: Tab) {
-        guard !isPopup, tab.pin == nil, tab.isWeb, !tab.isBlank, tabs.contains(where: { $0.id == tab.id }) else { return }
+        guard !isPopup, tab.pin == nil, !tab.shy, tab.isWeb, !tab.isBlank, tabs.contains(where: { $0.id == tab.id }) else { return }
         guard !tab.bench || Store.testing else { return }
+        // A tab asleep, or not yet woken since launch, has only its address:
+        // the small window draws the page, so the page is loaded first.
+        if !tab.wake() { tab.revive() }
         detach(tab)
         LittleWindow.show(tab, for: self, front: !Store.testing, lifted: true)
         writeSession(now: true)
@@ -5861,6 +5874,9 @@ final class Browser: NSObject, ObservableObject {
             // An empty page is never written; the first builds of Split View
             // on main wrote one for an empty half.
             guard let saved = URL(string: entry.url), entry.url != "about:blank" else { continue }
+            // A tab still in its small window: written so a quit keeps it,
+            // not made a second time while it is open.
+            if let lifted = entry.lifted, LittleWindow.holding(lifted) != nil { continue }
             // A row read from disk is a browser or window opened afresh: with
             // pins going home, a pin comes back at the page it was pinned at,
             // wherever it had been taken since.
