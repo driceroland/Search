@@ -231,18 +231,7 @@ final class Links: NSObject, NSApplicationDelegate {
         // find it running.
         guard deliver == nil else { return }
         deliver = { url in
-            // The window in front's browser, or a window brought back for it:
-            // the link lands where you are, not in the first window.
-            // Or the window, in its space, a rule of Settings › Spaces & Pins
-            // › Send links to a space sends it to (see SpaceRoutes.swift).
-            let front = Browsers.ensureWindow()
-            let browser = front.routed(url) ?? front
-            browser.arrive(url)
-            // Put away in the Dock, it stayed there: bringing a window to the
-            // front doesn't take it out (#95).
-            if let window = browser.window, window.isMiniaturized { window.deminiaturize(nil) }
-            // A hidden probe's window stays out of sight.
-            if !(Store.testing && NSApp.isHidden) { browser.window?.makeKeyAndOrderFront(nil) }
+            land(url)
             comeForward()
         }
         let early = waiting
@@ -264,6 +253,27 @@ final class Links: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    /// An address from outside the window — a link from another app, or what
+    /// was typed into the address field raised from one (Launcher.swift) —
+    /// into the window in front, or one brought back for it: it lands where
+    /// you are, not in the first window. Or the window, in its space, a rule
+    /// of Settings › Spaces & Pins › Send links to a space sends it to (see
+    /// SpaceRoutes.swift). The window it went to, which is left for the
+    /// caller to bring the app forward to.
+    @MainActor
+    @discardableResult
+    static func land(_ url: URL) -> Browser {
+        let front = Browsers.ensureWindow()
+        let browser = front.routed(url) ?? front
+        browser.arrive(url)
+        // Put away in the Dock, it stayed there: bringing a window to the
+        // front doesn't take it out (#95).
+        if let window = browser.window, window.isMiniaturized { window.deminiaturize(nil) }
+        // A hidden probe's window stays out of sight.
+        if !(Store.testing && NSApp.isHidden) { browser.window?.makeKeyAndOrderFront(nil) }
+        return browser
     }
 
     /// Runs once a window is actually showing, and one turn of the run loop
