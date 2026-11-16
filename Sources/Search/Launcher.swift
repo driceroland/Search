@@ -331,7 +331,12 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         let open = openTabs(matching: typed, for: target)
         // A page offered as open isn't offered again as a place to load.
         let shown = Set(open.map(\.url))
-        offers = open + places.offers.filter { $0.tab != nil || !shown.contains($0.url) }
+        var rest = places.offers.filter { $0.tab != nil || !shown.contains($0.url) }
+        // A command typed whole stays on top, over the open pages: there it
+        // is what Return does, as in ⌘L's field. Under a tab about settings,
+        // "settings" searched the web for the word.
+        let command = rest.first?.kind.isCommand == true ? [rest.removeFirst()] : []
+        offers = command + open + rest
         ending = places.ending
     }
 

@@ -24,7 +24,8 @@ def la(action="state", **fields):
 
 
 try:
-    sv.setup()
+    # Address-bar commands on, for the command on top at the end.
+    sv.setup(commandbar=True)
     sv.launch()
 
     s = la()
@@ -86,6 +87,19 @@ try:
     la("on", on=True)
     s = la("key", key="none")
     t.ok("the key taken away, none is wanted", s["key"] == "" and s["wants"] is False, s)
+
+    # A command typed whole stays over the open pages, where Return runs it.
+    la("key", key="suggested")
+    sv.page("launcher-history")
+    la("fire")
+    s = la("type", text="history")
+    kinds = [o["kind"] for o in s["offers"]]
+    t.ok("a command typed whole stays on top of the open pages",
+         bool(kinds) and kinds[0].startswith("command") and "open" in kinds[1:], s["offers"])
+    s = la("submit")
+    front = next((x for x in s["tabs"] if x["id"] == s["active"]), {})
+    t.ok("…and Return runs it rather than searching the web",
+         s["up"] is False and not front.get("address", "").startswith("http"), front)
 finally:
     t.done()
     sv.finish()
