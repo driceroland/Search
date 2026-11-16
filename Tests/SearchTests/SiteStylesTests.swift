@@ -70,6 +70,30 @@ final class SiteStylesTests: XCTestCase {
         XCTAssertTrue(js.contains("\\u2028"))
     }
 
+    func testAColorCodeWearsItsColorAndASelectorDoesNot() {
+        let marks = CodeTint.marks("#header { color: #fc0; background: rgb(0, 128, 255); }", script: false)
+        let colors = marks.compactMap { mark -> (UInt8, UInt8, UInt8, UInt8)? in
+            if case .color(let r, let g, let b, let a) = mark.kind { return (r, g, b, a) }
+            return nil
+        }
+        XCTAssertEqual(colors, [(255, 204, 0, 255), (0, 128, 255, 255)] as [(UInt8, UInt8, UInt8, UInt8)])
+        let red = CodeTint.marks("a { color: hsl(0, 100%, 50%) }", script: false).compactMap { mark -> (UInt8, UInt8, UInt8, UInt8)? in
+            if case .color(let r, let g, let b, let a) = mark.kind { return (r, g, b, a) }
+            return nil
+        }
+        XCTAssertEqual(red, [(255, 0, 0, 255)] as [(UInt8, UInt8, UInt8, UInt8)])
+        let size = CodeTint.marks("a { font-size: 16px }", script: false).first { $0.kind == .number }
+        XCTAssertEqual(size?.length, 4)
+        XCTAssertFalse(CodeTint.marks("/* #fff */", script: false).contains { if case .color = $0.kind { return true }; return false })
+    }
+
+    func testAKeywordIsColoredOnlyInJavaScript() {
+        XCTAssertTrue(CodeTint.marks("let a = 1\nlet b = 2", script: true).contains { $0.kind == .keyword })
+        XCTAssertFalse(CodeTint.marks("let a = 1", script: false).contains { $0.kind == .keyword })
+        XCTAssertEqual(CodeTint.pair(in: "{ a }", caret: 1, script: false), (0, 4))
+        XCTAssertNil(CodeTint.pair(in: "\"{}\"", caret: 2, script: true))
+    }
+
     func testKeepsAScriptAsTyped() {
         XCTAssertEqual(SiteStyles.keptScript("let a = 1\nlet b = 2"), "let a = 1\nlet b = 2")
         XCTAssertEqual(SiteStyles.keptScript("return /a/"), "return /a/")

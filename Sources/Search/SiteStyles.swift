@@ -158,8 +158,9 @@ final class SiteStyles: ObservableObject {
 
     /// Runs a site's JavaScript once, on the pages of that site open now.
     /// `watched` is the page whose error, if it has one, is reported. A
-    /// private tab is skipped, the same way the sheet is.
-    func run(_ source: String, on host: String, watched: Tab?, then: @escaping (Bool) -> Void) {
+    /// private tab is skipped, the same way the sheet is. The words are a
+    /// line to show, when WebKit has one, so the caret can go there.
+    func run(_ source: String, on host: String, watched: Tab?, then: @escaping ((words: String, line: Int)?) -> Void) {
         var watchedRan = false
         for tab in openTabs where !tab.shy && Dusk.host(of: tab.address) == host {
             guard let web = tab.built else { continue }
@@ -167,12 +168,34 @@ final class SiteStyles: ObservableObject {
             if watch { watchedRan = true }
             web.evaluateJavaScript(source, in: nil, in: .page) { result in
                 guard watch else { return }
-                let failed: Bool
-                if case .failure = result { failed = true } else { failed = false }
-                Task { @MainActor in then(failed) }
+                let trouble: (words: String, line: Int)?
+                if case .failure(let error) = result { trouble = Self.scriptTrouble(error) }
+                else { trouble = nil }
+                Task { @MainActor in then(trouble) }
             }
         }
-        if !watchedRan { then(false) }
+        if !watchedRan { then(nil) }
+    }
+
+    /// What WebKit said, short enough for the line under the window. The
+    /// line number is the script's own, because the script is injected as
+    /// itself and not wrapped.
+    private static func scriptTrouble(_ error: Error) -> (words: String, line: Int)? {
+        let info = (error as NSError).userInfo
+        let said = (info["WKJavaScriptExceptionMessage"] as? String)?
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let line = (info["WKJavaScriptExceptionLineNumber"] as? Int)
+            ?? (info["WKJavaScriptExceptionLineNumber"] as? NSNumber)?.intValue
+            ?? 0
+        let words: String
+        if let said, !said.isEmpty {
+            words = said.count > 60 ? String(said.prefix(60)) + "…" : said
+        } else {
+            words = "The JavaScript has an error."
+        }
+        let numbered = line > 0 ? "Saved. Line \(line): \(words)" : "Saved. \(words)"
+        return (numbered, line)
     }
 
     struct Cleaned: Equatable {
@@ -589,6 +612,8 @@ private struct StyleEditor: View {
     @State private var nameDraft = ""
     /// Why the CSS just changed under you, until you edit it again.
     @State private var note: String?
+    /// The line WebKit named, until the words change.
+    @State private var fault: Int?
     /// Closing says this once. The panel can leave by more than one path.
     @State private var mentioned = false
 
@@ -640,6 +665,7 @@ private struct StyleEditor: View {
         .onChange(of: pane) { _, next in
             if next != .look { stopHiding() }
         }
+        .onChange(of: language) { _, _ in fault = nil }
     }
 
     private var lookPlate: some View {
@@ -693,12 +719,15 @@ private struct StyleEditor: View {
                 Caption(language == .css
                         ? "Applied before the page loads."
                         : "Runs when the page loads.")
-                CodeView(text: language == .css ? $cssDraft : $scriptDraft, kind: language)
+                CodeView(text: language == .css ? $cssDraft : $scriptDraft, kind: language, fault: $fault)
                     .id("\(place ?? "")-\(language.rawValue)")
                     .frame(height: 220)
                     .background(Palette.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 if language == .css, let note, !codeDirty {
                     Caption(note)
+                }
+                if let room {
+                    Caption(room)
                 }
             }
         } foot: {
@@ -1104,9 +1133,24 @@ private struct StyleEditor: View {
             browser.announce(message)
             return
         }
-        styles.run(next, on: host, watched: tab) { failed in
-            browser.announce(failed ? "Saved. The JavaScript has an error." : message)
+        fault = nil
+        styles.run(next, on: host, watched: tab) { trouble in
+            if let trouble {
+                fault = trouble.line > 0 ? trouble.line : nil
+                browser.announce(trouble.words)
+            } else {
+                browser.announce(message)
+            }
         }
+    }
+
+    /// Said only as the text nears the length that gets cut on save.
+    private var room: String? {
+        let count = (language == .css ? cssDraft : scriptDraft).count
+        let left = SiteStyles.limit - count
+        if left < 0 { return "Shortened to fit when you save." }
+        if left < 4_000 { return "\(left.formatted()) characters left." }
+        return nil
     }
 
     private func savedMessage(_ cleaned: SiteStyles.Cleaned, scriptCut: Bool, emptied: Bool) -> String {
@@ -1428,13 +1472,439 @@ private struct ColorWell: NSViewRepresentable {
     }
 }
 
+/// Colors for the code field. Drawn over the text, never written into it,
+/// so a paste and a save stay the characters you typed. A color code wears
+/// its own color. A `#` that starts a selector does not: that is a name.
+enum CodeTint {
+    struct Mark: Equatable {
+        var location: Int
+        var length: Int
+        var kind: Kind
+    }
+
+    enum Kind: Equatable {
+        case comment, string, keyword, number
+        case color(UInt8, UInt8, UInt8, UInt8)
+    }
+
+    private static let words: Set<String> = [
+        "async", "await", "break", "case", "catch", "class", "const", "continue",
+        "default", "delete", "do", "else", "export", "extends", "false", "finally",
+        "for", "function", "if", "import", "in", "instanceof", "let", "new", "null",
+        "of", "return", "static", "super", "switch", "this", "throw", "true", "try",
+        "typeof", "undefined", "var", "while", "yield"
+    ]
+    private static let units: Set<String> = [
+        "px", "em", "rem", "vh", "vw", "vmin", "vmax", "ch", "ex", "pt", "pc",
+        "in", "cm", "mm", "s", "ms", "deg", "turn", "fr", "dvh", "dvw"
+    ]
+
+    static func marks(_ text: String, script: Bool) -> [Mark] {
+        let source = text as NSString
+        let n = source.length
+        var marks: [Mark] = []
+        var i = 0
+        while i < n {
+            let c = source.character(at: i)
+            if c == 34 || c == 39 || c == 96 {
+                let start = i
+                i = endOfString(source, from: i, quote: c)
+                marks.append(Mark(location: start, length: i - start, kind: .string))
+                appendHex(source, into: &marks, from: start, to: i, trusted: true)
+                continue
+            }
+            if c == 47, i + 1 < n, source.character(at: i + 1) == 42 {
+                let start = i
+                i = endOfComment(source, from: i + 2)
+                marks.append(Mark(location: start, length: i - start, kind: .comment))
+                continue
+            }
+            if script, c == 47, i + 1 < n, source.character(at: i + 1) == 47 {
+                let start = i
+                i += 2
+                while i < n, source.character(at: i) != 10 { i += 1 }
+                marks.append(Mark(location: start, length: i - start, kind: .comment))
+                continue
+            }
+            if c == 35, let found = hexColor(source, at: i, trusted: false) {
+                marks.append(Mark(location: i, length: found.end - i, kind: .color(found.r, found.g, found.b, found.a)))
+                i = found.end
+                continue
+            }
+            if !script, c == 64 {
+                let (word, end) = readIdent(source, from: i + 1)
+                if !word.isEmpty {
+                    marks.append(Mark(location: i, length: end - i, kind: .keyword))
+                    i = end
+                    continue
+                }
+            }
+            if !script, c == 33 {
+                let (word, end) = readIdent(source, from: i + 1)
+                if word.lowercased() == "important" {
+                    marks.append(Mark(location: i, length: end - i, kind: .keyword))
+                    i = end
+                    continue
+                }
+            }
+            if isDigit(c) || (c == 46 && i + 1 < n && isDigit(source.character(at: i + 1))),
+               i == 0 || !isIdent(source.character(at: i - 1)),
+               let end = readNumber(source, from: i, script: script), end > i {
+                marks.append(Mark(location: i, length: end - i, kind: .number))
+                i = end
+                continue
+            }
+            if isIdentStart(c) {
+                if !script, let found = colorCall(source, at: i) {
+                    marks.append(Mark(location: i, length: found.end - i, kind: .color(found.r, found.g, found.b, found.a)))
+                    i = found.end
+                    continue
+                }
+                let (word, end) = readIdent(source, from: i)
+                if end == i { i += 1; continue }
+                if script, words.contains(word) {
+                    marks.append(Mark(location: i, length: end - i, kind: .keyword))
+                }
+                i = end
+                continue
+            }
+            i += 1
+        }
+        return marks
+    }
+
+    /// The bracket beside the caret, and the one that closes it. Nothing
+    /// while the caret is in a string or a comment, where a brace is text.
+    static func pair(in text: String, caret: Int, script: Bool) -> (Int, Int)? {
+        let source = text as NSString
+        let n = source.length
+        guard caret >= 0, caret <= n else { return nil }
+        let spots = [caret - 1, caret].filter { $0 >= 0 && $0 < n }
+        let openers: [unichar: unichar] = [40: 41, 91: 93, 123: 125]
+        let closers: Set<unichar> = [41, 93, 125]
+        guard let target = spots.first(where: { openers[source.character(at: $0)] != nil || closers.contains(source.character(at: $0)) }) else {
+            return nil
+        }
+        var stack: [(unichar, Int)] = []
+        var i = 0
+        var quote: unichar = 0
+        var block = false
+        var line = false
+        while i < n {
+            let c = source.character(at: i)
+            if block {
+                if c == 42, i + 1 < n, source.character(at: i + 1) == 47 { block = false; i += 2 }
+                else { i += 1 }
+                continue
+            }
+            if line {
+                if c == 10 { line = false }
+                i += 1
+                continue
+            }
+            if quote != 0 {
+                if c == 92 { i = min(i + 2, n); continue }
+                if c == quote || (quote != 96 && c == 10) { quote = 0 }
+                i += 1
+                continue
+            }
+            if c == 34 || c == 39 || c == 96 { quote = c; i += 1; continue }
+            if c == 47, i + 1 < n, source.character(at: i + 1) == 42 { block = true; i += 2; continue }
+            if script, c == 47, i + 1 < n, source.character(at: i + 1) == 47 { line = true; i += 2; continue }
+            if let closer = openers[c] {
+                stack.append((closer, i))
+            } else if closers.contains(c), let last = stack.last, last.0 == c {
+                stack.removeLast()
+                if last.1 == target || i == target { return (last.1, i) }
+            }
+            i += 1
+        }
+        return nil
+    }
+
+    /// Ink that stays readable on the color, blended over the field so a
+    /// transparent color doesn't turn the letters white on white.
+    static func chip(_ r: UInt8, _ g: UInt8, _ b: UInt8, _ a: UInt8) -> (ink: NSColor, wash: NSColor) {
+        func mix(_ appearance: NSAppearance) -> (CGFloat, CGFloat, CGFloat) {
+            let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let base: CGFloat = dark ? 0.175 : 0.937
+            let alpha = CGFloat(a) / 255
+            return (
+                CGFloat(r) / 255 * alpha + base * (1 - alpha),
+                CGFloat(g) / 255 * alpha + base * (1 - alpha),
+                CGFloat(b) / 255 * alpha + base * (1 - alpha)
+            )
+        }
+        let wash = NSColor(name: nil, dynamicProvider: { appearance in
+            let (cr, cg, cb) = mix(appearance)
+            return NSColor(srgbRed: cr, green: cg, blue: cb, alpha: 1)
+        })
+        let ink = NSColor(name: nil, dynamicProvider: { appearance in
+            let (cr, cg, cb) = mix(appearance)
+            let light = 0.2126 * cr + 0.7152 * cg + 0.0722 * cb
+            return light > 0.62
+                ? NSColor(srgbRed: 0.12, green: 0.12, blue: 0.12, alpha: 1)
+                : NSColor(srgbRed: 0.98, green: 0.98, blue: 0.98, alpha: 1)
+        })
+        return (ink, wash)
+    }
+
+    private static func appendHex(_ source: NSString, into marks: inout [Mark], from: Int, to: Int, trusted: Bool) {
+        var j = from
+        while j < to {
+            if source.character(at: j) == 35, let found = hexColor(source, at: j, trusted: trusted), found.end <= to {
+                marks.append(Mark(location: j, length: found.end - j, kind: .color(found.r, found.g, found.b, found.a)))
+                j = found.end
+            } else {
+                j += 1
+            }
+        }
+    }
+
+    /// A value, not a selector. `#header` at the start of a rule is a name.
+    /// `#fff` after a colon, or inside `rgb` and `linear-gradient`, is a color.
+    private static func inValue(_ source: NSString, before start: Int) -> Bool {
+        var j = start - 1
+        var depth = 0
+        while j >= 0 {
+            let c = source.character(at: j)
+            if c == 41 { depth += 1 }
+            else if c == 40 {
+                if depth == 0 { return true }
+                depth -= 1
+            } else if depth == 0, c == 58 {
+                return true
+            } else if depth == 0, c == 59 || c == 123 || c == 125 {
+                return false
+            }
+            j -= 1
+        }
+        return false
+    }
+
+    private static func hexColor(_ source: NSString, at start: Int, trusted: Bool) -> (end: Int, r: UInt8, g: UInt8, b: UInt8, a: UInt8)? {
+        let n = source.length
+        guard start < n, source.character(at: start) == 35 else { return nil }
+        var i = start + 1
+        let digits = i
+        while i < n, isHex(source.character(at: i)) { i += 1 }
+        let count = i - digits
+        guard count == 3 || count == 4 || count == 6 || count == 8 else { return nil }
+        if !trusted, !inValue(source, before: start) { return nil }
+        let raw = source.substring(with: NSRange(location: digits, length: count))
+        guard let rgba = expandHex(raw) else { return nil }
+        return (i, rgba.0, rgba.1, rgba.2, rgba.3)
+    }
+
+    private static func expandHex(_ raw: String) -> (UInt8, UInt8, UInt8, UInt8)? {
+        let chars = Array(raw)
+        let full: [Character]
+        switch chars.count {
+        case 3: full = chars.flatMap { [$0, $0] } + ["f", "f"]
+        case 4: full = chars.flatMap { [$0, $0] }
+        case 6: full = chars + ["f", "f"]
+        case 8: full = chars
+        default: return nil
+        }
+        func byte(_ index: Int) -> UInt8? {
+            guard let hi = nibble(full[index]), let lo = nibble(full[index + 1]) else { return nil }
+            return hi << 4 | lo
+        }
+        guard let r = byte(0), let g = byte(2), let b = byte(4), let a = byte(6) else { return nil }
+        return (r, g, b, a)
+    }
+
+    private static func nibble(_ c: Character) -> UInt8? {
+        guard let v = c.asciiValue else { return nil }
+        switch v {
+        case 48...57: return v - 48
+        case 65...70: return v - 55
+        case 97...102: return v - 87
+        default: return nil
+        }
+    }
+
+    private static func colorCall(_ source: NSString, at start: Int) -> (end: Int, r: UInt8, g: UInt8, b: UInt8, a: UInt8)? {
+        let n = source.length
+        if start > 0, isIdent(source.character(at: start - 1)) { return nil }
+        let (name, after) = readIdent(source, from: start)
+        let kind = name.lowercased()
+        let hsl = kind == "hsl" || kind == "hsla"
+        guard hsl || kind == "rgb" || kind == "rgba" else { return nil }
+        guard after < n, source.character(at: after) == 40 else { return nil }
+        var i = after + 1
+        func skip() {
+            while i < n {
+                let c = source.character(at: i)
+                if c == 32 || c == 9 || c == 10 || c == 13 { i += 1 } else { break }
+            }
+        }
+        func number() -> (Double, Bool)? {
+            skip()
+            let begin = i
+            if i < n, source.character(at: i) == 43 || source.character(at: i) == 45 { i += 1 }
+            let mark = i
+            while i < n, isDigit(source.character(at: i)) { i += 1 }
+            if i < n, source.character(at: i) == 46 {
+                i += 1
+                while i < n, isDigit(source.character(at: i)) { i += 1 }
+            }
+            if i == mark { i = begin; return nil }
+            let raw = source.substring(with: NSRange(location: begin, length: i - begin))
+            guard let value = Double(raw) else { i = begin; return nil }
+            skip()
+            var percent = false
+            if i < n, source.character(at: i) == 37 { percent = true; i += 1 }
+            return (value, percent)
+        }
+        func comma() {
+            skip()
+            if i < n, source.character(at: i) == 44 { i += 1 }
+        }
+        guard let first = number() else { return nil }
+        if hsl {
+            skip()
+            if has(source, at: i, "deg") { i += 3 }
+        }
+        comma()
+        guard let second = number() else { return nil }
+        comma()
+        guard let third = number() else { return nil }
+        var alpha = 1.0
+        skip()
+        if i < n, source.character(at: i) == 44 || source.character(at: i) == 47 {
+            i += 1
+            if let part = number() {
+                alpha = part.1 ? part.0 / 100 : (part.0 > 1 ? part.0 / 255 : part.0)
+            }
+        }
+        skip()
+        guard i < n, source.character(at: i) == 41 else { return nil }
+        i += 1
+        alpha = min(1, max(0, alpha))
+        func byte(_ value: Double) -> UInt8 {
+            UInt8(min(255, max(0, Int(value.rounded()))))
+        }
+        if hsl {
+            let hue = first.1 ? first.0 / 100 * 360 : first.0
+            let sat = second.1 ? second.0 / 100 : (second.0 > 1 ? second.0 / 100 : second.0)
+            let lig = third.1 ? third.0 / 100 : (third.0 > 1 ? third.0 / 100 : third.0)
+            let (r, g, b) = hslToRGB(hue, min(1, max(0, sat)), min(1, max(0, lig)))
+            return (i, r, g, b, byte(alpha * 255))
+        }
+        func channel(_ part: (Double, Bool)) -> UInt8 {
+            byte(part.1 ? part.0 / 100 * 255 : part.0)
+        }
+        return (i, channel(first), channel(second), channel(third), byte(alpha * 255))
+    }
+
+    private static func hslToRGB(_ h: Double, _ s: Double, _ l: Double) -> (UInt8, UInt8, UInt8) {
+        let hue = ((h.truncatingRemainder(dividingBy: 360)) + 360).truncatingRemainder(dividingBy: 360) / 360
+        let q = l < 0.5 ? l * (1 + s) : l + s - l * s
+        let p = 2 * l - q
+        func channel(_ t0: Double) -> UInt8 {
+            var t = t0
+            if t < 0 { t += 1 }
+            if t > 1 { t -= 1 }
+            let v: Double
+            if t < 1.0 / 6 { v = p + (q - p) * 6 * t }
+            else if t < 0.5 { v = q }
+            else if t < 2.0 / 3 { v = p + (q - p) * (2.0 / 3 - t) * 6 }
+            else { v = p }
+            return UInt8(min(255, max(0, Int((v * 255).rounded()))))
+        }
+        return (channel(hue + 1.0 / 3), channel(hue), channel(hue - 1.0 / 3))
+    }
+
+    private static func has(_ source: NSString, at i: Int, _ word: String) -> Bool {
+        let len = (word as NSString).length
+        guard i >= 0, i + len <= source.length else { return false }
+        return source.substring(with: NSRange(location: i, length: len)).lowercased() == word
+    }
+
+    private static func endOfString(_ source: NSString, from start: Int, quote: unichar) -> Int {
+        let n = source.length
+        var i = start + 1
+        while i < n {
+            let next = source.character(at: i)
+            if next == 92 { i = min(i + 2, n); continue }
+            i += 1
+            if next == quote || (quote != 96 && next == 10) { break }
+        }
+        return i
+    }
+
+    private static func endOfComment(_ source: NSString, from start: Int) -> Int {
+        let n = source.length
+        var i = start
+        while i + 1 < n {
+            if source.character(at: i) == 42, source.character(at: i + 1) == 47 { return i + 2 }
+            i += 1
+        }
+        return n
+    }
+
+    private static func readIdent(_ source: NSString, from start: Int) -> (String, Int) {
+        var i = start
+        while i < source.length, isIdent(source.character(at: i)) { i += 1 }
+        guard i > start else { return ("", start) }
+        return (source.substring(with: NSRange(location: start, length: i - start)), i)
+    }
+
+    private static func readNumber(_ source: NSString, from start: Int, script: Bool) -> Int? {
+        let n = source.length
+        var i = start
+        var saw = false
+        if i < n, isDigit(source.character(at: i)) {
+            saw = true
+            while i < n, isDigit(source.character(at: i)) { i += 1 }
+        }
+        if i < n, source.character(at: i) == 46 {
+            let dot = i
+            i += 1
+            if i < n, isDigit(source.character(at: i)) {
+                saw = true
+                while i < n, isDigit(source.character(at: i)) { i += 1 }
+            } else {
+                i = dot
+            }
+        }
+        guard saw else { return nil }
+        if i < n, source.character(at: i) == 101 || source.character(at: i) == 69 {
+            var j = i + 1
+            if j < n, source.character(at: j) == 43 || source.character(at: j) == 45 { j += 1 }
+            let exp = j
+            while j < n, isDigit(source.character(at: j)) { j += 1 }
+            if j > exp { i = j }
+        }
+        if !script {
+            if i < n, source.character(at: i) == 37 { i += 1 }
+            else if i < n, isIdentStart(source.character(at: i)) {
+                let (word, end) = readIdent(source, from: i)
+                if units.contains(word.lowercased()) { i = end }
+            }
+        }
+        return i
+    }
+
+    private static func isDigit(_ c: unichar) -> Bool { c >= 48 && c <= 57 }
+    private static func isHex(_ c: unichar) -> Bool {
+        isDigit(c) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102)
+    }
+    private static func isIdentStart(_ c: unichar) -> Bool {
+        (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95 || c == 36
+    }
+    private static func isIdent(_ c: unichar) -> Bool { isIdentStart(c) || isDigit(c) }
+}
+
 /// A code field. Wrapping is on, and the substitutions that turn a quote
 /// into a curly one are off, so what you save is what you typed.
 private struct CodeView: NSViewRepresentable {
     @Binding var text: String
     var kind: CodeKind
+    @Binding var fault: Int?
 
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text, kind: kind) }
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text, fault: $fault, kind: kind) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()
@@ -1476,82 +1946,186 @@ private struct CodeView: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let view = scroll.documentView as? NSTextView else { return }
         context.coordinator.text = $text
+        context.coordinator.fault = $fault
         context.coordinator.kind = kind
-        guard view.string != text else {
-            context.coordinator.paint(view)
-            return
+        if view.string != text {
+            let range = view.selectedRange()
+            view.string = text
+            let end = (text as NSString).length
+            view.setSelectedRange(NSRange(location: min(range.location, end), length: 0))
         }
-        let range = view.selectedRange()
-        view.string = text
-        let end = (text as NSString).length
-        view.setSelectedRange(NSRange(location: min(range.location, end), length: 0))
+        if context.coordinator.shown != fault {
+            context.coordinator.shown = fault
+            if let fault { context.coordinator.show(fault, in: view) }
+        }
         context.coordinator.paint(view)
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
+        var fault: Binding<Int?>
         var kind: CodeKind
-        init(text: Binding<String>, kind: CodeKind) {
+        var shown: Int?
+        init(text: Binding<String>, fault: Binding<Int?>, kind: CodeKind) {
             self.text = text
+            self.fault = fault
             self.kind = kind
         }
 
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }
+            if fault.wrappedValue != nil { fault.wrappedValue = nil }
             text.wrappedValue = view.string
             paint(view)
         }
 
-        /// Comments and strings, drawn over the text without making it rich,
-        /// so a paste stays the characters you copied.
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let view = notification.object as? NSTextView else { return }
+            paint(view)
+        }
+
+        /// Tab indents by the same two spaces Format uses. Shift-tab takes
+        /// them back. Return keeps the line's indent, and steps in after a brace.
+        func textView(_ view: NSTextView, doCommandBy selector: Selector) -> Bool {
+            if selector == #selector(NSResponder.insertTab(_:)) {
+                indent(view, by: 2)
+                return true
+            }
+            if selector == #selector(NSResponder.insertBacktab(_:)) {
+                indent(view, by: -2)
+                return true
+            }
+            if selector == #selector(NSResponder.insertNewline(_:)) {
+                view.insertText(newline(in: view), replacementRange: view.selectedRange())
+                return true
+            }
+            return false
+        }
+
+        /// A closing brace on an otherwise empty indent steps back out.
+        func textView(_ view: NSTextView, shouldChangeTextIn range: NSRange, replacementString text: String?) -> Bool {
+            guard text == "}", range.length == 0 else { return true }
+            let ns = view.string as NSString
+            let line = ns.lineRange(for: range)
+            let before = ns.substring(with: NSRange(location: line.location, length: range.location - line.location))
+            guard before.count >= 2, before.allSatisfy({ $0 == " " }) else { return true }
+            view.insertText("}", replacementRange: NSRange(location: range.location - 2, length: 2))
+            return false
+        }
+
+        func show(_ line: Int, in view: NSTextView) {
+            guard line > 0 else { return }
+            let ns = view.string as NSString
+            var at = 0
+            var left = line
+            while left > 1, at < ns.length {
+                let range = ns.lineRange(for: NSRange(location: at, length: 0))
+                let next = range.location + range.length
+                if next <= at { break }
+                at = next
+                left -= 1
+            }
+            let spot = min(at, ns.length)
+            view.setSelectedRange(NSRange(location: spot, length: 0))
+            view.scrollRangeToVisible(NSRange(location: spot, length: 0))
+        }
+
+        /// Colors and the matching bracket. Temporary, so the text stays plain.
         func paint(_ view: NSTextView) {
             guard let layout = view.layoutManager, let storage = view.textStorage else { return }
             let whole = NSRange(location: 0, length: storage.length)
             layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: whole)
-            let source = storage.string as NSString
+            layout.removeTemporaryAttribute(.backgroundColor, forCharacterRange: whole)
             let comment = NSColor.tertiaryLabelColor
-            let string = NSColor.secondaryLabelColor
-            var index = 0
-            while index < source.length {
-                let character = source.character(at: index)
-                // A string first. A quote inside it can be escaped, and a
-                // comment marker there is part of the string, not a comment.
-                if character == 34 || character == 39 {
-                    var end = index + 1
-                    while end < source.length {
-                        let next = source.character(at: end)
-                        if next == 92 { end += 2; continue }
-                        end += 1
-                        if next == character || next == 10 { break }
-                    }
-                    if end > source.length { end = source.length }
-                    layout.addTemporaryAttribute(.foregroundColor, value: string, forCharacterRange: NSRange(location: index, length: end - index))
-                    index = end
-                    continue
+            let string = NSColor.systemRed
+            let keyword = NSColor.systemBlue
+            let number = NSColor.systemTeal
+            let script = kind == .javaScript
+            for mark in CodeTint.marks(storage.string, script: script) {
+                let range = NSRange(location: mark.location, length: mark.length)
+                guard range.location + range.length <= storage.length else { continue }
+                switch mark.kind {
+                case .comment:
+                    layout.addTemporaryAttribute(.foregroundColor, value: comment, forCharacterRange: range)
+                case .string:
+                    layout.addTemporaryAttribute(.foregroundColor, value: string, forCharacterRange: range)
+                case .keyword:
+                    layout.addTemporaryAttribute(.foregroundColor, value: keyword, forCharacterRange: range)
+                case .number:
+                    layout.addTemporaryAttribute(.foregroundColor, value: number, forCharacterRange: range)
+                case .color(let r, let g, let b, let a):
+                    let chip = CodeTint.chip(r, g, b, a)
+                    layout.addTemporaryAttribute(.foregroundColor, value: chip.ink, forCharacterRange: range)
+                    layout.addTemporaryAttribute(.backgroundColor, value: chip.wash, forCharacterRange: range)
                 }
-                if character == 47, index + 1 < source.length, source.character(at: index + 1) == 42 {
-                    var end = index + 2
-                    while end + 1 < source.length {
-                        if source.character(at: end) == 42, source.character(at: end + 1) == 47 {
-                            end += 2
-                            break
-                        }
-                        end += 1
-                    }
-                    if end > source.length { end = source.length }
-                    layout.addTemporaryAttribute(.foregroundColor, value: comment, forCharacterRange: NSRange(location: index, length: end - index))
-                    index = end
-                    continue
-                }
-                if kind == .javaScript, character == 47, index + 1 < source.length, source.character(at: index + 1) == 47 {
-                    var end = index + 2
-                    while end < source.length, source.character(at: end) != 10 { end += 1 }
-                    layout.addTemporaryAttribute(.foregroundColor, value: comment, forCharacterRange: NSRange(location: index, length: end - index))
-                    index = end
-                    continue
-                }
-                index += 1
             }
+            let caret = view.selectedRange()
+            if caret.length == 0, let (open, close) = CodeTint.pair(in: storage.string, caret: caret.location, script: script) {
+                let wash = NSColor.labelColor.withAlphaComponent(0.12)
+                for at in [open, close] where at >= 0 && at < storage.length {
+                    layout.addTemporaryAttribute(.backgroundColor, value: wash, forCharacterRange: NSRange(location: at, length: 1))
+                }
+            }
+        }
+
+        private func newline(in view: NSTextView) -> String {
+            let ns = view.string as NSString
+            let caret = view.selectedRange().location
+            let line = ns.lineRange(for: NSRange(location: min(caret, ns.length), length: 0))
+            let prefix = ns.substring(with: NSRange(location: line.location, length: max(0, caret - line.location)))
+            var spaces = ""
+            for character in prefix {
+                if character == " " { spaces.append(" ") } else { break }
+            }
+            let trimmed = prefix.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasSuffix("{") || trimmed.hasSuffix("(") || trimmed.hasSuffix("[") {
+                spaces += "  "
+            }
+            return "\n" + spaces
+        }
+
+        private func indent(_ view: NSTextView, by spaces: Int) {
+            let ns = view.string as NSString
+            let sel = view.selectedRange()
+            if sel.length == 0 {
+                if spaces > 0 {
+                    view.insertText(String(repeating: " ", count: spaces), replacementRange: sel)
+                } else {
+                    let start = max(0, sel.location - 2)
+                    let chunk = ns.substring(with: NSRange(location: start, length: sel.location - start))
+                    let drop = chunk.reversed().prefix { $0 == " " }.count
+                    guard drop > 0 else { return }
+                    view.insertText("", replacementRange: NSRange(location: sel.location - drop, length: drop))
+                }
+                return
+            }
+            let block = ns.lineRange(for: sel)
+            var lines: [NSRange] = []
+            var at = block.location
+            let end = block.location + block.length
+            while at < end {
+                let line = ns.lineRange(for: NSRange(location: at, length: 0))
+                lines.append(line)
+                let next = line.location + line.length
+                if next <= at { break }
+                at = next
+            }
+            view.undoManager?.beginUndoGrouping()
+            for line in lines.reversed() {
+                if spaces > 0 {
+                    view.insertText("  ", replacementRange: NSRange(location: line.location, length: 0))
+                } else {
+                    let text = ns.substring(with: line)
+                    var count = 0
+                    for character in text {
+                        if character == " ", count < 2 { count += 1 } else { break }
+                    }
+                    if count > 0 {
+                        view.insertText("", replacementRange: NSRange(location: line.location, length: count))
+                    }
+                }
+            }
+            view.undoManager?.endUndoGrouping()
         }
     }
 }
