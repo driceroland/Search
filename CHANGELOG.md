@@ -50,6 +50,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- A colour for each space, from the space's menu › Colour: blue, green, orange, red or violet. The space's icon wears it, on a faint wash of it, and so does its entry in the menu, so you can tell at a glance which space you're in. None until you pick one. ([#1115](https://github.com/driceroland/Search/issues/1115))
 - Shorter tab bar, in Settings › Appearance › Window: with the tabs across the top, the bar is only a few points taller than its tabs, 36 points where it is 52, and leaves the rest to the page. The window's three buttons stay on the row's middle. Off unless turned on.
 - Minimize the floating video, off unless you turn it on in Settings › Browsing. A button tucks the window into a corner, and a click on that button brings it back. Close, and the arrow back to the tab, stay as they are.
 - Reduce animations makes everything in Search's interface happen at once: the tab ⌘1–⌘9 picks is lit and shown with no glide, a space, a panel or a page's first frame comes without sliding or fading, for Search alone and whatever Reduce Motion in System Settings says. Off unless you turn on Settings › Appearance › Motion › Reduce animations.
