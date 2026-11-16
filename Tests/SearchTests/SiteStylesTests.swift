@@ -59,6 +59,15 @@ final class SiteStylesTests: XCTestCase {
         let quoted = SiteStyles.arranged(".a { background: url(\"not)a.png\"); color: red }")
         XCTAssertTrue(quoted.contains("url(\"not)a.png\")"))
         XCTAssertEqual(SiteStyles.arranged(quoted), quoted)
+        let escaped = SiteStyles.arranged("a { content: \"a\\\"b;c\"; }")
+        XCTAssertEqual(escaped, "a {\n  content: \"a\\\"b;c\";\n}")
+        XCTAssertEqual(SiteStyles.arranged(escaped), escaped)
+    }
+
+    func testALineSeparatorDoesNotBreakTheSheet() {
+        let js = Veiling.style("a { color: red\u{2028} }")
+        XCTAssertFalse(js.contains("\u{2028}"))
+        XCTAssertTrue(js.contains("\\u2028"))
     }
 
     func testKeepsAScriptAsTyped() {

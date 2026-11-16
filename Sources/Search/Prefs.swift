@@ -523,6 +523,11 @@ final class Preferences: ObservableObject {
             store.set(siteStyles, forKey: "styles.sites")
             SiteStyles.on = siteStyles
             SiteStyles.shared.applyOpen()
+            if !siteStyles {
+                for browser in Browsers.all where browser.styling {
+                    browser.styling = false
+                }
+            }
         }
     }
     /// Links to chosen sites open in their space (see SpaceRoutes.swift).

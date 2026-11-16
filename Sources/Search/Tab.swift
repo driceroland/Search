@@ -1197,11 +1197,13 @@ final class Tab: ObservableObject, Identifiable {
             add(Veiling.style(css), .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
         // This site's own look, the main frame only: an embedded frame is
-        // some other page. Off, or a site with nothing set, adds none.
-        // The JavaScript waits until the page has loaded and runs in the
-        // page's own world, so it can change the page; it is not run again
-        // when a color changes (see SiteStyles).
-        if SiteStyles.on, let host = Dusk.host(of: url ?? pageAddress) {
+        // some other page. Off, or a site with nothing set, adds none. A
+        // private tab adds none either: the panel can't save one from there,
+        // and a look saved earlier isn't applied. The JavaScript waits until
+        // the page has loaded and runs in the page's own world, so it can
+        // change the page; it is not run again when a color changes (see
+        // SiteStyles).
+        if !shy, SiteStyles.on, let host = Dusk.host(of: url ?? pageAddress) {
             if let sheet = SiteStyles.shared.css(on: host), !sheet.isEmpty {
                 add(Veiling.style(sheet, id: SiteStyles.element), .atDocumentStart, mainFrameOnly: true, in: Web.world)
             }

@@ -11,7 +11,8 @@ import WebKit
 // draws, the way something you've hidden does (see Curtain), and the
 // JavaScript runs once the page has loaded, in the page's own world, so it
 // can change that page. Both are kept on this Mac in styles.json. Closing
-// the panel keeps them. A private tab never writes one: the panel stays closed.
+// the panel keeps them. A private tab is left as the site sent it: the
+// panel stays closed, and a look is neither written nor applied there.
 //
 // The first version of the file stored a site's CSS as a string. That still
 // reads, as a look with only that CSS.
@@ -42,7 +43,11 @@ final class SiteStyles: ObservableObject {
     }()
 
     @Published private(set) var byHost: [String: SiteLook] = [:]
-    private var saving = false
+    /// One write at a time. A second change while a write is out does not
+    /// start another until that one has landed, so an older file cannot
+    /// arrive after a newer one.
+    private var writing = false
+    private var pending = false
 
     private init() { load() }
 
@@ -140,20 +145,23 @@ final class SiteStyles: ObservableObject {
     /// The pages open now, so a change of color or type shows without a
     /// reload. JavaScript is left as it was: this runs for a color too, and
     /// running the script again would repeat it. Asleep pages are left
-    /// alone: waking one would load it, and the next load arms it.
+    /// alone: waking one would load it, and the next load arms it. A private
+    /// tab is left alone too: nothing there is written down, and the page
+    /// stays as the site sent it.
     func applyOpen() {
         for tab in openTabs {
-            guard let web = tab.built, let host = Dusk.host(of: tab.address) else { continue }
+            guard let web = tab.built, !tab.shy, let host = Dusk.host(of: tab.address) else { continue }
             let sheet = Self.on ? (css(on: host) ?? "") : ""
             web.evaluateJavaScript(Veiling.style(sheet, id: Self.element), in: nil, in: Web.world) { _ in }
         }
     }
 
     /// Runs a site's JavaScript once, on the pages of that site open now.
-    /// `watched` is the page whose error, if it has one, is reported.
+    /// `watched` is the page whose error, if it has one, is reported. A
+    /// private tab is skipped, the same way the sheet is.
     func run(_ source: String, on host: String, watched: Tab?, then: @escaping (Bool) -> Void) {
         var watchedRan = false
-        for tab in openTabs where Dusk.host(of: tab.address) == host {
+        for tab in openTabs where !tab.shy && Dusk.host(of: tab.address) == host {
             guard let web = tab.built else { continue }
             let watch = tab === watched
             if watch { watchedRan = true }
@@ -210,6 +218,15 @@ final class SiteStyles: ObservableObject {
         func trimTail() {
             while let last = out.last, last == " " || last == "\t" { out.removeLast() }
         }
+        func slashed(_ chars: [Character], before index: Int) -> Bool {
+            var count = 0
+            var cursor = index
+            while cursor > 0, chars[cursor - 1] == "\\" {
+                count += 1
+                cursor -= 1
+            }
+            return count % 2 == 1
+        }
         while index < chars.count {
             let character = chars[index]
             if comment {
@@ -220,7 +237,10 @@ final class SiteStyles: ObservableObject {
             }
             if let open = quote {
                 out.append(character)
-                if character == open { quote = nil }
+                // A backslash keeps the quote, and a backslash before that
+                // backslash doesn't. Otherwise "a\"b" would end at the second
+                // quote and the rest would be laid out as CSS.
+                if character == open, !slashed(chars, before: index) { quote = nil }
                 index += 1
                 continue
             }
@@ -374,20 +394,40 @@ final class SiteStyles: ObservableObject {
     }
 
     private func save() {
-        guard !saving else { return }
-        saving = true
+        pending = true
+        guard !writing else { return }
+        writing = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            guard let self else { return }
-            saving = false
-            let snapshot = byHost
-            let file = Self.file
-            DispatchQueue.global(qos: .utility).async {
-                guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            self?.write()
+        }
+    }
+
+    private func write() {
+        guard pending else {
+            writing = false
+            return
+        }
+        pending = false
+        let snapshot = byHost
+        let file = Self.file
+        DispatchQueue.global(qos: .utility).async {
+            if let data = try? JSONEncoder().encode(snapshot) {
                 try? FileManager.default.createDirectory(
                     at: file.deletingLastPathComponent(), withIntermediateDirectories: true
                 )
                 try? data.write(to: file, options: .atomic)
             }
+            DispatchQueue.main.async { [weak self] in self?.finishWrite() }
+        }
+    }
+
+    private func finishWrite() {
+        guard pending else {
+            writing = false
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.write()
         }
     }
 
@@ -520,10 +560,7 @@ struct StylePanel: View {
             }
         }
         .onChange(of: browser.activeID) { _, _ in
-            guard browser.active?.shy == true else { return }
-            browser.stopPeeking()
-            if browser.veiling { browser.toggleHiding() }
-            browser.styling = false
+            if browser.active?.shy == true { browser.styling = false }
         }
     }
 }
@@ -552,6 +589,8 @@ private struct StyleEditor: View {
     @State private var nameDraft = ""
     /// Why the CSS just changed under you, until you edit it again.
     @State private var note: String?
+    /// Closing says this once. The panel can leave by more than one path.
+    @State private var mentioned = false
 
     private var site: String? { Dusk.host(of: tab.address) }
     /// A reload has no address for a moment. The look stays the one you had.
@@ -580,7 +619,24 @@ private struct StyleEditor: View {
             }
         }
         .onAppear { show(site) }
+        .onDisappear {
+            // The tab in front may already be the next one, and peeking
+            // follows that. This is the page the outline was drawn on.
+            keepName()
+            if let host = browser.curtain.host(of: tab.address) {
+                tab.unpeek(browser.curtain.css(on: host))
+            }
+            warnIfUnsaved()
+        }
         .onChange(of: site) { _, next in show(next) }
+        .onChange(of: tab.address) { _, next in
+            // A reload has no address for a moment, and a navigation can pass
+            // through about:blank. A page that isn't a website is a real
+            // departure: the panel was still editing the site you left.
+            guard let next, next.scheme?.lowercased() != "about", Dusk.host(of: next) == nil else { return }
+            warnIfUnsaved()
+            close()
+        }
         .onChange(of: pane) { _, next in
             if next != .look { stopHiding() }
         }
@@ -707,7 +763,7 @@ private struct StyleEditor: View {
                 .padding(.vertical, 11)
             }
             if !look.on, !look.script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Caption("JavaScript runs the next time this page loads.")
+                Caption("Paused. Turn it on, and JavaScript runs the next time this page loads.")
             }
         }
     }
@@ -985,20 +1041,27 @@ private struct StyleEditor: View {
         if browser.veiling { browser.toggleHiding() }
     }
 
+    /// Words still in the editor, not in the file.
+    private func warnIfUnsaved() {
+        guard !mentioned, let shown else { return }
+        let previous = styles.look(on: shown)
+        let cssSame = SiteStyles.arranged(cssDraft) == SiteStyles.arranged(previous.css)
+        let scriptSame = scriptDraft.trimmingCharacters(in: .whitespacesAndNewlines) == previous.script
+        if !cssSame || !scriptSame {
+            mentioned = true
+            browser.announce("Changes to \(shown) weren't saved.")
+        }
+    }
+
     /// A reload keeps this look. No address for a moment is still this
     /// site, so the words stay. Only a different website loads its own,
     /// and words you hadn't saved are left behind.
     private func show(_ host: String?) {
         guard let host, host != shown else { return }
         if shown != nil { stopHiding() }
-        if let shown {
-            let previous = styles.look(on: shown)
-            let cssSame = SiteStyles.arranged(cssDraft) == SiteStyles.arranged(previous.css)
-            let scriptSame = scriptDraft.trimmingCharacters(in: .whitespacesAndNewlines) == previous.script
-            if !cssSame || !scriptSame {
-                browser.announce("Changes to \(shown) weren't saved.")
-            }
-        }
+        keepName()
+        warnIfUnsaved()
+        mentioned = false
         shown = host
         let next = styles.look(on: host)
         cssDraft = SiteStyles.arranged(next.css)
@@ -1014,10 +1077,19 @@ private struct StyleEditor: View {
         renaming = false
     }
 
+    /// A name typed and not confirmed still belongs to the site on screen.
+    /// Leaving for another site would otherwise drop it.
+    private func keepName() {
+        guard renaming, let shown else { return }
+        styles.revise(on: shown) { $0.name = nameDraft }
+        renaming = false
+    }
+
     private func saveCode() {
         guard let host = place else { return }
         let before = look.script
-        let scriptCut = scriptDraft.count > SiteStyles.limit
+        let typed = scriptDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let scriptCut = SiteStyles.keptScript(scriptDraft).count < typed.count
         let cleaned = styles.keepCode(css: cssDraft, script: scriptDraft, on: host)
         let kept = styles.look(on: host)
         cssDraft = kept.css
@@ -1028,7 +1100,7 @@ private struct StyleEditor: View {
         let next = kept.script.trimmingCharacters(in: .whitespacesAndNewlines)
         let previous = before.trimmingCharacters(in: .whitespacesAndNewlines)
         let changed = next != previous
-        guard kept.on, changed, !next.isEmpty else {
+        guard SiteStyles.on, kept.on, changed, !next.isEmpty else {
             browser.announce(message)
             return
         }
@@ -1091,6 +1163,7 @@ private struct StyleEditor: View {
             browser.announce("Couldn't read that file.")
             return
         }
+        warnIfUnsaved()
         let script = SiteStyles.keptScript(look.script)
         styles.replace(look, on: host)
         shown = nil
@@ -1441,6 +1514,21 @@ private struct CodeView: NSViewRepresentable {
             var index = 0
             while index < source.length {
                 let character = source.character(at: index)
+                // A string first. A quote inside it can be escaped, and a
+                // comment marker there is part of the string, not a comment.
+                if character == 34 || character == 39 {
+                    var end = index + 1
+                    while end < source.length {
+                        let next = source.character(at: end)
+                        if next == 92 { end += 2; continue }
+                        end += 1
+                        if next == character || next == 10 { break }
+                    }
+                    if end > source.length { end = source.length }
+                    layout.addTemporaryAttribute(.foregroundColor, value: string, forCharacterRange: NSRange(location: index, length: end - index))
+                    index = end
+                    continue
+                }
                 if character == 47, index + 1 < source.length, source.character(at: index + 1) == 42 {
                     var end = index + 2
                     while end + 1 < source.length {
@@ -1459,19 +1547,6 @@ private struct CodeView: NSViewRepresentable {
                     var end = index + 2
                     while end < source.length, source.character(at: end) != 10 { end += 1 }
                     layout.addTemporaryAttribute(.foregroundColor, value: comment, forCharacterRange: NSRange(location: index, length: end - index))
-                    index = end
-                    continue
-                }
-                if character == 34 || character == 39 {
-                    var end = index + 1
-                    while end < source.length {
-                        let next = source.character(at: end)
-                        if next == 92 { end += 2; continue }
-                        end += 1
-                        if next == character || next == 10 { break }
-                    }
-                    if end > source.length { end = source.length }
-                    layout.addTemporaryAttribute(.foregroundColor, value: string, forCharacterRange: NSRange(location: index, length: end - index))
                     index = end
                     continue
                 }

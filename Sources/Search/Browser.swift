@@ -737,8 +737,15 @@ final class Browser: NSObject, ObservableObject {
     @Published var reviewing = false {
         didSet { if !reviewing { stopPeeking() } }
     }
-    /// True while this site's look is being edited.
-    @Published var styling = false
+    /// True while this site's look is being edited. Closing it ends picking,
+    /// so a click on the page is a click again.
+    @Published var styling = false {
+        didSet {
+            guard !styling, oldValue else { return }
+            if veiling { toggleHiding() }
+            if !reviewing { stopPeeking() }
+        }
+    }
 
     var hereHost: String? { curtain.host(of: active?.address) }
     /// The site a style is kept for: a web page, named without www.
