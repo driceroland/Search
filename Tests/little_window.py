@@ -51,6 +51,28 @@ saved = subprocess.run(["pbpaste"], capture_output=True).stdout
 try:
     sv.setup(); sv.launch()
 
+    # Small windows off, as they are unless turned on: no Open in Small
+    # Window in the Tabs menu (nor in a tab's menu, built the same way).
+    def tabs_menu(): return sv.cmd({"do": "menus"})["menus"].get("Tabs", [])
+    t.ok("small windows off: no Open in Small Window in the Tabs menu",
+         "Open in Small Window" not in tabs_menu() and "Duplicate Tab" in tabs_menu(), tabs_menu())
+
+    # A tab already in the row, lifted into a small window, then kept back.
+    page = f"{sv.BASE}/aside"
+    opened = sv.cmd({"do": "open", "url": page})
+    time.sleep(1.5)
+    st = sv.cmd({"do": "little", "what": "lift", "id": opened["id"]})
+    t.ok("a tab opens in a small window", page in st["littles"], st)
+    row = sv.cmd({"do": "tabs"})["tabs"]
+    t.ok("and leaves the row", all(page not in (item.get("url"), item.get("page"), item.get("view")) for item in row), row)
+    sv.cmd({"do": "little", "what": "keep"})
+    time.sleep(0.5)
+    st = little("look")
+    row = sv.cmd({"do": "tabs"})["tabs"]
+    back = next((item for item in row if page in (item.get("url"), item.get("page"), item.get("view"))), None)
+    t.ok("Open in Search puts it back in the row", st["littles"] == [] and back is not None, (st["littles"], row))
+    if back: sv.cmd({"do": "close", "id": back["id"]})
+
     # ⌘⇧C: this page's address, said at the window's foot — not the tab
     # behind it in the browser's window, which the menu would copy.
     little(f"{sv.BASE}/copied"); time.sleep(2)
@@ -71,7 +93,27 @@ try:
     press(29, "0", "cmd")
     t.ok("⌘0 puts it back", abs(little("look")["zoom"] - 1) < 0.01, little("look")["zoom"])
 
+    # Back stays in this window, and previous/next tab walk the small
+    # windows. Neither changes the tab in the window behind.
+    active = little("look")["activeID"]
+    press(30, "]", "cmd", "shift")
+    t.ok("one small window: next tab leaves the row", little("look")["activeID"] == active, little("look"))
+    sv.cmd({"do": "little", "what": "go", "url": f"{sv.BASE}/onward"}); time.sleep(1.5)
+    t.ok("the small window went on to another page", little("look")["littles"][-1].endswith("/onward"), little("look"))
+    press(33, "[", "cmd"); time.sleep(0.6)
+    st = little("look")
+    t.ok("⌘[ goes back in the small window", st["littles"][-1].endswith("/copied"), st)
+    t.ok("⌘[ leaves the tab behind", st["activeID"] == active, st)
+    little(f"{sv.BASE}/second"); time.sleep(1.2)
+    press(30, "]", "cmd", "shift")
+    st = little("look")
+    t.ok("⇧⌘] brings the other small window forward", st["fronted"].endswith("/copied"), st)
+    t.ok("⇧⌘] leaves the tab behind", st["activeID"] == active, st)
+    press(13, "w", "cmd"); time.sleep(0.3)
+    little("close"); time.sleep(0.3)
+
     # ⌘W and Escape close it; the browser's row is as it was.
+    little(f"{sv.BASE}/closing"); time.sleep(1.2)
     tabs = little("look")["tabs"]
     press(13, "w", "cmd")
     st = little("look")
@@ -132,6 +174,7 @@ try:
     def active(): return next((x["url"] for x in tabs() if x["active"]), "")
     opened = f"{sv.BASE}/open"
     sv.setup(**{"links.little": True}); sv.launch()
+    t.ok("small windows on: Open in Small Window in the Tabs menu", "Open in Small Window" in tabs_menu(), tabs_menu())
     sv.cmd({"do": "open", "url": opened}); time.sleep(1.5)
     windows(action="link", url=opened); time.sleep(0.5)
     t.ok("off: a link to an open page gets a small window", little("look")["littles"] == [opened], little("look"))
@@ -152,6 +195,66 @@ try:
     st = little("look")
     t.ok("the same link again brings that small window, not a second",
          st["littles"] == [elsewhere] and st["fronted"] == elsewhere, st)
+
+    # A tab lifted from a space that is then only on disk: closing its small
+    # window takes that tab's entry out of the space's file, and not a tab
+    # with the same address left in the row there (Browser.dropLifted).
+    def entries(space): return [e for e in sv.session(space)["tabs"] if e["url"].startswith(sv.BASE)]
+    def real(url):
+        """A tab as a person opens one: a bench tab is never written down."""
+        before = {x["id"] for x in sv.cmd({"do": "tabs"})["tabs"]}
+        sv.cmd({"do": "ui", "show": url})
+        for _ in range(50):
+            new = [x["id"] for x in sv.cmd({"do": "tabs"})["tabs"] if x["id"] not in before]
+            if new: return new[0]
+            time.sleep(0.1)
+        raise RuntimeError(f"no tab for {url}")
+    def twins(space): return [e for e in entries(space) if e["url"] == twin]
+    sv.setup(**{"spaces": True, "links.little": True}); sv.launch()
+    sv.cmd({"do": "space", "action": "new", "name": "Two"}); time.sleep(0.5)
+    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
+    two = next(x["id"] for x in sv.cmd({"do": "space"})["spaces"] if x["name"] == "Two")
+    twin = f"{sv.BASE}/twin"
+    first = real(twin)
+    second = real(twin)
+    real(f"{sv.BASE}/third"); time.sleep(1.5)
+    sv.cmd({"do": "select", "id": first}); time.sleep(0.3)
+    sv.cmd({"do": "little", "what": "lift", "id": second}); time.sleep(0.5)
+    t.ok("lifted: the space's file has both twins, one marked as lifted",
+         len(twins(two)) == 2 and sum(1 for e in twins(two) if e.get("lifted")) == 1, entries(two))
+    sv.cmd({"do": "ui", "spaces": False}); time.sleep(1)
+    t.ok("spaces off: that space is only on disk now", sv.cmd({"do": "space"})["parked"] == [], sv.cmd({"do": "space"}))
+    little("close"); time.sleep(0.8)
+    left = twins(two)
+    t.ok("closing the small window takes out the lifted twin only",
+         len(left) == 1 and not left[0].get("lifted"), entries(two))
+    t.ok("the rest of that space's row is as it was", [e["url"] for e in entries(two)] == [twin, f"{sv.BASE}/third"], entries(two))
+
+    # Kept from another space: Open in Search puts it in the row on screen,
+    # and the space it came from forgets it, so a relaunch doesn't bring it
+    # back in both.
+    sv.cmd({"do": "ui", "spaces": True}); time.sleep(0.5)
+    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
+    lone = f"{sv.BASE}/lone"
+    lifted = real(lone); time.sleep(1.5)
+    sv.cmd({"do": "little", "what": "lift", "id": lifted}); time.sleep(0.5)
+    sv.cmd({"do": "space", "action": "go", "index": 1}); time.sleep(0.8)
+    t.ok("parked: the space it came from still writes it down",
+         any(e["url"] == lone and e.get("lifted") for e in entries(two)), entries(two))
+    little("keep"); time.sleep(0.8)
+    row = [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]]
+    t.ok("kept: in the row of the space on screen", lone in row, row)
+    t.ok("and out of the file of the space it came from", all(e["url"] != lone for e in entries(two)), entries(two))
+
+    # A quit with a tab lifted: the relaunch has it in its row again.
+    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
+    back = real(f"{sv.BASE}/comeback"); time.sleep(1.5)
+    sv.cmd({"do": "little", "what": "lift", "id": back}); time.sleep(0.5)
+    sv.quit(); sv.launch()
+    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(1)
+    row = [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]]
+    t.ok("quit with a tab lifted: back in its space's row after a relaunch",
+         f"{sv.BASE}/comeback" in row and little("look")["littles"] == [], row)
 finally:
     subprocess.run(["pbcopy"], input=saved)
     t.done(); sv.finish()

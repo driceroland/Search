@@ -154,7 +154,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Bigger text in the sidebar** Sidebar tab titles feel small; no way to size them *(email)*
 - [ ] **A button to dock or float the sidebar** As ⌘S does, from the sidebar itself *([#852](https://github.com/driceroland/Search/issues/852))*
 - [ ] **One live pin shared by every space** A pin kept in every space could be one tab, the same page and playback in each space, rather than a copy per space. As an option. *([#875](https://github.com/driceroland/Search/issues/875))*
-- [ ] **Open a tab in a little window** The little window links from other apps open in, for a tab or a link from inside Search too, to move and keep beside the main window. *([#874](https://github.com/driceroland/Search/issues/874))*
 - [ ] **A picked tab stays under its folded group** Picking a tab from a folded group keeps that one tab showing under the group's header, until it's put away. *([#873](https://github.com/driceroland/Search/issues/873))*
 - [ ] **Camera and microphone shown on their tab** A tab using the camera or microphone says so on the tab, with a way to pause each. *([#870](https://github.com/driceroland/Search/issues/870))*
 - [ ] **Hide the profile mark in the column** With profiles in one window, an option to show only the space's mark, for one space per profile. *([#867](https://github.com/driceroland/Search/issues/867))*
