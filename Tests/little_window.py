@@ -17,7 +17,9 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -25,6 +27,24 @@ import split_view as sv  # noqa: E402
 
 sv.use("little-tests")
 t = sv.T()
+
+
+class Editor(BaseHTTPRequestHandler):
+    """A page that uses ⌘[ itself, as an editor's outdent does."""
+    PAGE = (b"<!doctype html><title>editor</title><textarea id=e></textarea><script>"
+            b"window.outdents = 0; document.addEventListener('keydown', function (e) {"
+            b" if (e.metaKey && e.key === '[') { e.preventDefault(); window.outdents++ } })</script>")
+
+    def do_GET(self):
+        self.send_response(200); self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(Editor.PAGE))); self.end_headers(); self.wfile.write(Editor.PAGE)
+
+    def log_message(self, *a): pass
+
+
+editor = ThreadingHTTPServer(("127.0.0.1", 0), Editor)
+threading.Thread(target=editor.serve_forever, daemon=True).start()
+EDITOR = f"http://127.0.0.1:{editor.server_port}/editor"
 
 
 def little(what): return sv.cmd({"do": "little", "what": what})
@@ -124,13 +144,31 @@ try:
     st = little("look")
     t.ok("⌘[ goes back in the small window", st["littles"][-1].endswith("/copied"), st)
     t.ok("⌘[ leaves the tab behind on its page", st["activeID"] == active and front_url().endswith("/behind-two"), (st, front_url()))
+    # A page that uses ⌘[ itself gets it first, as in the browser's window:
+    # the editor outdents, and the small window doesn't go back.
+    sv.cmd({"do": "little", "what": "go", "url": EDITOR})
+    def editor_ready(): return sv.cmd({"do": "little", "what": "js", "js": "!!document.getElementById('e')"}).get("value") is True
+    t.ok("the small window went on to an editor", until(editor_ready), little("look"))
+    def outdents(): return sv.cmd({"do": "little", "what": "js", "js": "window.outdents"}).get("value")
+    sv.cmd({"do": "little", "what": "js", "js": "document.getElementById('e').focus(); 0"})
+    sv.cmd({"do": "little", "what": "key", "chars": "[", "code": 33})
+    t.ok("⌘[ in an editor is the editor's", until(lambda: outdents() == 1), outdents())
+    time.sleep(0.5)
+    t.ok("and the small window stays on its page", little("look")["pages"][-1] == EDITOR, little("look")["pages"])
+    # On a page with no use for it, the same key comes back unused: Back.
+    sv.cmd({"do": "little", "what": "go", "url": f"{sv.BASE}/plain"})
+    until(lambda: sv.cmd({"do": "little", "what": "js", "js": "location.pathname == '/plain' && document.readyState == 'complete'"}).get("value") is True)
+    sv.cmd({"do": "little", "what": "key", "chars": "[", "code": 33})
+    t.ok("⌘[ a page leaves unused is Back", until(lambda: little("look")["pages"][-1] == EDITOR), little("look")["pages"])
+
     # Three small windows: next and previous go round them in the order
     # they were opened, from the newest, which has the keys.
     little(f"{sv.BASE}/second"); time.sleep(1.2)
     little(f"{sv.BASE}/third"); time.sleep(1.2)
+    first = little("look")["littles"][0]
     press(30, "]", "cmd", "shift")
     st = little("look")
-    t.ok("⇧⌘] from the newest goes round to the first", st["fronted"].endswith("/copied"), st)
+    t.ok("⇧⌘] from the newest goes round to the first", st["fronted"] == first, st)
     t.ok("⇧⌘] leaves the tab behind", st["activeID"] == active, st)
     press(33, "[", "cmd", "shift")
     t.ok("⇧⌘[ goes the other way, to the one before", little("look")["fronted"].endswith("/second"), little("look"))
@@ -328,6 +366,27 @@ try:
     sv.launch()
     st = windows()
     t.ok("relaunch: back in the second window's row", any(other in w["tabs"] for w in st["windows"]), st["windows"])
+
+    # Back moved to ⌘← in Settings › Shortcuts: while you type in a small
+    # window, ⌘← moves the caret to the start of the line, and the window
+    # doesn't go back. Launched by a link, with no browser window at all.
+    sv.setup(**{"links.little": True})
+    arrow = {"tabs.back": {"key": {"key": "left", "command": True, "shift": False, "option": False, "control": False}}}
+    subprocess.run(["defaults", "write", sv.SUITE, "shortcuts", "-data", json.dumps(arrow).encode().hex()])
+    launch_with(f"{sv.BASE}/first")
+    t.ok("launched by a link: a small window, no browser window",
+         until(lambda: little("look")["littles"] == [f"{sv.BASE}/first"]) and windows()["keptAway"], windows())
+    sv.cmd({"do": "little", "what": "go", "url": EDITOR})
+    t.ok("on to the editor", until(editor_ready), little("look"))
+    sv.cmd({"do": "little", "what": "js", "js": "var e = document.getElementById('e'); e.value = 'typed'; e.focus(); "
+                                              "e.setSelectionRange(5, 5); 0"})
+    sv.cmd({"do": "little", "what": "key", "chars": "\uf702", "code": 123})
+    caret = lambda: sv.cmd({"do": "little", "what": "js", "js": "document.getElementById('e').selectionStart"}).get("value")
+    t.ok("⌘← bound to Back moves the caret while typing", until(lambda: caret() == 0), caret())
+    t.ok("and the small window stays on its page", little("look")["pages"] == [EDITOR], little("look")["pages"])
+    sv.cmd({"do": "little", "what": "js", "js": "document.activeElement.blur(); 0"})
+    sv.cmd({"do": "little", "what": "key", "chars": "\uf702", "code": 123})
+    t.ok("⌘← with nothing being typed is Back", until(lambda: little("look")["pages"] == [f"{sv.BASE}/first"]), little("look")["pages"])
 finally:
     subprocess.run(["pbcopy"], input=saved)
     t.done(); sv.finish()

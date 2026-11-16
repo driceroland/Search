@@ -4920,6 +4920,9 @@ final class Browser: NSObject, ObservableObject {
         // A tab asleep, or not yet woken since launch, has only its address:
         // the small window draws the page, so the page is loaded first.
         if !tab.wake() { tab.revive() }
+        // Its video, in macOS's picture in picture, comes back into the page
+        // first: once out of the row, nothing here could bring it back.
+        if pictured == tab.id { unpicture() }
         detach(tab)
         LittleWindow.show(tab, for: self, front: !Store.testing, lifted: true)
         writeSession(now: true)

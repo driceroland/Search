@@ -1345,7 +1345,7 @@ struct ContentView: View {
     /// one press so the field can have it. Put back on the next turn, after
     /// this event has been delivered: restoring before then would let the
     /// menu run the command in the same breath.
-    private func silenceCaretEquivalents() -> [(NSMenuItem, String, NSEvent.ModifierFlags)] {
+    static func silenceCaretEquivalents() -> [(NSMenuItem, String, NSEvent.ModifierFlags)] {
         guard let main = NSApp.mainMenu else { return [] }
         let arrows = Set([
             NSLeftArrowFunctionKey, NSRightArrowFunctionKey, NSUpArrowFunctionKey, NSDownArrowFunctionKey,
@@ -1366,7 +1366,7 @@ struct ContentView: View {
         return stolen
     }
 
-    private func restoreCaretEquivalents(_ stolen: [(NSMenuItem, String, NSEvent.ModifierFlags)]) {
+    static func restoreCaretEquivalents(_ stolen: [(NSMenuItem, String, NSEvent.ModifierFlags)]) {
         for (item, key, mask) in stolen {
             item.keyEquivalent = key
             item.keyEquivalentModifierMask = mask
@@ -1404,26 +1404,10 @@ struct ContentView: View {
         // there is its Cancel: taken here, it closed the panel under it and
         // left the question up, with Return still on its first button.
         if event.window?.sheetParent != nil || NSApp.modalWindow != nil { return false }
-        // A small window's keys are its own (see Little.swift). An arrow
-        // bound to a command, while the caret is in a field there, is the
-        // field's: the menu would otherwise run it on the window behind.
-        if let little = LittleWindow.owning(event.window) {
-            // ⌘[ and ⌘] reach the page first, as in the browser's window
-            // (see pageFirst): an editor indents with them. Handed back
-            // unused, they are this window's Back and Forward.
-            if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-               let key = event.charactersIgnoringModifiers, key == "[" || key == "]",
-               pageFirst(event, key: key, shifted: false) { return false }
-            if little.take(event) { return true }
-            if let combo = KeyCombo(event: event), combo.movesCaret,
-               little.tab.typing || little.tab.built?.inputContext != nil {
-                let stolen = silenceCaretEquivalents()
-                if !stolen.isEmpty {
-                    DispatchQueue.main.async { [stolen] in self.restoreCaretEquivalents(stolen) }
-                }
-            }
-            return false
-        }
+        // A small window's keys are its own monitor's (LittleWindow.watchKeys),
+        // there with or without a browser window. Taken here as well, a key
+        // the page should have first was already gone.
+        if LittleWindow.owning(event.window) != nil { return false }
         // A popup window: ⌘W closes it, not a tab of the
         // window menus act on. New tabs return to its browser; Escape
         // dismisses its permission question.
@@ -1632,9 +1616,9 @@ struct ContentView: View {
                 // this press and the event goes on to the field. A letter
                 // shortcut is not one of these and still runs.
                 if combo.movesCaret, caretIn(event) {
-                    let stolen = silenceCaretEquivalents()
+                    let stolen = ContentView.silenceCaretEquivalents()
                     if !stolen.isEmpty {
-                        DispatchQueue.main.async { [stolen] in self.restoreCaretEquivalents(stolen) }
+                        DispatchQueue.main.async { [stolen] in ContentView.restoreCaretEquivalents(stolen) }
                     }
                     return false
                 }

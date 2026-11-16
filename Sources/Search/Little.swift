@@ -224,9 +224,45 @@ final class LittleWindow: NSObject, NSWindowDelegate {
 
     private static func watchKeys() {
         guard keys == nil else { return }
-        keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            owning(event.window)?.take(event) == true ? nil : event
+        keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in handle(event) }
+    }
+
+    /// A key press on the app, before its window has it: nil when a small
+    /// window took it.
+    static func handle(_ event: NSEvent) -> NSEvent? {
+        guard let little = owning(event.window) else { return event }
+        if little.pageFirst(event) { return event }
+        if little.take(event) { return nil }
+        little.leaveCaretKey(event)
+        return event
+    }
+
+    /// ⌘[ and ⌘] while the page has the keyboard go to the page first, as
+    /// in the browser's window (ContentView.pageFirst): an editor outdents
+    /// and indents with them. WebKit sends one the page leaves unused back
+    /// through the app, and then it is this window's Back or Forward.
+    private static var passed: NSEvent?
+
+    private func pageFirst(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+              let key = event.charactersIgnoringModifiers, key == "[" || key == "]",
+              let page = tab.built, window.firstResponder === page else { return false }
+        if let passed = LittleWindow.passed, PageView.same(passed, event) {
+            LittleWindow.passed = nil
+            return false
         }
+        LittleWindow.passed = event
+        return true
+    }
+
+    /// An arrow bound to a command, while the caret is in a field here, is
+    /// the field's. The menu would run the command on the window behind,
+    /// so its arrow items stand aside for this one press.
+    private func leaveCaretKey(_ event: NSEvent) {
+        guard let combo = KeyCombo(event: event), combo.movesCaret,
+              tab.typing || tab.built?.inputContext != nil else { return }
+        let stolen = ContentView.silenceCaretEquivalents()
+        if !stolen.isEmpty { DispatchQueue.main.async { ContentView.restoreCaretEquivalents(stolen) } }
     }
 
     /// Its keys, before the browser's: ⌃Tab goes to the other small

@@ -3413,6 +3413,36 @@ final class Bench {
                     answer(["error": "little go needs an address"]); return
                 }
                 LittleWindow.all.last?.tab.go(to: url)
+            case "key":
+                // ⌘ and a key on the newest one's page, as the app hands it
+                // on: the small windows' key monitor, then the page. A hidden
+                // window is never key, so a posted press would go elsewhere.
+                guard let little = LittleWindow.all.last, let page = little.tab.built,
+                      let chars = request["chars"] as? String, let code = request["code"] as? Int,
+                      let event = NSEvent.keyEvent(
+                        with: .keyDown, location: .zero, modifierFlags: .command,
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: little.windowNumber,
+                        context: nil, characters: chars, charactersIgnoringModifiers: chars,
+                        isARepeat: false, keyCode: UInt16(code))
+                else { answer(["error": "little key needs a small window, chars and code"]); return }
+                page.window?.makeFirstResponder(page)
+                // One the page leaves unused WebKit sends back through the
+                // app, where the small windows' monitor has it a second time.
+                if let passed = LittleWindow.handle(event) { page.keyDown(with: passed) }
+            case "js":
+                // Run in the newest one's page, with that page given the
+                // keyboard, as a click into it would.
+                guard let tab = LittleWindow.all.last?.tab, let js = request["js"] as? String else {
+                    answer(["error": "little js needs a small window and js"]); return
+                }
+                tab.web.window?.makeFirstResponder(tab.web)
+                tab.web.evaluateJavaScript(js) { value, error in
+                    MainActor.assumeIsolated {
+                        if let error { answer(["error": error.localizedDescription]); return }
+                        answer(["value": Bench.plain(value)])
+                    }
+                }
+                return
             case "lift":
                 // A tab already in the row, into a small window (see
                 // Browser.openInLittleWindow). `id` is the bench's short id,
