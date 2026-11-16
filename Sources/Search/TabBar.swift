@@ -728,6 +728,7 @@ private struct TabPill: View, Equatable {
     /// the address on the tab you're on).
     private var rest: AtRest? { live && !editing ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
     private var atRest: Bool { rest != nil }
+    private var dim: Bool { tab.asleep && !live && !hovering }
 
     /// A pinned tab is a square, an edited one is a field, everything else is
     /// its share of what is left.
@@ -810,6 +811,7 @@ private struct TabPill: View, Equatable {
         .animation(nil, value: hovering)
         .animation(Motion.glide, value: editing)
         .animation(Motion.glide, value: tab.pin)
+        .animation(Motion.quick, value: dim)
         .onChange(of: refusals) { _, _ in
             guard editing else { return }
             shake = 0
@@ -835,7 +837,7 @@ private struct TabPill: View, Equatable {
                 } else if tab.loading {
                     Ring()
                 } else {
-                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15, dim: tab.asleep)
+                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15, dim: dim)
                 }
             }
             .frame(width: 16, height: 16)
@@ -860,7 +862,7 @@ private struct TabPill: View, Equatable {
                     .frame(height: 16)
             } else {
                 if !tab.isBlank {
-                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15)
+                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15, dim: dim)
                 }
                 if tab.bench {
                     // A script's tab, not yours.
@@ -886,7 +888,7 @@ private struct TabPill: View, Equatable {
                 // The page is translated (Translate.swift).
                 TranslateSign(tab: tab, colour: colour)
                 TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
-                            size: 12.5, colour: colour, roomy: false)
+                            size: 12.5, colour: colour, roomy: false, dim: dim)
             }
 
             Spacer(minLength: 2)

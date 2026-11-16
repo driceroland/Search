@@ -1228,14 +1228,9 @@ private struct SideRow: View, Equatable {
     /// the address on the tab you're on).
     private var rest: AtRest? { live && !editing ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
     private var atRest: Bool { rest != nil }
+    private var dim: Bool { tab.asleep && !live && !hovering }
     /// A pin already put down has nothing left to put down: no minus (#1050).
     private var closable: Bool { tab.pin == nil || !tab.asleep }
-    /// A grouped tab holding no page — put away with its minus (Browser.putAway),
-    /// put to sleep, or not opened since launch: the row stays, dimmed as a
-    /// pin put down is, so the minus is seen to have done something.
-    /// Read from the tab here, not when the column made the row: the column
-    /// isn't drawn again when one of its tabs lets its page go.
-    private var putAway: Bool { grouped && tab.asleep && !live }
 
     var body: some View {
         let _ = Bench.count("row")
@@ -1249,7 +1244,7 @@ private struct SideRow: View, Equatable {
                     // title either way, as Settings says (#919).
                     if !tab.isBlank {
                         Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15,
-                             dim: putAway)
+                             dim: dim)
                     }
                     if tab.bench {
                         // A script's tab, not yours.
@@ -1274,7 +1269,7 @@ private struct SideRow: View, Equatable {
                     // The page is translated (Translate.swift).
                     TranslateSign(tab: tab, colour: colour)
                     TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
-                                size: prefs.sideTitle, colour: colour, roomy: true)
+                                size: prefs.sideTitle, colour: colour, roomy: true, dim: dim)
                 }
                 Spacer(minLength: 0)
             }
@@ -1391,6 +1386,7 @@ private struct SideRow: View, Equatable {
         }
         .animation(nil, value: hovering)
         .animation(Motion.glide, value: editing)
+        .animation(Motion.quick, value: dim)
         .onChange(of: refusals) { _, _ in
             guard editing else { return }
             shake = 0
@@ -1425,8 +1421,7 @@ private struct SideRow: View, Equatable {
 
     private var colour: Color {
         if live { return Palette.ink }
-        let colour = hovering ? Palette.ink.opacity(0.7) : Palette.muted
-        return putAway ? colour.opacity(0.45) : colour
+        return hovering ? Palette.ink.opacity(0.7) : Palette.muted
     }
 }
 

@@ -177,6 +177,7 @@ private struct SplitTabHalf: View {
     /// the address on the tab you're on).
     private var rest: AtRest? { focused && !editing && !narrow ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
     private var atRest: Bool { rest != nil }
+    private var dim: Bool { tab.asleep && !focused && !hovering }
 
     private var laidOut: some View {
         row
@@ -304,7 +305,7 @@ private struct SplitTabHalf: View {
         } else {
             HStack(spacing: stacked ? 8 : 5) {
                 if prefs.glyph == .icons || !tab.isBlank || narrow {
-                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: stacked ? 15 : 13, dim: tab.asleep)
+                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: stacked ? 15 : 13, dim: dim)
                         .frame(width: stacked ? 15 : 13, height: stacked ? 15 : 13)
                 }
                 if tab.shy {
@@ -327,7 +328,7 @@ private struct SplitTabHalf: View {
                     TitleAtRest(label: title, rest: rest, shown: atRest, hovering: hovering,
                                 size: stacked ? prefs.sideTitle : 12,
                                 colour: focused ? Palette.ink : hovering ? Palette.ink.opacity(0.7) : Palette.muted,
-                                roomy: stacked)
+                                roomy: stacked, dim: dim)
                 }
             }
         }

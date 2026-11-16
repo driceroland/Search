@@ -69,6 +69,7 @@ struct TitleAtRest: View {
     /// In the column, with room for "Not secure" and the subdomain; across
     /// the top a lock says the first and the site alone stands for the host.
     let roomy: Bool
+    var dim = false
 
     private var on: Bool { shown && rest != nil }
 
@@ -86,7 +87,9 @@ struct TitleAtRest: View {
                     .transition(.opacity)
             }
         }
+        .opacity(dim ? 0.45 : 1)
         .animation(Motion.reduced ? nil : .easeInOut(duration: 0.22), value: on)
+        .animation(Motion.quick, value: dim)
         .animation(nil, value: hovering)
     }
 }

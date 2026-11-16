@@ -748,6 +748,7 @@ struct Mark: View {
         .opacity(dim ? 0.45 : 1)
         .transition(.opacity)
         .animation(Motion.quick, value: icon == nil)
+        .animation(Motion.quick, value: dim)
     }
 }
 
