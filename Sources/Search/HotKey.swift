@@ -59,6 +59,30 @@ enum HotKey {
 
     static var isSet: Bool { registered != nil }
 
+    /// One of macOS's own keys, switched on in System Settings › Keyboard ›
+    /// Keyboard Shortcuts: a screenshot, Mission Control, Spotlight, the
+    /// input sources. Carbon registers one of those all the same and it
+    /// never comes, so Settings turns it down instead. Another app's key
+    /// can't be told apart this way: macOS doesn't say whose a key is.
+    static func usedByMacOS(code: UInt16, modifiers: UInt32) -> Bool {
+        var list: Unmanaged<CFArray>?
+        guard CopySymbolicHotKeys(&list) == noErr,
+              let entries = list?.takeRetainedValue() as? [[String: Any]] else { return false }
+        return usedByMacOS(code: code, modifiers: modifiers, in: entries)
+    }
+
+    /// The same, against the list macOS gives. Its arrows and function keys
+    /// carry fn as well, which a key Settings records never does.
+    nonisolated static func usedByMacOS(code: UInt16, modifiers: UInt32, in entries: [[String: Any]]) -> Bool {
+        let held = UInt32(cmdKey | shiftKey | optionKey | controlKey)
+        return entries.contains { entry in
+            guard entry[kHISymbolicHotKeyEnabled as String] as? Bool == true,
+                  entry[kHISymbolicHotKeyCode as String] as? Int == Int(code),
+                  let flags = entry[kHISymbolicHotKeyModifiers as String] as? Int else { return false }
+            return UInt32(truncatingIfNeeded: flags) & held == modifiers & held
+        }
+    }
+
     /// Once, for as long as the app runs: the key's presses come to the
     /// application's own event target.
     private static func installHandler() {

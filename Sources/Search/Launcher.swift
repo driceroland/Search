@@ -162,8 +162,14 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         if !wants { HotKey.clear() }
     }
 
+    /// Asked again each time, as one of macOS's keys can be switched on
+    /// after this one was chosen — or this one taken by the button.
     private func say(_ status: OSStatus, for key: LauncherKey) {
-        refusal = status == noErr ? nil : "\(key.combo.display) is taken by macOS or another app"
+        if HotKey.usedByMacOS(code: key.code, modifiers: HotKey.modifiers(of: key.combo)) {
+            refusal = "\(key.combo.display) is used by macOS"
+        } else {
+            refusal = status == noErr ? nil : "macOS won’t give Search \(key.combo.display)"
+        }
     }
 
     // MARK: - up and away
@@ -749,6 +755,9 @@ struct LauncherKeyBox: View {
         guard let combo = KeyCombo(event: event) else { return }
         guard combo.isUsable else { return say("Add ⌘, ⌥ or ⌃") }
         guard !KeyCombo.isReserved(combo) else { return say("Can’t be used") }
+        guard !HotKey.usedByMacOS(code: event.keyCode, modifiers: HotKey.modifiers(of: combo)) else {
+            return say("Used by macOS")
+        }
         prefs.launcherKey = LauncherKey(combo: combo, code: event.keyCode)
         stop()
     }

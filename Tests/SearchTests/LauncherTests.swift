@@ -59,6 +59,28 @@ final class LauncherTests: XCTestCase {
         XCTAssertEqual(HotKey.modifiers(of: KeyCombo("f5", command: false)), 0)
     }
 
+    func testMacOSsOwnKeysAreToldApart() {
+        let code = kHISymbolicHotKeyCode as String
+        let flags = kHISymbolicHotKeyModifiers as String
+        let on = kHISymbolicHotKeyEnabled as String
+        // As macOS 26 lists them: ⇧⌘3, Mission Control's ⌃↑ with fn, and
+        // ⇧⌘4 switched off in System Settings.
+        let entries: [[String: Any]] = [
+            [code: kVK_ANSI_3, flags: cmdKey | shiftKey, on: true],
+            [code: kVK_UpArrow, flags: controlKey | 0x20000, on: true],
+            [code: kVK_ANSI_4, flags: cmdKey | shiftKey, on: false],
+        ]
+        func used(_ key: Int, _ held: Int) -> Bool {
+            HotKey.usedByMacOS(code: UInt16(key), modifiers: UInt32(held), in: entries)
+        }
+        XCTAssertTrue(used(kVK_ANSI_3, cmdKey | shiftKey))
+        XCTAssertTrue(used(kVK_UpArrow, controlKey))
+        // Held with one more modifier, it is a key of its own.
+        XCTAssertFalse(used(kVK_ANSI_3, cmdKey | shiftKey | optionKey))
+        XCTAssertFalse(used(kVK_ANSI_4, cmdKey | shiftKey))
+        XCTAssertFalse(used(kVK_Space, cmdKey | shiftKey))
+    }
+
     func testKeyStandsAsideOnlyWithAWindowOfSearchInFront() {
         XCTAssertTrue(Launcher.standsAside(active: true, windowShowing: true))
         // Search in front with every window closed or in the Dock.
