@@ -248,6 +248,11 @@ final class Preferences: ObservableObject {
     @Published var cards: Bool {
         didSet { store.set(cards, forKey: "layout.cards") }
     }
+    /// The page stays a card when the window fills the screen (#1152). Off,
+    /// it goes edge to edge there, as asked for on #607.
+    @Published var cardsInFullScreen: Bool {
+        didSet { store.set(cardsInFullScreen, forKey: "layout.cardsFullScreen") }
+    }
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
     }
@@ -945,6 +950,7 @@ final class Preferences: ObservableObject {
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
+        cardsInFullScreen = store.bool(forKey: "layout.cardsFullScreen")
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
@@ -1184,6 +1190,7 @@ final class Preferences: ObservableObject {
         take(\.sidePanelWidth, "sidepanel.width", (store.object(forKey: "sidepanel.width") as? Double).map { CGFloat($0) }
             .flatMap { Preferences.sidePanelWidths.contains($0) ? $0 : nil }, or: 380)
         take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)
+        take(\.cardsInFullScreen, store.bool(forKey: "layout.cardsFullScreen"))
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
         take(\.instantMotion, store.bool(forKey: Motion.instantKey))

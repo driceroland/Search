@@ -2636,7 +2636,9 @@ final class Browser: NSObject, ObservableObject {
     /// The page as a card is off, and never with the window filling the
     /// screen, where the page goes edge to edge (#607). A page's own video
     /// filling the screen is the window's to add (see ContentView.cards).
-    var asCards: Bool { prefs.sidebar && prefs.cards && !fullScreen }
+    /// Settings › Appearance › Window › Keep the card in full screen, off
+    /// unless turned on, keeps it there too, as Arc and Zen do (#1152).
+    var asCards: Bool { prefs.sidebar && prefs.cards && (!fullScreen || prefs.cardsInFullScreen) }
     /// The extension a popup window was opened for (windows.create with
     /// type "popup"), or nil for a browser window. Such a window is small,
     /// the page under a thin line with its site; it is never saved, never
@@ -5481,9 +5483,17 @@ final class Browser: NSObject, ObservableObject {
         guard prefs.usesTabGroups else { return row.map { ($0.id, $0) } }
         let off = pairedOff
         let buckets = grouping(tabs)
+        // In an open group, a tab holding no page — put away, asleep, or not
+        // opened since launch — is drawn dimmed as closed, so ⌘1–9 counts
+        // past it, as ⌃Tab does (#1092): ⌘1 went to a group's closed tabs
+        // before the open ones under them (#1159). The tab you're on still
+        // counts, and a folded group is still one place, whatever it holds.
+        let here = activeID
         let groups = tabGroups.flatMap { group -> [(id: UUID, tab: Tab)] in
             let members = (buckets[group.id] ?? []).filter { !off.contains($0.id) }
-            guard group.collapsed else { return members.map { ($0.id, $0) } }
+            guard group.collapsed else {
+                return members.filter { !$0.asleep || $0.id == here }.map { ($0.id, $0) }
+            }
             let current = active.flatMap { self.group(of: $0) == group.id ? $0 : nil }
             guard let tab = current ?? members.max(by: { $0.touched < $1.touched }) else { return [] }
             return [(group.id, tab)]

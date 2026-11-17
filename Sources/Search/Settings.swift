@@ -532,6 +532,7 @@ struct SettingsPanel: View {
                         get: { prefs.cards },
                         set: { on in withAnimation(Motion.glide) { prefs.cards = on } }
                      ))
+        case "layout.cardsFullScreen": Switch(on: $prefs.cardsInFullScreen)
         case "toolbar.left": Switch(on: $prefs.navigationLeft)
         case "tabs.compact":
             Switch(on: Binding(
