@@ -28,5 +28,36 @@ const relayTimers=()=>{for(const timer of receiver.timers.splice(0))if(timer.del
  const result=await answer;
  assert.equal(result.result.bytes,65536);
  assert.equal(result.result.ok,true);
+
+ // No other page is open and the worker answers nothing: main settles at once.
+ const alone=fixture(false);
+ alone.root.BroadcastChannel=class { constructor(){} postMessage(){} };
+ vm.runInNewContext(script,alone.root);
+ let aloneSettled=false;
+ const aloneAnswer=alone.runtime.sendMessage({only:'worker'}).then(r=>{aloneSettled=true;return r;});
+ await drain();
+ assert.equal(aloneSettled,true,'an unanswered message with no other page must not wait out the relay countdown');
+ assert.equal(await aloneAnswer,undefined);
+
+ // An empty reply counts down. It must not settle over a page that is holding the answer.
+ const bus2=new Map();
+ const from=fixture(false), quiet=fixture(false), holder=fixture(false);
+ for(const state of [from,quiet,holder]) {
+  state.root.BroadcastChannel=class {
+   constructor(name){this.name=name;if(!bus2.has(name))bus2.set(name,[]);bus2.get(name).push(this);}
+   postMessage(data){for(const peer of bus2.get(this.name))if(peer!==this)queueMicrotask(()=>peer.onmessage?.({data:structuredClone(data)}));}
+  };
+  vm.runInNewContext(script,state.root);
+ }
+ const fireRelay=state=>{for(const timer of state.timers.splice(0))if(timer.delay===50)timer.callback();};
+ quiet.runtime.onMessage.addListener((message,sender,respond)=>{respond(undefined);});
+ let held;
+ holder.runtime.onMessage.addListener((message,sender,respond)=>{held=respond;return true;});
+ let blocked=false;
+ const raced=from.runtime.sendMessage({held:'answer'}).then(r=>{blocked=true;return r;});
+ await drain();fireRelay(quiet);fireRelay(holder);await drain();
+ assert.equal(blocked,false,'an empty relay reply must not settle while another page holds the answer');
+ held({kept:true});await drain();
+ assert.deepEqual(await raced,{kept:true});
  console.log('PASS whole-shim relay-first async response survives empty native result and reordered late native duplicate');
 })().catch(e=>{console.error(e);process.exitCode=1;});

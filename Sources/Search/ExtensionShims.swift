@@ -1227,27 +1227,48 @@ enum ExtensionShims {
       const relay = (message) => {
         if (!channel || inContent) return null;
         const id = me + ":" + (++relaySequence);
-        let finish, timer;
+        const key = relayKey(message);
+        let finish, timer = null, held = false, settled = false;
         const answer = new Promise((resolve) => { finish = resolve; });
-        const cancel = () => { clearTimeout(timer); relayReplies.delete(id); finish(undefined); };
+        // An empty reply is not an answer: another page may still be holding
+        // the real one. The countdown is what settles "nobody answered", and
+        // it ends at once when the worker was the only one who heard.
+        const settle = (value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          timer = null;
+          relayReplies.delete(id);
+          finish(value);
+        };
+        const countDown = () => { if (!settled && !timer) timer = setTimeout(() => settle(undefined), 10000); };
         relayReplies.set(id, {
-          held: () => clearTimeout(timer),
-          reply: (value) => { clearTimeout(timer); relayReplies.delete(id); finish(value); },
+          key,
+          held: () => { held = true; clearTimeout(timer); timer = null; },
+          reply: (value) => { if (value !== undefined) settle(value); else countDown(); },
+          alone: () => { if (!held) settle(undefined); },
         });
-        timer = setTimeout(cancel, 10000);
+        countDown();
         try {
           const value = JSON.parse(JSON.stringify(message));
           channel.postMessage({ relay: value, from: me, url: location.href, replyTo: id });
-        } catch (e) { cancel(); }
-        return { answer, cancel };
+        } catch (e) { settle(undefined); }
+        return { answer, cancel: () => settle(undefined), alone: () => { if (!held) settle(undefined); } };
       };
       const firstReply = (original, relayed) => {
         if (!relayed) return original;
         return new Promise((resolve, reject) => {
-          let left = 2, failure;
-          const none = () => { if (--left === 0) failure ? reject(failure) : resolve(undefined); };
-          original.then((value) => value !== undefined ? resolve(value) : none(), (error) => { failure = error; none(); });
-          relayed.answer.then((value) => value !== undefined ? resolve(value) : none());
+          let left = 2, failure, done = false;
+          const win = (value) => { if (!done) { done = true; resolve(value); } };
+          const none = () => { if (--left === 0) failure ? reject(failure) : win(undefined); };
+          original.then((value) => {
+            if (value !== undefined) win(value);
+            // No other page joined, and the worker had nothing to say.
+            // Main returns at once; the relay has nobody left to ask.
+            else if (peers.size === 0) { relayed.alone(); win(undefined); }
+            else none();
+          }, (error) => { failure = error; none(); });
+          relayed.answer.then((value) => value !== undefined ? win(value) : none());
         }).finally(relayed.cancel);
       };
       if (channel) {
