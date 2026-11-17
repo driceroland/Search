@@ -121,6 +121,7 @@ extension Browser {
     /// Put away: the page goes with the panel.
     func closePeek() {
         guard let page = peekTab else { return }
+        peekPinch = 0
         withAnimation(Motion.quick) {
             peekTab = nil
             peekFrom = nil
@@ -216,6 +217,7 @@ struct PeekPanel: View {
                 }
                 .frame(width: geo.size.width * 0.82, height: geo.size.height * 0.86)
                 .offset(x: 21)
+                .scaleEffect(1 + 0.04 * browser.peekPinch)
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }

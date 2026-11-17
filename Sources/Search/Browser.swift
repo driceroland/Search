@@ -2595,6 +2595,9 @@ final class Browser: NSObject, ObservableObject {
     var afterSpaceCreated: ((Space) -> Void)?
     /// A link's page, peeked at over this one (see Peek.swift).
     @Published var peekTab: Tab?
+    /// How far two fingers spreading on the peek are towards opening it as a
+    /// tab, 0 to 1 (see PageView.magnify): the panel grows with it.
+    @Published var peekPinch: CGFloat = 0
     /// The tab the peek was opened from: a pin wears the peek's icon while
     /// it is up (see PeekBadge).
     @Published var peekFrom: UUID?

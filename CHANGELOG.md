@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Spread two fingers on a peek to open it as a tab, as zooming into it: the panel grows a little with your fingers, the trackpad taps once when letting go will open it, and a lighter tap when your fingers come back under that. A page already zoomed in keeps its pinch.
+
 ### Held back
 
 Not in this version, kept on main for a later one:

@@ -2438,6 +2438,17 @@ final class Bench {
                 answer(["peek": ""])
                 return
             }
+            // "pinch": two fingers spreading on the peek, a list of steps
+            // ending as the fingers lift (see PageView.peekPinch).
+            if let steps = request["pinch"] as? [Double] {
+                guard let page = browser.peekTab?.built as? PageView else { answer(["error": "no peek"]); return }
+                page.peekPinch(.began, by: 0)
+                for step in steps { page.peekPinch(.changed, by: CGFloat(step)) }
+                let pinch = browser.peekPinch
+                page.peekPinch(request["cancel"] as? Bool == true ? .cancelled : .ended, by: 0)
+                answer(["pinch": Double(pinch), "peek": browser.peekTab?.address?.absoluteString ?? ""])
+                return
+            }
             // "js": run in the peek's page, in front or hidden.
             if let js = request["js"] as? String {
                 guard let page = browser.peekTab?.built else { answer(["error": "no peek"]); return }
