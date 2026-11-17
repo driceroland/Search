@@ -8,17 +8,20 @@ import Foundation
 enum PinRowLine: Identifiable {
     case folder(PinFolder, depth: Int)
     case pin(Tab, depth: Int)
+    /// A live folder's post (LiveFolders.swift).
+    case item(FeedItem, folder: UUID, depth: Int)
 
     var id: UUID {
         switch self {
         case .folder(let folder, _): folder.id
         case .pin(let tab, _): tab.id
+        case .item(let item, _, _): item.id
         }
     }
 
     var depth: Int {
         switch self {
-        case .folder(_, let depth), .pin(_, let depth): depth
+        case .folder(_, let depth), .pin(_, let depth), .item(_, _, let depth): depth
         }
     }
 
@@ -27,6 +30,7 @@ enum PinRowLine: Identifiable {
         switch self {
         case .folder(let folder, let depth): ["folder", depth, folder.name, folder.collapsed]
         case .pin(let tab, let depth): ["pin", depth, tab.name ?? tab.title, false]
+        case .item(let item, _, let depth): ["item", depth, item.title, false]
         }
     }
 }
@@ -54,6 +58,7 @@ extension Browser {
                 switch line {
                 case .folder(let folder, let depth): return .folder(folder, depth: depth)
                 case .pin(let id, let depth): return byID[id].map { .pin($0, depth: depth) }
+                case .item(let item, let folder, let depth): return .item(item, folder: folder, depth: depth)
                 }
             }
     }
@@ -147,6 +152,7 @@ extension Browser {
         let folders = pinFolders
         guard let gone = folders.first(where: { $0.id == id }) else { return }
         if editingPinFolder == id { editingPinFolder = nil }
+        LiveFolders.forget(id)
         savePinFolders(PinTree.removing(id, folders: folders, pins: []).folders)
         for tab in tabs where tab.pinFolder == id { tab.pinFolder = gone.parent }
         arrangePinFolders()
@@ -168,7 +174,8 @@ extension Browser {
     /// end of that folder's pins.
     func movePin(_ tab: Tab, into folder: UUID?, anchor: Tab.ID? = nil, after: Bool = false) {
         guard takesFolder(tab), let here = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-        let folder = folder.flatMap { id in pinFolders.contains { $0.id == id } ? id : nil }
+        // Never into a live folder: what it holds is its feed's.
+        let folder = folder.flatMap { id in pinFolders.contains { $0.id == id && !$0.isLive } ? id : nil }
         objectWillChange.send()
         tab.pinFolder = folder
         var row = tabs

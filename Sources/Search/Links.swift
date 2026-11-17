@@ -159,6 +159,8 @@ final class Links: NSObject, NSApplicationDelegate {
             Shared.prefs.followFile()
             // The address field from any app, once asked for (Launcher.swift).
             Launcher.shared.start()
+            // Live folders fetched, and kept fresh (LiveFolders.swift).
+            LiveFolders.start()
         }
         let plain = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
         guard !plain else { return }

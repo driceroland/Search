@@ -893,6 +893,15 @@ enum Ask {
         }
     }
 
+    /// Something to say, with nothing to answer but OK.
+    static func tell(_ title: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.addButton(withTitle: "OK")
+        show(alert) { _ in }
+    }
+
     /// `returnCancels`: Return is Cancel's, for a yes that can't be undone.
     static func sure(_ title: String, detail: String, confirm: String, returnCancels: Bool = false, then: @escaping () -> Void) {
         if Store.testing, let yes = testing {

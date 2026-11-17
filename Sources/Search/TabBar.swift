@@ -1570,6 +1570,7 @@ struct TabMenu: View {
             // space's own into a folder, a new one or one there is.
             if browser.prefs.showsPinFolders && browser.takesFolder(tab) {
                 Button("New Folder") { browser.newPinFolder(holding: tab) }
+                Button("New Live Folder…") { LiveFolders.ask(for: browser, in: tab.pinFolder) }
                 let folders = browser.pinFolders
                 if !folders.isEmpty {
                     Menu("Move to Folder") {

@@ -3574,7 +3574,10 @@ final class Bench {
                     "setting": browser.prefs.pinFolders, "rows": browser.prefs.showsPinRows,
                     "drawsFolders": browser.showsPinFolderRows,
                     "folders": now.map { ["id": $0.id.uuidString, "name": $0.name, "parent": name($0.parent),
-                                          "collapsed": $0.collapsed, "depth": PinTree.depth(of: $0.id, in: now)] as [String: Any] },
+                                          "collapsed": $0.collapsed, "depth": PinTree.depth(of: $0.id, in: now),
+                                          "feed": $0.feed?.absoluteString ?? NSNull(),
+                                          "items": ($0.items ?? []).map { [$0.title, $0.link.absoluteString] },
+                                          "failed": LiveFolders.failed.contains($0.id)] as [String: Any] },
                     // kind, depth, title, folded: what the column draws.
                     "lines": browser.pinRowLines().map(\.described),
                     // The rows in the order the row (and pins.json) keeps them.
@@ -3631,6 +3634,37 @@ final class Bench {
             case "delete":
                 guard let folder = named("name") else { answer(["error": "no folder “\(request["name"] as? String ?? "")”"]); return }
                 browser.deletePinFolder(folder.id)
+            case "live":
+                // New Live Folder… with its address typed (LiveFolders.swift):
+                // fetched, and the folder made from what it said.
+                guard let url = Feed.address(request["url"] as? String ?? "") else { answer(["error": "live needs a url"]); return }
+                let parent = named("in")?.id
+                Task { @MainActor in
+                    switch await Feed.load(url) {
+                    case .success(let read): answer(state(["made": browser.newLiveFolder(read, in: parent).uuidString]))
+                    case .failure(let problem): answer(state(["error": problem.said(url)]))
+                    }
+                }
+                return
+            case "refresh":
+                // Refresh in a live folder's menu; answered once it is back.
+                guard let folder = named("name"), folder.isLive else { answer(["error": "no live folder “\(request["name"] as? String ?? "")”"]); return }
+                LiveFolders.refresh(folder.id, in: browser.spaceID)
+                func wait(_ left: Int) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        if LiveFolders.isFetching(folder.id) && left > 0 { wait(left - 1) } else { answer(state()) }
+                    }
+                }
+                wait(150)
+                return
+            case "openitem":
+                // A live folder's post clicked: its page in a new tab.
+                guard let folder = named("name"), let title = request["title"] as? String,
+                      let item = folder.items?.first(where: { $0.title == title })
+                else { answer(["error": "no post “\(request["title"] as? String ?? "")” in that folder"]); return }
+                browser.openFeedItem(item)
+                answer(state(["opened": item.link.absoluteString, "front": browser.active.map { ["pinned": $0.pin != nil] } ?? NSNull()]))
+                return
             case "drawn":
                 // The column drawn off screen, as `column` draws it, and the
                 // lines it drew read back: kind, depth, title, folded.
@@ -3648,7 +3682,7 @@ final class Bench {
                 }
                 return
             default:
-                answer(["error": "pinfolder: state|on|off|pin|new|move|fold|open|rename|nest|delete|drawn"]); return
+                answer(["error": "pinfolder: state|on|off|pin|new|move|fold|open|rename|nest|delete|live|refresh|openitem|drawn"]); return
             }
             answer(state())
 
