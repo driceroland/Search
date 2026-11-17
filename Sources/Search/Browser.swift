@@ -5283,24 +5283,19 @@ final class Browser: NSObject, ObservableObject {
     func switchTabs(backwards: Bool) {
         guard let activeID else { return }
         tabSwitcher.partners = switcherPartners
-        let row = switcherRow
-        let current = activeSplit?.left ?? activeID
-        let start = row.contains(current) ? current : (tabSwitcher.lastLeft(among: Set(row), other: current) ?? row.first)
-        guard let start else { return }
-        tabSwitcher.step(row: row, current: start,
+        tabSwitcher.step(row: switcherRow, current: activeSplit?.left ?? activeID,
                          backwards: backwards, moons: LittleWindow.stacked, behindFirst: prefs.switcherBehindFirst)
     }
 
     /// The row's tabs the switcher offers: not a pin put down, nor a grouped
     /// tab put away, which hold no page and are drawn dimmed in the column as
-    /// closed (#1092). With `tabs.switcherLeavesOutPins` on, all pinned tabs
-    /// are left out (#1110). The tab you're on stays, whatever it is, unless
-    /// pinned tabs are left out.
+    /// closed (#1092). With `tabs.switcherLeavesOutPins` on, pinned tabs are
+    /// left out (#1110). The tab you're on stays, whatever it is.
     private var switcherRow: [Tab.ID] {
         let current = activeSplit?.left ?? activeID
         let leavesOutPins = prefs.switcherLeavesOutPins
         return tabs.filter { tab in
-            standsInRow(tab) && (!leavesOutPins || tab.pin == nil)
+            standsInRow(tab) && (!leavesOutPins || tab.pin == nil || tab.id == current)
                 && (tab.id == current || !tab.asleep
                     || (tab.pin == nil && !(prefs.usesTabGroups && group(of: tab) != nil)))
         }.map(\.id)
