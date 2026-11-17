@@ -256,6 +256,11 @@ enum Browsers {
             return
         }
         window.makeKeyAndOrderFront(nil)
+        // The window just opened is the one in front from now on. Its own
+        // didBecomeKey goes by before its view knows its window (WindowSetup
+        // waits a turn), so the menus, Bookmarks among them, went on acting
+        // on the window behind until you clicked away and back (#1146).
+        becameKey(browser)
         // Never in a test run: full screen would put a probe's window on a screen.
         if fullScreen, !Store.testing { window.toggleFullScreen(nil) }
         comeForward()
