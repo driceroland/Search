@@ -19,7 +19,7 @@ Not in this version, kept on main for a later one:
 
 ### Fixed
 
-- An extension's request rules load more as Chrome takes them: a header WebKit doesn't know is left out of a rule instead of the whole rule, an empty list of sites to leave out leaves out none, `\d`, `\w` and counts in a pattern are written out the way WebKit reads them, and a pattern beside a list of sites is pinned to the site it opens on. Thanks [@oddharsh](https://github.com/oddharsh)
+- An extension's request rules load more as Chrome takes them: a header WebKit doesn't know is left out of a rule instead of the whole rule, an empty list of sites to leave out leaves out none, `\d`, `\w` and counts in a pattern are written out the way WebKit reads them, and a pattern beside a list of sites is pinned to the site it opens on. Thanks [@oddharsh](https://github.com/oddharsh) ([#1168](https://github.com/driceroland/Search/pull/1168))
 
 
 ## 1.0.14 — 17 November 2026
