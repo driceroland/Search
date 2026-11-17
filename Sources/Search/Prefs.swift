@@ -100,6 +100,52 @@ enum SidebarPosition: String, CaseIterable, Identifiable {
     }
 }
 
+/// Where the tabs go when the settings have no line for it. Down the side,
+/// as Arc has them, for a Search opened for the first time (Drice, 17 Nov
+/// 2026); across the top before that. Nobody already using Search sees the
+/// tabs move with an update: `settle` writes the old place down for them,
+/// once, before the setting is first read.
+enum SidebarDefault {
+    /// Set at the first launch of a build that knows the new default, fresh
+    /// install or not, so `settle` looks only once: a fresh install's second
+    /// launch has settings and a session too, and must not be taken for one
+    /// from before.
+    static let settledKey = "sidebar.settled"
+
+    /// The column, except in a test world: the hidden suites were written
+    /// against tabs across the top and set `sidebar` when they want the
+    /// column.
+    static func fresh(testing: Bool) -> Bool { !testing }
+
+    /// Lines only a Search that has run before leaves behind: the welcome
+    /// walked through, a choice of what tabs wear (written by every build
+    /// before the welcome existed), and the window's frame AppKit keeps.
+    static let traces = ["welcomed", "glyph", "NSWindow Frame search"]
+
+    /// One time only. A Search that ran before this build, with no line for
+    /// where its tabs go, had them across the top: that is written down, so
+    /// the new default never reaches it. `ranBefore` is whether a session
+    /// or windows file is already in the folder.
+    static func settle(_ store: UserDefaults, testing: Bool, ranBefore: Bool) {
+        guard !store.bool(forKey: settledKey) else { return }
+        store.set(true, forKey: settledKey)
+        guard fresh(testing: testing),
+              store.object(forKey: "sidebar") == nil,
+              store.object(forKey: "manner") == nil
+        else { return }
+        if ranBefore || traces.contains(where: { store.object(forKey: $0) != nil }) {
+            store.set(false, forKey: "sidebar")
+        }
+    }
+
+    /// Whether this folder holds what a Search that has run leaves there.
+    static func ranBefore(in folder: URL) -> Bool {
+        ["session.json", "windows.json", "pins.json"].contains {
+            FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+        }
+    }
+}
+
 @MainActor
 final class Preferences: ObservableObject {
     private let store = Store.settings
@@ -821,8 +867,10 @@ final class Preferences: ObservableObject {
         NSApplication.shared.appearance = chosen.appearance
         sidePanelWidth = min(max(CGFloat(store.object(forKey: "sidepanel.width") as? Double ?? 380),
                                  Preferences.sidePanelWidths.lowerBound), Preferences.sidePanelWidths.upperBound)
+        SidebarDefault.settle(store, testing: Store.testing, ranBefore: SidebarDefault.ranBefore(in: Store.folder))
         sidebar = store.object(forKey: "sidebar") as? Bool
-            ?? (store.string(forKey: "manner") == "side")
+            ?? store.string(forKey: "manner").map { $0 == "side" }
+            ?? SidebarDefault.fresh(testing: Store.testing)
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
         roomyTabs = store.bool(forKey: "sidebar.roomy")
@@ -1050,7 +1098,8 @@ final class Preferences: ObservableObject {
         take(\.look, "look", store.string(forKey: "look").flatMap(Look.init), or: .system)
         take(\.navigationLeft, store.bool(forKey: "toolbar.left"))
         take(\.compactStrip, store.bool(forKey: "tabs.compact"))
-        take(\.sidebar, "sidebar", store.object(forKey: "sidebar") as? Bool, or: store.string(forKey: "manner") == "side")
+        take(\.sidebar, "sidebar", store.object(forKey: "sidebar") as? Bool,
+             or: store.string(forKey: "manner").map { $0 == "side" } ?? SidebarDefault.fresh(testing: Store.testing))
         take(\.sidePosition, "sidebar.position", store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init),
              or: .left)
         take(\.sideHides, store.bool(forKey: "sidebar.hides"))

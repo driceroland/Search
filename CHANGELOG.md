@@ -72,6 +72,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- A new Search starts with its tabs down the left, as Arc has them; ⇧⌘S or the welcome puts them across the top. If you already use Search, your tabs stay where they are.
 - Shield keeps its compiled block list between launches instead of compiling it again each time.
 - The floating video's window asks the page how far through the video is only while the pointer is over it, where it asked twice a second behind your back, and the page's check that the video is still the one floating runs when the page changes or a video starts playing, and every two seconds, where it ran four times a second.
 - An extension listening for tab group changes, or for the Mac going idle, is told when it happens, where Search had it ask for the groups every 3 seconds and for idleness every 15, for as long as it listened, each ask waking its worker. With nothing listening, nothing runs.
