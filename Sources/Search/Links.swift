@@ -159,6 +159,8 @@ final class Links: NSObject, NSApplicationDelegate {
             Shared.prefs.followFile()
             // The address field from any app, once asked for (Launcher.swift).
             Launcher.shared.start()
+            // And Search's mark in the menu bar (MenuBarItem.swift).
+            MenuBarItem.shared.start()
         }
         let plain = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
         guard !plain else { return }

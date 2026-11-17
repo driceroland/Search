@@ -804,6 +804,11 @@ final class Preferences: ObservableObject {
             }
         }
     }
+    /// Search's mark in the menu bar, with a menu, for as long as it runs
+    /// (see MenuBarItem.swift). Off unless asked for.
+    @Published var menuBarIcon: Bool {
+        didSet { store.set(menuBarIcon, forKey: "menubar.icon") }
+    }
     /// The floating field lists the last few places from History before
     /// anything is typed (Browser.recentPlaces). Off unless asked for.
     @Published var recentInNewTab: Bool {
@@ -948,6 +953,7 @@ final class Preferences: ObservableObject {
         floatingNewTab = store.bool(forKey: "newtab.floating")
         launcher = store.bool(forKey: "launcher.on")
         launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
+        menuBarIcon = store.bool(forKey: "menubar.icon")
         recentInNewTab = store.bool(forKey: "newtab.recent")
         // On for everyone who never touched it (24 Oct 2026).
         let history = store.object(forKey: "swipe.history") as? Bool ?? true

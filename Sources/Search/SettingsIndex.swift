@@ -430,6 +430,10 @@ enum SettingsIndex {
         .init(id: "launcher.key", group: "anywhere", icon: "keyboard",
               title: "Key", detail: "Press it in any app to bring the address field up",
               keys: ["launcher.key"], words: ["hotkey", "global shortcut", "shift command space"], parent: "launcher.on"),
+        .init(id: "menubar.icon", group: "anywhere", icon: "menubar.rectangle",
+              title: "Show Search in the menu bar", detail: "Its mark by the clock while Search runs, with a menu",
+              more: "The menu opens the address field, a new window or Settings, or quits Search. It stays while every window is closed.",
+              keys: ["menubar.icon"], words: ["menu bar", "status bar", "status item", "tray", "icon", "background"]),
 
         // About
         .init(id: "updates.version", group: "updates", icon: "arrow.down.app",
