@@ -39,9 +39,10 @@ def main():
         t.ok("cancelled past the line: still a peek", r.get("peek", "").endswith("/b"), r)
 
         r = sv.cmd({"do": "peek", "pinch": [0.1, 0.1, 0.1, 0.1]})
-        time.sleep(0.6)
+        t.ok("spread past the line: the panel grows to the page first", r.get("peek", "").endswith("/b"), r)
+        time.sleep(0.8)
         s = sv.sp("state")
-        t.ok("spread past the line: the peek is gone", r.get("peek") == "", r)
+        t.ok("…then the peek is gone", sv.cmd({"do": "probe"}).get("peek", "") == "")
         t.ok("…kept as a tab", len(s["tabs"]) == n + 1, len(s["tabs"]))
         front = next(x for x in s["tabs"] if x["id"] == s["activeID"])
         t.ok("…and it is the one in front", front["url"].endswith("/b"), front["url"])

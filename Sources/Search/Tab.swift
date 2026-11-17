@@ -2347,8 +2347,7 @@ final class PageView: WKWebView {
             peekSpread = 0
             peekArmed = false
             if open {
-                browser.peekPinch = 0
-                browser.keepPeek()
+                browser.openPeekGrown()
             } else {
                 withAnimation(Motion.quick) { browser.peekPinch = 0 }
             }
