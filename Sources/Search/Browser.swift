@@ -5514,12 +5514,15 @@ final class Browser: NSObject, ObservableObject {
 
     /// The row's tabs the switcher offers: not a pin put down, nor a grouped
     /// tab put away, which hold no page and are drawn dimmed in the column as
-    /// closed (#1092). The tab you're on stays, whatever it is.
+    /// closed (#1092). With `tabs.switcherLeavesOutPins` on, pinned tabs are
+    /// left out (#1110). The tab you're on stays, whatever it is.
     private var switcherRow: [Tab.ID] {
         let current = activeSplit?.left ?? activeID
+        let leavesOutPins = prefs.switcherLeavesOutPins
         return tabs.filter { tab in
-            standsInRow(tab) && (tab.id == current || !tab.asleep
-                || (tab.pin == nil && !(prefs.usesTabGroups && group(of: tab) != nil)))
+            standsInRow(tab) && (!leavesOutPins || tab.pin == nil || tab.id == current)
+                && (tab.id == current || !tab.asleep
+                    || (tab.pin == nil && !(prefs.usesTabGroups && group(of: tab) != nil)))
         }.map(\.id)
     }
 
