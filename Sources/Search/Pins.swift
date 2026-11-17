@@ -25,6 +25,10 @@ struct PinDef: Codable, Equatable {
     /// A row, not a square (see Tab.listed). Nil rather than false, so a
     /// pins file with no rows in it is written as it always was.
     var listed: Bool? = nil
+    /// The folder among the pinned rows that holds it (see PinFolders.swift),
+    /// nil at the top of them. Written only when it is in one, so the file
+    /// is unchanged for anyone with no folders.
+    var folder: UUID? = nil
 }
 
 @MainActor
@@ -130,6 +134,7 @@ enum Pins {
 
     /// A space deleted: its pins go with it.
     static func forget(_ space: UUID) {
+        PinFolders.forget(space)
         guard bySpace.removeValue(forKey: space) != nil else { return }
         save()
     }
@@ -147,7 +152,9 @@ enum Pins {
     /// A space's own pin, shown by every space from now on: at the end of
     /// the shared ones.
     nonisolated static func share(_ id: UUID, own: [PinDef], shared: [PinDef]) -> (own: [PinDef], shared: [PinDef]) {
-        guard let pin = own.first(where: { $0.id == id }) else { return (own, shared) }
+        guard var pin = own.first(where: { $0.id == id }) else { return (own, shared) }
+        // Folders are a space's own: a pin every space shows is in none.
+        pin.folder = nil
         return (own.filter { $0.id != id }, shared + [pin])
     }
 

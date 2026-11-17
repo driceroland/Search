@@ -759,6 +759,9 @@ final class Tab: ObservableObject, Identifiable {
     /// Drawn as a square while Settings › Tabs › Pinned rows is off, or
     /// with the tabs across the top.
     @Published var listed = false
+    /// For a pinned row, the folder among the rows that holds it (see
+    /// PinFolders.swift). Set when the row is built, from pins.json.
+    var pinFolder: UUID?
 
     /// The group that holds this ordinary tab in the sidebar.
     @Published var groupID: UUID? {

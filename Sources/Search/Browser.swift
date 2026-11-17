@@ -1981,6 +1981,8 @@ final class Browser: NSObject, ObservableObject {
         objectWillChange.send()
         if editingPin == tab.id { editingPin = nil }
         tab.listed = listed
+        // A square is in no folder (see PinFolders.swift).
+        if !listed { tab.pinFolder = nil }
         settlePin(tab, first: listed)
         writeSession(now: true)
     }
@@ -2080,6 +2082,7 @@ final class Browser: NSObject, ObservableObject {
         }
         tab.pin = nil
         tab.listed = false
+        tab.pinFolder = nil
         tab.home = nil
         tab.pinID = nil
         defer { writeSession(now: true) }
@@ -3084,7 +3087,8 @@ final class Browser: NSObject, ObservableObject {
             if tab.pinID == nil { tab.pinID = UUID() }
             return PinDef(id: tab.pinID ?? UUID(), letter: letter,
                           home: (tab.home ?? tab.pending ?? tab.address)?.absoluteString ?? "",
-                          title: tab.title, name: tab.name, listed: tab.listed ? true : nil)
+                          title: tab.title, name: tab.name, listed: tab.listed ? true : nil,
+                          folder: tab.listed && !tab.everywhere ? tab.pinFolder : nil)
         }
     }
 
@@ -3119,6 +3123,7 @@ final class Browser: NSObject, ObservableObject {
             if tab.pin != def.letter { tab.pin = def.letter }
             if tab.name != def.name { tab.name = def.name }
             if tab.listed != (def.listed == true) { tab.listed = def.listed == true }
+            tab.pinFolder = def.folder
             tab.home = URL(string: def.home)
             out.append(tab)
         }
@@ -3291,17 +3296,28 @@ final class Browser: NSObject, ObservableObject {
             // group of that name, because a pin is never in a group and the
             // folder is the thing that would be lost (see #478). With rows off
             // nothing is split: the whole list comes in as tabs, as before.
-            let rows = prefs.listsPins ? pinned.filter { $0.folder == nil } : []
+            // With Pin folders on as well, the folders come too, nested as
+            // Arc nests them (see PinTree.fromArc), and every page is a row:
+            // nothing is left over for a tab group.
+            let folded = prefs.listsPins && prefs.pinFolders
+            let filed = folded ? PinTree.fromArc(target.space?.pinned ?? [], into: PinFolders.folders(target.id)) : nil
+            let rows: [(item: ArcSidebar.Item, folder: UUID?)] = filed?.pages
+                ?? (prefs.listsPins ? pinned.filter { $0.folder == nil }.map { ($0.item, nil) } : [])
             for page in rows where !had.contains(where: { Browser.samePin($0, page.item.url) })
                 && !defs.contains(where: { $0.home == page.item.url.absoluteString }) {
                 let host = page.item.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
                 defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
                                    home: page.item.url.absoluteString, title: page.item.title,
-                                   name: nil, listed: true))
+                                   name: nil, listed: true, folder: page.folder))
                 pins += 1
             }
+            if let filed {
+                // Before the pins, so the row rebuilt for them finds their folders.
+                let before = Set(PinFolders.folders(target.id).map(\.id))
+                PinFolders.set(target.id, PinTree.withoutEmpty(filed.folders, keeping: before, pins: defs), from: self)
+            }
             Pins.set(target.id, defs, from: self)
-            let pages = rows.isEmpty ? pinned : pinned.filter { $0.folder != nil }
+            let pages = folded ? [] : rows.isEmpty ? pinned : pinned.filter { $0.folder != nil }
             if target.profile == profileID {
                 pinsChanged(in: target.id)
                 added += takeAsleep(pages, into: target.id)
@@ -4998,6 +5014,8 @@ final class Browser: NSObject, ObservableObject {
         // change, a change to the shared pins, or a relaunch before the space
         // was opened) found it in no list and closed it.
         // Squares ahead of rows there too (see Browser.tiered).
+        // Its folder stays behind, as its group does: at the top of the rows there.
+        tab.pinFolder = nil
         if tab.pin != nil, !tab.everywhere, let pin = pinDefs([tab]).first {
             let defs = Pins.defs(id).filter { $0.id != pin.id } + [pin]
             Pins.set(id, defs.filter { $0.listed != true } + defs.filter { $0.listed == true }, from: self)

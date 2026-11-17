@@ -772,6 +772,13 @@ final class Preferences: ObservableObject {
     @Published var listsPins: Bool {
         didSet { store.set(listsPins, forKey: "pins.list") }
     }
+    /// Folders among the pinned rows, as in Arc's pinned list (see
+    /// PinFolders.swift): Arc's folders come in as folders of rows rather
+    /// than as tab groups. Off unless asked for; without Pinned rows it
+    /// does nothing.
+    @Published var pinFolders: Bool {
+        didSet { store.set(pinFolders, forKey: "pins.folders") }
+    }
     /// A pin goes back to the page it was pinned at when it is closed with
     /// ⌘W and when Search opens again, as Arc's pins do, rather than keeping
     /// wherever it was taken since. The other half of "Pins keep their
@@ -788,6 +795,8 @@ final class Preferences: ObservableObject {
     /// Whether the pinned rows are drawn as rows: asked for, and with the
     /// tabs down the side. Across the top every pin is a square.
     var showsPinRows: Bool { listsPins && sidebar }
+    /// Whether the pinned rows are drawn in their folders.
+    var showsPinFolders: Bool { pinFolders && showsPinRows }
     /// Pins every space shows above its own, as Arc's favourites sit above
     /// every space (see Pins.shared).
     /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
@@ -988,6 +997,7 @@ final class Preferences: ObservableObject {
         usesSpaces = store.bool(forKey: "spaces")
         profilesInOneWindow = store.bool(forKey: "profiles.oneWindow")
         listsPins = store.bool(forKey: "pins.list")
+        pinFolders = store.bool(forKey: "pins.folders")
         // "Pins keep their site" is one switch over two keys (see
         // SettingsIndex): on when either was on, on by default when neither
         // was ever touched (Drice, 24 Oct 2026), off when one was turned
