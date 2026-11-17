@@ -591,9 +591,27 @@ final class Preferences: ObservableObject {
         didSet { store.set(readerFollowsLook, forKey: "reader.follows") }
     }
     /// A link from another app opens in a small window of its own (see
-    /// Little.swift). Off unless asked for.
+    /// Little.swift). On for a new install, off as it was for one from
+    /// before (see settleLittleLinks).
     @Published var littleLinks: Bool {
-        didSet { store.set(littleLinks, forKey: "links.little") }
+        didSet { store.set(littleLinks, forKey: Preferences.littleKey) }
+    }
+    nonisolated static let littleKey = "links.little"
+
+    /// Small windows for links became the default for new installs (Drice,
+    /// 17 Nov 2026); an install from before keeps its links in the browser's
+    /// window, as they always went, rather than finding them changed by an
+    /// update. Settled once, the first time a build with this runs: no line
+    /// yet, and a line from an earlier launch (the welcome walked through,
+    /// a glyph chosen, or the passkey lines every launch has written since
+    /// 1.0.1) means an install from before, which gets its old value, off,
+    /// written down. A new one gets on, written down too, so the next launch
+    /// (which finds those lines) doesn't take it for an old one. A choice
+    /// already made stands. Before anything else in init writes a line.
+    nonisolated static func settleLittleLinks(in store: UserDefaults) {
+        guard store.object(forKey: littleKey) == nil else { return }
+        let before = ["welcomed", "glyph", "passkeys.for", "passkeys.entitled"].contains { store.object(forKey: $0) != nil }
+        store.set(!before, forKey: littleKey)
     }
     /// With those small windows on: a link to a page already open in a tab
     /// goes to that tab instead (see Links.little). Off unless asked for.
@@ -845,6 +863,7 @@ final class Preferences: ObservableObject {
     }
 
     init() {
+        Preferences.settleLittleLinks(in: store)
         navigationLeft = store.bool(forKey: "toolbar.left")
         compactStrip = store.bool(forKey: "tabs.compact")
         // Carried over from when there were four ways of holding the browser
@@ -1011,7 +1030,7 @@ final class Preferences: ObservableObject {
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
         readerFollowsLook = store.bool(forKey: "reader.follows")
-        littleLinks = store.bool(forKey: "links.little")
+        littleLinks = store.bool(forKey: Preferences.littleKey)
         littleFindsTabs = store.bool(forKey: "links.little.tabs")
         sendsLinksToSpaces = store.bool(forKey: SpaceRoutes.key)
         spaceRoutes = (store.array(forKey: SpaceRoutes.rulesKey) ?? []).compactMap(SpaceRoute.init(plist:))
