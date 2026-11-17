@@ -38,6 +38,14 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Commands in the address field", detail: "Type the name of any menu command or setting, as in Arc's Command Bar.",
+               since: "1.0.13", get: { $0.commandBar }, set: { $0.commandBar = $1 }),
+        Toggle(title: "Capture", detail: "View › Capture… takes a picture of part of a page, or all of it.",
+               since: "1.0.13", get: { $0.capturesPages }, set: { $0.capturesPages = $1 }),
+        Toggle(title: "Folders in pinned rows", detail: "Pinned rows in folders that fold, as in Arc.",
+               since: "1.0.13", get: { $0.pinFolders }, set: { $0.pinFolders = $1 },
+               shown: { $0.listsPins }),
+
         Toggle(title: "Send links to a space", detail: "Links to the sites you choose open in their space, with its sign-ins, as in Arc.",
                since: "1.0.11", get: { $0.sendsLinksToSpaces }, set: { $0.sendsLinksToSpaces = $1 },
                shown: { $0.usesSpaces }),
@@ -105,6 +113,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.13"),
         Release(version: "1.0.12"),
         Release(version: "1.0.11"),
         Release(version: "1.0.10"),
@@ -162,6 +171,31 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.13", date: "17 November 2026",
+            headline: "Folders in pinned rows, Split View with four pages, sync between your Macs, and your fixes.",
+            new: [
+                "Sync your spaces, pins, bookmarks and a few settings between your Macs, through a folder they share. Settings › General.",
+                "Folders in pinned rows, as in Arc. Settings › Spaces & Pins.",
+                "Capture… in the View menu: a picture of part of a page, or all of it.",
+                "Commands in the address field, as Arc's Command Bar.",
+                "History › Archived Tabs: the tabs Search closed by itself, for 30 days.",
+                "A colour for each space, from the space's menu.",
+                "The address field from any app, with a key of your own. Settings › Keyboard & Mouse.",
+            ],
+            better: [
+                "Split View holds up to four pages.",
+                "Switching tabs shows the page sooner.",
+                "A new install starts with the tabs down the side, and links from other apps in a small window.",
+            ],
+            fixed: [
+                "⌘T opening its page in a group, from an empty tab left there.",
+                "A window opened with ⌘N that the menus didn't act on.",
+                "Control Panel for YouTube not saving its switches.",
+                "The floating video coming back small in its tab.",
+                "A link from another app bringing up the browser's window beside its small one.",
+            ]
+        ),
         Notes(
             version: "1.0.12", date: "9 November 2026",
             headline: "Your contact details in forms, a tab dragged across the top again, and your fixes.",

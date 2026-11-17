@@ -11,8 +11,17 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+## 1.0.13 — 17 November 2026
+
 ### Fixed
 
+- ⌘T's tab is in no group, whatever empty tab is lying around: ⌘T took an empty tab left in a group for its own, so the page you typed next opened in that group, from a tab in none. Thanks [@kurinawa](https://github.com/kurinawa) for reporting ([#1151](https://github.com/driceroland/Search/issues/1151))
 - A window just opened with ⌘N is the one the menus act on: a bookmark chosen from the Bookmarks menu opened in the window behind it until you clicked away and back. Thanks [@shubhammore121](https://github.com/shubhammore121) for reporting ([#1146](https://github.com/driceroland/Search/issues/1146))
 - A link from another app that opens in a small window while Search is hidden (⌘H) comes alone. Shown again for it, Search brought back every window it had, so the browser's window came up beside the small one as if the link had opened twice; it now stays away until Open in Search, the Dock or ⌘N asks for it, as after a launch made by a link. A browser window brought forward by anything else while they are kept away goes back off screen.
 - Save to Notion's popup sees that you are signed in to Notion, where its "Log in" only took you to your Notion workspace. An extension's own page asking a site it has been granted, without asking for credentials, now sends that site's cookies, as Chrome does; Search sent them only when the extension asked for credentials outright.
@@ -93,12 +102,6 @@ in [ROADMAP.md](ROADMAP.md).
 - Leaving a tab with a paused video no longer floats it: the float is for a video that is playing. Thanks [@oddharsh](https://github.com/oddharsh) ([#1034](https://github.com/driceroland/Search/pull/1034))
 - A tab's row in the column, a pin and a tab across the top redraw only when something of their own changes, not with every change to the window. Thanks [@oddharsh](https://github.com/oddharsh) ([#1033](https://github.com/driceroland/Search/pull/1033))
 - Typing into Find redraws only the find bar, not every tab in the column. Thanks [@oddharsh](https://github.com/oddharsh) ([#1032](https://github.com/driceroland/Search/pull/1032))
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
 
 ## 1.0.12 — 9 November 2026
 
