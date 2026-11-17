@@ -759,6 +759,9 @@ final class Tab: ObservableObject, Identifiable {
     /// Drawn as a square while Settings › Tabs › Pinned rows is off, or
     /// with the tabs across the top.
     @Published var listed = false
+    /// For a pinned row, the folder among the rows that holds it (see
+    /// PinFolders.swift). Set when the row is built, from pins.json.
+    var pinFolder: UUID?
 
     /// The group that holds this ordinary tab in the sidebar.
     @Published var groupID: UUID? {
@@ -947,7 +950,18 @@ final class Tab: ObservableObject, Identifiable {
             guard let self else { return }
             self.onSearch?(self, text)
         }
-        web.onFirstFrame = { [weak self] in self?.painted = true }
+        web.onFirstFrame = { [weak self] in
+            self?.painted = true
+            // A tab waking from sleep: this view is the page coming back.
+            // WebKit puts a page back where it was scrolled to as it first
+            // lays it out, which is ahead of this, so nothing moves under the
+            // picture of the old page once it goes. It goes when the page has
+            // faded in under it, not as that starts: both would be part
+            // see-through, and the window's ground would show between them.
+            // The half second after the commit (see Browser.didCommit) is
+            // for a page that never says.
+            self?.uncover(after: Motion.seconds(PageView.fadeIn))
+        }
         web.holdForFirstFrame()
         painted = !web.unpainted
         // Pages follow the appearance of the window they are drawn in, and the
@@ -1727,10 +1741,10 @@ final class Tab: ObservableObject, Identifiable {
         loadGeneration &+= 1
         let token = loadGeneration
         let view = web
-        continueLoadAndVerify(url, state: state, view: view, token: token, tries: 0)
+        continueLoadAndVerify(url, state: state, view: view, token: token, waited: false)
     }
 
-    private func continueLoadAndVerify(_ url: URL, state: Any?, view: PageView, token: UInt64, tries: Int) {
+    private func continueLoadAndVerify(_ url: URL, state: Any?, view: PageView, token: UInt64, waited: Bool) {
         guard loadGeneration == token, built === view else { return }
         // Wait for the stage to take the view back before loading into it. A
         // page loaded while its view is off any window boots as a hidden tab,
@@ -1742,10 +1756,15 @@ final class Tab: ObservableObject, Identifiable {
         // SwiftUI actually putting the view on screen. Bounded at about a
         // second, so a wake with no stage waiting for it still loads rather
         // than hanging on one that will never come.
-        if view.window == nil, tries < 50 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self, weak view] in
+        //
+        // The view says when it has a window (see PageView.whenInWindow)
+        // rather than being asked every 20 ms: asked, a tab woken by ⌘1–⌘9
+        // started loading up to a timer's tick after the stage was ready for
+        // it, and a tick that a busy main thread put off made it later.
+        if view.window == nil, !waited {
+            view.whenInWindow(within: 1) { [weak self, weak view] in
                 guard let self, let view else { return }
-                self.continueLoadAndVerify(url, state: state, view: view, token: token, tries: tries + 1)
+                self.continueLoadAndVerify(url, state: state, view: view, token: token, waited: true)
             }
             return
         }
@@ -2388,6 +2407,13 @@ final class PageView: WKWebView {
             item.target = self
             item.action = #selector(searchSelection(_:))
         }
+        // Inspect Element is WebKit's own, from this menu rather than the
+        // View menu. Handed on, and then the coat, if one was asked for.
+        if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierInspectElement" }) {
+            inspectItem = (item.target, item.action)
+            item.target = self
+            item.action = #selector(inspectFromPage(_:))
+        }
     }
 
     /// Translate Page to <your language>, or Show Original once it is:
@@ -2435,6 +2461,15 @@ final class PageView: WKWebView {
     })(document)
     """
     private var webSearch: (target: AnyObject?, action: Selector?) = (nil, nil)
+
+    /// WebKit's Inspect Element, handed on so the inspector's coat follows.
+    private var inspectItem: (target: AnyObject?, action: Selector?) = (nil, nil)
+
+    @objc private func inspectFromPage(_ item: NSMenuItem) {
+        guard let action = inspectItem.action else { return }
+        NSApp.sendAction(action, to: inspectItem.target, from: item)
+        browser?.dressInspector(of: self)
+    }
 
     /// WebKit's Open Link in New Window, handed on once the tab it makes is
     /// marked to stay behind. WebKit asks for that tab a moment later, from
@@ -2544,7 +2579,7 @@ final class PageView: WKWebView {
         // panel, which puts the peek away (see Peek.swift); under the column
         // it is nobody's.
         if underCover(event) {
-            if let browser, browser.peekTab != nil, browser.peekTab?.built !== self { browser.closePeek() }
+            if let browser, browser.peekInFront, browser.peekTab?.built !== self { browser.closePeek() }
             return
         }
         onTouch?()
@@ -2643,6 +2678,37 @@ final class PageView: WKWebView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         gateTrackingAreas()
+        guard window != nil, onWindow != nil else { return }
+        // Not in this very step: the stage puts the view in its window and
+        // only then gives it its size, and a page asked to load before that
+        // starts out laid out at no size.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window != nil else { return }
+            self.arrived()
+        }
+    }
+
+    /// What is to be done once the view is in a window, and which wait that
+    /// is: a timer left over from an earlier wait is no bound for this one.
+    private var onWindow: (() -> Void)?
+    private var waits: UInt64 = 0
+
+    /// `then`, once this view is in a window, or after `limit` seconds with
+    /// none — a view nobody is going to show still has to load.
+    func whenInWindow(within limit: TimeInterval, _ then: @escaping () -> Void) {
+        waits &+= 1
+        let wait = waits
+        onWindow = then
+        DispatchQueue.main.asyncAfter(deadline: .now() + limit) { [weak self] in
+            guard let self, self.waits == wait else { return }
+            self.arrived()
+        }
+    }
+
+    private func arrived() {
+        guard let then = onWindow else { return }
+        onWindow = nil
+        then()
     }
 
     func gateTrackingAreas() {
@@ -2744,7 +2810,10 @@ final class PageView: WKWebView {
     /// is a flash of it between a link that opens a tab and the page arriving,
     /// so a fresh view starts unseen, over the window's own ground, and comes
     /// in once WebKit says there is something on it worth seeing.
-    private(set) var unpainted = false
+    var unpainted: Bool { firstFrame != .shown }
+
+    private enum FirstFrame { case shown, held, presenting }
+    private var firstFrame = FirstFrame.shown
 
     /// WebKit says when the first frame is only through names outside the
     /// public framework, so it is asked whether it answers to them first. One
@@ -2754,21 +2823,44 @@ final class PageView: WKWebView {
         guard responds(to: observe) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, UInt) -> Void
         unsafeBitCast(method(for: observe), to: Setter.self)(self, observe, PageView.firstFrame)
-        unpainted = true
+        firstFrame = .held
         alphaValue = 0
     }
 
     /// In, quickly: the page is there, and the fade only covers the frame
     /// between WebKit laying it out and putting it on screen.
+    ///
+    /// It waits until that frame has reached the window. WebKit reports it a
+    /// few frames earlier, and fading in then showed the view's blank white.
     func showFirstFrame() {
-        guard unpainted else { return }
-        unpainted = false
-        onFirstFrame?()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
-            animator().alphaValue = 1
+        guard firstFrame == .held else { return }
+        firstFrame = .presenting
+        afterNextPresentation { [weak self] in
+            guard let self else { return }
+            self.firstFrame = .shown
+            self.onFirstFrame?()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Motion.seconds(PageView.fadeIn)
+                self.animator().alphaValue = 1
+            }
         }
     }
+
+    /// A web process that dies before it presents never answers, so the
+    /// page comes in after a second regardless, rather than staying unseen.
+    private func afterNextPresentation(_ then: @escaping () -> Void) {
+        let presented = NSSelectorFromString("_doAfterNextPresentationUpdate:")
+        guard responds(to: presented) else { return then() }
+        var done = false
+        let once = { if !done { done = true; then() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { once() }
+        typealias After = @convention(c) (AnyObject, Selector, @escaping @convention(block) () -> Void) -> Void
+        unsafeBitCast(method(for: presented), to: After.self)(self, presented) { DispatchQueue.main.async { once() } }
+    }
+
+    /// How long the page takes to fade in, and so how long a picture over it
+    /// waits before it goes (see Tab.build).
+    static let fadeIn: TimeInterval = 0.12
 
     /// _WKRenderingProgressEventFirstVisuallyNonEmptyLayout — the moment
     /// Safari takes down the picture it shows while a page comes back.

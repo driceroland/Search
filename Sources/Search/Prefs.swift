@@ -100,6 +100,52 @@ enum SidebarPosition: String, CaseIterable, Identifiable {
     }
 }
 
+/// Where the tabs go when the settings have no line for it. Down the side,
+/// as Arc has them, for a Search opened for the first time (Drice, 17 Nov
+/// 2026); across the top before that. Nobody already using Search sees the
+/// tabs move with an update: `settle` writes the old place down for them,
+/// once, before the setting is first read.
+enum SidebarDefault {
+    /// Set at the first launch of a build that knows the new default, fresh
+    /// install or not, so `settle` looks only once: a fresh install's second
+    /// launch has settings and a session too, and must not be taken for one
+    /// from before.
+    static let settledKey = "sidebar.settled"
+
+    /// The column, except in a test world: the hidden suites were written
+    /// against tabs across the top and set `sidebar` when they want the
+    /// column.
+    static func fresh(testing: Bool) -> Bool { !testing }
+
+    /// Lines only a Search that has run before leaves behind: the welcome
+    /// walked through, a choice of what tabs wear (written by every build
+    /// before the welcome existed), and the window's frame AppKit keeps.
+    static let traces = ["welcomed", "glyph", "NSWindow Frame search"]
+
+    /// One time only. A Search that ran before this build, with no line for
+    /// where its tabs go, had them across the top: that is written down, so
+    /// the new default never reaches it. `ranBefore` is whether a session
+    /// or windows file is already in the folder.
+    static func settle(_ store: UserDefaults, testing: Bool, ranBefore: Bool) {
+        guard !store.bool(forKey: settledKey) else { return }
+        store.set(true, forKey: settledKey)
+        guard fresh(testing: testing),
+              store.object(forKey: "sidebar") == nil,
+              store.object(forKey: "manner") == nil
+        else { return }
+        if ranBefore || traces.contains(where: { store.object(forKey: $0) != nil }) {
+            store.set(false, forKey: "sidebar")
+        }
+    }
+
+    /// Whether this folder holds what a Search that has run leaves there.
+    static func ranBefore(in folder: URL) -> Bool {
+        ["session.json", "windows.json", "pins.json"].contains {
+            FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+        }
+    }
+}
+
 @MainActor
 final class Preferences: ObservableObject {
     private let store = Store.settings
@@ -108,6 +154,13 @@ final class Preferences: ObservableObject {
     /// the tabs across the top. Off unless asked for.
     @Published var navigationLeft: Bool {
         didSet { store.set(navigationLeft, forKey: "toolbar.left") }
+    }
+
+    /// The tab strip only a few points taller than its tabs, where it is
+    /// otherwise a toolbar's height (Metrics.strip). With the tabs across the
+    /// top; off unless asked for.
+    @Published var compactStrip: Bool {
+        didSet { store.set(compactStrip, forKey: "tabs.compact") }
     }
 
     /// A local socket a script can drive the browser through, in tabs of its
@@ -280,6 +333,11 @@ final class Preferences: ObservableObject {
     @Published var closeGoesBack: Bool {
         didSet { store.set(closeGoesBack, forKey: "tabs.closeGoesBack") }
     }
+    /// ⌘Z reopens the tab just closed, as in Safari, while closing it is
+    /// still the last thing done (Browser.lastClose). Off unless asked for.
+    @Published var undoReopensTab: Bool {
+        didSet { store.set(undoReopensTab, forKey: "tabs.undoReopens") }
+    }
     /// ⌃Tab shows a link opened behind the page right after the page, so a
     /// quick ⌃Tab goes to it; off, the tab left last keeps that place and
     /// the link comes next (see TabSwitcher.ordered). Off unless asked for.
@@ -442,6 +500,31 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// Capture… in the View menu (see Snap.swift). Off unless asked for.
+    @Published var capturesPages: Bool {
+        didSet { store.set(capturesPages, forKey: "pages.capture") }
+    }
+
+    /// Chrome's colors on the Web Inspector (see Inspector.swift). Off
+    /// unless asked for, so the inspector stays as it comes.
+    @Published var inspectorChrome: Bool {
+        didSet {
+            store.set(inspectorChrome, forKey: "inspector.chrome")
+            guard inspectorChrome != oldValue else { return }
+            Browser.coatOpenInspectors()
+        }
+    }
+
+    /// The Web Inspector stays dark while Search is light. Off, it follows
+    /// Appearance. Off unless asked for.
+    @Published var inspectorDark: Bool {
+        didSet {
+            store.set(inspectorDark, forKey: "inspector.dark")
+            guard inspectorDark != oldValue else { return }
+            Browser.coatOpenInspectors()
+        }
+    }
+
     /// A click of the wheel scrolls the page as on Windows (see AutoScroll.swift).
     /// Off unless asked for.
     @Published var autoScroll: Bool {
@@ -465,6 +548,14 @@ final class Preferences: ObservableObject {
     @Published var lightMotion: Bool {
         didSet { store.set(lightMotion, forKey: Motion.lightKey) }
     }
+    /// Every transition immediate, whatever the Mac's Reduce Motion says
+    /// (see Motion.instant). Off unless turned on.
+    @Published var instantMotion: Bool {
+        didSet {
+            store.set(instantMotion, forKey: Motion.instantKey)
+            Motion.instant = instantMotion
+        }
+    }
     /// The modifier chosen in Settings › Shortcuts; Shift-click by default.
     @Published var peekClick: PeekClick {
         didSet { store.set(peekClick.rawValue, forKey: "links.peekClick") }
@@ -472,6 +563,13 @@ final class Preferences: ObservableObject {
     /// Open a clicked link over the page (see Peek.swift). On unless turned off.
     @Published var peeksLinks: Bool {
         didSet { store.set(peeksLinks, forKey: "links.peek") }
+    }
+    /// A peek stays with the tab it was opened from: another tab hides it,
+    /// and coming back shows it (see Browser.peekInFront). Its page stays
+    /// loaded while hidden, its video and sound paused (Browser.followPeek).
+    /// A change to how a peek goes away, so off unless asked for.
+    @Published var peekStays: Bool {
+        didSet { store.set(peekStays, forKey: "links.peek.stays") }
     }
     /// Pins as in Arc: a link from a pinned tab to another site opens in a
     /// peek, so the pin stays on its page (see Peek.swift), and ⌘W takes it
@@ -493,9 +591,27 @@ final class Preferences: ObservableObject {
         didSet { store.set(readerFollowsLook, forKey: "reader.follows") }
     }
     /// A link from another app opens in a small window of its own (see
-    /// Little.swift). Off unless asked for.
+    /// Little.swift). On for a new install, off as it was for one from
+    /// before (see settleLittleLinks).
     @Published var littleLinks: Bool {
-        didSet { store.set(littleLinks, forKey: "links.little") }
+        didSet { store.set(littleLinks, forKey: Preferences.littleKey) }
+    }
+    nonisolated static let littleKey = "links.little"
+
+    /// Small windows for links became the default for new installs (Drice,
+    /// 17 Nov 2026); an install from before keeps its links in the browser's
+    /// window, as they always went, rather than finding them changed by an
+    /// update. Settled once, the first time a build with this runs: no line
+    /// yet, and a line from an earlier launch (the welcome walked through,
+    /// a glyph chosen, or the passkey lines every launch has written since
+    /// 1.0.1) means an install from before, which gets its old value, off,
+    /// written down. A new one gets on, written down too, so the next launch
+    /// (which finds those lines) doesn't take it for an old one. A choice
+    /// already made stands. Before anything else in init writes a line.
+    nonisolated static func settleLittleLinks(in store: UserDefaults) {
+        guard store.object(forKey: littleKey) == nil else { return }
+        let before = ["welcomed", "glyph", "passkeys.for", "passkeys.entitled"].contains { store.object(forKey: $0) != nil }
+        store.set(!before, forKey: littleKey)
     }
     /// With those small windows on: a link to a page already open in a tab
     /// goes to that tab instead (see Links.little). Off unless asked for.
@@ -548,6 +664,14 @@ final class Preferences: ObservableObject {
         didSet {
             store.set(floatFlicks, forKey: "float.flicks")
             Float.flicks = floatFlicks
+        }
+    }
+    /// A button on the floating video tucks it into a corner (see Float.swift).
+    /// Off unless asked for.
+    @Published var floatMinimizes: Bool {
+        didSet {
+            store.set(floatMinimizes, forKey: "float.minimize")
+            Float.minimizes = floatMinimizes
         }
     }
     /// A video playing floats out when another app comes to the front, and
@@ -648,6 +772,13 @@ final class Preferences: ObservableObject {
     @Published var listsPins: Bool {
         didSet { store.set(listsPins, forKey: "pins.list") }
     }
+    /// Folders among the pinned rows, as in Arc's pinned list (see
+    /// PinFolders.swift): Arc's folders come in as folders of rows rather
+    /// than as tab groups. Off unless asked for; without Pinned rows it
+    /// does nothing.
+    @Published var pinFolders: Bool {
+        didSet { store.set(pinFolders, forKey: "pins.folders") }
+    }
     /// A pin goes back to the page it was pinned at when it is closed with
     /// ⌘W and when Search opens again, as Arc's pins do, rather than keeping
     /// wherever it was taken since. The other half of "Pins keep their
@@ -664,6 +795,8 @@ final class Preferences: ObservableObject {
     /// Whether the pinned rows are drawn as rows: asked for, and with the
     /// tabs down the side. Across the top every pin is a square.
     var showsPinRows: Bool { listsPins && sidebar }
+    /// Whether the pinned rows are drawn in their folders.
+    var showsPinFolders: Bool { pinFolders && showsPinRows }
     /// Pins every space shows above its own, as Arc's favourites sit above
     /// every space (see Pins.shared).
     /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
@@ -739,7 +872,9 @@ final class Preferences: ObservableObject {
     }
 
     init() {
+        Preferences.settleLittleLinks(in: store)
         navigationLeft = store.bool(forKey: "toolbar.left")
+        compactStrip = store.bool(forKey: "tabs.compact")
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
         // The Mac's own unless asked otherwise — a Mac in dark mode expects
@@ -760,8 +895,10 @@ final class Preferences: ObservableObject {
         NSApplication.shared.appearance = chosen.appearance
         sidePanelWidth = min(max(CGFloat(store.object(forKey: "sidepanel.width") as? Double ?? 380),
                                  Preferences.sidePanelWidths.lowerBound), Preferences.sidePanelWidths.upperBound)
+        SidebarDefault.settle(store, testing: Store.testing, ranBefore: SidebarDefault.ranBefore(in: Store.folder))
         sidebar = store.object(forKey: "sidebar") as? Bool
-            ?? (store.string(forKey: "manner") == "side")
+            ?? store.string(forKey: "manner").map { $0 == "side" }
+            ?? SidebarDefault.fresh(testing: Store.testing)
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
         roomyTabs = store.bool(forKey: "sidebar.roomy")
@@ -788,6 +925,7 @@ final class Preferences: ObservableObject {
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
+        undoReopensTab = store.bool(forKey: "tabs.undoReopens")
         switcherBehindFirst = store.bool(forKey: "tabs.switcherBehindFirst")
         frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
@@ -859,6 +997,7 @@ final class Preferences: ObservableObject {
         usesSpaces = store.bool(forKey: "spaces")
         profilesInOneWindow = store.bool(forKey: "profiles.oneWindow")
         listsPins = store.bool(forKey: "pins.list")
+        pinFolders = store.bool(forKey: "pins.folders")
         // "Pins keep their site" is one switch over two keys (see
         // SettingsIndex): on when either was on, on by default when neither
         // was ever touched (Drice, 24 Oct 2026), off when one was turned
@@ -882,6 +1021,9 @@ final class Preferences: ObservableObject {
         let flicks = store.object(forKey: "float.flicks") as? Bool ?? true
         floatFlicks = flicks
         Float.flicks = flicks
+        let minimizes = store.bool(forKey: "float.minimize")
+        floatMinimizes = minimizes
+        Float.minimizes = minimizes
         floatsAway = store.bool(forKey: "float.away")
         floatsOnLeave = store.object(forKey: "float.leave") as? Bool ?? true
         panelSite = store.string(forKey: "panel.site") ?? ""
@@ -894,10 +1036,11 @@ final class Preferences: ObservableObject {
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
+        peekStays = store.bool(forKey: "links.peek.stays")
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
         readerFollowsLook = store.bool(forKey: "reader.follows")
-        littleLinks = store.bool(forKey: "links.little")
+        littleLinks = store.bool(forKey: Preferences.littleKey)
         littleFindsTabs = store.bool(forKey: "links.little.tabs")
         sendsLinksToSpaces = store.bool(forKey: SpaceRoutes.key)
         spaceRoutes = (store.array(forKey: SpaceRoutes.rulesKey) ?? []).compactMap(SpaceRoute.init(plist:))
@@ -910,6 +1053,9 @@ final class Preferences: ObservableObject {
         let dusk = store.bool(forKey: "pages.dusk")
         darkensPages = dusk
         Dusk.shared.on = dusk
+        capturesPages = store.bool(forKey: "pages.capture")
+        inspectorChrome = store.bool(forKey: "inspector.chrome")
+        inspectorDark = store.bool(forKey: "inspector.dark")
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls
@@ -922,6 +1068,9 @@ final class Preferences: ObservableObject {
         fastPages = fast
         FrameRate.mode = fast
         lightMotion = store.bool(forKey: Motion.lightKey)
+        let instant = store.bool(forKey: Motion.instantKey)
+        instantMotion = instant
+        Motion.instant = instant
         // Left behind by the Web Inspector's switch, from before it was
         // always there.
         store.removeObject(forKey: "inspector")
@@ -977,7 +1126,9 @@ final class Preferences: ObservableObject {
     func reread() {
         take(\.look, "look", store.string(forKey: "look").flatMap(Look.init), or: .system)
         take(\.navigationLeft, store.bool(forKey: "toolbar.left"))
-        take(\.sidebar, "sidebar", store.object(forKey: "sidebar") as? Bool, or: store.string(forKey: "manner") == "side")
+        take(\.compactStrip, store.bool(forKey: "tabs.compact"))
+        take(\.sidebar, "sidebar", store.object(forKey: "sidebar") as? Bool,
+             or: store.string(forKey: "manner").map { $0 == "side" } ?? SidebarDefault.fresh(testing: Store.testing))
         take(\.sidePosition, "sidebar.position", store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init),
              or: .left)
         take(\.sideHides, store.bool(forKey: "sidebar.hides"))
@@ -991,6 +1142,7 @@ final class Preferences: ObservableObject {
         take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
+        take(\.instantMotion, store.bool(forKey: Motion.instantKey))
         take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))
         take(\.bookmarksBar, store.bool(forKey: "bookmarks.bar"))
         take(\.alwaysShowsDownloads, store.bool(forKey: "downloads.button"))

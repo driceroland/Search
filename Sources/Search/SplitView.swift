@@ -32,7 +32,7 @@ struct SplitStage: View {
         // left and the pages past the right edge, for good.
         PaneStageView(
             tabs: shown, split: split, focused: browser.activeID,
-            commit: { id, sizes in browser.setSplitFraction(id, fraction: sizes[0]) },
+            commit: { id, sizes in browser.setSplitSizes(id, sizes) },
             focus: { tab in browser.focusPane(tab) },
             frames: { frames = $0 },
             action: { action in
@@ -73,7 +73,8 @@ struct SplitStage: View {
                         .accessibilityHidden(true)
                 }
                 if let preview = drag.preview, preview.browserID == ObjectIdentifier(browser) {
-                    SplitDropPreview(preview: preview, tabs: browser.tabs)
+                    SplitDropPreview(preview: preview, tabs: browser.tabs,
+                                     split: browser.tabs.first { $0.id == preview.targetID }.flatMap(browser.split(for:)))
                         .transition(.opacity)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
@@ -204,6 +205,9 @@ private struct PaneLayers: View {
 private struct SplitDropPreview: View {
     let preview: TabDrag.Preview
     let tabs: [Tab]
+    /// The split the page under the hand is in, which the carried tab
+    /// joins: its pages are shown with the carried one among them.
+    var split: TabSplit? = nil
 
     private var target: Tab? { tabs.first { $0.id == preview.targetID } }
     private var carried: String {
@@ -211,10 +215,22 @@ private struct SplitDropPreview: View {
         return label.isEmpty ? "New Tab" : label
     }
 
+    /// Each page as it would stand, the carried one marked: of a page
+    /// alone, the two halves there always were.
+    private var places: [(id: String, title: String, proposed: Bool)] {
+        let label: (Tab.ID) -> String = { id in tabs.first { $0.id == id }?.label ?? "Page" }
+        var row = (split?.tabs ?? [preview.targetID]).filter { $0 != preview.sourceID }
+            .map { (id: $0.uuidString, title: label($0), proposed: false) }
+        let at = row.firstIndex { $0.id == preview.targetID.uuidString }.map { preview.side == .left ? $0 : $0 + 1 } ?? row.count
+        row.insert((id: "carried", title: carried, proposed: true), at: min(at, row.count))
+        return row
+    }
+
     var body: some View {
         HStack(spacing: 2) {
-            half(title: preview.side == .left ? carried : target?.label ?? "Page", proposed: preview.side == .left)
-            half(title: preview.side == .right ? carried : target?.label ?? "Page", proposed: preview.side == .right)
+            ForEach(places, id: \.id) { place in
+                half(title: place.title, proposed: place.proposed)
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

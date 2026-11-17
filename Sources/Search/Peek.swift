@@ -13,8 +13,46 @@ import WebKit
 // it there, with nothing loaded twice.
 
 extension Browser {
+    /// Shown. With Settings › Keyboard & Mouse › Peek stays with its tab on,
+    /// only while the tab it was opened from is on screen: another tab
+    /// hides it, and coming back shows it again. Off, another tab puts it
+    /// away (see select), so a peek is always in front.
+    var peekInFront: Bool {
+        guard peekTab != nil else { return false }
+        guard prefs.peekStays, let peekFrom else { return true }
+        return visibleTabIDs.contains(peekFrom)
+    }
+
+    /// A peek hidden behind another tab (see peekInFront) is out of sight,
+    /// so it plays and hears nothing: its video and sound wait, its camera
+    /// and microphone are muted, and all of it goes on when it is in front
+    /// again, with any question it asked meanwhile (see ask(from:)). A
+    /// camera or microphone question already up for it is answered no:
+    /// left over the tab in front, it would pass for that tab's. Told
+    /// whenever the tab in front, the pairs, Split View or the setting
+    /// changes.
+    func followPeek() {
+        guard let page = peekTab else { return }
+        let shown = peekInFront
+        if let web = page.built {
+            web.setAllMediaPlaybackSuspended(!shown) {}
+            // A view out of its window goes on capturing (see Tab.close).
+            // Search mutes capture nowhere else, so unmuting gives back
+            // only what this took.
+            let from: WKMediaCaptureState = shown ? .muted : .active
+            let to: WKMediaCaptureState = shown ? .active : .muted
+            if web.cameraCaptureState == from { web.setCameraCaptureState(to) {} }
+            if web.microphoneCaptureState == from { web.setMicrophoneCaptureState(to) {} }
+        }
+        if !shown { settleCapture(for: page) }
+        if shown, let held = heldDialogs.removeValue(forKey: page.id) {
+            DispatchQueue.main.async { held.forEach { $0.present() } }
+        }
+    }
+
     /// A modified click on a link, from a tab in the row.
     func peek(_ url: URL, from tab: Tab) {
+        if peekTab != nil { closePeek() }
         if tab.pin != nil, let host = url.host()?.lowercased() { tab.peeked = (Vault.registrable(host), Date()) }
         // On the window's space, as the other new tabs are, so a peek has the
         // same sign-ins as the tab it came from rather than the front
@@ -37,7 +75,7 @@ extension Browser {
     /// the site go as they always have, so moving about Gmail or Notion
     /// stays in the pin.
     func peeksFromPin(_ url: URL, in tab: Tab, on page: URL?) -> Bool {
-        guard prefs.pinsPeek, tab.pin != nil, peekTab == nil, Browser.peekable(url),
+        guard prefs.pinsPeek, tab.pin != nil, !peekInFront, Browser.peekable(url),
               let there = url.host()?.lowercased(),
               let here = page?.host()?.lowercased()
         else { return false }
@@ -55,6 +93,7 @@ extension Browser {
     /// so the page loads into it and the one that asked keeps it as its
     /// opener. The click was checked before (see createWebViewWith).
     func peekWindow(_ configuration: WKWebViewConfiguration, from tab: Tab, going url: URL) -> Tab {
+        if peekTab != nil { closePeek() }
         let page = Tab(shy: tab.shy, configuration: configuration)
         prepare(page)
         page.opener = tab.id
@@ -86,6 +125,8 @@ extension Browser {
             peekTab = nil
             peekFrom = nil
         }
+        heldDialogs.removeValue(forKey: page.id)?.forEach { $0.dismiss() }
+        settleCapture(for: page)
         page.close()
     }
 
@@ -94,17 +135,19 @@ extension Browser {
     /// the page and what it linked to, side by side.
     func keepPeek(beside: Bool = false) {
         guard let page = peekTab else { return }
-        let from = active
+        // The tab it was opened from, which in a pair need not be the one
+        // in front: kept, it goes beside that one, in its group.
+        let from = peekFrom.flatMap { id in tabs.first { $0.id == id } } ?? active
         let place = placeForNew()
         // Kept from a grouped tab, it joins that group, as a link opened
         // from there does (see open).
-        if prefs.usesTabGroups, !page.shy, let from = active { page.groupID = from.groupID }
+        if prefs.usesTabGroups, !page.shy, let from { page.groupID = from.groupID }
         withAnimation(Motion.quick) {
             peekTab = nil
             peekFrom = nil
         }
         insert(page, at: place)
-        if beside, prefs.splitView, let from, canSplit(page, with: from) {
+        if beside, prefs.splitView, let from, canJoin(page, beside: from) {
             pair(page, with: from, onLeft: false)
         } else {
             select(page)
@@ -120,13 +163,13 @@ struct PeekLayer: View {
         ZStack {
             // The dimming only fades. Grown and shrunk with the panel, its
             // edges travelled across the window as it came (Drice, 24 Sep 2026).
-            if browser.peekTab != nil {
+            if browser.peekInFront {
                 Color.black.opacity(0.22)
                     .contentShape(Rectangle())
                     .onTapGesture { browser.closePeek() }
                     .transition(.opacity)
             }
-            if let tab = browser.peekTab {
+            if browser.peekInFront, let tab = browser.peekTab {
                 PeekPanel(browser: browser, tab: tab)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
@@ -229,19 +272,20 @@ struct PeekBadge: View {
 /// the window's own greys, with a light passing over it. Quick pages never
 /// show it: it comes in only after a moment.
 ///
-/// Cheap on purpose. The shapes are drawn once into a single layer, and the
-/// light is one gradient sliding across it under a mask, so each frame of
-/// the animation moves a layer and redraws nothing. Without motion, as the
-/// Mac's accessibility settings can ask, it is still.
+/// The light is moved by Core Animation: a perpetual SwiftUI animation lays
+/// out the window every frame, even if the page never finishes loading.
+/// Without motion, as the Mac's accessibility settings can ask, it is still.
 struct PeekSkeleton: View {
+    /// Unset in the app so the Mac's setting is read as the bones appear.
+    var reducedMotion: Bool? = nil
+
     /// The light: a step above the shapes' grey toward the ground in light,
     /// and away from it in dark, so it reads as a sheen in both.
-    static let light = Color(nsColor: NSColor(name: nil) { appearance in
+    static let light = NSColor(name: nil) { appearance in
         NSColor(white: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 0.225 : 0.975, alpha: 1)
-    })
+    }
 
     @State private var shown = false
-    @State private var sweep = false
 
     var body: some View {
         GeometryReader { geo in
@@ -250,23 +294,13 @@ struct PeekSkeleton: View {
                 Palette.ground
                 if shown {
                     ZStack {
-                        Bones(width: width).foregroundStyle(Palette.wash)
-                        if !Motion.reduced {
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .clear, location: 0),
-                                    .init(color: PeekSkeleton.light, location: 0.5),
-                                    .init(color: .clear, location: 1),
-                                ],
-                                startPoint: .leading, endPoint: .trailing
-                            )
-                            .frame(width: geo.size.width * 0.6)
-                            .offset(x: (sweep ? 1 : -1) * geo.size.width * 0.8)
-                            .mask(Bones(width: width))
+                        Bones(width: width).foregroundStyle(Palette.wash).drawingGroup()
+                        if !(reducedMotion ?? Motion.reduced) {
+                            PeekSweep()
+                                .mask(Bones(width: width))
                         }
                     }
                     .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                    .drawingGroup()
                     .transition(.opacity)
                 }
             }
@@ -274,9 +308,7 @@ struct PeekSkeleton: View {
         .allowsHitTesting(false)
         .task {
             try? await Task.sleep(for: .milliseconds(150))
-            withAnimation(.easeOut(duration: 0.2)) { shown = true }
-            guard !Motion.reduced else { return }
-            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: false)) { sweep = true }
+            withAnimation(Motion.timed(.easeOut(duration: 0.2))) { shown = true }
         }
     }
 
@@ -319,6 +351,65 @@ struct PeekSkeleton: View {
 
         private func bar(_ length: CGFloat, _ height: CGFloat) -> some View {
             Capsule().frame(width: max(0, length), height: height)
+        }
+    }
+}
+
+/// A light passing over the bones, without waking SwiftUI for each frame.
+struct PeekSweep: NSViewRepresentable {
+    func makeNSView(context: Context) -> SweepView { SweepView() }
+    func updateNSView(_ view: SweepView, context: Context) {}
+
+    final class SweepView: NSView {
+        private let gradient = CAGradientLayer()
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            gradient.startPoint = CGPoint(x: 0, y: 0.5)
+            gradient.endPoint = CGPoint(x: 1, y: 0.5)
+            gradient.locations = [0, 0.5, 1]
+            layer?.addSublayer(gradient)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                let light = PeekSkeleton.light
+                gradient.colors = [light.withAlphaComponent(0).cgColor, light.cgColor, light.withAlphaComponent(0).cgColor]
+            }
+        }
+
+        override func layout() {
+            super.layout()
+            let sizeChanged = gradient.bounds.size != CGSize(width: bounds.width * 0.6, height: bounds.height)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            gradient.frame = CGRect(x: bounds.width * 0.2, y: 0, width: bounds.width * 0.6, height: bounds.height)
+            CATransaction.commit()
+            if sizeChanged { animate() }
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            viewDidChangeEffectiveAppearance()
+            animate()
+        }
+
+        private func animate() {
+            gradient.removeAnimation(forKey: "sweep")
+            guard window != nil, bounds.width > 0 else { return }
+            let sweep = CABasicAnimation(keyPath: "position.x")
+            sweep.fromValue = bounds.width * -0.3
+            sweep.toValue = bounds.width * 1.3
+            sweep.duration = 1.3
+            sweep.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            sweep.repeatCount = .infinity
+            gradient.add(sweep, forKey: "sweep")
         }
     }
 }

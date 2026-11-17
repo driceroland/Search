@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import WebKit
 import XCTest
 @testable import Search
@@ -98,6 +99,91 @@ final class ShortcutTests: XCTestCase {
             modifierFlags: [.control], timestamp: 0, windowNumber: 0, context: nil,
             characters: "&", charactersIgnoringModifiers: "&", isARepeat: false, keyCode: 18))
         XCTAssertEqual(KeyCombo(event: event), KeyCombo("1", command: false, control: true))
+    }
+
+    func testCommandArrowsMoveTheCaret() {
+        XCTAssertTrue(KeyCombo("left").movesCaret)
+        XCTAssertTrue(KeyCombo("right", shift: true).movesCaret)
+        XCTAssertTrue(KeyCombo("up").movesCaret)
+        XCTAssertTrue(KeyCombo("down", shift: true).movesCaret)
+        XCTAssertTrue(KeyCombo("left", command: false, option: true).movesCaret)
+        XCTAssertTrue(KeyCombo("down", command: false, shift: true, option: true).movesCaret)
+        XCTAssertFalse(KeyCombo("left", control: true).movesCaret)
+        XCTAssertFalse(KeyCombo("left", option: true).movesCaret)
+        XCTAssertFalse(KeyCombo("[").movesCaret)
+        XCTAssertFalse(KeyCombo("t").movesCaret)
+        XCTAssertFalse(KeyCombo("delete").movesCaret)
+    }
+
+    /// Back and Forward set to ⌘← and ⌘→ stay out of a text field. Outside
+    /// one they still navigate. The event is handed on, so the field — not
+    /// the command — receives it.
+    func testReboundArrowsYieldWhileTyping() async throws {
+        _ = NSApplication.shared
+        ShortcutStore.shared.resetAll()
+        let browser = Browser(record: WindowRecord())
+        let tab = try XCTUnwrap(browser.active)
+        tab.show(InternalPage(.history))
+        tab.show(InternalPage(.bookmarks))
+        XCTAssertEqual(tab.page?.kind, .bookmarks)
+        XCTAssertTrue(tab.canGoBack)
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 900, height: 600),
+                              styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: ContentView(browser: browser))
+        window.orderBack(nil)
+        defer {
+            ShortcutStore.shared.resetAll()
+            ContentView.forget(browser)
+            window.contentView = nil
+            window.close()
+            browser.closeAll()
+        }
+        var hook: ((NSEvent) -> NSEvent?)?
+        for _ in 0..<50 {
+            hook = ContentView.keyHooks[ObjectIdentifier(browser)]
+            if hook != nil { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let take = try XCTUnwrap(hook)
+
+        ShortcutStore.shared.assign(KeyCombo("left"), to: "tabs.back")
+        ShortcutStore.shared.assign(KeyCombo("right"), to: "tabs.forward")
+
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        text.string = "hello"
+        window.contentView?.addSubview(text)
+        XCTAssertTrue(window.makeFirstResponder(text))
+
+        let inField = try arrow(123, in: window)
+        XCTAssertTrue(take(inField) === inField, "⌘← is the field's while it is editing")
+        XCTAssertEqual(tab.page?.kind, .bookmarks)
+        let forwardInField = try arrow(124, in: window)
+        XCTAssertTrue(take(forwardInField) === forwardInField)
+        XCTAssertEqual(tab.page?.kind, .bookmarks)
+
+        tab.typing = true
+        XCTAssertTrue(window.makeFirstResponder(window.contentView))
+        let onPage = try arrow(123, in: window)
+        XCTAssertTrue(take(onPage) === onPage, "A page's own field keeps ⌘← too")
+        XCTAssertEqual(tab.page?.kind, .bookmarks)
+
+        tab.typing = false
+        XCTAssertNil(take(try arrow(123, in: window)))
+        XCTAssertEqual(tab.page?.kind, .history)
+        tab.typing = true
+        let stay = try arrow(124, in: window)
+        XCTAssertTrue(take(stay) === stay, "⌘→ stays put while typing")
+        XCTAssertEqual(tab.page?.kind, .history)
+        tab.typing = false
+        XCTAssertNil(take(try arrow(124, in: window)))
+        XCTAssertEqual(tab.page?.kind, .bookmarks)
+    }
+
+    private func arrow(_ code: UInt16, in window: NSWindow) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+            characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code))
     }
 
     func testPeekChoicePersistsAndInvalidValueKeepsDefault() {

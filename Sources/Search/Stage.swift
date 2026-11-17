@@ -87,7 +87,7 @@ struct Page: View {
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
         .animation(Motion.quick, value: tab.reader)
-        .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
+        .animation(Motion.timed(.easeOut(duration: 0.2)), value: tab.cover == nil)
     }
 }
 
@@ -121,7 +121,7 @@ struct Swiping: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
         }
-        .animation(.easeOut(duration: 0.16), value: pull == nil)
+        .animation(Motion.timed(.easeOut(duration: 0.16)), value: pull == nil)
     }
 }
 
@@ -170,7 +170,7 @@ private struct Disc: View {
         .offset(x: (pull.back ? 1 : -1) * (10 + reach * 0.2 + (pull.going ? 12 : 0)))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pull.back ? .leading : .trailing)
         .allowsHitTesting(false)
-        .animation(.easeOut(duration: 0.22), value: pull.going)
+        .animation(Motion.timed(.easeOut(duration: 0.22)), value: pull.going)
     }
 }
 
@@ -219,8 +219,8 @@ private struct HistoryList: View {
         .offset(x: (pull.back ? 1 : -1) * (10 + reach * 0.2), y: slide)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pull.back ? .leading : .trailing)
         .allowsHitTesting(false)
-        .animation(.spring(response: 0.22, dampingFraction: 0.9), value: pull.picked)
-        .animation(.easeOut(duration: 0.26), value: pull.going)
+        .animation(Motion.timed(.spring(response: 0.22, dampingFraction: 0.9)), value: pull.picked)
+        .animation(Motion.timed(.easeOut(duration: 0.26)), value: pull.going)
     }
 
     @ViewBuilder
@@ -725,9 +725,9 @@ struct DragStrip: NSViewRepresentable {
     }
 
     private final class Strip: NSView {
-        var reserved: CGFloat = 0
-        var below: CGFloat = 0
-        var trailing: CGFloat = 0
+        var reserved: CGFloat = 0 { didSet { if reserved != oldValue { aimCursor() } } }
+        var below: CGFloat = 0 { didSet { if below != oldValue { aimCursor() } } }
+        var trailing: CGFloat = 0 { didSet { if trailing != oldValue { aimCursor() } } }
         var onDoubleClick: (() -> Void)?
 
         private var pressed: NSEvent?
@@ -779,9 +779,24 @@ struct DragStrip: NSViewRepresentable {
             window.isMovable = count == 0
         }
 
+        /// A title bar's pointer is the arrow. The strip had no say in it,
+        /// so the I-beam a page or a field last set came along onto the
+        /// title bar and stayed through the whole drag of the window (#1094).
+        /// Only over the run the strip takes clicks in (see hitTest).
+        override func resetCursorRects() {
+            let room = NSRect(x: reserved, y: 0,
+                              width: max(0, bounds.width - trailing - reserved),
+                              height: max(0, bounds.height - below))
+            guard room.width > 0, room.height > 0 else { return }
+            addCursorRect(room, cursor: .arrow)
+        }
+
+        private func aimCursor() { window?.invalidateCursorRects(for: self) }
+
         override func mouseDown(with event: NSEvent) {
             pressed = event
             moved = false
+            NSCursor.arrow.set()
         }
 
         /// Here the window is let go for the one drag, handed to the system's

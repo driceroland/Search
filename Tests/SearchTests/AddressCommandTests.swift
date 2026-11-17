@@ -66,6 +66,54 @@ final class AddressCommandTests: XCTestCase {
         XCTAssertFalse(browser.placeOffers(for: "dwn").offers.contains { $0.kind.isCommand }, "off means off")
     }
 
+    func testMenuCommandsAndSettingsPagesAreOfferedUnderTheRest() {
+        _ = NSApplication.shared
+        let browser = Browser(record: WindowRecord())
+        let prefs = browser.prefs
+        let saved = (prefs.commandBar, prefs.splitView, prefs.ai, prefs.bookmarksBar)
+        defer { (prefs.commandBar, prefs.splitView, prefs.ai, prefs.bookmarksBar) = saved }
+        prefs.commandBar = true
+
+        // By the words of the name, in any order, from their start.
+        XCTAssertEqual(AddressCommand.listed("hide el", in: browser).first, .menu("view.hide"))
+        XCTAssertEqual(AddressCommand.listed("bar bookm", in: browser).first, .menu("bookmarks.bar"))
+        XCTAssertEqual(AddressCommand.listed("priv tab", in: browser).first, .menu("file.newPrivateTab"))
+        XCTAssertEqual(AddressCommand.listed("appear", in: browser).first, .page(.appearance))
+        XCTAssertEqual(AddressCommand.listed("privacy", in: browser).first, .page(.privacy))
+        XCTAssertTrue(AddressCommand.listed("zoom", in: browser).starts(with: [.menu("view.zoomIn"), .menu("view.zoomOut")]))
+        XCTAssertEqual(AddressCommand.menu("view.hide").title, "Hide Elements…")
+        XCTAssertEqual(AddressCommand.menu("view.hide").key, ShortcutStore.shared.key(for: "view.hide")?.display)
+        XCTAssertEqual(AddressCommand.page(.privacy).title, "Privacy Settings")
+
+        // Never an address, nor two letters, nor what a word above already is.
+        XCTAssertTrue(AddressCommand.listed("reload.com", in: browser).isEmpty)
+        XCTAssertTrue(AddressCommand.listed("zo", in: browser).isEmpty)
+        XCTAssertFalse(AddressCommand.listed("downloads", in: browser).contains(.menu("history.downloads")))
+        XCTAssertFalse(AddressCommand.listed("address", in: browser).contains(.menu("file.openAddress")), "the field is open")
+
+        // Hidden where the menu hides it: a feature off, no page, no pair.
+        prefs.splitView = false
+        XCTAssertFalse(AddressCommand.listed("split", in: browser).contains(.menu("tabs.split")))
+        prefs.splitView = true
+        XCTAssertTrue(AddressCommand.listed("split", in: browser).contains(.menu("tabs.split")))
+        XCTAssertFalse(AddressCommand.listed("swap pages", in: browser).contains(.menu("tabs.swapSplit")), "no pair on screen")
+        prefs.ai = false
+        XCTAssertTrue(AddressCommand.listed("summarize", in: browser).isEmpty)
+        XCTAssertNotEqual(browser.active?.isWeb, true)
+        XCTAssertTrue(AddressCommand.listed("reader", in: browser).isEmpty, "no page to read")
+
+        // Under the search, so Return still searches; the menu's action runs.
+        let offers = browser.placeOffers(for: "bookmarks bar").offers
+        XCTAssertFalse(offers.first?.kind.isCommand ?? true)
+        XCTAssertEqual(offers.last?.kind, .command(.menu("bookmarks.bar")))
+        let before = prefs.bookmarksBar
+        AddressCommand.menu("bookmarks.bar").run(on: browser)
+        XCTAssertNotEqual(prefs.bookmarksBar, before, "the menu's own action")
+
+        prefs.commandBar = false
+        XCTAssertFalse(browser.placeOffers(for: "bookmarks bar").offers.contains { $0.kind.isCommand }, "off means off")
+    }
+
     func testABookmarkFoundOnlyThroughATypoGoesUnderHistory() throws {
         _ = NSApplication.shared
         let browser = Browser(record: WindowRecord())

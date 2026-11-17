@@ -542,7 +542,11 @@ enum ExtensionShims {
         // from WebKit too, and nothing would reach the extension again. A
         // replacement that still carries them is taken.
         const carries = (v) => { try { return !!(v && v.runtime && v.runtime.id); } catch (e) { return false; } };
-        try { Object.defineProperty(root, key, { configurable: false, enumerable: d.enumerable, get: () => value, set: (v) => { if (carries(v)) value = v; } }); } catch (e) {}
+        // `browser` stays configurable, as WebKit has it: a fixed global
+        // can't be shadowed, and a page whose script starts with its own
+        // `const browser` (Control Panel for YouTube's popup) threw before
+        // a line of it ran. `chrome` alone keeps WebKit's listeners.
+        try { Object.defineProperty(root, key, { configurable: key === "browser", enumerable: d.enumerable, get: () => value, set: (v) => { if (carries(v)) value = v; } }); } catch (e) {}
       }
       // On a web page this is a content script: only Chrome's behaviour is
       // mended there, no API that Chrome doesn't give content scripts either.
@@ -915,14 +919,20 @@ enum ExtensionShims {
         const unreadLimit = 64 * 1024 * 1024;
         const fetch = function fetch(input, init) {
           const self = this, args = arguments;
-          // Read cheaply first: only credentials "include" is the browser's;
-          // any other fetch goes on untouched, its body unread.
+          // Read cheaply first: only credentials "include" is the browser's,
+          // and from a page "same-origin", the default, too: Chrome counts a
+          // granted host as the extension's own origin, so its cookies go
+          // with a plain fetch there. Save to Notion's popup asks Notion's
+          // API so and, given no session, said "Log in" while its tabs were
+          // signed in. Not yet from the worker, whose plain fetches are many
+          // (images, an app on the Mac polled with a short timeout).
+          // Any other fetch goes on untouched, its body unread.
           let credentials;
           try {
             credentials = init && init.credentials !== undefined ? String(init.credentials)
               : (input instanceof Request ? input.credentials : "same-origin");
           } catch (e) { return original.apply(self, args); }
-          if (credentials !== "include") return original.apply(self, args);
+          if (credentials !== "include" && (worker || credentials !== "same-origin")) return original.apply(self, args);
           // A copy to read, so the page's own Request keeps its body for
           // WebKit's fetch if the browser passes.
           let request, url;
@@ -1146,6 +1156,19 @@ enum ExtensionShims {
       }
       // The tab an extension's framed page is in, asked once (see __searchToFrame).
       let ownTab = null;
+      // The extension's own pages framed in websites' tabs, as its worker
+      // has heard from them: tab → frame → when. The worker hands a tab's
+      // message to those frames too (see alsoFramed), and finds them with
+      // webNavigation; an extension that didn't ask for it — Affinity
+      // Pathfinder — has them found this way instead. A framed page says it
+      // is there as it starts, and that it is going as it goes.
+      const framedPages = new Map();
+      let ownFrame = null;
+      if (embedded && runtime && typeof Object.getPrototypeOf(runtime).sendMessage === "function") {
+        const say = (here) => Promise.resolve(Object.getPrototypeOf(runtime).sendMessage.call(runtime, { __searchFramed: here }));
+        ownFrame = say(true).then((r) => r && typeof r.tabId === "number" && typeof r.frameId === "number" ? r : null, () => null);
+        try { root.addEventListener("pagehide", () => { say(false).catch(() => {}); }); } catch (e) {}
+      }
       // Who has something to say about a message, told between the
       // extension's worker and its own pages on a channel they share (one
       // origin): each says, as soon as its listeners have run, whether it
@@ -1387,6 +1410,21 @@ enum ExtensionShims {
         const listeners = new Set();
         let attached = false;
         const dispatch = function (message, sender, respond, local = false) {
+          // The worker notes each of the extension's pages framed in a
+          // website's tab that it hears from (see framedPages), and the
+          // page's word that it is there, or going.
+          if (internalMessages && !local && background && fromOwnPages(sender) && sender.tab
+            && typeof sender.tab.id === "number" && typeof sender.frameId === "number" && sender.frameId > 0) {
+            const tab = sender.tab.id, frames = framedPages.get(tab) || new Map();
+            if (message && message.__searchFramed === false) frames.delete(sender.frameId);
+            else frames.set(sender.frameId, Date.now());
+            if (frames.size) framedPages.set(tab, frames); else framedPages.delete(tab);
+          }
+          if (internalMessages && !local && message && typeof message.__searchFramed === "boolean" && sender && sender.id === runtime.id) {
+            if (!background) { setTimeout(() => respond(undefined), 10000); return true; }
+            respond(sender.tab && typeof sender.frameId === "number" ? { tabId: sender.tab.id, frameId: sender.frameId } : null);
+            return;
+          }
           if (!local && !background && !relaying && fromOwnPages(sender)) {
             const k = relayKey(message);
             if (k && pending(heardRelayed, k)) { count(heardRelayed, k, -1); return; }
@@ -1428,13 +1466,18 @@ enum ExtensionShims {
           // it pass without answering, as it would a message not for it.
           if (message && message.__searchToFrame) {
             const to = message.__searchToFrame;
-            if (!embedded || !(to.urls || []).includes(location.href)) {
+            const byAddress = embedded && (to.urls || []).includes(location.href);
+            const byFrame = embedded && !byAddress && Array.isArray(to.frames) && !!ownFrame;
+            if (!byAddress && !byFrame) {
               if (!background) setTimeout(() => sendResponse(undefined), 10000);
               return background ? undefined : true;
             }
             if (!ownTab) ownTab = Promise.resolve(runtime.sendMessage({ __searchCall: { space: "tabs", method: "getCurrent", args: [] } }))
               .then((reply) => reply && reply.value ? reply.value.id : null, () => null);
-            ownTab.then((id) => {
+            const mine = byFrame
+              ? ownFrame.then((own) => own && to.frames.includes(own.frameId) ? own.tabId : null)
+              : ownTab;
+            mine.then((id) => {
               if (id !== to.tabId) return setTimeout(() => sendResponse(undefined), 10000);
               let kept = false;
               for (const listener of [...listeners]) {
@@ -1946,14 +1989,22 @@ enum ExtensionShims {
       // from either wins.
       const alsoFramed = (answer, tabId, message, options) => {
         const nav = chrome.webNavigation;
-        if (!nav || typeof nav.getAllFrames !== "function" || typeof tabId !== "number") return answer;
+        if (typeof tabId !== "number") return answer;
         const own = runtime.getURL("");
         const wanted = options && typeof options.frameId === "number" ? options.frameId : null;
-        const framed = Promise.resolve(nav.getAllFrames({ tabId })).then((frames) => {
-          const urls = (frames || []).filter((f) => f.url && f.url.startsWith(own) && f.frameId !== 0 && (wanted === null || f.frameId === wanted)).map((f) => f.url);
-          if (!urls.length) return undefined;
-          return Object.getPrototypeOf(runtime).sendMessage.call(runtime, { __searchToFrame: { tabId, urls, message } });
-        }, () => undefined);
+        const hand = (envelope) => Object.getPrototypeOf(runtime).sendMessage.call(runtime, { __searchToFrame: { tabId, ...envelope, message } });
+        let framed;
+        if (nav && typeof nav.getAllFrames === "function") {
+          framed = Promise.resolve(nav.getAllFrames({ tabId })).then((frames) => {
+            const urls = (frames || []).filter((f) => f.url && f.url.startsWith(own) && f.frameId !== 0 && (wanted === null || f.frameId === wanted)).map((f) => f.url);
+            if (!urls.length) return undefined;
+            return hand({ urls });
+          }, () => undefined);
+        } else {
+          const ids = [...(framedPages.get(tabId) || new Map()).keys()].filter((id) => wanted === null || id === wanted);
+          if (!ids.length) return answer;
+          framed = Promise.resolve(hand({ frames: ids }));
+        }
         return new Promise((resolve, reject) => {
           let left = 2, failure = null;
           const none = () => { if (--left === 0) failure ? reject(failure) : resolve(undefined); };
@@ -2062,14 +2113,58 @@ enum ExtensionShims {
           // Read as the worker starts: Claude's lists its colours in a class.
           Color: { GREY: "grey", BLUE: "blue", RED: "red", YELLOW: "yellow", GREEN: "green",
             PINK: "pink", PURPLE: "purple", CYAN: "cyan", ORANGE: "orange" } });
+      // A port to the browser for as long as something here listens for an
+      // event WebKit lacks: the browser speaks on it when there is news
+      // (ExtensionWatch.swift), where this used to ask every few seconds.
+      // WebKit drops what a worker posts on a port only just opened, so the
+      // hello is said again until the browser answers it, and once more
+      // when the browser says the port has arrived ("ready"). `heard` is
+      // given what comes after: the answer to the hello, once — news may
+      // have come before it did — and then the news.
+      const watching = (name, hello, heard) => {
+        let port = null;
+        const start = () => {
+          if (port || !runtime || typeof runtime.connectNative !== "function") return;
+          let mine;
+          try { mine = runtime.connectNative(name); } catch (e) { return; }
+          port = mine;
+          let answered = false, tries = 0;
+          const greet = () => { try { mine.postMessage(hello()); } catch (e) {} };
+          const again = () => {
+            if (answered || port !== mine || tries++ >= 20) return;
+            greet();
+            setTimeout(again, 100 * Math.min(tries, 5));
+          };
+          mine.onMessage.addListener((m) => {
+            // Its own hello, sent back: what a worker posts in a port's first
+            // moments can come to its own listeners instead of the browser
+            // (see the note on ports to an app), and is no answer.
+            if (port !== mine || !m || typeof m !== "object" || m.listen) return;
+            if (m.ready) { if (!answered) greet(); return; }
+            if (m.listening && answered) return;
+            answered = true;
+            heard(m);
+          });
+          mine.onDisconnect.addListener(() => { if (port === mine) port = null; });
+          again();
+        };
+        const stop = () => {
+          const old = port;
+          port = null;
+          if (old) try { old.disconnect(); } catch (e) {}
+        };
+        // Said again to a port already open (the interval changed).
+        const update = () => { if (port) try { port.postMessage(hello()); } catch (e) {} };
+        return { start, stop, update, isOpen: () => !!port };
+      };
       // Groups change in Search's hands, where no event reaches the
-      // extension: while it listens, they are asked for every few seconds
+      // extension: while it listens, the browser says when they have changed
       // and what changed is told as Chrome tells it — and at once after the
       // extension changes one itself.
       let groupsChanged = () => {};
       if (chrome.tabGroups && chrome.tabGroups.onCreated && chrome.tabGroups.onCreated.listeners) {
         const groups = chrome.tabGroups, told = ["onCreated", "onRemoved", "onUpdated"];
-        let known = null, timer = null;
+        let known = null;
         // What an update changes; the order of the keys is the browser's.
         const shape = (g) => JSON.stringify([g.title, g.collapsed, g.color]);
         const tell = (name, group) => {
@@ -2089,13 +2184,23 @@ enum ExtensionShims {
             known = next;
           }, () => {});
         };
+        // Whatever the browser says, its answer to the hello included, is
+        // a reason to look: the groups are asked for and compared as before.
+        const line = watching("search.groups", () => ({ listen: true, worker }), () => groupsChanged());
         for (const name of told) {
-          const add = groups[name].addListener;
+          const { addListener: add, removeListener: remove } = groups[name];
           groups[name].addListener = (f) => {
             add(f);
-            if (timer) return;
+            if (line.isOpen()) return;
             groupsChanged();
-            timer = setInterval(groupsChanged, 3000);
+            line.start();
+          };
+          // Nobody left to tell: the port goes, and what was known with it.
+          groups[name].removeListener = (f) => {
+            remove(f);
+            if (told.some((n) => groups[n].listeners.size)) return;
+            line.stop();
+            known = null;
           };
         }
         put(groups, "update", (id, props, callback) => {
@@ -2145,21 +2250,30 @@ enum ExtensionShims {
       define("idle", ["queryState", "getAutoLockDelay"], [],
         { IdleState: { ACTIVE: "active", IDLE: "idle", LOCKED: "locked" } });
       if (chrome.idle && !chrome.idle.onStateChanged) {
-        // Asked every so often while anyone listens, the way Chrome
-        // notices on its own.
-        const changed = event(), add = changed.addListener;
-        let every = 60, state = "active", timer = null;
-        changed.addListener = (f) => {
-          add(f);
-          if (timer) return;
-          timer = setInterval(() => native("idle.queryState", [every]).then((now) => {
-            if (now === state) return;
-            state = now;
-            for (const g of changed.listeners) try { g(now); } catch (e) { setTimeout(() => { throw e; }); }
-          }).catch(() => {}), 15000);
+        // Told by the browser while anyone listens, the way Chrome notices
+        // on its own: when the Mac has been quiet for the detection
+        // interval, locks, or is used again (ExtensionWatch.swift).
+        const changed = event(), { addListener: add, removeListener: remove } = changed;
+        let every = 60, state = "active";
+        const line = watching("search.idle", () => ({ listen: true, worker, every }), (m) => {
+          if (typeof m.state !== "string" || m.state === state) return;
+          state = m.state;
+          for (const g of changed.listeners) try { g(m.state); } catch (e) { setTimeout(() => { throw e; }); }
+        });
+        changed.addListener = (f) => { add(f); line.start(); };
+        // The last one gone, the port goes with it, and the browser stops
+        // looking. A listener back starts from active, as the first did.
+        changed.removeListener = (f) => {
+          remove(f);
+          if (changed.listeners.size) return;
+          line.stop();
+          state = "active";
         };
         put(chrome.idle, "onStateChanged", changed);
-        put(chrome.idle, "setDetectionInterval", (seconds) => { every = Math.max(15, Number(seconds) || 60); });
+        put(chrome.idle, "setDetectionInterval", (seconds) => {
+          every = Math.max(15, Number(seconds) || 60);
+          line.update();
+        });
       }
       define("power", ["requestKeepAwake", "releaseKeepAwake", "reportActivity"]);
       define("browsingData",
@@ -3107,7 +3221,11 @@ enum ExtensionShims {
         // the tabs it was made with are put first in the answer, their
         // indexes left true: an extension takes tabs[0] for the one it made
         // (Claude in Chrome groups it, and a pin can't be grouped, #872).
-        if (chrome.windows && typeof chrome.windows.create === "function") {
+        // Not in a website's frame: there windows.create goes through the
+        // worker (see `embedded`), and a stand-in built here on WebKit's own
+        // would take that one's place and call WebKit directly, which ends
+        // the website's process (Affinity Pathfinder's sign-in).
+        if (!embedded && chrome.windows && typeof chrome.windows.create === "function") {
           const ns = chrome.windows;
           const create = ns.create.bind(ns);
           const ours = (...args) => {
@@ -4229,7 +4347,7 @@ enum ExtensionShims {
     /// The groups an extension is shown: never one without a tab. The same
     /// with groups off in Settings, where they are kept without a heading
     /// in the column (see the tab groups cases in `run`).
-    private static func listedGroups(_ browser: Browser) -> [TabGroup] {
+    static func listedGroups(_ browser: Browser) -> [TabGroup] {
         browser.tabGroups.filter { !browser.tabs(in: $0.id).isEmpty }
     }
 
@@ -4993,11 +5111,7 @@ enum ExtensionShims {
 
         // MARK: idle
         case "idle.queryState":
-            let threshold = (first as? Double) ?? 60
-            if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
-               session["CGSSessionScreenIsLocked"] as? Bool == true { return "locked" }
-            let quiet = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-            return quiet >= threshold ? "idle" : "active"
+            return ExtensionWatch.idleState(threshold: (first as? Double) ?? 60)
         case "idle.getAutoLockDelay":
             return 0
 

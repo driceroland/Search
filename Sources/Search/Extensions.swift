@@ -348,15 +348,18 @@ final class Extensions: NSObject, ObservableObject {
     /// The tab at `index` of the window an extension sees with this frame —
     /// `left, top, width, height` from windows.getAll(), whose order is
     /// WebKit's (the window in front first), not Browsers.all's. WebKit
-    /// turns the window's frame over from the bottom of the first screen;
-    /// it is turned back here, give or take two points.
+    /// turns the window's frame over by the height of the screen it gives
+    /// for the window (screenFrame(for:): the window's own screen), not the
+    /// first one: with the window on another display the two differ, and
+    /// no tab was found. It is turned back here, give or take two points.
     /// Two windows with one frame (one made over another, or profiles in
     /// one window) are told apart by the tab's address at that place, when
     /// the extension gave it (#872); still two, it is neither.
     func tab(windowFrame frame: CGRect, index: Int, address: String? = nil, for context: WKWebExtensionContext) -> Tab? {
-        let height = NSScreen.screens.first?.frame.height ?? 0
         let match = Browsers.all.filter { browser in
-            guard let window = browser.window?.frame else { return false }
+            guard let nsWindow = browser.window else { return false }
+            let window = nsWindow.frame
+            let height = (nsWindow.screen ?? NSScreen.main)?.frame.height ?? 0
             return abs(window.minX - frame.minX) <= 2 && abs((height - window.maxY) - frame.minY) <= 2
                 && abs(window.width - frame.width) <= 2 && abs(window.height - frame.height) <= 2
         }
@@ -413,6 +416,11 @@ final class Extensions: NSObject, ObservableObject {
                     guard let self, let browser else { return }
                     activated(from: pair.0, to: pair.1, in: browser)
                 },
+            // A group made, renamed, folded, moved or removed: the extensions
+            // listening for tab groups are told, where they used to ask.
+            browser.$tabGroups
+                .dropFirst()
+                .sink { _ in ExtensionWatch.groups.changed() },
         ]
     }
 
@@ -431,6 +439,7 @@ final class Extensions: NSObject, ObservableObject {
             watching[id] = nil
         }
         if let window = windows.removeValue(forKey: key) { controller.didCloseWindow(window) }
+        ExtensionWatch.groups.changed()
     }
 
     /// A window came to the front (windows.onFocusChanged).
@@ -505,6 +514,8 @@ final class Extensions: NSObject, ObservableObject {
             }
         }
         orders[key] = ids
+        // A tab opened or closed can make a group or end one.
+        ExtensionWatch.groups.changed()
     }
 
     /// A page you see that is in no window's row: a peek (Peek.swift), or
@@ -560,6 +571,9 @@ final class Extensions: NSObject, ObservableObject {
             tab.$address.dropFirst().removeDuplicates().sink { _ in changed(.URL) },
             tab.$loading.dropFirst().removeDuplicates().sink { _ in changed(.loading) },
             tab.$pin.dropFirst().map { $0 != nil }.removeDuplicates().sink { _ in changed(.pinned) },
+            // Into a group or out of one: a group shows to an extension
+            // only while it has a tab.
+            tab.$groupID.dropFirst().removeDuplicates().sink { _ in ExtensionWatch.groups.changed() },
         ]
     }
 
@@ -1956,6 +1970,10 @@ extension Extensions: WKWebExtensionControllerDelegate {
         }
         if port.applicationIdentifier == ExtensionSocket.name {
             ExtensionSocket.connect(port, from: extensionContext.uniqueIdentifier)
+            return
+        }
+        if port.applicationIdentifier == ExtensionWatch.groupsPort || port.applicationIdentifier == ExtensionWatch.idlePort {
+            try ExtensionWatch.connect(port, from: extensionContext)
             return
         }
         // The port a worker's shim opens only to find what ports share; it
