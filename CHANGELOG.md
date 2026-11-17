@@ -11,6 +11,15 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+
+## 1.0.14 — 17 November 2026
+
 ### Fixed
 
 - ⌘1–⌘9 count only the open tabs of an open group: a grouped tab holding no page, drawn dimmed as closed, is passed over as ⌃Tab passes it, where ⌘1 opened a group's closed tabs before the open ones below. A folded group is still one place. Thanks [@Karthikxp](https://github.com/Karthikxp) for reporting ([#1159](https://github.com/driceroland/Search/issues/1159))
@@ -25,12 +34,6 @@ in [ROADMAP.md](ROADMAP.md).
 - Your own style for a site, as Arc's Boosts: Edit Site Style… in the View menu opens a box for CSS of yours, worn by every page of the site you're on, as you type it and from the first frame of each page after. Done closes it, Clear takes it off. CSS only: Search never runs script you write in a page. Not written from a private tab, though one wears a style written elsewhere, as it does what you've hidden. The sites with a style are listed beside the setting, each to remove. No key until you give it one in Settings › Keyboard & Mouse. Off unless you turn it on in Settings › Browsing › Pages › Your own style for a site; turned off, every style is kept but none is worn. Asked for on [#1127](https://github.com/driceroland/Search/issues/1127)
 - A space with a colour now washes the window in it too, faintly, as Arc's space themes do: the tabs' column or the tab bar, the bookmarks bar and the ground around the page take on a hint of it, a little more in dark mode, and change with the space you're in. Never the page itself. A space without a colour looks exactly as before.
 - ⌘-click on a pinned tab moves a wandered page into the loose tabs and opens a fresh tab for the pin at its pinned address, or opens a new tab at that address when already at home. Off unless turned on in Settings › Spaces & Pins › ⌘-click on a pin opens a new tab ([#1142](https://github.com/driceroland/Search/issues/1142)). Thanks [@DHIRENSACHER](https://github.com/DHIRENSACHER) ([#1143](https://github.com/driceroland/Search/pull/1143))
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
 
 ## 1.0.13 — 17 November 2026
 

@@ -38,6 +38,14 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Your own style for a site", detail: "Edit Site Style… in the View menu: your CSS for the site you're on, as Arc's Boosts.",
+               since: "1.0.14", get: { $0.sitesStyles }, set: { $0.sitesStyles = $1 }),
+        Toggle(title: "Keep the card in full screen", detail: "The page keeps its room and rounded corners when the window fills the screen.",
+               since: "1.0.14", get: { $0.cardsInFullScreen }, set: { $0.cardsInFullScreen = $1 },
+               shown: { $0.sidebar && $0.cards }),
+        Toggle(title: "⌘-click on a pin opens a new tab", detail: "As in Arc, or takes a page that wandered off into the loose tabs.",
+               since: "1.0.14", get: { $0.pinCommandOpensTab }, set: { $0.pinCommandOpensTab = $1 }),
+
         Toggle(title: "Commands in the address field", detail: "Type the name of any menu command or setting, as in Arc's Command Bar.",
                since: "1.0.13", get: { $0.commandBar }, set: { $0.commandBar = $1 }),
         Toggle(title: "Capture", detail: "View › Capture… takes a picture of part of a page, or all of it.",
@@ -113,6 +121,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.14"),
         Release(version: "1.0.13"),
         Release(version: "1.0.12"),
         Release(version: "1.0.11"),
@@ -171,6 +180,24 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.14", date: "17 November 2026",
+            headline: "Live folders, your own style for a site, space colours on the window, and your fixes.",
+            new: [
+                "Live folders: a folder in the pinned rows that fills itself from a feed. Right-click a pinned row › New Live Folder….",
+                "Your own CSS for a site, as Arc's Boosts. Turn it on in Settings › Browsing.",
+                "Keep the page as a card in full screen. Settings › Appearance › Window.",
+                "⌘-click on a pin opens a new tab, as in Arc. Settings › Spaces & Pins.",
+            ],
+            better: [
+                "A space with a colour gives the window a faint wash of it.",
+            ],
+            fixed: [
+                "⌘1–⌘9 counting a group's closed tabs.",
+                "⌫ leaving the page you were typing in.",
+                "Extension popups that open themselves, such as Inoreader's.",
+            ]
+        ),
         Notes(
             version: "1.0.13", date: "17 November 2026",
             headline: "Folders in pinned rows, Split View with four pages, sync between your Macs, and your fixes.",
