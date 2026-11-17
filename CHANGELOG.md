@@ -21,6 +21,7 @@ Not in this version, kept on main for a later one:
 
 ### Fixed
 
+- Backspace (⌫) no longer goes back a page. Back is ⌘[, or the key you chose in Settings
 - ⌘T's tab is in no group, whatever empty tab is lying around: ⌘T took an empty tab left in a group for its own, so the page you typed next opened in that group, from a tab in none. Thanks [@kurinawa](https://github.com/kurinawa) for reporting ([#1151](https://github.com/driceroland/Search/issues/1151))
 - A window just opened with ⌘N is the one the menus act on: a bookmark chosen from the Bookmarks menu opened in the window behind it until you clicked away and back. Thanks [@shubhammore121](https://github.com/shubhammore121) for reporting ([#1146](https://github.com/driceroland/Search/issues/1146))
 - A link from another app that opens in a small window while Search is hidden (⌘H) comes alone. Shown again for it, Search brought back every window it had, so the browser's window came up beside the small one as if the link had opened twice; it now stays away until Open in Search, the Dock or ⌘N asks for it, as after a launch made by a link. A browser window brought forward by anything else while they are kept away goes back off screen.
