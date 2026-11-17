@@ -4276,8 +4276,11 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         // Reuse an empty tab at the chosen position, clearing its draft:
-        // repeated ⌘T must not leave a row of identical empty tabs.
-        if let blank = tabs.last(where: { $0.isBlank && !$0.bench && !$0.shy && split(for: $0) == nil }) {
+        // repeated ⌘T must not leave a row of identical empty tabs. Never
+        // one in a group: ⌘T's tab is in none, and an empty tab left in a
+        // group took the page typed next into it (#1151).
+        if let blank = tabs.last(where: { $0.isBlank && !$0.bench && !$0.shy && split(for: $0) == nil
+                                          && !(prefs.usesTabGroups && group(of: $0) != nil) }) {
             placeBlank(blank)
             if activeID != blank.id { leaving() }
             activeID = blank.id
