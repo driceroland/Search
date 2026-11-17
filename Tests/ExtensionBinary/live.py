@@ -52,7 +52,6 @@ def main():
   until(lambda:cmd({'do':'extensions'}).get('started'))
   extension=install(HERE/'extension','Search Binary Transport Fixture')
   tab,first=run('static');tabs.append(tab)
-  dynamic,_=run('dynamic');tabs.append(dynamic)
   blob=cmd({'do':'eval','id':tab,'js':'document.documentElement.dataset.binaryURL'})['value']
   outsider=install(HERE/'outsider','Search Binary Outsider Fixture')
   page=cmd({'do':'ext-page','id':outsider,'path':'page.html'})['id'];tabs.append(page)
@@ -73,7 +72,7 @@ def main():
   while time.monotonic()<end:time.sleep(1)
   tab,last=run('static-after-idle');tabs.append(tab)
   print('worker replaced during idle',first[0]['boot']!=last[0]['boot'],flush=True)
-  print('PASS real WebKit static/dynamic binary reads, large body, response relay, other-extension isolation and idle requests',flush=True)
+  print('PASS real WebKit static binary reads, large body, response relay, other-extension isolation and idle requests',flush=True)
  finally:
   sv.finish();server.shutdown();sv.srv.shutdown();signal.alarm(0)
 if __name__=='__main__':main()

@@ -1292,6 +1292,10 @@ enum ExtensionShims {
         entry.timer = setTimeout(() => releaseBlob(key), 120000);
       };
       const blobBase = "blob:" + runtime.getURL("");
+      // Attached only after this page creates a blob, and not joined to the
+      // message channel: a listener on every extension page is someone the
+      // worker waits on for every message.
+      let noteBlob = () => {};
       const blobChunkSize = 192 * 1024;
       const blobEncode = (bytes) => {
         let text = "";
@@ -1302,7 +1306,7 @@ enum ExtensionShims {
         const create = URL.createObjectURL, revoke = URL.revokeObjectURL;
         put(URL, "createObjectURL", function (value) {
           const url = create.apply(this, arguments);
-          if (value instanceof Blob && url.startsWith(blobBase)) blobURLs.set(url, value);
+          if (value instanceof Blob && url.startsWith(blobBase)) { blobURLs.set(url, value); noteBlob(); }
           return url;
         });
         put(URL, "revokeObjectURL", function (url) {
@@ -1514,6 +1518,9 @@ enum ExtensionShims {
               .then((value) => sendResponse({ value }), (e) => sendResponse({ error: String(e && e.message || e) }));
             return true;
           }
+          // A page that only serves its own blobs must not answer, or hold,
+          // any other message. That would put it in the set the worker waits on.
+          if (servingBlobs && listeners.size === 0 && !background && !relayHost) return;
           sender = untabbed(sender);
           for (const listener of [...listeners]) {
             let result;
@@ -1597,7 +1604,7 @@ enum ExtensionShims {
         put(event, "removeListener", (listener) => {
           listeners.delete(listener);
           if (told && listeners.size === 0 && !relayHost) leave();
-          if (attached && listeners.size === 0 && !(internalMessages && (background || relayHost || !inContent))) {
+          if (attached && listeners.size === 0 && !(internalMessages && (background || relayHost || servingBlobs))) {
             attached = false; remove(dispatch);
           }
         });
@@ -1606,7 +1613,15 @@ enum ExtensionShims {
         // A worker may only add listeners while it starts; one that adds its
         // first later would be refused. So in a worker the one listener is
         // WebKit's from the start.
-        if (background || relayHost || (internalMessages && !inContent)) { attached = true; add(dispatch); if (told) join(); }
+        let servingBlobs = false;
+        if (internalMessages) noteBlob = () => {
+          if (inContent || background || relayHost) return;
+          servingBlobs = true;
+          if (attached) return;
+          attached = true;
+          add(dispatch);
+        };
+        if (background || relayHost) { attached = true; add(dispatch); if (told) join(); }
       };
       if (runtime) {
         const names = new Set();
@@ -3474,17 +3489,13 @@ enum ExtensionShims {
       // What an extension registers for a page's own world has Search's
       // passkey patch before it, as its manifest's do (see prepare): a
       // password manager keeps a reference to navigator.credentials as it
-      // finds it, and falls back to that. Isolated registrations need the
-      // same compatibility shim as manifest content scripts, before they
-      // capture fetch or runtime methods. An update that names no world gets
+      // finds it, and falls back to that. An update that names no world gets
       // it too; in any other world the patch does nothing.
       if (scripting) {
         const first = (scripts, updating) => Array.isArray(scripts) ? scripts.map((s) => {
-          if (!s || !Array.isArray(s.js)) return s;
+          if (!s || !Array.isArray(s.js) || s.js.includes("search-passkeys.js")) return s;
           const world = String(s.world || "").toUpperCase();
-          const before = world === "MAIN" ? ["search-passkeys.js"]
-            : updating && !world ? ["search-passkeys.js", "search-shim.js"] : ["search-shim.js"];
-          return { ...s, js: [...before.filter((file) => !s.js.includes(file)), ...s.js] };
+          return world === "MAIN" || (updating && !world) ? { ...s, js: ["search-passkeys.js", ...s.js] } : s;
         }) : scripts;
         for (const name of ["registerContentScripts", "updateContentScripts"]) {
           const original = scripting[name];
