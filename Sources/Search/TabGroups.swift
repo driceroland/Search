@@ -147,7 +147,7 @@ struct GroupHeading: View {
         .accessibilityLabel(group.name)
         // Rename Group: no room for the name here, so it is typed beside.
         .popover(isPresented: Binding(get: { editing }, set: { if !$0 { browser.editingGroupID = nil } }),
-                 arrowEdge: browser.prefs.sidePosition == .right ? .leading : .trailing) {
+                 hangingFrom: browser.prefs.sidePosition == .right ? .leading : .trailing) {
             TextField("Group name", text: $draft)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12.5, weight: .medium))

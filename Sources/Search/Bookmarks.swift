@@ -1075,7 +1075,7 @@ struct BookmarkDoor: View {
                 BookmarkDoor.door(browser, kept: false)
             }
         }
-        .popover(isPresented: $browser.bookmarksOpen, arrowEdge: arrowEdge) {
+        .popover(isPresented: $browser.bookmarksOpen, hangingFrom: arrowEdge) {
             if let id = browser.bookmarkCard {
                 BookmarkCard(browser: browser, bookmarks: browser.bookmarks, id: id)
             } else {

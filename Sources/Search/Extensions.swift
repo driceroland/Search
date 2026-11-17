@@ -2232,7 +2232,7 @@ private struct ExtensionButtons: View {
                 // only if the flag is still its own.
                 .popover(isPresented: Binding(get: { extensions.menuOwner == key },
                                               set: { if !$0, extensions.menuOwner == key { extensions.menuOwner = nil } }),
-                         arrowEdge: edge) {
+                         hangingFrom: edge) {
                     ExtensionMenu(browser: browser, extensions: extensions)
                 }
             }
