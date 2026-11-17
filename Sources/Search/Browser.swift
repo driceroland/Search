@@ -53,7 +53,10 @@ final class Browser: NSObject, ObservableObject {
     /// Tabs picked with Command or Shift. The active page remains where it is.
     @Published private(set) var selectedTabIDs: Set<Tab.ID> = []
     private var selectionAnchor: Tab.ID?
-    @Published private(set) var splits: [TabSplit] = []
+    @Published private(set) var splits: [TabSplit] = [] {
+        // A pair taken apart can leave a peek's tab off screen.
+        didSet { if peekTab != nil { followPeek() } }
+    }
     /// Named tab sections in the current space, in display order.
     @Published var tabGroups: [TabGroup] = []
     @Published var editingGroupID: UUID?
@@ -74,6 +77,7 @@ final class Browser: NSObject, ObservableObject {
             }
             guard oldValue != activeID else { return }
             cameFrom = (oldValue, ProcessInfo.processInfo.systemUptime)
+            followPeek()
             // Going to another tab ends a page's run of links (see
             // placeForLink) — but with links opened in front beside their
             // page, not going between the page and the tabs it opened: each
@@ -1817,6 +1821,12 @@ final class Browser: NSObject, ObservableObject {
         settleCapture()
     }
 
+    /// A camera or microphone question up for this page alone, answered no:
+    /// a peek gone out of sight, whose question would pass for another tab's.
+    func settleCapture(for tab: Tab) {
+        if decideTab?.id == tab.id { settleCapture() }
+    }
+
     private func settleCapture() {
         let pending = decide
         decide = nil
@@ -2819,6 +2829,23 @@ final class Browser: NSObject, ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.sharedPinsChanged() }
             .store(in: &bag)
+        // Peek stays with its tab turned off: a peek hidden behind another
+        // tab goes at once, as that tab would have put it away. Left, it
+        // would come back over whatever tab is in front.
+        prefs.$peekStays
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self, !on, let from = peekFrom, !visibleTabIDs.contains(from) else { return }
+                closePeek()
+            }
+            .store(in: &bag)
+        // What is on screen, read once the setting has changed: a peek
+        // hidden or shown by it plays or waits (see followPeek).
+        prefs.$peekStays.dropFirst().map { _ in () }
+            .merge(with: prefs.$splitView.dropFirst().map { _ in () })
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.followPeek() }
+            .store(in: &bag)
         prefs.$usesTabGroups
             .dropFirst()
             .sink { [weak self] on in
@@ -3764,7 +3791,9 @@ final class Browser: NSObject, ObservableObject {
         guard tabs.contains(where: { $0.id == tab.id }) else { return }
         if let pair = split(for: tab), activeSplit?.id == pair.id {
             guard activeID != tab.id else { return }
-            if peekTab != nil { closePeek() }
+            // Both pages of the pair are on screen: a peek that stays with
+            // its tab stays over either.
+            if peekTab != nil, !prefs.peekStays { closePeek() }
             // Find stays open with what it was looking for, and looks in
             // this page instead (see activeID).
             cancelTabEdit()
@@ -4029,7 +4058,7 @@ final class Browser: NSObject, ObservableObject {
         // Spotlight's does. What was typed waits for the next ⌘T (see
         // dismiss()). It used to stay up with what was typed cleared.
         if launching { putAway(); return }
-        guard prefs.floatingNewTab, let tab = active, !tab.isBlank, peekTab == nil else {
+        guard prefs.floatingNewTab, let tab = active, !tab.isBlank, !peekInFront else {
             newTab()
             return
         }
@@ -4170,8 +4199,10 @@ final class Browser: NSObject, ObservableObject {
             tabGroups[index].collapsed = false
             writeSession(now: true)
         }
-        // A peek is over the tab it was opened from; another tab puts it away.
-        if peekTab != nil, tab.id != activeID { closePeek() }
+        // A peek is over the tab it was opened from; another tab puts it
+        // away, or, with Peek stays with its tab on, hides it until that tab
+        // is back (see peekInFront).
+        if peekTab != nil, tab.id != activeID, !prefs.peekStays { closePeek() }
         // Before ⌘K is put away below: its words were for finding a tab, not
         // a draft for the blank one it was pressed on.
         if tab.id != activeID, !summoning, let here = active, here.isBlank { here.draft = typed }
@@ -4225,7 +4256,7 @@ final class Browser: NSObject, ObservableObject {
             typed = ""
             return
         }
-        if peekTab != nil { closePeek() }
+        if peekInFront { closePeek() }
         else if closePanel() { return }
         else if !pickedTabs.isEmpty { closePickedTabs() }
         else if let tab = active { closeTab(tab) }
@@ -4259,6 +4290,8 @@ final class Browser: NSObject, ObservableObject {
     /// pin does, so this is where it was, not where it was when grouped.
     func putAway(_ tab: Tab) {
         guard tabs.contains(where: { $0.id == tab.id }) else { return }
+        // Its page goes, and its peek, hidden or not, with it.
+        if peekFrom == tab.id { closePeek() }
         detachSplit(tab)
         heldDialogs.removeValue(forKey: tab.id)?.forEach { $0.dismiss() }
         dropQuestions(for: tab.id)
@@ -4301,6 +4334,8 @@ final class Browser: NSObject, ObservableObject {
     /// behind; closing that blank tab closes the window.
     func close(_ tab: Tab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        // Its peek, hidden or not, goes with it.
+        if peekFrom == tab.id { closePeek() }
         let pair = split(for: tab)
         let partner = pair.flatMap { pair in tabs.first { $0.id == pair.partner(of: tab.id) } }
         detachSplit(tab)
@@ -4813,6 +4848,8 @@ final class Browser: NSObject, ObservableObject {
               let index = tabs.firstIndex(where: { $0.id == tab.id })
         else { return false }
         if let web = tab.built { cancelDisplay(for: web) }
+        // Its peek, hidden or not, doesn't follow it to another space.
+        if peekFrom == tab.id { closePeek() }
         let partner = split(for: tab).flatMap { pair in tabs.first { $0.id == pair.partner(of: tab.id) } }
         detachSplit(tab)
 
@@ -4916,6 +4953,8 @@ final class Browser: NSObject, ObservableObject {
     /// Out of this row, not closed: it is on its way to another window.
     private func detach(_ tab: Tab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        // Its peek, hidden or not, doesn't follow it to another window.
+        if peekFrom == tab.id { closePeek() }
         if let web = tab.built { cancelDisplay(for: web) }
         let partner = split(for: tab).flatMap { pair in tabs.first { $0.id == pair.partner(of: tab.id) } }
         detachSplit(tab)
@@ -7185,7 +7224,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     // A peek has the page in front; the tab underneath stays where it was.
-    func reload(fromOrigin: Bool = false) { (peekTab ?? active)?.reload(fromOrigin: fromOrigin) }
+    func reload(fromOrigin: Bool = false) { ((peekInFront ? peekTab : nil) ?? active)?.reload(fromOrigin: fromOrigin) }
     func back() { active?.back() }
     func forward() { active?.forward() }
 }
@@ -7316,7 +7355,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         if prefs.peeksLinks, action.navigationType == .linkActivated,
            ["http", "https"].contains(scheme),
            action.modifierFlags.intersection([.shift, .command, .option, .control]) == prefs.peekClick.flags,
-           let from = tab(for: webView), peekTab == nil {
+           let from = tab(for: webView), !peekInFront {
             decisionHandler(.cancel)
             DispatchQueue.main.async { [weak self] in self?.peek(url, from: from) }
             return
@@ -7542,7 +7581,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // pop-ups, takes the tab path as before. A window sized by the page,
         // "Sign in with…", is left alone, as is a modified click, and so is
         // anything that isn't a web page (about:blank, data:, blob:).
-        if clicked, !behind, !beside, !popup, prefs.pinsPeek, peekTab == nil, opener.pin != nil,
+        if clicked, !behind, !beside, !popup, prefs.pinsPeek, !peekInFront, opener.pin != nil,
            [.linkActivated, .other].contains(action.navigationType),
            action.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty,
            let url = action.request.url, Browser.peekable(url) {
@@ -7957,7 +7996,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             // still waiting is refused rather than queued behind it.
             guard !permissionBusy else { return decisionHandler(.deny) }
             decide = decisionHandler
-            decideTab = tab(for: webView)
+            // A peek's own page, which isn't in the row: its question goes
+            // when it does, or when it is hidden (see followPeek).
+            decideTab = tab(for: webView) ?? (peekTab?.built === webView ? peekTab : nil)
             askedAbout = shy ? "" : key
             askedRevision = shy ? nil : revision
             asking = CaptureAsk(host: host, wants: wants)

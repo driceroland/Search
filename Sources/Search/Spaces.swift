@@ -346,6 +346,9 @@ extension Browser {
             makingSpace = false
         }
         guard id != spaceID else { return }
+        // A peek that stays with its tab belongs to a tab on this space. The
+        // next space doesn't keep that page running out of sight.
+        if prefs.peekStays, peekTab != nil { closePeek() }
         cancelTabEdit()
         let returningVideo = parked[id].map { row in
             guard let active = row.active else { return false }

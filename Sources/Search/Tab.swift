@@ -2576,7 +2576,7 @@ final class PageView: WKWebView {
         // panel, which puts the peek away (see Peek.swift); under the column
         // it is nobody's.
         if underCover(event) {
-            if let browser, browser.peekTab != nil, browser.peekTab?.built !== self { browser.closePeek() }
+            if let browser, browser.peekInFront, browser.peekTab?.built !== self { browser.closePeek() }
             return
         }
         onTouch?()

@@ -915,6 +915,8 @@ final class Bench {
             // The column folded away, out for a look, and the lights with it (see Fold.swift).
             out["peek"] = hidden(browser.peekTab) ? "" : browser.peekTab?.address?.absoluteString ?? ""
             out["peekFrom"] = browser.peekFrom?.uuidString ?? ""
+            // Over the page now, or hidden while its tab is not (see peekInFront).
+            out["peekShown"] = browser.peekInFront
             // The size the peek's page is drawn at (see Tab.applyRememberedZoom).
             out["peekZoom"] = Double(browser.peekTab?.built?.pageZoom ?? 0)
             out["fetching"] = ["showing": browser.fetches.showing, "fraction": browser.fetches.fraction ?? -1, "done": browser.fetches.done]
@@ -2399,6 +2401,17 @@ final class Bench {
                 answer(["peek": ""])
                 return
             }
+            // "js": run in the peek's page, in front or hidden.
+            if let js = request["js"] as? String {
+                guard let page = browser.peekTab?.built else { answer(["error": "no peek"]); return }
+                page.evaluateJavaScript(js) { value, error in
+                    MainActor.assumeIsolated {
+                        if let error { answer(["error": error.localizedDescription]); return }
+                        answer(["value": Bench.plain(value)])
+                    }
+                }
+                return
+            }
             guard let tab = browser.active, let text = request["url"] as? String, let url = URL(string: text)
             else { answer(["error": "peek needs a tab in front and an address"]); return }
             browser.peek(url, from: tab)
@@ -3677,6 +3690,9 @@ final class Bench {
             // the window going there: a test run never takes the screen.
             if let on = request["fullscreen"] as? Bool, Store.testing { browser.fullScreen = on }
             if let on = request["peek"] as? Bool { browser.peeking = on }
+            // Settings › Keyboard & Mouse › Peek stays with its tab, moved as
+            // its switch moves it.
+            if let on = request["peekstays"] as? Bool { browser.prefs.peekStays = on }
             // A peek at a link (Peek.swift): its two buttons.
             if let what = request["peeklink"] as? String {
                 if what == "keep" { browser.keepPeek() }
@@ -4274,6 +4290,8 @@ final class Bench {
             },
             "held": browser.heldDialogs.mapValues(\.count).reduce(into: [String: Int]()) { out, entry in
                 if let tab = browser.tabs.first(where: { $0.id == entry.key }) { out[Bench.short(tab)] = entry.value }
+                // A peek hidden behind another tab waits too (see Browser.ask).
+                if entry.key == browser.peekTab?.id { out["peek"] = entry.value }
             },
             "paneFrames": browser.tabs.compactMap { tab -> [String: Any]? in
                 guard let web = tab.built, let window = browser.window, web.window === window else { return nil }

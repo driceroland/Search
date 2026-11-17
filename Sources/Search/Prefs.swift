@@ -513,6 +513,13 @@ final class Preferences: ObservableObject {
     @Published var peeksLinks: Bool {
         didSet { store.set(peeksLinks, forKey: "links.peek") }
     }
+    /// A peek stays with the tab it was opened from: another tab hides it,
+    /// and coming back shows it (see Browser.peekInFront). Its page stays
+    /// loaded while hidden, its video and sound paused (Browser.followPeek).
+    /// A change to how a peek goes away, so off unless asked for.
+    @Published var peekStays: Bool {
+        didSet { store.set(peekStays, forKey: "links.peek.stays") }
+    }
     /// Pins as in Arc: a link from a pinned tab to another site opens in a
     /// peek, so the pin stays on its page (see Peek.swift), and ⌘W takes it
     /// back to the page it was pinned at. Half of "Pins keep their site"
@@ -947,6 +954,7 @@ final class Preferences: ObservableObject {
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
+        peekStays = store.bool(forKey: "links.peek.stays")
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
         readerFollowsLook = store.bool(forKey: "reader.follows")
