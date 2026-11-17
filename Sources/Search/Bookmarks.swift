@@ -699,6 +699,17 @@ final class Bookmarks {
         let snapshot = roots
         // One after another, the newest last (see Disk).
         Disk.write(file) { try? JSONEncoder().encode(snapshot) }
+        NotificationCenter.default.post(name: Bookmarks.saved, object: self)
+    }
+
+    /// The list was saved: Sync takes it to the other Macs.
+    static let saved = Notification.Name("SearchBookmarksSaved")
+
+    /// The list as another Mac left it (see Sync.swift).
+    func adopt(_ nodes: [Bookmark]) {
+        guard nodes != roots else { return }
+        roots = nodes
+        save()
     }
 }
 

@@ -20,6 +20,7 @@ struct SettingsPanel: View {
 
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shield = Shield.shared
+    @ObservedObject private var sync = Sync.shared
     /// The keys rows name, as Settings › Shortcuts has them now.
     @ObservedObject private var shortcuts = ShortcutStore.shared
     @State private var isDefault = Links.isDefault
@@ -430,6 +431,7 @@ struct SettingsPanel: View {
             return isDefault ? "Search is the default browser on this Mac" : item.detail
         case "downloads.folder":
             return prefs.downloads.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        case "sync": return sync.on ? sync.summary : item.detail
         case "search.engine": return searchDetail
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail
@@ -487,6 +489,9 @@ struct SettingsPanel: View {
             // Coming from another browser, now or any time later: the same
             // page as File › Bring Things Over… and the Welcome's.
             Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
+        case "sync":
+            // On asks for the folder first; cancelled, it stays off.
+            Switch(on: Binding(get: { sync.on }, set: { $0 ? sync.choose() : sync.turnOff() }))
         case "quit.confirm": Switch(on: $prefs.confirmsQuit)
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)

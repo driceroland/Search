@@ -99,6 +99,28 @@ enum Pins {
         return true
     }
 
+    /// Pins as another Mac left them (see Sync.swift): each of `spaces`
+    /// given its list and the profile its shared one, and every window
+    /// told of what changed, as when another window changes them.
+    static func adopt(_ defs: [UUID: [PinDef]], in spaces: [UUID], shared: [PinDef], profile: UUID) {
+        load()
+        var changed: [UUID] = []
+        for space in spaces where (bySpace[space] ?? []) != (defs[space] ?? []) {
+            bySpace[space] = defs[space].flatMap { $0.isEmpty ? nil : $0 }
+            changed.append(space)
+        }
+        let sharedChanged = (sharedBy[profile] ?? []) != shared
+        if sharedChanged { sharedBy[profile] = shared.isEmpty ? nil : shared }
+        guard !changed.isEmpty || sharedChanged else { return }
+        save()
+        for space in changed {
+            NotificationCenter.default.post(name: Pins.changed, object: nil, userInfo: ["space": space])
+        }
+        if sharedChanged {
+            NotificationCenter.default.post(name: Pins.changed, object: nil, userInfo: ["shared": true, "profile": profile])
+        }
+    }
+
     /// A profile deleted: the pins its spaces all showed go with it.
     static func forgetShared(of profile: UUID) {
         load()
