@@ -259,9 +259,13 @@ struct Quick: View {
 
     var body: some View {
         Button(action: act) {
+            // On one line, whatever room is left: in the narrow downloads
+            // card, Resume, Retry and Remove broke in the middle of a word.
             Text(title)
                 .font(.system(size: 11.5))
                 .foregroundStyle(tint)
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Palette.wash, in: Capsule())
