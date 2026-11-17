@@ -1724,6 +1724,8 @@ final class Browser: NSObject, ObservableObject {
 
     func clearHistory() {
         history.forget()
+        // The tabs Search closed by itself are pages you have been to.
+        archive.clear()
         // The sites' icons are a list of where you have been, too, and so
         // are the searches learned from sites visited (SiteSearch.swift).
         Favicons.shared.forgetAll()

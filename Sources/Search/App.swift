@@ -361,6 +361,11 @@ struct SearchApp: App {
                     .shortcut("history.show")
                 Button("Downloads…") { browser.showDownloads() }
                     .shortcut("history.downloads")
+                // Only while tabs close by themselves (Closing.swift).
+                if browser.prefs.tabLife != .never {
+                    Button("Archived Tabs…") { browser.archiving = true }
+                        .shortcut("history.archive")
+                }
                 Divider()
                 Button("Clear Browsing Data…") { browser.clearBrowsingData() }
                     .shortcut("history.clearData")
@@ -1619,6 +1624,7 @@ struct ContentView: View {
                 if Command.split.contains(command.id), !browser.prefs.splitView { return false }
                 if Command.ai.contains(command.id), !browser.prefs.ai { return false }
                 if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
+                if Command.archive.contains(command.id), browser.prefs.tabLife == .never { return false }
                 // An arrow the text system uses moves the caret, whichever
                 // command wears it — Back on ⌘←, or anything else on ⌘↑ or
                 // ⌥→. The menu wears the same key, so it is taken off for

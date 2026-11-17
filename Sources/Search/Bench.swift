@@ -841,6 +841,10 @@ final class Bench {
                 "sheetReturn": browser.window?.attachedSheet?.defaultButtonCell?.title ?? "",
                 "history": browser.recalling,
                 "downloads": browser.hoarding,
+                // History › Archived Tabs…: up or not, and what it holds
+                // for this window's profile, newest first.
+                "archive": browser.archiving,
+                "archived": browser.archive.tabs.map { ["url": $0.url.absoluteString, "title": $0.title] },
                 "bookmarks": browser.bookmarking,
                 // The dropdown off the button, the ⇧⌘B card in it, and how
                 // many are kept, for every window alike.
@@ -3640,6 +3644,7 @@ final class Bench {
             if let on = request["welcome"] as? Bool { browser.welcoming = on }
             if let on = request["history"] as? Bool { browser.recalling = on }
             if let on = request["downloads"] as? Bool { browser.hoarding = on }
+            if let on = request["archive"] as? Bool { browser.archiving = on }
             if let on = request["bookmarks"] as? Bool { browser.bookmarking = on }
             // The Bring things over sheet: on, off, on at a browser by name,
             // or on for the extensions alone, as Settings › Extensions opens it.

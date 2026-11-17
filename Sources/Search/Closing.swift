@@ -5,9 +5,10 @@ import Foundation
 // Everything you open is for now, unless you say it is for keeping. A tab you
 // haven't looked at for twelve hours (or a day, a week, a month: Settings ›
 // Tabs) closes the way ⌘W would close it: ⇧⌘T and History › Recently Closed
-// bring it back while it is recent, and History has its page for good. What
-// stays is what you said to keep: a pinned tab, a tab you named, a tab in a
-// group, or a site explicitly kept awake from its card.
+// bring it back while it is recent, History › Archived Tabs… for a month
+// (Archive.swift), and History has its page for good. What stays is what
+// you said to keep: a pinned tab, a tab you named, a tab in a group, or a
+// site explicitly kept awake from its card.
 //
 // The time counts from when you last left the tab, or let go of it (unpinned,
 // ungrouped, unnamed: Tab.letGo), and goes on counting while Search is quit:
@@ -81,6 +82,7 @@ extension Browser {
         guard closeAfter != nil,
               together.allSatisfy({ $0.leftSince <= since && stays(because: $0) == nil }) else { return }
         for tab in together {
+            archive(tab)
             if tabs.contains(where: { $0 === tab }) {
                 close(tab)
             } else {
