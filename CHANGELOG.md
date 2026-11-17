@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- ⌫ no longer goes back a page, as in Safari: pressed outside a text box, or in a search box a page built its own way, it left the page and what you had typed. Back is ⌘[, or the key you chose in Settings. Thanks [@pasteley](https://github.com/pasteley) ([#1161](https://github.com/driceroland/Search/pull/1161))
+
 ### Held back
 
 Not in this version, kept on main for a later one:

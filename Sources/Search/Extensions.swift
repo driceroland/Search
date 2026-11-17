@@ -204,6 +204,7 @@ final class Extensions: NSObject, ObservableObject {
         Extensions.pages = views.userContentController
         ExtensionWorkerRecovery.shared.attach(views.userContentController)
         ExtensionCapture.mockDevices(views.preferences)
+        Web.backspaceStays(views.preferences)
         configuration.webViewConfiguration = views
         controller = WKWebExtensionController(configuration: configuration)
         super.init()

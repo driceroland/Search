@@ -135,6 +135,7 @@ enum Web {
         }
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
         inspector(config.preferences)
+        backspaceStays(config.preferences)
         NativePiP.allow(config.preferences)
         return config
     }
@@ -165,6 +166,15 @@ enum Web {
         guard preferences.responds(to: set) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
         unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, on)
+    }
+
+    /// WebKit's ⌫ as Back and ⇧⌫ as Forward, off as in Safari. Back is ⌘[,
+    /// or what Settings gives it.
+    static func backspaceStays(_ preferences: WKPreferences) {
+        let set = NSSelectorFromString("_setBackspaceKeyNavigationEnabled:")
+        guard preferences.responds(to: set) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, false)
     }
 }
 
