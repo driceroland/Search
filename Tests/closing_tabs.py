@@ -28,6 +28,7 @@ def by(st, id): return next((x for x in st["tabs"] if x["id"] == id), None)
 def at(st, name): return next((x for x in st["tabs"] if x["url"] == f"{sv.BASE}/{name}"), None)
 def hour(): subprocess.run(["defaults", "write", sv.SUITE, "close.after", "-float", str(HOUR)])
 def on(): subprocess.run(["defaults", "write", sv.SUITE, "tabs.close.after", "-int", "12"])
+def archived(): return [x["url"] for x in sv.cmd({"do": "probe"}).get("archived", [])]
 
 
 try:
@@ -46,6 +47,7 @@ try:
     on(); sv.launch(); st = sv.sp("state")
     t.ok("launch: a tab whose time ran out while quit is closed", at(st, "a") is None, urls(st))
     t.ok("launch: the tab in front stays", at(st, "front") is not None, urls(st))
+    t.ok("archive: the tab closed at launch is in it", f"{sv.BASE}/a" in archived(), archived())
 
     # What you keep stays; the rest closes.
     old = sv.page("old"); pinned = sv.page("pinned"); named = sv.page("named")
@@ -56,6 +58,8 @@ try:
     st = sv.sp("tidy")
     t.ok("on: an ordinary tab left two hours closes", by(st, old) is None, urls(st))
     t.ok("on: a fresh tab stays", by(st, fresh) is not None)
+    t.ok("archive: the tab that closed itself is in it", f"{sv.BASE}/old" in archived(), archived())
+    t.ok("archive: kept tabs are not", not any(u.endswith(("/pinned", "/named", "/grouped", "/fresh")) for u in archived()), archived())
     for id, why in ((pinned, "pinned"), (named, "named"), (grouped, "in a group"), (front, "on screen")):
         tab = by(st, id)
         t.ok(f"on: {why} keeps a tab", tab is not None and tab["staysReason"] == why, tab)
