@@ -2791,7 +2791,10 @@ final class PageView: WKWebView {
     /// is a flash of it between a link that opens a tab and the page arriving,
     /// so a fresh view starts unseen, over the window's own ground, and comes
     /// in once WebKit says there is something on it worth seeing.
-    private(set) var unpainted = false
+    var unpainted: Bool { firstFrame != .shown }
+
+    private enum FirstFrame { case shown, held, presenting }
+    private var firstFrame = FirstFrame.shown
 
     /// WebKit says when the first frame is only through names outside the
     /// public framework, so it is asked whether it answers to them first. One
@@ -2801,20 +2804,39 @@ final class PageView: WKWebView {
         guard responds(to: observe) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, UInt) -> Void
         unsafeBitCast(method(for: observe), to: Setter.self)(self, observe, PageView.firstFrame)
-        unpainted = true
+        firstFrame = .held
         alphaValue = 0
     }
 
     /// In, quickly: the page is there, and the fade only covers the frame
     /// between WebKit laying it out and putting it on screen.
+    ///
+    /// It waits until that frame has reached the window. WebKit reports it a
+    /// few frames earlier, and fading in then showed the view's blank white.
     func showFirstFrame() {
-        guard unpainted else { return }
-        unpainted = false
-        onFirstFrame?()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Motion.seconds(PageView.fadeIn)
-            animator().alphaValue = 1
+        guard firstFrame == .held else { return }
+        firstFrame = .presenting
+        afterNextPresentation { [weak self] in
+            guard let self else { return }
+            self.firstFrame = .shown
+            self.onFirstFrame?()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Motion.seconds(PageView.fadeIn)
+                self.animator().alphaValue = 1
+            }
         }
+    }
+
+    /// A web process that dies before it presents never answers, so the
+    /// page comes in after a second regardless, rather than staying unseen.
+    private func afterNextPresentation(_ then: @escaping () -> Void) {
+        let presented = NSSelectorFromString("_doAfterNextPresentationUpdate:")
+        guard responds(to: presented) else { return then() }
+        var done = false
+        let once = { if !done { done = true; then() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { once() }
+        typealias After = @convention(c) (AnyObject, Selector, @escaping @convention(block) () -> Void) -> Void
+        unsafeBitCast(method(for: presented), to: After.self)(self, presented) { DispatchQueue.main.async { once() } }
     }
 
     /// How long the page takes to fade in, and so how long a picture over it
