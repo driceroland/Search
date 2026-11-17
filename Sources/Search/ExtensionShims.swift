@@ -3341,13 +3341,17 @@ enum ExtensionShims {
       // What an extension registers for a page's own world has Search's
       // passkey patch before it, as its manifest's do (see prepare): a
       // password manager keeps a reference to navigator.credentials as it
-      // finds it, and falls back to that. An update that names no world gets
-      // it too; in any other world the patch does nothing.
+      // finds it, and falls back to that. Isolated registrations need the
+      // same compatibility shim as manifest content scripts, before they
+      // capture fetch or runtime methods. An update that names no world gets
+      // the passkey patch too. The page's own world gets only that patch.
       if (scripting) {
         const first = (scripts, updating) => Array.isArray(scripts) ? scripts.map((s) => {
-          if (!s || !Array.isArray(s.js) || s.js.includes("search-passkeys.js")) return s;
+          if (!s || !Array.isArray(s.js)) return s;
           const world = String(s.world || "").toUpperCase();
-          return world === "MAIN" || (updating && !world) ? { ...s, js: ["search-passkeys.js", ...s.js] } : s;
+          const before = world === "MAIN" ? ["search-passkeys.js"]
+            : updating && !world ? ["search-passkeys.js", "search-shim.js"] : ["search-shim.js"];
+          return { ...s, js: [...before.filter((file) => !s.js.includes(file)), ...s.js] };
         }) : scripts;
         for (const name of ["registerContentScripts", "updateContentScripts"]) {
           const original = scripting[name];
