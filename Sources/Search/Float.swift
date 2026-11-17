@@ -1446,6 +1446,31 @@ enum Isolate {
         if (video) video.removeAttribute('data-office-float');
         settle(video);
         reopen();
+        redraw(video);
+      }
+      // Put back while its tab wasn't in front (the little window closed
+      // from another tab), the video was sized to the tab again only as the
+      // tab came back, and WebKit went on drawing its picture at the little
+      // window's size, in the corner of the player, until something built
+      // it anew: full screen, or a reload. Taken out of the layout for a
+      // frame once its tab is in front, it is drawn at its own size.
+      function redraw(video) {
+        if (document.visibilityState !== 'hidden') return;
+        document.addEventListener('visibilitychange', function seen() {
+          if (document.visibilityState !== 'visible') return;
+          document.removeEventListener('visibilitychange', seen);
+          // Laid out at the tab's size first.
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              if (root.classList.contains('office-floating')) return;
+              var v = video && video.isConnected ? video : document.querySelector('video');
+              if (!v) return;
+              var shown = v.style.display;
+              v.style.display = 'none';
+              requestAnimationFrame(function () { v.style.display = shown; });
+            });
+          });
+        });
       }
       // Twitch, in its Studio mode, folds its chat away in a page as narrow as
       // the little window, and opens it again only when asked: back in its
