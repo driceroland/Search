@@ -19,6 +19,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- A space with a colour now washes the window in it too, faintly, as Arc's space themes do: the tabs' column or the tab bar, the bookmarks bar and the ground around the page take on a hint of it, a little more in dark mode, and change with the space you're in. Never the page itself. A space without a colour looks exactly as before.
 - ⌘-click on a pinned tab moves a wandered page into the loose tabs and opens a fresh tab for the pin at its pinned address, or opens a new tab at that address when already at home. Off unless turned on in Settings › Spaces & Pins › ⌘-click on a pin opens a new tab ([#1142](https://github.com/driceroland/Search/issues/1142)). Thanks [@DHIRENSACHER](https://github.com/DHIRENSACHER) ([#1143](https://github.com/driceroland/Search/pull/1143))
 
 ### Held back

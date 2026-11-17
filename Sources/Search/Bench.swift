@@ -3745,6 +3745,9 @@ final class Bench {
                 SpaceSwipe.shared.ended()
             case "move":
                 if let index = request["index"] as? Int { browser.moveSpace(browser.spaceID, to: index - 1) }
+            case "colour":
+                // The space on screen's colour, by index into Spaces.colours.
+                browser.setSpaceColour(browser.spaceID, to: request["colour"] as? Int ?? 0)
             case "menu":
                 // A space chosen from the space's menu, by its title, as a click would.
                 let menu = SpaceMenu.menu(for: browser)
@@ -3767,6 +3770,8 @@ final class Bench {
                 "parked": browser.parked.map { [$0.key.uuidString: $0.value.tabs.count] },
                 "tabs": browser.tabs.count,
                 "making": browser.makingSpace,
+                // The colour the chrome is washed with, by name; "" for none.
+                "wash": browser.washColour.map { Spaces.colourNames[$0] } ?? "",
                 "swipe": Double(browser.spaceSwipe),
                 // Each space off screen as a swipe draws it passing by
                 // (Parked.drawn): its groups, folded or not, and their tabs.

@@ -215,6 +215,10 @@ struct TabBar: View {
         .background {
             ZStack {
                 landing ? Palette.hover : Color.clear
+                // The space's colour, if it has one, over whatever ground the
+                // row lies on: the window's, or the one it brings along when
+                // it comes down over the page.
+                SpaceWash(colour: browser.washColour)
                 if browser.prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }

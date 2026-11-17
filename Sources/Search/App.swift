@@ -505,6 +505,10 @@ struct ContentView: View {
             // With the tabs down the side, the ground the page's card and the
             // column sit on (see CardEdge).
             (fullscreenTab != nil ? Color.black : cards ? Palette.frame : Palette.ground)
+            // As cards, the column, the bookmarks bar and the gaps around the
+            // page share that ground, so the space's colour washes all of it
+            // alike. Edge to edge the column and the strip bring their own.
+            if cards { SpaceWash(colour: browser.washColour) }
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
