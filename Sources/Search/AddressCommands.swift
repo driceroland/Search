@@ -141,11 +141,13 @@ enum AddressCommand: Equatable {
     private static let needsPage: Set<String> = [
         "file.share", "file.savePage", "file.exportPDF", "file.print", "edit.copyCleanLink", "view.reader",
         "view.summarize", "view.ask", "tabs.duplicate", "tabs.copyAddress", "tabs.copyMarkdown", "bookmarks.add",
+        "view.style",
     ]
     /// More words for a few, the ones other browsers use.
     private static let alsoCalled: [String: String] = [
         "view.reader": "reader view", "tabs.mute": "mute", "view.float": "picture in picture pip",
         "view.inspector": "devtools developer tools", "bookmarks.add": "bookmark", "view.hide": "zapper",
+        "view.style": "boost css",
     ]
 
     /// A menu command, offered only where the menu has it, and enabled.
@@ -161,6 +163,7 @@ enum AddressCommand: Equatable {
         if Command.dusk.contains(id), !prefs.darkensPages { return false }
         if Command.archive.contains(id), prefs.tabLife == .never { return false }
         if Command.capture.contains(id), !prefs.capturesPages { return false }
+        if Command.styles.contains(id), !prefs.sitesStyles || browser.active?.shy == true { return false }
         if id == "view.sitePanel", !prefs.sitesInPanel { return false }
         if id == "tabs.pinRow", !prefs.showsPinRows { return false }
         if id == "view.foldGroups", !browser.canFoldAllGroups { return false }

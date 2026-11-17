@@ -225,6 +225,12 @@ struct SearchApp: App {
                     .shortcut("view.hide")
                 Button("Hidden on This Site…") { browser.reviewing.toggle() }
                     .shortcut("view.hidden")
+                // Only once it is on (Settings › Browsing › Pages).
+                if browser.prefs.sitesStyles {
+                    Button("Edit Site Style…") { browser.editSiteStyle() }
+                        .shortcut("view.style")
+                        .disabled(!(browser.active?.isWeb ?? false) || browser.active?.shy == true)
+                }
                 Divider()
                 Button("Zoom In") { browser.zoom(by: 1.1) }
                     .shortcut("view.zoomIn")
@@ -795,6 +801,21 @@ struct ContentView: View {
             .ignoresSafeArea()
             .transition(.opacity)
         }
+        if let host = browser.styling {
+            // The same: the page stays in view, wearing what you type.
+            ZStack(alignment: .topTrailing) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { browser.styling = nil }
+                StylePanel(browser: browser, host: host)
+                    .id(host)
+                    .padding(.top, Metrics.strip + 8)
+                    .padding(.trailing, 14)
+                    .transition(.scale(scale: 0.97, anchor: .topTrailing).combined(with: .opacity))
+            }
+            .ignoresSafeArea()
+            .transition(.opacity)
+        }
     }
 
     /// The ⌃Tab switcher, small windows' moons included. Its own property:
@@ -924,6 +945,7 @@ struct ContentView: View {
             .animation(Motion.settle, value: browser.welcoming)
             .animation(Motion.settle, value: browser.newsShowing)
             .animation(Motion.settle, value: browser.reviewing)
+            .animation(Motion.settle, value: browser.styling)
         .onAppear {
             watchKeys()
             browser.askFocus()
@@ -1422,7 +1444,7 @@ struct ContentView: View {
         // Settings, History and the rest are tabs, and ⌃Tab goes to and
         // from them like any other.
         return !browser.welcoming &&
-            !browser.reviewing && !browser.bookmarksOpen &&
+            !browser.reviewing && browser.styling == nil && !browser.bookmarksOpen &&
             !browser.veiling && !browser.summoning && !browser.makingSpace &&
             !browser.peekInFront && browser.editingTab == nil &&
             browser.asking == nil && browser.offering == nil && browser.suggesting == nil
@@ -1530,6 +1552,10 @@ struct ContentView: View {
             }
             if browser.reviewing {
                 browser.reviewing = false
+                return true
+            }
+            if browser.styling != nil {
+                browser.styling = nil
                 return true
             }
             if browser.finding {
@@ -1650,6 +1676,7 @@ struct ContentView: View {
                 if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
                 if Command.archive.contains(command.id), browser.prefs.tabLife == .never { return false }
                 if Command.capture.contains(command.id), !browser.prefs.capturesPages { return false }
+                if Command.styles.contains(command.id), !browser.prefs.sitesStyles { return false }
                 // An arrow the text system uses moves the caret, whichever
                 // command wears it — Back on ⌘←, or anything else on ⌘↑ or
                 // ⌥→. The menu wears the same key, so it is taken off for

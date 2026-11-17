@@ -90,6 +90,7 @@ final class Browser: NSObject, ObservableObject {
             }
             if veiling { stopHiding() }
             if snapping { stopSnapping() }
+            if styling != nil { styling = nil }
             if displayTab?.id == oldValue { cancelDisplay() }
             if decideTab?.id == oldValue { settleCapture() }
             clearTabSelection()
@@ -748,6 +749,35 @@ final class Browser: NSObject, ObservableObject {
 
     var hereHost: String? { curtain.host(of: active?.address) }
     var hereVeils: [Veil] { curtain.veils(on: hereHost) }
+
+    /// The site whose style is being written, while View › Edit Site Style…
+    /// is up (see SiteStyles.swift).
+    @Published var styling: String?
+
+    /// View › Edit Site Style…. Not from a private tab, which writes nothing
+    /// down; a style written elsewhere is still worn there, as hidden
+    /// elements are.
+    func editSiteStyle() {
+        guard styling == nil else { styling = nil; return }
+        guard prefs.sitesStyles, let tab = active, tab.isWeb else { return }
+        guard !tab.shy else { return announce("Not in a private tab") }
+        guard let host = SiteStyles.host(of: tab.address) else { return }
+        if veiling { stopHiding() }
+        reviewing = false
+        styling = host
+    }
+
+    /// A site's style as it now stands, into the next page and the page up
+    /// now of every tab on that site; `host` nil, every tab.
+    private func restyle(_ host: String?) {
+        if !SiteStyles.shared.on, styling != nil { styling = nil }
+        for tab in tabs + parkedTabs + [peekTab].compactMap({ $0 }) {
+            let here = SiteStyles.host(of: tab.pageAddress)
+            guard host == nil || here == host else { continue }
+            tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+            tab.built?.callInSearch(SiteStyles.live, arguments: ["css": SiteStyles.shared.css(on: here) ?? ""])
+        }
+    }
 
     /// ⌘⇧H. Point at anything on the page and it goes, for good, on this site.
     func toggleHiding() {
@@ -3016,6 +3046,11 @@ final class Browser: NSObject, ObservableObject {
                     tab.built?.evaluateInSearch(on ? AutoScroll.script : AutoScroll.off)
                 }
             }
+            .store(in: &bag)
+
+        // A site's own style (see SiteStyles.swift), written or switched off.
+        SiteStyles.shared.changed
+            .sink { [weak self] host in self?.restyle(host) }
             .store(in: &bag)
 
         // Dark pages (see Dusk.swift), turned on or off, paused, or switched

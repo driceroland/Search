@@ -208,6 +208,7 @@ struct Command: Identifiable {
         Command("view.capture", "Capture…", .view, nil) { $0.toggleSnap() },
         Command("view.hide", "Hide Elements…", .view, KeyCombo("h", shift: true)) { $0.toggleHiding() },
         Command("view.hidden", "Hidden on This Site…", .view, KeyCombo("u", shift: true)) { $0.reviewing.toggle() },
+        Command("view.style", "Edit Site Style…", .view, nil) { $0.editSiteStyle() },
         Command("view.zoomIn", "Zoom In", .view, KeyCombo("+")) { $0.zoom(by: 1.1) },
         Command("view.zoomOut", "Zoom Out", .view, KeyCombo("-")) { $0.zoom(by: 1 / 1.1) },
         Command("view.actualSize", "Actual Size", .view, KeyCombo("0")) { $0.resetZoom() },
@@ -553,4 +554,7 @@ extension Command {
     static let archive: Set<String> = ["history.archive"]
     /// Capture…: with Capture pages off, not listed, and its key goes on to the page.
     static let capture: Set<String> = ["view.capture"]
+    /// Edit Site Style…: with Your own style for a site off, not listed,
+    /// and its key goes on to the page.
+    static let styles: Set<String> = ["view.style"]
 }

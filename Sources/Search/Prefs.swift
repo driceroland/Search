@@ -510,6 +510,15 @@ final class Preferences: ObservableObject {
         didSet { store.set(capturesPages, forKey: "pages.capture") }
     }
 
+    /// Your own style for a site, Edit Site Style… in the View menu (see
+    /// SiteStyles.swift). Off unless asked for; off, the styles are kept.
+    @Published var sitesStyles: Bool {
+        didSet {
+            store.set(sitesStyles, forKey: "sites.styles")
+            SiteStyles.shared.on = sitesStyles
+        }
+    }
+
     /// Chrome's colors on the Web Inspector (see Inspector.swift). Off
     /// unless asked for, so the inspector stays as it comes.
     @Published var inspectorChrome: Bool {
@@ -1086,6 +1095,9 @@ final class Preferences: ObservableObject {
         darkensPages = dusk
         Dusk.shared.on = dusk
         capturesPages = store.bool(forKey: "pages.capture")
+        let styles = store.bool(forKey: "sites.styles")
+        sitesStyles = styles
+        SiteStyles.shared.on = styles
         inspectorChrome = store.bool(forKey: "inspector.chrome")
         inspectorDark = store.bool(forKey: "inspector.dark")
         let scrolls = store.bool(forKey: "autoscroll")

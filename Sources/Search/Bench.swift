@@ -4019,6 +4019,17 @@ final class Bench {
                 answer(["error": "popups state|open|allow|remove|sites"])
             }
 
+        case "sitestyle":
+            // A site's own style written as the editor writes it (see
+            // SiteStyles.swift), and what the store then holds. Test runs
+            // only: it writes styles.json.
+            guard Store.testing else { answer(["error": "sitestyle only works on a --test run"]); return }
+            guard let host = request["host"] as? String else { answer(["error": "sitestyle needs host"]); return }
+            if let on = request["on"] as? Bool { browser.prefs.sitesStyles = on }
+            if let css = request["css"] as? String { SiteStyles.shared.set(css, on: host) }
+            answer(["on": SiteStyles.shared.on, "css": SiteStyles.shared.css(on: host) ?? "",
+                    "written": SiteStyles.shared.written(on: host), "editing": browser.styling ?? ""])
+
         case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "capture", "capture-stop":
             guard #available(macOS 15.4, *) else {
                 answer(["error": "extensions need macOS 15.4"])

@@ -1209,6 +1209,12 @@ final class Tab: ObservableObject, Identifiable {
         if !css.isEmpty {
             add(Veiling.style(css), .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
+        // Your own style for this site, the same way and in the same place:
+        // only with the setting on, and only a site you wrote one for (see
+        // SiteStyles.swift).
+        if let style = SiteStyles.shared.css(on: SiteStyles.host(of: url ?? pageAddress)) {
+            add(SiteStyles.script(style), .atDocumentStart, mainFrameOnly: true, in: Web.world)
+        }
         // The same scripts as the document before's, the usual case, are
         // left where they are: taken out and put back, every one was sent to
         // the page's process again on every link followed.
