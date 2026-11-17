@@ -160,6 +160,7 @@ enum AddressCommand: Equatable {
         if Command.ai.contains(id), !prefs.ai { return false }
         if Command.dusk.contains(id), !prefs.darkensPages { return false }
         if Command.archive.contains(id), prefs.tabLife == .never { return false }
+        if Command.capture.contains(id), !prefs.capturesPages { return false }
         if id == "view.sitePanel", !prefs.sitesInPanel { return false }
         if id == "tabs.pinRow", !prefs.showsPinRows { return false }
         if id == "view.foldGroups", !browser.canFoldAllGroups { return false }
