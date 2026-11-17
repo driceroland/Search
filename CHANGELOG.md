@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- An extension's message to one of its own pages keeps its reply when a relayed copy arrives first, where Search dropped the native message and the sender waited until it timed out. ([#1058](https://github.com/driceroland/Search/issues/1058), [#1147](https://github.com/driceroland/Search/pull/1147))
 - Move to Group in a tab's right-click menu moves every tab picked with it, as dragging them onto a group does, where it moved only the tab clicked.
 - An extension's right-click items for a picture, Are.na's Add to Are.na for one, show on pictures that aren't links: with an extension that adds such items, the page keeps WebKit's menu there, whose Copy Image and Download Image are Search's own.
 - With more than one window open, a click in the puzzle button's list of extensions opens the extension or pins it, where it only closed the list: every window's list followed one shared switch, and the click closed them all.
