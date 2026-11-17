@@ -89,6 +89,7 @@ final class Browser: NSObject, ObservableObject {
                 linkRun = nil
             }
             if veiling { stopHiding() }
+            if snapping { stopSnapping() }
             if displayTab?.id == oldValue { cancelDisplay() }
             if decideTab?.id == oldValue { settleCapture() }
             clearTabSelection()
@@ -737,6 +738,10 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var veiling = false
     /// The tab doing the picking, which is not always the one in front.
     private weak var picking: Tab?
+    /// True while Capture…'s layer is over a page (see Snap.swift).
+    @Published var snapping = false
+    /// The tab it is over.
+    weak var snapTab: Tab?
     /// True while the list of what is hidden here is up.
     @Published var reviewing = false {
         didSet { if !reviewing { stopPeeking() } }
@@ -749,6 +754,7 @@ final class Browser: NSObject, ObservableObject {
     func toggleHiding() {
         if veiling { return stopHiding() }
         guard let tab = active, tab.isWeb else { return }
+        if snapping { stopSnapping() }
         reviewing = false
         veiling = true
         picking = tab
@@ -8521,7 +8527,7 @@ extension Browser: WKDownloadDelegate {
 
     /// WebKit refuses to write over a file that is already there, so the name
     /// gains a number rather than the download quietly failing.
-    private static func free(_ name: String, in folder: URL) -> URL {
+    static func free(_ name: String, in folder: URL) -> URL {
         let stem = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
         var candidate = folder.appendingPathComponent(name)

@@ -454,6 +454,11 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// Capture… in the View menu (see Snap.swift). Off unless asked for.
+    @Published var capturesPages: Bool {
+        didSet { store.set(capturesPages, forKey: "pages.capture") }
+    }
+
     /// Chrome's colors on the Web Inspector (see Inspector.swift). Off
     /// unless asked for, so the inspector stays as it comes.
     @Published var inspectorChrome: Bool {
@@ -971,6 +976,7 @@ final class Preferences: ObservableObject {
         let dusk = store.bool(forKey: "pages.dusk")
         darkensPages = dusk
         Dusk.shared.on = dusk
+        capturesPages = store.bool(forKey: "pages.capture")
         inspectorChrome = store.bool(forKey: "inspector.chrome")
         inspectorDark = store.bool(forKey: "inspector.dark")
         let scrolls = store.bool(forKey: "autoscroll")

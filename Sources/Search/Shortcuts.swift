@@ -203,6 +203,9 @@ struct Command: Identifiable {
         Command("view.duskPause", "Pause Darkening", .view, KeyCombo("d", shift: true, option: true)) { $0.pauseDusk() },
         Command("view.summarize", "Summarize Page", .view, nil) { $0.summarizePage() },
         Command("view.ask", "Ask About This Page…", .view, nil) { $0.askAboutPage() },
+        // No key until you give one: Arc's ⇧⌘2 is a shifted digit, which
+        // the menus read as a different character on many keyboards.
+        Command("view.capture", "Capture…", .view, nil) { $0.toggleSnap() },
         Command("view.hide", "Hide Elements…", .view, KeyCombo("h", shift: true)) { $0.toggleHiding() },
         Command("view.hidden", "Hidden on This Site…", .view, KeyCombo("u", shift: true)) { $0.reviewing.toggle() },
         Command("view.zoomIn", "Zoom In", .view, KeyCombo("+")) { $0.zoom(by: 1.1) },
@@ -548,4 +551,6 @@ extension Command {
     static let dusk: Set<String> = ["view.dusk", "view.duskPause"]
     /// The archive's: with tabs never closing by themselves, not listed.
     static let archive: Set<String> = ["history.archive"]
+    /// Capture…: with Capture pages off, not listed, and its key goes on to the page.
+    static let capture: Set<String> = ["view.capture"]
 }

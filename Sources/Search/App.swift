@@ -215,6 +215,12 @@ struct SearchApp: App {
                         .disabled(!(browser.active?.isWeb ?? false))
                 }
                 Divider()
+                // Only once it is on (Settings › Browsing › Pages).
+                if browser.prefs.capturesPages {
+                    Button("Capture…") { browser.toggleSnap() }
+                        .shortcut("view.capture")
+                        .disabled(!(browser.active?.isWeb ?? false))
+                }
                 Button("Hide Elements…") { browser.toggleHiding() }
                     .shortcut("view.hide")
                 Button("Hidden on This Site…") { browser.reviewing.toggle() }
@@ -1504,6 +1510,10 @@ struct ContentView: View {
                 browser.toggleHiding()
                 return true
             }
+            if browser.snapping {
+                browser.stopSnapping()
+                return true
+            }
             if browser.reviewing {
                 browser.reviewing = false
                 return true
@@ -1625,6 +1635,7 @@ struct ContentView: View {
                 if Command.ai.contains(command.id), !browser.prefs.ai { return false }
                 if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
                 if Command.archive.contains(command.id), browser.prefs.tabLife == .never { return false }
+                if Command.capture.contains(command.id), !browser.prefs.capturesPages { return false }
                 // An arrow the text system uses moves the caret, whichever
                 // command wears it — Back on ⌘←, or anything else on ⌘↑ or
                 // ⌥→. The menu wears the same key, so it is taken off for

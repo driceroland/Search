@@ -827,6 +827,39 @@ final class Bench {
             let width = request["width"] as? Double
             shoot(tab, to: URL(fileURLWithPath: path), width: width, answer)
 
+        case "snap":
+            // Capture… (Snap.swift). start, stop and state work the layer as
+            // the menu does; area X Y W H, element X Y and page choose as a
+            // drag, a click or Whole Page would, the picture going to `path`
+            // and to a pasteboard of the bench's own, never the Mac's.
+            guard Store.testing else { answer(["error": "snap only works on a --test run"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            let mode = request["mode"] as? String ?? "state"
+            func number(_ key: String) -> Double { (request[key] as? NSNumber)?.doubleValue ?? 0 }
+            switch mode {
+            case "start", "stop", "state":
+                if mode == "start", !browser.snapping { browser.toggleSnap() }
+                if mode == "stop" { browser.stopSnapping() }
+                tab.web.evaluateInSearch("!!(window.__officeCapture && window.__officeCapture.live())") { live in
+                    answer(["snapping": browser.snapping, "live": (live as? Bool) ?? false,
+                            "on": browser.prefs.capturesPages])
+                }
+            case "area", "element", "page":
+                house(tab)
+                let path = (request["path"] as? String)
+                    ?? NSTemporaryDirectory() + "search-bench-snap-\(Bench.short(tab)).png"
+                let choose = mode == "area" ? "window.__officeCapture.area(x, y, w, h);"
+                    : mode == "element" ? "window.__officeCapture.element(x, y);" : "window.__officeCapture.page();"
+                tab.web.callInSearch(SnapGeometry.script + "\nreturn await new Promise(function (answer) { window.__officeCapture.on(answer); \(choose) });",
+                                     arguments: ["x": number("x"), "y": number("y"), "w": number("w"), "h": number("h")]) { value in
+                    guard let choice = SnapGeometry.Choice(value) else { answer(["error": "nothing chosen"]); return }
+                    browser.snap(choice, in: tab, to: URL(fileURLWithPath: path),
+                                 board: NSPasteboard(name: NSPasteboard.Name("search.bench.snap")), finished: answer)
+                }
+            default:
+                answer(["error": "snap start|stop|state|area|element|page"])
+            }
+
         case "probe":
             // The state of the window itself, for the bug that is not in a
             // page: which panels are up, whether something modal has the
@@ -3671,6 +3704,7 @@ final class Bench {
             }
             if let mode = (request["pages120"] as? String).flatMap(FastPages.init) { browser.prefs.fastPages = mode }
             if let on = request["dusk"] as? Bool { browser.prefs.darkensPages = on }
+            if let on = request["captures"] as? Bool { browser.prefs.capturesPages = on }
             if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             // Swipe between pages, standing in for the Mac's own setting.
             if let on = request["swipepages"] as? Bool, Store.testing { Swipe.testing = on }
@@ -3850,9 +3884,9 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
 
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }
