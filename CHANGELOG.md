@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Control Panel for YouTube saves what you change in its popup. Its page starts with a `browser` of its own, and Search had fixed that name in place for every extension page, so the page stopped before any of it ran and its switches did nothing. Thanks [@ahmedtarekxo](https://github.com/ahmedtarekxo) for reporting ([#1124](https://github.com/driceroland/Search/issues/1124))
 - With New tab in a floating field on, ⌘T held down leaves the field as the press left it, up or put away. Each of the key's repeats put the field away or raised it again, so it flickered and stayed wherever the count left it.
 - With the window on a display other than the Mac's first one, extensions find the tab they name again: a private tab reads `incognito: true` to an extension let into private tabs, and tabs.move, tabs.discard and the other calls that find a tab by its place work. WebKit gives a window's frame turned over by the height of the window's own screen, and Search turned it back by the first screen's.
 - A side panel's page goes with its window when the window closes for good, instead of staying in memory unseen.

@@ -542,7 +542,11 @@ enum ExtensionShims {
         // from WebKit too, and nothing would reach the extension again. A
         // replacement that still carries them is taken.
         const carries = (v) => { try { return !!(v && v.runtime && v.runtime.id); } catch (e) { return false; } };
-        try { Object.defineProperty(root, key, { configurable: false, enumerable: d.enumerable, get: () => value, set: (v) => { if (carries(v)) value = v; } }); } catch (e) {}
+        // `browser` stays configurable, as WebKit has it: a fixed global
+        // can't be shadowed, and a page whose script starts with its own
+        // `const browser` (Control Panel for YouTube's popup) threw before
+        // a line of it ran. `chrome` alone keeps WebKit's listeners.
+        try { Object.defineProperty(root, key, { configurable: key === "browser", enumerable: d.enumerable, get: () => value, set: (v) => { if (carries(v)) value = v; } }); } catch (e) {}
       }
       // On a web page this is a content script: only Chrome's behaviour is
       // mended there, no API that Chrome doesn't give content scripts either.
