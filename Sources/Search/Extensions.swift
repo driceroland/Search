@@ -1723,6 +1723,15 @@ final class Extensions: NSObject, ObservableObject {
         return nil
     }
 
+    /// action.openPopup: the button's popup as it is now, in the window in
+    /// front. False when the button has none.
+    func openPopup(for context: WKWebExtensionContext) -> Bool {
+        let target = browser
+        guard let url = popupURL(for: context, in: target) else { return false }
+        ExtensionPopup.shared.show(url, for: context, from: anchor(for: context.uniqueIdentifier, in: target), in: target)
+        return true
+    }
+
     /// The page the button's popup is now: one the extension set for this
     /// tab or for all of them, else its manifest's.
     private func popupURL(for context: WKWebExtensionContext, in targetBrowser: Browser? = nil) -> URL? {
