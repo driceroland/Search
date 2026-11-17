@@ -1174,12 +1174,17 @@ struct ContentView: View {
     private func watchKeys() {
         let id = ObjectIdentifier(browser)
         if let old = ContentView.monitors[id] { NSEvent.removeMonitor(old) }
-        ContentView.monitors[id] = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown]) { event in
-            // A click on the tab switcher, in this window only (see
-            // Browser.clickTabSwitcher), turned into the top-left coordinates
-            // SwiftUI's frames are in.
-            if event.type == .leftMouseDown {
-                guard let window, event.window === window, let height = window.contentView?.bounds.height
+        ContentView.monitors[id] = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { event in
+            if event.type != .keyDown, event.type != .flagsChanged {
+                // A click in this window means a close is no longer the last
+                // thing done (Browser.lastClose). On the way down, so the
+                // close a click on a tab's cross makes, on the way up, is.
+                guard let window, event.window === window else { return event }
+                Browser.lastClose = nil
+                // A click on the tab switcher, in this window only (see
+                // Browser.clickTabSwitcher), turned into the top-left
+                // coordinates SwiftUI's frames are in.
+                guard event.type == .leftMouseDown, let height = window.contentView?.bounds.height
                 else { return event }
                 let at = event.locationInWindow
                 return browser.clickTabSwitcher(at: CGPoint(x: at.x, y: height - at.y)) ? nil : event
@@ -1201,6 +1206,7 @@ struct ContentView: View {
                 if !event.modifierFlags.contains(.command) { browser.landSummon() }
                 return event
             }
+            ContentView.keyed(event)
             // Escape on a page filling the screen is WebKit's, which leaves
             // on the first one, as Safari does. Its window isn't a browser's,
             // so the key came here first and put away what was left up in
@@ -1245,7 +1251,18 @@ struct ContentView: View {
             }
             return take(event) ? nil : event
         }
-        ContentView.keyHooks[id] = { event in take(event) ? nil : event }
+        ContentView.keyHooks[id] = { event in
+            ContentView.keyed(event)
+            return take(event) ? nil : event
+        }
+    }
+
+    /// Any key but ⌘Z itself means a close is no longer the last thing
+    /// done, and ⌘Z no longer undoes it (Browser.lastClose). Before anything
+    /// acts on the key: ⌘W's own close is then the last.
+    private static func keyed(_ event: NSEvent) {
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if flags != .command || event.shortcutCharacters != "z" { Browser.lastClose = nil }
     }
 
     /// Each browser's key monitor. Kept here rather than in the view, so
@@ -1755,9 +1772,22 @@ struct ContentView: View {
         case "u" where shifted:
             browser.reviewing.toggle()
         case "z" where !shifted:
-            // Only while pointing. Everywhere else undo belongs to the page.
-            guard browser.veiling else { return false }
-            browser.undoHiding()
+            // While pointing, the last thing hidden comes back.
+            if browser.veiling {
+                browser.undoHiding()
+                return true
+            }
+            // With Settings › Tabs › ⌘Z reopens a closed tab on, the tab
+            // just closed, as ⇧⌘T would bring it back, while closing it is
+            // still the last thing done (Browser.lastClose): anything typed
+            // or clicked since, and ⌘Z is the page's as before. A caret in a
+            // text box the tab landed on doesn't keep it: nothing has been
+            // typed there to undo. Only once the page has left the key
+            // unused (pageFirst): a document or a drawing keeps its own
+            // undo. Not in a panel or another window.
+            guard browser.prefs.undoReopensTab, let window, event.window === window,
+                  browser.canUndoClose else { return false }
+            browser.undoClose()
         // ⌘+ arrives as "=" or "+" depending on the keyboard; both mean bigger.
         case "=", "+":
             browser.zoom(by: 1.1)
