@@ -865,6 +865,23 @@ final class Preferences: ObservableObject {
     @Published var floatingNewTab: Bool {
         didSet { store.set(floatingNewTab, forKey: "newtab.floating") }
     }
+    /// The address field from any app, as Spotlight's comes: a key of your
+    /// own raises it over the app in front, and Return opens what was typed
+    /// in Search (see Launcher.swift). Off unless asked for, and no key
+    /// taken from the Mac until one is chosen (#783).
+    @Published var launcher: Bool {
+        didSet { store.set(launcher, forKey: "launcher.on") }
+    }
+    /// The key it is on, chosen in Settings. None until then.
+    @Published var launcherKey: LauncherKey? {
+        didSet {
+            if let launcherKey, let data = try? JSONEncoder().encode(launcherKey) {
+                store.set(data, forKey: "launcher.key")
+            } else {
+                store.removeObject(forKey: "launcher.key")
+            }
+        }
+    }
     /// The floating field lists the last few places from History before
     /// anything is typed (Browser.recentPlaces). Off unless asked for.
     @Published var recentInNewTab: Bool {
@@ -1011,6 +1028,8 @@ final class Preferences: ObservableObject {
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
         commandBar = store.bool(forKey: "commandbar")
         floatingNewTab = store.bool(forKey: "newtab.floating")
+        launcher = store.bool(forKey: "launcher.on")
+        launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
         recentInNewTab = store.bool(forKey: "newtab.recent")
         // On for everyone who never touched it (24 Oct 2026).
         let history = store.object(forKey: "swipe.history") as? Bool ?? true
