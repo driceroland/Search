@@ -559,8 +559,9 @@ final class PaneStage: NSView {
     /// replacing another is handled here. Everything else is left to SwiftUI.
     func show(now tab: Tab) {
         guard window != nil, tabs.count == 1, split == nil, immersedID == nil, page(tab) != nil else { return }
-        apply([tab], split: nil, focused: tab.id)
-        needsLayout = true
+        // The usual way in, so a move under way is cut short as any change of
+        // pages cuts it: one page to another is never a move.
+        show([tab], split: nil, focused: tab.id)
         layoutSubtreeIfNeeded()
     }
 
