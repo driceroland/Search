@@ -17,6 +17,10 @@ Not in this version, kept on main for a later one:
 
 - AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
 
+### Fixed
+
+- An extension's request rules load more as Chrome takes them: a header WebKit doesn't know is left out of a rule instead of the whole rule, an empty list of sites to leave out leaves out none, `\d`, `\w` and counts in a pattern are written out the way WebKit reads them, and a pattern beside a list of sites is pinned to the site it opens on. Thanks [@oddharsh](https://github.com/oddharsh)
+
 
 ## 1.0.14 — 17 November 2026
 
