@@ -347,6 +347,12 @@ enum SettingsIndex {
               title: "Pinned rows", detail: "Pins as rows under the squares, and Clear over the rest",
               more: "As in Arc: squares for the sites you live in, rows for pages you keep, and a line over the rest with Clear. Right-click a tab to pin it as a row.",
               keys: ["pins.list"], words: ["arc", "pinned"], parent: "tabs.layout"),
+        .init(id: "pins.folders", group: "pins", icon: "folder",
+              title: "Folders in pinned rows", detail: "Pinned rows in folders, folders in folders, as in Arc",
+              more: "Right-click a pinned row and choose New Folder, or drag a row onto a folder. A folder folds with a click and holds up to three levels. Bringing Arc over keeps its folders as folders here.",
+              keys: ["pins.folders"],
+              words: ["arc", "folder", "folders", "nested", "subfolder", "pinned folder", "pinned tabs", "organise", "organize"],
+              parent: "pins.list"),
         .init(id: "newtab.floating", group: "opening", icon: "rectangle.and.text.magnifyingglass",
               title: "New tab in a floating field", detail: "⌘T raises the address field over the page, as in Arc",
               more: "Return opens what you typed in a new tab; Escape, ⌘W or a click outside puts it away.",
@@ -524,6 +530,7 @@ enum SettingsIndex {
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
+        case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
@@ -743,6 +750,9 @@ extension SettingsIndex {
         case "pins.keep":
             guard let on = value as? Bool else { return false }
             prefs.pinsKeepSite = on
+        case "pins.folders":
+            guard let on = value as? Bool else { return false }
+            prefs.pinFolders = on
         case "profiles.oneWindow":
             guard let on = value as? Bool else { return false }
             prefs.profilesInOneWindow = on

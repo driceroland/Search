@@ -3,7 +3,7 @@ import Foundation
 // Folders among the pinned rows, as in Arc's pinned list: a folder holds
 // pinned rows and other folders, folds and opens, and is the space's own.
 // Only rows go in one (a square never does, nor a pin every space shows),
-// and only while Settings › Tabs › Pinned rows and Pin folders are both on
+// and only while Settings › Spaces & Pins › Pinned rows and Folders in pinned rows are both on
 // are they drawn; turned off, the rows come back flat, and their folders
 // wait for the switch, as tab groups do.
 //
@@ -170,11 +170,56 @@ enum PinTree {
     /// The pins in the order the lines draw them, for a row whose order on
     /// disk should match what is seen.
     static func ordered(_ pins: [PinDef], folders: [PinFolder]) -> [PinDef] {
-        let all = lines(pins: pins.map { ($0.id, $0.folder) }, folders: folders.map { var f = $0; f.collapsed = false; return f })
         let byID = Dictionary(pins.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        return all.compactMap { line in
-            if case .pin(let id, _) = line { return byID[id] }
+        return orderedIDs(pins.map { ($0.id, $0.folder) }, folders: folders).compactMap { byID[$0] }
+    }
+
+    /// The same, by id: every pin, each once, folded folders opened.
+    static func orderedIDs(_ pins: [(id: UUID, folder: UUID?)], folders: [PinFolder]) -> [UUID] {
+        let open = folders.map { folder -> PinFolder in
+            var folder = folder
+            folder.collapsed = false
+            return folder
+        }
+        return lines(pins: pins, folders: open).compactMap { line in
+            if case .pin(let id, _) = line { return id }
             return nil
+        }
+    }
+
+    // MARK: - a pin let go among the rows
+
+    /// Where a pinned row carried among the folders goes: into `folder`
+    /// (nil: the top), beside `anchor` — before it, or after it — or, with
+    /// no anchor, at the end of that folder's pins.
+    struct Place: Equatable {
+        var folder: UUID?
+        var anchor: UUID? = nil
+        var after = false
+    }
+
+    /// The place for a pin let go at `y`, given each line drawn and where
+    /// (in the same space), and the folder each pin is in. Over a folder's
+    /// heading: into it. Over another pin: beside it, in its folder, before
+    /// it in its upper half, after it in its lower. Over the pin carried, or
+    /// between lines: nil, nothing moves. Above every line: first at the
+    /// top; below them all: last at the top.
+    static func place(y: CGFloat, lines: [(line: Line, frame: CGRect)], folders pinFolder: [UUID: UUID?],
+                      carrying: UUID) -> Place? {
+        guard let first = lines.first, let last = lines.last else { return nil }
+        if y < first.frame.minY {
+            let top = lines.first { if case .pin(let id, 0) = $0.line { return id != carrying }; return false }
+            if case .pin(let id, _)? = top?.line { return Place(folder: nil, anchor: id) }
+            return Place(folder: nil)
+        }
+        if y > last.frame.maxY { return Place(folder: nil) }
+        guard let hit = lines.first(where: { y >= $0.frame.minY && y <= $0.frame.maxY }) else { return nil }
+        switch hit.line {
+        case .folder(let folder, _):
+            return Place(folder: folder.id)
+        case .pin(let id, _):
+            guard id != carrying else { return nil }
+            return Place(folder: pinFolder[id] ?? nil, anchor: id, after: y > hit.frame.midY)
         }
     }
 

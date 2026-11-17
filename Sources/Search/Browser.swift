@@ -1935,6 +1935,8 @@ final class Browser: NSObject, ObservableObject {
     /// dialog: pinning happens at once, with a letter guessed from the address,
     /// and that letter arrives selected so the next keystroke replaces it.
     @Published var editingPin: Tab.ID?
+    /// The pin folder whose name is being typed (see PinFolders.swift).
+    @Published var editingPinFolder: UUID?
 
     var pinnedCount: Int { tabs.filter { $0.pin != nil }.count }
 
@@ -1997,6 +1999,14 @@ final class Browser: NSObject, ObservableObject {
         let pins = row.filter { $0.pin != nil }.count
         row.insert(tab, at: tab.listed ? (first ? squares : pins) : squares)
         if !row.elementsEqual(tabs, by: { $0.id == $1.id }) { tabs = row }
+    }
+
+    /// The same tabs in another order, for the pin folders
+    /// (BrowserPinFolders.swift); anything else is turned away.
+    func rearrangeTabs(_ row: [Tab]) {
+        guard row.count == tabs.count, Set(row.map(\.id)) == Set(tabs.map(\.id)),
+              !row.elementsEqual(tabs, by: { $0.id == $1.id }) else { return }
+        tabs = row
     }
 
     /// The squares ahead of the rows, each kind in its own order. Pins
@@ -3129,8 +3139,10 @@ final class Browser: NSObject, ObservableObject {
         }
         for gone in pinned { gone.close() }
         // In the order they were written, which already holds it; a file
-        // put together by hand, or an import, may not.
-        return Browser.tiered(out) + loose
+        // put together by hand, or an import, may not. With pin folders on,
+        // the rows in the order their folders draw them.
+        let tiered = Browser.tiered(out) + loose
+        return prefs.pinFolders ? Browser.arrangedPins(tiered, folders: PinFolders.folders(space)) : tiered
     }
 
     /// Another window changed a space's pins: this window's row there follows.

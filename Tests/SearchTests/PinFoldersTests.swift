@@ -146,6 +146,59 @@ final class PinFoldersTests: XCTestCase {
         XCTAssertEqual(kept.map(\.id), [mine.id, work.id, docs.id])
     }
 
+    // MARK: - a pin let go among the rows
+
+    /// Work (a heading) at 0–24, its pin B at 30–62, then A at 68–100.
+    private func measured(_ work: PinFolder, _ b: PinDef, _ a: PinDef) -> [(line: PinTree.Line, frame: CGRect)] {
+        [(.folder(work, depth: 0), CGRect(x: 0, y: 0, width: 200, height: 24)),
+         (.pin(b.id, depth: 1), CGRect(x: 0, y: 30, width: 200, height: 32)),
+         (.pin(a.id, depth: 0), CGRect(x: 0, y: 68, width: 200, height: 32))]
+    }
+
+    func testLetGoOverAFoldersHeadingGoesIntoIt() {
+        let work = folder("Work"), b = def("B", folder: work.id), a = def("A")
+        let place = PinTree.place(y: 10, lines: measured(work, b, a), folders: [b.id: work.id, a.id: nil], carrying: a.id)
+        XCTAssertEqual(place, PinTree.Place(folder: work.id))
+    }
+
+    func testLetGoOverAPinGoesBesideItInItsFolder() {
+        let work = folder("Work"), b = def("B", folder: work.id), a = def("A")
+        let lines = measured(work, b, a)
+        let folders: [UUID: UUID?] = [b.id: work.id, a.id: nil]
+        XCTAssertEqual(PinTree.place(y: 35, lines: lines, folders: folders, carrying: a.id),
+                       PinTree.Place(folder: work.id, anchor: b.id, after: false))
+        XCTAssertEqual(PinTree.place(y: 60, lines: lines, folders: folders, carrying: a.id),
+                       PinTree.Place(folder: work.id, anchor: b.id, after: true))
+    }
+
+    func testLetGoOnItselfOrBetweenLinesMovesNothing() {
+        let work = folder("Work"), b = def("B", folder: work.id), a = def("A")
+        let lines = measured(work, b, a)
+        let folders: [UUID: UUID?] = [b.id: work.id, a.id: nil]
+        XCTAssertNil(PinTree.place(y: 80, lines: lines, folders: folders, carrying: a.id))
+        XCTAssertNil(PinTree.place(y: 27, lines: lines, folders: folders, carrying: a.id))
+    }
+
+    func testLetGoPastEitherEndGoesToTheTop() {
+        let work = folder("Work"), b = def("B", folder: work.id), a = def("A")
+        let lines = measured(work, b, a)
+        let folders: [UUID: UUID?] = [b.id: work.id, a.id: nil]
+        XCTAssertEqual(PinTree.place(y: 400, lines: lines, folders: folders, carrying: b.id), PinTree.Place(folder: nil))
+        XCTAssertEqual(PinTree.place(y: -10, lines: lines, folders: folders, carrying: b.id),
+                       PinTree.Place(folder: nil, anchor: a.id))
+    }
+
+    func testOrderedIDsOpenFoldedFolders() {
+        let work = folder("Work", collapsed: true)
+        let a = def("A"), b = def("B", folder: work.id)
+        XCTAssertEqual(PinTree.orderedIDs([(a.id, a.folder), (b.id, b.folder)], folders: [work]), [b.id, a.id])
+    }
+
+    func testTheMenuListsFoldersSetInUnderTheirParents() {
+        let work = folder("Work"), docs = folder("Docs", in: work.id), home = folder("Home")
+        XCTAssertEqual(PinFolderMenu.entries([work, docs, home]).map(\.title), ["Work", "    Docs", "Home"])
+    }
+
     // MARK: - Arc
 
     /// A StorableSidebar.json with one space whose pinned list is a page and

@@ -3513,6 +3513,105 @@ final class Bench {
                 window.contentView = nil
             }
 
+        case "pinfolder":
+            // Folders in pinned rows (PinFolders.swift), as the setting,
+            // the menus and a drag make and change them, and the rows read
+            // back as drawn. Test runs only: it rearranges your pins.
+            guard Store.testing else { answer(["error": "pinfolder only works on a --test run"]); return }
+            let folders = browser.pinFolders
+            func named(_ key: String) -> PinFolder? {
+                guard let name = request[key] as? String, !name.isEmpty else { return nil }
+                return folders.first { $0.name == name } ?? folders.first { $0.id.uuidString.lowercased().hasPrefix(name.lowercased()) }
+            }
+            func pinned(_ key: String) -> Tab? {
+                guard let ref = (request[key] as? String)?.lowercased(), !ref.isEmpty else { return nil }
+                return browser.tabs.first { $0.id.uuidString.lowercased().hasPrefix(ref) }
+            }
+            func state(_ extra: [String: Any] = [:]) -> [String: Any] {
+                let now = browser.pinFolders
+                let name = { (id: UUID?) -> Any in id.flatMap { id in now.first { $0.id == id }?.name } ?? NSNull() }
+                var out: [String: Any] = [
+                    "setting": browser.prefs.pinFolders, "rows": browser.prefs.showsPinRows,
+                    "drawsFolders": browser.showsPinFolderRows,
+                    "folders": now.map { ["id": $0.id.uuidString, "name": $0.name, "parent": name($0.parent),
+                                          "collapsed": $0.collapsed, "depth": PinTree.depth(of: $0.id, in: now)] as [String: Any] },
+                    // kind, depth, title, folded: what the column draws.
+                    "lines": browser.pinRowLines().map(\.described),
+                    // The rows in the order the row (and pins.json) keeps them.
+                    "order": browser.listedPins.map { [Bench.short($0), $0.name ?? $0.title, name($0.pinFolder)] },
+                    "saved": Pins.defs(browser.spaceID).filter { $0.listed == true }.map { [$0.title, name($0.folder)] },
+                ]
+                for (key, value) in extra { out[key] = value }
+                return out
+            }
+            switch request["action"] as? String ?? "state" {
+            case "state":
+                break
+            case "on":
+                // Pinned rows with it, which it means nothing without.
+                browser.prefs.listsPins = true
+                browser.prefs.pinFolders = true
+                browser.pinsChanged(in: browser.spaceID)
+            case "off":
+                browser.prefs.pinFolders = false
+            case "pin":
+                // A tab pinned as a row, ready for a folder.
+                guard let tab = pinned("id") else { answer(missing(request)); return }
+                if tab.pin == nil { browser.pin(tab, listed: true) } else if !tab.listed { browser.setListed(tab, true) }
+            case "new":
+                // New Folder, holding a pin (its menu's) or inside a folder
+                // (a folder's menu's New Folder Inside).
+                let tab = pinned("id")
+                if request["id"] != nil, tab == nil { answer(missing(request)); return }
+                guard let made = browser.newPinFolder(named: request["name"] as? String ?? "New Folder",
+                                                      in: named("in")?.id, holding: tab, rename: false)
+                else { answer(["error": "no folder can be made there"]); return }
+                answer(state(["made": made.uuidString])); return
+            case "move":
+                // Move to Folder, or with "anchor" where a drag lets it go.
+                guard let tab = pinned("id") else { answer(missing(request)); return }
+                let into: UUID?
+                if request["folder"] as? String == "none" { into = nil }
+                else if let folder = named("folder") { into = folder.id }
+                else { answer(["error": "no folder “\(request["folder"] as? String ?? "")”"]); return }
+                guard browser.takesFolder(tab) else { answer(["error": "only a pinned row of this space goes in a folder"]); return }
+                browser.movePin(tab, into: into, anchor: pinned("anchor")?.id, after: request["after"] as? Bool ?? false)
+            case "fold", "open":
+                guard let folder = named("name") else { answer(["error": "no folder “\(request["name"] as? String ?? "")”"]); return }
+                browser.setPinFolderFolded(folder.id, request["action"] as? String == "fold")
+            case "rename":
+                guard let folder = named("name"), let to = request["to"] as? String else { answer(["error": "rename needs NAME TO"]); return }
+                browser.renamePinFolder(folder.id, to: to)
+            case "nest":
+                guard let folder = named("name") else { answer(["error": "no folder “\(request["name"] as? String ?? "")”"]); return }
+                let parent = request["parent"] as? String == "none" ? nil : named("parent")?.id
+                guard request["parent"] as? String == "none" || parent != nil else { answer(["error": "no parent folder"]); return }
+                guard PinTree.canMove(folder.id, into: parent, in: folders) else { answer(["error": "too deep, or inside itself"]); return }
+                browser.movePinFolder(folder.id, into: parent)
+            case "delete":
+                guard let folder = named("name") else { answer(["error": "no folder “\(request["name"] as? String ?? "")”"]); return }
+                browser.deletePinFolder(folder.id)
+            case "drawn":
+                // The column drawn off screen, as `column` draws it, and the
+                // lines it drew read back: kind, depth, title, folded.
+                let width = Double(browser.prefs.columnWidth)
+                let host = NSHostingView(rootView: SideBar(browser: browser, prefs: browser.prefs).frame(width: width, height: 800))
+                host.frame = NSRect(x: 0, y: 0, width: width, height: 800)
+                let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+                window.contentView = host
+                SideBar.drawnPinLines = []
+                host.layoutSubtreeIfNeeded()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    host.layoutSubtreeIfNeeded()
+                    answer(state(["drawn": SideBar.drawnPinLines]))
+                    window.contentView = nil
+                }
+                return
+            default:
+                answer(["error": "pinfolder: state|on|off|pin|new|move|fold|open|rename|nest|delete|drawn"]); return
+            }
+            answer(state())
+
         case "column":
             // The column of tabs, drawn off screen at its width, with what the
             // browser has now — the rows, the card for a new space, the dots.

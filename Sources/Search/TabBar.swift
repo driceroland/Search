@@ -1562,6 +1562,24 @@ struct TabMenu: View {
             if rows {
                 Button(tab.listed ? "Show as Square" : "Show as Row") { browser.setListed(tab, !tab.listed) }
             }
+            // Settings › Tabs › Folders in pinned rows: a row of this
+            // space's own into a folder, a new one or one there is.
+            if browser.prefs.showsPinFolders && browser.takesFolder(tab) {
+                Button("New Folder") { browser.newPinFolder(holding: tab) }
+                let folders = browser.pinFolders
+                if !folders.isEmpty {
+                    Menu("Move to Folder") {
+                        ForEach(PinFolderMenu.entries(folders), id: \.folder.id) { entry in
+                            Button(entry.title) { browser.movePin(tab, into: entry.folder.id) }
+                                .disabled(tab.pinFolder == entry.folder.id)
+                        }
+                        if tab.pinFolder != nil {
+                            Divider()
+                            Button("Remove from Folder") { browser.movePin(tab, into: nil) }
+                        }
+                    }
+                }
+            }
             // A row wears its title, not its letter; and a click on it is
             // the address, so the way home a square's double-click is
             // (Browser.goHome) is here instead, while it has wandered.
