@@ -157,6 +157,16 @@ final class Preferences: ObservableObject {
     @Published var sideHides: Bool {
         didSet { store.set(sideHides, forKey: "sidebar.hides") }
     }
+    /// Arc's active tab capsule at the top of the sidebar: shows the active
+    /// tab's address with copy and site controls above the pins. Off unless
+    /// asked for.
+    @Published var sidebarActiveTab: Bool {
+        didSet { store.set(sidebarActiveTab, forKey: "sidebar.activeTab") }
+    }
+    /// Whether the sidebar active tab capsule is shown: asked for, and with
+    /// the tabs down the side and not folded to icons only.
+    var showsSidebarActiveTab: Bool { sidebarActiveTab && sidebar && !sideIcons }
+
     /// Taller lines and larger titles in the column, for anyone who finds
     /// the default hard to read (#570). Off unless asked for.
     @Published var roomyTabs: Bool {
@@ -823,6 +833,7 @@ final class Preferences: ObservableObject {
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         sideIcons = store.bool(forKey: "sidebar.icons")
         foldsToIcons = store.bool(forKey: "sidebar.foldIcons")
+        sidebarActiveTab = store.bool(forKey: "sidebar.activeTab")
         showsPlayer = store.bool(forKey: "sidebar.player")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
@@ -1051,6 +1062,7 @@ final class Preferences: ObservableObject {
         take(\.roomyTabs, store.bool(forKey: "sidebar.roomy"))
         take(\.sideIcons, store.bool(forKey: "sidebar.icons"))
         take(\.foldsToIcons, store.bool(forKey: "sidebar.foldIcons"))
+        take(\.sidebarActiveTab, store.bool(forKey: "sidebar.activeTab"))
         take(\.sideWidth, "sidebar.width", (store.object(forKey: "sidebar.width") as? Double).map { CGFloat($0) }
             .flatMap { (Metrics.sideMin...Metrics.sideMax).contains($0) ? $0 : nil }, or: Metrics.side)
         take(\.sidePanelWidth, "sidepanel.width", (store.object(forKey: "sidepanel.width") as? Double).map { CGFloat($0) }

@@ -137,6 +137,11 @@ struct SideBar: View {
                     .frame(height: Metrics.strip)
                 }
 
+                if prefs.showsSidebarActiveTab {
+                    ActiveTabCapsule(browser: browser, prefs: prefs)
+                        .padding(.bottom, 8)
+                }
+
                 // The spaces side by side, as pages: two fingers sideways move
                 // the one on screen and the next one together, the next one
                 // coming in as this one goes, with nothing between them.
@@ -1721,5 +1726,157 @@ struct PinCarried: ViewModifier {
         let point = CGPoint(x: start.midX + travel.width, y: start.midY + travel.height)
         func distance(_ cell: CGRect) -> CGFloat { hypot(cell.midX - point.x, cell.midY - point.y) }
         return cells.indices.min { distance(cells[$0]) < distance(cells[$1]) } ?? from
+    }
+}
+
+// MARK: - active tab capsule (Arc style)
+
+/// The active tab's address capsule at the top of the sidebar, as in Arc:
+/// shows the active domain, a button to copy the address, and site information.
+struct ActiveTabCapsule: View {
+    @ObservedObject var browser: Browser
+    @ObservedObject var prefs: Preferences
+
+    var body: some View {
+        let currentID = browser.activeSplit?.focused ?? browser.activeSplit?.left ?? browser.activeID
+        if let tab = browser.tabs.first(where: { $0.id == currentID }) {
+            ActiveTabPill(browser: browser, tab: tab)
+        } else {
+            EmptyCapsule()
+        }
+    }
+}
+
+private struct ActiveTabPill: View {
+    @Environment(\.greys) private var greys
+    let browser: Browser
+    @ObservedObject var tab: Tab
+
+    @State private var hovering = false
+    @State private var copyHovering = false
+    @State private var tuneHovering = false
+    @State private var copied = false
+    @State private var tuneAnchor: NSView?
+
+    private var displayHost: String {
+        if tab.isBlank { return "New Tab" }
+        if let address = tab.address {
+            if address.scheme == "search" {
+                return address.host() ?? address.absoluteString
+            }
+            if let host = address.host() {
+                return host.replacingOccurrences(of: "www.", with: "")
+            }
+            if address.isFileURL {
+                return address.lastPathComponent
+            }
+        }
+        return tab.title.isEmpty ? "New Tab" : tab.title
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button {
+                browser.edit()
+            } label: {
+                HStack(spacing: 6) {
+                    Text(displayHost)
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                browser.copyAddress()
+                copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    copied = false
+                }
+            } label: {
+                Image(systemName: copied ? "checkmark" : "link")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(copied ? Palette.safe : (copyHovering ? Palette.ink : Palette.muted))
+                    .frame(width: 22, height: 22)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(copyHovering ? greys.wash : Color.clear)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Copy Address (⇧⌘C)")
+            .onHover { copyHovering = $0 }
+
+            Button {
+                if let tuneAnchor {
+                    SiteCardPanel.toggle(for: tab, in: browser, under: tuneAnchor)
+                }
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(tuneHovering ? Palette.ink : Palette.muted)
+                    .frame(width: 22, height: 22)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(tuneHovering ? greys.wash : Color.clear)
+                    )
+            }
+            .buttonStyle(.plain)
+            .background(AnchorSpot { tuneAnchor = $0 })
+            .help("Site Information")
+            .onHover { tuneHovering = $0 }
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
+        .frame(height: 34)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(hovering ? greys.hover : greys.tile)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onHover { hovering = $0 }
+        .contextMenu {
+            TabMenu(browser: browser, tab: tab, close: { browser.close(tab) })
+        }
+    }
+}
+
+private struct EmptyCapsule: View {
+    @Environment(\.greys) private var greys
+
+    var body: some View {
+        HStack {
+            Text("New Tab")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(Palette.muted)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(greys.tile)
+        )
+    }
+}
+
+/// An anchor view to give SiteCardPanel an exact NSView to stand under.
+private struct AnchorSpot: NSViewRepresentable {
+    let found: (NSView) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { found(view) }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { found(view) }
     }
 }

@@ -158,6 +158,11 @@ enum SettingsIndex {
               more: "Off, ⌘S hides the column and the page takes the whole window.",
               keys: ["sidebar.foldIcons"], words: ["collapse", "collapsed", "compact", "narrow", "hide sidebar", "icons only", "favicons"],
               parent: "tabs.layout"),
+        .init(id: "sidebar.activeTab", group: "window", icon: "capsule",
+              title: "Active tab at the top of the sidebar", detail: "A pill above the pins shows the address, with buttons to copy and check the site",
+              more: "As in Arc: a pill at the top of the sidebar displays the domain of the page you are on, with a button to copy its link and one to view site information.",
+              keys: ["sidebar.activeTab"], words: ["arc", "sidebar", "active tab", "address", "pill", "capsule", "url bar"],
+              parent: "tabs.layout"),
         .init(id: "layout.cards", group: "window", icon: "rectangle.inset.filled",
               title: "The page as a card", detail: "A little room around the page, with rounded corners",
               more: "Off, the page reaches the window's edges and the column is white with its hairline.",
@@ -515,7 +520,7 @@ enum SettingsIndex {
         case "pages.dusk": return prefs.look != .light
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
-        case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
+        case "sidebar.hides", "layout.cards", "pins.list", "sidebar.activeTab": return prefs.sidebar
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several

@@ -18,8 +18,11 @@ import SwiftUI
 /// and a click on the card is only a click.
 @MainActor
 enum SiteCardPanel {
+    static let didChangeNotification = Notification.Name("SiteCardPanel.didChange")
+
     private static var panel: Panel?
-    private static var resign: Any?
+    private static var watches: [Any] = []
+    private static var monitor: Any?
 
     static var isShown: Bool { panel != nil }
 
@@ -73,10 +76,23 @@ enum SiteCardPanel {
         }
     }
 
+    static func toggle(for tab: Tab, in browser: Browser, under field: NSView) {
+        if isShown {
+            let wasThis = (anchor === field)
+            hide()
+            if !wasThis {
+                show(for: tab, in: browser, under: field)
+            }
+        } else {
+            show(for: tab, in: browser, under: field)
+        }
+    }
+
     /// Under `field`, the tab's address, in `browser`'s window.
-    private static func show(for tab: Tab, in browser: Browser, under field: NSView) {
+    static func show(for tab: Tab, in browser: Browser, under field: NSView) {
         guard let window = field.window else { return }
         hide()
+        anchor = field
         let card = SiteCard(browser: browser, tab: tab) {
             SiteCardPanel.hide()
             browser.cancelTabEdit()
@@ -134,8 +150,30 @@ enum SiteCardPanel {
             panel.setFrame(frame, display: true)
         }
         self.panel = panel
-        resign = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { SiteCardPanel.hide() }
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+        watches = [
+            NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { SiteCardPanel.hide() }
+            },
+            NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { _ in
+                MainActor.assumeIsolated { SiteCardPanel.hide() }
+            },
+            NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { _ in
+                MainActor.assumeIsolated { SiteCardPanel.hide() }
+            }
+        ]
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { event in
+            guard let panel = SiteCardPanel.panel else { return event }
+            if event.type == .keyDown {
+                guard event.keyCode == 53 else { return event }
+                SiteCardPanel.hide()
+                return nil
+            }
+            if event.window === panel { return event }
+            if let anchor = SiteCardPanel.anchor, event.window === anchor.window,
+               anchor.convert(anchor.bounds, to: nil).contains(event.locationInWindow) { return event }
+            SiteCardPanel.hide()
+            return event
         }
     }
 
@@ -153,12 +191,17 @@ enum SiteCardPanel {
     }
 
     static func hide() {
-        if let resign { NotificationCenter.default.removeObserver(resign) }
-        resign = nil
+        watches.forEach(NotificationCenter.default.removeObserver)
+        watches = []
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        anchor = nil
+        original = nil
         guard let panel else { return }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
         self.panel = nil
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
     private final class Panel: NSPanel {

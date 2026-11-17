@@ -520,6 +520,7 @@ struct SettingsPanel: View {
                      ))
         case "sidebar.hides": Switch(on: $prefs.sideHides)
         case "sidebar.foldIcons": Switch(on: $prefs.foldsToIcons)
+        case "sidebar.activeTab": Switch(on: $prefs.sidebarActiveTab)
         case "layout.cards":
             Pictures(options: [(true, "As a card", AnyView(CardPicture(card: true))),
                                (false, "Edge to edge", AnyView(CardPicture(card: false)))],

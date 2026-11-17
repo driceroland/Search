@@ -292,6 +292,10 @@ struct Fold: View {
         .onChange(of: browser.bookmarksOpen) { _, open in
             if !open, !inside, browser.peeking { peek(false) }
         }
+        // The site card closed with the pointer elsewhere: the same.
+        .onReceive(NotificationCenter.default.publisher(for: SiteCardPanel.didChangeNotification)) { _ in
+            if !SiteCardPanel.isShown, !inside, browser.peeking { peek(false) }
+        }
     }
 
     /// A popover opened from a button in the column, still open: the
@@ -301,6 +305,7 @@ struct Fold: View {
     private var holding: Bool {
         if browser.bookmarksOpen { return true }
         if #available(macOS 15.4, *), Extensions.shared.menuOpen { return true }
+        if SiteCardPanel.isShown { return true }
         return false
     }
 
