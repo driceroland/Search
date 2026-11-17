@@ -556,42 +556,35 @@ struct SideBar: View {
         browser.squarePins.count + browser.listedPins.count + (prefs.usesTabGroups ? browser.tabGroups.count : 0)
     }
 
-    /// How many squares go in each row: at most four — fewer only when the
-    /// column is too narrow for four of the classic width — and as even as
-    /// they go, the fuller rows first. Five are three and two, seven four
-    /// and three, nine three, three and three, ten four, three and three.
-    /// Up to three stay the one row of three places they always were, with
-    /// a place or two empty rather than a lonely button the column's width.
-    static func pinRows(_ count: Int, most: Int) -> [Int] {
+    /// How many squares go in each row: at most four. Full rows keep four places,
+    /// and the last row holds any remainder.
+    static func pinRows(_ count: Int, most: Int = 4) -> [Int] {
         guard count > 0 else { return [] }
         let most = max(1, most)
-        let rows = (count + most - 1) / most
-        let base = count / rows
-        let extra = count % rows
-        return (0..<rows).map { $0 < extra ? base + 1 : base }
+        let fullRows = count / most
+        let remainder = count % most
+        var rows = Array(repeating: most, count: fullRows)
+        if remainder > 0 { rows.append(remainder) }
+        return rows
     }
 
-    /// Where each square goes, in the order of the row. Each row splits the
-    /// column's width between its own squares — the row fills edge to edge,
-    /// not each cell on its own — and every row is as tall as the narrowest
-    /// cell allows, never taller than the classic square: past that a cell
-    /// turns into a wide, short button rather than a bigger icon.
+    /// Where each square goes, in the order of the row. When the column is
+    /// shrunk, it switches to a 3-column grid so icons stay normal-sized and
+    /// easy to click; otherwise it keeps 4 columns.
     private func pinCells(_ count: Int) -> [CGRect] {
+        guard count > 0 else { return [] }
         let room = width - 20
         let gap = SideBar.pinGap
-        let fits = Int((room + gap) / (SideBar.square + gap))
-        let rows = SideBar.pinRows(count, most: min(4, max(1, fits)))
-        // A row of fewer than three keeps three places.
-        let slots = rows.map { rows.count == 1 ? max($0, min(3, fits)) : $0 }
-        let widths = slots.map { max(20, (room - CGFloat($0 - 1) * gap) / CGFloat($0)) }
-        let height = min(SideBar.square, widths.min() ?? SideBar.square)
+        let cols = width < 205 ? 3 : 4
+        let cellWidth = max(20, (room - CGFloat(cols - 1) * gap) / CGFloat(cols))
+        let height = min(SideBar.square, cellWidth)
         var cells: [CGRect] = []
-        for (row, n) in rows.enumerated() {
-            for col in 0..<n {
-                cells.append(CGRect(x: CGFloat(col) * (widths[row] + gap),
-                                    y: CGFloat(row) * (height + gap),
-                                    width: widths[row], height: height))
-            }
+        for i in 0..<count {
+            let col = i % cols
+            let row = i / cols
+            cells.append(CGRect(x: CGFloat(col) * (cellWidth + gap),
+                                y: CGFloat(row) * (height + gap),
+                                width: cellWidth, height: height))
         }
         return cells
     }

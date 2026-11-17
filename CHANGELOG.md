@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- When the sidebar is shrunk narrower, the pinned tab grid adapts to 3 columns per row so each square keeps enough room and icons remain normal-sized and easy to click ([#1149](https://github.com/driceroland/Search/issues/1149)).
 - Control Panel for YouTube saves what you change in its popup. Its page starts with a `browser` of its own, and Search had fixed that name in place for every extension page, so the page stopped before any of it ran and its switches did nothing. Thanks [@ahmedtarekxo](https://github.com/ahmedtarekxo) for reporting ([#1124](https://github.com/driceroland/Search/issues/1124))
 - Closing or moving the tab a peek was opened from closes the peek. When that tab was the only one, or moved to another window or space, the peek stayed over the next tab. Thanks [@heychintan](https://github.com/heychintan) ([#1120](https://github.com/driceroland/Search/pull/1120))
 - The Bookmarks menu stays still and keeps your bookmarks while a tab's title changes many times a second, as a live trading chart's price does. Its title flickered at each change, and opened at the wrong moment it could show only its first three items. Thanks [@shubhammore121](https://github.com/shubhammore121) for reporting ([#1137](https://github.com/driceroland/Search/issues/1137))
