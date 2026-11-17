@@ -2032,6 +2032,65 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
+    /// ⌘-click on a pin: if it has wandered from its home address, moves that
+    /// tab into the loose tabs and opens a fresh tab for the pin at its home,
+    /// or opens a new tab with the pin's address if it is already at home.
+    func commandClickPin(_ tab: Tab) {
+        guard tab.pin != nil else { return }
+        clearTabSelection()
+        if editingPin == tab.id { editingPin = nil }
+
+        let home = tab.home ?? tab.address
+        let wandered = tab.home != nil && tab.address != nil && !Browser.samePage(tab.home!, tab.address)
+
+        if wandered, let home {
+            objectWillChange.send()
+            let letter = tab.pin
+            let pinID = tab.pinID
+            let listed = tab.listed
+            let everywhere = tab.everywhere
+            let wasActive = activeID == tab.id
+            guard let pinIndex = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+
+            // A fresh tab for the pin, at its pinned address.
+            let newPin = Tab(configuration: Web.configuration(space: spaceID))
+            prepare(newPin)
+            newPin.pin = letter
+            newPin.home = home
+            newPin.pinID = pinID
+            newPin.listed = listed
+            newPin.everywhere = everywhere
+            newPin.pinFolder = tab.pinFolder
+            newPin.name = tab.name
+            newPin.go(to: home)
+
+            // The wandered page becomes a loose tab.
+            tab.pin = nil
+            tab.listed = false
+            tab.pinFolder = nil
+            tab.home = nil
+            tab.pinID = nil
+            tab.everywhere = false
+            tab.name = nil
+
+            tabs.remove(at: pinIndex)
+            tabs.insert(newPin, at: pinIndex)
+            let unpinnedSlot = min(pinnedCount, tabs.count)
+            tabs.insert(tab, at: unpinnedSlot)
+
+            if wasActive {
+                leaving()
+                activeID = newPin.id
+                editing = false
+                typed = ""
+            }
+            writeSession(now: true)
+            rememberSession()
+        } else if let url = home {
+            open(url, foreground: false, from: tab)
+        }
+    }
+
     /// Pin menu › Replace Pinned Page with Current URL: where the pin has
     /// wandered becomes the page it goes home to, as Arc's pins can. The
     /// other windows follow through pins.json (see writeSession).
@@ -5416,8 +5475,14 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Command toggles one tab; Shift picks the visible run from the last
-    /// clicked tab (or the active tab when a selection begins).
+    /// clicked tab (or the active tab when a selection begins). With the
+    /// setting on, a pin clicked with ⌘ (and no ⇧) opens a new tab or moves
+    /// a wandered tab instead.
     func extendTabSelection(to tab: Tab, modifiers: NSEvent.ModifierFlags) {
+        if prefs.pinCommandOpensTab, tab.pin != nil, modifiers.contains(.command), !modifiers.contains(.shift) {
+            commandClickPin(tab)
+            return
+        }
         let shown = selectableTabs.map(\.id)
         guard let end = shown.firstIndex(of: tab.id) else { return }
         if modifiers.contains(.shift) {

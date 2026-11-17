@@ -16,6 +16,10 @@ in [ROADMAP.md](ROADMAP.md).
 - An extension that opens its popup itself when its button is clicked shows it, as Inoreader does in its Extended mode. Inoreader sets the popup, opens it and sets it back to none in one go, and Search, asked to show it a moment later, found none and showed nothing: the click only seemed to turn the button on and off. The popup is now taken as it is when the extension asks. Thanks [@varyform](https://github.com/varyform) ([#1155](https://github.com/driceroland/Search/pull/1155))
 - ⌫ no longer goes back a page, as in Safari: pressed outside a text box, or in a search box a page built its own way, it left the page and what you had typed. Back is ⌘[, or the key you chose in Settings. Thanks [@pasteley](https://github.com/pasteley) ([#1161](https://github.com/driceroland/Search/pull/1161))
 
+### Added
+
+- ⌘-click on a pinned tab moves a wandered page into the loose tabs and opens a fresh tab for the pin at its pinned address, or opens a new tab at that address when already at home. Off unless turned on in Settings › Spaces & Pins › ⌘-click on a pin opens a new tab ([#1142](https://github.com/driceroland/Search/issues/1142)). Thanks [@DHIRENSACHER](https://github.com/DHIRENSACHER) ([#1143](https://github.com/driceroland/Search/pull/1143))
+
 ### Held back
 
 Not in this version, kept on main for a later one:

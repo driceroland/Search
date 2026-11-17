@@ -791,6 +791,12 @@ final class Preferences: ObservableObject {
     @Published var pinsGoHome: Bool {
         didSet { store.set(pinsGoHome, forKey: "pins.home") }
     }
+    /// ⌘-click on a pin opens a new tab at its address (or moves a wandered
+    /// pin into the loose tabs), as in Arc. Off, ⌘-click adds the pin to the
+    /// tab selection.
+    @Published var pinCommandOpensTab: Bool {
+        didSet { store.set(pinCommandOpensTab, forKey: "pins.commandNewTab") }
+    }
     /// A pin's ⌘ number pressed again, on that pin, goes back to the tab
     /// you were on before it.
     /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
@@ -1021,6 +1027,7 @@ final class Preferences: ObservableObject {
         profilesInOneWindow = store.bool(forKey: "profiles.oneWindow")
         listsPins = store.bool(forKey: "pins.list")
         pinFolders = store.bool(forKey: "pins.folders")
+        pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
         // "Pins keep their site" is one switch over two keys (see
         // SettingsIndex): on when either was on, on by default when neither
         // was ever touched (Drice, 24 Oct 2026), off when one was turned
