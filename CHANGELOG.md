@@ -15,6 +15,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Spread two fingers on a peek to open it as a tab, as zooming into it: the panel grows a little with your fingers, the trackpad taps once when letting go will open it, and a lighter tap when your fingers come back under that. A page already zoomed in keeps its pinch.
 
+### Fixed
+
+- With the column hidden until the pointer reaches the edge and the window kept off the screen's edge, by a tiling window manager's gaps for one, a pointer flung against the screen's edge brings the column out at once. It waited for the pointer to stop, and started the wait again with every move as the hand settled. A pointer passing through to a display on that side still stops first. ([#1121](https://github.com/driceroland/Search/pull/1121))
+
 ### Held back
 
 Not in this version, kept on main for a later one:

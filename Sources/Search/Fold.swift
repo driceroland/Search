@@ -388,7 +388,18 @@ struct Fold: View {
             // Off the window, so whatever is under the pointer isn't it. The
             // wait starts again with every move: the column comes once the
             // pointer stops, not while it is on its way somewhere else.
-            arrive(resting: true)
+            // Unless it is pinned against the screen's own edge, with no
+            // display beyond: it has nowhere else to be going. A window kept
+            // off the screen's edge by a tiling window manager's gaps
+            // otherwise always waited here, and a hand still settling after
+            // the fling started the wait again with every move.
+            let further = NSPoint(x: screen.x + (onRight ? 1 : -1), y: screen.y)
+            if NSScreen.screens.contains(where: { NSMouseInRect(further, $0.frame, false) }) {
+                arrive(resting: true)
+            } else {
+                pass()
+                peek(true)
+            }
         } else {
             pass()
         }
