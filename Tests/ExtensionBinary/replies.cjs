@@ -59,5 +59,28 @@ const relayTimers=()=>{for(const timer of receiver.timers.splice(0))if(timer.del
  assert.equal(blocked,false,'an empty relay reply must not settle while another page holds the answer');
  held({kept:true});await drain();
  assert.deepEqual(await raced,{kept:true});
+
+ // Every open page replies empty and none is holding an answer: settle at
+ // once, the way Chrome does, instead of waiting out the countdown.
+ const bus3=new Map();
+ const asker=fixture(false), left=fixture(false), right=fixture(false);
+ for(const state of [asker,left,right]) {
+  state.root.BroadcastChannel=class {
+   constructor(name){this.name=name;if(!bus3.has(name))bus3.set(name,[]);bus3.get(name).push(this);}
+   postMessage(data){for(const peer of bus3.get(this.name))if(peer!==this)queueMicrotask(()=>peer.onmessage?.({data:structuredClone(data)}));}
+  };
+  vm.runInNewContext(script,state.root);
+ }
+ const fireEmpty=state=>{for(const timer of state.timers.splice(0))if(timer.delay===50)timer.callback();};
+ left.runtime.onMessage.addListener((message,sender,respond)=>{respond(undefined);});
+ right.runtime.onMessage.addListener((message,sender,respond)=>{respond(undefined);});
+ let quietSettled=false;
+ const quietAnswer=asker.runtime.sendMessage({nobody:'listening'}).then(r=>{quietSettled=true;return r;});
+ await drain();fireEmpty(left);fireEmpty(right);await drain();
+ assert.equal(quietSettled,true,'empty replies from every open page must not wait out the countdown');
+ assert.equal(await quietAnswer,undefined);
+ const waitingOut=asker.timers.some(timer=>timer.delay===10000);
+ assert.equal(waitingOut,true,'a page that never replies still has the countdown behind it');
+ for(const timer of asker.timers)if(timer.delay===10000)assert.equal(quietSettled,true,'the countdown must not be what settled every empty reply');
  console.log('PASS whole-shim relay-first async response survives empty native result and reordered late native duplicate');
 })().catch(e=>{console.error(e);process.exitCode=1;});

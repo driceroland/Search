@@ -1228,11 +1228,13 @@ enum ExtensionShims {
         if (!channel || inContent) return null;
         const id = me + ":" + (++relaySequence);
         const key = relayKey(message);
-        let finish, timer = null, held = false, settled = false;
+        let finish, timer = null, held = false, settled = false, expected = null;
+        const emptyFrom = new Set();
         const answer = new Promise((resolve) => { finish = resolve; });
         // An empty reply is not an answer: another page may still be holding
-        // the real one. The countdown is what settles "nobody answered", and
-        // it ends at once when the worker was the only one who heard.
+        // the real one. Once every page this copy was sent to has replied
+        // empty, there is nothing left to wait for. The countdown is only
+        // for a page that never replies at all.
         const settle = (value) => {
           if (settled) return;
           settled = true;
@@ -1242,13 +1244,25 @@ enum ExtensionShims {
           finish(value);
         };
         const countDown = () => { if (!settled && !timer) timer = setTimeout(() => settle(undefined), 10000); };
+        const everyEmpty = () => expected && [...expected].every((peer) => emptyFrom.has(peer));
         relayReplies.set(id, {
           key,
           held: () => { held = true; clearTimeout(timer); timer = null; },
-          reply: (value) => { if (value !== undefined) settle(value); else countDown(); },
+          reply: (value, from) => {
+            if (value !== undefined) settle(value);
+            else {
+              if (from) emptyFrom.add(from);
+              if (everyEmpty()) settle(undefined);
+              else countDown();
+            }
+          },
           alone: () => { if (!held) settle(undefined); },
         });
         countDown();
+        Promise.resolve().then(() => {
+          expected = new Set(peers);
+          if (expected.size === 0 || everyEmpty()) settle(undefined);
+        });
         try {
           const value = JSON.parse(JSON.stringify(message));
           channel.postMessage({ relay: value, from: me, url: location.href, replyTo: id });
@@ -1276,7 +1290,7 @@ enum ExtensionShims {
           if (!data || data.from === me) return;
           if (data.replyTo && data.to === me) {
             const pending = relayReplies.get(data.replyTo);
-            if (pending) data.held ? pending.held() : pending.reply(data.value);
+            if (pending) data.held ? pending.held() : pending.reply(data.value, data.from);
             return;
           }
           if (data.relay !== undefined) {

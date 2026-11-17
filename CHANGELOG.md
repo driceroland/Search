@@ -13,7 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- An extension's message to one of its own pages keeps its reply when a relayed copy arrives first, where Search dropped the native message and the sender waited until it timed out. ([#1058](https://github.com/driceroland/Search/issues/1058), [#1147](https://github.com/driceroland/Search/pull/1147))
+- An extension's message to one of its own pages keeps its reply when a relayed copy arrives first, where Search dropped the native message and the sender waited until it timed out. When every other open page answers empty, that message comes back at once. ([#1058](https://github.com/driceroland/Search/issues/1058), [#1147](https://github.com/driceroland/Search/pull/1147))
 - A link from another app that opens in a small window while Search is hidden (⌘H) comes alone. Shown again for it, Search brought back every window it had, so the browser's window came up beside the small one as if the link had opened twice; it now stays away until Open in Search, the Dock or ⌘N asks for it, as after a launch made by a link. A browser window brought forward by anything else while they are kept away goes back off screen.
 - Save to Notion's popup sees that you are signed in to Notion, where its "Log in" only took you to your Notion workspace. An extension's own page asking a site it has been granted, without asking for credentials, now sends that site's cookies, as Chrome does; Search sent them only when the extension asked for credentials outright.
 - The downloads card floating by its button keeps Resume, Retry and Remove on one line each, where a failed download's buttons broke in the middle of the word, and its shadow is lighter.
