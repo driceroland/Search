@@ -67,7 +67,7 @@
                                        and whether a drag from there would move the window;
                                        double: test run, a double-click there (start the probe hidden)
     ./bench place ID INDEX             put a tab at another place in the row
-    ./bench pinfolder [on|off|drawn|pin ID|new NAME [ID] [in FOLDER]|move ID FOLDER|none [before|after ID2]
+    ./bench pinfolder [on|off|drawn|pin ID|new NAME [ID] [in FOLDER]|move ID FOLDER|none [before|after ID2]|live URL|refresh NAME
                       |fold NAME|open NAME|rename NAME TO|nest NAME PARENT|none|delete NAME]
                                        test run: folders in pinned rows — the setting (on: rows too), a tab pinned
                                        as a row, a folder (holding a pin, or inside one), a pin moved, folded,
@@ -431,7 +431,8 @@ def main(argv):
         elif args: sys.exit("usage: bench group [ID new [NAME] | ID NAME | ID none | fold NAME | close NAME]")
     elif verb == "pinfolder":
         usage = ("usage: bench pinfolder [on|off|drawn|pin ID|new NAME [ID] [in FOLDER]|move ID FOLDER|none [before|after ID2]"
-                 "|fold NAME|open NAME|rename NAME TO|nest NAME PARENT|none|delete NAME]")
+                 "|fold NAME|open NAME|rename NAME TO|nest NAME PARENT|none|delete NAME"
+                 "|live URL [in FOLDER]|refresh NAME|openitem NAME TITLE]")
         if not args: request["action"] = "state"
         elif args[0] in ("on", "off", "drawn", "state") and len(args) == 1: request["action"] = args[0]
         elif args[0] == "pin" and len(args) == 2: request["action"], request["id"] = "pin", args[1]
@@ -449,6 +450,13 @@ def main(argv):
         elif args[0] in ("fold", "open", "delete") and len(args) == 2: request["action"], request["name"] = args[0], args[1]
         elif args[0] == "rename" and len(args) == 3: request["action"], request["name"], request["to"] = "rename", args[1], args[2]
         elif args[0] == "nest" and len(args) == 3: request["action"], request["name"], request["parent"] = "nest", args[1], args[2]
+        elif args[0] == "live" and len(args) in (2, 4):
+            request["action"], request["url"] = "live", args[1]
+            if len(args) == 4:
+                if args[2] != "in": sys.exit(usage)
+                request["in"] = args[3]
+        elif args[0] == "refresh" and len(args) == 2: request["action"], request["name"] = "refresh", args[1]
+        elif args[0] == "openitem" and len(args) == 3: request["action"], request["name"], request["title"] = "openitem", args[1], args[2]
         else: sys.exit(usage)
     elif verb == "popups":
         if not args: sys.exit("usage: bench popups ID [open N|allow] | sites | remove SITE")

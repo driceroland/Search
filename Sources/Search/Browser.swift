@@ -90,6 +90,7 @@ final class Browser: NSObject, ObservableObject {
             }
             if veiling { stopHiding() }
             if snapping { stopSnapping() }
+            if styling != nil { styling = nil }
             if displayTab?.id == oldValue { cancelDisplay() }
             if decideTab?.id == oldValue { settleCapture() }
             clearTabSelection()
@@ -748,6 +749,35 @@ final class Browser: NSObject, ObservableObject {
 
     var hereHost: String? { curtain.host(of: active?.address) }
     var hereVeils: [Veil] { curtain.veils(on: hereHost) }
+
+    /// The site whose style is being written, while View › Edit Site Style…
+    /// is up (see SiteStyles.swift).
+    @Published var styling: String?
+
+    /// View › Edit Site Style…. Not from a private tab, which writes nothing
+    /// down; a style written elsewhere is still worn there, as hidden
+    /// elements are.
+    func editSiteStyle() {
+        guard styling == nil else { styling = nil; return }
+        guard prefs.sitesStyles, let tab = active, tab.isWeb else { return }
+        guard !tab.shy else { return announce("Not in a private tab") }
+        guard let host = SiteStyles.host(of: tab.address) else { return }
+        if veiling { stopHiding() }
+        reviewing = false
+        styling = host
+    }
+
+    /// A site's style as it now stands, into the next page and the page up
+    /// now of every tab on that site; `host` nil, every tab.
+    private func restyle(_ host: String?) {
+        if !SiteStyles.shared.on, styling != nil { styling = nil }
+        for tab in tabs + parkedTabs + [peekTab].compactMap({ $0 }) {
+            let here = SiteStyles.host(of: tab.pageAddress)
+            guard host == nil || here == host else { continue }
+            tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+            tab.built?.callInSearch(SiteStyles.live, arguments: ["css": SiteStyles.shared.css(on: here) ?? ""])
+        }
+    }
 
     /// ⌘⇧H. Point at anything on the page and it goes, for good, on this site.
     func toggleHiding() {
@@ -2032,6 +2062,65 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
+    /// ⌘-click on a pin: if it has wandered from its home address, moves that
+    /// tab into the loose tabs and opens a fresh tab for the pin at its home,
+    /// or opens a new tab with the pin's address if it is already at home.
+    func commandClickPin(_ tab: Tab) {
+        guard tab.pin != nil else { return }
+        clearTabSelection()
+        if editingPin == tab.id { editingPin = nil }
+
+        let home = tab.home ?? tab.address
+        let wandered = tab.home != nil && tab.address != nil && !Browser.samePage(tab.home!, tab.address)
+
+        if wandered, let home {
+            objectWillChange.send()
+            let letter = tab.pin
+            let pinID = tab.pinID
+            let listed = tab.listed
+            let everywhere = tab.everywhere
+            let wasActive = activeID == tab.id
+            guard let pinIndex = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+
+            // A fresh tab for the pin, at its pinned address.
+            let newPin = Tab(configuration: Web.configuration(space: spaceID))
+            prepare(newPin)
+            newPin.pin = letter
+            newPin.home = home
+            newPin.pinID = pinID
+            newPin.listed = listed
+            newPin.everywhere = everywhere
+            newPin.pinFolder = tab.pinFolder
+            newPin.name = tab.name
+            newPin.go(to: home)
+
+            // The wandered page becomes a loose tab.
+            tab.pin = nil
+            tab.listed = false
+            tab.pinFolder = nil
+            tab.home = nil
+            tab.pinID = nil
+            tab.everywhere = false
+            tab.name = nil
+
+            tabs.remove(at: pinIndex)
+            tabs.insert(newPin, at: pinIndex)
+            let unpinnedSlot = min(pinnedCount, tabs.count)
+            tabs.insert(tab, at: unpinnedSlot)
+
+            if wasActive {
+                leaving()
+                activeID = newPin.id
+                editing = false
+                typed = ""
+            }
+            writeSession(now: true)
+            rememberSession()
+        } else if let url = home {
+            open(url, foreground: false, from: tab)
+        }
+    }
+
     /// Pin menu › Replace Pinned Page with Current URL: where the pin has
     /// wandered becomes the page it goes home to, as Arc's pins can. The
     /// other windows follow through pins.json (see writeSession).
@@ -2547,7 +2636,9 @@ final class Browser: NSObject, ObservableObject {
     /// The page as a card is off, and never with the window filling the
     /// screen, where the page goes edge to edge (#607). A page's own video
     /// filling the screen is the window's to add (see ContentView.cards).
-    var asCards: Bool { prefs.sidebar && prefs.cards && !fullScreen }
+    /// Settings › Appearance › Window › Keep the card in full screen, off
+    /// unless turned on, keeps it there too, as Arc and Zen do (#1152).
+    var asCards: Bool { prefs.sidebar && prefs.cards && (!fullScreen || prefs.cardsInFullScreen) }
     /// The extension a popup window was opened for (windows.create with
     /// type "popup"), or nil for a browser window. Such a window is small,
     /// the page under a thin line with its site; it is never saved, never
@@ -2957,6 +3048,11 @@ final class Browser: NSObject, ObservableObject {
                     tab.built?.evaluateInSearch(on ? AutoScroll.script : AutoScroll.off)
                 }
             }
+            .store(in: &bag)
+
+        // A site's own style (see SiteStyles.swift), written or switched off.
+        SiteStyles.shared.changed
+            .sink { [weak self] host in self?.restyle(host) }
             .store(in: &bag)
 
         // Dark pages (see Dusk.swift), turned on or off, paused, or switched
@@ -4276,8 +4372,11 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         // Reuse an empty tab at the chosen position, clearing its draft:
-        // repeated ⌘T must not leave a row of identical empty tabs.
-        if let blank = tabs.last(where: { $0.isBlank && !$0.bench && !$0.shy && split(for: $0) == nil }) {
+        // repeated ⌘T must not leave a row of identical empty tabs. Never
+        // one in a group: ⌘T's tab is in none, and an empty tab left in a
+        // group took the page typed next into it (#1151).
+        if let blank = tabs.last(where: { $0.isBlank && !$0.bench && !$0.shy && split(for: $0) == nil
+                                          && !(prefs.usesTabGroups && group(of: $0) != nil) }) {
             placeBlank(blank)
             if activeID != blank.id { leaving() }
             activeID = blank.id
@@ -4361,6 +4460,8 @@ final class Browser: NSObject, ObservableObject {
         // wake is this the other case, one whose page quietly died while you
         // were elsewhere, which revive() checks for on its own.
         if !tab.wake() { tab.revive() }
+        // Show the page now rather than after SwiftUI's update (see PaneStage.show(now:)).
+        if activeSplit == nil, let window { PaneStage.stages.object(forKey: window)?.show(now: tab) }
         if let pair = activeSplit {
             for other in tabs where pair.contains(other.id) && other.id != tab.id {
                 if !other.isBlank, !other.wake() { other.revive() }
@@ -5382,9 +5483,17 @@ final class Browser: NSObject, ObservableObject {
         guard prefs.usesTabGroups else { return row.map { ($0.id, $0) } }
         let off = pairedOff
         let buckets = grouping(tabs)
+        // In an open group, a tab holding no page — put away, asleep, or not
+        // opened since launch — is drawn dimmed as closed, so ⌘1–9 counts
+        // past it, as ⌃Tab does (#1092): ⌘1 went to a group's closed tabs
+        // before the open ones under them (#1159). The tab you're on still
+        // counts, and a folded group is still one place, whatever it holds.
+        let here = activeID
         let groups = tabGroups.flatMap { group -> [(id: UUID, tab: Tab)] in
             let members = (buckets[group.id] ?? []).filter { !off.contains($0.id) }
-            guard group.collapsed else { return members.map { ($0.id, $0) } }
+            guard group.collapsed else {
+                return members.filter { !$0.asleep || $0.id == here }.map { ($0.id, $0) }
+            }
             let current = active.flatMap { self.group(of: $0) == group.id ? $0 : nil }
             guard let tab = current ?? members.max(by: { $0.touched < $1.touched }) else { return [] }
             return [(group.id, tab)]
@@ -5411,8 +5520,14 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Command toggles one tab; Shift picks the visible run from the last
-    /// clicked tab (or the active tab when a selection begins).
+    /// clicked tab (or the active tab when a selection begins). With the
+    /// setting on, a pin clicked with ⌘ (and no ⇧) opens a new tab or moves
+    /// a wandered tab instead.
     func extendTabSelection(to tab: Tab, modifiers: NSEvent.ModifierFlags) {
+        if prefs.pinCommandOpensTab, tab.pin != nil, modifiers.contains(.command), !modifiers.contains(.shift) {
+            commandClickPin(tab)
+            return
+        }
         let shown = selectableTabs.map(\.id)
         guard let end = shown.firstIndex(of: tab.id) else { return }
         if modifiers.contains(.shift) {
@@ -5514,12 +5629,15 @@ final class Browser: NSObject, ObservableObject {
 
     /// The row's tabs the switcher offers: not a pin put down, nor a grouped
     /// tab put away, which hold no page and are drawn dimmed in the column as
-    /// closed (#1092). The tab you're on stays, whatever it is.
+    /// closed (#1092). With `tabs.switcherLeavesOutPins` on, pinned tabs are
+    /// left out (#1110). The tab you're on stays, whatever it is.
     private var switcherRow: [Tab.ID] {
         let current = activeSplit?.left ?? activeID
+        let leavesOutPins = prefs.switcherLeavesOutPins
         return tabs.filter { tab in
-            standsInRow(tab) && (tab.id == current || !tab.asleep
-                || (tab.pin == nil && !(prefs.usesTabGroups && group(of: tab) != nil)))
+            standsInRow(tab) && (!leavesOutPins || tab.pin == nil || tab.id == current)
+                && (tab.id == current || !tab.asleep
+                    || (tab.pin == nil && !(prefs.usesTabGroups && group(of: tab) != nil)))
         }.map(\.id)
     }
 
@@ -7039,11 +7157,13 @@ final class Browser: NSObject, ObservableObject {
 
     /// What is open, most recently looked at first, filtered by what has been
     /// typed. On an empty field this is the whole point of the summon: it is
-    /// the tab strip, except you read it only when you ask for it.
-    private func openPages(matching typed: String) -> [Suggestion] {
+    /// the tab strip, except you read it only when you ask for it. Not the
+    /// tab in front, which ⌘K is pressed over — unless `front`: the address
+    /// field raised from another app (Launcher.swift) is pressed over none.
+    func openPages(matching typed: String, front: Bool = false) -> [Suggestion] {
         let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
         return tabs
-            .filter { $0.id != activeID && !$0.isBlank }
+            .filter { (front || $0.id != activeID) && !$0.isBlank }
             .filter { tab in
                 guard !needle.isEmpty else { return true }
                 let address = tab.address.map { Address.pretty($0) } ?? ""

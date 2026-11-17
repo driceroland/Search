@@ -225,6 +225,12 @@ struct SearchApp: App {
                     .shortcut("view.hide")
                 Button("Hidden on This Site…") { browser.reviewing.toggle() }
                     .shortcut("view.hidden")
+                // Only once it is on (Settings › Browsing › Pages).
+                if browser.prefs.sitesStyles {
+                    Button("Edit Site Style…") { browser.editSiteStyle() }
+                        .shortcut("view.style")
+                        .disabled(!(browser.active?.isWeb ?? false) || browser.active?.shy == true)
+                }
                 Divider()
                 Button("Zoom In") { browser.zoom(by: 1.1) }
                     .shortcut("view.zoomIn")
@@ -505,6 +511,10 @@ struct ContentView: View {
             // With the tabs down the side, the ground the page's card and the
             // column sit on (see CardEdge).
             (fullscreenTab != nil ? Color.black : cards ? Palette.frame : Palette.ground)
+            // As cards, the column, the bookmarks bar and the gaps around the
+            // page share that ground, so the space's colour washes all of it
+            // alike. Edge to edge the column and the strip bring their own.
+            if cards { SpaceWash(colour: browser.washColour) }
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
@@ -791,6 +801,21 @@ struct ContentView: View {
             .ignoresSafeArea()
             .transition(.opacity)
         }
+        if let host = browser.styling {
+            // The same: the page stays in view, wearing what you type.
+            ZStack(alignment: .topTrailing) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { browser.styling = nil }
+                StylePanel(browser: browser, host: host)
+                    .id(host)
+                    .padding(.top, Metrics.strip + 8)
+                    .padding(.trailing, 14)
+                    .transition(.scale(scale: 0.97, anchor: .topTrailing).combined(with: .opacity))
+            }
+            .ignoresSafeArea()
+            .transition(.opacity)
+        }
     }
 
     /// The ⌃Tab switcher, small windows' moons included. Its own property:
@@ -920,6 +945,7 @@ struct ContentView: View {
             .animation(Motion.settle, value: browser.welcoming)
             .animation(Motion.settle, value: browser.newsShowing)
             .animation(Motion.settle, value: browser.reviewing)
+            .animation(Motion.settle, value: browser.styling)
         .onAppear {
             watchKeys()
             browser.askFocus()
@@ -1207,6 +1233,11 @@ struct ContentView: View {
             // each takes only its own window's, and the one in front takes
             // those of windows that aren't a browser's (a panel, the little
             // window).
+            // The address field raised from another app answers its own keys
+            // (Launcher.swift): taken here, Escape would put away what is up
+            // in the window behind it, ⌘W close a tab there, and a key typed
+            // while this window's field is on its way be held for it.
+            if Launcher.owns(event.window) { return event }
             guard mine(event) else { return event }
             guard event.type == .keyDown else {
                 let held = browser.prefs.showsTabShortcuts && event.modifierFlags.contains(.command)
@@ -1413,7 +1444,7 @@ struct ContentView: View {
         // Settings, History and the rest are tabs, and ⌃Tab goes to and
         // from them like any other.
         return !browser.welcoming &&
-            !browser.reviewing && !browser.bookmarksOpen &&
+            !browser.reviewing && browser.styling == nil && !browser.bookmarksOpen &&
             !browser.veiling && !browser.summoning && !browser.makingSpace &&
             !browser.peekInFront && browser.editingTab == nil &&
             browser.asking == nil && browser.offering == nil && browser.suggesting == nil
@@ -1431,6 +1462,8 @@ struct ContentView: View {
         if event.window?.sheetParent != nil || NSApp.modalWindow != nil { return false }
         // A small window's keys are its own (see Little.swift).
         if let little = LittleWindow.owning(event.window) { return little.take(event) }
+        // Nor the address field raised from another app's (Launcher.swift).
+        if Launcher.owns(event.window) { return false }
         // A popup window: ⌘W closes it, not a tab of the
         // window menus act on. New tabs return to its browser; Escape
         // dismisses its permission question.
@@ -1519,6 +1552,10 @@ struct ContentView: View {
             }
             if browser.reviewing {
                 browser.reviewing = false
+                return true
+            }
+            if browser.styling != nil {
+                browser.styling = nil
                 return true
             }
             if browser.finding {
@@ -1639,6 +1676,7 @@ struct ContentView: View {
                 if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
                 if Command.archive.contains(command.id), browser.prefs.tabLife == .never { return false }
                 if Command.capture.contains(command.id), !browser.prefs.capturesPages { return false }
+                if Command.styles.contains(command.id), !browser.prefs.sitesStyles { return false }
                 // An arrow the text system uses moves the caret, whichever
                 // command wears it — Back on ⌘←, or anything else on ⌘↑ or
                 // ⌥→. The menu wears the same key, so it is taken off for

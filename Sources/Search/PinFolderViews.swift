@@ -51,7 +51,7 @@ struct PinFolderHeading: View {
         .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
         .frame(maxWidth: .infinity)
         .frame(height: GroupHeading.compactHeight)
-        .help(folder.collapsed ? "\(folder.name) — folded" : folder.name)
+        .help(folder.collapsed ? "\(folder.name) — folded" : (tip.isEmpty ? folder.name : "\(folder.name) — \(tip)"))
         .popover(isPresented: Binding(get: { editing }, set: { if !$0 { browser.editingPinFolder = nil } }),
                  arrowEdge: browser.prefs.sidePosition == .right ? .leading : .trailing) {
             field
@@ -70,7 +70,7 @@ struct PinFolderHeading: View {
                 .font(.system(size: 8.5, weight: .semibold))
                 .rotationEffect(.degrees(folder.collapsed ? 0 : 90))
                 .frame(width: 10)
-            Image(systemName: folder.collapsed ? "folder" : "folder.fill")
+            Image(systemName: glyph)
                 .font(.system(size: 11))
             if editing {
                 field
@@ -87,6 +87,7 @@ struct PinFolderHeading: View {
         .padding(.leading, CGFloat(depth) * Self.indent)
         .frame(height: GroupHeading.height)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .help(tip)
         .onChange(of: editing) { _, now in
             if now {
                 draft = folder.name
@@ -99,6 +100,19 @@ struct PinFolderHeading: View {
                 DispatchQueue.main.async { focused = true }
             }
         }
+    }
+
+    /// A live folder's mark is the feed's, open or folded alike.
+    private var glyph: String {
+        if folder.isLive { return "dot.radiowaves.up.forward" }
+        return folder.collapsed ? "folder" : "folder.fill"
+    }
+
+    /// A live folder's feed, or that its last fetch failed: nothing louder.
+    private var tip: String {
+        guard let feed = folder.feed else { return "" }
+        if LiveFolders.failed.contains(folder.id) { return "Couldn’t refresh" }
+        return feed.host() ?? feed.absoluteString
     }
 
     private var field: some View {
@@ -120,8 +134,14 @@ struct PinFolderHeading: View {
         let folders = browser.pinFolders
         Button("Rename Folder") { browser.editingPinFolder = folder.id }
         Button(folder.collapsed ? "Expand Folder" : "Collapse Folder") { browser.togglePinFolder(folder.id) }
-        Button("New Folder Inside") { browser.newPinFolder(in: folder.id) }
-            .disabled(!PinTree.canMake(in: folder.id, in: folders))
+        if folder.isLive {
+            Button("Refresh") { LiveFolders.refresh(folder.id, in: browser.spaceID) }
+        } else {
+            Button("New Folder Inside") { browser.newPinFolder(in: folder.id) }
+                .disabled(!PinTree.canMake(in: folder.id, in: folders))
+            Button("New Live Folder Inside…") { LiveFolders.ask(for: browser, in: folder.id) }
+                .disabled(!PinTree.canMake(in: folder.id, in: folders))
+        }
         Menu("Move Folder To") {
             Button("Top of Pinned Rows") { browser.movePinFolder(folder.id, into: nil) }
                 .disabled(folder.parent == nil)
@@ -137,13 +157,64 @@ struct PinFolderHeading: View {
     }
 }
 
+/// One post of a live folder (LiveFolders.swift): its title, set in under
+/// the folder's heading. A click opens it in a new tab; it is never a pin,
+/// and nothing carries it. With icons only, a tile with the post's title in
+/// its tooltip.
+struct FeedItemRow: View {
+    @Environment(\.greys) private var greys
+    let browser: Browser
+    @ObservedObject var prefs: Preferences
+    let item: FeedItem
+    let depth: Int
+    var compact = false
+    var interactive = true
+
+    @State private var hovering = false
+
+    var body: some View {
+        Group {
+            if compact {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 11))
+                    .frame(width: Metrics.iconTile, height: Metrics.iconTile)
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 10))
+                        .frame(width: 15)
+                    Text(item.title)
+                        .font(.system(size: prefs.sideTitle))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.leading, CGFloat(depth) * PinFolderHeading.indent)
+                .frame(height: prefs.sideRow)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .foregroundStyle(hovering ? Palette.ink : Palette.ink.opacity(0.75))
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(hovering ? greys.hover : .clear))
+        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .onTapGesture { if interactive { browser.openFeedItem(item) } }
+        .onHover { hovering = interactive && $0 }
+        .help(compact ? item.title : item.link.absoluteString)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.title)
+        .accessibilityAddTraits(.isLink)
+    }
+}
+
 /// The folders as a menu lists them: in drawn order, each set in under the
 /// one that holds it.
 enum PinFolderMenu {
     struct Entry { let folder: PinFolder; let title: String }
 
+    /// A live folder is left out: nothing is moved into one.
     static func entries(_ folders: [PinFolder]) -> [Entry] {
-        let open = folders.map { folder -> PinFolder in
+        let open = folders.filter { !$0.isLive }.map { folder -> PinFolder in
             var folder = folder
             folder.collapsed = false
             return folder

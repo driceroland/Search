@@ -190,6 +190,10 @@ struct SideBar: View {
         .background {
             ZStack {
                 landing ? greys.hover : onFrame ? Palette.frame : Palette.ground
+                // The space's colour, if it has one: over the ground, so the
+                // column stays opaque and folded out over the page it brings
+                // the same wash along.
+                SpaceWash(colour: browser.washColour)
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
@@ -445,6 +449,8 @@ struct SideBar: View {
                     switch line {
                     case .folder(let folder, let depth):
                         PinFolderHeading(browser: browser, folder: folder, depth: depth, compact: icons, interactive: false)
+                    case .item(let item, _, let depth):
+                        FeedItemRow(browser: browser, prefs: prefs, item: item, depth: depth, compact: icons, interactive: false)
                     case .pin(let tab, let depth):
                         if icons {
                             IconTile(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
@@ -705,6 +711,12 @@ struct SideBar: View {
                         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
                             pinLineFrames.rects[folder.id] = $0
                         }
+                case .item(let item, _, let depth):
+                    // A live folder's post: opened, never carried.
+                    FeedItemRow(browser: browser, prefs: prefs, item: item, depth: depth, compact: icons)
+                        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
+                            pinLineFrames.rects[item.id] = $0
+                        }
                 case .pin(let tab, let depth):
                     Group {
                         if icons {
@@ -748,6 +760,7 @@ struct SideBar: View {
             switch line {
             case .folder(let folder, let depth): return (.folder(folder, depth: depth), rect)
             case .pin(let tab, let depth): return (.pin(tab.id, depth: depth), rect)
+            case .item(let item, let folder, let depth): return (.item(item, folder: folder, depth: depth), rect)
             }
         }
         var folders: [UUID: UUID?] = [:]

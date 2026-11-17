@@ -57,7 +57,14 @@ struct BookmarksBar: View {
                 withAnimation(Motion.glide) { browser.prefs.bookmarksBar = false }
             }
         }
-        .background(onFrame ? Palette.frame : Palette.ground)
+        .background {
+            ZStack {
+                onFrame ? Palette.frame : Palette.ground
+                // The tabs' wash carried on under them, or the colour
+                // stopped at the bar's edge.
+                SpaceWash(colour: browser.washColour)
+            }
+        }
         .overlay(alignment: .bottom) {
             if !onFrame { Rectangle().fill(Palette.hairline).frame(height: 1) }
         }

@@ -89,9 +89,9 @@ extension Browser {
         // Split View on, the other pane is still there to point at.
         if editing, let active, !active.isBlank, active.built === page { return true }
         // What comes over the whole window: the ⌃Tab switcher, the hidden
-        // elements' list (a click beside it puts it away), Welcome and
-        // What's New.
-        if tabSwitcher.visible || reviewing || welcoming || newsShowing { return true }
+        // elements' list and a site's style (a click beside either puts it
+        // away), Welcome and What's New.
+        if tabSwitcher.visible || reviewing || styling != nil || welcoming || newsShowing { return true }
         // The Find bar is a pill over one corner of the page: whatever a
         // click there would land on decides. Asking the window costs far more
         // than the flags above, so only while the bar is open.

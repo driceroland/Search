@@ -135,6 +135,7 @@ enum Web {
         }
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
         inspector(config.preferences)
+        backspaceStays(config.preferences)
         NativePiP.allow(config.preferences)
         return config
     }
@@ -165,6 +166,15 @@ enum Web {
         guard preferences.responds(to: set) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
         unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, on)
+    }
+
+    /// WebKit's ⌫ as Back and ⇧⌫ as Forward, off as in Safari. Back is ⌘[,
+    /// or what Settings gives it.
+    static func backspaceStays(_ preferences: WKPreferences) {
+        let set = NSSelectorFromString("_setBackspaceKeyNavigationEnabled:")
+        guard preferences.responds(to: set) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, false)
     }
 }
 
@@ -1198,6 +1208,12 @@ final class Tab: ObservableObject, Identifiable {
         scripts += YouTubeAds.scripts(for: Dusk.host(of: url ?? pageAddress))
         if !css.isEmpty {
             add(Veiling.style(css), .atDocumentStart, mainFrameOnly: true, in: Web.world)
+        }
+        // Your own style for this site, the same way and in the same place:
+        // only with the setting on, and only a site you wrote one for (see
+        // SiteStyles.swift).
+        if let style = SiteStyles.shared.css(on: SiteStyles.host(of: url ?? pageAddress)) {
+            add(SiteStyles.script(style), .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
         // The same scripts as the document before's, the usual case, are
         // left where they are: taken out and put back, every one was sent to

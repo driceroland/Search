@@ -3488,6 +3488,46 @@ final class Bench {
                 "active": browser.active.flatMap { Store.testing || !$0.shy ? $0.address?.host() : nil } ?? "",
             ])
 
+        case "launcher":
+            // The address field from any app (Launcher.swift), in its model
+            // alone: on a run the bench drives the key is never asked of
+            // macOS and the panel never shown. "fire" is the key pressed.
+            guard Store.testing else { answer(["error": "launcher only works on a --test run"]); return }
+            let launcher = Launcher.shared
+            let prefs = Shared.prefs
+            switch request["action"] as? String ?? "state" {
+            case "on": prefs.launcher = request["on"] as? Bool ?? true
+            // ⇧⌘Space, as Settings offers it, or "none".
+            case "key": prefs.launcherKey = (request["key"] as? String) == "none" ? nil : .suggested
+            case "fire": launcher.toggle()
+            case "type": launcher.type(request["text"] as? String ?? "")
+            case "pick": launcher.picked = request["index"] as? Int
+            case "submit": launcher.submit()
+            case "escape": launcher.dismiss()
+            case "state": break
+            default:
+                answer(["error": "launcher takes on, key, fire, type, pick, submit, escape or state"])
+                return
+            }
+            // A turn later, once the switch's and the key's sinks have run.
+            DispatchQueue.main.async {
+                let front = Browsers.front ?? browser
+                answer([
+                    "on": prefs.launcher,
+                    "key": prefs.launcherKey?.combo.display ?? "",
+                    "wants": launcher.wants,
+                    "registered": HotKey.isSet,
+                    "up": launcher.up,
+                    "typed": launcher.typed,
+                    "offers": launcher.offers.map { ["url": $0.url.absoluteString, "open": $0.tab != nil, "kind": "\($0.kind)"] },
+                    // The window's own field, which the launcher's never shows in.
+                    "editing": front.editing,
+                    "windows": Browsers.all.filter { $0.isOpen && !$0.isPopup }.count,
+                    "tabs": front.tabs.map { ["id": Bench.short($0), "address": $0.address?.absoluteString ?? "", "private": $0.shy] },
+                    "active": front.active.map { Bench.short($0) } ?? "",
+                ])
+            }
+
         case "site":
             // The site card for the tab on screen, or one step in on its
             // connection, drawn off screen (see SiteCard.swift).
@@ -3534,7 +3574,10 @@ final class Bench {
                     "setting": browser.prefs.pinFolders, "rows": browser.prefs.showsPinRows,
                     "drawsFolders": browser.showsPinFolderRows,
                     "folders": now.map { ["id": $0.id.uuidString, "name": $0.name, "parent": name($0.parent),
-                                          "collapsed": $0.collapsed, "depth": PinTree.depth(of: $0.id, in: now)] as [String: Any] },
+                                          "collapsed": $0.collapsed, "depth": PinTree.depth(of: $0.id, in: now),
+                                          "feed": $0.feed?.absoluteString ?? NSNull(),
+                                          "items": ($0.items ?? []).map { [$0.title, $0.link.absoluteString] },
+                                          "failed": LiveFolders.failed.contains($0.id)] as [String: Any] },
                     // kind, depth, title, folded: what the column draws.
                     "lines": browser.pinRowLines().map(\.described),
                     // The rows in the order the row (and pins.json) keeps them.
@@ -3591,6 +3634,37 @@ final class Bench {
             case "delete":
                 guard let folder = named("name") else { answer(["error": "no folder “\(request["name"] as? String ?? "")”"]); return }
                 browser.deletePinFolder(folder.id)
+            case "live":
+                // New Live Folder… with its address typed (LiveFolders.swift):
+                // fetched, and the folder made from what it said.
+                guard let url = Feed.address(request["url"] as? String ?? "") else { answer(["error": "live needs a url"]); return }
+                let parent = named("in")?.id
+                Task { @MainActor in
+                    switch await Feed.load(url) {
+                    case .success(let read): answer(state(["made": browser.newLiveFolder(read, in: parent).uuidString]))
+                    case .failure(let problem): answer(state(["error": problem.said(url)]))
+                    }
+                }
+                return
+            case "refresh":
+                // Refresh in a live folder's menu; answered once it is back.
+                guard let folder = named("name"), folder.isLive else { answer(["error": "no live folder “\(request["name"] as? String ?? "")”"]); return }
+                LiveFolders.refresh(folder.id, in: browser.spaceID)
+                func wait(_ left: Int) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        if LiveFolders.isFetching(folder.id) && left > 0 { wait(left - 1) } else { answer(state()) }
+                    }
+                }
+                wait(150)
+                return
+            case "openitem":
+                // A live folder's post clicked: its page in a new tab.
+                guard let folder = named("name"), let title = request["title"] as? String,
+                      let item = folder.items?.first(where: { $0.title == title })
+                else { answer(["error": "no post “\(request["title"] as? String ?? "")” in that folder"]); return }
+                browser.openFeedItem(item)
+                answer(state(["opened": item.link.absoluteString, "front": browser.active.map { ["pinned": $0.pin != nil] } ?? NSNull()]))
+                return
             case "drawn":
                 // The column drawn off screen, as `column` draws it, and the
                 // lines it drew read back: kind, depth, title, folded.
@@ -3608,7 +3682,7 @@ final class Bench {
                 }
                 return
             default:
-                answer(["error": "pinfolder: state|on|off|pin|new|move|fold|open|rename|nest|delete|drawn"]); return
+                answer(["error": "pinfolder: state|on|off|pin|new|move|fold|open|rename|nest|delete|live|refresh|openitem|drawn"]); return
             }
             answer(state())
 
@@ -3705,6 +3779,9 @@ final class Bench {
                 SpaceSwipe.shared.ended()
             case "move":
                 if let index = request["index"] as? Int { browser.moveSpace(browser.spaceID, to: index - 1) }
+            case "colour":
+                // The space on screen's colour, by index into Spaces.colours.
+                browser.setSpaceColour(browser.spaceID, to: request["colour"] as? Int ?? 0)
             case "menu":
                 // A space chosen from the space's menu, by its title, as a click would.
                 let menu = SpaceMenu.menu(for: browser)
@@ -3727,6 +3804,8 @@ final class Bench {
                 "parked": browser.parked.map { [$0.key.uuidString: $0.value.tabs.count] },
                 "tabs": browser.tabs.count,
                 "making": browser.makingSpace,
+                // The colour the chrome is washed with, by name; "" for none.
+                "wash": browser.washColour.map { Spaces.colourNames[$0] } ?? "",
                 "swipe": Double(browser.spaceSwipe),
                 // Each space off screen as a swipe draws it passing by
                 // (Parked.drawn): its groups, folded or not, and their tabs.
@@ -3973,6 +4052,17 @@ final class Bench {
             default:
                 answer(["error": "popups state|open|allow|remove|sites"])
             }
+
+        case "sitestyle":
+            // A site's own style written as the editor writes it (see
+            // SiteStyles.swift), and what the store then holds. Test runs
+            // only: it writes styles.json.
+            guard Store.testing else { answer(["error": "sitestyle only works on a --test run"]); return }
+            guard let host = request["host"] as? String else { answer(["error": "sitestyle needs host"]); return }
+            if let on = request["on"] as? Bool { browser.prefs.sitesStyles = on }
+            if let css = request["css"] as? String { SiteStyles.shared.set(css, on: host) }
+            answer(["on": SiteStyles.shared.on, "css": SiteStyles.shared.css(on: host) ?? "",
+                    "written": SiteStyles.shared.written(on: host), "editing": browser.styling ?? ""])
 
         case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "capture", "capture-stop":
             guard #available(macOS 15.4, *) else {

@@ -204,6 +204,7 @@ final class Extensions: NSObject, ObservableObject {
         Extensions.pages = views.userContentController
         ExtensionWorkerRecovery.shared.attach(views.userContentController)
         ExtensionCapture.mockDevices(views.preferences)
+        Web.backspaceStays(views.preferences)
         configuration.webViewConfiguration = views
         controller = WKWebExtensionController(configuration: configuration)
         super.init()
@@ -1720,6 +1721,15 @@ final class Extensions: NSObject, ObservableObject {
             if let puzzle = map[Extensions.menuAnchor]?.view, puzzle.window != nil { return puzzle }
         }
         return nil
+    }
+
+    /// action.openPopup: the button's popup as it is now, in the window in
+    /// front. False when the button has none.
+    func openPopup(for context: WKWebExtensionContext) -> Bool {
+        let target = browser
+        guard let url = popupURL(for: context, in: target) else { return false }
+        ExtensionPopup.shared.show(url, for: context, from: anchor(for: context.uniqueIdentifier, in: target), in: target)
+        return true
     }
 
     /// The page the button's popup is now: one the extension set for this

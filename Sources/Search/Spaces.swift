@@ -66,6 +66,23 @@ enum Spaces {
     ]
     static let colourNames = ["None", "Blue", "Green", "Orange", "Red", "Violet"]
 
+    /// How much of a space's colour the chrome behind the tabs wears: the
+    /// column, the strip, the bookmarks bar and the ground around the page's
+    /// card, never the page. Faint, as Arc's space themes are: enough to
+    /// tell at the edge of the eye which space this is, not so much that a
+    /// tab's grey or a title's ink reads any differently. The dark ground
+    /// swallows more of a colour, so it takes a little more.
+    static let washLight = 0.07
+    static let washDark = 0.11
+
+    /// The wash for colour COLOUR, or nil for none: no colour, or an index
+    /// out of range from a newer Search. Nil draws nothing at all, so a
+    /// space without a colour looks exactly as every space did before.
+    static func wash(_ colour: Int?, dark: Bool) -> Double? {
+        guard let colour, colour > 0, colours.indices.contains(colour) else { return nil }
+        return dark ? washDark : washLight
+    }
+
     /// The icons a space can wear: Apple's own symbols, drawn in one weight
     /// and one grey, grouped as work, thinking, leisure and life.
     static let icons = [
@@ -313,6 +330,13 @@ struct Parked {
 extension Browser {
     var space: Space { spaces.first { $0.id == spaceID } ?? spaces[0] }
 
+    /// The colour the chrome is washed with (see Spaces.wash): the space on
+    /// screen's, so it follows a swipe, ⌃1–⌃9 and the profile shown. None
+    /// with spaces off, and while a new one is being made, as the dot has.
+    var washColour: Int? {
+        prefs.usesSpaces && !makingSpace && space.tint != nil ? space.colour : nil
+    }
+
     /// Every tab of the spaces not on screen, for the sleep timer.
     var parkedTabs: [Tab] { parked.values.flatMap(\.tabs) }
 
@@ -555,6 +579,25 @@ extension Browser {
 /// tabs in the row. One icon however many spaces there are; a click opens
 /// the menu. When the space changes the icon turns over the way the spaces
 /// went — out on one side, the next one in from the other.
+/// A space's colour laid faintly over the chrome's own ground. Handed the
+/// colour rather than the browser, so it is drawn again only when the
+/// colour changes, not on everything the browser announces. A change
+/// crossfades once and is done: nothing runs while it stays.
+struct SpaceWash: View {
+    let colour: Int?
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ZStack {
+            if let colour, let opacity = Spaces.wash(colour, dark: scheme == .dark) {
+                Spaces.colours[colour].opacity(opacity)
+            }
+        }
+        .allowsHitTesting(false)
+        .animation(Motion.quick, value: colour)
+    }
+}
+
 struct SpaceDot: View {
     @ObservedObject var browser: Browser
     @State private var hovering = false
@@ -848,6 +891,15 @@ enum Ask {
             guard ok, !name.isEmpty else { cancelled(); return }
             then(name, fresh.state != .on)
         }
+    }
+
+    /// Something to say, with nothing to answer but OK.
+    static func tell(_ title: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.addButton(withTitle: "OK")
+        show(alert) { _ in }
     }
 
     /// `returnCancels`: Return is Cancel's, for a yes that can't be undone.

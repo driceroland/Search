@@ -112,6 +112,11 @@ final class TabShortcutHintTests: XCTestCase {
         let splitGroup = browser.addTabGroup(containing: tabs[0])
         let group = browser.addTabGroup(containing: tabs[2])
         browser.move(tabs[3], toGroup: group)
+        // Restored and never shown, they hold no page: drawn dimmed as
+        // closed in an open group, and passed over by ⌘1–9 (#1159).
+        XCTAssertNil(browser.tabShortcutNumbers[tabs[2].id], "A grouped tab holding no page has no number")
+        XCTAssertNil(browser.tabShortcutNumbers[tabs[3].id])
+        for tab in [tabs[0], tabs[1], tabs[2], tabs[3]] { _ = tab.wake() }
         XCTAssertNil(browser.tabShortcutNumbers[splitGroup], "An expanded heading has no number")
         XCTAssertNil(browser.tabShortcutNumbers[group])
         XCTAssertNotNil(browser.tabShortcutNumbers[tabs[2].id])

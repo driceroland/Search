@@ -248,6 +248,11 @@ final class Preferences: ObservableObject {
     @Published var cards: Bool {
         didSet { store.set(cards, forKey: "layout.cards") }
     }
+    /// The page stays a card when the window fills the screen (#1152). Off,
+    /// it goes edge to edge there, as asked for on #607.
+    @Published var cardsInFullScreen: Bool {
+        didSet { store.set(cardsInFullScreen, forKey: "layout.cardsFullScreen") }
+    }
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
     }
@@ -343,6 +348,11 @@ final class Preferences: ObservableObject {
     /// the link comes next (see TabSwitcher.ordered). Off unless asked for.
     @Published var switcherBehindFirst: Bool {
         didSet { store.set(switcherBehindFirst, forKey: "tabs.switcherBehindFirst") }
+    }
+    /// The ⌃Tab switcher leaves out pinned tabs, showing only regular open
+    /// tabs (see Browser.switcherRow). Off unless asked for (#1110).
+    @Published var switcherLeavesOutPins: Bool {
+        didSet { store.set(switcherLeavesOutPins, forKey: "tabs.switcherLeavesOutPins") }
     }
     /// Where a new tab goes in the row. Next unless asked for.
     @Published var newTabPlace: NewTabPlace {
@@ -503,6 +513,15 @@ final class Preferences: ObservableObject {
     /// Capture… in the View menu (see Snap.swift). Off unless asked for.
     @Published var capturesPages: Bool {
         didSet { store.set(capturesPages, forKey: "pages.capture") }
+    }
+
+    /// Your own style for a site, Edit Site Style… in the View menu (see
+    /// SiteStyles.swift). Off unless asked for; off, the styles are kept.
+    @Published var sitesStyles: Bool {
+        didSet {
+            store.set(sitesStyles, forKey: "sites.styles")
+            SiteStyles.shared.on = sitesStyles
+        }
     }
 
     /// Chrome's colors on the Web Inspector (see Inspector.swift). Off
@@ -786,6 +805,12 @@ final class Preferences: ObservableObject {
     @Published var pinsGoHome: Bool {
         didSet { store.set(pinsGoHome, forKey: "pins.home") }
     }
+    /// ⌘-click on a pin opens a new tab at its address (or moves a wandered
+    /// pin into the loose tabs), as in Arc. Off, ⌘-click adds the pin to the
+    /// tab selection.
+    @Published var pinCommandOpensTab: Bool {
+        didSet { store.set(pinCommandOpensTab, forKey: "pins.commandNewTab") }
+    }
     /// A pin's ⌘ number pressed again, on that pin, goes back to the tab
     /// you were on before it.
     /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
@@ -865,6 +890,23 @@ final class Preferences: ObservableObject {
     @Published var floatingNewTab: Bool {
         didSet { store.set(floatingNewTab, forKey: "newtab.floating") }
     }
+    /// The address field from any app, as Spotlight's comes: a key of your
+    /// own raises it over the app in front, and Return opens what was typed
+    /// in Search (see Launcher.swift). Off unless asked for, and no key
+    /// taken from the Mac until one is chosen (#783).
+    @Published var launcher: Bool {
+        didSet { store.set(launcher, forKey: "launcher.on") }
+    }
+    /// The key it is on, chosen in Settings. None until then.
+    @Published var launcherKey: LauncherKey? {
+        didSet {
+            if let launcherKey, let data = try? JSONEncoder().encode(launcherKey) {
+                store.set(data, forKey: "launcher.key")
+            } else {
+                store.removeObject(forKey: "launcher.key")
+            }
+        }
+    }
     /// The floating field lists the last few places from History before
     /// anything is typed (Browser.recentPlaces). Off unless asked for.
     @Published var recentInNewTab: Bool {
@@ -908,6 +950,7 @@ final class Preferences: ObservableObject {
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
+        cardsInFullScreen = store.bool(forKey: "layout.cardsFullScreen")
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
@@ -927,6 +970,7 @@ final class Preferences: ObservableObject {
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
         undoReopensTab = store.bool(forKey: "tabs.undoReopens")
         switcherBehindFirst = store.bool(forKey: "tabs.switcherBehindFirst")
+        switcherLeavesOutPins = store.bool(forKey: "tabs.switcherLeavesOutPins")
         frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
@@ -998,6 +1042,7 @@ final class Preferences: ObservableObject {
         profilesInOneWindow = store.bool(forKey: "profiles.oneWindow")
         listsPins = store.bool(forKey: "pins.list")
         pinFolders = store.bool(forKey: "pins.folders")
+        pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
         // "Pins keep their site" is one switch over two keys (see
         // SettingsIndex): on when either was on, on by default when neither
         // was ever touched (Drice, 24 Oct 2026), off when one was turned
@@ -1011,6 +1056,8 @@ final class Preferences: ObservableObject {
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
         commandBar = store.bool(forKey: "commandbar")
         floatingNewTab = store.bool(forKey: "newtab.floating")
+        launcher = store.bool(forKey: "launcher.on")
+        launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
         recentInNewTab = store.bool(forKey: "newtab.recent")
         // On for everyone who never touched it (24 Oct 2026).
         let history = store.object(forKey: "swipe.history") as? Bool ?? true
@@ -1054,6 +1101,9 @@ final class Preferences: ObservableObject {
         darkensPages = dusk
         Dusk.shared.on = dusk
         capturesPages = store.bool(forKey: "pages.capture")
+        let styles = store.bool(forKey: "sites.styles")
+        sitesStyles = styles
+        SiteStyles.shared.on = styles
         inspectorChrome = store.bool(forKey: "inspector.chrome")
         inspectorDark = store.bool(forKey: "inspector.dark")
         let scrolls = store.bool(forKey: "autoscroll")
@@ -1140,6 +1190,7 @@ final class Preferences: ObservableObject {
         take(\.sidePanelWidth, "sidepanel.width", (store.object(forKey: "sidepanel.width") as? Double).map { CGFloat($0) }
             .flatMap { Preferences.sidePanelWidths.contains($0) ? $0 : nil }, or: 380)
         take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)
+        take(\.cardsInFullScreen, store.bool(forKey: "layout.cardsFullScreen"))
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
         take(\.instantMotion, store.bool(forKey: Motion.instantKey))

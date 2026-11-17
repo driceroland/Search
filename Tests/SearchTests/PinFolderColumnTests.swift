@@ -128,6 +128,7 @@ final class PinFolderColumnTests: XCTestCase {
             switch line {
             case .folder(let folder, let depth): "folder \(depth) \(folder.name)"
             case .pin(let tab, let depth): "pin \(depth) \(tab.title)"
+            case .item(let item, _, let depth): "item \(depth) \(item.title)"
             }
         }
     }

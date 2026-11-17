@@ -2735,6 +2735,19 @@ enum ExtensionShims {
           else tell(-1);
           return setPopup(details, callback);
         });
+        // Opened by Search, from the page the button has at the call. Left
+        // to WebKit, the promise settles before the browser is asked to show
+        // anything, and an extension that unsets its popup straight after —
+        // Inoreader sets it, opens it, then sets it back to none — has left
+        // nothing to open by then.
+        if (typeof a.openPopup === "function") {
+          put(a, "openPopup", (options, callback) => {
+            if (typeof options === "function") callback = options;
+            const promise = native("action.open", []);
+            if (!callback) return promise;
+            promise.then(() => callback(), (error) => withLastError(error, callback));
+          });
+        }
       }
       fill("action", {
         getUserSettings: resolve({ isOnToolbar: true }), onUserSettingsChanged: event(),
@@ -3428,13 +3441,17 @@ enum ExtensionShims {
       // What an extension registers for a page's own world has Search's
       // passkey patch before it, as its manifest's do (see prepare): a
       // password manager keeps a reference to navigator.credentials as it
-      // finds it, and falls back to that. An update that names no world gets
-      // it too; in any other world the patch does nothing.
+      // finds it, and falls back to that. Isolated registrations need the
+      // same compatibility shim as manifest content scripts, before they
+      // capture fetch or runtime methods. An update that names no world gets
+      // the passkey patch too. The page's own world gets only that patch.
       if (scripting) {
         const first = (scripts, updating) => Array.isArray(scripts) ? scripts.map((s) => {
-          if (!s || !Array.isArray(s.js) || s.js.includes("search-passkeys.js")) return s;
+          if (!s || !Array.isArray(s.js)) return s;
           const world = String(s.world || "").toUpperCase();
-          return world === "MAIN" || (updating && !world) ? { ...s, js: ["search-passkeys.js", ...s.js] } : s;
+          const before = world === "MAIN" ? ["search-passkeys.js"]
+            : updating && !world ? ["search-passkeys.js", "search-shim.js"] : ["search-shim.js"];
+          return { ...s, js: [...before.filter((file) => !s.js.includes(file)), ...s.js] };
         }) : scripts;
         for (const name of ["registerContentScripts", "updateContentScripts"]) {
           const original = scripting[name];
@@ -4885,6 +4902,10 @@ enum ExtensionShims {
                 popups[id, default: [:]]["*"] = path
                 popups[id] = popups[id]?.filter { $0.key == "*" }
             }
+            return nil
+
+        case "action.open":
+            guard owner.openPopup(for: context) else { throw Unsupported(what: "Failed to open popup.") }
             return nil
 
         // MARK: script injection and user scripts

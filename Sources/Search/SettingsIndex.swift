@@ -91,6 +91,7 @@ enum SettingsIndex {
         .init(id: "clear", page: .privacy, title: "Clear", icon: "trash"),
 
         .init(id: "mouse", page: .keyboard, title: "Mouse and trackpad", icon: "computermouse"),
+        .init(id: "anywhere", page: .keyboard, title: "From any app", icon: "macwindow.on.rectangle"),
 
         .init(id: "updates", page: .about, title: "Updates", icon: "arrow.triangle.2.circlepath"),
         .init(id: "developer", page: .about, title: "Developer", icon: "hammer"),
@@ -166,6 +167,10 @@ enum SettingsIndex {
               title: "The page as a card", detail: "A little room around the page, with rounded corners",
               more: "Off, the page reaches the window's edges and the column is white with its hairline.",
               keys: ["layout.cards"], words: ["edge to edge", "rounded", "margin"], kind: .wide, parent: "tabs.layout"),
+        .init(id: "layout.cardsFullScreen", group: "window", icon: "arrow.up.left.and.arrow.down.right",
+              title: "Keep the card in full screen", detail: "Off, the page goes edge to edge when the window fills the screen",
+              keys: ["layout.cardsFullScreen"], words: ["full screen", "fullscreen", "card", "margin", "rounded", "zen", "arc"],
+              parent: "layout.cards"),
         .init(id: "toolbar.left", group: "window", icon: "arrow.left.arrow.right",
               title: "Back, forward and reload on the left", detail: "Beside the window's buttons, before the tabs",
               keys: ["toolbar.left"], words: ["toolbar", "buttons", "navigation"], parent: "tabs.layout"),
@@ -225,6 +230,10 @@ enum SettingsIndex {
               title: "⌃Tab goes to a link opened behind", detail: "Otherwise a quick ⌃Tab goes back to the tab you were on before",
               more: "A link you ⌘-click, middle-click or open with Open Link in New Tab comes right after the page in the ⌃Tab switcher, the newest first. Off, it comes after the tab you were on before.",
               keys: ["tabs.switcherBehindFirst"], words: ["ctrl tab", "switcher", "background", "recent", "new tab"]),
+        .init(id: "tabs.switcherLeavesOutPins", group: "newtabs", icon: "pin.slash",
+              title: "The ⌃Tab switcher leaves out pinned tabs", detail: "Otherwise pinned tabs appear alongside regular tabs",
+              more: "When on, pinned tabs stay in their places and do not appear in the ⌃Tab switcher grid. Off, the switcher includes pinned tabs that are awake or in front.",
+              keys: ["tabs.switcherLeavesOutPins"], words: ["ctrl tab", "switcher", "pins", "pinned", "exclude"]),
         .init(id: "tabs.lazy", group: "newtabs", icon: "hourglass",
               title: "Load background tabs when you go to them", detail: "A link opened behind the page waits until you go to its tab",
               more: "With ⌘-click, the middle button, or a batch of links from another app. ⇧⌘-click still takes you there at once.",
@@ -308,6 +317,10 @@ enum SettingsIndex {
               title: "Capture pages", detail: "Capture… in the View menu copies an area, an element or the whole page",
               more: "Drag across an area, click an element, or choose Whole Page; Esc cancels. The picture is copied and saved as a PNG in your downloads folder, and goes nowhere else.",
               keys: ["pages.capture"], words: ["screenshot", "capture", "snapshot", "picture", "png", "arc"]),
+        .init(id: "sites.styles", group: "pages", icon: "paintbrush",
+              title: "Your own style for a site", detail: "Edit Site Style… in the View menu puts CSS of yours on the site you're on",
+              more: "Applied as you type, to every page of that site, as Arc's Boosts. CSS only: Search never runs script you write in a page. Off, every style is kept but none is worn.",
+              keys: ["sites.styles"], words: ["boost", "boosts", "css", "style", "stylesheet", "customize", "custom css", "arc", "theme"]),
         .init(id: "pages.120", group: "pages", icon: "speedometer",
               title: "Pages at 120 Hz", detail: "Smoother scrolling on screens that can. On power spares the battery",
               more: "Animations and scrolling in pages at up to 120 frames a second, instead of 60 as in Safari.",
@@ -349,10 +362,17 @@ enum SettingsIndex {
               keys: ["pins.list"], words: ["arc", "pinned"], parent: "tabs.layout"),
         .init(id: "pins.folders", group: "pins", icon: "folder",
               title: "Folders in pinned rows", detail: "Pinned rows in folders, folders in folders, as in Arc",
-              more: "Right-click a pinned row and choose New Folder, or drag a row onto a folder. A folder folds with a click and holds up to three levels. Bringing Arc over keeps its folders as folders here.",
+              more: "Right-click a pinned row and choose New Folder, or drag a row onto a folder. A folder folds with a click and holds up to three levels. Bringing Arc over keeps its folders as folders here. New Live Folder… fills one from a site's RSS or Atom feed, kept fresh every half hour.",
               keys: ["pins.folders"],
-              words: ["arc", "folder", "folders", "nested", "subfolder", "pinned folder", "pinned tabs", "organise", "organize"],
+              words: ["arc", "folder", "folders", "nested", "subfolder", "pinned folder", "pinned tabs", "organise", "organize",
+                      "live folder", "feed", "rss", "atom"],
               parent: "pins.list"),
+        .init(id: "pins.commandNewTab", group: "pins", icon: "command",
+              title: "⌘-click on a pin opens a new tab",
+              detail: "Opens a tab at the pin's site, or moves a wandered page to loose tabs",
+              more: "As in Arc: ⌘-clicking a pin opens a new tab at its address; on a pin that has wandered from its page, the wandered page is kept in loose tabs and the pin gets a fresh tab at home. Off, ⌘-click adds the pin to your tab selection.",
+              keys: ["pins.commandNewTab"],
+              words: ["command click", "cmd click", "pinned", "arc", "selection", "multi select"]),
         .init(id: "newtab.floating", group: "opening", icon: "rectangle.and.text.magnifyingglass",
               title: "New tab in a floating field", detail: "⌘T raises the address field over the page, as in Arc",
               more: "Return opens what you typed in a new tab; Escape, ⌘W or a click outside puts it away.",
@@ -435,6 +455,14 @@ enum SettingsIndex {
               title: "Hold a swipe to pick from history", detail: "Keep your fingers down after a swipe back to pick a page",
               more: "Swipe back or forward and keep your fingers down: the pages that way appear, and moving up or down picks one.",
               keys: ["swipe.history"], words: ["gesture", "trackpad", "back"]),
+        .init(id: "launcher.on", group: "anywhere", icon: "rectangle.and.text.magnifyingglass",
+              title: "Open the address field from any app", detail: "A key of your own raises it over the app you're in, as Spotlight does",
+              more: "Return opens what you typed in a new tab of Search's window in front, or goes to the tab that already has it, and brings Search forward. Escape, a click outside or the key again puts it away and leaves you where you were. With a window of Search's in front, the key is left to the page: ⌘L is the field there.",
+              keys: ["launcher.on", "launcher.key"],
+              words: ["spotlight", "launcher", "global", "hotkey", "shortcut", "quick search", "raycast", "alfred", "anywhere"]),
+        .init(id: "launcher.key", group: "anywhere", icon: "keyboard",
+              title: "Key", detail: "Press it in any app to bring the address field up",
+              keys: ["launcher.key"], words: ["hotkey", "global shortcut", "shift command space"], parent: "launcher.on"),
 
         // About
         .init(id: "updates.version", group: "updates", icon: "arrow.down.app",
@@ -530,6 +558,7 @@ enum SettingsIndex {
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
+        case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
@@ -539,6 +568,7 @@ enum SettingsIndex {
         case "newtab.recent": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
         case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
+        case "launcher.key": return prefs.launcher
         default: return true
         }
     }
@@ -558,6 +588,7 @@ enum SettingsIndex {
         case "newtab.recent": return "Only with the new tab in a floating field"
         case "links.little.tabs": return "Only with links from other apps in a small window"
         case "links.peek.stays": return "Only when links or pins open peeks"
+        case "launcher.key": return "Only with the address field from any app on"
         default: return "Only with the tabs down a side"
         }
     }

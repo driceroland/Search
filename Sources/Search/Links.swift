@@ -155,7 +155,13 @@ final class Links: NSObject, NSApplicationDelegate {
         // among it — goes (Security).
         DispatchQueue.global(qos: .utility).async { ImportFile.sweepScratch() }
         Trim.start()
-        MainActor.assumeIsolated { Shared.prefs.followFile() }
+        MainActor.assumeIsolated {
+            Shared.prefs.followFile()
+            // The address field from any app, once asked for (Launcher.swift).
+            Launcher.shared.start()
+            // Live folders fetched, and kept fresh (LiveFolders.swift).
+            LiveFolders.start()
+        }
         let plain = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
         guard !plain else { return }
         DispatchQueue.main.async {
@@ -231,18 +237,7 @@ final class Links: NSObject, NSApplicationDelegate {
         // find it running.
         guard deliver == nil else { return }
         deliver = { url in
-            // The window in front's browser, or a window brought back for it:
-            // the link lands where you are, not in the first window.
-            // Or the window, in its space, a rule of Settings › Spaces & Pins
-            // › Send links to a space sends it to (see SpaceRoutes.swift).
-            let front = Browsers.ensureWindow()
-            let browser = front.routed(url) ?? front
-            browser.arrive(url)
-            // Put away in the Dock, it stayed there: bringing a window to the
-            // front doesn't take it out (#95).
-            if let window = browser.window, window.isMiniaturized { window.deminiaturize(nil) }
-            // A hidden probe's window stays out of sight.
-            if !(Store.testing && NSApp.isHidden) { browser.window?.makeKeyAndOrderFront(nil) }
+            land(url)
             comeForward()
         }
         let early = waiting
@@ -266,6 +261,27 @@ final class Links: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// An address from outside the window — a link from another app, or what
+    /// was typed into the address field raised from one (Launcher.swift) —
+    /// into the window in front, or one brought back for it: it lands where
+    /// you are, not in the first window. Or the window, in its space, a rule
+    /// of Settings › Spaces & Pins › Send links to a space sends it to (see
+    /// SpaceRoutes.swift). The window it went to, which is left for the
+    /// caller to bring the app forward to.
+    @MainActor
+    @discardableResult
+    static func land(_ url: URL) -> Browser {
+        let front = Browsers.ensureWindow()
+        let browser = front.routed(url) ?? front
+        browser.arrive(url)
+        // Put away in the Dock, it stayed there: bringing a window to the
+        // front doesn't take it out (#95).
+        if let window = browser.window, window.isMiniaturized { window.deminiaturize(nil) }
+        // A hidden probe's window stays out of sight.
+        if !(Store.testing && NSApp.isHidden) { browser.window?.makeKeyAndOrderFront(nil) }
+        return browser
+    }
+
     /// Runs once a window is actually showing, and one turn of the run loop
     /// after that, so the frame is on the screen before the work starts.
     /// Gives up waiting after a second or so and runs anyway — a launch
@@ -287,10 +303,14 @@ final class Links: NSObject, NSApplicationDelegate {
     /// apps built on Electron, left Search behind them. So if Search still
     /// isn't in front a moment later, it asks again the way it did before
     /// macOS 14.
+    ///
+    /// `lookedAt`: a test world opened to be looked at (./fresh.sh, with no
+    /// script driving it) comes forward too — the launcher's Return there is
+    /// how the launcher is tried by hand. Never one the bench drives.
     @MainActor
-    private static func comeForward() {
+    static func comeForward(lookedAt: Bool = false) {
         // Never a test run's: a probe started hidden stays off every screen.
-        guard !Store.testing else { return }
+        guard !Store.testing || (lookedAt && !Launcher.benchDriven) else { return }
         guard #available(macOS 14, *) else {
             NSApp.activate(ignoringOtherApps: true)
             return
