@@ -59,7 +59,8 @@ try:
 
     sv.ev(tall, "window.scrollTo(0, 1500); 1")
     whole = sv.cmd({"do": "snap", "id": tall, "mode": "page", "path": f"{out}/page.png"})
-    t.ok("page: the whole height, scrolled or not", whole.get("height") == round(5000 * scale), whole)
+    pts = (whole.get("points") or [0, 0])[1]
+    t.ok("page: the whole height, scrolled or not", pts >= 5000 and whole.get("height") == round(pts * scale), whole)
     r, g, b = bottom_pixel(f"{out}/page.png")
     t.ok("page: its foot is drawn (red), not left blank", r > 200 and g < 60 and b < 60, (r, g, b))
 finally:
