@@ -1800,7 +1800,7 @@ private struct ActiveTabPill: View {
             } label: {
                 Image(systemName: copied ? "checkmark" : "link")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(copied ? Palette.safe : (copyHovering ? Palette.ink : Palette.muted))
+                    .foregroundStyle(copied ? Palette.muted : (copyHovering ? Palette.ink : Palette.muted))
                     .frame(width: 22, height: 22)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
