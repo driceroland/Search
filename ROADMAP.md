@@ -66,7 +66,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **No white flash in the side panel and between pages** Dark mode: the panel on opening and a tab moving to its next page stay dark. *([#768](https://github.com/driceroland/Search/issues/768))*
 - [ ] **Floating video only when the page is out of sight** Side by side with another app or on a second display, the video stays in its page. *([#761](https://github.com/driceroland/Search/issues/761))*
 - [ ] **A snappier hidden sidebar** Shorter slide, window buttons arrive with the column. *([#760](https://github.com/driceroland/Search/issues/760))*
-- [ ] **Signed-out spaces keep their own history** A page visited in one signed-out space doesn't show in another's history or suggestions. *([#758](https://github.com/driceroland/Search/issues/758))*
 - [ ] **Link actions on a right-clicked image** Open the image in a new tab or a split, copy its address, as with ⌘-click. *([#756](https://github.com/driceroland/Search/issues/756))*
 - [ ] **A very long group fills the whole column** A group with hundreds of tabs pushes everything out of reach; it should scroll inside the column. *([#755](https://github.com/driceroland/Search/issues/755))*
 - [ ] **Video in a peek turns black** Opening a peek's video player, then a link under the video, leaves a black layer over it. *(email)*

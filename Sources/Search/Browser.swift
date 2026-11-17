@@ -419,8 +419,15 @@ final class Browser: NSObject, ObservableObject {
     }
     let typing = FieldState()
 
-    /// This window's profile's (see Profiles.swift).
-    let history: History
+    /// The space on screen's: its profile's (see Profiles.swift), or its own
+    /// when it is signed out of the others (see Spaces.history).
+    var history: History { Spaces.history(for: spaceID) }
+
+    /// Where a tab's visits go: the history of the space whose store it
+    /// uses, wherever the tab is now, a parked space's or a pin's included.
+    func history(of tab: Tab) -> History {
+        Spaces.owner(of: tab.store).map(Spaces.history(for:)) ?? Profiles.history(profileID)
+    }
     /// What the field is offering, best first.
     private(set) var offers: [Suggestion] {
         get { typing.offers }
@@ -1757,16 +1764,38 @@ final class Browser: NSObject, ObservableObject {
         announce("Cache cleared")
     }
 
-    func clearHistory() {
-        history.forget()
-        // The tabs Search closed by itself are pages you have been to.
-        archive.clear()
+    /// `space`: nil for everywhere you have been, as the History menu and
+    /// Settings clear it; a space for the history it keeps alone, as Safari
+    /// clears one profile's, chosen in History's Clear… (see historyScopes).
+    func clearHistory(in space: UUID? = nil) {
+        if let space {
+            Spaces.history(for: space).forget()
+        } else {
+            // Everywhere you have been: the signed-out spaces' own histories too.
+            for history in Spaces.histories(of: profileID) { history.forget() }
+            // The tabs Search closed by itself are pages you have been to.
+            archive.clear()
+        }
         // The sites' icons are a list of where you have been, too, and so
         // are the searches learned from sites visited (SiteSearch.swift).
+        // Every space shares them, so they go whichever history does.
         Favicons.shared.forgetAll()
         SiteSearch.forget()
         Shared.forgetDownloadAddresses()
         announce("History cleared")
+    }
+
+    /// The histories this window's spaces keep, for Clear…'s choice: the one
+    /// the first space shares with the spaces signed in with it, named for
+    /// them all, then each signed-out space's own. None while there is only
+    /// the one history, so nothing is shown to choose from.
+    var historyScopes: [(space: UUID, name: String)] {
+        guard prefs.usesSpaces else { return [] }
+        let apart = spaces.filter { Spaces.ownsStore($0.id) }
+        guard !apart.isEmpty else { return [] }
+        let shared = spaces.filter { !Spaces.ownsStore($0.id) }
+        let first = shared.first.map { [(space: $0.id, name: shared.map(\.name).joined(separator: ", "))] } ?? []
+        return first + apart.map { (space: $0.id, name: $0.name) }
     }
 
     /// The last few places, for the History menu.
@@ -2669,7 +2698,6 @@ final class Browser: NSObject, ObservableObject {
         profileID = profile
         let loaded = Spaces.read(profile: profile)
         spaces = loaded
-        history = Profiles.history(profile)
         bookmarks = Profiles.bookmarks(profile)
         // With spaces off, the window is the profile's home: the session and
         // the store that were there before spaces, wherever its dot has been
@@ -2720,8 +2748,12 @@ final class Browser: NSObject, ObservableObject {
         folded = prefs.sidebar && prefs.sideHides
 
         // The History menu lists the last few places, and the menu is drawn
-        // from this object's changes — so a change to those is passed on.
-        history.recentChanges
+        // from this object's changes — so a change to those is passed on,
+        // from the history of whichever space is on screen.
+        $spaceID
+            .removeDuplicates()
+            .map { Spaces.history(for: $0).recentChanges }
+            .switchToLatest()
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &bag)
 
@@ -6755,7 +6787,7 @@ final class Browser: NSObject, ObservableObject {
                 // A translated title is the page's in your words, not its own:
                 // history keeps the page's (Translate.swift).
                 guard let tab, !tab.shy, tab.translator == nil, let url = tab.address else { return }
-                self?.history.retitle(url, title)
+                self?.history(of: tab).retitle(url, title)
             }
             .store(in: &bag)
     }
@@ -8541,7 +8573,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // fetch looks broken.
         Favicons.shared.fetch(for: tab)
         guard !tab.shy, !tab.bench else { return }
-        history.record(url, title: tab.title)
+        history(of: tab).record(url, title: tab.title)
         // A site's home page that says where its search is (OpenSearch):
         // with Search a site on, it joins the list (see SiteSearch.learn).
         if prefs.searchesSites, profileID == Profile.personalID, url.scheme == "https", url.path.isEmpty || url.path == "/" {

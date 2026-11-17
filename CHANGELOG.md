@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- A space signed out of the others keeps its own history. A page visited there showed up in every other space's history and address suggestions; it now stays in that space's, and goes when the space is deleted. Spaces signed in with the first one still share its history. Clear History clears them all; History's Clear… can clear one space's instead, chosen beside Clear as Safari chooses a profile, shown only while a space keeps a history of its own. Thanks [@pasteley](https://github.com/pasteley) for reporting ([#758](https://github.com/driceroland/Search/issues/758))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
