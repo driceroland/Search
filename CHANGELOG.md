@@ -19,7 +19,7 @@ Not in this version, kept on main for a later one:
 
 ### Fixed
 
-- Extensions that set themselves up when they're installed now do. WebKit told a fresh install as a browser start, or handed the event over while the extension was still loading the file that listens for it, so the extension never heard it; the first extension installed in each launch always missed it. Thanks [@oddharsh](https://github.com/oddharsh)
+- Extensions that set themselves up when they're installed now do. WebKit told a fresh install as a browser start, or handed the event over while the extension was still loading the file that listens for it, so the extension never heard it; the first extension installed in each launch always missed it. Thanks [@oddharsh](https://github.com/oddharsh) ([#1165](https://github.com/driceroland/Search/pull/1165))
 
 
 ## 1.0.14 — 17 November 2026
