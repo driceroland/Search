@@ -68,6 +68,54 @@ enum OneWindow {
         window.isExcludedFromWindowsMenu = false
         if !(Store.testing && NSApp.isHidden) { window.orderFront(nil) }
     }
+
+    /// The windows' side of a profile switch (Browsers.bring): `window`
+    /// takes `old`'s place, at its frame, full screen if `old` was, and
+    /// `old` goes out of sight. `leaving`: `old`'s browser is still the one
+    /// tucked away; `coming`: `window`'s is still the one on screen — both
+    /// asked again once macOS has finished a turn into or out of full
+    /// screen, since another switch may have come meanwhile.
+    ///
+    /// A window is never ordered out in full screen: it would keep its
+    /// full-screen space, black in Mission Control, and a swipe went from
+    /// one profile's to the next as windows apart (idea 670). The one
+    /// leaving comes out of full screen first, on screen, and the one coming
+    /// goes into it in its place: one full-screen space.
+    static func swap(_ window: NSWindow, over old: NSWindow?, leaving: @escaping () -> Bool, coming: @escaping () -> Bool) {
+        guard let old, old.styleMask.contains(.fullScreen) else {
+            return place(window, over: old, full: false, leaving: leaving)
+        }
+        FullScreenTurn.after(old, entering: false) {
+            // Switched back meanwhile: it stays, out of full screen.
+            guard leaving() else { return }
+            if coming() { place(window, over: old, full: true, leaving: leaving) } else { old.orderOut(nil) }
+        }
+        old.toggleFullScreen(nil)
+    }
+
+    /// `window` over `old`, at its frame, then `old` out of sight once
+    /// `window` is there and while `leaving` holds. `full`: `window` goes
+    /// into full screen; a window still in it (from before idea 670) comes
+    /// out of it otherwise.
+    private static func place(_ window: NSWindow, over old: NSWindow?, full: Bool, leaving: @escaping () -> Bool) {
+        let isFull = window.styleMask.contains(.fullScreen)
+        if let old, !isFull { window.setFrame(old.frame, display: false) }
+        if let old, old.isVisible { window.order(.above, relativeTo: old.windowNumber) }
+        window.makeKeyAndOrderFront(nil)
+        guard full != isFull else {
+            // Straight over it, then it steps out from under: no gap between.
+            old?.orderOut(nil)
+            return
+        }
+        // Into full screen or out of it, macOS's own way, and the one left
+        // steps out once it is done.
+        let frame = old?.frame
+        FullScreenTurn.after(window, entering: full) {
+            if !full, let frame { window.setFrame(frame, display: true) }
+            if leaving() { old?.orderOut(nil) }
+        }
+        window.toggleFullScreen(nil)
+    }
 }
 
 extension Browsers {
@@ -146,27 +194,11 @@ extension Browsers {
         window.isExcludedFromWindowsMenu = false
         old?.animationBehavior = .none
         old?.isExcludedFromWindowsMenu = true
-        let wantsFull = old?.styleMask.contains(.fullScreen) == true
-        let isFull = window.styleMask.contains(.fullScreen)
-        if let old, !wantsFull, !isFull { window.setFrame(old.frame, display: false) }
         if Store.testing && NSApp.isHidden {
             // A hidden probe: nothing is ordered in (see show), only out.
             old?.orderOut(nil)
-        } else if wantsFull == isFull {
-            // Straight over it, then it steps out from under: no gap between.
-            if let old, old.isVisible { window.order(.above, relativeTo: old.windowNumber) }
-            window.makeKeyAndOrderFront(nil)
-            old?.orderOut(nil)
         } else {
-            // Full screen on one side only: macOS's own way into full screen,
-            // or out of it, and the one left steps out once it is done.
-            window.makeKeyAndOrderFront(nil)
-            let frame = old?.frame
-            FullScreenTurn.after(window, entering: wantsFull) {
-                if !wantsFull, let frame { window.setFrame(frame, display: true) }
-                if current.tucked { old?.orderOut(nil) }
-            }
-            window.toggleFullScreen(nil)
+            OneWindow.swap(window, over: old, leaving: { current.tucked }, coming: { !next.tucked })
         }
         becameKey(next)
         save()

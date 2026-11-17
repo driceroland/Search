@@ -17,6 +17,8 @@ struct ShortcutsPage: View {
         if command.section == .spaces, !prefs.usesSpaces { return false }
         if Command.ai.contains(command.id), !browser.prefs.ai { return false }
         if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
+        if Command.archive.contains(command.id), prefs.tabLife == .never { return false }
+        if Command.capture.contains(command.id), !prefs.capturesPages { return false }
         let words = hunt.trimmingCharacters(in: .whitespaces)
         guard !words.isEmpty else { return true }
         let key = store.key(for: command.id)?.display ?? ""

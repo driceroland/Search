@@ -73,6 +73,17 @@ struct KeyCombo: Codable, Hashable {
     /// A key alone, or with only ⇧, is typing — never a shortcut.
     var isUsable: Bool { command || option || control || isFunctionKey }
 
+    /// A key the text system uses to move or select, so a command bound to
+    /// it stands aside while the caret is in a field. ⌘ and an arrow is the
+    /// line or the document; ⌥ and an arrow is a word or a paragraph; ⇧
+    /// selects. A letter shortcut is not one of these: ⌘T and ⌘W stay the
+    /// browser's while you type.
+    var movesCaret: Bool {
+        let arrow = key == "left" || key == "right" || key == "up" || key == "down"
+        guard arrow, !control else { return false }
+        return (command && !option) || (option && !command)
+    }
+
     var swiftUI: KeyboardShortcut? {
         let equivalent: KeyEquivalent
         switch key {
@@ -192,6 +203,9 @@ struct Command: Identifiable {
         Command("view.duskPause", "Pause Darkening", .view, KeyCombo("d", shift: true, option: true)) { $0.pauseDusk() },
         Command("view.summarize", "Summarize Page", .view, nil) { $0.summarizePage() },
         Command("view.ask", "Ask About This Page…", .view, nil) { $0.askAboutPage() },
+        // No key until you give one: Arc's ⇧⌘2 is a shifted digit, which
+        // the menus read as a different character on many keyboards.
+        Command("view.capture", "Capture…", .view, nil) { $0.toggleSnap() },
         Command("view.hide", "Hide Elements…", .view, KeyCombo("h", shift: true)) { $0.toggleHiding() },
         Command("view.hidden", "Hidden on This Site…", .view, KeyCombo("u", shift: true)) { $0.reviewing.toggle() },
         Command("view.zoomIn", "Zoom In", .view, KeyCombo("+")) { $0.zoom(by: 1.1) },
@@ -241,6 +255,17 @@ struct Command: Identifiable {
             guard browser.prefs.splitView, let tab = browser.active else { return }
             browser.detachSplit(tab)
         },
+        // No key until you give one: either unpins a pinned tab, as ⌥⌘N
+        // takes away the split it made. With the rows off every pin is a
+        // square, and so is the row's.
+        Command("tabs.pin", "Pin Tab", .tabs, nil) { browser in
+            guard let tab = browser.active else { return }
+            if tab.pin != nil { browser.unpin(tab) } else if tab.isWeb { browser.pin(tab) }
+        },
+        Command("tabs.pinRow", "Pin Tab as Row", .tabs, nil) { browser in
+            guard let tab = browser.active else { return }
+            if tab.pin != nil { browser.unpin(tab) } else if tab.isWeb { browser.pin(tab, listed: browser.prefs.showsPinRows) }
+        },
         Command("tabs.rename", "Rename Tab", .tabs, nil) { browser in
             if let tab = browser.active { browser.beginTabRename(tab) }
         },
@@ -261,6 +286,7 @@ struct Command: Identifiable {
 
         Command("history.show", "Show History…", .history, KeyCombo("y")) { $0.recalling = true },
         Command("history.downloads", "Downloads…", .history, KeyCombo("j", shift: true)) { $0.showDownloads() },
+        Command("history.archive", "Archived Tabs…", .history, nil) { $0.archiving = true },
         Command("history.clearData", "Clear Browsing Data…", .history, KeyCombo("delete", shift: true)) { $0.clearBrowsingData() },
         Command("history.clear", "Clear History", .history, nil) { $0.clearHistory() },
     ] + (1...9).map { number in
@@ -311,6 +337,30 @@ final class ShortcutStore: ObservableObject {
     }
 
     func isChanged(_ id: String) -> Bool { changed[id] != nil }
+
+    /// Words that name a key, with each key moved in Settings › Shortcuts
+    /// said as it is now: "⌘S keeps the tabs out" once the fold is on ⌥⌘S.
+    /// Whole keys only, so ⇧⌘S is never read as ⌘S; a key taken away
+    /// altogether is left as written.
+    func relabel(_ text: String) -> String {
+        guard !changed.isEmpty, text.contains(where: { "⌃⌥⇧⌘".contains($0) }) else { return text }
+        var moved: [String: String] = [:]
+        for command in Command.all where changed[command.id] != nil {
+            guard let was = command.defaultKey?.display, let now = key(for: command.id)?.display, now != was else { continue }
+            moved[was] = now
+        }
+        guard !moved.isEmpty else { return text }
+        let whole = NSRange(text.startIndex..., in: text)
+        var out = text
+        for match in ShortcutStore.keyWords.matches(in: text, range: whole).reversed() {
+            guard let range = Range(match.range, in: text), let now = moved[String(text[range])] else { continue }
+            out.replaceSubrange(range, with: now)
+        }
+        return out
+    }
+
+    /// A key as menus write it: its modifiers, then the key (see KeyCombo.display).
+    private static let keyWords = try! NSRegularExpression(pattern: "[⌃⌥⇧⌘]+(?:Space|[^\\s⌃⌥⇧⌘])")
 
     /// A press of the recent-tabs switcher's key, and whether it walks back:
     /// its key as set, or the same with ⇧ added. Nil for any other key.
@@ -499,4 +549,8 @@ extension Command {
     static let ai: Set<String> = ["view.summarize", "view.ask"]
     /// Dark pages': with them off, not listed, and their keys go on to the page.
     static let dusk: Set<String> = ["view.dusk", "view.duskPause"]
+    /// The archive's: with tabs never closing by themselves, not listed.
+    static let archive: Set<String> = ["history.archive"]
+    /// Capture…: with Capture pages off, not listed, and its key goes on to the page.
+    static let capture: Set<String> = ["view.capture"]
 }

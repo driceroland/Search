@@ -111,6 +111,10 @@ enum SettingsIndex {
               title: "Bring things over", detail: "Bookmarks, history, passwords and extensions from another browser",
               more: "From another browser on this Mac, or from a file it exported. Nothing leaves your Mac.",
               words: ["import", "chrome", "safari", "arc", "migrate"]),
+        .init(id: "sync", group: "browser", icon: "arrow.triangle.2.circlepath",
+              title: "Sync with your other Macs", detail: "Spaces, pins, bookmarks and settings, through a folder you choose",
+              more: "Choose a folder your Macs share, in iCloud Drive or Dropbox for example, and turn this on with the same folder in Search on each Mac. Each profile syncs on its own. Never your history, passwords, cookies, sign-ins or open tabs. No account and no server: only small files in that folder.",
+              keys: ["sync.folder"], words: ["sync", "icloud", "dropbox", "other mac", "devices", "mac"]),
         .init(id: "quit.confirm", group: "browser", icon: "power",
               title: "Confirm before quitting", detail: "Ask before ⌘Q or Quit Search closes the browser",
               keys: ["quit.confirm"], words: ["quit", "cmd q"]),
@@ -135,6 +139,15 @@ enum SettingsIndex {
               title: "Darken pages that stay light", detail: "Pages with no dark look of their own are darkened too",
               more: "Sites with a dark look of their own already follow it. ⇧⌘D for the site you're on, ⌥⇧⌘D to pause everywhere.",
               keys: ["pages.dusk"], words: ["dark", "dusk", "night"], parent: "look"),
+        .init(id: "inspector.chrome", group: "theme", icon: "paintpalette",
+              title: "Chrome's colors in the Web Inspector",
+              detail: "A flat tab strip, and DevTools' colors for the row and the code",
+              more: "Off, the inspector is left as it comes. The panels and the tools stay Web Inspector's.",
+              keys: ["inspector.chrome"], words: ["devtools", "inspect", "console", "chrome"]),
+        .init(id: "inspector.dark", group: "theme", icon: "moon.stars",
+              title: "Keep the Web Inspector dark", detail: "The tools stay dark while Search is light",
+              more: "Off, it follows Appearance. Chrome's colors, when they're on, follow this too.",
+              keys: ["inspector.dark"], words: ["devtools", "inspect", "console", "dark"], parent: "look"),
         .init(id: "tabs.layout", group: "window", icon: "sidebar.left",
               title: "Tabs", detail: "Across the top of the window, down a side as a column, or as icons only",
               more: "Icons only is a narrow column of each tab's icon, the title in a tooltip. Nothing grows under the pointer.",
@@ -156,6 +169,10 @@ enum SettingsIndex {
         .init(id: "toolbar.left", group: "window", icon: "arrow.left.arrow.right",
               title: "Back, forward and reload on the left", detail: "Beside the window's buttons, before the tabs",
               keys: ["toolbar.left"], words: ["toolbar", "buttons", "navigation"], parent: "tabs.layout"),
+        .init(id: "tabs.compact", group: "window", icon: "rectangle.compress.vertical",
+              title: "Shorter tab bar", detail: "Only a few points above and below the tabs, for more of the page",
+              keys: ["tabs.compact"], words: ["compact", "slim", "thin", "height", "padding", "tab bar", "toolbar"],
+              parent: "tabs.layout"),
         .init(id: "sidebar.roomy", group: "tablook", icon: "textformat.size.larger",
               title: "Roomier tabs", detail: "Taller rows and larger titles in the column",
               keys: ["sidebar.roomy"], words: ["bigger", "larger", "text size", "accessibility"], parent: "tabs.layout"),
@@ -179,6 +196,10 @@ enum SettingsIndex {
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
               keys: [Motion.lightKey], words: ["battery", "animations", "motion"]),
+        .init(id: "motion.instant", group: "motion", icon: "bolt",
+              title: "Reduce animations", detail: "Switching tabs, spaces and panels happens at once, without sliding or fading",
+              more: "For Search alone, whatever Reduce Motion in System Settings says. The tab ⌘1–⌘9 picks is lit at once, and the page shows at once.",
+              keys: [Motion.instantKey], words: ["animations", "motion", "instant", "faster", "reduce motion", "transitions"]),
 
         // Tabs
         .init(id: "tabs.newPlace", group: "newtabs", icon: "arrow.right.to.line",
@@ -196,6 +217,10 @@ enum SettingsIndex {
               title: "Closing a tab goes back to the one before", detail: "Otherwise you land on the tab beside it",
               more: "The tab you viewed last in this space, as ⌃Tab would take you. The other half of a Split View stays first.",
               keys: ["tabs.closeGoesBack"], words: ["close", "previous tab", "recent"]),
+        .init(id: "tabs.undoReopens", group: "newtabs", icon: "arrow.uturn.backward.circle",
+              title: "⌘Z reopens a closed tab", detail: "Right after closing it, as ⇧⌘T would bring it back",
+              more: "Only while closing it is the last thing you did: type or click anything else and ⌘Z undoes as before. A page that uses ⌘Z itself, such as a document or a drawing, keeps it.",
+              keys: ["tabs.undoReopens"], words: ["undo", "reopen", "closed tab", "cmd z", "restore"]),
         .init(id: "tabs.switcherBehindFirst", group: "newtabs", icon: "rectangle.stack",
               title: "⌃Tab goes to a link opened behind", detail: "Otherwise a quick ⌃Tab goes back to the tab you were on before",
               more: "A link you ⌘-click, middle-click or open with Open Link in New Tab comes right after the page in the ⌃Tab switcher, the newest first. Off, it comes after the tab you were on before.",
@@ -261,6 +286,9 @@ enum SettingsIndex {
               title: "Float the video on its own", detail: "A playing video comes out when you leave its tab, or Search",
               more: "It goes back into its tab when you return, and stays put while its window is still in view on another screen. ⇧⌘P still floats one by hand.",
               keys: ["float.leave", "float.away"], words: ["pip", "picture in picture", "switch apps"], kind: .wide),
+        .init(id: "float.minimize", group: "video", icon: "minus.circle",
+              title: "Minimize the floating video", detail: "A button tucks the floating video small. The same button brings it back",
+              keys: ["float.minimize"], words: ["minimize", "pip", "collapse", "small"]),
         .init(id: "media.click", group: "video", icon: "play.slash",
               title: "Videos wait for a click", detail: "Videos don't start by themselves, even without sound",
               keys: [Preferences.waitsKey], words: ["autoplay", "auto-play"]),
@@ -276,6 +304,10 @@ enum SettingsIndex {
         .init(id: "pageZoom", group: "pages", icon: "plus.magnifyingglass",
               title: "Page zoom", detail: "Where every site starts. ⌘+ and ⌘− are kept for each site",
               keys: ["pageZoom"], words: ["zoom", "size", "scale"]),
+        .init(id: "pages.capture", group: "pages", icon: "camera.viewfinder",
+              title: "Capture pages", detail: "Capture… in the View menu copies an area, an element or the whole page",
+              more: "Drag across an area, click an element, or choose Whole Page; Esc cancels. The picture is copied and saved as a PNG in your downloads folder, and goes nowhere else.",
+              keys: ["pages.capture"], words: ["screenshot", "capture", "snapshot", "picture", "png", "arc"]),
         .init(id: "pages.120", group: "pages", icon: "speedometer",
               title: "Pages at 120 Hz", detail: "Smoother scrolling on screens that can. On power spares the battery",
               more: "Animations and scrolling in pages at up to 120 frames a second, instead of 60 as in Safari.",
@@ -315,6 +347,12 @@ enum SettingsIndex {
               title: "Pinned rows", detail: "Pins as rows under the squares, and Clear over the rest",
               more: "As in Arc: squares for the sites you live in, rows for pages you keep, and a line over the rest with Clear. Right-click a tab to pin it as a row.",
               keys: ["pins.list"], words: ["arc", "pinned"], parent: "tabs.layout"),
+        .init(id: "pins.folders", group: "pins", icon: "folder",
+              title: "Folders in pinned rows", detail: "Pinned rows in folders, folders in folders, as in Arc",
+              more: "Right-click a pinned row and choose New Folder, or drag a row onto a folder. A folder folds with a click and holds up to three levels. Bringing Arc over keeps its folders as folders here.",
+              keys: ["pins.folders"],
+              words: ["arc", "folder", "folders", "nested", "subfolder", "pinned folder", "pinned tabs", "organise", "organize"],
+              parent: "pins.list"),
         .init(id: "newtab.floating", group: "opening", icon: "rectangle.and.text.magnifyingglass",
               title: "New tab in a floating field", detail: "⌘T raises the address field over the page, as in Arc",
               more: "Return opens what you typed in a new tab; Escape, ⌘W or a click outside puts it away.",
@@ -325,7 +363,7 @@ enum SettingsIndex {
               keys: ["newtab.recent"], words: ["recent", "history", "suggestions", "cmd t", "last visited"], parent: "newtab.floating"),
         .init(id: "commandbar", group: "opening", icon: "chevron.right.square",
               title: "Address bar commands", detail: "\"settings\" or \"new tab\" alone in the address field goes there",
-              more: "Part of a name, like \"down\" or \"dwn\", shows the command lower in the list.",
+              more: "Part of a name, like \"down\" or \"dwn\", shows the command lower in the list, with every menu command and Settings page whose name has the words typed, as Arc's Command Bar.",
               keys: ["commandbar"], words: ["commands", "command palette"]),
         .init(id: "start.fresh", group: "opening", icon: "sunrise",
               title: "Start with a fresh window", detail: "Pins, groups and named tabs come back; last time's others don't",
@@ -387,6 +425,9 @@ enum SettingsIndex {
               title: "Peek at a link", detail: "Its page opens in a panel over the one you're reading",
               more: "Escape puts it away; the other button keeps it as a tab.",
               keys: ["links.peek", "links.peekClick"], words: ["preview", "shift click", "peek"]),
+        .init(id: "links.peek.stays", group: "mouse", icon: "eye.slash",
+              title: "Peek stays with its tab", detail: "Another tab hides it, with its video and sound paused, and coming back shows it",
+              keys: ["links.peek.stays"], words: ["peek", "keep peek", "switch tabs"], parent: "links.peek"),
         .init(id: "autoscroll", group: "mouse", icon: "arrow.up.and.down.circle",
               title: "Scroll with the middle button", detail: "Click the wheel, then move the mouse to scroll, as on Windows",
               keys: ["autoscroll"], words: ["middle click", "autoscroll", "wheel"]),
@@ -486,15 +527,18 @@ enum SettingsIndex {
     @MainActor static func applies(_ item: SettingsItem, _ prefs: Preferences) -> Bool {
         switch item.id {
         case "pages.dusk": return prefs.look != .light
+        case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "layout.cards", "pins.list": return prefs.sidebar
+        case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
-        case "toolbar.left": return !prefs.sidebar
+        case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
         case "spaces.links": return prefs.usesSpaces
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
+        case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
         default: return true
         }
     }
@@ -503,7 +547,8 @@ enum SettingsIndex {
     static func needs(_ item: SettingsItem) -> String {
         switch item.id {
         case "pages.dusk": return "Only while Search isn't set to Light"
-        case "toolbar.left": return "Only with the tabs across the top"
+        case "inspector.dark": return "Only while Search isn't set to Dark"
+        case "toolbar.left", "tabs.compact": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "profiles.oneWindow": return "Only with more than one profile"
@@ -512,6 +557,7 @@ enum SettingsIndex {
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent": return "Only with the new tab in a floating field"
         case "links.little.tabs": return "Only with links from other apps in a small window"
+        case "links.peek.stays": return "Only when links or pins open peeks"
         default: return "Only with the tabs down a side"
         }
     }
@@ -704,6 +750,9 @@ extension SettingsIndex {
         case "pins.keep":
             guard let on = value as? Bool else { return false }
             prefs.pinsKeepSite = on
+        case "pins.folders":
+            guard let on = value as? Bool else { return false }
+            prefs.pinFolders = on
         case "profiles.oneWindow":
             guard let on = value as? Bool else { return false }
             prefs.profilesInOneWindow = on

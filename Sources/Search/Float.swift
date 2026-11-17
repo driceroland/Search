@@ -60,6 +60,16 @@ final class Float {
     /// along (Settings › General). Off unless asked for.
     static var flicks = false
 
+    /// A button that tucks the window into a corner (Settings › Browsing).
+    /// Off unless asked for. The window up now hears a change at once.
+    static weak var shown: Float?
+    static var minimizes = false {
+        didSet { shown?.controls?.offerMinimize(minimizes) }
+    }
+
+    /// The minimize button, pressed with no pointer. For the bench.
+    func benchTuck() { controls?.benchMinimize() }
+
     /// Where a flick sends the window, a margin in from the edges of
     /// `area`. A swipe clearly both ways — between about 22° and 68° — takes
     /// it to the corner it points at; a straighter one along its stronger
@@ -194,12 +204,16 @@ final class Float {
             }
         }
         controls.onSkip = { [weak self] seconds in self?.onSkip?(seconds) }
+        // Brought up to date as the pointer arrives, being asked for only
+        // while it is there.
+        controls.onEnter = { [weak self] in self?.refreshControls() }
         ground.addSubview(controls)
         self.controls = controls
 
         panel.contentView = ground
         panel.orderFrontRegardless()
         self.panel = panel
+        Float.shown = self
 
         // Off once the page has drawn a frame at the window's size with the
         // video alone in it, and never later than the limit: a page that
@@ -226,11 +240,19 @@ final class Float {
                     return
                 }
 
-                self.onProgress? { through, playing in
-                    self.controls?.progress = through
-                    self.controls?.playing = playing
-                }
+                // The bar and the pause button are drawn only while the
+                // pointer is over the window: asked then, not every half
+                // second for a page nobody is looking at.
+                if self.controls?.isNear == true { self.refreshControls() }
             }
+        }
+    }
+
+    /// How far through the video is, and whether it plays, for the controls.
+    private func refreshControls() {
+        onProgress? { [weak self] through, playing in
+            self?.controls?.progress = through
+            self?.controls?.playing = playing
         }
     }
 
@@ -258,6 +280,7 @@ final class Float {
     /// window is kept as it was, not as the sliver it is.
     private var restingFrame: NSRect? {
         guard let panel else { return nil }
+        if let home = controls?.tuckedFrom { return home }
         guard let home = controls?.dockedFrom else { return panel.frame }
         return NSRect(origin: home, size: panel.frame.size)
     }
@@ -273,6 +296,7 @@ final class Float {
         keeping = []
         ticker?.invalidate()
         ticker = nil
+        if Float.shown === self { Float.shown = nil }
         (page as? WKWebView)?.allowsMagnification = true
         page?.removeFromSuperview()
         page = nil
@@ -288,7 +312,7 @@ final class Float {
         guard let cover else { return }
         self.cover = nil
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.12
+            context.duration = Motion.seconds(0.12)
             cover.animator().alphaValue = 0
         }, completionHandler: {
             cover.removeFromSuperview()
@@ -317,7 +341,8 @@ final class Float {
     }
 
     /// What a small window of video needs, and nothing else: a way out, a way
-    /// back, a way to stop it, and a way to step over the bit you missed.
+    /// back, and, when Settings asks, a way to tuck it small. A way to stop
+    /// it, and a way to step over the bit you missed.
     ///
     /// Out of sight until the pointer is over the window — the whole point of
     /// this window is the picture.
@@ -326,6 +351,7 @@ final class Float {
         var onReturn: (() -> Void)?
         var onPlayPause: (() -> Void)?
         var onSkip: ((Double) -> Void)?
+        var onEnter: (() -> Void)?
 
         var playing = true {
             didSet { pause.image = glyph(playing ? "pause.fill" : "play.fill", 17) }
@@ -337,6 +363,7 @@ final class Float {
         }
 
         private let close = NSButton()
+        private let tuck = NSButton()
         private let back = NSButton()
         private let pause = NSButton()
         private let rewind = NSButton()
@@ -344,6 +371,8 @@ final class Float {
         private let scrim = CAGradientLayer()
         private let line = Line()
         private var near = false
+        /// Whether the pointer is over the window, where the controls show.
+        var isNear: Bool { near }
 
         override init(frame: NSRect) {
             super.init(frame: frame)
@@ -362,6 +391,8 @@ final class Float {
             layer?.addSublayer(scrim)
 
             dress(close, "xmark", 11, round: 15, action: #selector(pressedClose))
+            dress(tuck, "minus", 11, round: 15, action: #selector(pressedMinimize))
+            tuck.isHidden = !Float.minimizes
             dress(back, "arrow.up.forward", 12, round: 15, action: #selector(pressedReturn))
             dress(rewind, "gobackward.15", 15, round: 19, action: #selector(pressedRewind))
             dress(pause, "pause.fill", 17, round: 25, action: #selector(pressedPause))
@@ -375,7 +406,7 @@ final class Float {
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError() }
 
-        private var buttons: [NSButton] { [close, back, rewind, pause, forward] }
+        private var buttons: [NSButton] { [close, tuck, back, rewind, pause, forward] }
 
         private func dress(
             _ button: NSButton,
@@ -411,6 +442,7 @@ final class Float {
             CATransaction.commit()
 
             close.frame = NSRect(x: 14, y: bounds.height - 44, width: 30, height: 30)
+            tuck.frame = NSRect(x: 52, y: bounds.height - 44, width: 30, height: 30)
             back.frame = NSRect(x: bounds.width - 44, y: bounds.height - 44, width: 30, height: 30)
 
             let middle = bounds.midY - 25
@@ -433,18 +465,21 @@ final class Float {
             )
         }
 
-        override func mouseEntered(with event: NSEvent) { fade(to: 1) }
+        override func mouseEntered(with event: NSEvent) {
+            fade(to: 1)
+            onEnter?()
+        }
         override func mouseExited(with event: NSEvent) { fade(to: 0) }
 
         private func fade(to value: CGFloat) {
             near = value > 0
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.16
+                context.duration = Motion.seconds(0.16)
                 buttons.forEach { $0.animator().alphaValue = value }
                 line.animator().alphaValue = value
             }
             CATransaction.begin()
-            CATransaction.setAnimationDuration(0.16)
+            CATransaction.setAnimationDuration(Motion.seconds(0.16))
             scrim.opacity = Swift.Float(value)
             CATransaction.commit()
         }
@@ -459,7 +494,7 @@ final class Float {
         override func hitTest(_ point: NSPoint) -> NSView? {
             let inside = convert(point, from: superview)
             if near {
-                for button in buttons where button.frame.contains(inside) {
+                for button in buttons where !button.isHidden && button.frame.contains(inside) {
                     return button
                 }
             }
@@ -842,6 +877,70 @@ final class Float {
             )
         }
 
+        /// The frame before it was tucked, so closing remembers that size,
+        /// and a click on the button brings it back.
+        private(set) var tuckedFrom: NSRect?
+        private var tuckedMin: NSSize?
+
+        /// The minimize button, when Settings has it on. Off, and already
+        /// tucked: it comes back out, and the button goes.
+        func offerMinimize(_ on: Bool) {
+            tuck.isHidden = !on
+            if !on, tuckedFrom != nil { untuck() }
+        }
+
+        /// For the bench, which has no pointer: the button's own action.
+        func benchMinimize() {
+            offerMinimize(true)
+            pressedMinimize()
+        }
+
+        private func tuckAway() {
+            guard let window, tuckedFrom == nil, window.frame.width > 230 else { return }
+            tuckedFrom = window.frame
+            tuckedMin = window.minSize
+            let wide: CGFloat = 220
+            let tall = wide * window.frame.height / max(window.frame.width, 1)
+            window.minSize = NSSize(width: wide, height: tall)
+            var target = NSRect(x: window.frame.maxX - wide, y: window.frame.minY, width: wide, height: tall)
+            if let area {
+                target.origin.x = min(max(area.minX, target.minX), area.maxX - wide)
+                target.origin.y = min(max(area.minY, target.minY), area.maxY - tall)
+            }
+            tuck.image = glyph("plus", 11)
+            hideTransport(true)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.18
+                window.animator().setFrame(target, display: false)
+            }
+        }
+
+        private func untuck() {
+            guard let window, let home = tuckedFrom else { return }
+            let min = tuckedMin ?? NSSize(width: 260, height: 146)
+            tuckedFrom = nil
+            tuckedMin = nil
+            tuck.image = glyph("minus", 11)
+            hideTransport(false)
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.18
+                window.animator().setFrame(home, display: false)
+            }, completionHandler: {
+                window.minSize = min
+            })
+        }
+
+        private func hideTransport(_ hide: Bool) {
+            rewind.isHidden = hide
+            pause.isHidden = hide
+            forward.isHidden = hide
+            line.isHidden = hide
+        }
+
+        @objc private func pressedMinimize() {
+            if tuckedFrom != nil { untuck() } else { tuckAway() }
+        }
+
         @objc private func pressedClose() { onClose?() }
         @objc private func pressedReturn() { onReturn?() }
         @objc private func pressedRewind() { onSkip?(-15) }
@@ -1198,10 +1297,15 @@ enum Isolate {
       // turns pure black while still holding a perfectly live page. That is the
       // black rectangle, and it is not an orphaned window at all.
       //
-      // So the mark is put back on whatever is playing now, four times a
-      // second, for as long as the page is out.
+      // So the mark is put back on whatever is playing now, for as long as
+      // the page is out: when a video starts to play, within a quarter of a
+      // second of the page's elements changing or the mark being taken off
+      // (a player rebuilding itself does both), and every two seconds for a
+      // page that does neither. It was every quarter of a second whether
+      // anything had changed or not.
+      if (window.__officeFloatUnwatch) window.__officeFloatUnwatch();
       clearInterval(window.__officeFloatWatch);
-      window.__officeFloatWatch = setInterval(function () {
+      var remark = function () {
         if (document.querySelector('[data-office-float]')) return;
         var again = null, most = 0;
         var all = document.querySelectorAll('video');
@@ -1215,7 +1319,23 @@ enum Isolate {
           }
         }
         if (again) again.setAttribute('data-office-float', '');
-      }, 250);
+      };
+      var queued = null;
+      var changes = new MutationObserver(function () {
+        if (!queued) queued = setTimeout(function () { queued = null; remark(); }, 250);
+      });
+      changes.observe(document.documentElement, {
+        childList: true, subtree: true, attributes: true, attributeFilter: ['data-office-float']
+      });
+      // Media events don't bubble: caught on the way down.
+      document.addEventListener('playing', remark, true);
+      window.__officeFloatWatch = setInterval(remark, 2000);
+      window.__officeFloatUnwatch = function () {
+        changes.disconnect();
+        clearTimeout(queued);
+        document.removeEventListener('playing', remark, true);
+        window.__officeFloatUnwatch = null;
+      };
 
       // Where the picture is once the rest of the page is out of the way,
       // as large as it goes whole and in the middle, for cutting it out of a
@@ -1316,6 +1436,7 @@ enum Isolate {
         // Floated again in the meantime: that is the float's now.
         if (window.__officeFloatLanding !== landing) return;
         window.__officeFloatLanding = null;
+        if (window.__officeFloatUnwatch) window.__officeFloatUnwatch();
         clearInterval(window.__officeFloatWatch);
         window.__officeFloatWatch = null;
         root.classList.remove('office-floating');

@@ -20,6 +20,9 @@ struct SettingsPanel: View {
 
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shield = Shield.shared
+    @ObservedObject private var sync = Sync.shared
+    /// The keys rows name, as Settings › Shortcuts has them now.
+    @ObservedObject private var shortcuts = ShortcutStore.shared
     @State private var isDefault = Links.isDefault
     /// A site shortcut being written, kept out of Preferences until it's saved.
     @State private var draft: Keyword?
@@ -364,9 +367,9 @@ struct SettingsPanel: View {
         let counts = SettingsIndex.applies(item, prefs)
         return SettingRow(
             icon: item.icon,
-            title: title(of: item),
-            detail: counts ? detail(of: item) : SettingsIndex.needs(item),
-            more: counts ? item.more : nil,
+            title: shortcuts.relabel(title(of: item)),
+            detail: shortcuts.relabel(counts ? detail(of: item) : SettingsIndex.needs(item)),
+            more: counts ? item.more.map(shortcuts.relabel) : nil,
             wide: item.kind == .wide,
             lit: lit == item.id
         ) {
@@ -428,6 +431,7 @@ struct SettingsPanel: View {
             return isDefault ? "Search is the default browser on this Mac" : item.detail
         case "downloads.folder":
             return prefs.downloads.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        case "sync": return sync.on ? sync.summary : item.detail
         case "search.engine": return searchDetail
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail
@@ -485,6 +489,9 @@ struct SettingsPanel: View {
             // Coming from another browser, now or any time later: the same
             // page as File › Bring Things Over… and the Welcome's.
             Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
+        case "sync":
+            // On asks for the folder first; cancelled, it stays off.
+            Switch(on: Binding(get: { sync.on }, set: { $0 ? sync.choose() : sync.turnOff() }))
         case "quit.confirm": Switch(on: $prefs.confirmsQuit)
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)
@@ -508,6 +515,8 @@ struct SettingsPanel: View {
                 (look, look == .system ? "Auto" : look.title, AnyView(LookPicture(look: look)))
             }, selection: $prefs.look)
         case "pages.dusk": Switch(on: $prefs.darkensPages)
+        case "inspector.chrome": Switch(on: $prefs.inspectorChrome)
+        case "inspector.dark": Switch(on: $prefs.inspectorDark)
         case "tabs.layout":
             Pictures(options: TabsLayout.allCases.map { ($0, $0.title, AnyView(LayoutPicture(layout: $0))) },
                      selection: Binding(
@@ -524,6 +533,11 @@ struct SettingsPanel: View {
                         set: { on in withAnimation(Motion.glide) { prefs.cards = on } }
                      ))
         case "toolbar.left": Switch(on: $prefs.navigationLeft)
+        case "tabs.compact":
+            Switch(on: Binding(
+                get: { prefs.compactStrip },
+                set: { on in withAnimation(Motion.glide) { prefs.compactStrip = on } }
+            ))
         case "sidebar.roomy":
             Switch(on: Binding(
                 get: { prefs.roomyTabs },
@@ -535,6 +549,7 @@ struct SettingsPanel: View {
         case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
         case "motion.light": Switch(on: $prefs.lightMotion)
+        case "motion.instant": Switch(on: $prefs.instantMotion)
         case "note.split": Always()
         default: EmptyView()
         }
@@ -554,6 +569,7 @@ struct SettingsPanel: View {
             .fixedSize()
         case "tabs.newAfterLast": Switch(on: $prefs.newTabAfterLast)
         case "tabs.closeGoesBack": Switch(on: $prefs.closeGoesBack)
+        case "tabs.undoReopens": Switch(on: $prefs.undoReopensTab)
         case "tabs.switcherBehindFirst": Switch(on: $prefs.switcherBehindFirst)
         case "tabs.frontBeside": Switch(on: $prefs.frontLinksBeside)
         case "tabs.lazy": Switch(on: $prefs.lazyTabs)
@@ -629,6 +645,7 @@ struct SettingsPanel: View {
         case "float.own":
             Segmented(options: FloatOwn.allCases.map { ($0, $0.title) }, selection: $prefs.floatOwn, wide: true)
                 .frame(maxWidth: 340)
+        case "float.minimize": Switch(on: $prefs.floatMinimizes)
         case "media.click": Switch(on: $prefs.waitsForPlay)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
         case "fullscreen.keepsWindow": Switch(on: $prefs.keepsWindow)
@@ -639,6 +656,7 @@ struct SettingsPanel: View {
             // The number itself takes it back to 100%.
             Steps(stops: Preferences.zooms, value: $prefs.pageZoom, home: 1) { "\(Int(($0 * 100).rounded()))%" }
         case "pages.120": Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
+        case "pages.capture": Switch(on: $prefs.capturesPages)
         case "autocorrect": Switch(on: $prefs.autocorrect)
         case "note.panel", "note.translate", "note.sitesearch", "note.links", "note.flick": Always()
         default: EmptyView()
@@ -671,6 +689,7 @@ struct SettingsPanel: View {
         case "spaces.links": Switch(on: $prefs.sendsLinksToSpaces)
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
+        case "pins.folders": Switch(on: $prefs.pinFolders)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
         case "newtab.recent": Switch(on: $prefs.recentInNewTab)
         case "commandbar": Switch(on: $prefs.commandBar)
@@ -730,6 +749,7 @@ struct SettingsPanel: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .fixedSize()
+        case "links.peek.stays": Switch(on: $prefs.peekStays)
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "swipe.history": Switch(on: $prefs.holdsHistory)
         case "note.switcher": Always()
@@ -856,15 +876,23 @@ struct SettingsPanel: View {
             .padding(.trailing, 14)
             .padding(.bottom, 6)
         }
-        ForEach(prefs.keywords) { entry in
+        // The one being changed is up in the editor, not here as well.
+        ForEach(prefs.keywords.filter { $0.id != draft?.id }) { entry in
             HStack(spacing: 8) {
-                Text(entry.keyword)
-                    .frame(width: 50, alignment: .leading)
-                Text("→").foregroundStyle(Palette.muted)
-                Text(entry.template)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Clicked, a saved shortcut opens in the editor to be
+                // changed, rather than deleted and written again.
+                HStack(spacing: 8) {
+                    Text(entry.keyword)
+                        .frame(width: 50, alignment: .leading)
+                    Text("→").foregroundStyle(Palette.muted)
+                    Text(entry.template)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { draft = entry }
+                .help("Click to change")
                 Button {
                     prefs.keywords.removeAll { $0.id == entry.id }
                 } label: {
@@ -888,7 +916,8 @@ struct SettingsPanel: View {
     /// only exists once its address is one it's safe to send words to.
     private var draftProblem: String? {
         guard let draft else { return nil }
-        return Keyword.problem(word: draft.keyword, template: draft.template, among: prefs.keywords)
+        return Keyword.problem(word: draft.keyword, template: draft.template,
+                               among: prefs.keywords.filter { $0.id != draft.id })
     }
 
     private var keywordDetail: String {
@@ -901,10 +930,17 @@ struct SettingsPanel: View {
 
     private func saveDraft() {
         guard let current = draft, draftProblem == nil else { return }
-        prefs.keywords.append(Keyword(
+        let saved = Keyword(
+            id: current.id,
             keyword: current.keyword.trimmingCharacters(in: .whitespacesAndNewlines),
             template: current.template.trimmingCharacters(in: .whitespacesAndNewlines)
-        ))
+        )
+        // One being changed keeps its place in the list.
+        if let index = prefs.keywords.firstIndex(where: { $0.id == saved.id }) {
+            prefs.keywords[index] = saved
+        } else {
+            prefs.keywords.append(saved)
+        }
         draft = nil
     }
 
@@ -919,7 +955,7 @@ struct SettingsPanel: View {
 
     private var searchDetail: String {
         guard prefs.engine == .custom else { return "Where words that aren't an address go" }
-        guard Engine.accepts(prefs.customEngine) else {
+        guard Engine.accepts(Engine.written(prefs.customEngine)) else {
             return "An http or https address with %s where the words go. Until then, Google"
         }
         return "Words go to \(prefs.engine.name(custom: prefs.customEngine))"
@@ -930,7 +966,7 @@ struct SettingsPanel: View {
             return SettingsIndex.item("search.shift")?.detail ?? ""
         }
         guard engine == .custom else { return "Shift-Return sends what you typed to \(engine.title)" }
-        guard Engine.accepts(prefs.shiftCustom) else {
+        guard Engine.accepts(Engine.written(prefs.shiftCustom)) else {
             return "An http or https address with %s where the words go. Until then, Google"
         }
         return "Shift-Return sends what you typed to \(engine.name(custom: prefs.shiftCustom))"

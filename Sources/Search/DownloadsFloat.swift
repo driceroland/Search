@@ -220,7 +220,7 @@ enum DownloadsFloat {
 
         var body: some View {
             card()
-                .shadow(color: .black.opacity(0.16), radius: 14, y: 5)
+                .shadow(color: .black.opacity(0.12), radius: 9, y: 3)
                 .scaleEffect(presence.shown ? 1 : 0.9, anchor: DownloadsFloat.corner(edge))
                 .opacity(presence.shown ? 1 : 0)
                 .padding(DownloadsFloat.insets(edge))

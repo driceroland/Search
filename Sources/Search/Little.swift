@@ -4,8 +4,10 @@ import SwiftUI
 // it with the site, Open in Search and nothing else — to read and close, or
 // to keep. Arc calls it Little Arc; the idea came to Search as #227.
 //
-// Off unless asked for, in Settings › General: a link from Mail opens in the
-// browser's window, as it always has, for anyone who hasn't chosen this.
+// On for a new install, in Settings › General; an install from before it
+// was the default keeps it off, and a link from Mail opens in the browser's
+// window, as it always did, until it is turned on (see
+// Preferences.settleLittleLinks).
 //
 // The page is a tab of its own, as a peek is (see Peek.swift), only in a
 // window of its own: Open in Search moves it into the browser's row, where

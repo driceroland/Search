@@ -32,14 +32,24 @@ enum Engine: String, CaseIterable, Identifiable {
         case .brave: return "https://search.brave.com/search?q=%s"
         case .qwant: return "https://www.qwant.com/?q=%s"
         case .custom:
-            let trimmed = custom.trimmingCharacters(in: .whitespacesAndNewlines)
-            return Engine.accepts(trimmed) ? trimmed : Engine.standard.template(custom: "")
+            let written = Engine.written(custom)
+            return Engine.accepts(written) ? written : Engine.standard.template(custom: "")
         }
     }
 
     func name(custom: String) -> String {
         guard self == .custom else { return title }
-        return Engine.bareHost(of: custom) ?? Engine.standard.title
+        return Engine.bareHost(of: Engine.written(custom)) ?? Engine.standard.title
+    }
+
+    /// A custom engine's address as people bring it: copied from another
+    /// browser with {searchTerms} where the words go, or typed without its
+    /// https://. Either one was turned away, and every search went to Google.
+    static func written(_ template: String) -> String {
+        var text = template.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "{searchTerms}", with: "%s")
+        if !text.isEmpty, !text.contains("://") { text = "https://" + text }
+        return text
     }
 
     static func accepts(_ template: String) -> Bool {

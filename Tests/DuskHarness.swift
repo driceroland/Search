@@ -30,6 +30,9 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
         var turned: [String] = []
         /// "colours", or "filter" to keep the page to the filter.
         var mode = "colours"
+        /// What it should end up darkened by, where that isn't the one it
+        /// starts in: a page the colours gave up on.
+        var finish: String?
         /// JavaScript that should be true of the darkened page, with
         /// lum(selector, property) and ok(selector, property) to read it.
         /// A selector reaches into a shadow root with " >>> ".
@@ -171,6 +174,113 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
             document.getElementById('first').sheet.insertRule('.b{background:#fff}',1)},300)</script>
             """, dark: false, shown: true,
                 looks: ["lum('#a','backgroundColor') < 0.05", "lum('#b','backgroundColor') < 0.05"], settle: 1.8),
+        // A page whose styles never settle: a new <style> every few
+        // milliseconds that replaces the last, and one rewritten in place.
+        // Each sheet is twinned once, and its twin goes with it: what is held
+        // stays about what the page has now, however long this goes on.
+        Fixture(name: "colours-restless-styles", html: """
+            <style>body{background:#fff;color:#222}</style><div id=a class=r>A</div>
+            <script>
+            var n = 0, last = null, again = document.createElement('style');
+            document.head.appendChild(again);
+            var timer = setInterval(function () {
+              var s = document.createElement('style');
+              s.textContent = '.r' + n + '{background:#fff;color:#111}.r{background:#fff}';
+              document.head.appendChild(s);
+              if (last) last.remove();
+              last = s;
+              again.textContent = '.r' + n + '{border:1px solid #ccc}';
+              if (++n >= 150) { clearInterval(timer); document.documentElement.dataset.finished = '1'; }
+            }, 12);
+            </script>
+            """, dark: false, shown: true,
+                looks: ["document.documentElement.dataset.finished === '1'", "lum('#a','backgroundColor') < 0.05",
+                        "window.__officeDusk.state().colours.sheets <= 5", "window.__officeDusk.state().colours.twins <= 5",
+                        "document.adoptedStyleSheets.length <= 10"], settle: 4.0),
+        // The same with big sheets, so that what they cost in all is past
+        // what a page is worth (DuskColours' LIMIT): the colours give up on
+        // it for good, and it is left to the filter with none of theirs held.
+        Fixture(name: "colours-restless-budget", html: """
+            <style>body{background:#fff;color:#222}</style><div id=a>A</div>
+            <script>
+            var n = 0, last = null, rules = '';
+            for (var i = 0; i < 1500; i++) rules += '.c' + i + '{background:#fff;color:#111}';
+            var timer = setInterval(function () {
+              var s = document.createElement('style');
+              s.textContent = rules + '.r' + n + '{color:#000}';
+              document.head.appendChild(s);
+              if (last) last.remove();
+              last = s;
+              if (++n >= 100) { clearInterval(timer); document.documentElement.dataset.finished = '1'; }
+            }, 30);
+            </script>
+            """, dark: false, shown: true, finish: "filter",
+                looks: ["document.documentElement.dataset.finished === '1'", "window.__officeDusk.state().colours.over === true",
+                        "window.__officeDusk.state().colours.sheets === 0", "window.__officeDusk.state().colours.text === 0",
+                        "document.adoptedStyleSheets.length <= 1"], settle: 8.0),
+        // Too much held at once: one sheet whose twin alone is past the budget.
+        Fixture(name: "colours-huge-sheet", html: """
+            <style>body{background:#fff;color:#222}</style><div id=a>A</div>
+            <script>
+            var rules = '';
+            for (var i = 0; i < 25000; i++) rules += '.c' + i + '{background:#fff;color:#111}';
+            var s = document.createElement('style');
+            s.textContent = rules;
+            document.head.appendChild(s);
+            </script>
+            """, dark: false, shown: true, finish: "filter",
+                looks: ["window.__officeDusk.state().colours.over === true", "window.__officeDusk.state().colours.text === 0",
+                        "document.adoptedStyleSheets.length <= 1",
+                        "getComputedStyle(document.documentElement).filter.indexOf('invert') >= 0"], settle: 1.5),
+        // Every sheet swapped for a new one at once: the old twins go before
+        // the new are made, and don't count against the page's budget.
+        Fixture(name: "colours-sheets-swapped-all-at-once", html: """
+            <style>body{background:#fff;color:#222}</style><div id=a class=r>A</div>
+            <script>
+            var made = [];
+            var add = function (tag) {
+              for (var i = 0; i < 1200; i++) {
+                var s = document.createElement('style');
+                s.textContent = '.' + tag + i + '{color:#111}.r{background:#fff}';
+                document.head.appendChild(s);
+                made.push(s);
+              }
+            };
+            add('a');
+            setTimeout(function () { made.forEach(function (s) { s.remove(); }); made = []; add('b'); }, 700);
+            </script>
+            """, dark: false, shown: true,
+                looks: ["window.__officeDusk.state().colours.over === false", "window.__officeDusk.state().colours.sheets >= 1200",
+                        "window.__officeDusk.state().colours.sheets <= 1210", "lum('#a','backgroundColor') < 0.05"], settle: 2.5),
+        // Given up, the page is the filter's, and the filter's rules apply: a
+        // site that turns to a dark look of its own afterwards is measured
+        // again and let go, since turned over it would come out light.
+        Fixture(name: "colours-given-up-then-dark", html: """
+            <style>body{background:#fff}html.dark body{background:#111;color:#eee}</style><div id=a>A</div>
+            <script>
+            var rules = '';
+            for (var i = 0; i < 25000; i++) rules += '.c' + i + '{background:#fff;color:#111}';
+            var s = document.createElement('style');
+            s.textContent = rules;
+            document.head.appendChild(s);
+            setTimeout(function () { document.documentElement.className = 'dark'; }, 700);
+            </script>
+            """, dark: true, shown: false,
+                looks: ["window.__officeDusk.state().colours.over === true",
+                        "getComputedStyle(document.documentElement).filter === 'none'"], settle: 2.0),
+        // Too many held at once: a sheet for everything, none of them let go.
+        Fixture(name: "colours-many-sheets", html: """
+            <style>body{background:#fff;color:#222}</style><div id=a>A</div>
+            <script>
+            for (var i = 0; i < 2100; i++) {
+              var s = document.createElement('style');
+              s.textContent = '.s' + i + '{color:#111}';
+              document.head.appendChild(s);
+            }
+            </script>
+            """, dark: false, shown: true, finish: "filter",
+                looks: ["window.__officeDusk.state().colours.over === true", "window.__officeDusk.state().colours.sheets === 0",
+                        "document.adoptedStyleSheets.length <= 1"], settle: 1.5),
         // Already dark in places: kept dark, its writing kept light.
         Fixture(name: "colours-dark-bar", html: """
             <style>body{background:#fff}#bar{background:#131921;color:#fff}</style><div id=bar>Bar</div><p>Page</p>
@@ -437,12 +547,15 @@ private final class DuskHarness: NSObject, NSApplicationDelegate, WKScriptMessag
         // Darkened the way it was asked to be: in its colours where the
         // browser can, by the filter where it was kept to it.
         let mode = state?["mode"] as? String ?? "none"
-        if fixture.shown, mode != fixture.mode { wrong.append("darkened by \(mode), not \(fixture.mode)") }
+        let wanted = fixture.finish ?? fixture.mode
+        if fixture.shown, mode != wanted { wrong.append("darkened by \(mode), not \(wanted)") }
         let ok = native == fixture.dark && shown == fixture.shown && wrong.isEmpty
         if !ok { failures += 1 }
         if !wrong.isEmpty { print("     \(wrong.joined(separator: ", "))") }
         let heard = told.map { "\($0["on"] as? Bool == true ? "on" : "off")" }.joined(separator: ",")
-        let took = (state?["colours"] as? [String: Any]).map { " \($0["twins"] ?? 0) twins, \($0["ms"] ?? 0) ms" } ?? ""
+        let took = (state?["colours"] as? [String: Any]).map {
+            " \($0["sheets"] ?? 0) sheets, \($0["twins"] ?? 0) twins, \($0["text"] ?? 0) chars, \($0["ms"] ?? 0) ms\($0["over"] as? Bool == true ? ", given up" : "")"
+        } ?? ""
         print("\(ok ? "ok  " : "FAIL") \(fixture.name): measured \(native.map { $0 ? "dark" : "light" } ?? "nothing"), "
               + "\(shown ? "darkened by \(mode)" : "left alone") (told: \(heard))\(took)")
 

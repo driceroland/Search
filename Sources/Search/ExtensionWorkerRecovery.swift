@@ -120,6 +120,7 @@ final class ExtensionWorkerRecovery {
         backgrounds[id] = background
         // The worker before this one is gone, and its hosts with it.
         ExtensionNative.stopWorkerHosts(of: id)
+        ExtensionWatch.workerGone(of: id)
         createdWorker(id, lifetime: background.lifetime)
     }
 

@@ -67,6 +67,13 @@
                                        and whether a drag from there would move the window;
                                        double: test run, a double-click there (start the probe hidden)
     ./bench place ID INDEX             put a tab at another place in the row
+    ./bench pinfolder [on|off|drawn|pin ID|new NAME [ID] [in FOLDER]|move ID FOLDER|none [before|after ID2]
+                      |fold NAME|open NAME|rename NAME TO|nest NAME PARENT|none|delete NAME]
+                                       test run: folders in pinned rows — the setting (on: rows too), a tab pinned
+                                       as a row, a folder (holding a pin, or inside one), a pin moved, folded,
+                                       renamed, nested, deleted; each answers the lines drawn (kind, depth, title,
+                                       folded), the folders and the saved order; drawn: the column drawn off
+                                       screen and its lines read back
     ./bench group [ID new [NAME] | ID NAME | ID none | fold NAME | close NAME]
                                        test run: the tab groups; a tab into a new group, into one by name,
                                        or out of its group; a group folded or opened, or closed with its tabs
@@ -422,6 +429,27 @@ def main(argv):
         elif len(args) >= 2 and args[1] == "new": request["id"], request["new"], request["name"] = args[0], True, " ".join(args[2:])
         elif len(args) >= 2: request["id"], request["name"] = args[0], " ".join(args[1:])
         elif args: sys.exit("usage: bench group [ID new [NAME] | ID NAME | ID none | fold NAME | close NAME]")
+    elif verb == "pinfolder":
+        usage = ("usage: bench pinfolder [on|off|drawn|pin ID|new NAME [ID] [in FOLDER]|move ID FOLDER|none [before|after ID2]"
+                 "|fold NAME|open NAME|rename NAME TO|nest NAME PARENT|none|delete NAME]")
+        if not args: request["action"] = "state"
+        elif args[0] in ("on", "off", "drawn", "state") and len(args) == 1: request["action"] = args[0]
+        elif args[0] == "pin" and len(args) == 2: request["action"], request["id"] = "pin", args[1]
+        elif args[0] == "new" and len(args) >= 2:
+            request["action"], request["name"] = "new", args[1]
+            rest = args[2:]
+            if len(rest) >= 2 and rest[-2] == "in": request["in"], rest = rest[-1], rest[:-2]
+            if len(rest) == 1: request["id"] = rest[0]
+            elif rest: sys.exit(usage)
+        elif args[0] == "move" and len(args) in (3, 5):
+            request["action"], request["id"], request["folder"] = "move", args[1], args[2]
+            if len(args) == 5:
+                if args[3] not in ("before", "after"): sys.exit(usage)
+                request["after"], request["anchor"] = args[3] == "after", args[4]
+        elif args[0] in ("fold", "open", "delete") and len(args) == 2: request["action"], request["name"] = args[0], args[1]
+        elif args[0] == "rename" and len(args) == 3: request["action"], request["name"], request["to"] = "rename", args[1], args[2]
+        elif args[0] == "nest" and len(args) == 3: request["action"], request["name"], request["parent"] = "nest", args[1], args[2]
+        else: sys.exit(usage)
     elif verb == "popups":
         if not args: sys.exit("usage: bench popups ID [open N|allow] | sites | remove SITE")
         if args[0] == "sites": request["action"] = "sites"

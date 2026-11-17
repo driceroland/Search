@@ -339,6 +339,14 @@ final class TabSwitcher: ObservableObject {
         return cached.image
     }
 
+    /// A tab's picture, unless it holds no page and kept no picture to wake
+    /// with: a pin put down (or a tab brought back) draws its mark, not the
+    /// page it showed before (#1050).
+    func preview(for tab: Tab) -> NSImage? {
+        guard !tab.asleep || tab.keptPicture != nil else { return nil }
+        return preview(for: tab.id, address: tab.address)
+    }
+
     func cachePreview(_ image: NSImage, for id: Tab.ID, address: URL) {
         let shown = ring.contains(id) || candidates.contains { partners[$0] == id }
         guard kept(id) || (visible && shown) else { return }
@@ -353,11 +361,11 @@ final class TabSwitcher: ObservableObject {
         let firsts = [selectedID].compactMap { $0 } + ring.filter { $0 != selectedID }
         let orderedIDs = firsts.flatMap { id in [id] + [partners[id]].compactMap { $0 } }
         let ordered = orderedIDs.compactMap(tab)
-            .filter { $0.id == current || preview(for: $0.id, address: $0.address) == nil }
+            .filter { $0.id == current || preview(for: $0) == nil }
         for (index, tab) in ordered.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.04) { [weak self, weak tab] in
                 guard let self, let tab, self.generation == token, self.visible else { return }
-                guard tab.id == current || self.preview(for: tab.id, address: tab.address) == nil else { return }
+                guard tab.id == current || self.preview(for: tab) == nil else { return }
                 self.requestPreview(of: tab, gesture: token)
             }
         }
@@ -568,7 +576,7 @@ struct TabSwitcherOverlay: View {
     private func picture(_ tab: Tab, width: CGFloat, height: CGFloat, mark: CGFloat = 26) -> some View {
         ZStack {
             Palette.hover
-            if let preview = switcher.preview(for: tab.id, address: tab.address) {
+            if let preview = switcher.preview(for: tab) {
                 Image(nsImage: preview)
                     .resizable()
                     .scaledToFill()
