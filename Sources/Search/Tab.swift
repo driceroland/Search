@@ -799,7 +799,7 @@ final class Tab: ObservableObject, Identifiable {
     /// has a name and an address in the row, and costs nothing until you go to
     /// it — which is the difference between a browser that starts in half a
     /// second with twenty tabs and one that doesn't.
-    @Published private(set) var pending: URL?
+    private(set) var pending: URL?
 
     /// For a tab put to sleep for not being looked at: the page's own history
     /// — the back list, the page, where it was scrolled to — handed to the

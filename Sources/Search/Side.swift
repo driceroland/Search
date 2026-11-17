@@ -1228,7 +1228,9 @@ private struct SideRow: View, Equatable {
     /// the address on the tab you're on).
     private var rest: AtRest? { live && !editing ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
     private var atRest: Bool { rest != nil }
-    private var dim: Bool { tab.asleep && !live && !hovering }
+    /// Grouped tabs put away already dim, even with the new setting off.
+    private var putAway: Bool { grouped && tab.asleep && !live }
+    private var dim: Bool { prefs.dimsSleepingTabs && tab.asleep && !live && !hovering && !putAway }
     /// A pin already put down has nothing left to put down: no minus (#1050).
     private var closable: Bool { tab.pin == nil || !tab.asleep }
 
@@ -1244,7 +1246,7 @@ private struct SideRow: View, Equatable {
                     // title either way, as Settings says (#919).
                     if !tab.isBlank {
                         Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15,
-                             dim: dim)
+                             dim: putAway || dim)
                     }
                     if tab.bench {
                         // A script's tab, not yours.
@@ -1421,7 +1423,8 @@ private struct SideRow: View, Equatable {
 
     private var colour: Color {
         if live { return Palette.ink }
-        return hovering ? Palette.ink.opacity(0.7) : Palette.muted
+        let colour = hovering ? Palette.ink.opacity(0.7) : Palette.muted
+        return putAway ? colour.opacity(0.45) : colour
     }
 }
 

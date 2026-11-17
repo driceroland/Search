@@ -255,6 +255,10 @@ final class Preferences: ObservableObject {
     @Published var sleepsTabs: Bool {
         didSet { store.set(sleepsTabs, forKey: "tabs.sleep") }
     }
+    /// A resting tab's title and icon fade until you go to it. Off unless chosen.
+    @Published var dimsSleepingTabs: Bool {
+        didSet { store.set(dimsSleepingTabs, forKey: "tabs.sleep.dim") }
+    }
     /// Tabs you haven't pinned, named or grouped close once left alone this
     /// long, as in Arc. Never unless asked for.
     @Published var tabLife: TabLife {
@@ -807,6 +811,7 @@ final class Preferences: ObservableObject {
         popupWindows = store.bool(forKey: "tabs.popupWindows")
         popupSites = Set(store.stringArray(forKey: "privacy.popupSites") ?? [])
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
+        dimsSleepingTabs = store.bool(forKey: "tabs.sleep.dim")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen
         lazyTabs = store.bool(forKey: "tabs.lazy")
