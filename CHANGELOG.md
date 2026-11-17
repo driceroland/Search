@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Save to Notion's popup sees that you are signed in to Notion, where its "Log in" only took you to your Notion workspace. An extension's own page asking a site it has been granted, without asking for credentials, now sends that site's cookies, as Chrome does; Search sent them only when the extension asked for credentials outright.
 - The downloads card floating by its button keeps Resume, Retry and Remove on one line each, where a failed download's buttons broke in the middle of the word, and its shadow is lighter.
 - Profiles in one window stays one window in full screen. Each profile's window kept a full-screen space of its own once it had been on screen, black in Mission Control, and a swipe went from one to the other as separate windows; the window you leave now comes out of full screen and the next one takes its place in it.
 - Control Panel for YouTube saves what you change in its popup. Its page starts with a `browser` of its own, and Search had fixed that name in place for every extension page, so the page stopped before any of it ran and its switches did nothing. Thanks [@ahmedtarekxo](https://github.com/ahmedtarekxo) for reporting ([#1124](https://github.com/driceroland/Search/issues/1124))

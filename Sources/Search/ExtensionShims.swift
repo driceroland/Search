@@ -919,14 +919,20 @@ enum ExtensionShims {
         const unreadLimit = 64 * 1024 * 1024;
         const fetch = function fetch(input, init) {
           const self = this, args = arguments;
-          // Read cheaply first: only credentials "include" is the browser's;
-          // any other fetch goes on untouched, its body unread.
+          // Read cheaply first: only credentials "include" is the browser's,
+          // and from a page "same-origin", the default, too: Chrome counts a
+          // granted host as the extension's own origin, so its cookies go
+          // with a plain fetch there. Save to Notion's popup asks Notion's
+          // API so and, given no session, said "Log in" while its tabs were
+          // signed in. Not yet from the worker, whose plain fetches are many
+          // (images, an app on the Mac polled with a short timeout).
+          // Any other fetch goes on untouched, its body unread.
           let credentials;
           try {
             credentials = init && init.credentials !== undefined ? String(init.credentials)
               : (input instanceof Request ? input.credentials : "same-origin");
           } catch (e) { return original.apply(self, args); }
-          if (credentials !== "include") return original.apply(self, args);
+          if (credentials !== "include" && (worker || credentials !== "same-origin")) return original.apply(self, args);
           // A copy to read, so the page's own Request keeps its body for
           // WebKit's fetch if the browser passes.
           let request, url;
