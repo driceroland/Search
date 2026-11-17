@@ -349,7 +349,7 @@ enum SettingsIndex {
               keys: ["newtab.recent"], words: ["recent", "history", "suggestions", "cmd t", "last visited"], parent: "newtab.floating"),
         .init(id: "commandbar", group: "opening", icon: "chevron.right.square",
               title: "Address bar commands", detail: "\"settings\" or \"new tab\" alone in the address field goes there",
-              more: "Part of a name, like \"down\" or \"dwn\", shows the command lower in the list.",
+              more: "Part of a name, like \"down\" or \"dwn\", shows the command lower in the list, with every menu command and Settings page whose name has the words typed, as Arc's Command Bar.",
               keys: ["commandbar"], words: ["commands", "command palette"]),
         .init(id: "start.fresh", group: "opening", icon: "sunrise",
               title: "Start with a fresh window", detail: "Pins, groups and named tabs come back; last time's others don't",

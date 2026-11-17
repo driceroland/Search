@@ -6810,6 +6810,9 @@ final class Browser: NSObject, ObservableObject {
         if let command { list.insert(.command(command), at: 0) }
         // A partial command goes last, so Return still does what it did.
         if prefs.commandBar, let near = AddressCommand.near(typed, in: self) { list.append(.command(near)) }
+        // The menus' commands and Settings' pages, as Arc's Command Bar has
+        // them: under the rest, never the row Return takes.
+        if prefs.commandBar, !list.isEmpty { list += AddressCommand.listed(typed, in: self).map(Suggestion.command) }
         // Neither a page already open nor a command has an address to
         // complete towards. And with a command on top, Return runs it: a
         // grey ending in the field ("history" finishing as history.com)

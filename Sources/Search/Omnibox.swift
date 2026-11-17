@@ -245,6 +245,12 @@ struct Omnibox: View {
                         .truncationMode(.tail)
                 }
                 Spacer(minLength: 0)
+                // A command's key, as Arc's Command Bar shows it.
+                if case .command(let command) = offer.kind, let key = command.key {
+                    Text(key)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                }
                 if offer.kind == .bookmark {
                     // Kept by you, not only visited: the bookmark's mark,
                     // at the end now that the site's icon leads the row.
