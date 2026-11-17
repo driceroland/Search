@@ -122,6 +122,47 @@ enum SnapGeometry {
         return Plan(rect: rect, width: width == rect.width ? nil : max(width, 1), cropped: cropped)
     }
 
+    /// A whole page, from the PDF WebKit makes of it: how big to draw it.
+    /// takeSnapshot draws only what the page has on screen, and leaves the
+    /// rest of a long page white; a PDF of the page is the whole document.
+    /// `size` is the part drawn, in points, from the page's top: all of it,
+    /// or `tallest` of it. `scale` is pixels a point: the screen's, or less
+    /// for a picture past `budget`. Nil for a page with no size.
+    static func raster(_ page: CGSize, backing: CGFloat, tallest: CGFloat = SnapGeometry.tallest,
+                       budget: CGFloat = SnapGeometry.budget) -> (size: CGSize, scale: CGFloat, cropped: Bool)? {
+        guard page.width >= 2, page.height >= 2 else { return nil }
+        let size = CGSize(width: page.width.rounded(.down), height: min(page.height, tallest).rounded(.down))
+        var scale = backing
+        let pixels = size.width * size.height * scale * scale
+        if pixels > budget { scale = (budget / (size.width * size.height)).squareRoot() }
+        return (size, scale, page.height > tallest)
+    }
+
+    /// The first page of a PDF, its top `size` points, as a bitmap at
+    /// `scale` pixels a point, on white as the page's own ground is.
+    static func draw(pdf data: Data, page: CGSize? = nil, backing: CGFloat) -> (image: NSImage, cropped: Bool)? {
+        guard let provider = CGDataProvider(data: data as CFData),
+              let document = CGPDFDocument(provider), let first = document.page(at: 1) else { return nil }
+        let box = first.getBoxRect(.mediaBox)
+        guard let plan = raster(page ?? box.size, backing: backing) else { return nil }
+        let (size, scale, cropped) = plan
+        let wide = Int((size.width * scale).rounded(.down)), high = Int((size.height * scale).rounded(.down))
+        guard wide > 0, high > 0, let srgb = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: wide, height: high, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: srgb, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: wide, height: high))
+        context.interpolationQuality = .high
+        context.scaleBy(x: scale, y: scale)
+        // PDF space runs up from the bottom: the page's top is lined up with
+        // the bitmap's, so a page cut short keeps its top.
+        context.translateBy(x: -box.minX, y: size.height - box.maxY)
+        context.drawPDFPage(first)
+        guard let cg = context.makeImage() else { return nil }
+        return (NSImage(cgImage: cg, size: size), cropped)
+    }
+
     /// "Capture 2026-11-17 at 14.03.22.png": a time, as the Mac names its
     /// own screenshots, and not the site, which a private tab's would give
     /// away in the Downloads folder.
@@ -432,39 +473,65 @@ extension Browser {
             finished?(["error": "nothing there"])
             return
         }
+        let passing = tab.shy
+        let file = file ?? Browser.free(SnapGeometry.fileName(Date()), in: downloadsFolder)
+        let failed: (String?) -> Void = { [weak self] reason in
+            self?.announce("Couldn't capture this page")
+            finished?(["error": reason ?? "no picture"])
+        }
+        let done: (NSImage, Bool) -> Void = { [weak self] image, cropped in
+            self?.keep(image, cropped: cropped, rect: plan.rect, passing: passing, file: file, board: board,
+                       failed: failed, finished: finished)
+        }
+        // The whole page: as a PDF, which has all of it, drawn at the
+        // screen's scale. takeSnapshot leaves white what is off screen.
+        if choice.kind == .page {
+            web.createPDF(configuration: WKPDFConfiguration()) { result in
+                MainActor.assumeIsolated {
+                    switch result {
+                    case .success(let pdf):
+                        guard let drawn = SnapGeometry.draw(pdf: pdf, backing: backing) else { return failed("no page in the PDF") }
+                        done(drawn.image, drawn.cropped)
+                    case .failure(let error):
+                        failed(error.localizedDescription)
+                    }
+                }
+            }
+            return
+        }
         let config = WKSnapshotConfiguration()
         config.rect = plan.rect
         // After the layer has gone from the screen, so it is never in it.
         config.afterScreenUpdates = true
         if let width = plan.width { config.snapshotWidth = NSNumber(value: Double(width)) }
-        let passing = tab.shy
-        let file = file ?? Browser.free(SnapGeometry.fileName(Date()), in: downloadsFolder)
-        web.takeSnapshot(with: config) { [weak self] image, error in
+        web.takeSnapshot(with: config) { image, error in
             MainActor.assumeIsolated {
+                guard let image else { return failed(error?.localizedDescription) }
+                done(image, plan.cropped)
+            }
+        }
+    }
+
+    /// The picture on the clipboard and in its file, and said so.
+    private func keep(_ image: NSImage, cropped: Bool, rect: CGRect, passing: Bool, file: URL, board: NSPasteboard,
+                      failed: (String?) -> Void, finished: (([String: Any]) -> Void)?) {
+        guard let data = SnapGeometry.png(image) else { return failed("no PNG") }
+        SnapGeometry.copy(png: data.png, tiff: data.tiff, passing: passing, to: board)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let wrote = (try? data.png.write(to: file, options: .atomic)) != nil
+            DispatchQueue.main.async {
                 guard let self else { return }
-                guard let image, let data = SnapGeometry.png(image) else {
-                    self.announce("Couldn't capture this page")
-                    finished?(["error": error?.localizedDescription ?? "no picture"])
-                    return
+                let copied = cropped ? "The top of the page copied" : "Copied"
+                if wrote {
+                    self.announce("\(copied) and saved to \(file.deletingLastPathComponent().lastPathComponent)", file: file)
+                } else {
+                    self.announce("\(copied), but couldn't save it")
                 }
-                SnapGeometry.copy(png: data.png, tiff: data.tiff, passing: passing, to: board)
-                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                    let wrote = (try? data.png.write(to: file, options: .atomic)) != nil
-                    DispatchQueue.main.async {
-                        guard let self else { return }
-                        let copied = plan.cropped ? "The top of the page copied" : "Copied"
-                        if wrote {
-                            self.announce("\(copied) and saved to \(file.deletingLastPathComponent().lastPathComponent)", file: file)
-                        } else {
-                            self.announce("\(copied), but couldn't save it")
-                        }
-                        let rep = NSBitmapImageRep(data: data.png)
-                        finished?(["path": wrote ? file.path : "", "width": rep?.pixelsWide ?? 0,
-                                   "height": rep?.pixelsHigh ?? 0, "points": [image.size.width, image.size.height],
-                                   "rect": [plan.rect.minX, plan.rect.minY, plan.rect.width, plan.rect.height],
-                                   "cropped": plan.cropped])
-                    }
-                }
+                let rep = NSBitmapImageRep(data: data.png)
+                finished?(["path": wrote ? file.path : "", "width": rep?.pixelsWide ?? 0,
+                           "height": rep?.pixelsHigh ?? 0, "points": [image.size.width, image.size.height],
+                           "rect": [rect.minX, rect.minY, rect.width, rect.height],
+                           "cropped": cropped])
             }
         }
     }

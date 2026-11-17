@@ -111,4 +111,49 @@ final class SnapGeometryTests: XCTestCase {
         SnapGeometry.copy(png: data.png, tiff: data.tiff, passing: false, to: board)
         XCTAssertNil(board.data(forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType")))
     }
+    func testAWholePageIsDrawnAtTheScreensScale() {
+        let drawn = SnapGeometry.raster(CGSize(width: 1180, height: 5040), backing: 2)
+        XCTAssertEqual(drawn?.size, CGSize(width: 1180, height: 5040))
+        XCTAssertEqual(drawn?.scale, 2)
+        XCTAssertEqual(drawn?.cropped, false)
+    }
+
+    func testAWholePagePastTheCapsIsItsTopAndSmaller() {
+        let long = SnapGeometry.raster(CGSize(width: 800, height: 100_000), backing: 1)
+        XCTAssertEqual(long?.size, CGSize(width: 800, height: SnapGeometry.tallest))
+        XCTAssertEqual(long?.cropped, true)
+        let big = try! XCTUnwrap(SnapGeometry.raster(CGSize(width: 2000, height: 20_000), backing: 2))
+        XCTAssertLessThan(big.scale, 2)
+        XCTAssertLessThanOrEqual(2000 * big.scale * 20_000 * big.scale, SnapGeometry.budget * 1.0001)
+        XCTAssertNil(SnapGeometry.raster(.zero, backing: 2))
+    }
+
+    /// A tall page as WebKit's PDF has it: green at its top, red at its
+    /// bottom, and both in the picture, the right way up.
+    func testThePDFsBottomIsDrawnNotLeftWhite() throws {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 100, height: 3000)
+        let consumer = try XCTUnwrap(CGDataConsumer(data: data as CFMutableData))
+        let pdf = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &box, nil))
+        pdf.beginPDFPage(nil)
+        pdf.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        pdf.fill(CGRect(x: 0, y: 0, width: 100, height: 200))       // the bottom
+        pdf.setFillColor(CGColor(red: 0, green: 1, blue: 0, alpha: 1))
+        pdf.fill(CGRect(x: 0, y: 2900, width: 100, height: 100))    // the top
+        pdf.endPDFPage()
+        pdf.closePDF()
+
+        let drawn = try XCTUnwrap(SnapGeometry.draw(pdf: data as Data, backing: 2))
+        XCTAssertEqual(drawn.image.size, NSSize(width: 100, height: 3000))
+        XCTAssertFalse(drawn.cropped)
+        let rep = NSBitmapImageRep(cgImage: try XCTUnwrap(drawn.image.cgImage(forProposedRect: nil, context: nil, hints: nil)))
+        XCTAssertEqual(rep.pixelsWide, 200)
+        XCTAssertEqual(rep.pixelsHigh, 6000)
+        let top = try XCTUnwrap(rep.colorAt(x: 100, y: 20)?.usingColorSpace(.sRGB))
+        let middle = try XCTUnwrap(rep.colorAt(x: 100, y: 3000)?.usingColorSpace(.sRGB))
+        let bottom = try XCTUnwrap(rep.colorAt(x: 100, y: 5980)?.usingColorSpace(.sRGB))
+        XCTAssertGreaterThan(top.greenComponent, 0.8); XCTAssertLessThan(top.redComponent, 0.4)
+        XCTAssertGreaterThan(middle.blueComponent, 0.9)
+        XCTAssertGreaterThan(bottom.redComponent, 0.8); XCTAssertLessThan(bottom.greenComponent, 0.4)
+    }
 }
