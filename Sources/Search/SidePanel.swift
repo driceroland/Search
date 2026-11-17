@@ -257,10 +257,8 @@ extension Browser {
     /// pair shows one page as any other tab does.
     private func panelPanes(_ tab: Tab.ID? = nil) -> [Tab] {
         guard let here = tabs.first(where: { $0.id == (tab ?? activeID) }) else { return [] }
-        guard let pair = split(for: here), let other = pair.partner(of: here.id),
-              let beside = tabs.first(where: { $0.id == other })
-        else { return [here] }
-        return [here, beside]
+        guard let pair = split(for: here) else { return [here] }
+        return [here] + tabs.filter { pair.contains($0.id) && $0.id != here.id }
     }
 }
 

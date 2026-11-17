@@ -147,7 +147,7 @@ extension Browser {
             peekFrom = nil
         }
         insert(page, at: place)
-        if beside, prefs.splitView, let from, canSplit(page, with: from) {
+        if beside, prefs.splitView, let from, canJoin(page, beside: from) {
             pair(page, with: from, onLeft: false)
         } else {
             select(page)

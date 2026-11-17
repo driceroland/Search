@@ -385,7 +385,7 @@ final class TabDrag: ObservableObject {
         return markers.values.compactMap(\.view).first { view in
             view.kind == .stage && view.browser === browser && view.window === window
                 && !view.isHiddenOrHasHiddenAncestor
-                && view.tab.map { browser.canSplit(source, with: $0) } == true
+                && view.tab.map { browser.canJoin(source, beside: $0) } == true
                 && window.convertToScreen(view.convert(view.bounds, to: nil)).contains(point)
         }?.tab
     }
@@ -398,7 +398,7 @@ final class TabDrag: ObservableObject {
                 && window.convertToScreen(view.convert(view.bounds, to: nil)).contains(point)
         }
         if let stage = candidates.first(where: { view in
-            view.kind == .stage && view.tab.map { browser.canSplit(source, with: $0) } == true
+            view.kind == .stage && view.tab.map { browser.canJoin(source, beside: $0) } == true
         }), let page = stage.tab {
             let frame = window.convertToScreen(stage.convert(stage.bounds, to: nil))
             let band = max(TabDrag.band, frame.width * TabDrag.bandShare)

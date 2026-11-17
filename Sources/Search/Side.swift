@@ -482,8 +482,9 @@ struct SideBar: View {
         let rows = prefs.usesTabGroups
             ? displayed.filter { $0.pin == nil && browser.group(of: $0) == nil } + grouped.flatMap { $0 }
             : displayed.filter { $0.pin == nil }
-        // A pair is two lines (see SplitTabItem).
-        let pairs = rows.filter { browser.split(for: $0) != nil }.count
+        // A split is a line for each page (see SplitTabItem): the lines
+        // past the first.
+        let pairs = rows.reduce(0) { $0 + max(0, (browser.split(for: $1)?.tabs.count ?? 1) - 1) }
         let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
         // A folded group showing none of its tabs still has its empty stack
         // of them under its heading, and the gap after it.
@@ -504,17 +505,18 @@ struct SideBar: View {
         close: @escaping () -> Void
     ) -> some View {
         let pair = prefs.splitView ? splits.first(where: { $0.left == tab.id }) : nil
+        let pages = pair.map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? []
         if icons {
-            if let pair, let right = tabs.first(where: { $0.id == pair.right }) {
-                IconPair(browser: browser, prefs: prefs, left: tab, right: right,
+            if let pair, pages.count >= 2 {
+                IconPair(browser: browser, prefs: prefs, pages: pages,
                          live: activeID.map { pair.contains($0) } ?? false,
                          focusedID: activeID, interactive: interactive, pill: pill)
             } else {
                 IconTile(browser: browser, prefs: prefs, tab: tab, live: tab.id == activeID,
                          pill: pill, close: close, interactive: interactive)
             }
-        } else if let pair, let right = tabs.first(where: { $0.id == pair.right }) {
-            SplitTabItem(browser: browser, prefs: prefs, left: tab, right: right,
+        } else if let pair, pages.count >= 2 {
+            SplitTabItem(browser: browser, prefs: prefs, pages: pages,
                          width: nil, height: rowHeight,
                          live: activeID.map { pair.contains($0) } ?? false,
                          focusedID: activeID,
@@ -530,8 +532,10 @@ struct SideBar: View {
     /// Each row's place down the column, the gap under it included: a pair
     /// stands as two lines (see Carried). Worked out once for the list.
     private func steps(_ rows: [Tab]) -> [CGFloat] {
-        let pairs = prefs.splitView ? Set(browser.splits.filter { $0.left != $0.right }.map(\.left)) : []
-        return rows.map { (pairs.contains($0.id) ? rowHeight * 2 : rowHeight) + SideBar.gap }
+        let pairs = prefs.splitView
+            ? Dictionary(browser.splits.filter { $0.left != $0.right }.map { ($0.left, $0.tabs.count) }, uniquingKeysWith: { first, _ in first })
+            : [:]
+        return rows.map { rowHeight * CGFloat(pairs[$0.id] ?? 1) + SideBar.gap }
     }
 
     // MARK: - the pinned squares

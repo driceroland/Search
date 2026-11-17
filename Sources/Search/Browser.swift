@@ -101,9 +101,8 @@ final class Browser: NSObject, ObservableObject {
             let left = tabs.first { $0.id == old }
             left?.touch()
             if prefs.splitView, let pair = splits.first(where: { $0.contains(old) }),
-               activeID.map({ !pair.contains($0) }) ?? true,
-               let partner = tabs.first(where: { $0.id == pair.partner(of: old) }) {
-                partner.touch()
+               activeID.map({ !pair.contains($0) }) ?? true {
+                for other in tabs where pair.others(than: old).contains(other.id) { other.touch() }
             }
             // The page to come back to, when the pair is chosen again.
             if prefs.splitView, let id = activeID,
@@ -1954,7 +1953,7 @@ final class Browser: NSObject, ObservableObject {
         // Pins are the space's, kept on disk and shown in every window: a
         // private tab can't be one, or its page would outlive it there.
         guard !tab.shy, tab.page == nil else { return }
-        detachSplit(tab)
+        leaveSplit(tab)
         if tab.pin == nil {
             let previousGroup = tab.groupID
             tab.groupID = nil
@@ -3646,13 +3645,17 @@ final class Browser: NSObject, ObservableObject {
         let keptGroups = groups?.filter { group in
             entries.contains { $0.groupID == group.id }
         }
-        // Only a pair that is whole in the file: one with an empty page, or
-        // a private one, isn't written, and its other page comes back alone.
+        // The pages of a split that are in the file: an empty page, or a
+        // private one, isn't written. Two or more left stay a split, their
+        // shares made up between them; one alone comes back as a tab.
         let savedSplits = splits.compactMap { pair -> Session.Split? in
-            let places = pair.tabs.compactMap { indices[$0] }
-            guard places.count == pair.tabs.count, places.count >= 2,
+            let written = pair.tabs.indices.filter { indices[pair.tabs[$0]] != nil }
+            let places = written.compactMap { indices[pair.tabs[$0]] }
+            guard places.count >= 2,
                   places == Array(places[0]..<places[0] + places.count) else { return nil }
-            return Session.Split(tabs: places, axis: pair.axis, sizes: pair.sizes,
+            let sizes = written.count == pair.tabs.count || pair.sizes.count != pair.tabs.count
+                ? pair.sizes : TabSplit.clamp(written.map { pair.sizes[$0] })
+            return Session.Split(tabs: places, axis: pair.axis, sizes: sizes,
                                  focused: pair.focused.flatMap { indices[$0] })
         }
         return .init(tabs: entries, active: active, groups: keptGroups, splits: savedSplits)
@@ -3708,6 +3711,15 @@ final class Browser: NSObject, ObservableObject {
             && tabs.contains(where: { $0.id == second.id })
     }
 
+    /// Whether `tab` can go beside `target` on screen: into the split
+    /// `target` is in, while it has room, or as a pair with it. Moving
+    /// within its own split is always room enough.
+    func canJoin(_ tab: Tab, beside target: Tab) -> Bool {
+        guard canSplit(tab, with: target) else { return false }
+        guard let there = split(for: target) else { return true }
+        return there.contains(tab.id) || !there.isFull
+    }
+
     /// Zen's rule for pins: a pin never goes into a pair — it keeps its
     /// place among the pins, in every window (Pins.swift) — but its page
     /// does, as a new tab beside the other page. Anything else is itself.
@@ -3720,25 +3732,38 @@ final class Browser: NSObject, ObservableObject {
         return copy
     }
 
-    func pair(_ dragged: Tab, with target: Tab, onLeft: Bool) {
-        guard canSplit(dragged, with: target) else { return }
+    /// `dragged` beside `target`, on its left or right. With `target`
+    /// already in a split that has room, `dragged` joins it there and the
+    /// pages are made even; alone, the two make a pair. `joining` false
+    /// takes `target` out of its split first, for a pair of exactly these
+    /// two (see pairPickedTabs). `dragged` leaves any split it was in.
+    func pair(_ dragged: Tab, with target: Tab, onLeft: Bool, joining: Bool = true) {
+        guard joining ? canJoin(dragged, beside: target) : canSplit(dragged, with: target) else { return }
         if floating == dragged.id || floating == target.id { land() }
         let dragged = splittable(dragged)
         let target = splittable(target)
-        detachSplit(dragged)
-        detachSplit(target)
+        leaveSplit(dragged)
+        if !joining { leaveSplit(target) }
         let oldGroup = dragged.groupID
         dragged.groupID = target.groupID
         var row = tabs.filter { $0.id != dragged.id }
         guard let index = row.firstIndex(where: { $0.id == target.id }) else { return }
         row.insert(dragged, at: onLeft ? index : index + 1)
-        let left = onLeft ? dragged : target
-        let right = onLeft ? target : dragged
-        splits.append(TabSplit(tabs: [left.id, right.id], focused: dragged.id))
+        let members: [Tab.ID]
+        if let at = splits.firstIndex(where: { $0.contains(target.id) }) {
+            splits[at].insert(dragged.id, beside: target.id, before: onLeft)
+            splits[at].focused = dragged.id
+            members = splits[at].tabs
+        } else {
+            let left = onLeft ? dragged : target
+            let right = onLeft ? target : dragged
+            splits.append(TabSplit(tabs: [left.id, right.id], focused: dragged.id))
+            members = [left.id, right.id]
+        }
         tabs = row
         removeEmptyGroup(oldGroup)
         focusPane(dragged)
-        for pane in [left, right] where !pane.isBlank {
+        for pane in tabs where members.contains(pane.id) && !pane.isBlank {
             if !pane.wake() { pane.revive() }
         }
         rememberSession()
@@ -3750,13 +3775,13 @@ final class Browser: NSObject, ObservableObject {
     /// split puts it away, as ⌘T, ⌘L and ⌘K each put away what they raised
     /// (#912). It used to go to the right-hand page, which ⌃⌘→ already does.
     func splitKey() {
-        if pickedPair == nil, activeSplit != nil, let tab = active { return detachSplit(tab) }
+        if pickedSplit == nil, activeSplit != nil, let tab = active { return detachSplit(tab) }
         startSplit()
     }
 
     func startSplit() {
-        // Two tabs picked in the column: those two side by side.
-        if pickedPair != nil { return pairPickedTabs() }
+        // Two to four tabs picked in the column: those side by side.
+        if pickedSplit != nil { return pairPickedTabs() }
         guard prefs.splitView, let shown = active, !shown.bench else { return }
         if let pair = activeSplit {
             if let right = tabs.first(where: { $0.id == pair.right }) { focusPane(right) }
@@ -3779,17 +3804,68 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
+    /// Tabs › Add Page to Split View: with a split on screen that has
+    /// room, an empty page beside the one with the keys, to its right, as
+    /// ⌥⌘N puts one beside a page alone.
+    func addPaneToSplit() {
+        guard prefs.splitView, let pair = activeSplit, !pair.isFull, let shown = active, !shown.bench else { return }
+        let right = Tab(shy: shown.shy,
+                        configuration: shown.shy ? Web.configuration(shy: true, store: shown.store)
+                            : Web.configuration(space: spaceID))
+        prepare(right)
+        right.groupID = shown.groupID
+        guard let index = tabs.firstIndex(where: { $0.id == shown.id }),
+              let at = splits.firstIndex(where: { $0.id == pair.id }) else { return }
+        splits[at].insert(right.id, beside: shown.id)
+        splits[at].focused = right.id
+        tabs.insert(right, at: index + 1)
+        focusPane(right)
+        editing = true
+        typed = ""
+        focusRequest += 1
+        rememberSession()
+    }
+
+    /// Whether Add Page to Split View has somewhere to add one.
+    var canAddPane: Bool {
+        guard let pair = activeSplit, let shown = active else { return false }
+        return !pair.isFull && !shown.bench
+    }
+
+    /// The whole split taken apart: every page stays, as a tab of its own.
     func detachSplit(_ tab: Tab) {
         guard let index = splits.firstIndex(where: { $0.contains(tab.id) }) else { return }
         splits.remove(at: index)
         rememberSession()
     }
 
+    /// One page out of its split, the others staying together; a split
+    /// left with one page is no split, and that page is a tab again. Of a
+    /// pair, the same as taking it apart.
+    func leaveSplit(_ tab: Tab) {
+        guard let index = splits.firstIndex(where: { $0.contains(tab.id) }) else { return }
+        var rest = splits[index]
+        if rest.remove(tab.id) {
+            if rest.focused == nil, let id = activeID, rest.contains(id) { rest.focused = id }
+            splits[index] = rest
+        } else {
+            splits.remove(at: index)
+        }
+        rememberSession()
+    }
+
     /// Once a drag of the divider is over, or once an arrow key moved it:
     /// the drag itself is followed by the stage alone (see PaneStage).
     func setSplitFraction(_ id: UUID, fraction: Double) {
-        guard fraction.isFinite, let index = splits.firstIndex(where: { $0.id == id }) else { return }
-        let sizes = TabSplit.clamp([fraction, 1 - fraction])
+        guard fraction.isFinite else { return }
+        setSplitSizes(id, [fraction, 1 - fraction])
+    }
+
+    /// Each page's share at once, for three or four (two as a fraction).
+    func setSplitSizes(_ id: UUID, _ sizes: [Double]) {
+        guard let index = splits.firstIndex(where: { $0.id == id }),
+              sizes.count == splits[index].tabs.count, sizes.allSatisfy(\.isFinite) else { return }
+        let sizes = TabSplit.clamp(sizes)
         guard splits[index].sizes != sizes else { return }
         splits[index].sizes = sizes
         rememberSession()
@@ -3826,10 +3902,12 @@ final class Browser: NSObject, ObservableObject {
         select(tab)
     }
 
-    /// ⌃⌘← and ⌃⌘→: the page on that side.
+    /// ⌃⌘← and ⌃⌘→: the page next to it on that side, none past the ends.
+    /// Of two, the page on that side.
     func focusPane(onLeft: Bool) {
-        guard let pair = activeSplit,
-              let tab = tabs.first(where: { $0.id == (onLeft ? pair.left : pair.right) }) else { return }
+        guard let pair = activeSplit, let id = activeID, let at = pair.tabs.firstIndex(of: id) else { return }
+        let next = min(max(0, at + (onLeft ? -1 : 1)), pair.tabs.count - 1)
+        guard let tab = tabs.first(where: { $0.id == pair.tabs[next] }) else { return }
         focusPane(tab)
     }
 
@@ -3846,11 +3924,11 @@ final class Browser: NSObject, ObservableObject {
         guard prefs.splitView, let current = active, tabs.contains(where: { $0.id == tab.id }) else { return select(tab) }
         if let pair = activeSplit, pair.contains(tab.id) {
             let other = pair.partner(of: tab.id).flatMap { id in tabs.first { $0.id == id } }
-            detachSplit(tab)
+            leaveSplit(tab)
             if let other { select(other) }
             return
         }
-        guard tab.id == current.id || canSplit(tab, with: current) else { return select(tab) }
+        guard tab.id == current.id || canJoin(tab, beside: current) else { return select(tab) }
         openInSplit(tab)
     }
 
@@ -3860,7 +3938,7 @@ final class Browser: NSObject, ObservableObject {
         guard prefs.splitView, let current = active else { return }
         if tab.id == current.id { return startSplit() }
         guard split(for: tab)?.contains(current.id) != true else { return focusPane(tab) }
-        guard canSplit(tab, with: current) else { return }
+        guard canJoin(tab, beside: current) else { return }
         pair(tab, with: current, onLeft: false)
     }
 
@@ -3892,20 +3970,27 @@ final class Browser: NSObject, ObservableObject {
         return tabs.filter { ids.contains($0.id) }
     }
 
-    /// Exactly two tabs picked, and already the two pages of one pair.
+    /// The tabs picked are already the pages of one split, all of them.
     var pickedTabsArePaired: Bool {
         let picked = pickedTabs
-        return picked.count == 2 && split(for: picked[0])?.contains(picked[1].id) == true
+        guard picked.count >= 2, let pair = split(for: picked[0]) else { return false }
+        return picked.allSatisfy { pair.contains($0.id) }
     }
 
-    /// Exactly two tabs picked that can go side by side: what Open 2 Tabs in
-    /// Split View and ⌥⌘N pair. More than two isn't a pair — Split View holds
-    /// two pages — so the menu's item is off then and ⌥⌘N does what it does
+    /// Two to four tabs picked that can go side by side: what Open 2 Tabs
+    /// (3, 4) in Split View and ⌥⌘N put together. More than a split holds
+    /// can't be, so the menu's item is off then and ⌥⌘N does what it does
     /// without a selection.
-    var pickedPair: (left: Tab, right: Tab)? {
+    var pickedSplit: [Tab]? {
         let picked = pickedTabs
-        guard prefs.splitView, picked.count == 2, !pickedTabsArePaired,
-              canSplit(picked[0], with: picked[1]) else { return nil }
+        guard prefs.splitView, (2...TabSplit.most).contains(picked.count), !pickedTabsArePaired,
+              picked.dropFirst().allSatisfy({ canSplit($0, with: picked[0]) }) else { return nil }
+        return picked
+    }
+
+    /// Exactly two picked, of `pickedSplit`.
+    var pickedPair: (left: Tab, right: Tab)? {
+        guard let picked = pickedSplit, picked.count == 2 else { return nil }
         return (picked[0], picked[1])
     }
 
@@ -3917,12 +4002,20 @@ final class Browser: NSObject, ObservableObject {
     /// left is a pin — and the tab asked from has the keys. The selection
     /// is done with.
     func pairPickedTabs(focus asked: Tab? = nil) {
-        guard let (left, right) = pickedPair else { return }
+        guard let picked = pickedSplit else { return }
+        let (left, right) = (picked[0], picked[1])
         clearTabSelection()
         if left.pin != nil && right.pin == nil {
-            pair(left, with: right, onLeft: true)
+            pair(left, with: right, onLeft: true, joining: false)
         } else {
-            pair(right, with: left, onLeft: false)
+            pair(right, with: left, onLeft: false, joining: false)
+        }
+        // The third and fourth after them, in the column's order, each
+        // beside the last page of the split (a pin as its page's copy).
+        for tab in picked.dropFirst(2) {
+            guard let made = split(for: right) ?? split(for: left),
+                  let last = tabs.first(where: { $0.id == made.right }) else { break }
+            pair(tab, with: last, onLeft: false)
         }
         if let asked, let made = split(for: asked), activeSplit?.id == made.id {
             focusPane(asked)
@@ -3930,6 +4023,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// The divider's menu › Swap Pages.
+    /// Of three or four, the order turned round.
     func swapSplit() {
         guard let pair = activeSplit, let index = splits.firstIndex(where: { $0.id == pair.id }) else { return }
         let members = pair.tabs.compactMap { id in tabs.first { $0.id == id } }
@@ -3945,7 +4039,7 @@ final class Browser: NSObject, ObservableObject {
     /// The divider's menu › Even Out, or a double-click on it.
     func evenSplit() {
         guard let pair = activeSplit else { return }
-        setSplitFraction(pair.id, fraction: 0.5)
+        setSplitSizes(pair.id, TabSplit.even(pair.tabs.count))
     }
 
     /// The divider's menu › Close Both. Remembered as one, as Close Tabs
@@ -3967,7 +4061,7 @@ final class Browser: NSObject, ObservableObject {
               !tab.bench, tab.shy == blank.shy,
               let at = tabs.firstIndex(where: { $0.id == blank.id }) else { return }
         let tab = splittable(tab)
-        detachSplit(tab)
+        leaveSplit(tab)
         let oldGroup = tab.groupID
         tab.groupID = blank.groupID
         var row = tabs.filter { $0.id != tab.id }
@@ -3984,9 +4078,10 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
+    /// The next page, round from the last to the first: of two, the other.
     func focusOtherPane() {
-        guard let pair = activeSplit,
-              let other = tabs.first(where: { $0.id == (activeID == pair.left ? pair.right : pair.left) }) else { return }
+        guard let pair = activeSplit, let id = activeID, let at = pair.tabs.firstIndex(of: id),
+              let other = tabs.first(where: { $0.id == pair.tabs[(at + 1) % pair.tabs.count] }) else { return }
         focusPane(other)
     }
 
@@ -4004,7 +4099,7 @@ final class Browser: NSObject, ObservableObject {
               moving.allSatisfy({ ($0.pin == nil) == (anchor.pin == nil) }), joins(tab, kindOf: anchor) else { return }
         var row = tabs.filter { !ids.contains($0.id) }
         guard let target = row.firstIndex(where: { $0.id == anchor.id }) else { return }
-        let targetSize = split(for: anchor) == nil ? 1 : 2
+        let targetSize = split(for: anchor)?.tabs.count ?? 1
         row.insert(contentsOf: moving, at: from < index ? target + targetSize : target)
         // Picked tabs from other groups join the carried tab's, or setting
         // the row would put each back in its own (see arrangeGroupedTabs).
@@ -4036,7 +4131,7 @@ final class Browser: NSObject, ObservableObject {
                   split(for: tab)?.contains(target.id) != true,
                   (tab.pin == nil) == (target.pin == nil), joins(tab, kindOf: target) else { return }
             let targetStart = split(for: target).flatMap { pair in tabs.firstIndex { $0.id == pair.left } } ?? targetIndex
-            detachSplit(tab)
+            leaveSplit(tab)
             let previousGroup = tab.groupID
             tab.groupID = target.groupID
             var row = tabs.filter { $0.id != tab.id }
@@ -4044,7 +4139,7 @@ final class Browser: NSObject, ObservableObject {
             tabs = row
             removeEmptyGroup(previousGroup)
         } else {
-            detachSplit(tab)
+            leaveSplit(tab)
             var row = tabs
             row.remove(at: sourceIndex)
             row.insert(tab, at: tab.pin == nil ? row.count : row.filter { $0.pin != nil && (tab.listed || !$0.listed) }.count)
@@ -4236,9 +4331,11 @@ final class Browser: NSObject, ObservableObject {
         // wake is this the other case, one whose page quietly died while you
         // were elsewhere, which revive() checks for on its own.
         if !tab.wake() { tab.revive() }
-        if let pair = activeSplit,
-           let other = tabs.first(where: { $0.id == (pair.left == tab.id ? pair.right : pair.left) }),
-           !other.isBlank, !other.wake() { other.revive() }
+        if let pair = activeSplit {
+            for other in tabs where pair.contains(other.id) && other.id != tab.id {
+                if !other.isBlank, !other.wake() { other.revive() }
+            }
+        }
         rememberSession()
         editing = false
         typed = tab.isBlank ? tab.draft : ""
@@ -4300,7 +4397,7 @@ final class Browser: NSObject, ObservableObject {
         guard tabs.contains(where: { $0.id == tab.id }) else { return }
         // Its page goes, and its peek, hidden or not, with it.
         if peekFrom == tab.id { closePeek() }
-        detachSplit(tab)
+        leaveSplit(tab)
         heldDialogs.removeValue(forKey: tab.id)?.forEach { $0.dismiss() }
         dropQuestions(for: tab.id)
         if floating == tab.id { land(covering: false) }
@@ -4346,7 +4443,7 @@ final class Browser: NSObject, ObservableObject {
         if peekFrom == tab.id { closePeek() }
         let pair = split(for: tab)
         let partner = pair.flatMap { pair in tabs.first { $0.id == pair.partner(of: tab.id) } }
-        detachSplit(tab)
+        leaveSplit(tab)
         heldDialogs.removeValue(forKey: tab.id)?.forEach { $0.dismiss() }
         dropQuestions(for: tab.id)
 
@@ -4416,7 +4513,7 @@ final class Browser: NSObject, ObservableObject {
             }
             let fresh = Tab(configuration: Web.configuration(space: spaceID))
             prepare(fresh)
-            remember(tab, at: index, partner: partner?.id, onLeft: pair?.left == tab.id)
+            remember(tab, at: index, partner: partner?.id, onLeft: pair?.isBefore(tab.id, partner?.id) ?? false)
             tab.close()
             tabs[index] = fresh
             activeID = fresh.id
@@ -4426,7 +4523,7 @@ final class Browser: NSObject, ObservableObject {
             return
         }
 
-        remember(tab, at: index, partner: partner?.id, onLeft: pair?.left == tab.id)
+        remember(tab, at: index, partner: partner?.id, onLeft: pair?.isBefore(tab.id, partner?.id) ?? false)
         tab.close()
         tabs.remove(at: index)
         removeEmptyGroup(tab.groupID)
@@ -4458,8 +4555,8 @@ final class Browser: NSObject, ObservableObject {
     func closeOthers(but keep: Tab) {
         select(keep)
         // The list is read once: closing walks the row and can add to it.
-        let partner = split(for: keep).flatMap { $0.partner(of: keep.id) }
-        for tab in tabs.filter({ $0.id != keep.id && $0.id != partner }) {
+        let kept = split(for: keep)?.tabs ?? [keep.id]
+        for tab in tabs.filter({ !kept.contains($0.id) }) {
             close(tab)
         }
         select(keep)
@@ -4469,8 +4566,8 @@ final class Browser: NSObject, ObservableObject {
     /// Both pages of the clicked split stay; pins keep their places too.
     func tabsBelow(_ tab: Tab) -> [Tab] {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return [] }
-        let partner = split(for: tab).flatMap { $0.partner(of: tab.id) }
-        let end = max(index, tabs.firstIndex(where: { $0.id == partner }) ?? index)
+        let members = split(for: tab)?.tabs ?? []
+        let end = members.compactMap { id in tabs.firstIndex { $0.id == id } }.max().map { max(index, $0) } ?? index
         return tabs.dropFirst(end + 1).filter { $0.pin == nil }
     }
 
@@ -4641,10 +4738,17 @@ final class Browser: NSObject, ObservableObject {
             // A pair cleared together: its other half came back just before,
             // beside it already. Made a pair again as it stands, not through
             // pair(), which would take the focus and wake both pages.
-            if let id = ghost.partner, let partner = back[id],
-               split(for: partner) == nil, canSplit(tab, with: partner) {
-                let pair = TabSplit(tabs: ghost.onLeft ? [tab.id, partner.id] : [partner.id, tab.id], focused: tab.id)
-                if Browser.holds(pair, in: tabs) { splits.append(pair) }
+            if let id = ghost.partner, let partner = back[id], canSplit(tab, with: partner) {
+                if let at = splits.firstIndex(where: { $0.contains(partner.id) }) {
+                    // Three or four closed together: into the split the
+                    // pages after it already made again.
+                    var grown = splits[at]
+                    if grown.insert(tab.id, beside: partner.id, before: ghost.onLeft),
+                       Browser.holds(grown, in: tabs) { splits[at] = grown }
+                } else {
+                    let pair = TabSplit(tabs: ghost.onLeft ? [tab.id, partner.id] : [partner.id, tab.id], focused: tab.id)
+                    if Browser.holds(pair, in: tabs) { splits.append(pair) }
+                }
             }
         }
         if regrouped { arrangeGroupedTabs() }
@@ -4692,9 +4796,10 @@ final class Browser: NSObject, ObservableObject {
         } else {
             tab.go(to: ghost.url)
         }
-        // Back into its pair, if the page it was beside is still alone.
+        // Back into its split beside the page it was beside, while that page
+        // is alone or its split has room.
         if let id = ghost.partner, let partner = tabs.first(where: { $0.id == id }),
-           split(for: partner) == nil, canSplit(tab, with: partner) {
+           canJoin(tab, beside: partner) {
             pair(tab, with: partner, onLeft: ghost.onLeft)
         }
     }
@@ -4859,7 +4964,7 @@ final class Browser: NSObject, ObservableObject {
         // Its peek, hidden or not, doesn't follow it to another space.
         if peekFrom == tab.id { closePeek() }
         let partner = split(for: tab).flatMap { pair in tabs.first { $0.id == pair.partner(of: tab.id) } }
-        detachSplit(tab)
+        leaveSplit(tab)
 
         if floating == tab.id { land() }
         if editingTab == tab.id { cancelTabEdit() }
@@ -4965,7 +5070,7 @@ final class Browser: NSObject, ObservableObject {
         if peekFrom == tab.id { closePeek() }
         if let web = tab.built { cancelDisplay(for: web) }
         let partner = split(for: tab).flatMap { pair in tabs.first { $0.id == pair.partner(of: tab.id) } }
-        detachSplit(tab)
+        leaveSplit(tab)
         if floating == tab.id { land() }
         if editingTab == tab.id { cancelTabEdit() }
         if activeID == tab.id {
@@ -5076,11 +5181,9 @@ final class Browser: NSObject, ObservableObject {
         // A pair is one place in the row: moved into a group or out of one,
         // both halves go, and stay a pair. Dragged apart in the row, one
         // half leaves on its own (see dropTabIntoStrip).
-        let partner = split(for: tab).flatMap { pair in
-            tabs.first { $0.id == (pair.left == tab.id ? pair.right : pair.left) }
-        }
+        let partners = split(for: tab).map { pair in tabs.filter { pair.contains($0.id) && $0.id != tab.id } } ?? []
         tab.groupID = id
-        partner?.groupID = id
+        for partner in partners { partner.groupID = id }
         removeEmptyGroup(previousGroup)
         arrangeGroupedTabs()
         if let id, let index = tabGroups.firstIndex(where: { $0.id == id }) {
@@ -5117,7 +5220,7 @@ final class Browser: NSObject, ObservableObject {
                 ?? row.firstIndex(where: { $0.pin == nil }) ?? row.count
         }
         let previous = Set(moving.compactMap(\.groupID))
-        if detaching { detachSplit(tab) }
+        if detaching { leaveSplit(tab) }
         for member in moving { member.groupID = target.group }
         row.insert(contentsOf: moving, at: insertion)
         tabGroups[groupIndex].collapsed = false
@@ -5939,7 +6042,8 @@ final class Browser: NSObject, ObservableObject {
         var taken = Set<Tab.ID>()
         for saved in saved.splits {
             let members = saved.tabs.compactMap { bySavedIndex[$0] }
-            guard members.count == saved.tabs.count, !members.contains(where: { taken.contains($0.id) }) else { continue }
+            guard members.count == saved.tabs.count, members.count <= TabSplit.most,
+                  !members.contains(where: { taken.contains($0.id) }) else { continue }
             let pair = TabSplit(tabs: members.map(\.id), axis: saved.axis, sizes: saved.sizes,
                                 focused: saved.focused.flatMap { bySavedIndex[$0]?.id })
             guard Browser.holds(pair, in: row) else { continue }
@@ -6045,8 +6149,9 @@ final class Browser: NSObject, ObservableObject {
 
     private func safeInsertionIndex(_ proposed: Int) -> Int {
         let index = min(max(0, proposed), tabs.count)
-        guard index < tabs.count, split(for: tabs[index]).map({ $0.left != tabs[index].id }) == true else { return index }
-        return index + 1
+        guard index < tabs.count, let pair = split(for: tabs[index]), pair.left != tabs[index].id else { return index }
+        // Inside a split: after its last page.
+        return (tabs.firstIndex { $0.id == pair.right }).map { $0 + 1 } ?? index + 1
     }
 
     private func adopt(_ tab: Tab) {
@@ -6088,8 +6193,8 @@ final class Browser: NSObject, ObservableObject {
         return true
     }
 
-    /// With a pair on screen, its other page: what floats when the focused
-    /// one has nothing playing.
+    /// With a split on screen, the page beside the focused one: what floats
+    /// when the focused one has nothing playing.
     private var otherPane: Tab? {
         guard let pair = activeSplit, let id = activeID else { return nil }
         return tabs.first { $0.id == pair.partner(of: id) }

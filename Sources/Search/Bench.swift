@@ -4190,7 +4190,7 @@ final class Bench {
             guard let root = browser.window?.contentView?.superview, let found = stage(in: root) else {
                 answer(["error": "no split stage in this window"]); return
             }
-            reply(["motion": found.motionNow])
+            reply(["motion": found.motionNow, "dividers": found.dividerFrames])
         case "pose":
             // A card as a page's question would put up, with no page waiting
             // on it: a page that asks is held by WebKit until it is answered,
@@ -4207,6 +4207,23 @@ final class Bench {
                 answer(["error": "split answer needs the id of a page with a question"]); return
             }
             browser.answer(question, ok: request["ok"] as? Bool ?? true, text: request["text"] as? String)
+            reply()
+        case "add":
+            // Tabs › Add Page to Split View: an empty page beside the one
+            // with the keys, while the split on screen has room.
+            browser.addPaneToSplit()
+            reply()
+        case "leave":
+            // A tab menu's Remove from Split View: this page out, the
+            // others together (of two, both apart).
+            guard let page = tab() else { answer(["error": "split leave needs id"]); return }
+            browser.leaveSplit(page)
+            reply()
+        case "sizes":
+            guard let pair = request["split"] as? String, let id = UUID(uuidString: pair),
+                  let sizes = request["sizes"] as? [Double]
+            else { answer(["error": "split sizes needs split UUID and sizes"]); return }
+            browser.setSplitSizes(id, sizes)
             reply()
         case "swap": browser.swapSplit(); reply()
         case "even": browser.evenSplit(); reply()
@@ -4345,6 +4362,10 @@ final class Bench {
             // in Split View would pair: off while the menu's item is off.
             "selected": browser.tabs.filter { browser.selectedTabIDs.contains($0.id) }.map { Bench.short($0) },
             "pickedPair": browser.pickedPair.map { [Bench.short($0.left), Bench.short($0.right)] } ?? [],
+            // What Open 2–4 Tabs in Split View would put together.
+            "pickedSplit": browser.pickedSplit?.map { Bench.short($0) } ?? [],
+            "canAddPane": browser.canAddPane,
+            "most": TabSplit.most,
             "pickedPaired": browser.pickedTabsArePaired,
         ]
     }

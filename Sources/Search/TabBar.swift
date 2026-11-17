@@ -349,9 +349,11 @@ struct TabBar: View {
 
     /// Each place in a run: a pin's width, a pair's or a tab's, and the gap.
     private func steps(_ run: [Tab], each: CGFloat) -> [CGFloat] {
-        let pairs = browser.prefs.splitView ? Set(browser.splits.filter { $0.left != $0.right }.map(\.left)) : []
+        let pairs = browser.prefs.splitView
+            ? Dictionary(browser.splits.filter { $0.left != $0.right }.map { ($0.left, $0.tabs.count) }, uniquingKeysWith: { first, _ in first })
+            : [:]
         return run.map { tab in
-            (tab.pin != nil ? Metrics.pinWidth : pairs.contains(tab.id) ? splitItemWidth(base: each) : each) + Metrics.tabGap
+            (tab.pin != nil ? Metrics.pinWidth : pairs[tab.id].map { splitItemWidth(base: each, pages: $0) } ?? each) + Metrics.tabGap
         }
     }
 
@@ -368,11 +370,12 @@ struct TabBar: View {
         pill: Namespace.ID
     ) -> some View {
         let pair = browser.prefs.splitView ? splits.first(where: { $0.left == tab.id }) : nil
-        if let pair, let right = tabs.first(where: { $0.id == pair.right }) {
-            let editingPair = browser.editingTab == tab.id || browser.editingTab == right.id
-            let pairedWidth = splitItemWidth(base: width)
+        let pages = pair.map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? []
+        if let pair, pages.count >= 2 {
+            let editingPair = pages.contains { browser.editingTab == $0.id }
+            let pairedWidth = splitItemWidth(base: width, pages: pages.count)
             let displayedWidth = interactive && editingPair ? min(340, room) : pairedWidth
-            SplitTabItem(browser: browser, prefs: browser.prefs, left: tab, right: right,
+            SplitTabItem(browser: browser, prefs: browser.prefs, pages: pages,
                          width: displayedWidth, height: height,
                          live: activeID.map { pair.contains($0) } ?? false,
                          focusedID: activeID,
@@ -460,7 +463,7 @@ struct TabBar: View {
             + headingWidth + CGFloat(max(0, shown - 1)) * Metrics.tabGap
             + (pinLine ? PinLine.space : 0)
         if let id = browser.editingTab, let tab = browser.tabs.first(where: { $0.id == id }) {
-            let splitWidth = browser.prefs.splitView ? browser.split(for: tab).map { _ in splitItemWidth(base: each) } : nil
+            let splitWidth = browser.prefs.splitView ? browser.split(for: tab).map { splitItemWidth(base: each, pages: $0.tabs.count) } : nil
             let oldWidth = splitWidth ?? (tab.pin != nil ? Metrics.pinWidth : each)
             total += min(340, strip - lights - leading - 12) - oldWidth
         }
@@ -517,12 +520,16 @@ struct TabBar: View {
 
     private func rowTabs(_ tabs: [Tab], splits: [TabSplit]) -> [Tab] {
         guard browser.prefs.splitView else { return tabs }
-        let right = Set(splits.map(\.right))
-        return tabs.filter { !right.contains($0.id) }
+        // A split's later pages share its first one's place.
+        let later = Set(splits.flatMap { $0.tabs.dropFirst() })
+        return tabs.filter { !later.contains($0.id) }
     }
 
-    private func splitItemWidth(base: CGFloat) -> CGFloat {
-        min(210, max(136, base * 1.55))
+    /// A split's item across the top: of two, half again as wide as a tab
+    /// and a little more; each page past two adds about two thirds of one.
+    private func splitItemWidth(base: CGFloat, pages: Int = 2) -> CGFloat {
+        let more = CGFloat(max(0, pages - 2))
+        return min(210 + 90 * more, max(136 + 60 * more, base * (1.55 + 0.65 * more)))
     }
 
     private func pairWidthExtra(in tabs: [Tab], base: CGFloat, splits: [TabSplit]) -> CGFloat {
@@ -530,7 +537,7 @@ struct TabBar: View {
         let ids = Set(tabs.map(\.id))
         return splits.reduce(CGFloat.zero) { total, pair in
             guard pair.left != pair.right, ids.contains(pair.left) else { return total }
-            return total + splitItemWidth(base: base) - base
+            return total + splitItemWidth(base: base, pages: pair.tabs.count) - base
         }
     }
 }
@@ -1613,28 +1620,34 @@ struct TabMenu: View {
             }
         }
         if browser.prefs.splitView {
-            // Right-clicked among tabs picked in the column: those two side
-            // by side. More than two can't be, so it is there but off.
+            // Right-clicked among tabs picked in the column: those side by
+            // side, up to four. More can't be, so it is there but off.
             let picked = browser.selectedTabIDs.contains(tab.id) ? browser.visibleSelectedTabCount : 1
             if picked > 1 && !browser.pickedTabsArePaired {
-                Button("Open 2 Tabs in Split View") { browser.pairPickedTabs(focus: tab) }
-                    .disabled(browser.pickedPair == nil)
+                Button("Open \(picked) Tabs in Split View") { browser.pairPickedTabs(focus: tab) }
+                    .disabled(browser.pickedSplit == nil)
             }
-            if browser.split(for: tab) != nil {
+            if let pair = browser.split(for: tab) {
                 Button("Swap Pages") {
                     browser.focusPane(tab)
                     browser.swapSplit()
                 }
+                if pair.tabs.count > 2 {
+                    // This page alone out of it; the others stay together.
+                    Button("Remove from Split View") { browser.leaveSplit(tab) }
+                }
                 Button("Separate Split Tabs") { browser.detachSplit(tab) }
-                Button("Close Both Pages") {
+                Button(pair.tabs.count > 2 ? "Close All Pages" : "Close Both Pages") {
                     browser.focusPane(tab)
                     browser.closeSplit()
                 }
             } else if picked == 1 {
                 // Beside the page on screen; on that page itself, an empty
-                // page beside it.
-                Button("Open in Split View") { browser.openInSplit(tab) }
-                    .disabled(tab.bench)
+                // page beside it. On a split with room, one more page in it.
+                let current = browser.active
+                let adding = browser.activeSplit != nil && current?.id != tab.id
+                Button(adding ? "Add to Split View" : "Open in Split View") { browser.openInSplit(tab) }
+                    .disabled(tab.bench || (adding && current.map { !browser.canJoin(tab, beside: $0) } ?? true))
             }
         }
         if tab.pin == nil, !tab.bench {

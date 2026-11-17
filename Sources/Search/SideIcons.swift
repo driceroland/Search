@@ -249,13 +249,14 @@ private struct CornerSpeaker: View {
     }
 }
 
-/// A pair as one tile: its two marks, one over the other, inside one edge.
-/// Each half is pressed on its own, as a half of a pair's row is.
+/// A split as one tile: its marks, one over the other — two to four —
+/// inside one edge. Each half is pressed on its own, as a half of a split's
+/// row is.
 struct IconPair: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
-    @ObservedObject var left: Tab
-    @ObservedObject var right: Tab
+    /// Its pages, in order. Each half watches its own.
+    let pages: [Tab]
     let live: Bool
     var focusedID: Tab.ID? = nil
     let interactive: Bool
@@ -266,15 +267,16 @@ struct IconPair: View {
     @ObservedObject private var separation = PairSeparation.shared
 
     private var focused: Tab.ID? { live ? (focusedID ?? browser.activeID) : nil }
+    private var first: Tab.ID? { pages.first?.id }
+    private var last: Tab.ID? { pages.last?.id }
 
     var body: some View {
         VStack(spacing: 0) {
-            half(left)
-            half(right)
+            ForEach(pages) { tab in half(tab) }
         }
         .animation(Motion.quick, value: separation.leaving)
         .background {
-            // The pair's own ground, lighter than the live grey that sits on
+            // The split's own ground, lighter than the live grey that sits on
             // the half the keys go to.
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(live ? greys.wash : greys.tile)
@@ -284,8 +286,10 @@ struct IconPair: View {
                 .strokeBorder(Palette.hairline, lineWidth: 1)
                 .allowsHitTesting(false)
         }
-        .onAppear { if interactive && Store.testing { IconTiles.pairs[left.id] = right.id } }
-        .onDisappear { if interactive && Store.testing && IconTiles.pairs[left.id] == right.id { IconTiles.pairs[left.id] = nil } }
+        .onAppear { if interactive && Store.testing, let first, let last { IconTiles.pairs[first] = last } }
+        .onDisappear {
+            if interactive && Store.testing, let first, let last, IconTiles.pairs[first] == last { IconTiles.pairs[first] = nil }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Split tabs")
     }
@@ -293,7 +297,7 @@ struct IconPair: View {
     private func half(_ tab: Tab) -> some View {
         IconTile(browser: browser, prefs: prefs, tab: tab, live: focused == tab.id, pill: pill,
                  close: { browser.closeTab(tab) }, interactive: interactive, half: true)
-            .opacity(separation.leaving.map { $0 != tab.id && ($0 == left.id || $0 == right.id) } == true ? 0.35 : 1)
+            .opacity(separation.leaving.map { leaving in leaving != tab.id && pages.contains { $0.id == leaving } } == true ? 0.35 : 1)
             .background {
                 if focused == tab.id {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)

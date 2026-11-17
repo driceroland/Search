@@ -259,11 +259,17 @@ struct SearchApp: App {
                 if browser.prefs.splitView {
                     // The same key puts a pair apart: on a pair, the item
                     // says so, and the one below it without a key goes.
-                    Button(browser.activeSplit == nil || browser.pickedPair != nil ? "Split Current Page" : "Separate Split Tabs") {
+                    Button(browser.activeSplit == nil || browser.pickedSplit != nil ? "Split Current Page" : "Separate Split Tabs") {
                         browser.splitKey()
                     }
                         .shortcut("tabs.split")
                         .disabled(browser.active == nil || browser.active?.bench == true)
+                    // On a split with room: one more page, empty, beside
+                    // the one with the keys (up to four).
+                    if browser.activeSplit != nil {
+                        Button("Add Page to Split View") { browser.addPaneToSplit() }
+                            .disabled(!browser.canAddPane)
+                    }
                     Button("Focus Left Page") { browser.focusPane(onLeft: true) }
                         .shortcut("tabs.focusLeftPane")
                         .disabled(browser.activeSplit == nil)
@@ -273,14 +279,14 @@ struct SearchApp: App {
                     Button("Swap Pages") { browser.swapSplit() }
                         .shortcut("tabs.swapSplit")
                         .disabled(browser.activeSplit == nil)
-                    if browser.activeSplit == nil || browser.pickedPair != nil {
+                    if browser.activeSplit == nil || browser.pickedSplit != nil {
                         Button("Separate Split Tabs") {
                             if let tab = browser.active { browser.detachSplit(tab) }
                         }
                         .shortcut("tabs.separateSplit")
                         .disabled(browser.activeSplit == nil)
                     }
-                    Button("Close Both Pages") { browser.closeSplit() }
+                    Button((browser.activeSplit?.tabs.count ?? 2) > 2 ? "Close All Pages" : "Close Both Pages") { browser.closeSplit() }
                         .disabled(browser.activeSplit == nil)
                     Divider()
                 }
@@ -1044,11 +1050,8 @@ struct ContentView: View {
     @ViewBuilder
     private var fullscreenWatch: some View {
         if browser.prefs.splitView, let split = browser.activeSplit {
-            if let left = browser.tabs.first(where: { $0.id == split.left }) {
-                TabImmersionWatch(tab: left) { immersing() }.id(left.id)
-            }
-            if let right = browser.tabs.first(where: { $0.id == split.right }) {
-                TabImmersionWatch(tab: right) { immersing() }.id(right.id)
+            ForEach(browser.tabs.filter { split.contains($0.id) }) { pane in
+                TabImmersionWatch(tab: pane) { immersing() }.id(pane.id)
             }
         } else if let active = browser.active {
             TabImmersionWatch(tab: active) { immersing() }.id(active.id)
