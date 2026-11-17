@@ -1508,13 +1508,25 @@ struct BookmarksPanel: View {
 /// menu out afresh each time it opens — anything added beside them was
 /// gone by then. So its delegate is wrapped: SwiftUI does its update,
 /// then the bookmarks go in after it. SwiftUI puts its delegate back on
-/// every update, so the wrapping is put back too (see `start`).
+/// every update, and may hand over a new menu, so the wrapping is put
+/// back too, at every turn of the run loop (see `start`).
+///
+/// They are put in only while the menu bar is in use. SwiftUI updates the
+/// menu bar many times a second while a tab's title keeps changing (a live
+/// price in a trading chart's title, #1137), and each update went through
+/// here: every bookmark taken out and made again in a closed menu, for
+/// rows nobody could see, and the Bookmarks menu's title flickered.
 @MainActor
 final class BookmarkMenu: NSObject, NSMenuDelegate {
     static let shared = BookmarkMenu()
 
     private weak var browser: Browser?
     private var watch: [Any] = []
+    /// Looks after each turn of the run loop: see `start`.
+    private var looking: CFRunLoopObserver?
+    /// The menu bar is in use: from the moment it is clicked (or reached
+    /// from the keyboard) until it is let go of.
+    private var tracking = false
     private let relay = Relay()
     /// What each folder's submenu holds, until it opens.
     private var folders: [ObjectIdentifier: [Bookmark]] = [:]
@@ -1526,32 +1538,55 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
     func start(for browser: Browser) {
         guard self.browser == nil else { return }
         self.browser = browser
-        relay.after = { [weak self] menu in self?.fill(menu) }
+        relay.after = { [weak self] menu in
+            guard let self, tracking else { return }
+            fill(menu)
+        }
         // SwiftUI puts its own delegate back whenever it updates the menu
-        // bar, which is whenever anything in the window changes. So: after
-        // each event, and as the menu bar starts to be used, before any of
-        // its menus opens.
+        // bar, which is whenever anything in the window changes — a tab's
+        // title too, which arrives from the page and not from an event, so
+        // looking only after each event left SwiftUI's delegate in place
+        // until the next one. And it may put a new menu in the old one's
+        // place. So: at every turn of the run loop, menus open or not, the
+        // menu there now is wrapped; while the menu bar is in use, it holds
+        // the bookmarks, put back as soon as a turn finds them gone. A
+        // lookup among a dozen items, and nothing more while all is well.
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 0) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.look() }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        looking = observer
         let centre = NotificationCenter.default
         watch = [
-            centre.addObserver(forName: NSApplication.didUpdateNotification, object: nil, queue: nil) { [weak self] _ in
-                MainActor.assumeIsolated { self?.wrap() }
-            },
+            // As the menu bar starts to be used, before any of its menus
+            // opens: the bookmarks go in now, not a turn later.
             centre.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { [weak self] note in
                 MainActor.assumeIsolated {
-                    guard (note.object as? NSMenu) === NSApp.mainMenu else { return }
-                    self?.wrap()
+                    guard let self, (note.object as? NSMenu) === NSApp.mainMenu else { return }
+                    self.tracking = true
+                    self.look()
                 }
             },
-            // However the menu bar is let go of, even if SwiftUI's delegate
-            // got the menu's own close instead.
+            // However the menu bar is let go of.
             centre.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: nil) { [weak self] note in
                 MainActor.assumeIsolated {
                     guard (note.object as? NSMenu) === NSApp.mainMenu else { return }
-                    self?.closed()
+                    self?.tracking = false
                 }
             },
         ]
         wrap()
+    }
+
+    /// The menu there now wrapped, and, while the menu bar is in use,
+    /// holding the bookmarks. An open menu is updated by SwiftUI itself,
+    /// straight through its own delegate, whenever anything it shows could
+    /// have changed — a tab's title, every second on a download page — and
+    /// that took the bookmarks out from under the pointer.
+    private func look() {
+        guard let menu else { return }
+        wrap(menu)
+        if tracking, !menu.items.contains(where: { $0.tag == Self.mark }) { fill(menu) }
     }
 
     private var menu: NSMenu? { NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu }
@@ -1559,34 +1594,8 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
     /// The window in front's: its profile's bookmarks (see Profiles.swift).
     private var shown: Browser? { Browsers.front.flatMap { !$0.isPopup ? $0 : nil } ?? browser }
 
-    /// Looks, while the menu is open, after each turn of the run loop.
-    private var looking: CFRunLoopObserver?
-
-    /// An open menu is updated by SwiftUI itself, straight through its own
-    /// delegate, whenever anything it shows could have changed — a tab's
-    /// title, every second on a download page — and that took the bookmarks
-    /// out from under the pointer. While it is open, they go back in as soon
-    /// as a turn of the run loop finds them gone.
-    fileprivate func opened(_ menu: NSMenu) {
-        guard looking == nil else { return }
-        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 0) { [weak self, weak menu] _, _ in
-            MainActor.assumeIsolated {
-                guard let self, let menu, !menu.items.contains(where: { $0.tag == Self.mark }) else { return }
-                self.fill(menu)
-            }
-        }
-        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
-        looking = observer
-    }
-
-    fileprivate func closed() {
-        guard let looking else { return }
-        CFRunLoopObserverInvalidate(looking)
-        self.looking = nil
-    }
-
-    private func wrap() {
-        guard let menu, menu.delegate !== relay
+    private func wrap(_ menu: NSMenu? = nil) {
+        guard let menu = menu ?? self.menu, menu.delegate !== relay
         else { return }
         relay.inner = menu.delegate
         menu.delegate = relay
@@ -1744,16 +1753,6 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
         func menuNeedsUpdate(_ menu: NSMenu) {
             inner?.menuNeedsUpdate?(menu)
             MainActor.assumeIsolated { after?(menu) }
-        }
-
-        func menuWillOpen(_ menu: NSMenu) {
-            inner?.menuWillOpen?(menu)
-            MainActor.assumeIsolated { BookmarkMenu.shared.opened(menu) }
-        }
-
-        func menuDidClose(_ menu: NSMenu) {
-            inner?.menuDidClose?(menu)
-            MainActor.assumeIsolated { BookmarkMenu.shared.closed() }
         }
 
         /// Only for its own items: the bookmarks aren't SwiftUI's to know.
