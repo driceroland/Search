@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A link from another app that opens in a small window while Search is hidden (⌘H) comes alone. Shown again for it, Search brought back every window it had, so the browser's window came up beside the small one as if the link had opened twice; it now stays away until Open in Search, the Dock or ⌘N asks for it, as after a launch made by a link. A browser window brought forward by anything else while they are kept away goes back off screen.
 - Save to Notion's popup sees that you are signed in to Notion, where its "Log in" only took you to your Notion workspace. An extension's own page asking a site it has been granted, without asking for credentials, now sends that site's cookies, as Chrome does; Search sent them only when the extension asked for credentials outright.
 - The downloads card floating by its button keeps Resume, Retry and Remove on one line each, where a failed download's buttons broke in the middle of the word, and its shadow is lighter.
 - Profiles in one window stays one window in full screen. Each profile's window kept a full-screen space of its own once it had been on screen, black in Mission Control, and a swipe went from one to the other as separate windows; the window you leave now comes out of full screen and the next one takes its place in it.

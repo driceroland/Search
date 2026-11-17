@@ -327,7 +327,13 @@ final class Links: NSObject, NSApplicationDelegate {
         // A site sent to a space opens there, with that space's sign-ins.
         if SpaceRoutes.space(for: url) != nil { return false }
         if Shared.prefs.littleFindsTabs, goToOpen(url) { return true }
-        if !launched { Browsers.keepAway() }
+        // Hidden (⌘H), the app comes forward for the small window and shows
+        // every window it had: the browser's came up beside it, as if the
+        // link had opened twice. They are kept away, as a launch's are.
+        if !launched || NSApp.isHidden {
+            Browsers.keepAway()
+            Browsers.putAway()
+        }
         // The space and sign-ins of the window in front, on screen or not.
         let browser = Browsers.front.flatMap { !$0.isPopup ? $0 : nil }
             ?? Browsers.primary ?? SceneSlot.shared.browser
