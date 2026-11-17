@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Changed
+
+- The highlight in the Settings sidebar slides to the section you pick, as the live tab's slides in the tab column, with a little give at the end. It jumps as before with Reduce Motion on.
+
 ### Held back
 
 Not in this version, kept on main for a later one:
