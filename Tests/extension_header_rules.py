@@ -16,8 +16,8 @@ service refused it, and VOT said it couldn't request the translation (idea
 know (x-client-data). Served here: a pretend service that says what headers
 reached it. What is checked:
 
-- a rule's headers, Sec-* and User-Agent among them, reach the extension's
-  credentialed fetch, and a rule removing Origin removes it;
+- a rule's headers reach the extension's credentialed fetch, but to an app
+  on this Mac (the pretend service is one) never Origin or Sec-* ones;
 - what the browser keeps for itself doesn't: a rule's Cookie or Host;
 - a rule for one address doesn't reach another;
 - a rule naming a header WebKit doesn't know is kept without that header,
@@ -164,9 +164,13 @@ def main():
         t.ok("the rules are taken", r == {"ok": True}, r)
 
         got = ask(tid, {"url": f"http://127.0.0.1:{port}/api/translate"})
-        t.ok("a rule's Sec-* header reaches the extension's credentialed fetch", isinstance(got, dict) and got.get("sec-vtrans-token") == "token-1", got)
-        t.ok("and its User-Agent and plain header", isinstance(got, dict) and "YaBrowser" in got.get("user-agent", "") and got.get("x-plain") == "plain", got)
-        t.ok("a rule removing Origin removes it", isinstance(got, dict) and "origin" not in got, got)
+        t.ok("a rule's User-Agent and plain header reach the extension's credentialed fetch",
+             isinstance(got, dict) and "YaBrowser" in got.get("user-agent", "") and got.get("x-plain") == "plain", got)
+        # The service here is on this Mac, where a rule may not touch Origin
+        # or Sec-* headers (local apps go by Origin); elsewhere it may
+        # (ExtensionFetchTests, and VOT's own service).
+        t.ok("to an app on this Mac, Origin stays and no Sec-* header is set",
+             isinstance(got, dict) and got.get("origin", "").startswith("chrome-extension://") and "sec-vtrans-token" not in got, got)
         t.ok("a rule's Cookie and Host don't go", isinstance(got, dict) and "stolen" not in got.get("cookie", "")
              and got.get("host") == f"127.0.0.1:{port}", got)
 

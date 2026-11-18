@@ -3213,15 +3213,32 @@ enum ExtensionShims {
           const p = ready.then(() => attempt(options, 100));
           p.then(built, () => {});
           // Its request-header rules, as it wrote them, for its own fetches
-          // the browser sends (see headerRules).
-          p.then(() => {
+          // the browser sends (see headerRules) — with its allow rules, which
+          // outrank them by priority — once WebKit has the update. Only
+          // rules WebKit kept: one it dropped whole doesn't apply anywhere.
+          p.then(() => (rawGet[name] ? rawGet[name]() : Promise.resolve([]))).then((all) => {
+            const present = new Set(all.map((r) => r.id));
+            const kept = (id) => present.has(id) || all.some((r) => madeFrom(r.id, present) === id);
             for (const id of (given && given.removeRuleIds) || []) headerRules.delete(name + ":" + id);
             for (const rule of (given && given.addRules) || []) {
-              if (rule && rule.action && rule.action.type === "modifyHeaders" && Array.isArray(rule.action.requestHeaders) && headerRules.size < 500) {
-                try { headerRules.set(name + ":" + rule.id, JSON.parse(JSON.stringify(rule))); } catch (e) {}
+              const type = rule && rule.action && rule.action.type;
+              if (!(type === "modifyHeaders" && Array.isArray(rule.action.requestHeaders)) && type !== "allow") continue;
+              if (!kept(rule.id)) continue;
+              const regex = rule.condition && rule.condition.regexFilter;
+              if (typeof regex === "string" && (regex.length > 2048 || /\\[1-9]|\\k<|\(\?<?[=!]/.test(regex))) {
+                try { native("debug.error", ["declarativeNetRequest: rule " + rule.id + " isn't applied to requests the browser sends — its regexFilter is one Chrome wouldn't take"]).catch(() => {}); } catch (x) {}
+                continue;
               }
+              if (headerRules.size >= 500 && !headerRules.has(name + ":" + rule.id)) {
+                if (!headerRules.full) {
+                  headerRules.full = true;
+                  try { native("debug.error", ["declarativeNetRequest: header rules beyond 500 aren't applied to requests the browser sends"]).catch(() => {}); } catch (x) {}
+                }
+                continue;
+              }
+              try { headerRules.set(name + ":" + rule.id, JSON.parse(JSON.stringify(rule))); } catch (e) {}
             }
-          }, () => {});
+          }).catch(() => {});
           // In a test run, an update that still fails is said, not only
           // handed back to an extension that may drop it.
           if (__SEARCH_VERBOSE__) p.catch((e) => { try { native("debug.error", ["declarativeNetRequest: " + name + " failed — " + (e && e.message)]).catch(() => {}); } catch (x) {} });
@@ -3236,7 +3253,8 @@ enum ExtensionShims {
         rawGet[name]().then((all) => {
           for (const rule of all || []) {
             const key = name + ":" + rule.id;
-            if (rule && rule.action && rule.action.type === "modifyHeaders" && Array.isArray(rule.action.requestHeaders)
+            const type = rule && rule.action && rule.action.type;
+            if (((type === "modifyHeaders" && Array.isArray(rule.action.requestHeaders)) || type === "allow")
                 && !headerRules.has(key) && headerRules.size < 500) headerRules.set(key, rule);
           }
         }, () => {});

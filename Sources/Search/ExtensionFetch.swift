@@ -313,29 +313,42 @@ enum ExtensionFetch {
         let value: String?
     }
 
-    /// What the rules that match this request do to its headers, the
-    /// highest priority first: once a rule has set or removed a header,
-    /// lower ones leave it alone; appends add up.
-    nonisolated static func headerChanges(_ rules: [[String: Any]], url: URL, method: String) -> [HeaderChange] {
-        let matching = rules.filter { rule in
-            guard let action = rule["action"] as? [String: Any], action["type"] as? String == "modifyHeaders" else { return false }
-            return ruleMatches(rule["condition"] as? [String: Any] ?? [:], url: url, method: method)
-        }.sorted {
-            let (a, b) = (($0["priority"] as? Int) ?? 1, ($1["priority"] as? Int) ?? 1)
-            return a != b ? a > b : (($0["id"] as? Int) ?? 0) < (($1["id"] as? Int) ?? 0)
+    /// What the rules that match this request do to its headers, as Chrome
+    /// orders them: the highest priority first; an allow rule at the same
+    /// or a higher priority than a header rule cancels it; for each header
+    /// the first rule decides — a set or a remove ends it, an append lets
+    /// only later appends add to it. Nothing for a request to an app on this
+    /// Mac may touch its Origin or Sec-* headers: local apps go by Origin.
+    /// Matching stops at `deadline` (nothing is changed then); nil if so.
+    nonisolated static func headerChanges(_ rules: [[String: Any]], url: URL, method: String,
+                                          deadline: Date = .distantFuture) -> [HeaderChange]? {
+        var matching: [(priority: Int, id: Int, type: String, rule: [String: Any])] = []
+        for rule in rules {
+            guard Date() < deadline else { return nil }
+            guard let type = (rule["action"] as? [String: Any])?["type"] as? String, type == "modifyHeaders" || type == "allow",
+                  let verdict = ruleMatches(rule["condition"] as? [String: Any] ?? [:], url: url, method: method, deadline: deadline)
+            else { continue }
+            guard verdict else { continue }
+            matching.append(((rule["priority"] as? Int) ?? 1, (rule["id"] as? Int) ?? 0, type, rule))
         }
-        var decided = Set<String>(), changes: [HeaderChange] = []
-        for rule in matching {
-            for entry in ((rule["action"] as? [String: Any])?["requestHeaders"] as? [[String: Any]]) ?? [] {
+        guard Date() < deadline else { return nil }
+        let allowedAbove = matching.filter { $0.type == "allow" }.map(\.priority).max()
+        let ordered = matching.filter { item in item.type == "modifyHeaders" && (allowedAbove.map { item.priority > $0 } ?? true) }
+            .sorted { $0.priority != $1.priority ? $0.priority > $1.priority : $0.id < $1.id }
+        let local = loopback(url)
+        var first = [String: String](), changes: [HeaderChange] = []
+        for item in ordered {
+            for entry in ((item.rule["action"] as? [String: Any])?["requestHeaders"] as? [[String: Any]]) ?? [] {
                 guard let name = entry["header"] as? String, ruleMayChange(name),
                       let operation = entry["operation"] as? String, ["set", "remove", "append"].contains(operation) else { continue }
+                let key = name.lowercased()
+                if local && (key == "origin" || key.hasPrefix("sec-")) { continue }
                 let value = entry["value"] as? String
                 if operation != "remove" {
                     guard let value, !breaksLine(value) else { continue }
                 }
-                let key = name.lowercased()
-                if decided.contains(key) { continue }
-                if operation != "append" { decided.insert(key) }
+                if let decided = first[key], decided != "append" || operation != "append" { continue }
+                if first[key] == nil { first[key] = operation }
                 changes.append(HeaderChange(name: name, operation: operation, value: value))
             }
         }
@@ -355,8 +368,9 @@ enum ExtensionFetch {
     /// Whether a rule's condition takes this request, as Chrome reads it
     /// for a request the extension itself makes: resource type
     /// xmlhttprequest, from no tab and no site. A condition this can't
-    /// judge (domainType, initiator domains) doesn't match.
-    nonisolated static func ruleMatches(_ c: [String: Any], url: URL, method: String) -> Bool {
+    /// judge (domainType, initiator domains), or a regexFilter Chrome
+    /// wouldn't take, doesn't match. Nil if the deadline passed.
+    nonisolated static func ruleMatches(_ c: [String: Any], url: URL, method: String, deadline: Date = .distantFuture) -> Bool? {
         guard let host = url.host?.lowercased() else { return false }
         let strings = { (key: String) in (c[key] as? [Any])?.compactMap { ($0 as? String)?.lowercased() } }
         let ints = { (key: String) in (c[key] as? [Any])?.compactMap { $0 as? Int } }
@@ -373,32 +387,181 @@ enum ExtensionFetch {
         let sensitive = c["isUrlFilterCaseSensitive"] as? Bool ?? false
         let address = url.absoluteString
         if let filter = c["urlFilter"] as? String {
-            guard urlFilterMatches(filter, address, caseSensitive: sensitive) else { return false }
+            guard filter.utf8.count <= 4096, urlFilterMatches(filter, address, caseSensitive: sensitive) else { return false }
         }
-        if let regex = c["regexFilter"] as? String {
-            guard address.range(of: regex, options: sensitive ? .regularExpression : [.regularExpression, .caseInsensitive]) != nil else { return false }
+        if let source = c["regexFilter"] as? String {
+            // Over 2 KB of address, a regex isn't tried: the work grows with
+            // it. Nor one that has once taken too long.
+            guard address.utf16.count <= 2048, !tooSlow(source), let regex = compiled(source, caseSensitive: sensitive) else { return false }
+            let started = Date()
+            let found = regexMatches(regex, address, deadline: deadline)
+            if Date().timeIntervalSince(started) > 0.02 { markTooSlow(source) }
+            return found
         }
         return true
     }
 
-    /// Chrome's urlFilter: `||` anchors at the start of a domain label,
-    /// `|` at the start or end of the address, `*` is anything, `^` a
-    /// separator (or the end).
-    nonisolated static func urlFilterMatches(_ filter: String, _ address: String, caseSensitive: Bool) -> Bool {
-        var rest = Substring(filter), pattern = ""
-        if rest.hasPrefix("||") { pattern = #"^[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^/?#]*\.)?"#; rest = rest.dropFirst(2) }
-        else if rest.hasPrefix("|") { pattern = "^"; rest = rest.dropFirst() }
-        var end = ""
-        if rest.hasSuffix("|") { end = "$"; rest = rest.dropLast() }
-        for ch in rest {
+    /// A regexFilter as Chrome takes it (RE2): not over 2 KB, and nothing
+    /// RE2 has no word for — backreferences, lookaround. ICU, which runs it
+    /// here, backtracks where RE2 doesn't, so also nothing that makes a
+    /// match take without end: a quantifier on a group that has a
+    /// quantifier or an alternation inside, or more than one unbounded
+    /// quantifier (two from the start, `^…`): each more multiplies the work
+    /// by the address's length.
+    nonisolated static func regexAllowed(_ source: String) -> Bool {
+        guard !source.isEmpty, source.utf8.count <= 2048 else { return false }
+        if source.range(of: #"\\[1-9]|\\k<|\(\?<?[=!]"#, options: .regularExpression) != nil { return false }
+        var groups: [Bool] = []   // per open group: something inside multiplies
+        var escaped = false, inClass = false, lastClosedRisky = false, unbounded = 0
+        let chars = Array(source)
+        var index = 0
+        while index < chars.count {
+            let ch = chars[index]
+            defer { index += 1 }
+            if escaped { escaped = false; lastClosedRisky = false; continue }
+            if ch == "\\" { escaped = true; continue }
+            if inClass { if ch == "]" { inClass = false }; lastClosedRisky = false; continue }
             switch ch {
-            case "*": pattern += ".*"
-            case "^": pattern += "(?:[^A-Za-z0-9_.%-]|$)"
-            default: pattern += NSRegularExpression.escapedPattern(for: String(ch))
+            case "[": inClass = true; lastClosedRisky = false
+            case "(": groups.append(false); lastClosedRisky = false
+            case "|": if !groups.isEmpty { groups[groups.count - 1] = true }; lastClosedRisky = false
+            case ")":
+                let risky = groups.popLast() ?? false
+                if risky, !groups.isEmpty { groups[groups.count - 1] = true }
+                lastClosedRisky = risky
+            case "*", "+", "?", "{":
+                if lastClosedRisky { return false }
+                if !groups.isEmpty { groups[groups.count - 1] = true }
+                lastClosedRisky = false
+                if ch == "{" {
+                    var body = ""
+                    while index + 1 < chars.count && chars[index + 1] != "}" { index += 1; body.append(chars[index]) }
+                    index += 1
+                    let bounds = body.split(separator: ",", omittingEmptySubsequences: false)
+                    if bounds.count == 2, bounds[1].isEmpty || (Int(bounds[1]) ?? 1000) > 10 { unbounded += 1 }
+                } else if ch != "?" { unbounded += 1 }
+                // A lazy or possessive mark after a quantifier is part of it.
+                if index + 1 < chars.count, chars[index + 1] == "?" || chars[index + 1] == "+" { index += 1 }
+            default: lastClosedRisky = false
             }
         }
-        pattern += end
-        return address.range(of: pattern, options: caseSensitive ? .regularExpression : [.regularExpression, .caseInsensitive]) != nil
+        // ICU tries a match at every place in the address: unanchored, each
+        // unbounded quantifier more multiplies the work by its length.
+        return unbounded <= (source.hasPrefix("^") ? 2 : 1)
+    }
+
+    /// Regexes that once took over 20 ms on an address: never tried again
+    /// this run (their rules don't match). ICU can't be stopped inside one
+    /// attempt, so a request waits for matching no longer than its budget
+    /// (see `within`), and a slow pattern isn't given a second go.
+    nonisolated(unsafe) private static var slow = Set<String>()
+    private static let slowLock = NSLock()
+    nonisolated static func tooSlow(_ source: String) -> Bool { slowLock.lock(); defer { slowLock.unlock() }; return slow.contains(source) }
+    nonisolated static func markTooSlow(_ source: String) { slowLock.lock(); slow.insert(source); slowLock.unlock() }
+
+    /// Compiled once, kept for the next request.
+    nonisolated(unsafe) private static let regexCache: NSCache<NSString, NSRegularExpression> = {
+        let cache = NSCache<NSString, NSRegularExpression>()
+        cache.countLimit = 1000
+        return cache
+    }()
+
+    nonisolated static func compiled(_ source: String, caseSensitive: Bool) -> NSRegularExpression? {
+        guard regexAllowed(source) else { return nil }
+        let key = ((caseSensitive ? "1" : "0") + source) as NSString
+        if let regex = regexCache.object(forKey: key) { return regex }
+        guard let regex = try? NSRegularExpression(pattern: source, options: caseSensitive ? [] : [.caseInsensitive]) else { return nil }
+        regexCache.setObject(regex, forKey: key)
+        return regex
+    }
+
+    /// A match, given up at the deadline (nil then).
+    nonisolated static func regexMatches(_ regex: NSRegularExpression, _ address: String, deadline: Date) -> Bool? {
+        var found = false, late = false
+        let text = address as NSString
+        regex.enumerateMatches(in: address, options: [.reportProgress], range: NSRange(location: 0, length: text.length)) { result, _, stop in
+            if result != nil { found = true; stop.pointee = true }
+            else if Date() >= deadline { late = true; stop.pointee = true }
+        }
+        return late && !found ? nil : found
+    }
+
+    /// Chrome's urlFilter, matched without a regular expression: `||`
+    /// anchors at the start of a domain label, `|` at the start or end of
+    /// the address, `*` is anything, `^` a separator (or the end). At worst
+    /// address × pattern steps; never backtracks without end.
+    nonisolated static func urlFilterMatches(_ filter: String, _ address: String, caseSensitive: Bool) -> Bool {
+        let lower = { (s: String) in caseSensitive ? s : s.lowercased() }
+        var pattern = Array(lower(filter).unicodeScalars)
+        let text = Array(lower(address).unicodeScalars)
+        var domainAnchor = false, startAnchor = false, endAnchor = false
+        if pattern.starts(with: ["|", "|"]) { domainAnchor = true; pattern.removeFirst(2) }
+        else if pattern.first == "|" { startAnchor = true; pattern.removeFirst() }
+        if pattern.last == "|" { endAnchor = true; pattern.removeLast() }
+        // Where a match may start.
+        var starts: [Int]
+        if domainAnchor {
+            guard let colon = (0..<max(text.count - 2, 0)).first(where: { text[$0] == ":" && text[$0 + 1] == "/" && text[$0 + 2] == "/" })
+            else { return false }
+            let hostStart = colon + 3
+            var hostEnd = hostStart
+            while hostEnd < text.count, !["/", "?", "#"].contains(text[hostEnd]) { hostEnd += 1 }
+            starts = [hostStart]
+            for k in hostStart..<hostEnd where text[k] == "." { starts.append(k + 1) }
+        } else if startAnchor {
+            starts = [0]
+        } else {
+            starts = [-1]   // anywhere: a leading `*`
+        }
+        let separator = { (c: Unicode.Scalar) -> Bool in
+            !(c.properties.isAlphabetic || ("0"..."9").contains(c) || ["_", "-", ".", "%"].contains(c))
+        }
+        for start in starts {
+            let body = start < 0 ? [Unicode.Scalar("*")] + pattern : pattern
+            let from = max(start, 0)
+            if wildcard(body, Array(text[from...]), toEnd: endAnchor, separator: separator) { return true }
+        }
+        return false
+    }
+
+    /// `*` and `^` matched greedily with one point to come back to: the
+    /// classic linear wildcard match.
+    nonisolated private static func wildcard(_ p: [Unicode.Scalar], _ t: [Unicode.Scalar], toEnd: Bool,
+                                             separator: (Unicode.Scalar) -> Bool) -> Bool {
+        var i = 0, j = 0, star = -1, mark = 0
+        while j < t.count {
+            if i < p.count, p[i] == "*" { star = i; mark = j; i += 1; continue }
+            if i < p.count, p[i] == "^" ? separator(t[j]) : p[i] == t[j] { i += 1; j += 1; continue }
+            if !toEnd, i == p.count { return true }
+            if star >= 0 { i = star + 1; mark += 1; j = mark; continue }
+            return false
+        }
+        // The address is spent: what is left must be `*`s, and a `^` may
+        // stand for its end.
+        while i < p.count, p[i] == "*" || p[i] == "^" { i += 1 }
+        return i == p.count
+    }
+
+    /// Whichever comes first, once.
+    private final class Once: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+        func first() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
+    }
+
+    /// `work` off the main actor; nil if it hasn't finished within `seconds`
+    /// (it is then left to finish on its own, unwaited for).
+    nonisolated static func within<T: Sendable>(_ seconds: TimeInterval, _ work: @escaping @Sendable () -> T) async -> T? {
+        return await withCheckedContinuation { (finished: CheckedContinuation<T?, Never>) in
+            let once = Once()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let value = work()
+                if once.first() { finished.resume(returning: value) }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
+                if once.first() { finished.resume(returning: nil) }
+            }
+        }
     }
 
     /// Whether it may use declarativeNetRequest at all.
@@ -537,13 +700,11 @@ enum ExtensionFetch {
             if let body = message["body"] as? String { request.httpBody = Data(base64Encoded: body) }
             if ExtensionFetch.mayUseHeaderRules(context), let rules = message["headerRules"] as? [[String: Any]] {
                 headerRules = Array(rules.prefix(500))
-                let changes = ExtensionFetch.headerChanges(headerRules, url: url, method: method)
-                ExtensionFetch.apply(changes, to: &request)
-                if !changes.isEmpty { ExtensionFetch.note(["ruleHeaders": changes.map { "\($0.operation) \($0.name)" }, "for": url.absoluteString]) }
             }
             let unsigned = request
             Task { @MainActor in
                 var request = unsigned
+                await self.applyHeaderRules(to: &request)
                 await self.sign(&request)
                 guard !self.ended else { return }
                 let configuration = URLSessionConfiguration.ephemeral
@@ -561,6 +722,27 @@ enum ExtensionFetch {
                 self.task = task
                 task.resume()
             }
+        }
+
+        /// The extension's header rules that match, worked out off the main
+        /// actor and given a deadline; past it, none are applied.
+        private func applyHeaderRules(to request: inout URLRequest) async {
+            guard !headerRules.isEmpty, let url = request.url else { return }
+            nonisolated(unsafe) let rules = headerRules
+            let method = request.httpMethod ?? "GET"
+            let deadline = Date().addingTimeInterval(0.05)
+            let changes = await ExtensionFetch.within(0.1) {
+                ExtensionFetch.headerChanges(rules, url: url, method: method, deadline: deadline)
+            } ?? nil
+            guard let changes else {
+                ExtensionFetch.note(["ruleHeadersTimedOut": url.absoluteString])
+                if let id = context?.uniqueIdentifier {
+                    Extensions.shared.noteError("declarativeNetRequest: header rules took too long to match \(url.host ?? "") and weren't applied", for: id)
+                }
+                return
+            }
+            ExtensionFetch.apply(changes, to: &request)
+            if !changes.isEmpty { ExtensionFetch.note(["ruleHeaders": changes.map { "\($0.operation) \($0.name)" }, "for": url.absoluteString]) }
         }
 
         /// The cookies for the request's address (granted: sign is only
@@ -601,7 +783,7 @@ enum ExtensionFetch {
                     return handler(nil)
                 }
                 var hop = ExtensionFetch.hop(request, from: response.url)
-                ExtensionFetch.apply(ExtensionFetch.headerChanges(self.headerRules, url: next, method: hop.httpMethod ?? "GET"), to: &hop)
+                await self.applyHeaderRules(to: &hop)
                 await self.sign(&hop)
                 self.redirected = true
                 handler(hop)
