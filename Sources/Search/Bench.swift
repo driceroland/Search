@@ -1701,6 +1701,7 @@ final class Bench {
                 case .visited: "visited"
                 case .bookmark: "bookmark"
                 case .known: "known"
+                case .elsewhere: "elsewhere"
                 case .command: "command"
                 }
             }
@@ -2137,6 +2138,24 @@ final class Bench {
                 reply["pages"] = SettingsPanel.Page.blocks.flatMap { $0 }.map(\.rawValue)
             }
             answer(reply)
+
+        case "icloud":
+            // Sync with iCloud as it stands (Tests/icloud_sync_off.py): on
+            // or not, whether this build could, and whether anything is
+            // running, waiting or listening. "on": asks the switch to turn
+            // on, which a test run always refuses: CloudKit is never
+            // reached from one. Test runs only.
+            guard Store.testing else { answer(["error": "icloud only works on a --test run"]); return }
+            let icloud = ICloudSync.shared
+            if request["turn"] as? String == "on" { icloud.turnOn() }
+            // "entitled": the signature carries the container and CloudKit,
+            // read from the process alone; nothing asks CloudKit.
+            answer(["on": icloud.on, "available": icloud.available, "entitled": ICloudSync.entitled,
+                    "scheduled": icloud.isScheduled,
+                    "engine": icloud.engine != nil, "joined": icloud.joined, "folderSync": Sync.shared.on,
+                    "stored": Store.settings.object(forKey: ICloudSync.onKey) != nil,
+                    "file": FileManager.default.fileExists(atPath: Store.file("icloud.json").path),
+                    "summary": icloud.summary(folderSyncOn: Sync.shared.on, otherwise: "off")])
 
         case "menus":
             // Every menu of the menu bar, by title, after SwiftUI has filled

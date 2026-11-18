@@ -31,6 +31,9 @@ struct Suggestion: Identifiable, Equatable {
         /// Words you searched a site in the field for before, read from
         /// this window's history (SiteSearch.pastSearches).
         case searched
+        /// A page open on another device, through Sync with iCloud
+        /// (ICloudSync.offers).
+        case elsewhere
         /// Not a place either: something the app itself does.
         case command(AddressCommand)
 
@@ -46,6 +49,7 @@ struct Suggestion: Identifiable, Equatable {
         if case .searched = kind { return "searched " + History.identity(for: url) }
         if case .visited = kind { return History.identity(for: url) }
         if case .bookmark = kind { return History.identity(for: url) }
+        if case .elsewhere = kind { return "elsewhere " + History.identity(for: url) }
         return key
     }
 

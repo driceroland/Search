@@ -311,6 +311,29 @@ if [ -f "Search.provisionprofile" ]; then
   cp "Search.provisionprofile" "$APP/Contents/embedded.provisionprofile"
   ENTITLEMENTS="Search.passkeys.entitlements"
   echo "passkeys: profile embedded"
+  # Sync with iCloud (ICloudSync.swift) needs the iCloud entitlements, and
+  # those only open with a profile that carries the container: signed with
+  # them and a profile from before, the app would not start. So they go in
+  # only when the profile names iCloud.com.officecommun.search; otherwise
+  # the build is as before and Settings says it needs a new one. Of the
+  # two keys a profile may or may not carry (the container's environment,
+  # the pushes), only what it does carry is kept.
+  PROFILE_PLIST="$(mktemp -t search-profile)"
+  security cms -D -i "Search.provisionprofile" > "$PROFILE_PLIST" 2>/dev/null || true
+  profile_has() { /usr/libexec/PlistBuddy -c "Print :Entitlements:$1" "$PROFILE_PLIST" >/dev/null 2>&1; }
+  if /usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.developer.icloud-container-identifiers" "$PROFILE_PLIST" 2>/dev/null \
+      | grep -q "iCloud.com.officecommun.search"; then
+    ENTITLEMENTS="build/Search.icloud.entitlements"
+    mkdir -p build
+    cp "Search.icloud.entitlements" "$ENTITLEMENTS"
+    for key in com.apple.developer.icloud-container-environment com.apple.developer.aps-environment; do
+      profile_has "$key" || /usr/libexec/PlistBuddy -c "Delete :$key" "$ENTITLEMENTS" >/dev/null
+    done
+    echo "iCloud: the profile carries iCloud.com.officecommun.search, Sync with iCloud is in"
+  else
+    echo "iCloud: the profile has no iCloud container, built without Sync with iCloud (Settings says it needs a new build)"
+  fi
+  rm -f "$PROFILE_PLIST"
 fi
 if [ -n "$IDENTITY" ]; then
   codesign --force --deep --timestamp --options runtime \

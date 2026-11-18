@@ -264,6 +264,9 @@ struct Omnibox: View {
                     // Kept by you, not only visited: the bookmark's mark,
                     // at the end now that the site's icon leads the row.
                     symbol("bookmark")
+                } else if offer.kind == .elsewhere {
+                    // Open on another device: iCloud Tabs' mark.
+                    symbol("laptopcomputer.and.iphone")
                 }
             }
             .padding(.horizontal, 12)
