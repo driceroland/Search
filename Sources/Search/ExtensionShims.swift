@@ -1999,7 +1999,12 @@ enum ExtensionShims {
             }
           }).finally(() => { asking = false; });
         };
-        checkWorker = page ? check : () => {};
+        // Never from the background itself: a background page (WebKit makes
+        // one when a manifest names scripts beside its worker, as Language
+        // Reactor's does) is what would answer, and its own message never
+        // reaches it — every check came back empty, and the extension was
+        // restarted over and over.
+        checkWorker = page && !background ? check : () => {};
         put(runtime, "sendMessage", (...args) => {
           const callback = typeof args[args.length - 1] === "function" ? args.pop() : null;
           // Never heard back by the one that sends it, so said for it.
