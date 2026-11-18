@@ -37,9 +37,10 @@ THE SCRIPT (JSON; YAML if PyYAML is installed) — Tests/demo/example.json is a
   look        "light" | "dark" | "system"
   settings    {"sidebar": true, "layout.cards": true, "spaces": true, "splitView": true, …}
               raw defaults keys of the demo world's own suite, written before launch
-  spaces      [{"name", "colour": "blue"|0…5, "tabs": [{"name", "url", "group"}],
+  spaces      [{"name", "colour": "blue"|0…5, "tabs": [{"name", "url", "group", "js"}],
                 "pins": [{"url", "listed"}], "folders": [{"name", "pins": [URL…], "folded"}]}]
-              URLs are https://…, or local:NAME for a page the harness serves
+              URLs are https://…, or local:NAME for a page the harness serves; "js" runs
+              on the tab once it has loaded (a cookie or region banner taken away)
   start       {"space": 1, "tab": NAME}
   lead, tail  seconds at rest before the first step and after the last; settle: before recording
   steps       [{"do": ACTION, "at": SECONDS | "wait": SECONDS, …}]  ("at" from the first step's
@@ -240,6 +241,16 @@ class Session:
                     self.cmd({"do": "group", "id": tid, "name": g, **({} if g in groups else {"new": True})})
                     groups.add(g)
                 time.sleep(0.3)
+            # Loaded while their space is in front: the bench finds only its
+            # tabs. Then the tab's "js", if any (a banner taken away, say).
+            for tab in space.get("pins", []) + space.get("tabs", []):
+                tid = self.names.get(tab.get("name", ""))
+                if not tid: continue
+                try: self.cmd({"do": "wait", "id": tid, "seconds": 15})
+                except Exception as e: log(f"(waiting for {tab['name']})", e)
+                if tab.get("js"):
+                    try: self.cmd({"do": "eval", "id": tid, "js": tab["js"]})
+                    except Exception as e: log(f"(js on {tab['name']})", e)
             if i == 0:
                 # The tab the probe came up with goes, once there are others.
                 for tid in before:
@@ -248,10 +259,6 @@ class Session:
         start = s.get("start") or {}
         self.cmd({"do": "space", "action": "go", "index": int(start.get("space", 1))})
         if start.get("tab"): self.cmd({"do": "select", "id": self.tab(start["tab"])})
-        # Pages loaded, then a moment to settle.
-        for name, tid in self.names.items():
-            try: self.cmd({"do": "wait", "id": tid, "seconds": 15})
-            except Exception as e: log(f"(waiting for {name})", e)
 
     # -- the pointer
 

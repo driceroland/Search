@@ -52,7 +52,12 @@ case "capture":
              "message": "Screen Recording is not allowed for the app that started demo-capture (its responsible app: the terminal or Claude). Allow it in System Settings › Privacy & Security › Screen & System Audio Recording."])
         exit(2)
     }
-    Task {
+    // ScreenCaptureKit wants a window-server connection made first
+    // (CGS_REQUIRE_INIT otherwise): an app of no kind — no Dock icon, no
+    // menu bar, never active — with its run loop.
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    Task { @MainActor in
         do {
             let window = try await shareableWindow(id)
             let recorder = WindowRecorder(window: window, scale: scale)
@@ -82,7 +87,7 @@ case "capture":
             exit(1)
         }
     }
-    dispatchMain()
+    app.run()
 
 case "compose":
     guard let plan = option("--plan") else { fail("usage: demo-capture compose --plan PLAN.json") }
