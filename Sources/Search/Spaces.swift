@@ -539,7 +539,56 @@ extension Browser {
     func switchSpace(index: Int) {
         let list = everySpace
         guard list.indices.contains(index) else { return }
-        switchSpace(to: list[index].id)
+        goToSpace(list[index].id)
+    }
+
+    /// ⌃1–⌃9 and the space's menu: the space's page in front at once, its
+    /// rows sliding in, and the column taking it once they stand still
+    /// (SpaceSwipe.bring). Taken at once, the column's whole row was made
+    /// over before the rows could move, and the slide began late, with a
+    /// jolt. Anything else, with Reduce Motion, or in a hidden window (whose
+    /// frames are never drawn, so the bench's), the space at once.
+    func goToSpace(_ id: UUID) {
+        let shown = spaceComing ?? spaceID
+        guard prefs.usesSpaces, id != shown, !makingSpace, !Motion.reduced,
+              let to = spaces.firstIndex(where: { $0.id == id }),
+              let here = spaces.firstIndex(where: { $0.id == shown }),
+              !NSApp.isHidden || SpaceSwipe.glidesHidden
+        else {
+            SpaceSwipe.shared.land(self)
+            return switchSpace(to: id)
+        }
+        SpaceSwipe.shared.bring(self, id, step: to > here ? 1 : -1)
+    }
+
+    /// The page in front of space `id`, put on the stage now (pageAhead),
+    /// before the column has taken the space: woken if it sleeps, as the
+    /// space would wake it. Not a pair of Split View: that one comes with
+    /// the space.
+    func showAhead(_ id: UUID) {
+        // Back to this space's own, on a swipe brought back short.
+        if id == spaceID {
+            pageAhead = nil
+            if let window, let active { PaneStage.stages.object(forKey: window)?.show(now: active) }
+            return
+        }
+        guard let row = parked[id] else { return }
+        let front = row.active.flatMap { active in row.tabs.first { $0.id == active } } ?? row.tabs.first { $0.pin == nil }
+        guard let front, !(prefs.splitView && row.splits.contains { $0.contains(front.id) }) else { return }
+        if !front.wake() { front.revive() }
+        pageAhead = front
+        if let window { PaneStage.stages.object(forKey: window)?.show(now: front) }
+    }
+
+    /// Where space `index` lies in the map (SideBar.others), in pages from
+    /// the one at `at`: in the spaces' order, but for one on its way in from
+    /// further along (⌃1–⌃9), drawn where comingSlot says, and the one that
+    /// lies there out of the way.
+    func mapSlot(_ index: Int, from at: Int) -> Int {
+        guard let coming = spaceComing, let from = spaces.firstIndex(where: { $0.id == coming }),
+              comingSlot != from - at else { return index - at }
+        if index == from { return comingSlot }
+        return index - at == comingSlot ? 1000 : index - at
     }
 
     /// The icon a new space gets unless told: the first no space wears yet.
@@ -856,7 +905,7 @@ enum SpaceMenu {
             if let name = list.name { menu.addItem(.sectionHeader(title: name)) }
             for space in list.spaces {
                 let entry = item(space.name, key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
-                    browser.switchSpace(to: space.id)
+                    browser.goToSpace(space.id)
                 }
                 entry.image = image(space.symbol, tint: space.tint)
                 menu.addItem(entry)

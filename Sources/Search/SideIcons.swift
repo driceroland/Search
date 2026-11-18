@@ -230,7 +230,7 @@ struct IconTile: View {
         if live {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(greys.pinLive)
-                .matchedGeometryEffect(id: "live", in: pill)
+                .modifier(LiveMatch(id: LivePill.id(browser), in: pill))
         } else if browser.selectedTabIDs.contains(tab.id) {
             RoundedRectangle(cornerRadius: 9, style: .continuous).fill(greys.wash)
         } else if hovering {
@@ -320,7 +320,7 @@ struct IconPair: View {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .fill(greys.pinLive)
                         .padding(2)
-                        .matchedGeometryEffect(id: "live", in: pill)
+                        .modifier(LiveMatch(id: LivePill.id(browser), in: pill))
                 }
             }
     }
