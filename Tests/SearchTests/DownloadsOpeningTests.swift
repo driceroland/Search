@@ -114,13 +114,21 @@ final class DownloadsOpeningTests: XCTestCase {
         }
     }
 
-    func testTheFloatingCardIsAQuarterOfTheWindow() {
+    func testTheFloatingCardIsAQuarterOfATallWindow() {
+        let frame = NSRect(x: 0, y: 0, width: 1180, height: 1400)
+        let button = NSRect(x: 1120, y: 1366, width: 26, height: 26)
+        let spot = DownloadsFloat.layout(edge: .bottom, button: button,
+                                         room: frame.insetBy(dx: 8, dy: 8), width: 380, windowHeight: 1400)
+        XCTAssertEqual(spot.card.height, 350)
+        XCTAssertEqual(spot.card.width, 380)
+        XCTAssertEqual(spot.card.maxX, button.maxX, "its right edge with the button's")
+    }
+
+    func testTheFloatingCardHoldsThreeDownloadsInAShorterWindow() {
         let frame = NSRect(x: 0, y: 0, width: 1180, height: 780)
         let button = NSRect(x: 1120, y: 746, width: 26, height: 26)
         let spot = DownloadsFloat.layout(edge: .bottom, button: button,
                                          room: frame.insetBy(dx: 8, dy: 8), width: 380, windowHeight: 780)
-        XCTAssertEqual(spot.card.height, 195)
-        XCTAssertEqual(spot.card.width, 380)
-        XCTAssertEqual(spot.card.maxX, button.maxX, "its right edge with the button's")
+        XCTAssertEqual(spot.card.height, DownloadsFloat.leastHeight)
     }
 }

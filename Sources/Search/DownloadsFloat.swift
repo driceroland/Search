@@ -3,7 +3,8 @@ import SwiftUI
 
 // Downloads by its button (Settings › Downloads › Open Downloads): the
 // side panel's card, as wide as the panel is and a quarter of the window's
-// height, floating beside the button instead of taking room from the page.
+// height, or tall enough for three downloads if that is more, floating
+// beside the button instead of taking room from the page.
 // Its own small window, as the site card's is (SiteCard.swift): it never
 // takes the keys, so the page keeps them, and a click on the card is only a
 // click. It grows in from the button's corner and shrinks back into it,
@@ -147,14 +148,18 @@ enum DownloadsFloat {
     /// click meant for it.
     static let margin: CGFloat = 24
 
+    /// The card's height in all but a tall window, where it is a quarter of
+    /// it; less only when the window has no more room.
+    static let leastHeight: CGFloat = 300
+
     static func insets(_ edge: Edge) -> EdgeInsets {
         EdgeInsets(top: edge == .bottom ? 0 : margin, leading: edge == .trailing ? 0 : margin,
                    bottom: edge == .top ? 0 : margin, trailing: edge == .leading ? 0 : margin)
     }
 
     /// Beside the button, as wide as the side panel and a quarter of the
-    /// window's height: under a button in the row, its right edge with the
-    /// button's; beside one at the column's foot, level with its bottom, on
+    /// window's height, or enough for three downloads: under a button in
+    /// the row, its right edge with the button's; beside one at the column's foot, level with its bottom, on
     /// the side away from the column's edge. Kept inside the window and its
     /// screen, and never over the button: short of room on the button's
     /// side, it is smaller rather than pushed back onto it.
@@ -177,8 +182,9 @@ enum DownloadsFloat {
         let gap = Metrics.cardGap
         let least: CGFloat = 120
         var width = min(asked, max(240, room.width))
-        // Enough for its title, two downloads and its foot in a short window.
-        var height = min(max(170, windowHeight / 4), room.height)
+        // Enough for its title, three downloads, the start of a fourth
+        // under the list's fade, and its foot: a quarter of a tall window.
+        var height = min(max(DownloadsFloat.leastHeight, windowHeight / 4), room.height)
         var card = NSRect.zero
         switch edge {
         case .bottom:

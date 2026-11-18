@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Downloads, wherever it opens, draws the lines between its files from one side of their box to the other, and a list longer than its room fades out at the foot instead of stopping halfway through a file. Floating by the button, the card is tall enough for three downloads.
 - On a space with a colour or a gradient, the open tab, the tab under the pointer and the pins' squares take the space's tint, where they sat on it as grey patches.
 - Passwords from Apple's Passwords app should ask for a new six-digit code far less often: Search now keeps Apple's helper running for as long as you're connected, telling it now and then (and when the Mac wakes) that a tab came to the front, as Apple's own extension does, so a sleep or a quiet hour no longer lets the pairing go. If it still asks, the reason is noted in the Mac's log for us to look at. Reported by [@mehdiillala](https://github.com/mehdiillala) ([#1122](https://github.com/driceroland/Search/issues/1122))
 - An extension's box opened over a page from a key, as Vimium's Vomnibar (T, o) is, takes what you type straight away, where it opened unfocused and the keys went nowhere until it was clicked. WebKit refuses a frame from another site focus until it has had a key of its own, so the first key now puts the focus where the extension asked before it lands. Thanks to the person who reported it with a full diagnosis.
