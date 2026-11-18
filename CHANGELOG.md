@@ -19,7 +19,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Improved
 
-- The miniplayer keeps the pointer attached through two-finger moves and corner glides until you move it with one finger. It lifts slightly while swiping and settles back when you let go; pinch gestures resize it about the pointer, including small pinches, within the current display.
+- The miniplayer keeps the pointer attached through two-finger moves and corner glides until you move it with one finger. The cursor and controls stay hidden until you move the pointer again. Small swipes allow precise positioning even with corner flicks on. It lifts slightly while swiping and settles back when you let go; pinch gestures resize it about the pointer, including small pinches, within the current display.
 
 ### Held back
 

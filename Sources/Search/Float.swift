@@ -471,19 +471,20 @@ final class Float {
 
         override func mouseEntered(with event: NSEvent) {
             fade(to: 1)
-            onEnter?()
+            if !gestureQuiet { onEnter?() }
         }
         override func mouseExited(with event: NSEvent) { fade(to: 0) }
 
-        private func fade(to value: CGFloat) {
+        private func fade(to requested: CGFloat) {
+            let value: CGFloat = gestureQuiet ? 0 : requested
             near = value > 0
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = Motion.seconds(0.16)
+                context.duration = gestureQuiet ? 0 : Motion.seconds(0.16)
                 buttons.forEach { $0.animator().alphaValue = value }
                 line.animator().alphaValue = value
             }
             CATransaction.begin()
-            CATransaction.setAnimationDuration(Motion.seconds(0.16))
+            CATransaction.setAnimationDuration(gestureQuiet ? 0 : Motion.seconds(0.16))
             scrim.opacity = Swift.Float(value)
             CATransaction.commit()
         }
@@ -553,6 +554,8 @@ final class Float {
         // Keep a position within the picture, rather than a screen position:
         // a corner glide can cross most of the display after fingers lift.
         private(set) var pointerAnchor: NSPoint?
+        private(set) var gestureQuiet = false
+        private var cursorHidden = false
         private var liftedSize: NSSize?
         private var movement: [NSObjectProtocol] = []
         private var pointerMonitor: Any?
@@ -570,6 +573,9 @@ final class Float {
                     MainActor.assumeIsolated { self?.carryPointer() }
                 })
             }
+            movement.append(NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: NSApp, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.releasePointer() }
+            })
             pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
                 MainActor.assumeIsolated { self?.releasePointer() }
                 return event
@@ -578,7 +584,28 @@ final class Float {
 
         override func mouseMoved(with event: NSEvent) { releasePointer() }
 
-        private func releasePointer() { pointerAnchor = nil }
+        private func releasePointer() {
+            pointerAnchor = nil
+            if cursorHidden {
+                NSCursor.unhide()
+                cursorHidden = false
+            }
+            guard gestureQuiet else { return }
+            gestureQuiet = false
+            if let window, window.frame.contains(NSEvent.mouseLocation) {
+                fade(to: 1)
+                onEnter?()
+            }
+        }
+
+        private func quietGesture() {
+            gestureQuiet = true
+            fade(to: 0)
+            if !cursorHidden, pointerAnchor != nil, window?.isVisible == true {
+                NSCursor.hide()
+                cursorHidden = true
+            }
+        }
 
         private func attachPointer() {
             guard pointerAnchor == nil, let window else { return }
@@ -634,6 +661,7 @@ final class Float {
             let ended = event.phase.contains(.ended) || event.phase.contains(.cancelled)
             if event.phase.contains(.began) {
                 attachPointer()
+                quietGesture()
                 if !Float.flicks { liftPicture() }
             }
             // Restore the real size before picking a corner or docking target.
@@ -641,6 +669,7 @@ final class Float {
             if event.phase.contains(.cancelled) {
                 releasePointer()
                 if pulling != nil { glide(to: pullFrom, bouncing: true) }
+                else if Float.flicks, !flicked { window.setFrameOrigin(pullFrom) }
                 pulling = nil
                 swipe = .zero
                 flicked = false
@@ -689,6 +718,7 @@ final class Float {
             if event.phase.contains(.began) {
                 // Corner and docking geometry uses the resting origin.
                 lowerPicture()
+                stopGlide()
                 swipe = .zero
                 flicked = false
                 pulling = nil
@@ -738,6 +768,13 @@ final class Float {
             // sets off along one side before it turns diagonal, and read
             // early it went the wrong way. A long one doesn't wait.
             let length = hypot(swipe.dx, swipe.dy)
+            if !flicked, length <= 120, let window {
+                // Small swipes place it exactly; a deliberate flick still snaps.
+                let extraX = (window.frame.width - (liftedSize?.width ?? window.frame.width)) / 2
+                let extraY = (window.frame.height - (liftedSize?.height ?? window.frame.height)) / 2
+                window.setFrameOrigin(NSPoint(x: pullFrom.x + swipe.dx - extraX,
+                                              y: pullFrom.y + swipe.dy - extraY))
+            }
             if !flicked, length > 120 || (lifted && length > 20) {
                 flicked = true
                 flick(swipe)
@@ -915,16 +952,16 @@ final class Float {
             if event.phase.contains(.began) {
                 lowerPicture()
                 stopGlide()
+                attachPointer()
+                quietGesture()
                 pinching = 0
             }
-            if event.phase.contains(.cancelled) { pinching = 0; return }
+            if event.phase.contains(.cancelled) { pinching = 0; releasePointer(); return }
             pinching += event.magnification
 
-            // Every event would mean a window resize, a web view relayout and a
-            // video re-fit sixty times a second, which is the stutter. Moving
-            // in steps of a fiftieth is below what an eye reads as a jump and
-            // an order of magnitude less work.
-            guard abs(pinching) > 0.02 || (event.phase.contains(.ended) && pinching != 0) else { return }
+            // Keep subpixel pinches until they add up to a visible adjustment.
+            // Flushing the remainder on release also preserves very small pinches.
+            guard abs(pinching) > 0.002 || (event.phase.contains(.ended) && pinching != 0) else { return }
             let by = pinching
             pinching = 0
             resize(
