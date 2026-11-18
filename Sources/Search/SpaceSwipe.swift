@@ -505,7 +505,10 @@ final class SpaceSwipe {
         // as the fingers let go. Only the distance counted, and a quick
         // stroke, over before it had gone far, snapped back as if not made.
         let flick = abs(travel) >= 12 && abs(speed) > 400 && (speed < 0) == (travel < 0)
-        let far = abs(travel) >= SpaceSwipe.enough(for: browser) || flick
+        // The card for a new space takes a longer stroke, and no flick.
+        let far = toCard(travel, in: browser)
+            ? abs(travel) >= 2 * SpaceSwipe.enough(for: browser)
+            : abs(travel) >= SpaceSwipe.enough(for: browser) || flick
         // Fingers to the left, or up, bring what is next.
         let target = cancelled || !far ? here : here + (travel < 0 ? 1 : -1)
         if target != here, let other = beyond(browser, target) {
@@ -530,11 +533,17 @@ final class SpaceSwipe {
         letGoSpeed = nil
     }
 
-    /// Nothing that way: the rows give a little, and come back.
+    /// Nothing that way: the rows give a little, and come back. Toward the
+    /// card for a new space they go heavily, for it not to come by chance.
     private func resisted(_ travel: CGFloat, in browser: Browser) -> CGFloat {
         let here = shown(browser)
         let blocked = (travel > 0 && here == 0 && browser.profileBeyond(-1) == nil) || (travel < 0 && here == browser.spaces.count)
-        return blocked ? travel / 4 : travel
+        return blocked ? travel / 4 : toCard(travel, in: browser) ? travel * 0.6 : travel
+    }
+
+    /// Fingers going from the last space toward the card for a new one.
+    private func toCard(_ travel: CGFloat, in browser: Browser) -> Bool {
+        travel < 0 && !browser.makingSpace && shown(browser) == browser.spaces.count - 1 && beyond(browser, browser.spaces.count) == nil
     }
 
     /// The pages carry on the way the fingers went until the next one is
@@ -542,10 +551,19 @@ final class SpaceSwipe {
     /// frame and without anything moving — it was already there. One past
     /// the last space is the card for a new one.
     func slide(_ browser: Browser, to target: Int, from here: Int) {
+        let width = SpaceSwipe.page(browser)
         if browser.makingSpace, target != browser.spaces.count {
             browser.cancelSpaceCreation()
+            // Off the card now, the rows where they are: left on it until
+            // the space behind it was taken, a moment after its rows
+            // stopped, the next stroke back started from the card again,
+            // and brought that same space back.
+            browser.makingSpace = false
+            let shift = CGFloat(browser.spaces.count - taken(browser)) * width
+            browser.spaceSwipe -= shift
+            SwipeGlide.rebase(by: -shift)
+            base -= shift
         }
-        let width = SpaceSwipe.page(browser)
         let away: CGFloat = target > here ? -1 : 1
         browser.spaceStep = target > here ? 1 : -1
         resting = Date().addingTimeInterval(SpaceSwipe.rest)
