@@ -48,7 +48,13 @@ work = Path(tempfile.mkdtemp(prefix="search-extpagescript-"))
 
 class Site(BaseHTTPRequestHandler):
     def do_GET(self):
-        body = b"<!doctype html><title>t</title><p>page</p><script nonce=abc>window.pageOwn = 1;</script>"
+        # The page keeps a currentScript of its own, which must be its again
+        # once the extension's script has run; the strict page frames
+        # another, whose content script is refused (top frame only).
+        own = (b"<script nonce=abc>window.pageOwn = 1; window.ownCurrent = { mine: true };"
+               b"Object.defineProperty(document, 'currentScript', { configurable: true, get: () => window.ownCurrent });</script>")
+        frame = b"<iframe src='/strict-frame'></iframe>" if self.path == "/strict" else b""
+        body = b"<!doctype html><title>t</title><p>page</p>" + own + frame
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         if self.path.startswith("/strict"):
@@ -69,7 +75,7 @@ FILES = {
         "manifest_version": 3, "name": "PageScript", "version": "1.0",
         # The browser is asked through the extension's background.
         "background": {"service_worker": "sw.js"},
-        "content_scripts": [{"matches": ["http://127.0.0.1/*"], "js": ["cs.js"], "run_at": "document_idle"}],
+        "content_scripts": [{"matches": ["http://127.0.0.1/*"], "js": ["cs.js"], "run_at": "document_idle", "all_frames": True}],
         "web_accessible_resources": [{"resources": ["page.js"], "matches": ["http://127.0.0.1/*"]}],
     }),
     "sw.js": "chrome.runtime.onMessage.addListener(() => {});",
@@ -77,8 +83,10 @@ FILES = {
     # world it ran in.
     "page.js": """
 document.documentElement.dataset.runs = String(Number(document.documentElement.dataset.runs || 0) + 1);
-document.documentElement.dataset.current = document.currentScript ? (document.currentScript.dataset.tag || "no tag") : "none";
+const current = document.currentScript;
+document.documentElement.dataset.current = current && current.dataset ? (current.dataset.tag || "no tag") : current ? "the page's own" : "none";
 document.documentElement.dataset.world = typeof window.pageOwn;
+document.documentElement.dataset.active = String(navigator.userActivation.isActive) + " " + String(navigator.userActivation.hasBeenActive);
 """,
     "hidden.js": "document.documentElement.dataset.hidden = 'ran';",
     "cs.js": """
@@ -150,16 +158,26 @@ def main():
             return t
 
         tid = sv.sp("open", url=base + "/strict")["resultID"]
-        d = look(tid, within=25, until=lambda d: "loadOne" in d and "loadTwo" in d)
+        # Nothing asked of the page before its script has run: a script the
+        # bench runs there counts as a user gesture itself.
+        time.sleep(10)
+        d = look(tid, within=15, until=lambda d: "loadOne" in d and "loadTwo" in d)
         t.ok("its web-accessible script runs in a page whose policy refuses it, once", d.get("runs") == "1", d)
         t.ok("in the page's own world", d.get("world") == "number", d)
         t.ok("with document.currentScript its element", d.get("current") == "One", d)
+        strict_active = d.get("active", "")
+        t.ok("without a user gesture: the page isn't active while it runs", strict_active.startswith("false "), d)
         t.ok("and the element hears load", d.get("loadOne") == "load", d)
         t.ok("a file that isn't web-accessible doesn't run, and its element hears error",
              "hidden" not in d and d.get("loadTwo") == "error", d)
+        restored = sv.ev(tid, "String(document.currentScript === window.ownCurrent)")
+        t.ok("the page's own currentScript is its own again afterwards", restored == "true", restored)
+        framed = json.loads(sv.ev(tid, "JSON.stringify(Object.assign({}, frames[0].document.documentElement.dataset))") or "{}")
+        t.ok("in a frame, its script isn't run, and the element hears error", "runs" not in framed and framed.get("loadOne") == "error", framed)
         time.sleep(1)
         reported = next(x for x in sv.cmd({"do": "extensions"})["extensions"] if x["id"] == ext["id"]).get("reported", [])
-        t.ok("the refusal is in its error list", any("hidden.js" in r and "web_accessible_resources" in r for r in reported), reported)
+        t.ok("the refusals are in its error list", any("hidden.js" in r and "web_accessible_resources" in r for r in reported)
+             and any("page.js" in r and "top frame" in r for r in reported), reported)
 
         # The page itself adds a script with the extension's address: the
         # policy refuses it, and nothing runs it for the page.
@@ -168,10 +186,21 @@ def main():
         time.sleep(4)
         d = look(tid, within=1)
         t.ok("a script element the page adds itself isn't run for it", d.get("runs") == "1" and d.get("current") == "One", d)
+        seen = sv.ev(tid, "String(typeof (window.webkit && webkit.messageHandlers && webkit.messageHandlers.searchPageScript))")
+        t.ok("the page can't reach the browser's handler", seen == "undefined", seen)
+        own_page = sv.cmd({"do": "ext-page", "id": ext["id"], "path": "sw.js"})["id"]
+        time.sleep(1)
+        seen = sv.ev(own_page, "String(typeof (window.webkit && webkit.messageHandlers && webkit.messageHandlers.searchPageScript))")
+        t.ok("nor can the extension's own pages", seen == "undefined", seen)
 
         tid = sv.sp("open", url=base + "/plain")["resultID"]
+        time.sleep(10)
         d = look(tid, until=lambda d: "loadOne" in d and "loadTwo" in d)
         t.ok("on a page without a policy it loads by itself, once", d.get("runs") == "1" and d.get("loadOne") == "load", d)
+        # Opened the same way, a page where the script loaded by itself:
+        # running it for the page gave it no activation that one hasn't.
+        t.ok("and the page run for has been no more activated than one where it loads by itself",
+             strict_active == d.get("active"), (strict_active, d.get("active")))
 
         if os.environ.get("SEARCH_YOUTUBE") == "1":
             sv.cmd({"do": "ext-answer", "answer": "yes"})
