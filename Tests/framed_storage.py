@@ -20,7 +20,12 @@ wherever they are framed.
 - a panel in a private tab keeps its own localStorage: it reads nothing the
   others wrote, and what it writes reaches none of them;
 - the extension's own chrome.storage shows nothing of how it is done: not in
-  get(null), getKeys() or getBytesInUse().
+  get(null), getKeys() or getBytesInUse();
+- the copy sits where content scripts, in the website's process, can't read
+  it: the extension's session storage, kept to its own pages. Read straight
+  from WebKit, past the shim, a content script finds nothing of it;
+- the extension clearing its session storage takes the copy with it, but
+  no panel's own localStorage: none is signed out.
 """
 import json
 import sys
@@ -55,6 +60,22 @@ document.body.appendChild(host);
 const frame = document.createElement("iframe");
 frame.src = chrome.runtime.getURL("/panel/panel.html");
 host.attachShadow({ mode: "open" }).appendChild(frame);
+// What a content script, in the website's process, can read of the
+// extension's storage, straight from WebKit (the prototype's get, past the
+// shim's own): asked by the page.
+addEventListener("message", (e) => {
+  if (!(e.data && e.data.peek)) return;
+  const read = async (name) => {
+    const area = chrome.storage && chrome.storage[name];
+    if (!area) return "absent";
+    const get = Object.getPrototypeOf(area).get;
+    if (typeof get !== "function") return "no native get";
+    try { return JSON.stringify(await get.call(area, null)); }
+    catch (err) { return "refused: " + err; }
+  };
+  Promise.all([read("session"), read("local")])
+    .then(([session, local]) => window.postMessage({ panel: { peek: { session, local } } }, "*"));
+});
 """,
     "panel/panel.html": "<!doctype html><html><head><meta charset='utf-8'></head><body><script src='panel.js'></script></body></html>",
     "panel/panel.js": """
@@ -69,16 +90,18 @@ addEventListener("message", (e) => {
   if (asked.go === "read") tell({ read: localStorage.getItem("token") });
   if (asked.go === "burst") { for (let i = 0; i < 40; i++) localStorage.setItem("token", "burst-" + i); tell({ burst: true }); }
   if (asked.go === "all") Promise.all([
+    chrome.storage.session.get(null),
+    typeof chrome.storage.session.getKeys === "function" ? chrome.storage.session.getKeys() : null,
+    typeof chrome.storage.session.getBytesInUse === "function" ? chrome.storage.session.getBytesInUse(null) : 0,
     chrome.storage.local.get(null),
-    typeof chrome.storage.local.getKeys === "function" ? chrome.storage.local.getKeys() : null,
-    chrome.storage.local.getBytesInUse(null),
-  ]).then(([all, keys, bytes]) => tell({ all: Object.keys(all), keys, bytes }));
+  ]).then(([all, keys, bytes, local]) => tell({ all: Object.keys(all), keys, bytes, local: Object.keys(local) }));
+  if (asked.go === "clear-session") chrome.storage.session.clear().then(() => tell({ cleared: true }));
 });
 // How many times the copy the panels share is written, seen past the shim's
 // hiding (the shim's own way in), for the batching check.
 window.writes = 0;
 Object.getPrototypeOf(chrome.storage.onChanged).addListener.call(chrome.storage.onChanged, (changes, area) => {
-  if (area === "local" && changes && "__searchFramedLocalStorage" in changes) window.writes++;
+  if (area === "session" && changes && "__searchFramedLocalStorage" in changes) window.writes++;
 });
 addEventListener("message", (e) => {
   if ((e.data || {}).go === "writes") tell({ writes: window.writes });
@@ -194,7 +217,25 @@ def main():
         said = until(one, lambda s: "all" in s)
         seen = next((s for s in said if "all" in s), {})
         t.ok("the extension's chrome.storage shows nothing of it",
-             seen.get("all") == [] and seen.get("keys") in ([], None) and seen.get("bytes") == 0, said)
+             seen.get("all") == [] and seen.get("keys") in ([], None) and seen.get("bytes") == 0 and seen.get("local") == [], said)
+
+        def peek(tab):
+            sv.ev(tab, "window.told = []; postMessage({ peek: true }, '*'); true")
+            return next((s["peek"] for s in until(tab, lambda s: "peek" in s) if "peek" in s), None)
+
+        def unseen(saw):
+            return saw is not None and all(
+                "burst-39" not in v and "__searchFramed" not in v and v != "no native get" for v in saw.values())
+
+        saw = peek(one)
+        t.ok("a content script, read straight from WebKit, finds nothing of the copy", unseen(saw), saw)
+
+        ask(one, go="clear-session")
+        until(one, lambda s: "cleared" in s)
+        time.sleep(1)
+        ask(two, go="read")
+        said = until(two, lambda s: "read" in s)
+        t.ok("the extension clearing its session storage signs no panel out", {"read": "burst-39"} in said, said)
         for x in (one, two, shy): sv.cmd({"do": "close", "id": x})
     finally:
         srv.shutdown(); srv.server_close(); folder.cleanup()

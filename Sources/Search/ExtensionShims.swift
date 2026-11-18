@@ -1526,7 +1526,7 @@ enum ExtensionShims {
                     else if (op.key in values) { delete values[op.key]; changed = true; }
                   }
                 }
-                if (changed) await chrome.storage.local.set({ [sharedKey]: { by: String(by), values } });
+                if (changed) await sharedArea.set({ [sharedKey]: { by: String(by), values } });
                 return true;
               });
               sharedWrites = write.catch(() => {});
@@ -1766,34 +1766,38 @@ enum ExtensionShims {
         }
       }
       // Where framed pages share their localStorage (see below, at
-      // `embedded && localArea`), hidden from the extension: content scripts
-      // included, so this comes before they return.
+      // `embedded && sharedArea`): the extension's session storage, which
+      // WebKit keeps to its own pages and worker, away from its content
+      // scripts in a website's process (unless the extension itself opens
+      // it to them with setAccessLevel, which WebKit won't let the shim
+      // cover); gone when Search quits, until a page writes again. Hidden
+      // from the extension too, so this comes before content scripts return.
       const sharedKey = "__searchFramedLocalStorage";
-      const localArea = chrome.storage && chrome.storage.local;
+      const sharedArea = chrome.storage && chrome.storage.session;
       // The copy itself, for the worker only (see `__searchFramedStorage`).
       let readShared = async () => undefined;
-      if (localArea && typeof localArea.get === "function") {
-        const get = localArea.get.bind(localArea);
+      if (sharedArea && typeof sharedArea.get === "function") {
+        const get = sharedArea.get.bind(sharedArea);
         readShared = () => Promise.resolve(get(sharedKey)).then((all) => all ? all[sharedKey] : undefined);
         const answer = (p, callback) => {
           if (typeof callback !== "function") return p;
           p.then(callback, (error) => withLastError(error, callback));
         };
-        put(localArea, "get", (keys, callback) => {
+        put(sharedArea, "get", (keys, callback) => {
           if (typeof keys === "function") { callback = keys; keys = null; }
           return answer(Promise.resolve(get(keys === undefined ? null : keys)).then((all) => {
             if (all && typeof all === "object" && sharedKey in all) { all = { ...all }; delete all[sharedKey]; }
             return all;
           }), callback);
         });
-        if (typeof localArea.getKeys === "function") {
-          const getKeys = localArea.getKeys.bind(localArea);
-          put(localArea, "getKeys", (callback) => answer(Promise.resolve(getKeys())
+        if (typeof sharedArea.getKeys === "function") {
+          const getKeys = sharedArea.getKeys.bind(sharedArea);
+          put(sharedArea, "getKeys", (callback) => answer(Promise.resolve(getKeys())
             .then((keys) => Array.isArray(keys) ? keys.filter((key) => key !== sharedKey) : keys), callback));
         }
-        if (typeof localArea.getBytesInUse === "function") {
-          const bytes = localArea.getBytesInUse.bind(localArea);
-          put(localArea, "getBytesInUse", (keys, callback) => {
+        if (typeof sharedArea.getBytesInUse === "function") {
+          const bytes = sharedArea.getBytesInUse.bind(sharedArea);
+          put(sharedArea, "getBytesInUse", (keys, callback) => {
             if (typeof keys === "function") { callback = keys; keys = null; }
             if (keys === null || keys === undefined) {
               return answer(Promise.all([bytes(null), bytes(sharedKey)]).then(([all, hidden]) => Math.max(0, (all || 0) - (hidden || 0))), callback);
@@ -1811,7 +1815,7 @@ enum ExtensionShims {
             let w = wrapped.get(listener);
             if (!w) {
               w = (changes, area) => {
-                if (changes && sharedKey in changes && (!withArea || area === "local")) {
+                if (changes && sharedKey in changes && (!withArea || area === "session")) {
                   changes = { ...changes }; delete changes[sharedKey];
                   if (!Object.keys(changes).length) return;
                 }
@@ -1825,7 +1829,7 @@ enum ExtensionShims {
           put(ev, "hasListener", (listener) => has(wrapped.get(listener) || listener));
         };
         hide(chrome.storage.onChanged, true);
-        hide(localArea.onChanged, false);
+        hide(sharedArea.onChanged, false);
       }
       // Installed before the content-script return. Each passive subscription
       // is bound natively to the background that this port connected to. A
@@ -3000,14 +3004,14 @@ enum ExtensionShims {
       // Chrome keeps: WebKit keeps a framed page's storage per website, so
       // Affinity Pathfinder, which keeps its sign-in there, was signed in on
       // one company's site and signed out on every other. What such a page
-      // writes is kept in the extension's own storage too (sharedKey,
+      // writes is kept in the extension's session storage too (sharedKey,
       // written by the worker, hidden from the extension), in batches: a
       // quarter of a second after the first change at most, and as the page
       // goes. A framed page takes that copy from the worker as it opens —
       // and opens again if it had already read something older — and hears
       // every change after, with the storage event Chrome would fire. A page
       // in a private tab, or one the worker doesn't answer, keeps its own.
-      if (embedded && localArea && runtime && root.localStorage && root.Storage) {
+      if (embedded && sharedArea && runtime && root.localStorage && root.Storage) {
         const ls = root.localStorage, proto = Storage.prototype;
         const real = { get: proto.getItem, set: proto.setItem, remove: proto.removeItem, clear: proto.clear };
         const send = (message) => Promise.resolve(Object.getPrototypeOf(runtime).sendMessage.call(runtime, message));
@@ -3085,10 +3089,12 @@ enum ExtensionShims {
         }, keepOwn);
         if (chrome.storage.onChanged) {
           Object.getPrototypeOf(chrome.storage.onChanged).addListener.call(chrome.storage.onChanged, (changes, area) => {
-            const change = area === "local" && changes && changes[sharedKey];
+            const change = area === "session" && changes && changes[sharedKey];
             if (!change || !ready || off) return;
-            const now = change.newValue || { values: {} }, before = change.oldValue || { values: {} };
-            if (now.by === writer) return;
+            // The copy gone (the extension cleared its session storage) is
+            // not every key removed: this page keeps what it has.
+            const now = change.newValue, before = change.oldValue || { values: {} };
+            if (!now || now.by === writer) return;
             for (const [key, old, value] of take(now.values || {}, before.values || {})) {
               try { root.dispatchEvent(new StorageEvent("storage", { key, oldValue: old, newValue: value, url: location.href, storageArea: ls })); } catch (e) {}
             }
