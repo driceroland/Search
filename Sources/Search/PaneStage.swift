@@ -60,7 +60,6 @@ final class PaneStage: NSView {
         didSet {
             guard corner != oldValue else { return }
             for slot in slots { slot.corner = corner }
-            for cue in cues { cue.corner = corner }
             paint()
             needsLayout = true
         }
@@ -169,7 +168,6 @@ final class PaneStage: NSView {
         needsLayout = true
     }
     fileprivate var slots: [StageView] = []
-    private var cues: [FocusCue] = []
     /// Between the first two pages: always there, so what is laid over or
     /// under the pages has one place to be put against.
     fileprivate let divider = PaneDivider()
@@ -291,11 +289,6 @@ final class PaneStage: NSView {
             shadow.actions = ["bounds": NSNull(), "position": NSNull(), "hidden": NSNull()]
             layer?.insertSublayer(shadow, at: 0)
             shadows.append(shadow)
-            let cue = FocusCue()
-            cue.corner = corner
-            cue.alphaValue = 0
-            addSubview(cue, positioned: .below, relativeTo: divider)
-            cues.append(cue)
         }
         while moreDividers.count < max(0, tabs.count - 2) {
             let more = PaneDivider()
@@ -438,18 +431,9 @@ final class PaneStage: NSView {
                 shadow.frame = frame
                 shadow.isHidden = corner == 0 || !visible
             }
-            // Only with two pages on screen does it matter which one keys go to,
-            // and only as cards: edge to edge, a grey frame round one page
-            // of two read as a stray border (Drice, 18 Nov 2026).
-            let cue = cues[index]
-            cue.frame = frame
-            let lit = paired && corner > 0 && index < tabs.count && tabs[index].id == focused
-            if (cue.alphaValue == 1) != lit {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = Motion.reduced ? 0 : 0.14
-                    cue.animator().alphaValue = lit ? 1 : 0
-                }
-            }
+            // No line round the page the keys go to: as a card or edge to
+            // edge, it read as a stray frame on one page of two (Drice,
+            // 18 Nov 2026). The page clicked last is the one they go to.
         }
         // A window made too narrow for two takes the other page off, and
         // gives it back once there is room.
@@ -695,31 +679,6 @@ final class PaneStage: NSView {
         guard hovered != id else { return }
         hovered = id
         onHover?(id)
-    }
-}
-
-/// A line round the page the keys go to, with two pages up. Mid-grey,
-/// which shows on a white page and a dark one alike; drawn rather than a
-/// layer's border, so a picture of the window has it too. It takes no clicks.
-///
-/// Two points of the grey itself: at one point and 55% it stood about 2:1
-/// from a white page, and in dark mode about 1.6:1, little more than the
-/// other card's own edge, so which page Back, ⌘L and ⌘F would act on was
-/// hard to tell. Now about 3:1 from a white page in either look.
-final class FocusCue: NSView {
-    /// Round, when the pages are cards.
-    var corner: CGFloat = 0 { didSet { if corner != oldValue { needsDisplay = true } } }
-    static let width: CGFloat = 2
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func draw(_ dirtyRect: NSRect) {
-        Palette.NS.muted.setStroke()
-        let half = FocusCue.width / 2
-        let inner = bounds.insetBy(dx: half, dy: half)
-        let line = corner > 0
-            ? NSBezierPath(roundedRect: inner, xRadius: max(0, corner - half), yRadius: max(0, corner - half))
-            : NSBezierPath(rect: inner)
-        line.lineWidth = FocusCue.width
-        line.stroke()
     }
 }
 
