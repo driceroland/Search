@@ -562,7 +562,14 @@ def main():
                  until(lambda: agents().get("state") == "asking") and agents().get("auto") is False, agents())
             agents("allow")
             said("list_tabs", {}, h.answer(n))
-            t.ok("always: allowed again in the question, it is no longer suspended",
+            t.ok("always: a one-off Allow leaves it suspended",
+                 [e["suspended"] for e in agents().get("trusted", [])] == [True], agents().get("trusted"))
+            h.tool("disconnect")
+            n = h.send("tools/call", {"name": "list_tabs", "arguments": {}})
+            t.ok("always: so the next connection is asked too", until(lambda: agents().get("state") == "asking"), agents())
+            agents("allow", simulate=True)
+            said("list_tabs", {}, h.answer(n))
+            t.ok("always: Always ticked again lifts it",
                  [e["suspended"] for e in agents().get("trusted", [])] == [False], agents().get("trusted"))
             h.tool("disconnect")
             listed, err = h.tool("list_tabs")
@@ -570,6 +577,28 @@ def main():
                  and agents().get("admissions") == 2, agents())
             h.tool("disconnect")
             h.close()
+
+            # Always ticked and allowed, then Stop in that same session: the
+            # next connection is asked.
+            agents("forget")
+            p1 = Client("claude-code", via=launcher); clients.append(p1)
+            n = p1.send("tools/call", {"name": "list_tabs", "arguments": {}})
+            t.ok("first session: asked", until(lambda: agents().get("state") == "asking"), agents())
+            agents("allow", simulate=True)
+            said("list_tabs", {}, p1.answer(n))
+            t.ok("first session: remembered", [e["suspended"] for e in agents().get("trusted", [])] == [False]
+                 and agents().get("auto") is False, agents())
+            agents("stop")
+            t.ok("first session: Stop suspends what was just remembered",
+                 [e["suspended"] for e in agents().get("trusted", [])] == [True], agents().get("trusted"))
+            p1.tool("list_tabs")  # hears it was stopped, and lets go
+            time.sleep(11)
+            n = p1.send("tools/call", {"name": "list_tabs", "arguments": {}})
+            t.ok("first session: the next connection is asked",
+                 until(lambda: agents().get("state") == "asking") and agents().get("auto") is False, agents())
+            agents("deny")
+            said("list_tabs", {}, p1.answer(n))
+            p1.close()
 
             # Another name through the same launcher: asked.
             time.sleep(11)

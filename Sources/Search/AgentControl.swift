@@ -390,6 +390,8 @@ final class AgentSession: ObservableObject, Identifiable {
     fileprivate var token: audit_token_t?
     /// It said hello: no longer a silent connection.
     fileprivate var greeted = false
+    /// The bench ticked "Always" for a launcher that can't be (test runs).
+    fileprivate var simulated = false
     /// Working now: a request in hand, or one a moment ago. Connected and
     /// quiet, the line says so (an agent that finished its turn without
     /// disconnecting keeps its connection until it goes idle for good).
@@ -776,10 +778,10 @@ final class AgentControl: ObservableObject {
     private func end(_ session: AgentSession, _ why: String) {
         guard self.session === session else { return }
         let was = session.consent.state
-        // Stopped while let in without asking: not let in again without
-        // asking, until you allow it in the question.
-        if why.hasPrefix("stopped"), was == .allowed, let id = session.admittedBy {
-            AgentTrust.shared.suspend(id)
+        // Stopped, let in without asking or not: never let in again without
+        // asking, until you tick "Always allow" for it again in the question.
+        if why.hasPrefix("stopped"), was == .allowed {
+            AgentTrust.shared.suspend(client: session.client, also: session.admittedBy)
             Self.log.notice("stopped: \(session.client, privacy: .public) is asked about again from now on")
         }
         session.hello?(AgentRefusal(code: "stopped", message: "Stopped in Search").said)
@@ -873,9 +875,11 @@ final class AgentControl: ObservableObject {
     }
 
     /// The bench's answer, in a test run (Bench `agents`).
-    func answerForTest(allow: Bool, seesTabs: Bool, always: Bool = false) {
+    func answerForTest(allow: Bool, seesTabs: Bool, always: Bool = false, simulate: Bool = false) {
         guard Store.testing else { return }
         if always, let session, session.noAlways == nil { session.wantsAlways = true }
+        // "Always" ticked for the launcher a harness can't sign (see decide).
+        if simulate, let session { session.wantsAlways = true; session.simulated = true }
         decide(allow: allow, seesTabs: seesTabs, now: .distantFuture)
     }
 
@@ -885,9 +889,15 @@ final class AgentControl: ObservableObject {
         Self.log.notice("\(allow ? "allowed" : "not allowed", privacy: .public)\(allow && seesTabs ? ", with your tabs" : "", privacy: .public)")
         // Remembered only as ticked, and only a program that can be: the
         // box isn't there otherwise, and this says so again.
-        // Allowed in the question: whatever Stop suspended under its name
-        // may let it in again.
-        if allow { AgentTrust.shared.resume(client: session.client) }
+        // "Always allow" ticked again: whatever Stop suspended under its
+        // name may let it in again. A one-off Allow leaves it suspended.
+        if allow, session.wantsAlways { AgentTrust.shared.resume(client: session.client) }
+        // The bench's stand-in, in a test run, for a launcher a harness
+        // can't have signed: remembered by its own requirement.
+        if allow, session.simulated, Store.testing, session.noAlways != nil, let launcher = session.launcher,
+           !launcher.requirement.isEmpty {
+            AgentTrust.shared.rememberSimulated(client: session.client, requirement: launcher.requirement)
+        }
         if allow, session.wantsAlways, session.noAlways == nil, let launcher = session.launcher,
            AgentTrust.shared.remember(client: session.client, launcher: launcher) {
             Self.log.notice("always allowed from now on: \(session.client, privacy: .public), started by \(launcher.identifier, privacy: .public) of team \(launcher.team, privacy: .public)")
@@ -948,7 +958,8 @@ final class AgentControl: ObservableObject {
         session.justAdmitted = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak session] in session?.justAdmitted = false }
         guard let browser = session.browser else { return }
-        let bare = browser.folded || browser.active.map { browser.fillsHere($0) } == true
+        // Folded away, icons only (no room for the line), or a page full screen.
+        let bare = browser.folded || browser.prefs.iconColumn || browser.active.map { browser.fillsHere($0) } == true
         if bare {
             browser.announce("\(session.client) was let in automatically — File › Stop Agent (⌃⌥⌘.) stops it")
         }

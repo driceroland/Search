@@ -26,7 +26,7 @@ import Security
 // run whatever they are given. Checked again on every connection: the
 // parent must pass the requirement remembered, and the client give the same
 // name; anything else and the question is asked. Stop suspends it (asked
-// again until you allow it in the question), and it runs out by itself 30
+// again until you tick "Always allow" again), and it runs out by itself 30
 // days after it was granted or 7 days after it was last used. It never
 // carries "Let it see my open tabs": let in without asking, an agent sees
 // only its own tabs.
@@ -78,6 +78,18 @@ struct AgentLauncher: Equatable {
     static let allowed: [String: String] = [
         "com.anthropic.claude-code": "Q6L2SF6YDW",
     ]
+
+    /// What each of them is checked against, and what is remembered: written
+    /// here, never the program's own designated requirement, which is the
+    /// program's word. Claude Code's: its identifier, a Developer ID
+    /// certificate from Apple, Anthropic's team.
+    static let requirements: [String: String] = [
+        "com.anthropic.claude-code": #"identifier "com.anthropic.claude-code" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "Q6L2SF6YDW""#,
+    ]
+
+    /// The requirement this launcher is remembered by: the allowlist's own
+    /// for its identifier, once it has passed it (AgentIdentity.describe).
+    var allowlisted: String? { unrememberable == nil ? Self.requirements[identifier] : nil }
 
     /// Why a launcher can't be remembered, or nil when it can.
     static func refusal(signed: Bool, adhoc: Bool, team: String, identifier: String, path: String) -> String? {
@@ -172,6 +184,11 @@ enum AgentIdentity {
         if out.requirement.isEmpty { out.signed = false }
         out.unrememberable = AgentLauncher.refusal(signed: out.signed, adhoc: out.adhoc, team: out.team,
                                                    identifier: out.identifier, path: out.path)
+        // What it says it is, checked against what Search says that is.
+        if out.unrememberable == nil,
+           !(AgentLauncher.requirements[out.identifier].map { passes(code, $0) } ?? false) {
+            out.unrememberable = "\(out.name), which started it, isn't signed as \(out.identifier) must be"
+        }
         return out
     }
 
@@ -216,7 +233,7 @@ struct RememberedAgent: Codable, Equatable, Identifiable {
     var path: String
     var added: Date
     var used: Date
-    /// Stopped while let in without asking: asked again, until you allow it
+    /// Stopped: asked again, until you tick "Always allow" for it
     /// again in the question.
     var suspended: Bool?
     /// Put there by the bench in a probe's world (`agents trust`), for a
@@ -309,10 +326,12 @@ struct KeychainVault: AgentVault {
 final class MemoryVault: AgentVault {
     var data: Data?
     var usable = true
+    /// Every write fails, as a keychain might.
+    var refuses = false
     init(_ data: Data? = nil) { self.data = data }
     func read() -> Data? { usable ? data : nil }
     func write(_ data: Data) -> Bool {
-        guard usable else { return false }
+        guard usable, !refuses else { return false }
         self.data = data
         return true
     }
@@ -343,24 +362,32 @@ final class AgentTrust: ObservableObject {
     /// program that started it by its signature. Only a launcher that can be.
     @discardableResult
     func remember(client: String, launcher: AgentLauncher, now: Date = Date()) -> Bool {
-        guard usable, launcher.unrememberable == nil, !launcher.requirement.isEmpty else { return false }
-        let entry = RememberedAgent(client: client, requirement: launcher.requirement, team: launcher.team,
+        guard usable, let requirement = launcher.allowlisted else { return false }
+        let entry = RememberedAgent(client: client, requirement: requirement, team: launcher.team,
                                     identifier: launcher.identifier, signer: launcher.who, path: launcher.path,
                                     added: now, used: now)
         return keep(entry)
     }
 
-    /// Stopped while let in without asking: asked again from now on, until
-    /// you allow it again in the question.
-    func suspend(_ id: RememberedAgent.ID) {
-        guard let index = remembered.firstIndex(where: { $0.id == id }) else { return }
-        var next = remembered
-        next[index].suspended = true
-        _ = save(next)
+    /// Stopped: asked again from now on, until you tick "Always allow" for
+    /// it again in the question. Every entry under the name it gave, and the
+    /// one that let it in if another. Fails closed: if the keychain won't
+    /// take it, it holds here until Search quits.
+    func suspend(client: String, also id: RememberedAgent.ID? = nil) {
+        let next = remembered.map { entry in
+            var entry = entry
+            if entry.client == client || entry.id == id { entry.suspended = true }
+            return entry
+        }
+        guard next != remembered else { return }
+        if !save(next) {
+            remembered = next
+            AgentIdentity.log.error("a stopped agent's suspension couldn't be kept in the keychain; it holds until Search quits")
+        }
     }
 
-    /// You allowed it in the question: what was suspended under that name
-    /// is let in again next time.
+    /// "Always allow" ticked again in the question: what was suspended
+    /// under that name is let in again next time.
     func resume(client: String) {
         guard remembered.contains(where: { $0.client == client && $0.suspended == true }) else { return }
         _ = save(remembered.map { entry in

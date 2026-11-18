@@ -509,7 +509,8 @@ final class Bench {
             let agents = AgentControl.shared
             switch request["action"] as? String ?? "state" {
             case "allow": agents.answerForTest(allow: true, seesTabs: request["tabs"] as? Bool ?? false,
-                                               always: request["always"] as? Bool ?? false)
+                                               always: request["always"] as? Bool ?? false,
+                                               simulate: request["simulate"] as? Bool ?? false)
             // Remembered agents (AgentTrust), in this world's own keychain
             // item: listed; one remembered by a requirement given here, for
             // a launcher a harness can't have signed; forgotten.

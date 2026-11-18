@@ -15,7 +15,9 @@ final class AgentTrustTests: XCTestCase {
     }
 
     /// Claude Code's own, as `codesign -d -r-` gives it.
-    nonisolated static let claude = #"identifier "com.anthropic.claude-code" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = Q6L2SF6YDW"#
+    /// What Claude Code is checked against and remembered by: Search's own
+    /// requirement for it (AgentLauncher.requirements).
+    nonisolated static let claude = AgentLauncher.requirements["com.anthropic.claude-code"]!
 
     /// A launcher that could be remembered, as the signature would say.
     static func signed(_ requirement: String = claude) -> AgentLauncher {
@@ -241,8 +243,7 @@ final class AgentTrustTests: XCTestCase {
         let vault = MemoryVault()
         let trust = AgentTrust(vault: vault)
         trust.remember(client: "Claude Code", launcher: Self.signed())
-        let id = trust.remembered[0].id
-        trust.suspend(id)
+        trust.suspend(client: "Claude Code")
         XCTAssertNil(AgentTrust.match(client: "Claude Code", launcher: Self.signed(), passed: [Self.claude], among: trust.remembered, testing: false),
                      "stopped: asked again")
         XCTAssertEqual(trust.requirements(for: "Claude Code"), [], "not even checked")
@@ -296,5 +297,73 @@ final class AgentTrustTests: XCTestCase {
         let source = try String(contentsOfFile: #filePath.replacingOccurrences(of: "Tests/SearchTests/AgentTrustTests.swift",
                                                                                  with: "Sources/Search/AgentTrust.swift"), encoding: .utf8)
         XCTAssertTrue(source.contains("out[kSecAttrAccessGroup as String] = group"))
+    }
+
+    // MARK: - the re-review
+
+    /// Remembered by Search's requirement for Claude Code, never by the one
+    /// the program declares for itself.
+    func testRememberedByTheAllowlistsRequirement() throws {
+        let trust = AgentTrust(vault: MemoryVault())
+        XCTAssertTrue(trust.remember(client: "Claude Code", launcher: Self.signed("anchor apple generic")))
+        XCTAssertEqual(trust.remembered.first?.requirement, Self.claude)
+        var stranger = Self.signed("anchor apple generic")
+        stranger.identifier = "com.example.agent"
+        stranger.unrememberable = AgentLauncher.refusal(signed: true, adhoc: false, team: "ABCDE12345",
+                                                        identifier: stranger.identifier, path: "/tmp/agent")
+        XCTAssertNil(stranger.allowlisted)
+        XCTAssertFalse(AgentTrust(vault: MemoryVault()).remember(client: "Claude Code", launcher: stranger))
+        // And the requirement itself is one Security parses.
+        var made: SecRequirement?
+        XCTAssertEqual(SecRequirementCreateWithString(Self.claude as CFString, [], &made), errSecSuccess)
+    }
+
+    /// Always ticked, Allow, then Stop in that same session — nothing let it
+    /// in automatically, and still the next connection is asked.
+    func testStopSuspendsByNameInTheFirstSessionToo() {
+        let trust = AgentTrust(vault: MemoryVault())
+        trust.remember(client: "Claude Code", launcher: Self.signed())
+        trust.remember(client: "Codex", launcher: Self.signed())
+        trust.suspend(client: "Claude Code", also: nil)
+        XCTAssertEqual(trust.remembered.filter { $0.suspended == true }.map(\.client), ["Claude Code"])
+        XCTAssertNil(AgentTrust.match(client: "Claude Code", launcher: Self.signed(), passed: [Self.claude], among: trust.remembered, testing: false))
+        XCTAssertNotNil(AgentTrust.match(client: "Codex", launcher: Self.signed(), passed: [Self.claude], among: trust.remembered, testing: false))
+    }
+
+    /// The keychain refusing the write: suspended anyway, until Search quits.
+    func testASuspensionTheKeychainRefusesStillHolds() {
+        let vault = MemoryVault()
+        let trust = AgentTrust(vault: vault)
+        trust.remember(client: "Claude Code", launcher: Self.signed())
+        vault.refuses = true
+        trust.suspend(client: "Claude Code")
+        XCTAssertEqual(trust.remembered.first?.suspended, true)
+        XCTAssertNil(AgentTrust.match(client: "Claude Code", launcher: Self.signed(), passed: [Self.claude], among: trust.remembered, testing: false))
+        XCTAssertEqual(trust.requirements(for: "Claude Code"), [])
+    }
+
+    /// Only "Always allow" ticked again lifts a suspension; a one-off Allow
+    /// doesn't, nor does the stand-in for a test harness outside a test run.
+    func testOnlyAlwaysTickedAgainLiftsIt() throws {
+        let source = try String(contentsOfFile: #filePath.replacingOccurrences(of: "Tests/SearchTests/AgentTrustTests.swift",
+                                                                                 with: "Sources/Search/AgentControl.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("if allow, session.wantsAlways { AgentTrust.shared.resume(client: session.client) }"))
+        XCTAssertFalse(source.contains("if allow { AgentTrust.shared.resume"))
+        XCTAssertTrue(source.contains("AgentTrust.shared.suspend(client: session.client, also: session.admittedBy)"))
+        XCTAssertTrue(source.contains("if allow, session.simulated, Store.testing,"))
+        XCTAssertTrue(source.contains("browser.folded || browser.prefs.iconColumn ||"), "icons only: said as when folded")
+    }
+
+    /// Search's requirement for Claude Code passes the real `claude`, where
+    /// one is installed (read only: nothing is run).
+    func testTheRealClaudePassesIt() throws {
+        let link = (NSHomeDirectory() as NSString).appendingPathComponent(".local/bin/claude")
+        let path = (try? FileManager.default.destinationOfSymbolicLink(atPath: link)) ?? link
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: path), "no claude here")
+        var code: SecStaticCode?
+        XCTAssertEqual(SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &code), errSecSuccess)
+        var made: SecRequirement?
+        XCTAssertEqual(SecRequirementCreateWithString(Self.claude as CFString, [], &made), errSecSuccess)
+        XCTAssertEqual(SecStaticCodeCheckValidity(try XCTUnwrap(code), [], made), errSecSuccess)
     }
 }
