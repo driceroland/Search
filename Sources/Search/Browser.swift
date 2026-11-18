@@ -249,8 +249,13 @@ final class Browser: NSObject, ObservableObject {
         guard let tab = active, let url = tab.address else { return }
         let kept = bookmarks.bookmark(for: url)
         guard let id = (kept ?? bookmarks.add(url, title: tab.title))?.id else { return }
+        // A new one goes into the folder picked last on the card, not the
+        // top level every time. One kept before stays where it is.
+        let folder = kept == nil ? bookmarks.lastFolder : nil
+        if let folder { bookmarks.move(id, into: folder) }
         guard !folded else {
-            announce(kept == nil ? "Bookmarked" : "Already a bookmark")
+            let name = folder.flatMap { bookmarks.bookmark($0)?.title }
+            announce(kept == nil ? name.map { "Bookmarked in \($0)" } ?? "Bookmarked" : "Already a bookmark")
             return
         }
         bookmarkCard = id
