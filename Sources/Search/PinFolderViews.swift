@@ -9,6 +9,8 @@ import SwiftUI
 struct PinFolderHeading: View {
     @Environment(\.greys) private var greys
     @ObservedObject var browser: Browser
+    /// For the row's size: a tab's own, roomier tabs and all.
+    @ObservedObject var prefs: Preferences
     let folder: PinFolder
     let depth: Int
     var compact = false
@@ -23,6 +25,15 @@ struct PinFolderHeading: View {
 
     /// Set in by each level, as a group's tabs are under its name.
     static let indent: CGFloat = 14
+
+    /// A heading's height: a tab row's, so a folder sits among the pins as
+    /// one more of them; with icons only, a group heading's.
+    static func height(_ prefs: Preferences, compact: Bool) -> CGFloat {
+        compact ? GroupHeading.compactHeight : prefs.sideRow
+    }
+
+    /// The width a tab row gives its site's icon (SideRow's Mark).
+    private var mark: CGFloat { prefs.roomyTabs ? 17 : 15 }
 
     private var editing: Bool { interactive && browser.editingPinFolder == folder.id }
 
@@ -67,25 +78,29 @@ struct PinFolderHeading: View {
     private var long: some View {
         HStack(spacing: 6) {
             Image(systemName: "chevron.right")
-                .font(.system(size: 8.5, weight: .semibold))
+                .font(.system(size: prefs.roomyTabs ? 9.5 : 8.5, weight: .semibold))
                 .rotationEffect(.degrees(folder.collapsed ? 0 : 90))
                 .frame(width: 10)
-            Image(systemName: glyph)
-                .font(.system(size: 11))
-            if editing {
-                field
-            } else {
-                Text(folder.name)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            HStack(spacing: 8) {
+                // The folder where a tab's icon is, as large; its name as a tab's title.
+                Image(systemName: glyph)
+                    .font(.system(size: mark * 0.8))
+                    .frame(width: mark, height: mark)
+                if editing {
+                    field
+                } else {
+                    Text(folder.name)
+                        .font(.system(size: prefs.sideTitle, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
             Spacer(minLength: 0)
         }
         .foregroundStyle(Palette.muted)
         .padding(.horizontal, 10)
         .padding(.leading, CGFloat(depth) * Self.indent)
-        .frame(height: GroupHeading.height)
+        .frame(height: Self.height(prefs, compact: false))
         .frame(maxWidth: .infinity, alignment: .leading)
         .help(tip)
         .onChange(of: editing) { _, now in
@@ -118,7 +133,7 @@ struct PinFolderHeading: View {
     private var field: some View {
         TextField("Folder name", text: $draft)
             .textFieldStyle(.plain)
-            .font(.system(size: 12.5, weight: .medium))
+            .font(.system(size: prefs.sideTitle, weight: .medium))
             .focused($focused)
             .onSubmit(commit)
             .onExitCommand { browser.editingPinFolder = nil }

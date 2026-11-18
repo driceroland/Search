@@ -3682,16 +3682,25 @@ final class Bench {
             case "drawn":
                 // The column drawn off screen, as `column` draws it, and the
                 // lines it drew read back: kind, depth, title, folded.
+                // "roomy": Settings › Appearance › Roomier tabs first.
+                if let roomy = request["roomy"] as? Bool { browser.prefs.roomyTabs = roomy }
                 let width = Double(browser.prefs.columnWidth)
                 let host = NSHostingView(rootView: SideBar(browser: browser, prefs: browser.prefs).frame(width: width, height: 800))
                 host.frame = NSRect(x: 0, y: 0, width: width, height: 800)
                 let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
                 window.contentView = host
                 SideBar.drawnPinLines = []
+                SideBar.drawnPinFrames = [:]
                 host.layoutSubtreeIfNeeded()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     host.layoutSubtreeIfNeeded()
-                    answer(state(["drawn": SideBar.drawnPinLines]))
+                    // Each line's kind, title and drawn height, in order.
+                    let heights = browser.pinRowLines().map { line -> [Any] in
+                        let kind = line.described
+                        return [kind[0], kind[2], SideBar.drawnPinFrames[line.id].map { Double($0.height) } ?? NSNull()]
+                    }
+                    answer(state(["drawn": SideBar.drawnPinLines, "heights": heights,
+                                  "row": Double(browser.prefs.sideRow), "roomy": browser.prefs.roomyTabs]))
                     window.contentView = nil
                 }
                 return

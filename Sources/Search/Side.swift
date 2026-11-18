@@ -420,6 +420,8 @@ struct SideBar: View {
     /// The pinned rows' lines as last drawn with folders, for the bench
     /// (`pinfolder`): kind, depth, title, folded. Test runs only.
     @MainActor static var drawnPinLines: [[Any]] = []
+    /// Where each of those lines was drawn, in the rows' own space. Test runs only.
+    @MainActor static var drawnPinFrames: [UUID: CGRect] = [:]
 
     /// Another space's rows, drawn with the same pieces as this one's so the
     /// two read as one column while they pass — and nothing to press until
@@ -449,7 +451,7 @@ struct SideBar: View {
                 ForEach(lines) { line in
                     switch line {
                     case .folder(let folder, let depth):
-                        PinFolderHeading(browser: browser, folder: folder, depth: depth, compact: icons, interactive: false)
+                        PinFolderHeading(browser: browser, prefs: prefs, folder: folder, depth: depth, compact: icons, interactive: false)
                     case .item(let item, _, let depth):
                         FeedItemRow(browser: browser, prefs: prefs, item: item, depth: depth, compact: icons, interactive: false)
                     case .pin(let tab, let depth):
@@ -525,7 +527,7 @@ struct SideBar: View {
         guard browser.showsPinFolderRows else {
             return CGFloat(listed) * (rowHeight + SideBar.gap) + (listed > 0 ? SideBar.gap : 0)
         }
-        let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
+        let heading = PinFolderHeading.height(prefs, compact: icons)
         let lines = browser.pinRowLines()
         let total = lines.reduce(CGFloat(0)) { sum, line in
             if case .folder = line { return sum + heading + SideBar.gap }
@@ -700,7 +702,7 @@ struct SideBar: View {
     private var foldered: some View {
         let lines = browser.pinRowLines()
         if Store.testing { SideBar.drawnPinLines = lines.map(\.described) }
-        let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
+        let heading = PinFolderHeading.height(prefs, compact: icons)
         let lineSteps = lines.map { line -> CGFloat in
             if case .folder = line { return heading + SideBar.gap }
             return rowHeight + SideBar.gap
@@ -710,10 +712,11 @@ struct SideBar: View {
             ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                 switch line {
                 case .folder(let folder, let depth):
-                    PinFolderHeading(browser: browser, folder: folder, depth: depth, compact: icons,
+                    PinFolderHeading(browser: browser, prefs: prefs, folder: folder, depth: depth, compact: icons,
                                      target: drop?.folder == folder.id && drop?.anchor == nil)
                         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
                             pinLineFrames.rects[folder.id] = $0
+                            if Store.testing { SideBar.drawnPinFrames[folder.id] = $0 }
                         }
                 case .item(let item, _, let depth):
                     // A live folder's post: opened, never carried.
@@ -741,6 +744,7 @@ struct SideBar: View {
                     }
                     .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
                         pinLineFrames.rects[tab.id] = $0
+                        if Store.testing { SideBar.drawnPinFrames[tab.id] = $0 }
                     }
                     // Carried as rows are, but put down only where let go:
                     // its place among the lines is no place in the row.

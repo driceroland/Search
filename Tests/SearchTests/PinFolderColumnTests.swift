@@ -109,6 +109,43 @@ final class PinFolderColumnTests: XCTestCase {
         XCTAssertFalse(window.isVisible, "never ordered in")
     }
 
+    /// A folder's row is a tab row's height, normal and roomier, its
+    /// title the size of a tab's.
+    func testAFolderRowIsAsTallAsATabRow() async throws {
+        let browser = makeBrowser()
+        let (_, two, three, _) = try pinned(browser)
+        let work = try XCTUnwrap(browser.newPinFolder(named: "Work", holding: two, rename: false))
+        browser.movePin(three, into: work)
+        let roomy = browser.prefs.roomyTabs
+        defer { browser.prefs.roomyTabs = roomy }
+        for on in [false, true] {
+            browser.prefs.roomyTabs = on
+            SideBar.drawnPinFrames = [:]
+            let width = Double(browser.prefs.columnWidth)
+            let host = NSHostingView(rootView: SideBar(browser: browser, prefs: browser.prefs).frame(width: width, height: 360))
+            host.appearance = NSAppearance(named: .aqua)
+            host.frame = NSRect(x: 0, y: 0, width: width, height: 360)
+            let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            windows.append(window)
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(300))
+            host.layoutSubtreeIfNeeded()
+            let folder = try XCTUnwrap(SideBar.drawnPinFrames[work])
+            let pin = try XCTUnwrap(SideBar.drawnPinFrames[two.id])
+            XCTAssertEqual(folder.height, browser.prefs.sideRow, "roomier \(on)")
+            XCTAssertEqual(folder.height, pin.height, "roomier \(on)")
+            if let out = ProcessInfo.processInfo.environment["SNAPSHOT_DIR"],
+               let picture = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: picture)
+                try picture.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: out).appendingPathComponent("pin-folder-rows-\(on ? "roomier" : "normal").png"))
+            }
+            XCTAssertFalse(window.isVisible, "never ordered in")
+        }
+    }
+
     func testWithTheSwitchOffTheRowsAreFlat() throws {
         let browser = makeBrowser()
         let (_, two, _, _) = try pinned(browser)

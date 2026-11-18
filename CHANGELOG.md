@@ -32,6 +32,7 @@ in [ROADMAP.md](ROADMAP.md).
 - The line under the pins, with Clear at its end, waits for a tab with a page under it: over nothing but the empty tab a window starts with, it was a line with nothing to keep apart. New Live Folder… is in a square pin's menu too.
 - View › Edit Site Style… can be made larger: drag its bottom corner and the CSS editor takes the room, down to a sensible least size and never past the window. It opens at the size you left it; a double-click on the corner puts it back. `python3 Tests/site_styles.py` checks it.
 - A pin closed, put down or put to sleep while its page was still loading no longer spins on its row for good. The page's view was torn down after what listened to it, so its last "done loading" was never heard.
+- Folders in pinned rows are as tall as the tab rows beside them, their folder icon as large as a tab's icon and their name as large as a tab's title, and they follow Settings › Appearance › Roomier tabs. They were a smaller group heading's size. `python3 Tests/pin_folders.py` checks it.
 
 ### Added
 
