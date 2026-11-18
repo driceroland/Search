@@ -410,6 +410,31 @@ final class ICloudSync: ObservableObject {
 
     var joined: Bool { ledger.joined }
 
+    // MARK: never from inside CloudKit's callbacks
+    //
+    // CloudKit stops the app ("Cannot await a call into CKSyncEngine from
+    // within a delegate callback…") when a call that comes back to the
+    // delegate is awaited inside one of its callbacks, and a plain Task
+    // started from a callback counts as inside it: it inherits the
+    // callback's context. Sign-in arrives as a callback, and joining
+    // awaits a fetch. So all work that awaits the engine starts in a
+    // detached task, and every awaited call into the engine is made from
+    // one, whoever calls; what it changes here is changed on the main
+    // actor, after.
+
+    /// Work that awaits the engine, in a task of its own.
+    private func detach(_ work: @escaping @MainActor (ICloudSync) async -> Void) {
+        Task.detached { [weak self] in
+            guard let self else { return }
+            await work(self)
+        }
+    }
+
+    /// One awaited call into the engine, in a task of its own.
+    private static func outside<T>(_ call: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await Task.detached { try await call() }.value
+    }
+
     /// The running process's own signature, as for passkeys
     /// (Preferences.entitledToPasskeys): the container, with CloudKit.
     nonisolated static var entitled: Bool {
@@ -450,7 +475,7 @@ final class ICloudSync: ObservableObject {
         stop()
         if let engine, ledger.joined {
             engine.delete([ledger.deviceKey])
-            Task { try? await engine.send(); engine.close() }
+            Task.detached { _ = try? await ICloudSync.outside { try await engine.send() }; await engine.close() }
         } else {
             engine?.close()
         }
@@ -468,8 +493,8 @@ final class ICloudSync: ObservableObject {
         stop()
         on = false
         defaults.removeObject(forKey: ICloudSync.onKey)
-        Task {
-            do { try await engine.eraseZone() } catch { self.problem = ICloudSync.say(error) }
+        detach { sync in
+            do { try await ICloudSync.outside { try await engine.eraseZone() } } catch { sync.problem = ICloudSync.say(error) }
             engine.close()
         }
         ledger = ledger.fresh()
@@ -499,13 +524,13 @@ final class ICloudSync: ObservableObject {
         }
         // Joined before (a relaunch): what changed meanwhile, both ways.
         // Otherwise the first fetch, then the merge.
-        Task {
-            if self.ledger.joined {
-                self.account = await self.engine?.account() ?? .unknown
-                self.refresh()
-                self.publish()
+        detach { sync in
+            if sync.ledger.joined {
+                if let engine = sync.engine { sync.account = (try? await ICloudSync.outside { await engine.account() }) ?? .unknown }
+                sync.refresh()
+                sync.publish()
             } else {
-                await self.join()
+                await sync.join()
             }
         }
     }
@@ -536,13 +561,13 @@ final class ICloudSync: ObservableObject {
     /// Back in front, or now and then: anything new from the other devices.
     func refresh() {
         guard let engine else { return }
-        guard ledger.joined else { Task { await join() }; return }
-        Task {
+        guard ledger.joined else { detach { await $0.join() }; return }
+        detach { sync in
             do {
-                try await engine.fetch()
-                self.synced()
+                try await ICloudSync.outside { try await engine.fetch() }
+                sync.synced()
             } catch {
-                self.problem = ICloudSync.say(error)
+                sync.problem = ICloudSync.say(error)
             }
         }
     }
@@ -554,13 +579,13 @@ final class ICloudSync: ObservableObject {
         guard let engine, !ledger.joined, !joining else { return }
         joining = true
         defer { joining = false }
-        account = await engine.account()
+        account = (try? await ICloudSync.outside { await engine.account() }) ?? .unknown
         guard account == .signedIn else {
             problem = account == .restricted ? "iCloud is restricted on this Mac" : nil
             return
         }
         do {
-            try await engine.fetch()
+            try await ICloudSync.outside { try await engine.fetch() }
         } catch {
             problem = ICloudSync.say(error)
             return
@@ -757,7 +782,9 @@ final class ICloudSync: ObservableObject {
         switch now {
         case .signedIn:
             problem = nil
-            Task { await join() }
+            // Arrives as a CloudKit callback: joining awaits a fetch, so
+            // it starts detached (see `detach`).
+            detach { await $0.join() }
         case .signedOut, .restricted:
             // Another person's iCloud, or none: nothing of the last one stays.
             ledger = ledger.fresh()

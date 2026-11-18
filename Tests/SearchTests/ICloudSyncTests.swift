@@ -16,6 +16,13 @@ final class ICloudSyncTests: XCTestCase {
 
     // MARK: - stand-ins
 
+    /// Set while a CKSyncEngine delegate callback runs, the way CloudKit
+    /// marks one: a task-local, which a Task started inside inherits and a
+    /// detached one doesn't.
+    enum Callback {
+        @TaskLocal static var inside = false
+    }
+
     /// iCloud, as far as one device can tell.
     final class FakeEngine: ICloudEngine {
         weak var sync: ICloudSync?
@@ -27,19 +34,26 @@ final class ICloudSyncTests: XCTestCase {
         var failing = false
         var erased = false
         var state: ICloudSync.Account = .signedIn
+        /// Calls CloudKit would have stopped the app for: awaited from
+        /// inside a callback.
+        var awaitedInside: [String] = []
+        var sends = 0
+
+        private func check(_ name: String) { if Callback.inside { awaitedInside.append(name) } }
 
         func save(_ keys: [String]) { saved += keys }
         func delete(_ keys: [String]) { deleted += keys }
         func fetch() async throws {
+            check("fetch")
             fetches += 1
             if failing { throw URLError(.notConnectedToInternet) }
             let incoming = cloud
             cloud = []
             for record in incoming { sync?.arrived(record.key, data: record.data, at: record.at, fields: nil) }
         }
-        func send() async throws {}
-        func eraseZone() async throws { erased = true }
-        func account() async -> ICloudSync.Account { state }
+        func send() async throws { check("send"); sends += 1 }
+        func eraseZone() async throws { check("eraseZone"); erased = true }
+        func account() async -> ICloudSync.Account { check("account"); return state }
         func close() {}
     }
 
@@ -591,6 +605,60 @@ final class ICloudSyncTests: XCTestCase {
         sync.turnOn()
         XCTAssertTrue(sync.on)
         XCTAssertNil(sync.offReason)
+    }
+
+    /// Until `condition`, or two seconds.
+    private func until(_ condition: () -> Bool) async {
+        for _ in 0..<200 where !condition() { try? await Task.sleep(nanoseconds: 10_000_000) }
+    }
+
+    /// CloudKit's crash on a real account ("Cannot await a call into
+    /// CKSyncEngine from within a delegate callback"): every path that can
+    /// start from a callback, or from a button, timer or menu while one
+    /// runs, awaits the engine only from a detached task.
+    func testNothingAwaitsTheEngineFromInsideACallback() async {
+        let mac = FakeMac(), engine = FakeEngine()
+        let sync = make(mac, engine)
+
+        // Turned on: the first fetch.
+        Callback.$inside.withValue(true) { sync.turnOn() }
+        await until { sync.joined }
+        XCTAssertTrue(sync.joined)
+
+        // Signed out and in again, as CKSyncEngine says it: a join, so a fetch.
+        let before = engine.fetches
+        Callback.$inside.withValue(true) {
+            sync.accountChanged(.signedOut)
+            sync.accountChanged(.signedIn)
+        }
+        await until { sync.joined && engine.fetches > before }
+        XCTAssertTrue(sync.joined, "joined again after signing in")
+
+        // Back in front, the timer: a fetch.
+        let again = engine.fetches
+        Callback.$inside.withValue(true) { sync.refresh() }
+        await until { engine.fetches > again }
+        XCTAssertGreaterThan(engine.fetches, again)
+
+        // Turned off: this Mac's tabs deleted and sent.
+        Callback.$inside.withValue(true) { sync.turnOff() }
+        await until { engine.sends > 0 }
+        XCTAssertEqual(engine.sends, 1)
+
+        // On again, then Delete Search's data from iCloud.
+        Callback.$inside.withValue(true) { sync.turnOn() }
+        await until { sync.joined }
+        Callback.$inside.withValue(true) { sync.erase() }
+        await until { engine.erased }
+        XCTAssertTrue(engine.erased)
+
+        // On again, then the zone deleted elsewhere: off, nothing awaited.
+        Callback.$inside.withValue(true) { sync.turnOn() }
+        await until { sync.joined }
+        Callback.$inside.withValue(true) { sync.zoneGone() }
+        XCTAssertFalse(sync.on)
+
+        XCTAssertEqual(engine.awaitedInside, [], "awaited from inside a callback: CloudKit would stop the app")
     }
 
     func testSigningOutForgetsTheLastAccount() async {
