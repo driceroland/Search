@@ -3120,7 +3120,47 @@ enum ExtensionShims {
         if (patterns.length > 1 && (ids.length < patterns.length - 1 || ids.slice(0, patterns.length - 1).some((id) => taken.has(id)))) return [rule];
         return patterns.map((regexFilter, k) => ({ ...rule, id: k === 0 ? rule.id : ids[k - 1], condition: { ...c, regexFilter } }));
       };
-      const rawGet = {};
+      // A frame's own request (sub_frame) against initiatorDomains or
+      // excludedInitiatorDomains: WebKit checks the frame being loaded —
+      // still about:blank — where Chrome checks the page that holds it.
+      // Privacy Badger's "block soundcloud.com unless soundcloud.com asked"
+      // so blocked SoundCloud's own sign-in frame on soundcloud.com, and
+      // "Sign in" did nothing (idea 712); a rule for frames that given
+      // pages hold let them through. The frame part of such a rule becomes
+      // a rule of its own with the same sites as domains/excludedDomains,
+      // which WebKit checks against the page; everything else stays with
+      // the rule as written, which WebKit checks as Chrome does. Its id is
+      // the last of the rule's own made ids, out of sight like the others.
+      const frameIds = (id) => { const ids = madeIds(id); return ids.length ? ids[ids.length - 1] : null; };
+      const framePart = (rule) => {
+        const c = rule && rule.condition;
+        if (!c || (c.initiatorDomains === undefined && c.excludedInitiatorDomains === undefined)) return null;
+        if (c.domains !== undefined || c.excludedDomains !== undefined) return null;
+        const types = c.resourceTypes;
+        if (Array.isArray(types) ? !types.includes("sub_frame") : (c.excludedResourceTypes || []).includes("sub_frame")) return null;
+        const rest = { ...c };
+        if (Array.isArray(types)) {
+          rest.resourceTypes = types.filter((t) => t !== "sub_frame");
+        } else {
+          rest.excludedResourceTypes = [...(c.excludedResourceTypes || ["main_frame"]), "sub_frame"];
+        }
+        const frame = { ...c, resourceTypes: ["sub_frame"] };
+        delete frame.excludedResourceTypes;
+        delete frame.initiatorDomains; delete frame.excludedInitiatorDomains;
+        if (c.initiatorDomains !== undefined) frame.domains = c.initiatorDomains;
+        if (c.excludedInitiatorDomains !== undefined) frame.excludedDomains = c.excludedInitiatorDomains;
+        // A rule for frames alone stays one rule, under its own id.
+        if (Array.isArray(rest.resourceTypes) && !rest.resourceTypes.length) return { rest: null, frame: { ...rule, condition: frame } };
+        const id = frameIds(rule.id);
+        if (id === null) return null;
+        return { rest: { ...rule, condition: rest }, frame: { ...rule, id, condition: frame } };
+      };
+      const splitFrames = (rule, taken) => {
+        const part = framePart(rule);
+        if (part && part.rest && taken && taken.has(part.frame.id)) return [rule];
+        return part ? [part.rest, part.frame].filter(Boolean) : [rule];
+      };
+      const rawGet = {}, rawUpdate = {};
       for (const [get, name] of [["getSessionRules", "updateSessionRules"], ["getDynamicRules", "updateDynamicRules"]]) {
         if (!dnr || typeof dnr[get] !== "function") continue;
         const original = dnr[get].bind(dnr);
@@ -3152,6 +3192,7 @@ enum ExtensionShims {
       if (dnr) for (const name of ["updateSessionRules", "updateDynamicRules"]) {
         if (typeof dnr[name] !== "function") continue;
         const original = dnr[name].bind(dnr);
+        rawUpdate[name] = original;
         put(dnr, name, (options = {}, callback) => {
           const given = options;
           const ready = (rawGet[name] ? rawGet[name]() : Promise.resolve([])).catch(() => []).then((all) => {
@@ -3165,7 +3206,7 @@ enum ExtensionShims {
               const leaving = new Set(options.removeRuleIds || []);
               const taken = new Set([...present].filter((id) => !leaving.has(id) && !leaving.has(madeFrom(id, present))));
               options.addRules.forEach((r) => r && taken.add(r.id));
-              options = { ...options, addRules: options.addRules.map(mendRule).filter(Boolean).flatMap((r) => spread(name, r, taken)) };
+              options = { ...options, addRules: options.addRules.map(mendRule).filter(Boolean).flatMap((r) => spread(name, r, taken)).flatMap((r) => splitFrames(r, taken)) };
             }
           });
           const attempt = async (opts, left) => {
@@ -3251,6 +3292,14 @@ enum ExtensionShims {
       if (dnr) for (const name of ["updateSessionRules", "updateDynamicRules"]) {
         if (!rawGet[name]) continue;
         rawGet[name]().then((all) => {
+          // Rules stored before their frame part was split off (idea 712):
+          // split now. A split rule no longer names frames, so this happens once.
+          const present = new Set((all || []).map((r) => r.id));
+          const stale = (all || []).filter((r) => madeFrom(r.id, present) === null && framePart(r));
+          if (stale.length && rawUpdate[name]) {
+            Promise.resolve(rawUpdate[name]({ removeRuleIds: stale.map((r) => r.id), addRules: stale.flatMap((r) => splitFrames(r, present)) }))
+              .then(built, (e) => { if (__SEARCH_VERBOSE__) try { native("debug.error", ["declarativeNetRequest: frame rules not split — " + (e && e.message)]).catch(() => {}); } catch (x) {} });
+          }
           for (const rule of all || []) {
             const key = name + ":" + rule.id;
             const type = rule && rule.action && rule.action.type;
