@@ -1,0 +1,592 @@
+#!/usr/bin/env python3
+"""Polished demo videos of Search, recorded from a script, nobody's screen taken.
+
+    ./demo record SCRIPT.json OUT.mp4 [--keep] [--prores] [--4k]
+                                  launch Search in a demo world of its own, seeded from the
+                                  script; record only its window (ScreenCaptureKit, 60 fps,
+                                  2×) while the steps run through the bench; then compose:
+                                  background, shadow, rounded corners, a drawn pointer and
+                                  camera moves → OUT.mp4 (libx264 -crf 16, yuv420p), and
+                                  OUT.mov in ProRes 422 HQ with --prores. --keep leaves the
+                                  raw recording and plan in OUT.mp4.work/ for `compose`.
+    ./demo compose WORK OUT.mp4   compose again from a kept OUT.mp4.work/ (no app needed)
+    ./demo check SCRIPT.json      read the script and say what it would do; starts nothing
+    ./demo fake OUT.mp4 [--prores] [--4k]
+                                  the composer on a made-up recording (ffmpeg's test
+                                  pattern): checks background, shadow, pointer and encoding
+                                  without Search or Screen Recording
+    ./demo selftest               what ScreenCaptureKit gives for a window of the helper's own
+                                  placed off every screen (needs Screen Recording)
+    ./demo build                  build the Swift helper, build/demo-capture
+
+Search must be built first (./build.sh → build/Search.app). The window is
+ordered in far off every screen (bench `stage`), so it shows on no display,
+and the app is never made active; only that window is recorded, without the
+real pointer. The demo world is wiped afterwards, as Tests/split_view.py's
+finish() does. Screen Recording must be allowed for the app that runs this
+(Terminal, or Claude): macOS names it in System Settings › Privacy & Security
+› Screen & System Audio Recording. Nothing here asks for it.
+
+THE SCRIPT (JSON; YAML if PyYAML is installed) — Tests/demo/example.json is a
+~30 s showcase. Every key is optional:
+
+  window      {"width": 1440, "height": 900}            the browser window, in points
+  output      {"width": 1920, "height": 1080, "fps": 60, "crf": 16, "prores": false,
+               "margin": 0.07, "radius": 16, "cursor": 1}   (3840×2160 for 4K; cursor 0: none)
+  background  {"image": PATH, "blur": 0}               default: a soft blurred gradient
+  look        "light" | "dark" | "system"
+  settings    {"sidebar": true, "layout.cards": true, "spaces": true, "splitView": true, …}
+              raw defaults keys of the demo world's own suite, written before launch
+  spaces      [{"name", "colour": "blue"|0…5, "tabs": [{"name", "url", "group"}],
+                "pins": [{"url", "listed"}], "folders": [{"name", "pins": [URL…], "folded"}]}]
+              URLs are https://…, or local:NAME for a page the harness serves
+  start       {"space": 1, "tab": NAME}
+  lead, tail  seconds at rest before the first step and after the last; settle: before recording
+  steps       [{"do": ACTION, "at": SECONDS | "wait": SECONDS, …}]  ("at" from the first step's
+              start; "wait" after the step before)
+
+Points ("to", "from") are window points from its top left, "x%,y%" of the window,
+"center", or "page:CSS SELECTOR" on the page in front. "@NAME" in a raw bench
+request is that tab's id. Actions:
+
+  move   {to, dur=.6, hover}     the drawn pointer glides (cubic-bezier .16,1,.3,1); hover: the
+                                 page hears it pass (bench `pointer`)
+  hover  {to, dur}               move with hover
+  click  {to?, via="view"|"app"|"page"|"none", then?}   press drawn; the real click through
+                                 bench (`split mouse`, `pointer press`), never the Mac's mouse
+  tap    {selector, tab?, mods?} pointer to an element, then bench `tap` (a trusted click)
+  drag   {from, to, dur=.9}      a drag, drawn and delivered a frame apart
+  cursor {visible, jump}
+  key    {key: "cmd+shift+h", letgo?}   release {}: the held modifiers let go (⌃Tab)
+  type   {text, every=.08}       into what has the keyboard (pointer hidden while typing)
+  field  {text}                  the address field's own way
+  suggest {pick: "Capture"}      the address field's row whose words hold that, taken
+  space  {swipe: -320, ms} | {go: N} | {new: NAME} | {colour}
+  split  {pair: [DRAGGED, TARGET], side} | {request: {...}}
+  select {tab}    peek {link: SELECTOR | url | close}    pinch {amount=.6, ms=600}
+  menu   {title: "Edit Site Style…", menu?}    style {css?, close?}
+  zoom   {rect: [x, y, w, h] in window points | "reset", dur=.9}   the camera, in post
+  scroll {dy, dx, ms, tab?}   eval {js, tab?}   bench {request: {...}}   wait {}
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / "Tools" / "demo"))
+import plan  # noqa: E402
+
+HELPER = ROOT / "build" / "demo-capture"
+HELPER_SOURCES = sorted((ROOT / "Tools" / "DemoCapture").glob("*.swift"))
+FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+APP = ROOT / "build" / "Search.app"
+
+# The default background: a neutral gradient with soft colour, blurred.
+GRADIENT = {
+    "colors": [[0.86, 0.87, 0.90, 1], [0.64, 0.67, 0.73, 1]],
+    "blobs": [[0.97, 0.82, 0.72, 0.55, 0.12, 0.18, 0.45],
+              [0.60, 0.70, 0.93, 0.55, 0.88, 0.82, 0.50],
+              [0.84, 0.76, 0.93, 0.40, 0.62, 0.08, 0.35]],
+    "blur": 30,
+}
+
+
+def log(*a):
+    print("demo:", *a, file=sys.stderr, flush=True)
+
+
+# ---------------------------------------------------------------- the helper
+
+def build_helper():
+    newest = max(p.stat().st_mtime for p in HELPER_SOURCES)
+    if HELPER.exists() and HELPER.stat().st_mtime >= newest:
+        return
+    HELPER.parent.mkdir(exist_ok=True)
+    log("building build/demo-capture")
+    subprocess.run(["xcrun", "swiftc", "-O", "-swift-version", "5", "-o", str(HELPER), *map(str, HELPER_SOURCES)], check=True)
+
+
+# ---------------------------------------------------------------- composing
+
+def compose_plan(s, work, out, start, frames, cursor_events, camera_events, window_points, home):
+    o = s["output"]
+    W, H, fps = o["width"], o["height"], o["fps"]
+    rect, k, radius, shadows = plan.layout(W, H, window_points[0], window_points[1], o["margin"], o["radius"])
+    bg = dict(GRADIENT) if not s["background"].get("image") else {}
+    bg.update({k_: v for k_, v in s["background"].items() if v is not None})
+    if bg.get("image"): bg["image"] = str(Path(bg["image"]).expanduser().resolve())
+    p = {
+        "capture": str(work / "capture.mov"), "stamps": str(work / "stamps.json"),
+        "out": str(out), "prores": str(Path(out).with_suffix(".mov")) if o.get("prores") else None,
+        "ffmpeg": FFMPEG, "width": W, "height": H, "fps": fps, "crf": o.get("crf", 16),
+        "start": start, "frames": frames, "background": bg,
+        "window": list(rect), "radius": radius, "shadows": shadows, "border": max(1.0, H / 1080),
+        "windowPoints": list(window_points),
+        "cursor": plan.cursor_track(cursor_events, start, frames, fps, home) if s["output"].get("cursor", 1) else None,
+        "camera": plan.camera_track(camera_events, start, frames, fps, W, H, rect, k),
+        "cursorSize": float(o.get("cursor", 1) or 1),
+    }
+    path = work / "plan.json"
+    path.write_text(json.dumps(p))
+    return path
+
+
+def run_compose(plan_path, out=None, prores=None):
+    p = json.loads(Path(plan_path).read_text())
+    if out:
+        p["out"] = str(Path(out).resolve())
+        if prores is not None: p["prores"] = str(Path(out).resolve().with_suffix(".mov")) if prores else None
+        Path(plan_path).write_text(json.dumps(p))
+    build_helper()
+    log(f"composing {p['frames']} frames at {p['width']}×{p['height']} → {p['out']}")
+    subprocess.run([str(HELPER), "compose", "--plan", str(plan_path)], check=True)
+    return p["out"]
+
+
+# ---------------------------------------------------------------- the app
+
+class Session:
+    """One demo world's Search, driven through the bench, and what the
+    pointer and the camera did, by the wall clock."""
+
+    def __init__(self, sv, script):
+        self.sv, self.s = sv, script
+        self.names = {}
+        self.cursor = []
+        self.camera = []
+        self.window = (script["window"]["width"], script["window"]["height"])
+        self.at = (self.window[0] * 0.62, self.window[1] * 0.58)   # where the pointer is
+        self.visible = True
+        self.threads = []
+
+    # -- the bench
+
+    def cmd(self, request):
+        return self.sv.cmd(self.resolve(request))
+
+    def resolve(self, value):
+        """"@name" anywhere in a request: that tab's id."""
+        if isinstance(value, str) and value.startswith("@"):
+            if value[1:] not in self.names: raise SystemExit(f"demo: no tab named {value[1:]!r}")
+            return self.names[value[1:]]
+        if isinstance(value, dict): return {k: self.resolve(v) for k, v in value.items()}
+        if isinstance(value, list): return [self.resolve(v) for v in value]
+        return value
+
+    def fire(self, request):
+        """Sent without waiting for its answer (pointer moves along a path)."""
+        t = threading.Thread(target=lambda: self._quiet(request), daemon=True)
+        t.start()
+        self.threads.append(t)
+
+    def _quiet(self, request):
+        try: self.cmd(request)
+        except Exception as e: log("(ignored)", e)
+
+    def url(self, u):
+        return self.sv.BASE + "/" + u[len("local:"):].lstrip("/") if u.startswith("local:") else u
+
+    def active(self):
+        for tab in self.cmd({"do": "tabs"}).get("tabs", []):
+            if tab.get("active"): return tab["id"]
+        raise SystemExit("demo: no tab in front")
+
+    def tab(self, name):
+        return self.active() if name in (None, "active") else self.resolve("@" + name)
+
+    # -- seeding
+
+    def seed(self):
+        s, sv = self.s, self.sv
+        self.cmd({"do": "window"})
+        if s.get("look"): self.cmd({"do": "ui", "look": s["look"]})
+        before = [t["id"] for t in self.cmd({"do": "tabs"}).get("tabs", [])]
+        spaces = s["spaces"] or [{"name": "", "colour": 0, "tabs": [{"url": "https://www.apple.com", "name": "start"}]}]
+        folders_on = False
+        for i, space in enumerate(spaces):
+            if i == 0:
+                if space["name"]: self.cmd({"do": "space", "action": "rename", "name": space["name"]})
+            else:
+                self.cmd({"do": "space", "action": "new", "name": space["name"]})
+            if space.get("colour"): self.cmd({"do": "space", "action": "colour", "colour": space["colour"]})
+            for pin in space.get("pins", []):
+                pid = sv.sp("open", url=self.url(pin["url"]), atEnd=True)["resultID"]
+                self.cmd({"do": "pin", "id": pid, "listed": bool(pin.get("listed"))})
+                if pin.get("name"): self.names[pin["name"]] = pid
+            for folder in space.get("folders", []):
+                if not folders_on:
+                    self.cmd({"do": "pinfolder", "action": "on"}); folders_on = True
+                for j, pin in enumerate(folder.get("pins", [])):
+                    pid = sv.sp("open", url=self.url(pin["url"]), atEnd=True)["resultID"]
+                    self.cmd({"do": "pin", "id": pid, "listed": True})
+                    if j == 0: self.cmd({"do": "pinfolder", "action": "new", "name": folder["name"], "id": pid})
+                    else: self.cmd({"do": "pinfolder", "action": "move", "id": pid, "folder": folder["name"]})
+                    if pin.get("name"): self.names[pin["name"]] = pid
+                if folder.get("folded"): self.cmd({"do": "pinfolder", "action": "fold", "name": folder["name"]})
+            groups = set()
+            for tab in space.get("tabs", []):
+                tid = sv.sp("open", url=self.url(tab["url"]), atEnd=True)["resultID"]
+                if tab.get("name"): self.names[tab["name"]] = tid
+                if tab.get("group"):
+                    g = tab["group"]
+                    self.cmd({"do": "group", "id": tid, "name": g, **({} if g in groups else {"new": True})})
+                    groups.add(g)
+                time.sleep(0.3)
+            if i == 0:
+                # The tab the probe came up with goes, once there are others.
+                for tid in before:
+                    try: sv.sp("closeTab", id=tid)
+                    except Exception as e: log("(could not close the first tab)", e)
+        start = s.get("start") or {}
+        self.cmd({"do": "space", "action": "go", "index": int(start.get("space", 1))})
+        if start.get("tab"): self.cmd({"do": "select", "id": self.tab(start["tab"])})
+        # Pages loaded, then a moment to settle.
+        for name, tid in self.names.items():
+            try: self.cmd({"do": "wait", "id": tid, "seconds": 15})
+            except Exception as e: log(f"(waiting for {name})", e)
+
+    # -- the pointer
+
+    def point(self, spec, tab=None):
+        """A target in window points; "page:SELECTOR" asks the page in front."""
+        if isinstance(spec, str) and spec.startswith("page:"):
+            selector = spec[5:]
+            tid = self.tab(tab)
+            js = ("(function(){var e=document.querySelector(%s);if(!e)return null;var r=e.getBoundingClientRect();"
+                  "return [r.left+r.width/2,r.top+r.height/2];})()") % json.dumps(selector)
+            got = self.cmd({"do": "eval", "id": tid, "js": js}).get("value")
+            if not got: raise SystemExit(f"demo: nothing on the page matches {selector!r}")
+            frame = self.cmd({"do": "probe"}).get("activePageFrame") or [0, 0]
+            return frame[0] + got[0], frame[1] + got[1]
+        return plan.target(spec, self.window)
+
+    def show(self):
+        if not self.visible:
+            self.cursor.append({"t": time.time(), "kind": "show"}); self.visible = True
+
+    def hide(self):
+        if self.visible:
+            self.cursor.append({"t": time.time(), "kind": "hide"}); self.visible = False
+
+    def move(self, to, dur=0.6, hover=False, tab=None):
+        self.show()
+        start, frm = time.time(), self.at
+        self.cursor.append({"t": start, "kind": "move", "to": list(to), "dur": dur})
+        if hover:
+            tid = self.tab(tab)
+            frame = self.cmd({"do": "probe"}).get("activePageFrame") or [0, 0]
+            # The page hears the pointer pass over it, at about 30 a second.
+            n = max(1, int(dur * 30))
+            for i in range(1, n + 1):
+                f = plan.EASE(i / n)
+                x, y = frm[0] + (to[0] - frm[0]) * f, frm[1] + (to[1] - frm[1]) * f
+                self.fire({"do": "pointer", "id": tid, "x": x, "y": y, "what": "move"})
+                time.sleep(max(0, start + dur * i / n - time.time()))
+        else:
+            time.sleep(dur)
+        self.at = tuple(to)
+
+    def press(self, real):
+        """Down and up where the pointer is; `real` does the click itself."""
+        self.show()
+        self.cursor.append({"t": time.time(), "kind": "down"})
+        if real: real()
+        else: time.sleep(0.08)
+        self.cursor.append({"t": time.time(), "kind": "up"})
+
+    # -- the steps
+
+    def run(self, steps, t0):
+        for i, step in enumerate(steps):
+            if "at" in step:
+                time.sleep(max(0.0, t0 + step["at"] - time.time()))
+            elif "wait" in step:
+                time.sleep(step["wait"])
+            log(f"{time.time() - t0:6.2f}s  step {i}: {step['do']}")
+            getattr(self, "do_" + step["do"])(step)
+        for t in self.threads: t.join(timeout=5)
+
+    def do_wait(self, st): pass
+
+    def do_move(self, st):
+        self.move(self.point(st["to"], st.get("tab")), st.get("dur", 0.6), st.get("hover", False), st.get("tab"))
+
+    do_hover = lambda self, st: self.move(self.point(st["to"], st.get("tab")), st.get("dur", 0.6), True, st.get("tab"))
+
+    def do_cursor(self, st):
+        if "jump" in st:
+            to = self.point(st["jump"]); self.cursor.append({"t": time.time(), "kind": "jump", "to": list(to)}); self.at = to
+        if st.get("visible") is False: self.hide()
+        if st.get("visible") is True: self.show()
+
+    def do_click(self, st):
+        if "to" in st: self.move(self.point(st["to"], st.get("tab")), st.get("dur", 0.5))
+        x, y = self.at
+        via = st.get("via", "view")
+        if via == "none": real = None
+        elif via == "page": real = lambda: self.cmd({"do": "pointer", "id": self.tab(st.get("tab")), "x": x, "y": y, "what": "press"})
+        else: real = lambda: self.sv.sp("mouse", points=[[x, y], [x, y]], every=0.06, **({"to": "view"} if via == "view" else {}))
+        self.press(real)
+        if st.get("then"): self.run([dict(st["then"], wait=0)], time.time())
+
+    def do_tap(self, st):
+        tid = self.tab(st.get("tab"))
+        self.move(self.point("page:" + st["selector"], st.get("tab")), st.get("dur", 0.5))
+        self.press(lambda: self.cmd({"do": "tap", "id": tid, "selector": st["selector"], **({"mods": st["mods"]} if st.get("mods") else {})}))
+
+    def do_drag(self, st):
+        a, b = self.point(st["from"], st.get("tab")), self.point(st["to"], st.get("tab"))
+        if self.at != a: self.move(a, st.get("approach", 0.45))
+        dur = st.get("dur", 0.9)
+        points = plan.drag_points(a, b, dur)
+        via = st.get("via", "view")
+        self.cursor.append({"t": time.time(), "kind": "down"})
+        t = threading.Thread(target=lambda: self._quiet({"do": "split", "action": "mouse", "points": points, "every": 1 / 60,
+                                                          **({"to": "view"} if via == "view" else {})}), daemon=True)
+        t.start()
+        self.cursor.append({"t": time.time(), "kind": "move", "to": list(b), "dur": dur})
+        time.sleep(dur)
+        self.cursor.append({"t": time.time(), "kind": "up"})
+        self.at = b
+        t.join(timeout=dur + 5)
+
+    def do_key(self, st):
+        code, chars, mods = plan.parse_key(st["key"])
+        self.cmd({"do": "press", "code": code, "chars": chars, "mods": mods, **({"letgo": True} if st.get("letgo") else {})})
+
+    def do_release(self, st):
+        self.cmd({"do": "press", "code": 0, "chars": "", "mods": [], "release": True})
+
+    def do_type(self, st):
+        if st.get("hide", True): self.hide()
+        self.cmd({"do": "typekeys", "text": st["text"], "every": st.get("every", 0.08)})
+
+    def do_field(self, st):
+        self.cmd({"do": "field", "text": st["text"], "type": True})
+
+    def do_suggest(self, st):
+        want = st["pick"].lower()
+        until = time.time() + st.get("within", 3)
+        while True:
+            offers = self.cmd({"do": "suggest"}).get("offers", [])
+            found = [i for i, o in enumerate(offers) if want in " ".join(map(str, o)).lower()]
+            if found or time.time() > until: break
+            time.sleep(0.1)
+        if not found: raise SystemExit(f"demo: no row offers {st['pick']!r}: {offers}")
+        self.cmd({"do": "suggest", "action": "take", "index": found[0]})
+
+    def do_space(self, st):
+        if "swipe" in st: self.cmd({"do": "space", "action": "swipe", "dx": st["swipe"], "ms": st.get("ms", 650)})
+        elif "go" in st: self.cmd({"do": "space", "action": "go", "index": st["go"]})
+        elif "new" in st: self.cmd({"do": "space", "action": "new", "name": st["new"]})
+        elif "colour" in st: self.cmd({"do": "space", "action": "colour", "colour": plan.COLOURS.index(st["colour"].lower()) if isinstance(st["colour"], str) else st["colour"]})
+
+    def do_split(self, st):
+        if "pair" in st:
+            a, b = st["pair"]
+            self.sv.sp("pair", id=self.tab(a), **{"with": self.tab(b)}, side=st.get("side", "right"))
+        else:
+            self.cmd({"do": "split", **self.resolve(st.get("request", {}))})
+
+    def do_select(self, st):
+        self.cmd({"do": "select", "id": self.tab(st["tab"])})
+
+    def do_peek(self, st):
+        if st.get("close"):
+            self.cmd({"do": "peek", "url": "close"}); return
+        url = st.get("url")
+        if st.get("link"):
+            tid = self.tab(st.get("tab"))
+            href = self.cmd({"do": "eval", "id": tid, "js": "(function(){var e=document.querySelector(%s);return e&&e.href})()" % json.dumps(st["link"])}).get("value")
+            if not href: raise SystemExit(f"demo: no link matches {st['link']!r}")
+            url = url or href
+            self.move(self.point("page:" + st["link"], st.get("tab")), st.get("dur", 0.6))
+        self.press(lambda: self.cmd({"do": "peek", "url": self.url(url)}))
+
+    def do_pinch(self, st):
+        steps = st.get("steps") or [st.get("amount", 0.6) / st.get("n", 12)] * st.get("n", 12)
+        self.cmd({"do": "peek", "pinch": steps, "ms": st.get("ms", 600)})
+
+    def do_menu(self, st):
+        self.cmd({"do": "menuitem", "title": st["title"], **({"menu": st["menu"]} if st.get("menu") else {})})
+
+    def do_style(self, st):
+        tid = self.tab(st.get("tab"))
+        host = st.get("host") or (self.cmd({"do": "eval", "id": tid, "js": "location.hostname"}).get("value") or "")
+        req = {"do": "sitestyle", "host": host}
+        if "css" in st: req["css"] = st["css"]
+        if st.get("close"): req["close"] = True
+        self.cmd(req)
+
+    def do_zoom(self, st):
+        rect = st.get("rect")
+        if rect == "reset": rect = None
+        self.camera.append({"t": time.time(), "rect": rect, "dur": st.get("dur", 0.9)})
+
+    def do_scroll(self, st):
+        self.cmd({"do": "wheel", "id": self.tab(st.get("tab")), "dx": st.get("dx", 0), "dy": st.get("dy", -400),
+                  "ms": st.get("ms", 500), "steps": st.get("steps", 20), "glide": st.get("glide", 20)})
+
+    def do_eval(self, st):
+        self.cmd({"do": "eval", "id": self.tab(st.get("tab")), "js": st["js"]})
+
+    def do_bench(self, st):
+        log("   ", json.dumps(self.cmd(st["request"]))[:200])
+
+
+# ---------------------------------------------------------------- record
+
+def record(script_path, out, keep=False, prores=False, four_k=False):
+    s = plan.load(script_path)
+    if prores: s["output"]["prores"] = True
+    if four_k: s["output"].update(width=3840, height=2160)
+    out = Path(out).resolve()
+    if not APP.exists(): raise SystemExit(f"demo: build Search first (./build.sh → {APP})")
+    if not Path(FFMPEG).exists(): raise SystemExit("demo: ffmpeg not found (brew install ffmpeg)")
+    build_helper()
+    work = Path(str(out) + ".work")
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+
+    sys.path.insert(0, str(ROOT / "Tests"))
+    import split_view as sv  # the hidden-probe harness: launch, socket, wipe
+    slug = re.sub(r"[^a-z0-9-]+", "-", (s.get("world") or Path(script_path).stem).lower()).strip("-")[:24] or "demo"
+    sv.use(f"demo-{slug}")
+    assert sv.SUITE.startswith("com.officecommun.search.test.demo-"), sv.SUITE  # never the real Search's settings
+    session = Session(sv, s)
+    capture = None
+    result = {}
+    try:
+        sv.setup()
+        for key, value in s["settings"].items():
+            kind = ["-bool", "true" if value else "false"] if isinstance(value, bool) else \
+                ["-int", str(value)] if isinstance(value, int) else \
+                ["-float", str(value)] if isinstance(value, float) else ["-string", str(value)]
+            subprocess.run(["defaults", "write", sv.SUITE, key, *kind], check=True)
+        log(f"launching a hidden probe in world {sv.W}")
+        sv.launch()
+        if not os.path.exists(sv.SOCK): raise SystemExit("demo: the probe never opened its bench socket")
+        w, h = session.window
+        session.cmd({"do": "window"})
+        # Ordered in far off every screen, so the pages lay out and paint at their size.
+        staged = session.cmd({"do": "stage", "width": w, "height": h})
+        log("staged", {k: staged.get(k) for k in ("window", "frame", "scale", "onScreen")})
+        session.seed()
+        staged = session.cmd({"do": "stage", "width": w, "height": h})
+        time.sleep(s["settle"])
+
+        capture = subprocess.Popen([str(HELPER), "capture", "--window", str(staged["window"]), "--out", str(work / "capture.mov"),
+                                    "--stamps", str(work / "stamps.json"), "--fps", str(s["output"]["fps"]), "--scale", "2"],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        ready = json.loads(capture.stdout.readline() or "{}")
+        if ready.get("error") == "screen-recording-denied":
+            raise SystemExit("demo: " + ready["message"])
+        if not ready.get("ready"):
+            raise SystemExit(f"demo: the recording never started: {ready}")
+        log("recording", ready)
+        start = time.time()
+        t0 = start + s["lead"]
+        time.sleep(s["lead"])
+        session.run(s["steps"], t0)
+        time.sleep(s["tail"])
+        end = time.time()
+        capture.stdin.write("stop\n"); capture.stdin.flush()
+        result = json.loads(capture.stdout.readline() or "{}")
+        capture.wait(timeout=30)
+        log("recorded", result)
+        frames = int((end - start) * s["output"]["fps"])
+        plan_path = compose_plan(s, work, out, start, frames, session.cursor, session.camera, session.window,
+                                 (w * 0.62, h * 0.58))
+    finally:
+        if capture and capture.poll() is None:
+            try: capture.stdin.write("stop\n"); capture.stdin.flush(); capture.wait(timeout=10)
+            except Exception: capture.kill()
+        try: sv.cmd({"do": "stage", "on": False})
+        except Exception: pass
+        sv.finish()
+        log(f"world {sv.W} quit and wiped")
+    run_compose(plan_path)
+    if not keep: shutil.rmtree(work, ignore_errors=True)
+    print(out)
+
+
+# ---------------------------------------------------------------- check / fake
+
+def check(script_path):
+    s = plan.load(script_path)
+    o = s["output"]
+    rect, k, radius, _ = plan.layout(o["width"], o["height"], s["window"]["width"], s["window"]["height"], o["margin"], o["radius"])
+    print(f"window {s['window']['width']}×{s['window']['height']} pt → {rect[2]:.0f}×{rect[3]:.0f} px at "
+          f"({rect[0]:.0f}, {rect[1]:.0f}) in {o['width']}×{o['height']} @ {o['fps']} fps, {k:.3f} px/pt")
+    for sp in s["spaces"]:
+        print(f"space {sp['name']!r} ({plan.COLOURS[sp.get('colour', 0)]}): "
+              f"{len(sp.get('tabs', []))} tabs, {len(sp.get('pins', []))} pins, {len(sp.get('folders', []))} folders")
+    t = s["lead"]
+    for i, st in enumerate(s["steps"]):
+        t = st["at"] if "at" in st else t + st.get("wait", 0)
+        rest = {k_: v for k_, v in st.items() if k_ not in ("do", "at", "wait")}
+        print(f"  ≥{t:5.1f}s  {st['do']:8} {json.dumps(rest, ensure_ascii=False)[:90]}")
+        t += st.get("dur", 0)
+    print(f"about {t + s['tail']:.0f} s plus the time the app takes to answer")
+
+
+def fake(out, prores=False, four_k=False):
+    """The composer on a made-up recording: ffmpeg's test pattern at a 1440×900
+    window's 2× size, its stamps on the wall clock, a pointer moving and
+    clicking, and a zoom."""
+    build_helper()
+    out = Path(out).resolve()
+    work = Path(tempfile.mkdtemp(prefix="demo-fake-"))
+    W, H, fps, secs = 2880, 1800, 60, 4
+    subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    f"testsrc2=size={W}x{H}:rate={fps}:duration={secs}", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-bf", "0", str(work / "capture.mov")], check=True)
+    start = 1_000_000.0
+    (work / "stamps.json").write_text(json.dumps({"hostToWall": start, "stamps": [i / fps for i in range(secs * fps)]}))
+    s = plan.parse({"output": {"prores": prores, **({"width": 3840, "height": 2160} if four_k else {})}})
+    cursor = [{"t": start + 0.3, "kind": "move", "to": [300, 200], "dur": 0.8},
+              {"t": start + 1.3, "kind": "down"}, {"t": start + 1.4, "kind": "up"},
+              {"t": start + 2.0, "kind": "move", "to": [1100, 700], "dur": 0.8}]
+    camera = [{"t": start + 1.0, "rect": [100, 50, 500, 320], "dur": 0.8}, {"t": start + 2.6, "rect": None, "dur": 0.8}]
+    p = compose_plan(s, work, out, start, secs * fps, cursor, camera, (1440, 900), (900, 560))
+    q = json.loads(p.read_text()); q["still"] = 80; q["stillPath"] = str(out.with_suffix(".png")); p.write_text(json.dumps(q))
+    run_compose(p)
+    shutil.rmtree(work, ignore_errors=True)
+    print(out)
+    print(out.with_suffix(".png"))
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip()); return 0
+    verb, args = argv[0], argv[1:]
+    flags = {a for a in args if a.startswith("--")}
+    args = [a for a in args if not a.startswith("--")]
+    if verb == "record" and len(args) == 2:
+        record(args[0], args[1], keep="--keep" in flags, prores="--prores" in flags, four_k="--4k" in flags)
+    elif verb == "compose" and len(args) == 2:
+        run_compose(Path(args[0]) / "plan.json", args[1], prores=True if "--prores" in flags else None)
+    elif verb == "check" and len(args) == 1:
+        check(args[0])
+    elif verb == "fake" and len(args) == 1:
+        fake(args[0], prores="--prores" in flags, four_k="--4k" in flags)
+    elif verb == "selftest":
+        build_helper()
+        return subprocess.run([str(HELPER), "selftest", *(args or ["offscreen-active"])]).returncode
+    elif verb == "build":
+        build_helper()
+    else:
+        print(__doc__.strip(), file=sys.stderr); return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

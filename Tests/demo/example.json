@@ -1,0 +1,83 @@
+{
+  "title": "Search — a 30-second tour",
+  "comment": "Run with: ./demo record Tests/demo/example.json ~/Desktop/search-tour.mp4. Pointer targets are window points from the top left, \"x%,y%\" of the window, or \"page:SELECTOR\" on the page in front.",
+  "window": {"width": 1440, "height": 900},
+  "output": {"width": 1920, "height": 1080, "fps": 60, "crf": 16, "prores": false},
+  "background": {"image": null},
+  "look": "light",
+  "settings": {
+    "sidebar": true,
+    "layout.cards": true,
+    "spaces": true,
+    "splitView": true,
+    "commandbar": true,
+    "pages.capture": true,
+    "sites.styles": true,
+    "pins.folders": true
+  },
+  "spaces": [
+    {
+      "name": "Studio",
+      "colour": "blue",
+      "pins": [
+        {"url": "https://www.wikipedia.org/"},
+        {"url": "https://developer.apple.com/"}
+      ],
+      "folders": [
+        {"name": "Type", "pins": ["https://fonts.google.com/", "https://www.typewolf.com/"]}
+      ],
+      "tabs": [
+        {"name": "apple", "url": "https://www.apple.com/"},
+        {"name": "typo", "url": "https://en.wikipedia.org/wiki/Typography"},
+        {"name": "arena", "url": "https://www.are.na/"},
+        {"name": "bauhaus", "url": "https://en.wikipedia.org/wiki/Bauhaus"}
+      ]
+    },
+    {
+      "name": "Reading",
+      "colour": "orange",
+      "tabs": [
+        {"name": "verge", "url": "https://www.theverge.com/"},
+        {"name": "swiss", "url": "https://en.wikipedia.org/wiki/International_Typographic_Style"}
+      ]
+    }
+  ],
+  "start": {"space": 1, "tab": "apple"},
+  "lead": 1.2,
+  "settle": 3,
+  "steps": [
+    {"do": "move", "to": [130, 520], "dur": 0.7},
+    {"do": "space", "swipe": -320, "ms": 700, "wait": 0.2},
+    {"do": "space", "swipe": 320, "ms": 700, "wait": 1.6},
+
+    {"do": "zoom", "rect": [0, 0, 900, 280], "dur": 0.8, "wait": 1.0},
+    {"do": "key", "key": "cmd+l", "wait": 0.3},
+    {"do": "type", "text": "capt", "every": 0.11, "wait": 0.2},
+    {"do": "suggest", "pick": "Capture", "wait": 0.7},
+    {"do": "zoom", "rect": "reset", "dur": 0.8, "wait": 0.3},
+    {"do": "drag", "from": "34%,30%", "to": "64%,66%", "dur": 1.1, "wait": 0.5},
+    {"do": "bench", "request": {"do": "snap", "id": "@apple", "mode": "stop"}, "wait": 1.4},
+
+    {"do": "split", "pair": ["typo", "apple"], "side": "right", "wait": 0.4},
+    {"do": "split", "pair": ["arena", "typo"], "side": "right", "wait": 1.8},
+
+    {"do": "select", "tab": "bauhaus", "wait": 2.2},
+    {"do": "peek", "link": "#mw-content-text p a[href^='/wiki/']", "dur": 0.6, "wait": 0.6},
+    {"do": "pinch", "amount": 0.7, "ms": 650, "wait": 1.4},
+
+    {"do": "key", "key": "cmd+shift+h", "wait": 1.4},
+    {"do": "hover", "to": "page:#mw-content-text .mw-file-element", "dur": 0.7, "wait": 0.4},
+    {"do": "click", "via": "page", "wait": 0.3},
+    {"do": "key", "key": "escape", "wait": 1.0},
+
+    {"do": "menu", "title": "Edit Site Style…", "wait": 0.6},
+    {"do": "type", "text": "body{filter:grayscale(1)}", "every": 0.05, "wait": 0.6},
+    {"do": "style", "close": true, "wait": 1.5},
+
+    {"do": "key", "key": "ctrl+tab", "wait": 0.6},
+    {"do": "key", "key": "ctrl+tab", "wait": 0.6},
+    {"do": "release", "wait": 0.9},
+    {"do": "move", "to": [1180, 700], "dur": 0.9, "wait": 0.4}
+  ],
+  "tail": 1.8
+}

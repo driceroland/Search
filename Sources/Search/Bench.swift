@@ -1017,8 +1017,9 @@ final class Bench {
                     ?? (browser.window ?? Links.window)?.windowNumber ?? 0
             // "letgo": the modifiers let go of, as a flags change with
             // none left, after the press.
-            let types: [NSEvent.EventType] = request["letgo"] as? Bool == true
-                ? [.keyDown, .keyUp, .flagsChanged] : [.keyDown, .keyUp]
+            // "release": only that — the modifiers held for a ⌃Tab let go (./demo).
+            let types: [NSEvent.EventType] = request["release"] as? Bool == true ? [.flagsChanged]
+                : request["letgo"] as? Bool == true ? [.keyDown, .keyUp, .flagsChanged] : [.keyDown, .keyUp]
             for type in types {
                 guard let event = NSEvent.keyEvent(
                     with: type, location: .zero, modifierFlags: type == .flagsChanged ? [] : flags,
@@ -2443,6 +2444,20 @@ final class Bench {
             if let steps = request["pinch"] as? [Double] {
                 guard let page = browser.peekTab?.built as? PageView else { answer(["error": "no peek"]); return }
                 page.peekPinch(.began, by: 0)
+                // "ms": the steps spread over that long, as fingers spread (./demo).
+                if let ms = request["ms"] as? Double, ms > 0, !steps.isEmpty {
+                    let each = ms / 1000 / Double(steps.count)
+                    for (n, step) in steps.enumerated() {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + each * Double(n + 1)) {
+                            page.peekPinch(.changed, by: CGFloat(step))
+                            guard n == steps.count - 1 else { return }
+                            let pinch = browser.peekPinch
+                            page.peekPinch(request["cancel"] as? Bool == true ? .cancelled : .ended, by: 0)
+                            answer(["pinch": Double(pinch), "peek": browser.peekTab?.address?.absoluteString ?? ""])
+                        }
+                    }
+                    return
+                }
                 for step in steps { page.peekPinch(.changed, by: CGFloat(step)) }
                 let pinch = browser.peekPinch
                 page.peekPinch(request["cancel"] as? Bool == true ? .cancelled : .ended, by: 0)
@@ -2748,6 +2763,78 @@ final class Bench {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 answer(["window": NSApp.windows.map { "\(type(of: $0))" }, "hidden": NSApp.isHidden])
             }
+
+        case "stage":
+            // For ./demo: the browser's window ordered in far off every screen
+            // and the app shown again without coming forward, so that
+            // ScreenCaptureKit can record that one window while nobody sees
+            // it (DemoStage.swift). "width"/"height": its size; "active":
+            // drawn as the key window's (default). "on": false hides the app
+            // again. Test runs only.
+            guard Store.testing, let window = browser.window ?? Links.window else { answer(["error": "stage only works on a --test run"]); return }
+            func onScreen(_ w: NSWindow) -> Bool { NSScreen.screens.contains { $0.frame.intersects(w.frame) } }
+            if request["on"] as? Bool == false {
+                DemoStage.end()
+                NSApp.hide(nil)
+                Bench.pagesShown = false
+                answer(["stage": false])
+                return
+            }
+            let size = NSSize(width: request["width"] as? Double ?? Double(window.frame.width),
+                              height: request["height"] as? Double ?? Double(window.frame.height))
+            _ = room ?? makeRoom()
+            // Nothing of the app's left where it would show once it is shown again.
+            window.orderOut(nil)
+            for other in NSApp.windows where other !== room && other !== window && onScreen(other) { other.orderOut(nil) }
+            Bench.pagesShown = true
+            NSApp.unhideWithoutActivation()
+            DemoStage.put(window, size: size, active: request["active"] as? Bool ?? true)
+            let showing = NSApp.windows.filter { $0.isVisible && onScreen($0) }
+            if !showing.isEmpty {
+                DemoStage.end()
+                NSApp.hide(nil)
+                Bench.pagesShown = false
+                answer(["error": "a window would have shown: \(showing.map { "\(type(of: $0)) \(NSStringFromRect($0.frame))" })"])
+                return
+            }
+            // A turn later, once SwiftUI has laid the window out at its size.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                answer(["stage": true, "window": window.windowNumber, "frame": [Double(window.frame.minX), Double(window.frame.minY), Double(window.frame.width), Double(window.frame.height)],
+                        "scale": Double(window.backingScaleFactor), "lights": Bench.lights(of: window), "onScreen": onScreen(window),
+                        "hidden": NSApp.isHidden, "active": NSApp.isActive])
+            }
+
+        case "typekeys":
+            // For ./demo: text typed into whatever has the window's keyboard,
+            // a character every "every" seconds (0.07), as a hand types it.
+            // Test runs only.
+            guard Store.testing, let window = browser.window ?? Links.window, let text = request["text"] as? String
+            else { answer(["error": "typekeys needs a --test run and some text"]); return }
+            let every = min(1, max(0.005, request["every"] as? Double ?? 0.07))
+            DemoStage.typeText(text, in: window, every: every) {
+                answer(["typed": text, "responder": window.firstResponder.map { "\(type(of: $0))" } ?? ""])
+            }
+
+        case "menuitem":
+            // For ./demo: a menu bar item chosen by its title, as a click on it
+            // would ("title", optionally "menu" for the menu it is in). Test
+            // runs only.
+            guard Store.testing, let title = request["title"] as? String else { answer(["error": "menuitem needs a --test run and a title"]); return }
+            func find(in menu: NSMenu) -> (NSMenu, Int)? {
+                menu.delegate?.menuNeedsUpdate?(menu)
+                for (index, item) in menu.items.enumerated() {
+                    if item.title == title, item.isEnabled, item.action != nil { return (menu, index) }
+                    if let sub = item.submenu, let found = find(in: sub) { return found }
+                }
+                return nil
+            }
+            let menus = (NSApp.mainMenu?.items ?? []).filter { item in
+                guard let wanted = request["menu"] as? String else { return true }
+                return item.title == wanted
+            }.compactMap(\.submenu)
+            guard let (menu, index) = menus.lazy.compactMap(find).first else { answer(["error": "no enabled menu item “\(title)”"]); return }
+            menu.performActionForItem(at: index)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { answer(["chose": title]) }
 
         case "pages":
             // Pages that WebKit will paint, for `picture`, from a probe started
@@ -3777,6 +3864,17 @@ final class Bench {
                 let dx = request["dx"] as? Double ?? -120
                 SpaceSwipe.shared.start(for: browser)
                 SpaceSwipe.shared.began()
+                // "ms": the fingers' travel spread over that long (./demo).
+                if let ms = request["ms"] as? Double, ms > 0 {
+                    for n in 1...12 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000 * Double(n) / 12) {
+                            SpaceSwipe.shared.moved(along: dx / 12)
+                            if n == 12 { SpaceSwipe.shared.ended() }
+                        }
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000 + 0.1) { answer(["swiped": dx]) }
+                    return
+                }
                 for _ in 0..<12 { SpaceSwipe.shared.moved(along: dx / 12) }
                 SpaceSwipe.shared.ended()
             case "hold":
@@ -3790,6 +3888,9 @@ final class Bench {
                 SpaceSwipe.shared.ended()
             case "move":
                 if let index = request["index"] as? Int { browser.moveSpace(browser.spaceID, to: index - 1) }
+            case "rename":
+                // The space on screen named anew, as its menu's Rename does (./demo).
+                if let name = request["name"] as? String, !name.isEmpty { browser.renameSpace(browser.spaceID, to: name) }
             case "colour":
                 // The space on screen's colour, by index into Spaces.colours.
                 browser.setSpaceColour(browser.spaceID, to: request["colour"] as? Int ?? 0)
@@ -4072,6 +4173,8 @@ final class Bench {
             guard let host = request["host"] as? String else { answer(["error": "sitestyle needs host"]); return }
             if let on = request["on"] as? Bool { browser.prefs.sitesStyles = on }
             if let css = request["css"] as? String { SiteStyles.shared.set(css, on: host) }
+            // "close": the editor put away, as its Done does once what was typed is set (./demo).
+            if request["close"] as? Bool == true { browser.styling = nil }
             answer(["on": SiteStyles.shared.on, "css": SiteStyles.shared.css(on: host) ?? "",
                     "written": SiteStyles.shared.written(on: host), "editing": browser.styling ?? ""])
 
@@ -4185,6 +4288,8 @@ final class Bench {
             let resume = request["resume"] as? Bool == true
             let clicks = request["clicks"] as? Int ?? 1
             let direct = request["to"] as? String == "view"
+            // "every": seconds between points (./demo paces a drag at a frame).
+            let every = min(0.5, max(0.004, request["every"] as? Double ?? 0.02))
             for (index, coordinates) in points.enumerated() {
                 let type: NSEvent.EventType = index == 0 && !resume ? .leftMouseDown
                     : index == points.count - 1 && !hold ? .leftMouseUp : .leftMouseDragged
@@ -4199,7 +4304,7 @@ final class Bench {
                 // hands them to no view. "view": straight to the view under
                 // the press instead, as `tap` does, for what the view itself
                 // does with them.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02 * Double(index)) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + every * Double(index)) {
                     guard direct else { NSApp.sendEvent(event); return }
                     if type == .leftMouseDown {
                         let root = window.contentView?.superview
@@ -4212,7 +4317,7 @@ final class Bench {
                     }
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02 * Double(points.count) + 0.4) { reply() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + every * Double(points.count) + 0.4) { reply() }
 
         case "open":
             guard let url = (request["url"] as? String).flatMap(URL.init(string:)) else {
