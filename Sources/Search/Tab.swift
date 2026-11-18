@@ -735,6 +735,10 @@ final class Tab: ObservableObject, Identifiable {
     /// the session or the history, and gone when the script is done.
     let bench: Bool
 
+    /// A bench tab a coding agent opened (AgentControl): marked as its own
+    /// in the row, and kept to the web.
+    var agent = false
+
     /// The tab whose page opened this one, when a script did. Sign-in flows
     /// hand you back to it when they are done.
     var opener: Tab.ID?

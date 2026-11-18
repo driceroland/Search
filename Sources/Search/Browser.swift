@@ -2702,6 +2702,11 @@ final class Browser: NSObject, ObservableObject {
             } else if prefs.benchRefused {
                 announce("“Let a script drive Search” was turned on outside Settings, and stays off")
             }
+            if prefs.agents {
+                AgentControl.shared.start()
+            } else if prefs.agentsRefused {
+                announce("“Let coding agents use Search” was turned on outside Settings, and stays off")
+            }
             welcoming = !prefs.welcomed
             newsShowing = WhatsNew.due(prefs: prefs, welcoming: welcoming)
             // Once a day, quietly: is there a newer one?
@@ -3052,6 +3057,14 @@ final class Browser: NSObject, ObservableObject {
                 guard let self else { return }
                 if on { Bench.shared.start(for: self) } else { Bench.shared.stop() }
                 announce(on ? "Scripts can drive Search — see ./bench" : "The bench is closed")
+            }
+            .store(in: &bag)
+
+        prefs.$agents
+            .dropFirst()
+            .removeDuplicates()
+            .sink { on in
+                if on { AgentControl.shared.start() } else { AgentControl.shared.stop() }
             }
             .store(in: &bag)
 
@@ -5907,10 +5920,12 @@ final class Browser: NSObject, ObservableObject {
 
     /// A page for the bench: at the end of the row, behind whatever you are
     /// looking at, and marked as not yours. `shy`: a private one, for a test run.
+    /// `agent`: a coding agent's (AgentControl), marked as such.
     @discardableResult
-    func benchOpen(_ url: URL, shy: Bool = false) -> Tab {
+    func benchOpen(_ url: URL, shy: Bool = false, agent: Bool = false) -> Tab {
         let url = Browser.page(url)
         let tab = Tab(shy: shy, bench: true, configuration: shy ? nil : Browser.extensionConfiguration(for: url))
+        tab.agent = agent
         prepare(tab)
         tabs.append(tab)
         tab.go(to: url)
@@ -7590,6 +7605,15 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         _ action: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
+        // A coding agent's tab stays on the web: no file to download, none of
+        // Search's own pages, no file:// and no link handed to another app,
+        // whoever asked — the agent, the page, or a link it clicked.
+        if tab(for: webView)?.agent == true,
+           action.shouldPerformDownload || !(action.request.url.map(AgentRules.mayLoad) ?? true) {
+            AgentControl.log.notice("a page in an agent's tab was kept from going somewhere")
+            decisionHandler(.cancel)
+            return
+        }
         // "Download Image" from the page's own context menu and a link with
         // the `download` attribute arrive as an ordinary-looking action with
         // this one flag set. ("Download Linked File" doesn't come this way:
@@ -7898,6 +7922,20 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // The opener's copy is what its view was made with, maybe before
         // Settings › Videos wait for a click last moved.
         configuration.mediaTypesRequiringUserActionForPlayback = Web.playback
+        // A coding agent's page opening another: a tab of the agent's own,
+        // at the end of the row and behind, never one of yours or a window
+        // in front of what you are looking at.
+        if opener.agent {
+            let tab = Tab(bench: true, configuration: configuration)
+            tab.agent = true
+            tab.opener = from
+            if clicked { opener.popupGesture.opened(tab.id) }
+            prepare(tab)
+            tabs.append(tab)
+            if let url = action.request.url { tab.setAddressOptimistically(url) }
+            AgentControl.shared.adopted(tab, from: opener)
+            return tab.web
+        }
         // A new window a pin's page asked for on a click — a target="_blank"
         // link, or window.open from the click, as Gmail's links and many
         // sites' do, often by way of a redirect on their own site — opens in
@@ -8085,6 +8123,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         navigationAction: WKNavigationAction,
         didBecome download: WKDownload
     ) {
+        if tab(for: webView)?.agent == true { return refuseAgentDownload(download) }
         keep(download, from: webView)
         dropEmpty(webView)
     }
@@ -8094,8 +8133,16 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         navigationResponse: WKNavigationResponse,
         didBecome download: WKDownload
     ) {
+        if tab(for: webView)?.agent == true { return refuseAgentDownload(download) }
         keep(download, from: webView)
         dropEmpty(webView)
+    }
+
+    /// A coding agent downloads nothing: what its page sends is dropped
+    /// before a byte of it is kept anywhere.
+    private func refuseAgentDownload(_ download: WKDownload) {
+        AgentControl.log.notice("a download in an agent's tab was refused")
+        download.cancel { _ in }
     }
 
     /// Download Linked File in the right-click menu. WebKit starts the

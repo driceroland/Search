@@ -238,255 +238,11 @@ def wipe(world):
 
 # MARK: - what runs in the page
 
-# In Search's own content world (Tab.world) when the server asks for it:
-# the page's DOM, none of its globals, so the element list kept between
-# calls is out of the page's reach. Shared by read_page, the element tools
-# and wait_for.
-HELPERS = r"""
-var ROLES = {button:1, link:1, checkbox:1, radio:1, switch:1, tab:1, menuitem:1, menuitemcheckbox:1,
-  menuitemradio:1, option:1, combobox:1, textbox:1, searchbox:1, slider:1, spinbutton:1, listbox:1,
-  heading:1, dialog:1, alertdialog:1, alert:1, treeitem:1, gridcell:1, iframe:1};
-var SEL = 'a[href],area[href],button,input:not([type=hidden]),select,textarea,summary,[contenteditable],' +
-  '[role],[tabindex],h1,h2,h3,h4,h5,h6,iframe';
-function squash(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, 160); }
-function visible(el) {
-  var r = el.getBoundingClientRect();
-  if (r.width === 0 && r.height === 0) return false;
-  if (el.checkVisibility && !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
-  return !el.closest('[aria-hidden=true],[inert]');
-}
-function role(el) {
-  var r = (el.getAttribute('role') || '').trim().split(/\s+/)[0];
-  if (r && r !== 'none' && r !== 'presentation') return r;
-  var t = el.tagName.toLowerCase();
-  if (t === 'a' || t === 'area') return el.hasAttribute('href') ? 'link' : 'generic';
-  if (t === 'button' || t === 'summary') return 'button';
-  if (t === 'select') return el.multiple || el.size > 1 ? 'listbox' : 'combobox';
-  if (t === 'textarea') return 'textbox';
-  if (/^h[1-6]$/.test(t)) return 'heading';
-  if (t === 'iframe') return 'iframe';
-  if (t === 'input') {
-    return {checkbox: 'checkbox', radio: 'radio', range: 'slider', number: 'spinbutton', search: 'searchbox',
-      submit: 'button', button: 'button', reset: 'button', image: 'button', file: 'button',
-      color: 'button'}[(el.type || 'text').toLowerCase()] || 'textbox';
-  }
-  if (el.isContentEditable) return 'textbox';
-  return 'generic';
-}
-function name(el) {
-  var by = el.getAttribute('aria-labelledby'), t = el.tagName.toLowerCase(), s;
-  if (by) {
-    s = squash(by.split(/\s+/).map(function (id) {
-      var n = document.getElementById(id); return n ? n.innerText || n.textContent : '';
-    }).join(' '));
-    if (s) return s;
-  }
-  if ((s = squash(el.getAttribute('aria-label')))) return s;
-  if (/^(input|textarea|select)$/.test(t) && el.labels && el.labels.length &&
-      (s = squash(Array.prototype.map.call(el.labels, function (l) { return l.innerText; }).join(' ')))) return s;
-  if (t === 'input' && /^(submit|button|reset)$/i.test(el.type)) return squash(el.value || el.type);
-  if (t === 'input' && /^image$/i.test(el.type)) return squash(el.alt || el.value);
-  if (t === 'area') return squash(el.alt);
-  if (t === 'iframe') return squash(el.title || el.src);
-  if (!/^(input|textarea|select)$/.test(t)) {
-    if ((s = squash(el.innerText))) return s;
-    var img = el.querySelector('img[alt]');
-    if (img && (s = squash(img.alt))) return s;
-  }
-  return squash(el.getAttribute('placeholder') || el.getAttribute('title'));
-}
-function secret(el) {
-  if (el.tagName !== 'INPUT') return false;
-  if ((el.type || '').toLowerCase() === 'password') return true;
-  return /(^|\s)(cc-|one-time-code|current-password|new-password)/.test(el.getAttribute('autocomplete') || '');
-}
-function editable(el) {
-  if (el.isContentEditable) return true;
-  if (el.tagName === 'TEXTAREA') return true;
-  return el.tagName === 'INPUT' &&
-    !/^(checkbox|radio|submit|button|reset|image|file|range|color|hidden)$/i.test(el.type || 'text');
-}
-function wanted(el) {
-  var r = role(el);
-  if (ROLES[r]) return r;
-  var ti = el.getAttribute('tabindex');
-  return ti !== null && +ti >= 0 ? r : null;
-}
-function candidates() {
-  // The document's, then each open shadow root's: a closed one is the
-  // page's own business.
-  var out = [], roots = [document];
-  while (roots.length) {
-    var root = roots.shift();
-    Array.prototype.push.apply(out, root.querySelectorAll(SEL));
-    var all = root.querySelectorAll('*');
-    for (var i = 0; i < all.length; i++) if (all[i].shadowRoot) roots.push(all[i].shadowRoot);
-  }
-  return out;
-}
-function described(el) {
-  var s = el.tagName.toLowerCase();
-  if (el.id) s += '#' + el.id;
-  if (typeof el.className === 'string' && el.className.trim()) s += '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.');
-  return s;
-}
-"""
-
-READ = (
-    HELPERS
-    + r"""
-(function (snap, most, longest, withText) {
-  var found = candidates(), els = [], nodes = [], cut = false, vw = innerWidth, vh = innerHeight;
-  for (var i = 0; i < found.length; i++) {
-    var el = found[i], r0 = wanted(el);
-    if (!r0 || !visible(el)) continue;
-    if (nodes.length >= most) { cut = true; break; }
-    var r = el.getBoundingClientRect(), n = { e: els.length, role: r0, name: name(el) };
-    if (r0 === 'heading') n.level = +(el.getAttribute('aria-level') || el.tagName.slice(1)) || 2;
-    if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && !/^(submit|button|reset|image|checkbox|radio)$/i.test(el.type || '')) {
-      if (secret(el)) { n.redacted = true; n.filled = !!el.value; } else n.value = String(el.value).slice(0, 500);
-    } else if (el.isContentEditable) n.value = String(el.innerText).slice(0, 500);
-    if (/^(checkbox|radio)$/i.test(el.type || '') && el.tagName === 'INPUT') n.checked = el.checked;
-    ['checked', 'expanded', 'selected', 'pressed'].forEach(function (k) {
-      var v = el.getAttribute('aria-' + k); if (v === 'true' || v === 'false') n[k] = v === 'true';
-    });
-    if (el.disabled || el.getAttribute('aria-disabled') === 'true') n.disabled = true;
-    if (el.readOnly) n.readonly = true;
-    if (el.tagName === 'A' && el.href) n.href = String(el.href).slice(0, 300);
-    if (el.getRootNode() !== document) n.shadow = true;
-    n.box = [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)];
-    n.inView = r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
-    els.push(el); nodes.push(n);
-  }
-  globalThis.__benchMCP = { snap: snap, els: els };
-  var out = { url: location.href, title: document.title, nodes: nodes, nodesTruncated: cut,
-    viewport: { width: vw, height: vh, scrollY: Math.round(scrollY),
-      scrollHeight: document.documentElement ? document.documentElement.scrollHeight : 0 } };
-  if (withText) {
-    var text = document.body ? document.body.innerText : '';
-    out.textTruncated = text.length > longest;
-    out.text = text.slice(0, longest);
-  }
-  return JSON.stringify(out);
-})(%s, %s, %s, %s)
-"""
-)
-
-# One element of the last read, checked before anything is done with it.
-TOUCH = (
-    HELPERS
-    + r"""
-(function (snap, i, how, text, replace) {
-  function no(code, message) { return JSON.stringify({ error: code, message: message }); }
-  var kept = globalThis.__benchMCP;
-  if (!kept || kept.snap !== snap) return no('stale_element', 'The page has changed since that read_page');
-  var el = kept.els[i];
-  if (!el || !el.isConnected) return no('detached', 'That element is no longer in the page');
-  if (how === 'click') {
-    if (el.disabled) return no('disabled', 'That element is disabled');
-    el.scrollIntoView({ block: 'center', inline: 'center' });
-    var r = el.getBoundingClientRect();
-    if (!r.width || !r.height || !visible(el)) return no('not_visible', 'That element is hidden');
-    var x = r.left + r.width / 2, y = r.top + r.height / 2;
-    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return no('out_of_view', 'That element cannot be scrolled into view');
-    var hit = document.elementFromPoint(x, y);
-    while (hit && hit.shadowRoot) {
-      var deeper = hit.shadowRoot.elementFromPoint(x, y);
-      if (!deeper || deeper === hit) break;
-      hit = deeper;
-    }
-    var label = hit && hit.closest ? hit.closest('label') : null;
-    if (!hit || !(hit === el || el.contains(hit) || (label && label.control === el)))
-      return no('obscured', 'Covered by ' + (hit ? described(hit) : 'nothing at its middle'));
-    // A selector naming exactly this element, for the bench's real click;
-    // none inside a shadow root, which a selector can't reach.
-    var q = null;
-    if (el.getRootNode() === document) {
-      var parts = [];
-      for (var n = el; n && n !== document.documentElement; n = n.parentElement) {
-        var k = 1;
-        for (var p = n.previousElementSibling; p; p = p.previousElementSibling) if (p.tagName === n.tagName) k++;
-        parts.unshift(n.tagName.toLowerCase() + ':nth-of-type(' + k + ')');
-      }
-      parts.unshift('html');
-      q = parts.join(' > ');
-      if (document.querySelector(q) !== el) q = null;
-    }
-    return JSON.stringify({ ok: true, selector: q, at: [Math.round(x), Math.round(y)] });
-  }
-  if (how === 'press') { el.click(); return JSON.stringify({ ok: true }); }
-  if (!editable(el)) return no('not_editable', 'That element is not a text field');
-  if (el.disabled || el.readOnly) return no('not_editable', 'That field is disabled or read-only');
-  var before = el.isContentEditable ? el.textContent : el.value;
-  var want = replace ? text : before + text;
-  if (how === 'focus') {
-    el.scrollIntoView({ block: 'center', inline: 'nearest' });
-    el.focus();
-    if (replace) {
-      if (el.isContentEditable) getSelection().selectAllChildren(el);
-      else if (el.select) el.select();
-    } else if (!el.isContentEditable && el.setSelectionRange) {
-      try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {}
-    }
-    return JSON.stringify({ ok: true, want: want });
-  }
-  if (how === 'set') {
-    el.focus();
-    // Through the field's own setter, with the events a keystroke fires,
-    // as ./bench type does, so frameworks notice.
-    if (el.isContentEditable) {
-      el.textContent = want;
-      el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }));
-    } else {
-      var proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      var setter = Object.getOwnPropertyDescriptor(proto, 'value');
-      if (setter && setter.set) setter.set.call(el, want); else el.value = want;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-  }
-  if (how === 'submit') {
-    var form = el.form || el.closest('form');
-    if (!form) return no('no_form', 'That field is in no form');
-    if (form.requestSubmit) form.requestSubmit(); else form.submit();
-    return JSON.stringify({ ok: true });
-  }
-  var got = el.isContentEditable ? el.textContent : el.value;
-  var out = { ok: true, verified: got === (how === 'verify' ? text : want) };
-  if (!out.verified && !secret(el)) out.holds = String(got).slice(0, 500);
-  return JSON.stringify(out);
-})(%s, %s, %s, %s, %s)
-"""
-)
-
-CHECK = (
-    HELPERS
-    + r"""
-(function (c) {
-  var ok = true;
-  try {
-    if (c.text != null) ok = ok && !!document.body && document.body.innerText.indexOf(c.text) !== -1;
-    if (c.url != null) ok = ok && location.href.indexOf(c.url) !== -1;
-    if (c.selector != null) { var e = document.querySelector(c.selector); ok = ok && !!e && visible(e); }
-    if (c.role != null || c.name != null) {
-      var want = c.name == null ? null : String(c.name).toLowerCase();
-      ok = ok && candidates().some(function (el) {
-        var r = wanted(el);
-        return r && (c.role == null || r === c.role) &&
-          (want == null || name(el).toLowerCase().indexOf(want) !== -1) && visible(el);
-      });
-    }
-  } catch (e) {
-    return JSON.stringify({ error: 'bad_condition', message: String(e && e.message || e) });
-  }
-  return JSON.stringify({ met: c.gone ? !ok : ok, url: location.href, title: document.title });
-})(%s)
-"""
-)
-
-
-def js(value):
-    return json.dumps(value)
+# The scripts that read a page and touch one element of a read live in
+# Search (PageScripts, in PageHands.swift), shared with coding agents, and
+# run in Search's own content world (Tab.world) when the bench's `page` verb
+# asks: the page's DOM, none of its globals, so the element list kept
+# between calls is out of the page's reach.
 
 
 # MARK: - sessions
@@ -536,8 +292,9 @@ class Session:
         return ask(self.world, request, patience)
 
     def page_js(self, handle, script, patience=35.0):
-        """A script in Search's own world on that page → what it returned."""
-        answer = self.ask({"do": "eval", "id": self.tab(handle), "js": script, "world": "search"}, patience)
+        """One of Search's page scripts (read, touch, check) on that page, in
+        Search's own world → what it returned."""
+        answer = self.ask({"do": "page", "id": self.tab(handle), **script}, patience)
         value = answer.get("value")
         try:
             out = json.loads(value) if isinstance(value, str) else value
@@ -576,6 +333,10 @@ def session_of(args):
     if id not in sessions:
         raise Refusal("stale_session", "That session is closed or belongs to another server", "Use open_session.")
     return sessions[id]
+
+
+def touch(snap, index, how, text="", replace=True):
+    return {"script": "touch", "snap": snap, "index": index, "how": how, "text": text, "replace": replace}
 
 
 def element_of(s, args):
@@ -763,8 +524,13 @@ def tool_read_page(args):
     snap = s.snaps.get(handle, 0) + 1
     out = s.page_js(
         handle,
-        READ
-        % (snap, int(args.get("max_nodes", 300)), int(args.get("max_text", 20000)), js(bool(args.get("text", True)))),
+        {
+            "script": "read",
+            "snap": snap,
+            "most": int(args.get("max_nodes", 300)),
+            "longest": int(args.get("max_text", 20000)),
+            "text": bool(args.get("text", True)),
+        },
     )
     s.snaps[handle] = snap
     for node in out.get("nodes", []):
@@ -778,12 +544,12 @@ def tool_click(args):
     page, snap, index = element_of(s, args)
     tab = s.tab(page)
     url = s.ask({"do": "wait", "id": tab, "seconds": 0}).get("url", "")
-    seen = s.page_js(page, TOUCH % (snap, index, js("click"), js(""), "true"))
+    seen = s.page_js(page, touch(snap, index, "click"))
     trusted = bool(seen.get("selector")) and bool(args.get("trusted", True))
     if trusted:
         s.ask({"do": "tap", "id": tab, "selector": seen["selector"]})
     else:
-        s.page_js(page, TOUCH % (snap, index, js("press"), js(""), "true"))
+        s.page_js(page, touch(snap, index, "press"))
     time.sleep(0.3)
     out = s.settle(page, float(args.get("timeout", 10)))
     out.update(trusted=trusted, at=seen.get("at"), navigated=out["url"] != url)
@@ -796,13 +562,14 @@ def tool_type(args):
     text, replace = str(args.get("text", "")), bool(args.get("replace", True))
     if args.get("keys", False):
         # Real key events (the bench's key), into the field after focusing it.
-        want = s.page_js(page, TOUCH % (snap, index, js("focus"), js(text), js(replace)))["want"]
+        # A secret field's comes back as None: Search kept it in the page.
+        want = s.page_js(page, touch(snap, index, "focus", text, replace))["want"]
         s.ask({"do": "key", "id": s.tab(page), "text": text})
-        out = s.page_js(page, TOUCH % (snap, index, js("verify"), js(want), js(replace)))
+        out = s.page_js(page, touch(snap, index, "verify", want, replace))
     else:
-        out = s.page_js(page, TOUCH % (snap, index, js("set"), js(text), js(replace)))
+        out = s.page_js(page, touch(snap, index, "set", text, replace))
     if args.get("submit", False):
-        s.page_js(page, TOUCH % (snap, index, js("submit"), js(""), "true"))
+        s.page_js(page, touch(snap, index, "submit"))
         time.sleep(0.3)
         out.update(s.settle(page, float(args.get("timeout", 10))))
     return out
@@ -824,7 +591,7 @@ def tool_wait_for(args):
     last = None
     while True:
         try:
-            last = s.page_js(handle, CHECK % js(condition), patience=10)
+            last = s.page_js(handle, {"script": "check", "condition": condition}, patience=10)
             if last.get("met"):
                 return {
                     "met": True,

@@ -489,6 +489,11 @@ enum SettingsIndex {
               title: "Let a script drive Search", detail: "A local socket for testing; its tabs never take over",
               more: "Its tabs open beside yours with a flask on them. See ./bench.",
               keys: ["bench"], words: ["automation", "script", "developer"]),
+        .init(id: "agents", group: "developer", icon: "cursorarrow.rays",
+              title: "Let coding agents use Search", detail: "Claude Code or Codex can ask to browse in tabs of its own, while you watch",
+              more: "Each time one connects, the window asks you first, and a pill says it is there until it goes or you press Stop. It works in tabs of its own, marked in the row; your tabs it can read only if you tick “Let it see my open tabs”, and never uses. It never sees passwords, card numbers, one-time codes, private tabs, cookies or Settings, and can't download or choose files. It connects through a file on this Mac only, never the network: claude mcp add search -- /path/to/Search/search-mcp.",
+              keys: ["agents"],
+              words: ["agent", "ai", "claude", "claude code", "codex", "mcp", "automation", "computer use", "developer"]),
 
         // Moved to a menu, or always on: only the find field says so.
         .init(id: "autocorrect", group: "pages", icon: "textformat.abc.dottedunderline",

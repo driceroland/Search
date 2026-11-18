@@ -94,36 +94,10 @@ final class Bench {
     /// nothing of yours, and scripts set them up with a defaults write.
     @MainActor
     enum Consent {
-        private static var query: [String: Any] {
-            [kSecClass as String: kSecClassGenericPassword,
-             kSecUseDataProtectionKeychain as String: true,
-             kSecAttrService as String: "com.officecommun.search.bench",
-             kSecAttrAccount as String: Store.world.map { "consent (\($0))" } ?? "consent"]
-        }
-
-        /// The mark is there — or there is nowhere to keep one: a copy built
-        /// without Search's provisioning profile has no access group, and
-        /// keeps the switch as it always was.
-        static var given: Bool {
-            var asked = query
-            asked[kSecReturnAttributes as String] = true
-            let status = SecItemCopyMatching(asked as CFDictionary, nil)
-            return status == errSecSuccess || status == errSecMissingEntitlement
-        }
-
-        static func grant() {
-            var item = query
-            item[kSecValueData as String] = Data("on".utf8)
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            let status = SecItemAdd(item as CFDictionary, nil)
-            if status != errSecSuccess, status != errSecDuplicateItem, status != errSecMissingEntitlement {
-                NSLog("Bench: the switch left no mark (%d)", status)
-            }
-        }
-
-        static func revoke() {
-            SecItemDelete(query as CFDictionary)
-        }
+        private static let mark = SwitchMark(service: "com.officecommun.search.bench")
+        static var given: Bool { mark.given }
+        static func grant() { mark.grant() }
+        static func revoke() { mark.revoke() }
     }
 
     // MARK: - starting and stopping
@@ -497,6 +471,52 @@ final class Bench {
                 ])
             }
 
+        case "page":
+            // bench-mcp's page scripts (PageScripts, shared with coding
+            // agents), run in Search's own world: read the page, touch one
+            // element of the last read, or check a condition.
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            house(tab)
+            func int(_ key: String, _ otherwise: Int) -> Int { (request[key] as? NSNumber)?.intValue ?? otherwise }
+            let key = "__benchMCP"
+            let script: String
+            switch request["script"] as? String {
+            case "read":
+                script = PageScripts.read(key: key, snap: int("snap", 1), most: int("most", 300),
+                                          longest: int("longest", 20000), text: request["text"] as? Bool ?? true)
+            case "touch":
+                script = PageScripts.touch(key: key, snap: int("snap", 0), index: int("index", -1),
+                                           how: request["how"] as? String ?? "", text: request["text"] as? String,
+                                           replace: request["replace"] as? Bool ?? true)
+            case "check":
+                script = PageScripts.check(request["condition"] as? [String: Any] ?? [:])
+            default:
+                answer(["error": "page needs a script: read, touch or check"])
+                return
+            }
+            tab.web.evaluateJavaScript(script, in: nil, in: Web.world) { result in
+                switch result {
+                case .success(let value): answer(["value": Bench.plain(value)])
+                case .failure(let error): answer(["error": error.localizedDescription])
+                }
+            }
+
+        case "agents":
+            // Coding agents (AgentControl): what is connected and asked, and
+            // the prompt answered as its buttons would. Only on a SEARCH_PROBE
+            // run: on yours, only your click answers it.
+            guard Store.testing else { answer(["error": "agents only works on a --test run"]); return }
+            let agents = AgentControl.shared
+            switch request["action"] as? String ?? "state" {
+            case "allow": agents.answer(allow: true, seesTabs: request["tabs"] as? Bool ?? false, now: .distantFuture)
+            case "deny": agents.answer(allow: false, seesTabs: false, now: .distantFuture)
+            case "stop": agents.stopSession()
+            // The switch in Settings turned off, as its click would.
+            case "off": browser.prefs.agents = false
+            default: break
+            }
+            answer(agents.state)
+
         case "agent":
             // A tab's whole user agent, as another browser's would read, until
             // it is set back with none. Only on a SEARCH_PROBE run: a page
@@ -575,12 +595,10 @@ final class Bench {
             let view = tab.web
             view.evaluateJavaScript(Bench.locate(selector)) { value, error in
                 MainActor.assumeIsolated {
-                    guard let point = value as? [Double], point.count == 2, let window = view.window else {
+                    guard let point = value as? [Double], point.count == 2, view.window != nil else {
                         answer(["error": error?.localizedDescription ?? "nothing matches \(selector)"])
                         return
                     }
-                    let local = NSPoint(x: point[0], y: view.isFlipped ? point[1] : view.bounds.height - point[1])
-                    let spot = view.convert(local, to: nil)
                     // Held while clicking: "shift", "cmd", "opt".
                     var held: NSEvent.ModifierFlags = []
                     for name in request["mods"] as? [String] ?? [] {
@@ -590,25 +608,7 @@ final class Bench {
                     }
                     // "button": "middle" clicks with the middle button.
                     let middle = request["button"] as? String == "middle"
-                    let types: [NSEvent.EventType] = middle ? [.otherMouseDown, .otherMouseUp] : [.leftMouseDown, .leftMouseUp]
-                    for type in types {
-                        guard var event = NSEvent.mouseEvent(
-                            with: type, location: spot, modifierFlags: held,
-                            timestamp: ProcessInfo.processInfo.systemUptime,
-                            windowNumber: window.windowNumber, context: nil,
-                            eventNumber: 0, clickCount: 1, pressure: type == types[0] ? 1 : 0
-                        ) else { continue }
-                        if middle, let raw = event.cgEvent {
-                            raw.setIntegerValueField(.mouseEventButtonNumber, value: 2)
-                            if let again = NSEvent(cgEvent: raw) { event = again }
-                        }
-                        switch type {
-                        case .leftMouseDown: view.mouseDown(with: event)
-                        case .otherMouseDown: view.otherMouseDown(with: event)
-                        case .otherMouseUp: view.otherMouseUp(with: event)
-                        default: view.mouseUp(with: event)
-                        }
-                    }
+                    PageHands.click(view, at: point, held: held, middle: middle)
                     answer(["ok": true, "at": point.map { Int($0) }])
                 }
             }
@@ -1051,19 +1051,7 @@ final class Bench {
                 if pressed.contains(where: { PageView.same($0, event) }) { resent += 1 }
                 return event
             }
-            for character in text {
-                let chars = String(character)
-                for type in [NSEvent.EventType.keyDown, .keyUp] {
-                    guard let event = NSEvent.keyEvent(
-                        with: type, location: .zero, modifierFlags: [],
-                        timestamp: ProcessInfo.processInfo.systemUptime,
-                        windowNumber: view.window?.windowNumber ?? 0, context: nil,
-                        characters: chars, charactersIgnoringModifiers: chars,
-                        isARepeat: false, keyCode: Bench.keyCode(for: character)
-                    ) else { continue }
-                    if type == .keyDown { pressed.append(event); view.keyDown(with: event) } else { view.keyUp(with: event) }
-                }
-            }
+            PageHands.type(text, into: view) { pressed.append($0) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 if let watch { NSEvent.removeMonitor(watch) }
                 answer(["typed": text, "sentBackUnused": resent, "quieted": PageView.quieted - before])
@@ -4885,7 +4873,8 @@ final class Bench {
 
     // MARK: - the room off screen
 
-    private var room: NSWindow?
+    /// Shared with coding agents (PageRoom, in PageHands.swift).
+    private var room: NSWindow? { PageRoom.shared.window }
 
     // MARK: - nothing on a screen
 
@@ -4949,33 +4938,14 @@ final class Bench {
     /// The stage takes it back the moment you pick its tab, and it comes
     /// here again when the bench next needs it.
     private func house(_ tab: Tab) {
-        guard tab.bench, tab.web.window == nil else { return }
-        let window = room ?? makeRoom()
-        tab.web.frame = window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
-        tab.web.autoresizingMask = [.width, .height]
-        window.contentView?.addSubview(tab.web)
+        PageRoom.shared.house(tab)
     }
 
     /// The last page `ai read` read, for `ai check`.
     static var aiRead: AIPage.Read?
 
     private func makeRoom() -> NSWindow {
-        // Off every screen, and never key or main: it exists so that a web
-        // view has a window, and for nothing else.
-        let window = NSWindow(
-            contentRect: NSRect(x: -20000, y: -20000, width: 1280, height: 800),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.isReleasedWhenClosed = false
-        window.isExcludedFromWindowsMenu = true
-        window.collectionBehavior = [.transient, .ignoresCycle, .stationary]
-        window.level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
-        window.hasShadow = false
-        window.orderBack(nil)
-        room = window
-        return window
+        PageRoom.shared.made()
     }
 
     private func shoot(_ tab: Tab, to file: URL, width: Double?, _ answer: @escaping ([String: Any]) -> Void) {
@@ -4983,16 +4953,12 @@ final class Bench {
     }
 
     private func shoot(_ web: WKWebView, to file: URL, width: Double?, _ answer: @escaping ([String: Any]) -> Void) {
-        let shot = WKSnapshotConfiguration()
-        shot.afterScreenUpdates = true
-        if let width { shot.snapshotWidth = NSNumber(value: width) }
-        web.takeSnapshot(with: shot) { image, error in
-            MainActor.assumeIsolated {
-                guard let image, let tiff = image.tiffRepresentation,
-                      let rep = NSBitmapImageRep(data: tiff),
-                      let png = rep.representation(using: .png, properties: [:])
-                else {
-                    answer(["error": error?.localizedDescription ?? "no picture"])
+        PageHands.snapshot(web, width: width) { result in
+            switch result {
+            case .failure(let error): answer(["error": error.localizedDescription])
+            case .success(let rep):
+                guard let png = rep.representation(using: .png, properties: [:]) else {
+                    answer(["error": "no picture"])
                     return
                 }
                 do {

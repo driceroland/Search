@@ -874,10 +874,11 @@ private struct TabPill: View, Equatable {
                     Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15)
                 }
                 if tab.bench {
-                    // A script's tab, not yours.
-                    Image(systemName: "flask")
+                    // A script's tab, or a coding agent's, not yours.
+                    Image(systemName: tab.agent ? "cursorarrow.rays" : "flask")
                         .font(.system(size: 9))
                         .foregroundStyle(colour.opacity(0.7))
+                        .help(tab.agent ? "Opened by a coding agent" : "Opened by a script")
                 }
                 if tab.shy {
                     // Quiet, and only on the tabs that keep nothing.

@@ -202,6 +202,12 @@ extension Browser {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping ([URL]?) -> Void
     ) {
+        // A coding agent's page never has a file chosen for it: that is
+        // yours to do, in a tab of yours.
+        if tab(for: webView)?.agent == true {
+            AgentControl.log.notice("a file chooser in an agent's tab was refused")
+            return completionHandler(nil)
+        }
         // Over its own page only, as its other questions are (see ask): a
         // page behind, or the other page of a pair, choosing a file would
         // have it chosen under the page you are looking at. A test run never

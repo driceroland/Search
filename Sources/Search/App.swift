@@ -728,6 +728,7 @@ struct ContentView: View {
     private var bars: some View {
         VStack(spacing: 8) {
             announcement
+            AgentBar(browser: browser)
             if let ask = browser.asking {
                 Group {
                     if ask.screen { ScreenQuestion(browser: browser, ask: ask) }

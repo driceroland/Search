@@ -766,6 +766,7 @@ struct SettingsPanel: View {
         case "about.feedback": Pill("Send Feedback") { Links.writeFeedback() }
         case "about.notes": Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
         case "bench": Switch(on: $prefs.bench)
+        case "agents": Switch(on: $prefs.agents)
         default: EmptyView()
         }
     }
