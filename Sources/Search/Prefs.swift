@@ -182,6 +182,8 @@ final class Preferences: ObservableObject {
         didSet {
             store.set(agents, forKey: "agents")
             agents ? Preferences.agentsMark.grant() : Preferences.agentsMark.revoke()
+            // Turned off, or on afresh: nobody is remembered (AgentTrust).
+            if agents != oldValue { AgentTrust.shared.forgetAll() }
         }
     }
     static let agentsMark = SwitchMark(service: "com.officecommun.search.agents")

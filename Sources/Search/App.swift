@@ -84,6 +84,8 @@ struct SearchApp: App {
                     .shortcut("file.closeTab")
                 Button("Close Window") { browser.closeWindow() }
                     .shortcut("file.closeWindow")
+                // A coding agent connected (AgentControl): Stop, one click away.
+                StopAgentMenuItem()
             }
             CommandGroup(replacing: .printItem) {
                 Button("Share…") { browser.share() }
@@ -743,6 +745,8 @@ struct ContentView: View {
     private var bars: some View {
         VStack(spacing: 8) {
             announcement
+            // A coding agent's question; never anything over the page once
+            // it is answered (AgentBanner).
             AgentBar(browser: browser)
             if let ask = browser.asking {
                 Group {

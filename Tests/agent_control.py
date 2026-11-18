@@ -14,7 +14,15 @@ password's value kept in the page; typing checked; a real click and the page
 it leads to; addresses Search won't go to and keys it won't press; a
 picture with the password blacked out; your tabs unseen unless allowed,
 read-only when allowed, a private one never; Stop dropping the connection;
-Don't Allow, and no question again straight after.
+Don't Allow, and no question again straight after. The pill gone as soon as
+the agent disconnects, and shown idle, then let go, when it stops asking.
+
+"Always allow": not offered for a client the harness's Python started, nor
+for one an ad-hoc signed launcher started; a launcher's own requirement
+remembered through the bench (`agents trust`, a probe world's only) lets it
+in without asking, with the pill and Stop; another name, Python, or a
+launcher forgotten is asked again; the setting turned off forgets everyone.
+The world's own keychain item is all that is touched, and is emptied.
 """
 
 import base64
@@ -24,6 +32,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -95,10 +104,14 @@ BASE = f"http://127.0.0.1:{srv.server_port}"
 class Client:
     """./search-mcp, as an agent runs it."""
 
-    def __init__(self, name="claude-code"):
+    def __init__(self, name="claude-code", via=None):
+        # `via`: a program that starts search-mcp as its child, standing in
+        # for claude as its parent.
         self.p = subprocess.Popen(
-            [str(ROOT / "search-mcp"), "--world", sv.W],
+            ([via] if via else []) + [str(ROOT / "search-mcp"), "--world", sv.W],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            # A group of its own: closed, the launcher's child goes with it.
+            start_new_session=True,
         )
         self.n = 0
         init = self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
@@ -129,6 +142,10 @@ class Client:
             self.p.wait(5)
         except Exception:
             self.p.kill()
+        try:
+            os.killpg(self.p.pid, 9)
+        except OSError:
+            pass
 
 
 def said(which, args, out):
@@ -176,6 +193,34 @@ def raw_connect():
     return json.loads(data.split(b"\n")[0] or b"{}")
 
 
+LAUNCHER_C = r"""
+#include <spawn.h>
+#include <sys/wait.h>
+extern char **environ;
+int main(int argc, char **argv) {
+    pid_t pid; int status = 1;
+    if (argc < 2 || posix_spawn(&pid, argv[1], 0, 0, argv + 1, environ) != 0) return 127;
+    waitpid(pid, &status, 0);
+    return WEXITSTATUS(status);
+}
+"""
+
+
+def make_launcher():
+    """An ad-hoc signed program that starts search-mcp as its child: the
+    parent a client is known by, as claude is Claude Code's. Its own
+    requirement (a cdhash) is what `agents trust` is given."""
+    folder = tempfile.mkdtemp(prefix="agent-launcher-")
+    source, binary = f"{folder}/launcher.c", f"{folder}/launcher"
+    with open(source, "w") as f:
+        f.write(LAUNCHER_C)
+    subprocess.run(["cc", "-O1", "-o", binary, source], check=True)
+    said = subprocess.run(["codesign", "-d", "-r-", binary], capture_output=True, text=True)
+    requirement = next(line.split("=> ", 1)[1] for line in (said.stdout + said.stderr).splitlines()
+                       if line.lstrip("# ").startswith("designated => "))
+    return folder, binary, requirement
+
+
 t = sv.T()
 
 
@@ -215,6 +260,10 @@ def main():
         opened, err = said("open_tab", {}, a.answer(n))
         t.ok("allowed: its tab opens", not err and opened.get("page") == "p1" and opened["url"].endswith("/form"), opened)
         t.ok("allowed, without your tabs", agents().get("state") == "allowed" and agents().get("seesTabs") is False)
+        first_tab = agents().get("workingOn")
+        t.ok("the dot is on the tab it works in, and only there", first_tab and agents().get("marked") == [first_tab], agents())
+        st = agents("draw")
+        t.ok("Stop is drawn in the chrome, never over the page", st.get("pillDrawn") is True and st.get("overPage") is False, st)
 
         # ---- reading, with the password kept in the page
         read, err = a.tool("read_page", page="p1")
@@ -277,6 +326,12 @@ def main():
         # ---- M1: no camera, microphone, location or notifications
         x, err = a.tool("open_tab", url=f"{BASE}/perm")
         perm = x.get("page")
+        st = agents()
+        t.ok("the dot moves to the tab it works in now", st.get("workingOn") not in ("", first_tab)
+             and st.get("marked") == [st.get("workingOn")], st)
+        a.tool("read_page", page="p1")
+        st = agents()
+        t.ok("and back again", st.get("workingOn") == first_tab and st.get("marked") == [first_tab], st)
         x, err = a.tool("wait_for", page=perm, text="notify=", timeout=8)
         x, err = a.tool("wait_for", page=perm, text="camera=", timeout=8)
         said_, _ = a.tool("read_page", page=perm)
@@ -363,8 +418,13 @@ def main():
             t.ok("H1: on your tab, nothing in the page is waited on", err and code(x) == "bad_condition", x)
             x, err = b.tool("wait_for", page=theirs["page"], url="/yours", title="form", timeout=2)
             t.ok("H1: its address and title are", not err and x.get("met") is True, x)
+        st = agents("draw")
+        t.ok("Stop drawn while connected, never over the page", st.get("pillDrawn") is True and st.get("overPage") is False, st)
+        t.ok("a tab of yours it read wears the dot while it does", st.get("marked") == [st.get("workingOn")], st)
         x, err = b.tool("disconnect")
-        t.ok("disconnect lets go", not err and until(lambda: agents().get("connected") is False), x)
+        t.ok("disconnect lets go", not err and agents().get("connected") is False, (x, agents()))
+        st = agents("draw")
+        t.ok("after disconnect, Stop and every dot are gone", st.get("pillDrawn") is False and st.get("marked") == [], st)
         b.close()
 
         # ---- Don't Allow
@@ -426,6 +486,98 @@ def main():
         t.ok("L5: the window closed, the question is gone", until(lambda: agents().get("connected") is False), agents())
         e.close()
 
+
+        # ---- Always allow
+        time.sleep(11)
+        folder, launcher, requirement = make_launcher()
+        try:
+            # Python, the harness's own, started this client: never offered.
+            f = Client("claude-code"); clients.append(f)
+            n = f.send("tools/call", {"name": "list_tabs", "arguments": {}})
+            t.ok("always: asked", until(lambda: agents().get("state") == "asking"), agents())
+            st = agents("draw")
+            t.ok("always: not offered when Python started it", st.get("offersAlways") is False
+                 and "runs anything" in st.get("noAlways", "") and st.get("alwaysDrawn") is False, st)
+            try:
+                agents("click", on="always")
+                t.ok("always: no box to click", False)
+            except RuntimeError as e:
+                t.ok("always: no box to click", "isn't drawn" in str(e), str(e))
+            agents("allow", always=True)
+            said("list_tabs", {}, f.answer(n))
+            t.ok("always: allowed this once, nobody remembered", agents().get("trusted") == [], agents().get("trusted"))
+            t.ok("always: asked, so not automatic", agents().get("auto") is False)
+            # ---- idle, then let go; the client connects again by itself
+            agents("idle", after=1, letGo=4)
+            t.ok("idle: the line says so, and the dot goes",
+                 until(lambda: agents().get("busy") is False and agents().get("marked") == [], 5), agents())
+            t.ok("idle: let go after a while", until(lambda: agents().get("connected") is False, 8), agents())
+            n = f.send("tools/call", {"name": "list_tabs", "arguments": {}})
+            t.ok("idle: the next call asks again rather than taking it for Stop",
+                 until(lambda: agents().get("state") == "asking", 5), agents())
+            agents("deny")
+            x, err = said("list_tabs", {}, f.answer(n))
+            t.ok("idle: and hears the answer", err and code(x) == "not_allowed", x)
+            agents("idle")
+            f.close()
+
+            # An ad-hoc signed launcher: not offered either.
+            time.sleep(11)
+            g = Client("claude-code", via=launcher); clients.append(g)
+            n = g.send("tools/call", {"name": "list_tabs", "arguments": {}})
+            t.ok("always: asked through the launcher", until(lambda: agents().get("state") == "asking"), agents())
+            st = agents()
+            t.ok("always: the launcher is the program examined", os.path.realpath(st.get("launcher", {}).get("path", "")) == os.path.realpath(launcher)
+                 and st["launcher"].get("adhoc") is True, st.get("launcher"))
+            t.ok("always: not offered for an ad-hoc launcher", st.get("offersAlways") is False
+                 and "named developer" in st.get("noAlways", ""), st.get("noAlways"))
+            g.close()
+
+            # Its requirement remembered, as a signed launcher's would be.
+            time.sleep(11)
+            st = agents("trust", client="Claude Code", requirement=requirement)
+            t.ok("always: kept in this world's keychain item", st.get("usable") is True
+                 and [e["requirement"] for e in st.get("trusted", [])] == [requirement], st)
+            h = Client("claude-code", via=launcher); clients.append(h)
+            listed, err = h.tool("list_tabs")
+            st = agents()
+            t.ok("always: let in without asking", not err and st.get("state") == "allowed" and st.get("auto") is True, (listed, st))
+            t.ok("always: still only its own tabs", not err and all(p["mine"] for p in listed.get("tabs", [])), listed)
+            st = agents("draw")
+            t.ok("always: Stop shows, allowed automatically, not over the page",
+                 st.get("pillDrawn") is True and st.get("overPage") is False and st.get("auto") is True, st)
+            agents("stop")
+            t.ok("always: Stop still stops it", until(lambda: agents().get("connected") is False), agents())
+            x, err = h.tool("list_tabs")
+            t.ok("always: and the agent hears it", err and code(x) == "stopped", x)
+            h.close()
+
+            # Another name through the same launcher: asked.
+            time.sleep(11)
+            i = Client("codex", via=launcher); clients.append(i)
+            i.send("tools/call", {"name": "list_tabs", "arguments": {}})
+            t.ok("always: another name is asked", until(lambda: agents().get("state") == "asking"), agents())
+            i.close()
+
+            # The remembered name from Python, not the launcher: asked.
+            time.sleep(11)
+            j = Client("claude-code"); clients.append(j)
+            j.send("tools/call", {"name": "list_tabs", "arguments": {}})
+            t.ok("always: the same name started by Python is asked", until(lambda: agents().get("state") == "asking"), agents())
+            j.close()
+
+            # Forgotten: asked.
+            time.sleep(11)
+            agents("forget", client="Claude Code")
+            k = Client("claude-code", via=launcher); clients.append(k)
+            k.send("tools/call", {"name": "list_tabs", "arguments": {}})
+            t.ok("always: forgotten is asked again", until(lambda: agents().get("state") == "asking"), agents())
+            k.close()
+            time.sleep(11)
+            agents("trust", client="Claude Code", requirement=requirement)
+        finally:
+            subprocess.run(["rm", "-rf", folder])
+
         # ---- L4: search-mcp won't speak to a socket that isn't Search's
         fake_world = f"agent-fake-{os.getpid()}"
         fake = f"{os.path.expanduser('~')}/Library/Application Support/Search ({fake_world})"
@@ -445,7 +597,12 @@ def main():
         # ---- the setting off: the socket goes
         agents("off")
         t.ok("turned off: the socket goes", until(lambda: not os.path.exists(AGENT_SOCK)))
+        t.ok("turned off: everyone remembered is forgotten", agents().get("trusted") == [], agents().get("trusted"))
     finally:
+        try:
+            agents("forget")
+        except Exception:
+            pass
         for c in clients:
             c.close()
         t.done()

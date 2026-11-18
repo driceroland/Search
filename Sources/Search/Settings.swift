@@ -818,6 +818,8 @@ struct SettingsPanel: View {
                     }
                 }
             }
+        case "agents":
+            if !searched, prefs.agents { RememberedAgents() }
         case "passwords.apple":
             ApplePasswordsCard(prefs: prefs, bare: true)
                 .under()
@@ -1557,5 +1559,30 @@ private struct NotificationSites: View {
                 }
             }
         }
+    }
+}
+
+/// The coding agents you said to always allow (AgentTrust), each with who
+/// signed the program that starts it and when it was last let in, and
+/// Forget. Under "Let coding agents use Search".
+private struct RememberedAgents: View {
+    @ObservedObject private var trust = AgentTrust.shared
+
+    var body: some View {
+        ForEach(trust.remembered) { entry in
+            Rule()
+            SettingRow(icon: "checkmark.shield", title: entry.client,
+                       detail: "Allowed without asking · signed by \(entry.signer) · last used \(Self.when(entry.used))"
+                           + (entry.seesTabs ? " · sees your tabs" : ""),
+                       more: entry.path.isEmpty ? nil : "Started by \((entry.path as NSString).lastPathComponent) (\(entry.identifier), team \(entry.team)), last seen at \(entry.path). Let in only while that program still passes its code signature and it calls itself “\(entry.client)”.") {
+                Pill("Forget") { trust.forget(entry.id) }
+            }
+        }
+    }
+
+    private static func when(_ date: Date) -> String {
+        let format = RelativeDateTimeFormatter()
+        format.unitsStyle = .full
+        return Date().timeIntervalSince(date) < 60 ? "just now" : format.localizedString(for: date, relativeTo: Date())
     }
 }

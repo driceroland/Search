@@ -508,7 +508,27 @@ final class Bench {
             guard Store.testing else { answer(["error": "agents only works on a --test run"]); return }
             let agents = AgentControl.shared
             switch request["action"] as? String ?? "state" {
-            case "allow": agents.answerForTest(allow: true, seesTabs: request["tabs"] as? Bool ?? false)
+            case "allow": agents.answerForTest(allow: true, seesTabs: request["tabs"] as? Bool ?? false,
+                                               always: request["always"] as? Bool ?? false)
+            // Remembered agents (AgentTrust), in this world's own keychain
+            // item: listed; one remembered by a requirement given here, for
+            // a launcher a harness can't have signed; forgotten.
+            case "trusted": break
+            case "trust":
+                let ok = AgentTrust.shared.rememberSimulated(client: request["client"] as? String ?? "",
+                                                             requirement: request["requirement"] as? String ?? "",
+                                                             seesTabs: request["tabs"] as? Bool ?? false)
+                guard ok else { answer(["error": "nothing remembered: this build has nowhere safe to keep it"]); return }
+            case "forget":
+                if let client = request["client"] as? String {
+                    for entry in AgentTrust.shared.remembered where entry.client == client { AgentTrust.shared.forget(entry.id) }
+                } else {
+                    AgentTrust.shared.forgetAll()
+                }
+            // Idle and letting go sooner, in seconds.
+            case "idle":
+                agents.idleForTest = request["after"] as? Double
+                agents.letGoForTest = request["letGo"] as? Double
             case "deny": agents.answerForTest(allow: false, seesTabs: false)
             // The question's Allow pressed with no click behind it, as
             // Accessibility would press it: ignored.
@@ -524,13 +544,22 @@ final class Bench {
                 let made = agents.madeClick(on: which, inside: request["outside"] as? Bool != true,
                                             stale: request["stale"] as? Bool == true)
                 guard let made else { answer(["error": "the question isn't drawn"]); return }
-                if which == "tabs" { agents.toggleTabs(event: made) } else { agents.answer(allow: which == "allow", event: made) }
+                switch which {
+                case "tabs": agents.toggleTabs(event: made)
+                case "always": agents.toggleAlways(event: made)
+                default: agents.answer(allow: which == "allow", event: made)
+                }
             case "stop": agents.stopSession()
             // The switch in Settings turned off, as its click would.
             case "off": browser.prefs.agents = false
             default: break
             }
-            answer(agents.state)
+            var out = agents.state
+            out["usable"] = AgentTrust.shared.usable
+            out["trusted"] = AgentTrust.shared.remembered.map { ["client": $0.client, "requirement": $0.requirement,
+                                                                 "team": $0.team, "seesTabs": $0.seesTabs,
+                                                                 "used": $0.used.timeIntervalSince1970] }
+            answer(out)
 
         case "agent":
             // A tab's whole user agent, as another browser's would read, until

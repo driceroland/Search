@@ -211,7 +211,30 @@ class Search:
             error = answer["error"]
             raise Refusal(error.get("code", "not_allowed"), error.get("message", ""), error.get("hint", ""))
 
+    def let_go(self):
+        """Whether Search let this connection go while nothing was asked (it
+        says "idle", then closes): then the next request connects afresh,
+        rather than taking it for Stop."""
+        if self.sock is None or self.asking is not None:
+            return False
+        self.sock.setblocking(False)
+        try:
+            chunk = self.sock.recv(1 << 16)
+        except (BlockingIOError, InterruptedError):
+            return False
+        except OSError:
+            chunk = b""
+        finally:
+            if self.sock is not None:
+                self.sock.setblocking(True)
+        self.buffer += chunk
+        # Closed with nothing said is Stop, or the setting turned off: that
+        # is for the next request to hear.
+        return b'"code": "idle"' in self.buffer or b'"code":"idle"' in self.buffer
+
     def ask(self, request, patience=60.0):
+        if self.let_go():
+            self.drop()
         if self.sock is None:
             self.connect()
         self.wait_for_answer()
@@ -411,7 +434,7 @@ TOOLS = [
     (
         "disconnect",
         tool_disconnect,
-        "Let go of Search: the pill in its window goes, and your tabs stay for the person to look at.",
+        "Let go of Search: its Stop and the mark on the tab you work in go, and your tabs stay for the person to look at.",
         {"type": "object", "properties": {}},
     ),
 ]

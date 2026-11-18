@@ -18,6 +18,7 @@ final class HeldEdges: ObservableObject {
 struct SideBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
+    @ObservedObject private var agents = AgentControl.shared
     /// On the window's ground, beside the page's card (see CardEdge): the
     /// ground's colour and no edge of its own, the card's edge being the line.
     var onFrame = false
@@ -160,10 +161,20 @@ struct SideBar: View {
             .padding(.horizontal, 10)
             // Clear of the foot, which sits over the sidebar's bottom edge,
             // and of what plays in another tab, over the foot.
-            .padding(.bottom, footHeight + (browser.player == nil ? 0 : rowHeight + SideBar.playerGap))
+            .padding(.bottom, footHeight + (browser.player == nil ? 0 : rowHeight + SideBar.playerGap)
+                     + (agentHere && !icons ? SideBar.agentRow + SideBar.playerGap : 0))
 
             VStack(spacing: 0) {
                 Spacer()
+                // A coding agent allowed in this window: its pill and Stop,
+                // in the column rather than over the page (AgentBanner).
+                if agentHere, !icons {
+                    AgentStatus(browser: browser, style: .row)
+                        .frame(height: SideBar.agentRow)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, SideBar.playerGap)
+                        .transition(.opacity)
+                }
                 if let tab = browser.player {
                     PlayerRow(browser: browser, prefs: prefs, tab: tab)
                         .padding(.horizontal, 10)
@@ -1177,6 +1188,10 @@ struct SideBar: View {
     }
     /// Between what plays in another tab and the foot's doors.
     private static let playerGap: CGFloat = 4
+    /// The agent's quiet line at the column's foot.
+    private static let agentRow: CGFloat = 30
+    /// An agent's pill is showing in this window (AgentControl).
+    private var agentHere: Bool { agents.shownIn == ObjectIdentifier(browser) }
 
     @ViewBuilder
     private var newTab: some View {
@@ -1218,6 +1233,8 @@ private struct SideFoot: View {
     var body: some View {
         if vertical {
             VStack(spacing: 2) {
+                // An agent connected in this window: a click on it is Stop.
+                AgentStatus(browser: browser, style: .icon)
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
                 BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
@@ -1511,13 +1528,16 @@ private struct SideRow: View, Equatable {
                     if !tab.isBlank {
                         Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15,
                              dim: putAway)
+                            // A coding agent at work here: a dot on the
+                            // icon's corner, the row as it was.
+                            .overlay(alignment: .bottomTrailing) { AgentMark(tab: tab) }
                     }
-                    if tab.bench {
-                        // A script's tab, or a coding agent's, not yours.
-                        Image(systemName: tab.agent ? "cursorarrow.rays" : "flask")
+                    if tab.bench, !tab.agent {
+                        // A script's tab, not yours.
+                        Image(systemName: "flask")
                             .font(.system(size: 9))
                             .foregroundStyle(colour.opacity(0.7))
-                            .help(tab.agent ? "Opened by a coding agent" : "Opened by a script")
+                            .help("Opened by a script")
                     }
                     if tab.shy {
                         Image(systemName: "eye.slash")
@@ -1543,6 +1563,10 @@ private struct SideRow: View, Equatable {
             .padding(.leading, 10)
             .padding(.trailing, status || peeking ? 0 : 10)
             .frame(height: prefs.sideRow)
+            // Stop, under the pointer, on the row the agent is working in.
+            .overlay(alignment: .trailing) {
+                if hovering, tab.agentWorking, !editing { AgentRowStop().padding(.trailing, 4) }
+            }
             .contentShape(Rectangle())
             .modifier(TabPress(enabled: interactive && !editing && !pickedAmongOthers, active: live, selected: $selectedOnPress, pressing: $pressed) {
                 browser.clearTabSelection()

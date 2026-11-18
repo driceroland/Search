@@ -17,13 +17,17 @@ import WebKit
 // shows "<name> wants to use Search" with Allow and Don't Allow; nothing
 // else it sends is looked at until you answer, and only a mouse click in
 // that window answers. Allowed, it lasts as long as that connection does,
-// or until Stop on the pill the window shows for as long as it is
-// connected, or its window closes. Nothing is remembered: the next
-// connection asks again. One agent at a time; after Don't Allow, Stop, or
+// or until Stop (in the column's foot or the strip, on the row of the tab
+// it works in, and File › Stop Agent — never over the page, AgentBanner),
+// or its window closes, or it asks nothing for five minutes. The next connection asks again, unless
+// you ticked "Always allow" for it: then it is let in without asking while
+// the program that started it still passes the code signature remembered,
+// and it gives the same name (AgentTrust) — still with Stop, "allowed
+// automatically". One agent at a time; after Don't Allow, Stop, or
 // a question left unanswered, nobody asks again for a few seconds, so a
 // client can't bury you in questions.
 //
-// It works in tabs of its own: opened at the end of your row, marked, never
+// It works in tabs of its own: opened at the end of your row, never
 // selected for you, never in your session, never a script's (the bench's).
 // Your own tabs it can list and read only if you ticked "Let it see my open
 // tabs", and it never clicks, types or goes anywhere in them, and waits on
@@ -370,6 +374,32 @@ final class AgentSession: ObservableObject, Identifiable {
     fileprivate(set) var askedUptime: TimeInterval = 0
     /// "Let it see my open tabs", as ticked in the question so far.
     @Published fileprivate(set) var wantsTabs = false
+    /// "Always allow", as ticked in the question so far.
+    @Published fileprivate(set) var wantsAlways = false
+    /// Let in without asking: remembered (AgentTrust).
+    @Published fileprivate(set) var auto = false
+    /// The program that started it, as its signature says, once checked at
+    /// hello; nil if it couldn't be.
+    @Published fileprivate(set) var launcher: AgentLauncher?
+    /// The process that connected, as the kernel names it.
+    fileprivate var token: audit_token_t?
+    /// It said hello: no longer a silent connection.
+    fileprivate var greeted = false
+    /// Working now: a request in hand, or one a moment ago. Connected and
+    /// quiet, the line says so (an agent that finished its turn without
+    /// disconnecting keeps its connection until it goes idle for good).
+    @Published fileprivate(set) var busy = true
+    /// When it last asked for something, or was last answered.
+    fileprivate var stirred = Date()
+    /// The tab it is working in now, wearing the dot (Tab.agentWorking).
+    fileprivate weak var workingOn: Tab?
+
+    /// Why "Always allow" isn't offered, or nil when it is.
+    var noAlways: String? {
+        guard AgentTrust.shared.usable else { return "this copy of Search has nowhere safe to keep it" }
+        guard let launcher else { return "Search couldn't tell which program started it" }
+        return launcher.unrememberable
+    }
 
     fileprivate var source: DispatchSourceRead?
     /// What is still to be sent, and the source that sends it once the
@@ -426,6 +456,12 @@ final class AgentControl: ObservableObject {
     static let most = 64 << 20
     /// After Don't Allow or Stop, no new question for this long.
     static let quiet: TimeInterval = 10
+    /// Asked nothing for this long, an allowed agent is shown as idle, and
+    /// its tab's dot goes…
+    static let idle: TimeInterval = 8
+    /// …and for this long, let go: a client still running asks again (or is
+    /// let in again, if remembered) on its next request.
+    static let letGo: TimeInterval = 300
     /// Where the element lists live in each page, apart from the bench's.
     private static let key = "__searchAgent"
 
@@ -435,6 +471,10 @@ final class AgentControl: ObservableObject {
     private var listener: Int32 = -1
     private var accepting: DispatchSourceRead?
     private var quietUntil = Date.distantPast
+    /// Looks at an allowed agent every few seconds: busy, idle, gone idle.
+    private var watch: Timer?
+    /// The window showing its Stop, for the column to make room for it.
+    @Published private(set) var shownIn: ObjectIdentifier?
 
     // MARK: starting and stopping
 
@@ -541,6 +581,7 @@ final class AgentControl: ObservableObject {
             return
         }
         let session = AgentSession(fd: fd, program: Self.program(of: fd))
+        session.token = AgentIdentity.token(of: fd)
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)
         source.setEventHandler { [weak self, weak session] in
             MainActor.assumeIsolated { if let self, let session { self.read(session) } }
@@ -554,7 +595,7 @@ final class AgentControl: ObservableObject {
         // A client that connects and says nothing doesn't keep the only
         // place: hello within a few seconds, or it is let go.
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self, weak session] in
-            guard let self, let session, self.session === session, session.consent.state == .connected else { return }
+            guard let self, let session, self.session === session, !session.greeted else { return }
             end(session, "it said nothing")
         }
         Self.log.notice("connected: \(session.program, privacy: .public)")
@@ -674,6 +715,10 @@ final class AgentControl: ObservableObject {
         }
         session.inbox.removeFirst()
         session.working = true
+        if verb != "hello" {
+            session.stirred = Date()
+            if !session.busy { session.busy = true }
+        }
         let delay = verb == "hello" ? 0 : session.pace.delay(at: ProcessInfo.processInfo.systemUptime)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak session] in
             guard let self, let session, self.session === session else { return }
@@ -685,6 +730,7 @@ final class AgentControl: ObservableObject {
                 Self.log.notice("\(verb, privacy: .public) \(request["page"] as? String ?? request["element"] as? String ?? "", privacy: .public) \(code, privacy: .public)")
                 self.say(self.reply(out, to: request), to: session)
                 session.working = false
+                session.stirred = Date()
                 self.pump(session)
             }
             // One answer, always: a page that never replies doesn't hold the
@@ -717,7 +763,7 @@ final class AgentControl: ObservableObject {
 
     // MARK: ending
 
-    /// Stop, from the pill.
+    /// Stop: the column's foot, the strip, the row, File › Stop Agent.
     func stopSession() {
         if let session { end(session, "stopped from the window") }
     }
@@ -737,7 +783,11 @@ final class AgentControl: ObservableObject {
         session.inbox = []
         session.source?.cancel()
         session.source = nil
+        work(on: nil, session)
         self.session = nil
+        watch?.invalidate()
+        watch = nil
+        shownIn = nil
         // A question you said no to, walked away from, or an agent you
         // stopped, doesn't come straight back.
         if was == .refused || was == .asking || (was == .allowed && why.hasPrefix("stopped")) {
@@ -760,6 +810,9 @@ final class AgentControl: ObservableObject {
     weak var allowButton: NSView?
     weak var refuseButton: NSView?
     weak var tabsBox: NSView?
+    weak var alwaysBox: NSView?
+    /// Stop, as drawn: in the column's foot or the strip.
+    weak var stopButton: NSView?
 
     private func clicked(_ event: NSEvent?, on view: NSView?, _ session: AgentSession) -> Bool {
         let ok = AgentRules.isClick(event, on: view, in: session.browser?.window, after: session.askedUptime + 0.5)
@@ -782,12 +835,25 @@ final class AgentControl: ObservableObject {
         session.wantsTabs.toggle()
     }
 
+    /// "Always allow", ticked or unticked: the same click, on that box, and
+    /// only where it is offered.
+    func toggleAlways(event: NSEvent?) {
+        guard let session, session.consent.state == .asking, session.noAlways == nil,
+              clicked(event, on: alwaysBox, session) else { return }
+        session.wantsAlways.toggle()
+    }
+
     /// For the bench's `agents click`: a mouse-up made as a hand's would
     /// be, on one of the question's controls or beside it, now or before
     /// the question was up.
     func madeClick(on which: String, inside: Bool, stale: Bool) -> NSEvent? {
-        guard let session, let view = which == "allow" ? allowButton : which == "tabs" ? tabsBox : refuseButton,
-              let window = view.window else { return nil }
+        let view: NSView? = switch which {
+        case "allow": allowButton
+        case "tabs": tabsBox
+        case "always": alwaysBox
+        default: refuseButton
+        }
+        guard let session, let view, let window = view.window else { return nil }
         let middle = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
         let spot = inside ? middle : NSPoint(x: middle.x, y: middle.y + view.bounds.height + 40)
         let when = stale ? session.askedUptime + 0.2 : ProcessInfo.processInfo.systemUptime
@@ -796,8 +862,9 @@ final class AgentControl: ObservableObject {
     }
 
     /// The bench's answer, in a test run (Bench `agents`).
-    func answerForTest(allow: Bool, seesTabs: Bool) {
+    func answerForTest(allow: Bool, seesTabs: Bool, always: Bool = false) {
         guard Store.testing else { return }
+        if always, let session, session.noAlways == nil { session.wantsAlways = true }
         decide(allow: allow, seesTabs: seesTabs, now: .distantFuture)
     }
 
@@ -805,10 +872,17 @@ final class AgentControl: ObservableObject {
         guard let session, session.consent.state == .asking, now.timeIntervalSince(session.asked) > 0.5 else { return }
         session.consent.answer(allow: allow, seesTabs: seesTabs)
         Self.log.notice("\(allow ? "allowed" : "not allowed", privacy: .public)\(allow && seesTabs ? ", with your tabs" : "", privacy: .public)")
+        // Remembered only as ticked, and only a program that can be: the
+        // box isn't there otherwise, and this says so again.
+        if allow, session.wantsAlways, session.noAlways == nil, let launcher = session.launcher,
+           AgentTrust.shared.remember(client: session.client, launcher: launcher, seesTabs: session.consent.seesTabs) {
+            Self.log.notice("always allowed from now on: \(session.client, privacy: .public), started by \(launcher.identifier, privacy: .public) of team \(launcher.team, privacy: .public)")
+        }
         let hello = session.hello
         session.hello = nil
         if allow {
             hello?(["allowed": true, "seesTabs": session.consent.seesTabs])
+            began(session)
             pump(session)
         } else {
             hello?(AgentRefusal(code: "not_allowed", message: "You were not allowed to use Search").said)
@@ -819,9 +893,88 @@ final class AgentControl: ObservableObject {
         }
     }
 
+    /// After hello, once the program that started it is known: let in at
+    /// once if you said to always allow it and it still is what you said
+    /// that to (AgentTrust.match, checked afresh on every connection), or
+    /// the question goes up.
+    private func greet(_ session: AgentSession, passed: Set<String>) {
+        let trust = AgentTrust.shared
+        session.consent.hello()
+        session.asked = Date()
+        session.askedUptime = ProcessInfo.processInfo.systemUptime
+        guard let entry = AgentTrust.match(client: session.client, launcher: session.launcher, passed: passed,
+                                           among: trust.remembered) else {
+            if !trust.requirements(for: session.client).isEmpty {
+                Self.log.notice("\(session.client, privacy: .public) is remembered, but what started it didn't pass: asking")
+            }
+            return
+        }
+        session.auto = true
+        session.consent.answer(allow: true, seesTabs: entry.seesTabs)
+        var seen = entry
+        seen.path = session.launcher?.path ?? entry.path
+        trust.used(seen)
+        Self.log.notice("allowed automatically: \(session.client, privacy: .public), started by \(session.launcher?.identifier ?? "", privacy: .public) of team \(session.launcher?.team ?? "", privacy: .public)\(entry.seesTabs ? ", with your tabs" : "", privacy: .public)")
+        let hello = session.hello
+        session.hello = nil
+        hello?(["allowed": true, "seesTabs": session.consent.seesTabs, "remembered": true])
+        began(session)
+        pump(session)
+    }
+
+    /// Allowed: Stop goes up in its window's chrome, kept honest about
+    /// whether it is working.
+    private func began(_ session: AgentSession) {
+        session.stirred = Date()
+        session.busy = true
+        shownIn = session.browser.map(ObjectIdentifier.init)
+        watch?.invalidate()
+        watch = Timer.scheduledTimer(withTimeInterval: Store.testing ? 0.5 : 2, repeats: true) { [weak self, weak session] _ in
+            MainActor.assumeIsolated {
+                guard let self, let session, self.session === session, session.consent.state == .allowed else { return }
+                self.look(at: session, now: Date())
+            }
+        }
+    }
+
+    private func look(at session: AgentSession, now: Date) {
+        let quiet = session.working ? 0 : now.timeIntervalSince(session.stirred)
+        let busy = quiet < (idleForTest ?? Self.idle)
+        if session.busy != busy { session.busy = busy }
+        if !busy { work(on: nil, session) }
+        if quiet >= (letGoForTest ?? Self.letGo) {
+            // Said first, so the client knows to ask again when it next
+            // needs Search, rather than taking it for Stop.
+            say(["error": ["code": "idle", "message": "Let go after a while with nothing asked",
+                           "hint": "Connect again when you next need Search."]], to: session)
+            end(session, "idle")
+        }
+    }
+
+    /// The dot goes to the tab it is working in now, and off the one before.
+    private func work(on tab: Tab?, _ session: AgentSession) {
+        if let before = session.workingOn, before !== tab { before.agentWorking = false }
+        session.workingOn = tab
+        if let tab, !tab.agentWorking { tab.agentWorking = true }
+    }
+
+    /// The bench's, in a test run: shorter waits for idle and letting go.
+    var idleForTest: TimeInterval?
+    var letGoForTest: TimeInterval?
+
+    /// Whether the drawn Stop sits over the page you are looking at: never.
+    private var stopOverPage: Bool {
+        guard let stop = stopButton, let window = stop.window,
+              let page = session?.browser?.active?.built, page.window === window else { return false }
+        let spot = stop.convert(stop.bounds, to: nil)
+        return page.convert(page.bounds, to: nil).intersects(spot)
+    }
+
     /// For the bench's `agents`.
     var state: [String: Any] {
-        guard let session else { return ["running": running, "connected": false] }
+        // Every tab wearing the dot, in every window.
+        let marked = Browsers.all.flatMap(\.tabs).filter(\.agentWorking).map { Bench.short($0) }
+        guard let session else { return ["running": running, "connected": false, "pillDrawn": stopButton?.window != nil, "marked": marked] }
         let state: String = switch session.consent.state {
         case .connected: "connected"
         case .asking: "asking"
@@ -832,7 +985,13 @@ final class AgentControl: ObservableObject {
         return ["running": running, "connected": true, "state": state, "client": session.client,
                 "program": session.program, "seesTabs": session.consent.seesTabs, "wantsTabs": session.wantsTabs,
                 "drawn": allowButton?.window != nil && tabsBox?.window != nil,
-                "own": session.own.count]
+                "own": session.own.count, "auto": session.auto, "wantsAlways": session.wantsAlways,
+                "offersAlways": session.noAlways == nil, "noAlways": session.noAlways ?? "",
+                "alwaysDrawn": alwaysBox?.window != nil, "busy": session.busy,
+                "pillDrawn": stopButton?.window != nil, "overPage": stopOverPage,
+                "workingOn": session.workingOn.map { Bench.short($0) } ?? "", "marked": marked,
+                "launcher": session.launcher.map { ["path": $0.path, "identifier": $0.identifier, "team": $0.team,
+                                                     "adhoc": $0.adhoc, "signed": $0.signed] } ?? [:]]
     }
 
     /// A tab an agent's tab opened (Browser's createWebViewWith): its own too.
@@ -846,6 +1005,7 @@ final class AgentControl: ObservableObject {
     private func run(_ verb: String, _ request: [String: Any], in session: AgentSession, _ answer: @escaping ([String: Any]) -> Void) {
         func refuse(_ refusal: AgentRefusal) { answer(refusal.said) }
         if verb == "hello" {
+            session.greeted = true
             session.client = AgentRules.clientName(request["client"])
             session.browser = Browsers.all.first { $0.window?.isKeyWindow == true } ?? Browsers.primary
             guard session.browser != nil else {
@@ -853,16 +1013,26 @@ final class AgentControl: ObservableObject {
                 end(session, "no window")
                 return
             }
-            session.consent.hello()
-            session.asked = Date()
-            session.askedUptime = ProcessInfo.processInfo.systemUptime
             session.closing = NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification, object: session.browser?.window, queue: .main
             ) { [weak self, weak session] _ in
                 MainActor.assumeIsolated { if let self, let session { self.end(session, "the window closed") } }
             }
-            // Answered when you answer.
+            // Answered when you answer, or when it is found remembered.
             session.hello = answer
+            // Who started it, by its signature, away from the main thread
+            // (the signature is checked on disk); then let in if remembered,
+            // or asked.
+            let token = session.token
+            let requirements = AgentTrust.shared.requirements(for: session.client)
+            DispatchQueue.global(qos: .userInitiated).async { [weak self, weak session] in
+                let seen = token.flatMap { AgentIdentity.examine($0, against: requirements) }
+                DispatchQueue.main.async {
+                    guard let self, let session, self.session === session, session.consent.state == .connected else { return }
+                    session.launcher = seen?.launcher
+                    self.greet(session, passed: seen?.passed ?? [])
+                }
+            }
             return
         }
         guard let browser = session.browser, Browsers.all.contains(where: { $0 === browser }) else {
@@ -880,6 +1050,7 @@ final class AgentControl: ObservableObject {
                 guard let url = AgentRules.address(request["url"] as? String ?? "") else { throw Self.badAddress }
                 let tab = browser.benchOpen(url, agent: true)
                 session.own.insert(tab.id)
+                work(on: tab, session)
                 PageRoom.shared.house(tab)
                 settle(tab, session, timeout: request["timeout"] as? Double ?? 20, answer)
             case "go":
@@ -954,6 +1125,7 @@ final class AgentControl: ObservableObject {
             ?? "stale_page"
         switch refusal {
         case nil:
+            work(on: found, session)
             return found!
         case "not_yours":
             throw AgentRefusal(code: "not_yours", message: "That tab is the person's own: it can be read, never used",

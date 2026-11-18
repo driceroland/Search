@@ -180,6 +180,9 @@ struct TabBar: View {
                     // Back, forward, reload, and the bookmarks, at the far end
                     // of the row. The dropdown hangs from the last one.
                     HStack(spacing: Metrics.tabGap) {
+                        // A coding agent allowed in this window: its pill and
+                        // Stop, here rather than over the page (AgentBanner).
+                        AgentStatus(browser: browser, style: .door)
                         // Only while a download is running, and a moment after.
                         FetchDoor(browser: browser, fetches: browser.fetches)
                         ExtensionSlot(browser: browser)
@@ -850,6 +853,7 @@ private struct TabPill: View, Equatable {
                     Ring()
                 } else {
                     Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15, dim: tab.asleep)
+                        .overlay(alignment: .bottomTrailing) { AgentMark(tab: tab) }
                 }
             }
             .frame(width: 16, height: 16)
@@ -875,13 +879,14 @@ private struct TabPill: View, Equatable {
             } else {
                 if !tab.isBlank {
                     Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15)
+                        .overlay(alignment: .bottomTrailing) { AgentMark(tab: tab) }
                 }
-                if tab.bench {
-                    // A script's tab, or a coding agent's, not yours.
-                    Image(systemName: tab.agent ? "cursorarrow.rays" : "flask")
+                if tab.bench, !tab.agent {
+                    // A script's tab, not yours.
+                    Image(systemName: "flask")
                         .font(.system(size: 9))
                         .foregroundStyle(colour.opacity(0.7))
-                        .help(tab.agent ? "Opened by a coding agent" : "Opened by a script")
+                        .help("Opened by a script")
                 }
                 if tab.shy {
                     // Quiet, and only on the tabs that keep nothing.
