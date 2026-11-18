@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Switching spaces is quick and smooth with many tabs, with two fingers, ⌃1–⌃9 or the space's menu: the tabs slide in already scrolled to the tab you were on, and the page comes in with them, where the column stalled, came in at the top and jumped down. Quick runs of strokes, short flicks and a quick stroke back all count, and the card for a new space takes a longer stroke.
+
 ### Held back
 
 Not in this version, kept on main for a later one:
