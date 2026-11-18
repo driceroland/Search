@@ -1704,6 +1704,44 @@ enum ExtensionShims {
         return;
       }
 
+      // An extension's page framed in a website, as Vimium's Vomnibar is:
+      // its content script focuses the frame on a key press, and the page
+      // focuses its box. WebKit turns that second focus() down in a frame
+      // from another site until the frame has had a key or a click of its
+      // own, where Chrome lets it through, so the box sat unfocused and
+      // typing went nowhere until clicked (Vimium, password managers'
+      // inline menus). The element last refused is remembered; the first
+      // key the frame itself gets puts it there before the key lands, so
+      // its letters go into the box, and the box's own key handlers hear
+      // it too (Escape, Enter, arrows). From then on WebKit lets focus()
+      // through for the life of the frame.
+      if (embedded && typeof HTMLElement === "function" && typeof document !== "undefined") {
+        const focus = HTMLElement.prototype.focus;
+        let wanted = null;
+        put(HTMLElement.prototype, "focus", function () {
+          const result = focus.apply(this, arguments);
+          wanted = document.activeElement === this ? null : this;
+          return result;
+        });
+        window.addEventListener("keydown", (event) => {
+          const target = wanted;
+          if (!event.isTrusted || !target) return;
+          wanted = null;
+          if (!target.isConnected || document.activeElement === target) return;
+          focus.call(target);
+          if (document.activeElement !== target || event.target === target) return;
+          // Heard by the box's own listeners as if typed there; the key's
+          // letters follow the focus by themselves.
+          const copy = new KeyboardEvent("keydown", {
+            key: event.key, code: event.code, location: event.location, repeat: event.repeat,
+            ctrlKey: event.ctrlKey, shiftKey: event.shiftKey, altKey: event.altKey, metaKey: event.metaKey,
+            bubbles: true, cancelable: true, composed: true,
+          });
+          event.stopImmediatePropagation();
+          if (!target.dispatchEvent(copy)) event.preventDefault();
+        }, true);
+      }
+
       // In a website's frame, everything WebKit keeps to the extension's own
       // process goes through the worker instead. What stays direct is what
       // WebKit lets a content script call too. Namespaces the shim adds

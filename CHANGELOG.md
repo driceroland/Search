@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- An extension's box opened over a page from a key, as Vimium's Vomnibar (T, o) is, takes what you type straight away, where it opened unfocused and the keys went nowhere until it was clicked. WebKit refuses a frame from another site focus until it has had a key of its own, so the first key now puts the focus where the extension asked before it lands. Thanks Ross for the report and the diagnosis.
 - Split View no longer draws a frame round the page the keys go to, as a card or edge to edge: it read as a stray border on one page of two.
 - The line under the pins, with Clear at its end, waits for a tab with a page under it: over nothing but the empty tab a window starts with, it was a line with nothing to keep apart. New Live Folder… is in a square pin's menu too.
 
