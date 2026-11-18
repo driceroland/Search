@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 // The column of tabs, folded away with ⌘S.
 //
@@ -55,7 +56,84 @@ extension Browser {
         // Only if it was out: set at all, every row of the column is built
         // again, 30 of them with 30 tabs, before the slide starts.
         if peeking { peeking = false }
+        foldTicket += 1
+        // Pressed again before the column went: it stays.
+        if foldingAway {
+            foldingAway = false
+            return
+        }
+        // Going away, the page is given the column's room first, and the
+        // column slides only once WebKit has drawn the page at that size.
+        // Given it as the slide started, the page grew while it slid, and
+        // what WebKit hadn't drawn yet came in from the far edge as a bar
+        // of the web view's own ground, black or white with the theme. Out
+        // over the far edge, where the room goes, nothing of it shows.
+        let pages = shownPages
+        if !folded, prefs.sidebar, !Motion.reduced, !pages.isEmpty {
+            let ticket = foldTicket
+            foldingAway = true
+            Browser.drawn(pages, within: 0.12) { [weak self] in
+                guard let self, ticket == self.foldTicket, self.foldingAway else { return }
+                withAnimation(Motion.folding(out: false)) {
+                    self.foldingAway = false
+                    self.folded = true
+                }
+            }
+            return
+        }
         withAnimation(Motion.folding(out: folded)) { folded.toggle() }
+    }
+
+    /// The pages on screen beside the column: the one in front, and its
+    /// other half in Split View.
+    private var shownPages: [WKWebView] {
+        guard let active else { return [] }
+        let tabs = activeSplit.map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? [active]
+        return tabs.compactMap { $0.isWeb && !$0.asleep && !$0.floating ? $0.built : nil }
+    }
+
+    /// `done` once each of `pages` has its new size and WebKit has put it
+    /// on screen drawn at that size — its next presentation after the
+    /// resize, asked of its private side — or after `within` seconds,
+    /// whichever is first: a WebKit without that question, or a page too
+    /// busy to answer, holds nothing up for long.
+    static func drawn(_ pages: [WKWebView], within: TimeInterval, _ done: @escaping @MainActor () -> Void) {
+        var finished = false
+        let finish = {
+            guard !finished else { return }
+            finished = true
+            done()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + within) { MainActor.assumeIsolated { finish() } }
+        // Asked before the layout that resizes them, the next presentation
+        // is the one already on its way, at the old size.
+        let sizes = pages.map(\.frame.size)
+        func resized() {
+            guard !finished else { return }
+            guard zip(pages, sizes).contains(where: { $0.frame.size != $1 }) else {
+                DispatchQueue.main.async { MainActor.assumeIsolated { resized() } }
+                return
+            }
+            presented(pages, finish)
+        }
+        DispatchQueue.main.async { MainActor.assumeIsolated { resized() } }
+    }
+
+    private static func presented(_ pages: [WKWebView], _ finish: @escaping @MainActor () -> Void) {
+        var left = pages.count
+        let ask = NSSelectorFromString("_doAfterNextPresentationUpdate:")
+        for page in pages {
+            guard page.responds(to: ask), let imp = page.method(for: ask) else { continue }
+            typealias Then = @convention(block) () -> Void
+            typealias After = @convention(c) (AnyObject, Selector, Then) -> Void
+            let then: Then = {
+                MainActor.assumeIsolated {
+                    left -= 1
+                    if left == 0 { finish() }
+                }
+            }
+            unsafeBitCast(imp, to: After.self)(page, ask, then)
+        }
     }
 
     /// The folded column out over the page, or back in.

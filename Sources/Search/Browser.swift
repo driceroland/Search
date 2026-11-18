@@ -360,6 +360,10 @@ final class Browser: NSObject, ObservableObject {
     /// while it is (see Fold.swift).
     @Published var folded = false
     @Published var peeking = false
+    /// ⌘S on its way to folding the column: the page already has the room,
+    /// the column has not moved yet (see Browser.toggleFold).
+    @Published var foldingAway = false
+    var foldTicket = 0
 
     /// The address field, raised over a page by ⌘L. A blank tab shows it
     /// without being asked — there is nothing else for that tab to show.

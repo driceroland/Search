@@ -1174,7 +1174,8 @@ final class Bench {
                 let start = woke > 0 ? woke : pressed
                 let built = Bench.bodies["row", default: 0]
                 passes.append(["at": ((start - pressed) * 1000).rounded(), "ms": ((now - start) * 10000).rounded() / 10,
-                               "page": Double(web.frame.width), "rows": built - rows])
+                               "page": Double(web.frame.width), "rows": built - rows, "folded": browser.folded,
+                               "away": browser.foldingAway])
                 rows = built
                 woke = 0
             }
@@ -1182,6 +1183,8 @@ final class Bench {
             Bench.bodies = [:]
             let before = Double(web.frame.width)
             browser.toggleFold()
+            // "twice": ⌘S again at once, while the page takes its room.
+            if request["twice"] as? Bool == true { browser.toggleFold() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
                 for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
                 answer(["folded": browser.folded, "pageBefore": before, "passes": passes])

@@ -573,6 +573,17 @@ struct ContentView: View {
         .animation(Motion.glide, value: browser.prefs.sidePosition)
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
+        // ⌘S folding the column: the page its room now, the column still
+        // out over it, its far side past the window's edge; called off, the
+        // column's room back. Never slid: what moves is the column, after.
+        .onChange(of: browser.foldingAway) { _, away in
+            roomTicket += 1
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) {
+                if away, sidebar { room = CGSize(width: foldedWidth, height: roomed.height) } else { room = chrome }
+            }
+        }
     }
 
     // With Split View off, the stage is the one it always was: a single
@@ -632,6 +643,10 @@ struct ContentView: View {
         }
         return CGSize(width: sidebar ? sideWidth : 0, height: band + bar)
     }
+
+    /// The column's width folded away: the room ⌘S gives the page before
+    /// the column slides (see Browser.toggleFold).
+    private var foldedWidth: CGFloat { cards ? Metrics.cardGap : 0 }
 
     /// The column's width: the setting, or where its edge is while held.
     private var sideWidth: CGFloat { edges.side ?? browser.prefs.columnWidth }

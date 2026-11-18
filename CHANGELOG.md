@@ -35,6 +35,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Folders in pinned rows are as tall as the tab rows beside them, their folder icon as large as a tab's icon and their name as large as a tab's title, and they follow Settings › Appearance › Roomier tabs. They were a smaller group heading's size. `python3 Tests/pin_folders.py` checks it.
 - Opening a pin folder opens it in place. When it held more pins than the column had room for, the column started scrolling and jumped down to the tab you were on, and the folder's own row had to be scrolled back to. `python3 Tests/pin_folder_scroll.py` checks it.
 - A folder in the pinned rows can be moved by dragging its row, as a pinned row is: let go on the top of another folder's row to put it before that folder, on the rest of it to put it inside, or among the pins of a folder (or at the top) to move it there. Nested folders move the same way, and a folder never goes inside itself or deeper than three levels. Before, only the right-click menu could move one. `python3 Tests/pin_folders.py` checks it.
+- Hiding the tab column with ⌘S no longer flashes a black or white bar along the far side of the window. The page was given the column's room as the column started to slide, and the part of it the web view had not drawn yet at its new size came in from the far edge. The page now takes its room first, with the column still over it, and the column slides once the page is drawn, a few hundredths of a second later. ⌘S pressed again in that moment leaves the column where it is. `python3 Tests/fold_flash.py` checks it.
 
 ### Added
 
