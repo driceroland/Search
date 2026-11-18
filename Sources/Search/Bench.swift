@@ -4096,7 +4096,7 @@ final class Bench {
             answer(["on": SiteStyles.shared.on, "css": SiteStyles.shared.css(on: host) ?? "",
                     "written": SiteStyles.shared.written(on: host), "editing": browser.styling ?? ""])
 
-        case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "capture", "capture-stop":
+        case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "ext-sites", "capture", "capture-stop":
             guard #available(macOS 15.4, *) else {
                 answer(["error": "extensions need macOS 15.4"])
                 return
@@ -4653,6 +4653,26 @@ final class Bench {
             }
             extensions.setPrivate(id, request["on"] as? Bool ?? true)
             answer(["private": context.hasAccessToPrivateData])
+        case "ext-sites":
+            // Where an extension runs (Settings › Extensions › Runs on): set
+            // with "mode" (all, some, click) and "hosts", or "here": true for
+            // the right-click's Run on This Site; read without them.
+            guard Store.testing else { answer(["error": "only in a test run"]); return }
+            guard let id = request["id"] as? String, let context = extensions.contexts[id] else {
+                answer(["error": "ext-sites needs a loaded extension's id"]); return
+            }
+            if let mode = (request["mode"] as? String).flatMap(SiteAccess.Mode.init(rawValue:)) {
+                let hosts = (request["hosts"] as? [String])?.compactMap(SiteAccess.host(from:)) ?? extensions.siteAccess(id).hosts
+                extensions.setSiteAccess(id, SiteAccess(mode: mode, hosts: hosts))
+            }
+            if request["here"] as? Bool == true { extensions.runHere(id) }
+            let access = extensions.siteAccess(id)
+            let reaches = (request["url"] as? String).flatMap(URL.init(string:)).map { context.hasAccess(to: $0) }
+            answer(["mode": access.mode.rawValue, "hosts": access.hosts, "runsHere": extensions.runsHere(id),
+                    "reaches": reaches.map { $0 as Any } ?? NSNull(),
+                    "denied": context.deniedPermissionMatchPatterns.keys.map(\.string).sorted(),
+                    "granted": context.grantedPermissionMatchPatterns.keys.map(\.string).sorted(),
+                    "clicked": (extensions.clickGrants[id] ?? [:]).values.map(\.host).sorted()])
         case "capture":
             // Extensions' screen recording: ids given, what is recording, who
             // may, and the last request with its answer.

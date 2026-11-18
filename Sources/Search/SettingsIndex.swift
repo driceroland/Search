@@ -95,6 +95,9 @@ enum SettingsIndex {
 
         .init(id: "updates", page: .about, title: "Updates", icon: "arrow.triangle.2.circlepath"),
         .init(id: "developer", page: .about, title: "Developer", icon: "hammer"),
+
+        // Drawn by ExtensionsPage itself; here so the find field reaches it.
+        .init(id: "extensions", page: .extensions, title: "Installed", icon: "puzzlepiece.extension"),
     ]
 
     static func group(_ id: String) -> SettingsGroup? { groups.first { $0.id == id } }
@@ -498,6 +501,12 @@ enum SettingsIndex {
         .init(id: "note.translate", group: "pages", icon: "translate",
               title: "Translate pages on this Mac", detail: "Always there: right-click a page › Translate Page",
               keys: ["translate.pages"], words: ["translate", "language"], kind: .note, findOnly: true),
+        .init(id: "extensions.sites", group: "extensions", icon: "globe",
+              title: "Where an extension runs", detail: "Each extension's Runs on: all sites, sites you name, or on click",
+              more: "Fewer sites means less memory on the rest. Right-click an extension's button to run it on the site you're on.",
+              keys: ["extensions.sites"],
+              words: ["site access", "sites", "permissions", "host", "on click", "activetab", "memory", "extension"],
+              kind: .note, findOnly: true),
         .init(id: "note.awake", group: "memory", icon: "sun.max",
               title: "Keep selected sites awake", detail: "Always there: Keep This Site Awake, on the site's card",
               keys: ["tabs.keepAwake"], words: ["awake", "sleep"], kind: .note, findOnly: true),

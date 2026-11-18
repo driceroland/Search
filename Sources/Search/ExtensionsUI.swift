@@ -136,43 +136,54 @@ struct ExtensionsPage: View {
 
         var body: some View {
             let context = extensions.contexts[item.id]
-            HStack(spacing: 12) {
-                Group {
-                    if let icon = context?.webExtension.icon(for: CGSize(width: 32, height: 32)) {
-                        Image(nsImage: icon).resizable().interpolation(.high)
-                    } else {
-                        Image(systemName: "puzzlepiece.extension").foregroundStyle(Palette.muted)
+            let sites = context.map(Extensions.asksForSites) == true
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 12) {
+                    Group {
+                        if let icon = context?.webExtension.icon(for: CGSize(width: 32, height: 32)) {
+                            Image(nsImage: icon).resizable().interpolation(.high)
+                        } else {
+                            Image(systemName: "puzzlepiece.extension").foregroundStyle(Palette.muted)
+                        }
                     }
+                    .frame(width: 22, height: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.name)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                        Text(detail(context))
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Palette.muted)
+                            .lineLimit(1)
+                            .help(item.source ?? "")
+                    }
+                    Spacer(minLength: 8)
+                    if sites {
+                        RunsOn(item: item, extensions: extensions)
+                    }
+                    // Five pills don't fit beside the name in a settings page's
+                    // width, and wrapped a letter at a time when they tried. One
+                    // menu holds them all, there without hovering to find it.
+                    Menu { actions(context) } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(hovering ? Palette.ink : Palette.muted)
+                            .frame(width: 26, height: 26)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel("More for \(item.name)")
+                    .help("More for \(item.name)")
+                    Switch(on: Binding(get: { item.enabled }, set: { extensions.setEnabled(item.id, $0) }))
                 }
-                .frame(width: 22, height: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Palette.ink)
-                        .lineLimit(1)
-                    Text(detail(context))
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Palette.muted)
-                        .lineLimit(1)
-                        .help(item.source ?? "")
+                if sites, extensions.siteAccess(item.id).restricted {
+                    SiteList(item: item, extensions: extensions)
+                        .padding(.leading, 34)
+                        .padding(.top, 8)
                 }
-                Spacer(minLength: 8)
-                // Five pills don't fit beside the name in a settings page's
-                // width, and wrapped a letter at a time when they tried. One
-                // menu holds them all, there without hovering to find it.
-                Menu { actions(context) } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(hovering ? Palette.ink : Palette.muted)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .accessibilityLabel("More for \(item.name)")
-                .help("More for \(item.name)")
-                Switch(on: Binding(get: { item.enabled }, set: { extensions.setEnabled(item.id, $0) }))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -231,6 +242,125 @@ struct ExtensionsPage: View {
             if let errors = context.map(Extensions.errors(of:)), !errors.isEmpty { parts.append("\(errors.count) warning\(errors.count == 1 ? "" : "s")") }
             return parts.joined(separator: " · ")
         }
+    }
+}
+
+/// An extension's "Runs on": every site it asked for (the default), the
+/// ones you name, or only where you click its button.
+@available(macOS 15.4, *)
+private struct RunsOn: View {
+    let item: Installed
+    @ObservedObject var extensions: Extensions
+
+    var body: some View {
+        let access = extensions.siteAccess(item.id)
+        Menu {
+            Picker("Runs on", selection: Binding(
+                get: { access.mode },
+                set: { extensions.setSiteAccess(item.id, SiteAccess(mode: $0, hosts: access.hosts)) }
+            )) {
+                Text("All Sites It Asks For").tag(SiteAccess.Mode.all)
+                Text("Only Sites I Name").tag(SiteAccess.Mode.some)
+                Text("Only When I Click It").tag(SiteAccess.Mode.click)
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            HStack(spacing: 3) {
+                Text(access.mode.title)
+                    .font(.system(size: 11.5))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+            }
+            .foregroundStyle(access.restricted ? Palette.ink : Palette.muted)
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .background(Palette.wash, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("\(item.name) runs on")
+        .accessibilityValue(access.mode.title)
+        .help("Where \(item.name) runs. Fewer sites, less memory on the rest")
+    }
+}
+
+/// Under an extension held to fewer sites: the sites you named, one to add,
+/// and a word on what that means.
+@available(macOS 15.4, *)
+private struct SiteList: View {
+    let item: Installed
+    @ObservedObject var extensions: Extensions
+    @State private var typed = ""
+
+    var body: some View {
+        let access = extensions.siteAccess(item.id)
+        VStack(alignment: .leading, spacing: 6) {
+            if access.mode == .some {
+                ForEach(access.hosts, id: \.self) { host in
+                    HStack(spacing: 6) {
+                        Text(host)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        Button {
+                            extensions.setSiteAccess(item.id, access.removing(host))
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Palette.muted)
+                                .frame(width: 18, height: 18)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove \(host)")
+                        .help("Remove \(host)")
+                    }
+                }
+                HStack(spacing: 8) {
+                    ZStack(alignment: .leading) {
+                        if typed.isEmpty {
+                            Text("Add a site, like example.com")
+                                .foregroundStyle(Palette.muted.opacity(0.8))
+                        }
+                        TextField("", text: $typed)
+                            .textFieldStyle(.plain)
+                            .foregroundStyle(Palette.ink)
+                            .onSubmit(add)
+                            .accessibilityLabel("Add a site for \(item.name)")
+                    }
+                    .font(.system(size: 12))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    Pill("Add", action: add)
+                        .disabled(SiteAccess.host(from: typed) == nil)
+                }
+            }
+            Text(note(access))
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func add() {
+        guard let host = SiteAccess.host(from: typed) else { return }
+        extensions.setSiteAccess(item.id, extensions.siteAccess(item.id).adding(host))
+        typed = ""
+    }
+
+    private func note(_ access: SiteAccess) -> String {
+        var out = access.mode == .some
+            ? "Subdomains included. Elsewhere it runs once you click its button, on that tab until it leaves the site."
+            : "It runs on a page once you click its button there, on that tab until it leaves the site."
+        if SiteAccess.needsEverySite(name: item.name, said: Extensions.settings(for: item.id)) {
+            out += " \(item.name) may need every site to fill in sign-ins."
+        }
+        return out
     }
 }
 

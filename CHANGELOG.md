@@ -22,6 +22,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Choose where each extension runs, as Chrome's Site access: Settings › Extensions › an extension's Runs on menu picks All sites (as before, and the default), Some sites (the ones you list, with their subdomains) or On click (only once you press its button, on that tab's site until it leaves it). An extension kept off a site isn't put into its pages at all, so they stay as light as without it. Right-click an extension's button to run it on this site once or always.
 - Settings › Keyboard & Mouse › Bounce at the top and bottom: pages stretch past their ends and spring back, as in Safari. Off unless you turn it on.
 - A space can wear a gradient instead of one colour, if you like: the space's menu › Colour › Gradient… picks two or three colours, which way they run and a faint grain, with a few ready-made ones, and the window changes as you choose. It washes the tabs, the bookmarks bar and the ground around the page as faintly as a colour does, and goes with the space when you switch or swipe. Remove Gradient gives the space its colour back; spaces without one look exactly as before, and it syncs with your other Macs.
 - Spread two fingers on a peek to open it as a tab, as zooming into it: the panel grows a little with your fingers, the trackpad taps once when letting go will open it, and a lighter tap when your fingers come back under that. Let go past it and the panel grows to the whole page and simply is the tab, with no flash. A page already zoomed in keeps its pinch.

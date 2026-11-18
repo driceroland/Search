@@ -71,6 +71,10 @@ final class Extensions: NSObject, ObservableObject {
     /// dozen at most per extension.
     @Published private(set) var errors: [String: [String]] = [:]
 
+    /// Something an extension's button or its row shows changed outside
+    /// this file (where it runs, ExtensionSiteAccess.swift).
+    func buttonsChanged() { actionsChanged += 1 }
+
     func noteError(_ text: String, for id: String) {
         var list = errors[id] ?? []
         list.append(text)
@@ -84,6 +88,9 @@ final class Extensions: NSObject, ObservableObject {
     /// Each window's row as WebKit last heard it, by browser.
     private var orders: [ObjectIdentifier: [Tab.ID]] = [:]
     private var watching: [Tab.ID: [AnyCancellable]] = [:]
+    /// Sites a click on its button gave each extension, by tab, while its
+    /// "Runs on" isn't every site (ExtensionSiteAccess.swift).
+    var clickGrants: [String: [Tab.ID: ClickGrant]] = [:]
     /// Pages you see that are in no window's row (see openedAside).
     private var aside: Set<Tab.ID> = []
     private var bag = Set<AnyCancellable>()
@@ -438,6 +445,7 @@ final class Extensions: NSObject, ObservableObject {
             }
             adapters[id] = nil
             watching[id] = nil
+            leftSite(id, to: nil)
         }
         if let window = windows.removeValue(forKey: key) { controller.didCloseWindow(window) }
         ExtensionWatch.groups.changed()
@@ -470,6 +478,7 @@ final class Extensions: NSObject, ObservableObject {
             }
             adapters[id] = nil
             watching[id] = nil
+            leftSite(id, to: nil)
         }
         for tab in now where !order.contains(tab.id) {
             // Kept from a peek or a small window: extensions hear of it as a
@@ -547,6 +556,7 @@ final class Extensions: NSObject, ObservableObject {
         }
         adapters[tab.id] = nil
         watching[tab.id] = nil
+        leftSite(tab.id, to: nil)
     }
 
     /// An extension loaded while a peek was open learns of it as it does of
@@ -569,7 +579,10 @@ final class Extensions: NSObject, ObservableObject {
         }
         watching[id] = [
             tab.$title.dropFirst().removeDuplicates().sink { _ in changed(.title) },
-            tab.$address.dropFirst().removeDuplicates().sink { _ in changed(.URL) },
+            tab.$address.dropFirst().removeDuplicates().sink { [weak self] url in
+                changed(.URL)
+                self?.leftSite(id, to: url)
+            },
             tab.$loading.dropFirst().removeDuplicates().sink { _ in changed(.loading) },
             tab.$pin.dropFirst().map { $0 != nil }.removeDuplicates().sink { _ in changed(.pinned) },
             // Into a group or out of one: a group shows to an extension
@@ -637,7 +650,9 @@ final class Extensions: NSObject, ObservableObject {
             if found.requestedPermissions.contains(.declarativeNetRequest) {
                 context.setPermissionStatus(.grantedExplicitly, for: .declarativeNetRequestWithHostAccess)
             }
-            Extensions.grantSites(context)
+            // Every site it asked for, unless "Runs on" says fewer.
+            Extensions.grantSites(context, as: SiteAccess.of(item.id))
+            clickGrants[item.id] = nil
             // Its own sign-in address, https://<id>.chromiumapp.org, which
             // is never loaded (see ExtensionAuth.handOver). WebKit shows an
             // extension a tab's address only where it has access, where
@@ -1039,6 +1054,8 @@ final class Extensions: NSObject, ObservableObject {
         loadedBefore.remove(id)
         Store.settings.removeObject(forKey: "extensions.newtab.\(id)")
         Store.settings.removeObject(forKey: "extensions.private.\(id)")
+        SiteAccess.forget(id)
+        clickGrants[id] = nil
         installed.removeAll { $0.id == id }
         save()
         try? FileManager.default.removeItem(at: Extensions.folder(for: id))
@@ -1686,6 +1703,8 @@ final class Extensions: NSObject, ObservableObject {
         Extensions.pressed[id] = Date()
         let activeBrowser = targetBrowser ?? browser
         let tab = activeBrowser.flatMap { activeAdapter(of: $0, for: context) }
+        // "Runs on" a click: this tab's site, before the extension hears of it.
+        if let page = tab?.tab { grantClick(context, on: page) }
         if let tab { context.userGesturePerformed(in: tab) }
         // An extension that asked for its button to open its side panel,
         // with one turned on over this tab.
@@ -2221,7 +2240,7 @@ private struct ExtensionButtons: View {
                 ForEach(extensions.buttons.filter(\.pinned).prefix(room ?? .max)) { button in
                     ActionButton(button: button) { extensions.press(button.id, in: browser) }
                         .background(Anchor(id: button.id, browser: browser))
-                        .contextMenu { ExtensionActions(id: button.id, name: button.name, extensions: extensions) }
+                        .contextMenu { ExtensionActions(id: button.id, name: button.name, browser: browser, extensions: extensions) }
                 }
                 let key = Extensions.menuKey(browser)
                 Door(icon: "puzzlepiece.extension", on: extensions.menuOwner == key, help: "Extensions") {
@@ -2319,6 +2338,7 @@ private struct ExtensionIcon: View {
 private struct ExtensionActions: View {
     let id: String
     let name: String
+    var browser: Browser? = nil
     let extensions: Extensions
 
     var body: some View {
@@ -2328,8 +2348,37 @@ private struct ExtensionActions: View {
             SwiftUI.Button("Options…") { extensions.openOptions(id) }
         }
         SwiftUI.Button("Reload") { extensions.reload(id) }
+        sites
         Divider()
         SwiftUI.Button("Remove “\(name)”…") { ExtensionActions.confirmRemove(id, name: name, extensions) }
+    }
+
+    /// Where it runs, from where you are: once here, always here, and the
+    /// three choices of Settings › Extensions.
+    @ViewBuilder
+    private var sites: some View {
+        if let context = extensions.contexts[id], Extensions.asksForSites(context) {
+            let access = extensions.siteAccess(id)
+            let target = browser ?? extensions.browser
+            let here = SiteAccess.site(of: target?.active?.address)
+            Divider()
+            if let here, access.restricted {
+                if !extensions.runsHere(id, in: target) {
+                    SwiftUI.Button("Run on This Site") { extensions.runHere(id, in: target) }
+                }
+                Toggle("Always on \(here)", isOn: Binding(
+                    get: { access.covers(here) },
+                    set: { extensions.setSiteAccess(id, $0 ? access.adding(here) : access.removing(here)) }
+                ))
+            }
+            Picker("Runs On", selection: Binding(
+                get: { access.mode },
+                set: { extensions.setSiteAccess(id, SiteAccess(mode: $0, hosts: access.hosts)) }
+            )) {
+                ForEach(SiteAccess.Mode.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.menu)
+        }
     }
 
     static func confirmRemove(_ id: String, name: String, _ extensions: Extensions) {
@@ -2444,7 +2493,7 @@ private struct ExtensionMenu: View {
             }
             .onHover { hovering = $0 }
             .help(button.label)
-            .contextMenu { ExtensionActions(id: button.id, name: button.name, extensions: extensions) }
+            .contextMenu { ExtensionActions(id: button.id, name: button.name, browser: browser, extensions: extensions) }
         }
     }
 
