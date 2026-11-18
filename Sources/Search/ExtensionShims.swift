@@ -546,7 +546,15 @@ enum ExtensionShims {
         // can't be shadowed, and a page whose script starts with its own
         // `const browser` (Control Panel for YouTube's popup) threw before
         // a line of it ran. `chrome` alone keeps WebKit's listeners.
-        try { Object.defineProperty(root, key, { configurable: key === "browser", enumerable: d.enumerable, get: () => value, set: (v) => { if (carries(v)) value = v; } }); } catch (e) {}
+        // In the worker, though, `browser` keeps WebKit's own object. With a
+        // replacement there WebKit stops handing the worker its events:
+        // webextension-polyfill, which Cosmos's worker loads, doesn't take
+        // WebKit's `browser` for a native one (its prototype isn't Object's)
+        // and puts its wrapper of `chrome` there, and action.onClicked never
+        // came again — Cosmos's button, and the one on its images, did
+        // nothing. WebKit's `browser` already is what the polyfill makes.
+        const ownBrowser = key === "browser" && typeof ServiceWorkerGlobalScope !== "undefined" && root instanceof ServiceWorkerGlobalScope;
+        try { Object.defineProperty(root, key, { configurable: key === "browser", enumerable: d.enumerable, get: () => value, set: (v) => { if (!ownBrowser && carries(v)) value = v; } }); } catch (e) {}
       }
       // On a web page this is a content script: only Chrome's behaviour is
       // mended there, no API that Chrome doesn't give content scripts either.

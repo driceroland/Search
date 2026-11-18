@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Fixed
 
 - An extension that downloads a file into a folder, as "photos/2026/a.jpg", gets that folder inside Downloads, as in Chrome, where only the file's name was kept.
+- Cosmos's window now opens, from its button in the toolbar and from the one on an image. Its background loads a common add-on (webextension-polyfill) that, in Search, cut it off from your clicks.
 - Eagle's extension saves images to the Eagle app again, and 好采助手 saves Xiaohongshu images to it: an extension's background can now talk to an app on your Mac that its manifest names (Eagle's, on localhost), as in Chrome. Eagle's extension also stopped half-way through starting, on a check that only works in Chrome, so it never even asked the app.
 - On a space with a colour or a gradient, the open tab, the tab under the pointer and the pins' squares take the space's tint, where they sat on it as grey patches.
 - Passwords from Apple's Passwords app should ask for a new six-digit code far less often: Search now keeps Apple's helper running for as long as you're connected, telling it now and then (and when the Mac wakes) that a tab came to the front, as Apple's own extension does, so a sleep or a quiet hour no longer lets the pairing go. If it still asks, the reason is noted in the Mac's log for us to look at. Reported by [@mehdiillala](https://github.com/mehdiillala) ([#1122](https://github.com/driceroland/Search/issues/1122))
