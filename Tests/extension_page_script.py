@@ -21,6 +21,7 @@ and one with none. What is checked:
   element hears error, and the refusal is in the extension's error list;
 - a script element the page itself adds with the extension's address isn't
   run for it;
+- in a private tab, only when the extension is let into private tabs;
 - on a page without a policy the script loads by itself, once, as before.
 
 With SEARCH_YOUTUBE=1 it also installs Language Reactor and Ambient light
@@ -192,6 +193,19 @@ def main():
         time.sleep(1)
         seen = sv.ev(own_page, "String(typeof (window.webkit && webkit.messageHandlers && webkit.messageHandlers.searchPageScript))")
         t.ok("nor can the extension's own pages", seen == "undefined", seen)
+
+        # A private tab: only with the extension let into private tabs.
+        shy = sv.cmd({"do": "open", "url": base + "/strict", "private": True})["id"]
+        time.sleep(8)
+        d = look(shy, within=2)
+        t.ok("in a private tab it isn't let into, nothing of it runs", "runs" not in d, d)
+        sv.cmd({"do": "ext-private", "id": ext["id"], "on": True})
+        time.sleep(1)
+        shy = sv.cmd({"do": "open", "url": base + "/strict", "private": True})["id"]
+        time.sleep(8)
+        d = look(shy, within=10, until=lambda d: "loadOne" in d)
+        t.ok("let in, it runs there as in any tab", d.get("runs") == "1" and d.get("loadOne") == "load", d)
+        sv.cmd({"do": "ext-private", "id": ext["id"], "on": False})
 
         tid = sv.sp("open", url=base + "/plain")["resultID"]
         time.sleep(10)

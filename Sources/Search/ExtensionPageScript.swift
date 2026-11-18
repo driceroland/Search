@@ -117,7 +117,21 @@ enum ExtensionPageScript {
         return URL(fileURLWithPath: String(cString: real))
     }
 
-    /// The address without its fragment, as location.href reads it.
+    /// The address as `location.origin + location.pathname +
+    /// location.search` reads it — what the evaluation's first line checks,
+    /// with nothing of the page's (no String method it could replace).
+    /// Nil for one that can't be put so; then nothing runs.
+    nonisolated static func pageAddress(_ url: URL) -> String? {
+        guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let scheme = parts.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = parts.percentEncodedHost?.lowercased(), !host.isEmpty else { return nil }
+        let port = parts.port.flatMap { ($0 == 80 && scheme == "http") || ($0 == 443 && scheme == "https") ? nil : ":\($0)" } ?? ""
+        let path = parts.percentEncodedPath.isEmpty ? "/" : parts.percentEncodedPath
+        let query = parts.percentEncodedQuery.flatMap { $0.isEmpty ? nil : "?" + $0 } ?? ""
+        return scheme + "://" + host + port + path + query
+    }
+
+    /// The address without its fragment.
     nonisolated static func withoutFragment(_ url: URL) -> String {
         var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
         parts?.fragment = nil
@@ -133,7 +147,7 @@ enum ExtensionPageScript {
         let name = "search-page-script-" + token
         return (strict ? "\"use strict\";" : "") + """
         (() => {
-          if (String(location.href).split("#")[0] !== \(quoted)) throw new Error("\(movedMarker)");
+          if (location.origin + location.pathname + location.search !== \(quoted)) throw "\(movedMarker)";
           let element = null;
           const take = (event) => { element = event.target; };
           document.addEventListener("\(name)", take, true);
@@ -200,6 +214,7 @@ enum ExtensionPageScript {
               let tab = Browsers.all.lazy.flatMap({ $0.tabs }).first(where: { $0.built === web }) else {
             throw Refused(why: "not asked from a tab")
         }
+        guard !tab.shy || context.hasAccessToPrivateData else { throw Refused(why: "it isn't let into private tabs") }
         guard tab.held == nil else { throw Refused(why: "the tab is held for a sign-in") }
         // The document the content script is in, as WebKit has it. A tab
         // still loading (content scripts run while it does) must be loading
@@ -234,7 +249,8 @@ enum ExtensionPageScript {
         guard web.responds(to: evaluate) else { throw Refused(why: "this version of WebKit can't run it without a user gesture") }
         ran.insert(key)
         if ran.count > 1000 { ran.removeAll() }
-        let script = evaluation(source: source, expected: withoutFragment(page), token: token)
+        guard let expected = pageAddress(page) else { throw Refused(why: "the page's address can't be checked") }
+        let script = evaluation(source: source, expected: expected, token: token)
         let address = URL(string: "\(Extensions.scheme)://\(id)/\(relative)")
         typealias Evaluate = @convention(c) (AnyObject, Selector, NSString, NSURL?, WKFrameInfo?, WKContentWorld, Bool,
                                              @escaping @convention(block) (Any?, Error?) -> Void) -> Void

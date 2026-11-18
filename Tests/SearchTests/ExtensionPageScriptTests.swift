@@ -46,12 +46,22 @@ final class ExtensionPageScriptTests: XCTestCase {
     func testEvaluation() {
         let token = String(repeating: "a", count: 32)
         let plain = ExtensionPageScript.evaluation(source: "var x = 1;", expected: "https://www.youtube.com/watch?v=1", token: token)
-        XCTAssertTrue(plain.hasPrefix("(() => {\n  if (String(location.href).split(\"#\")[0] !== \"https://www.youtube.com/watch?v=1\") throw"), plain)
+        XCTAssertTrue(plain.hasPrefix("(() => {\n  if (location.origin + location.pathname + location.search !== \"https://www.youtube.com/watch?v=1\") throw \""), plain)
         XCTAssertTrue(plain.contains("queueMicrotask"))
         XCTAssertTrue(plain.hasSuffix("var x = 1;\n;void 0"))
         let strict = ExtensionPageScript.evaluation(source: "/* hi */\n'use strict'; var y;", expected: "https://a.b/", token: token)
         XCTAssertTrue(strict.hasPrefix("\"use strict\";(() => {"), strict)
         let quoted = ExtensionPageScript.evaluation(source: "", expected: "https://a.b/?q=\"</script>\\", token: token)
         XCTAssertTrue(quoted.contains(#"!== "https://a.b/?q=\"</script>\\")"#), quoted)
+    }
+
+    /// The address the evaluation checks, as location reads it.
+    func testPageAddress() {
+        let a = { (s: String) in ExtensionPageScript.pageAddress(URL(string: s)!) }
+        XCTAssertEqual(a("https://www.youtube.com/watch?v=1#t=3"), "https://www.youtube.com/watch?v=1")
+        XCTAssertEqual(a("HTTPS://WWW.Example.com"), "https://www.example.com/")
+        XCTAssertEqual(a("http://127.0.0.1:8080/a%20b?x=%41"), "http://127.0.0.1:8080/a%20b?x=%41")
+        XCTAssertEqual(a("https://a.example:443/p?"), "https://a.example/p")
+        XCTAssertNil(a("file:///etc/hosts"))
     }
 }

@@ -254,7 +254,7 @@ final class ExtensionFetchTests: XCTestCase {
 
     /// Chrome's urlFilter, as VOT's rules write it.
     func testURLFilter() {
-        let m = { (f: String, a: String) in ExtensionFetch.urlFilterMatches(f, a, caseSensitive: false) }
+        let m = { (f: String, a: String) in ExtensionFetch.urlFilterMatches(f, a, caseSensitive: false) == true }
         XCTAssertTrue(m("|https://api.browser.yandex.ru/", "https://api.browser.yandex.ru/video-translation/translate"))
         XCTAssertFalse(m("|https://api.browser.yandex.ru/", "https://evil.example/https://api.browser.yandex.ru/"), "anchored at the start")
         XCTAssertTrue(m("||googlevideo.com/", "https://rr3---sn-x.googlevideo.com/videoplayback"))
@@ -392,10 +392,10 @@ final class ExtensionFetchTests: XCTestCase {
     /// Whatever the work, the request waits no longer than it was given.
     func testWithin() async {
         let started = Date()
-        let late = await ExtensionFetch.within(0.1) { Thread.sleep(forTimeInterval: 1); return 1 }
+        let late = await ExtensionFetch.within(0.1, lane: "test-within") { Thread.sleep(forTimeInterval: 1); return 1 }
         XCTAssertNil(late)
         XCTAssertLessThan(Date().timeIntervalSince(started), 0.8)
-        let quick = await ExtensionFetch.within(1) { 2 }
+        let quick = await ExtensionFetch.within(2, lane: "test-within-quick") { 2 }
         XCTAssertEqual(quick, 2)
     }
 
@@ -404,9 +404,85 @@ final class ExtensionFetchTests: XCTestCase {
     func testURLFilterIsLinear() {
         let address = "https://a.example/" + String(repeating: "a", count: 20000)
         let started = Date()
-        XCTAssertFalse(ExtensionFetch.urlFilterMatches(String(repeating: "*a", count: 200) + "b", address, caseSensitive: false))
-        XCTAssertTrue(ExtensionFetch.urlFilterMatches("||example^*aaa", address, caseSensitive: false))
+        XCTAssertEqual(ExtensionFetch.urlFilterMatches(String(repeating: "*a", count: 200) + "b", address, caseSensitive: false), false)
+        XCTAssertEqual(ExtensionFetch.urlFilterMatches("||example^*aaa", address, caseSensitive: false), true)
         XCTAssertLessThan(Date().timeIntervalSince(started), 2)
-        XCTAssertTrue(ExtensionFetch.urlFilterMatches("||ÉXAMPLE.com^", "https://www.éxample.com/", caseSensitive: false))
+        XCTAssertEqual(ExtensionFetch.urlFilterMatches("||ÉXAMPLE.com^", "https://www.éxample.com/", caseSensitive: false), true)
+    }
+
+    /// Every way an address can name this Mac.
+    func testLoopbackHosts() {
+        for host in ["localhost", "LOCALHOST.", "app.localhost", "127.0.0.1", "127.0.0.1.", "127.1", "127.255.255.254", "2130706433",
+                     "0.0.0.0", "0", "::1", "[::1]", "::", "[::]", "::ffff:127.0.0.1", "[::ffff:7f00:1]", "0:0:0:0:0:0:0:1"] {
+            XCTAssertTrue(ExtensionFetch.loopbackHost(host), host)
+        }
+        for host in ["example.com", "localhost.example.com", "128.0.0.1", "10.0.0.1", "::2", "::ffff:10.0.0.1", "2001:db8::1", "notlocalhost"] {
+            XCTAssertFalse(ExtensionFetch.loopbackHost(host), host)
+        }
+        XCTAssertTrue(ExtensionFetch.loopback(URL(string: "http://127.0.0.2:8080/")!))
+        XCTAssertFalse(ExtensionFetch.loopback(URL(string: "file://localhost/x")!))
+    }
+
+    /// urlFilter over a huge address isn't tried; a slow one stops at the
+    /// deadline and isn't tried again.
+    func testURLFilterBounds() {
+        let huge = URL(string: "https://x.example/" + String(repeating: "a", count: 1_000_000))!
+        let rules = (1...500).map { rule($0, 1, "modifyHeaders", [["header": "X-A", "operation": "set", "value": "1"]],
+                                         ["urlFilter": String(repeating: "*a", count: 2000) + "b"]) }
+        var started = Date()
+        XCTAssertEqual(ExtensionFetch.headerChanges(rules, url: huge, method: "GET")?.isEmpty, true)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1, "over 8 KB: not tried")
+
+        // The matcher's worst: one `*`, then a long literal run that almost
+        // matches everywhere — address × pattern steps.
+        let filter = "*" + String(repeating: "a", count: 4000) + "b"
+        let address = "https://x.example/" + String(repeating: "a", count: 8000)
+        _ = ExtensionFetch.urlFilterMatches("a", "https://x.example/a", caseSensitive: false)   // warm up
+        started = Date()
+        XCTAssertNil(ExtensionFetch.urlFilterMatches(filter, address, caseSensitive: false, deadline: Date().addingTimeInterval(0.02)))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.3, "stopped at the deadline")
+        let one = [rule(1, 1, "modifyHeaders", [["header": "X-A", "operation": "set", "value": "1"]], ["urlFilter": filter])]
+        XCTAssertNil(ExtensionFetch.headerChanges(one, url: URL(string: address)!, method: "GET", deadline: Date().addingTimeInterval(0.05)))
+        XCTAssertTrue(ExtensionFetch.tooSlow("url:" + filter))
+        started = Date()
+        XCTAssertEqual(ExtensionFetch.headerChanges(one, url: URL(string: address)!, method: "GET")?.isEmpty, true)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.05, "not tried again")
+    }
+
+    /// One extension's matching runs one at a time: work given up on holds
+    /// a single thread, and past a few waiting nothing more is queued.
+    func testOneLanePerExtension() async {
+        let id = "test-lane"
+        nonisolated(unsafe) var running = 0, most = 0
+        let lock = NSLock()
+        let work: @Sendable () -> Int = {
+            lock.lock(); running += 1; most = max(most, running); lock.unlock()
+            Thread.sleep(forTimeInterval: 0.3)
+            lock.lock(); running -= 1; lock.unlock()
+            return 1
+        }
+        let started = Date()
+        async let a = ExtensionFetch.within(0.05, lane: id, work)
+        async let b = ExtensionFetch.within(0.05, lane: id, work)
+        async let c = ExtensionFetch.within(0.05, lane: id, work)
+        let results = await [a, b, c]
+        XCTAssertEqual(results.compactMap { $0 }.count, 0, "all given up at the budget")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.5)
+        XCTAssertLessThanOrEqual(ExtensionFetch.waiting(for: id), 4)
+        for _ in 0..<40 where ExtensionFetch.waiting(for: id) > 0 { try? await Task.sleep(for: .milliseconds(100)) }
+        lock.lock(); let peak = most; lock.unlock()
+        XCTAssertEqual(peak, 1, "never two at once")
+        // A full lane takes nothing more.
+        for _ in 0..<4 { Task { _ = await ExtensionFetch.within(0.01, lane: id) { Thread.sleep(forTimeInterval: 0.5); return 0 } } }
+        try? await Task.sleep(for: .milliseconds(50))
+        let refused = Date()
+        let extra = await ExtensionFetch.within(5, lane: id) { 9 }
+        XCTAssertNil(extra)
+        XCTAssertLessThan(Date().timeIntervalSince(refused), 0.1, "refused at once")
+    }
+
+    func testRegexQuantifierCount() {
+        XCTAssertFalse(ExtensionFetch.regexAllowed(String(repeating: "a?", count: 20) + String(repeating: "a", count: 20)), "a?ⁿaⁿ")
+        XCTAssertTrue(ExtensionFetch.regexAllowed("^https?://(www\\.)?example\\.com/v[0-9]{1,3}/"))
     }
 }

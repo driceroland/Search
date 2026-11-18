@@ -94,8 +94,30 @@ enum ExtensionFetch {
 
     /// An app on this Mac: localhost, 127.0.0.1 or [::1].
     nonisolated static func loopback(_ url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
-        return ["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host?.lowercased() ?? "")
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https", let host = url.host else { return false }
+        return loopbackHost(host)
+    }
+
+    /// localhost and every name under it; 127.0.0.0/8 and 0.0.0.0, however
+    /// written (127.1, 2130706433…); ::1, :: and ::ffff:127.0.0.0/104. A
+    /// trailing dot or brackets change nothing.
+    nonisolated static func loopbackHost(_ raw: String) -> Bool {
+        var host = raw.lowercased()
+        if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        while host.hasSuffix(".") { host.removeLast() }
+        if host == "localhost" || host.hasSuffix(".localhost") { return true }
+        var v4 = in_addr()
+        if !host.contains(":"), inet_aton(host, &v4) == 1 {
+            let address = UInt32(bigEndian: v4.s_addr)
+            return address >> 24 == 127 || address == 0
+        }
+        var v6 = in6_addr()
+        guard inet_pton(AF_INET6, host, &v6) == 1 else { return false }
+        let bytes = withUnsafeBytes(of: v6) { Array($0) }
+        let zeros = bytes[0..<15].allSatisfy { $0 == 0 }
+        if zeros && (bytes[15] == 0 || bytes[15] == 1) { return true }        // :: and ::1
+        let mapped = bytes[0..<10].allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff
+        return mapped && bytes[12] == 127                                       // ::ffff:127.0.0.0/104
     }
 
     // MARK: - which store
@@ -387,7 +409,14 @@ enum ExtensionFetch {
         let sensitive = c["isUrlFilterCaseSensitive"] as? Bool ?? false
         let address = url.absoluteString
         if let filter = c["urlFilter"] as? String {
-            guard filter.utf8.count <= 4096, urlFilterMatches(filter, address, caseSensitive: sensitive) else { return false }
+            // Over 8 KB of address a filter isn't tried, nor one that once
+            // took too long; and it stops at the deadline.
+            guard filter.utf8.count <= 4096, address.utf8.count <= 8192, !tooSlow("url:" + filter) else { return false }
+            let started = Date()
+            let found = urlFilterMatches(filter, address, caseSensitive: sensitive, deadline: deadline)
+            if Date().timeIntervalSince(started) > 0.02 { markTooSlow("url:" + filter) }
+            guard let found else { return nil }
+            guard found else { return false }
         }
         if let source = c["regexFilter"] as? String {
             // Over 2 KB of address, a regex isn't tried: the work grows with
@@ -412,7 +441,7 @@ enum ExtensionFetch {
         guard !source.isEmpty, source.utf8.count <= 2048 else { return false }
         if source.range(of: #"\\[1-9]|\\k<|\(\?<?[=!]"#, options: .regularExpression) != nil { return false }
         var groups: [Bool] = []   // per open group: something inside multiplies
-        var escaped = false, inClass = false, lastClosedRisky = false, unbounded = 0
+        var escaped = false, inClass = false, lastClosedRisky = false, unbounded = 0, quantifiers = 0
         let chars = Array(source)
         var index = 0
         while index < chars.count {
@@ -431,6 +460,7 @@ enum ExtensionFetch {
                 lastClosedRisky = risky
             case "*", "+", "?", "{":
                 if lastClosedRisky { return false }
+                quantifiers += 1
                 if !groups.isEmpty { groups[groups.count - 1] = true }
                 lastClosedRisky = false
                 if ch == "{" {
@@ -447,12 +477,17 @@ enum ExtensionFetch {
         }
         // ICU tries a match at every place in the address: unanchored, each
         // unbounded quantifier more multiplies the work by its length.
-        return unbounded <= (source.hasPrefix("^") ? 2 : 1)
+        // And not too many optional or bounded ones: a?ⁿaⁿ takes 2ⁿ steps.
+        return unbounded <= (source.hasPrefix("^") ? 2 : 1) && quantifiers <= 16
     }
 
-    /// Regexes that once took over 20 ms on an address: never tried again
-    /// this run (their rules don't match). ICU can't be stopped inside one
-    /// attempt, so a request waits for matching no longer than its budget
+    /// Patterns (regexes, and urlFilters as "url:…") that once took over
+    /// 20 ms on an address: never tried again
+    /// this run (their rules don't match). ICU reports progress (and so can
+    /// be stopped) between attempts at each place in the address, not inside
+    /// one attempt: one that backtracks runs on (measured: `^(a|aa)*c$` over
+    /// 60 characters ran 0.6 s past a 50 ms deadline). So a request waits
+    /// for matching no longer than its budget
     /// (see `within`), and a slow pattern isn't given a second go.
     nonisolated(unsafe) private static var slow = Set<String>()
     private static let slowLock = NSLock()
@@ -490,7 +525,8 @@ enum ExtensionFetch {
     /// anchors at the start of a domain label, `|` at the start or end of
     /// the address, `*` is anything, `^` a separator (or the end). At worst
     /// address × pattern steps; never backtracks without end.
-    nonisolated static func urlFilterMatches(_ filter: String, _ address: String, caseSensitive: Bool) -> Bool {
+    nonisolated static func urlFilterMatches(_ filter: String, _ address: String, caseSensitive: Bool,
+                                             deadline: Date = .distantFuture) -> Bool? {
         let lower = { (s: String) in caseSensitive ? s : s.lowercased() }
         var pattern = Array(lower(filter).unicodeScalars)
         let text = Array(lower(address).unicodeScalars)
@@ -519,7 +555,8 @@ enum ExtensionFetch {
         for start in starts {
             let body = start < 0 ? [Unicode.Scalar("*")] + pattern : pattern
             let from = max(start, 0)
-            if wildcard(body, Array(text[from...]), toEnd: endAnchor, separator: separator) { return true }
+            guard let matched = wildcard(body, Array(text[from...]), toEnd: endAnchor, separator: separator, deadline: deadline) else { return nil }
+            if matched { return true }
         }
         return false
     }
@@ -527,9 +564,11 @@ enum ExtensionFetch {
     /// `*` and `^` matched greedily with one point to come back to: the
     /// classic linear wildcard match.
     nonisolated private static func wildcard(_ p: [Unicode.Scalar], _ t: [Unicode.Scalar], toEnd: Bool,
-                                             separator: (Unicode.Scalar) -> Bool) -> Bool {
-        var i = 0, j = 0, star = -1, mark = 0
+                                             separator: (Unicode.Scalar) -> Bool, deadline: Date) -> Bool? {
+        var i = 0, j = 0, star = -1, mark = 0, steps = 0
         while j < t.count {
+            steps += 1
+            if steps & 0xFFF == 0, Date() >= deadline { return nil }
             if i < p.count, p[i] == "*" { star = i; mark = j; i += 1; continue }
             if i < p.count, p[i] == "^" ? separator(t[j]) : p[i] == t[j] { i += 1; j += 1; continue }
             if !toEnd, i == p.count { return true }
@@ -551,11 +590,39 @@ enum ExtensionFetch {
 
     /// `work` off the main actor; nil if it hasn't finished within `seconds`
     /// (it is then left to finish on its own, unwaited for).
-    nonisolated static func within<T: Sendable>(_ seconds: TimeInterval, _ work: @escaping @Sendable () -> T) async -> T? {
+    /// Each extension's matching, on a queue of its own: work given up on
+    /// keeps one thread at most, never one per request. Past a few waiting,
+    /// a new one isn't queued at all (nil, as if late).
+    private final class Lane: @unchecked Sendable {
+        let queue: DispatchQueue
+        private let lock = NSLock()
+        private var waiting = 0
+        init(_ id: String) { queue = DispatchQueue(label: "search.extension-fetch.rules." + id, qos: .userInitiated) }
+        func enter() -> Bool { lock.lock(); defer { lock.unlock() }; guard waiting < 4 else { return false }; waiting += 1; return true }
+        func leave() { lock.lock(); waiting -= 1; lock.unlock() }
+        var count: Int { lock.lock(); defer { lock.unlock() }; return waiting }
+    }
+    nonisolated(unsafe) private static var lanes: [String: Lane] = [:]
+    private static let lanesLock = NSLock()
+    nonisolated private static func lane(_ id: String) -> Lane {
+        lanesLock.lock(); defer { lanesLock.unlock() }
+        if let lane = lanes[id] { return lane }
+        let lane = Lane(id)
+        lanes[id] = lane
+        return lane
+    }
+    /// Test runs: how many of an extension's matchings are queued or running.
+    nonisolated static func waiting(for id: String) -> Int { lane(id).count }
+
+    nonisolated static func within<T: Sendable>(_ seconds: TimeInterval, lane id: String,
+                                                _ work: @escaping @Sendable () -> T) async -> T? {
+        let lane = lane(id)
+        guard lane.enter() else { return nil }
         return await withCheckedContinuation { (finished: CheckedContinuation<T?, Never>) in
             let once = Once()
-            DispatchQueue.global(qos: .userInitiated).async {
+            lane.queue.async {
                 let value = work()
+                lane.leave()
                 if once.first() { finished.resume(returning: value) }
             }
             DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
@@ -731,7 +798,7 @@ enum ExtensionFetch {
             nonisolated(unsafe) let rules = headerRules
             let method = request.httpMethod ?? "GET"
             let deadline = Date().addingTimeInterval(0.05)
-            let changes = await ExtensionFetch.within(0.1) {
+            let changes = await ExtensionFetch.within(0.1, lane: context?.uniqueIdentifier ?? "") {
                 ExtensionFetch.headerChanges(rules, url: url, method: method, deadline: deadline)
             } ?? nil
             guard let changes else {
