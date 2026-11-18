@@ -1380,7 +1380,8 @@ struct TabAddressField: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+        // The caret kept clear of the field's end (RoomyField).
+        let field = RoomyField()
         field.delegate = context.coordinator
         field.isBordered = false
         field.drawsBackground = false

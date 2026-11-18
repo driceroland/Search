@@ -571,7 +571,7 @@ struct AddressField: NSViewRepresentable {
     /// field had no window to ask: the request went nowhere and nothing asked
     /// again, so ⌘T left a field with no caret and typing that went nowhere
     /// until it was clicked. Now the request waits for the window.
-    final class Field: NSTextField {
+    final class Field: RoomyField {
         var arrived: (() -> Void)?
 
         override func viewDidMoveToWindow() {
@@ -733,5 +733,48 @@ struct AddressField: NSViewRepresentable {
                 return false
             }
         }
+    }
+}
+
+/// A one-line field whose text stops a little short of its trailing edge.
+///
+/// Scrolled to the end of a long query, the field editor put the caret and
+/// the last letter right against the field's edge, a fraction of a point in
+/// (0.2 to 1 measured), where anything that clips the field there — the row
+/// or the pill around it, a wider caret — hid the caret and part of the last
+/// letter (idea 736). The text is now laid out, drawn and edited in a rect
+/// `margin` short of that edge, so the editor scrolls the caret that far in.
+class RoomyField: NSTextField {
+    override class var cellClass: AnyClass? {
+        get { RoomyFieldCell.self }
+        set {}
+    }
+}
+
+final class RoomyFieldCell: NSTextFieldCell {
+    /// What is kept clear past the caret at the end of the text.
+    static let margin: CGFloat = 4
+
+    private static func short(_ rect: NSRect) -> NSRect {
+        var inner = rect
+        inner.size.width = max(0, inner.width - margin)
+        return inner
+    }
+
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        Self.short(super.drawingRect(forBounds: rect))
+    }
+
+    // The field editor is laid in the frame it is handed here, not in the
+    // drawing rect above.
+    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
+                       delegate: Any?, event: NSEvent?) {
+        super.edit(withFrame: Self.short(rect), in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+
+    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
+                         delegate: Any?, start selStart: Int, length selLength: Int) {
+        super.select(withFrame: Self.short(rect), in: controlView, editor: textObj, delegate: delegate,
+                     start: selStart, length: selLength)
     }
 }

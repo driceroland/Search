@@ -44,6 +44,28 @@ final class Bench {
     /// How many covers the last ⌘S laid over what a page had yet to draw
     /// (see Browser.cover).
     static var foldCovers = 0
+
+    /// See the bench's `caret`.
+    static func caret(_ editor: NSTextView, in field: NSTextField) -> [String: Any] {
+        guard let window = field.window else { return ["error": "no window"] }
+        func box(_ r: CGRect) -> [Double] { [r.minX, r.minY, r.maxX, r.maxY].map { Double($0) } }
+        func inWindow(_ range: NSRange) -> CGRect {
+            window.convertFromScreen(editor.firstRect(forCharacterRange: range, actualRange: nil))
+        }
+        var seen = field.convert(field.visibleRect, to: nil)
+        if let clip = editor.superview as? NSClipView { seen = seen.intersection(clip.convert(clip.bounds, to: nil)) }
+        let length = (editor.string as NSString).length
+        let selected = editor.selectedRange()
+        let caret = inWindow(NSRange(location: selected.upperBound, length: 0))
+        let last = length > 0 ? inWindow(NSRange(location: length - 1, length: 1)) : .zero
+        return ["text": editor.string, "selected": [selected.location, selected.length],
+                "class": String(describing: type(of: field)),
+                "seen": box(seen), "caret": box(caret), "last": box(last),
+                "field": box(field.convert(field.bounds, to: nil)),
+                "clip": (editor.superview as? NSClipView).map { box($0.convert($0.bounds, to: nil)) } ?? [],
+                "editor": box(editor.convert(editor.bounds, to: nil)),
+                "inset": [Double(editor.textContainerInset.width), Double(editor.textContainer?.lineFragmentPadding ?? 0)]]
+    }
     static func count(_ name: String) {
         if counting { bodies[name, default: 0] += 1 }
     }
@@ -1981,6 +2003,17 @@ final class Bench {
             guard Store.testing else { answer(["error": "import-file only works on a --test run"]); return }
             browser.cancelFileImport()
             answer(["cancelling": browser.fileImport?.cancelling ?? false])
+
+        case "caret":
+            // The field being typed in (the window's first responder): where
+            // the caret and the last character are, in window points, against
+            // what of the field is in sight — the field's own visible part,
+            // within the clip its editor scrolls in (idea 736). Reads only.
+            guard Store.testing else { answer(["error": "caret only works on a --test run"]); return }
+            guard let window = browser.window ?? Links.window, let editor = window.firstResponder as? NSTextView,
+                  let field = editor.delegate as? NSTextField
+            else { answer(["error": "no field is being typed in"]); return }
+            answer(Bench.caret(editor, in: field))
 
         case "tab-type":
             // The field in the tab, on the tab in front: the edit begun as a
