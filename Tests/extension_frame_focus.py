@@ -83,6 +83,11 @@ def attr(page, name):
     return sv.cmd({"do": "eval", "id": page, "js": f"document.documentElement.getAttribute('data-{name}') || ''"}).get("value")
 
 
+def has_keys(page):
+    tab = next((x for x in sv.sp("state")["tabs"] if x["id"] == page), {})
+    return tab.get("hasKeys") is True
+
+
 def main():
     t = sv.T()
     folder = work / "ext"
@@ -108,6 +113,14 @@ def main():
         t.ok("its content script runs on the page", attr(page, "ready") == "1")
         sv.cmd({"do": "click", "id": page, "selector": "body"})
         time.sleep(0.4)
+        # The keys go to the window's first responder, and a tab opened a
+        # moment ago doesn't always have it yet (the click above is the
+        # page's own, which doesn't move it): T then never reached the page,
+        # about one run in four, and the checks below failed with nothing in
+        # the box. So the page is given the keys, as a click on it would.
+        if not has_keys(page):
+            sv.cmd({"do": "key", "id": page, "text": ""})
+        t.ok("the page has the keys", has_keys(page))
 
         press(17, "t"); time.sleep(1.5)
         press(0, "a"); press(11, "b")
