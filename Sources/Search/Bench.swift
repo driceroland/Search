@@ -4121,8 +4121,17 @@ final class Bench {
             guard let host = request["host"] as? String else { answer(["error": "sitestyle needs host"]); return }
             if let on = request["on"] as? Bool { browser.prefs.sitesStyles = on }
             if let css = request["css"] as? String { SiteStyles.shared.set(css, on: host) }
+            // "pull": [DX, DY], the editor's corner dragged that far, as its
+            // grip does it; kept as letting go keeps it.
+            if let pull = request["pull"] as? [Double], pull.count == 2 {
+                StylePanel.keep(StylePanel.pulled(StylePanel.kept, by: CGSize(width: pull[0], height: pull[1]),
+                                                  room: browser.window?.contentView?.bounds.size))
+            }
+            let size = StylePanel.kept
             answer(["on": SiteStyles.shared.on, "css": SiteStyles.shared.css(on: host) ?? "",
-                    "written": SiteStyles.shared.written(on: host), "editing": browser.styling ?? ""])
+                    "written": SiteStyles.shared.written(on: host), "editing": browser.styling ?? "",
+                    "size": [Double(size.width), Double(size.height)],
+                    "least": [Double(StylePanel.least.width), Double(StylePanel.least.height)]])
 
         case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "ext-sites", "capture", "capture-stop":
             guard #available(macOS 15.4, *) else {

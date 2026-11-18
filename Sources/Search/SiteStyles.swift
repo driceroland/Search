@@ -142,6 +142,8 @@ final class SiteStyles: ObservableObject {
 
 /// View › Edit Site Style…: the CSS for the site in front, on the page as
 /// you type. Done closes it; there is nothing to save, it already is.
+/// Its bottom corner, away from the corner it hangs from, makes it larger
+/// or smaller, the editor taking the room; the size is kept for next time.
 struct StylePanel: View {
     @ObservedObject var browser: Browser
     let host: String
@@ -149,9 +151,49 @@ struct StylePanel: View {
     @State private var text = ""
     @State private var pending: DispatchWorkItem?
     @FocusState private var typing: Bool
+    /// The card's width and the editor's height, as last left.
+    @State private var size = StylePanel.kept
+    @State private var start: CGSize?
+    @State private var over = false
+
+    /// What it opens at the first time, and the least it is made.
+    static let first = CGSize(width: 420, height: 220)
+    static let least = CGSize(width: 340, height: 120)
+
+    static var kept: CGSize {
+        let width = Store.settings.double(forKey: "sitestyle.width")
+        let height = Store.settings.double(forKey: "sitestyle.height")
+        guard width > 0, height > 0 else { return first }
+        return CGSize(width: max(width, least.width), height: max(height, least.height))
+    }
+
+    static func keep(_ size: CGSize) {
+        Store.settings.set(Double(size.width), forKey: "sitestyle.width")
+        Store.settings.set(Double(size.height), forKey: "sitestyle.height")
+    }
+
+    /// The most it may take: the window, less the margins round the card,
+    /// its title and its foot.
+    static func most(in room: CGSize?) -> CGSize {
+        guard let room, room.width > 0, room.height > 0 else { return CGSize(width: 1200, height: 900) }
+        return CGSize(width: max(least.width, room.width - 28),
+                      height: max(least.height, room.height - Metrics.strip - 8 - 14 - 150))
+    }
+
+    /// `from` pulled by `moved` at the corner under the card's left edge:
+    /// left and down make it larger.
+    static func pulled(_ from: CGSize, by moved: CGSize, room: CGSize?) -> CGSize {
+        let most = most(in: room)
+        return CGSize(width: min(max(from.width - moved.width, least.width), most.width),
+                      height: min(max(from.height + moved.height, least.height), most.height))
+    }
+
+    private var room: CGSize? { browser.window?.contentView?.bounds.size }
 
     var body: some View {
-        Plate(host, width: 420, close: close) {
+        let most = Self.most(in: room)
+        let shown = CGSize(width: min(size.width, most.width), height: min(size.height, most.height))
+        return Plate(host, width: shown.width, close: close) {
             VStack(alignment: .leading, spacing: 6) {
                 Caption("CSS for every page of this site")
                 TextEditor(text: $text)
@@ -161,7 +203,7 @@ struct StylePanel: View {
                     .autocorrectionDisabled()
                     .focused($typing)
                     .padding(8)
-                    .frame(height: 220)
+                    .frame(height: shown.height)
                     .background(Palette.wash, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         } foot: {
@@ -173,6 +215,7 @@ struct StylePanel: View {
                 Spacer()
             }
         }
+        .overlay(alignment: .bottomLeading) { corner }
         .onAppear {
             text = SiteStyles.shared.written(on: host)
             typing = true
@@ -185,6 +228,45 @@ struct StylePanel: View {
             pending = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
         }
+    }
+
+    /// The corner that resizes it: a small mark, the pointer's resize arrow
+    /// over it; a double-click puts it back to its first size.
+    private var corner: some View {
+        Image(systemName: "arrow.down.left.and.arrow.up.right")
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(over || start != nil ? Palette.muted : Palette.faint)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                guard inside != over else { return }
+                over = inside
+                if inside { Self.cursor.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { drag in
+                        let from = start ?? size
+                        if start == nil { start = from }
+                        size = Self.pulled(from, by: drag.translation, room: room)
+                    }
+                    .onEnded { _ in
+                        start = nil
+                        Self.keep(size)
+                    }
+            )
+            .onTapGesture(count: 2) {
+                size = Self.first
+                Self.keep(size)
+            }
+            .help("Drag to resize")
+            .accessibilityHidden(true)
+    }
+
+    /// The diagonal resize arrow where macOS has one to give.
+    private static var cursor: NSCursor {
+        if #available(macOS 15, *) { return .frameResize(position: .bottomLeft, directions: .all) }
+        return .crosshair
     }
 
     private func close() {

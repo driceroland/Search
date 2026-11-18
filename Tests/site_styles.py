@@ -90,6 +90,18 @@ def main():
         time.sleep(0.6)
         t.ok("cleared: forgotten", s["written"] == "", s)
         t.ok("…and the page as the site made it", color(a) == plain and sheet(a) == "", color(a))
+
+        # The editor's card resizes from its corner, within its least size,
+        # and opens at the size it was left, after a relaunch too.
+        s = style()
+        first = s["size"]
+        t.ok("editor: opens at 420 by 220 the first time", first == [420, 220], first)
+        s = style(pull=[-120, 160])
+        t.ok("editor: pulled left and down, larger", s["size"] == [540, 380], s["size"])
+        sv.quit(); sv.launch()
+        t.ok("editor: the size is kept", style()["size"] == [540, 380], style()["size"])
+        s = style(pull=[2000, -2000])
+        t.ok("editor: never under its least size", s["size"] == s["least"], s)
     finally:
         sv.finish()
     t.done()

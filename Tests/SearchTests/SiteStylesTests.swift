@@ -1,5 +1,6 @@
 import AppKit
 import JavaScriptCore
+import SwiftUI
 import XCTest
 @testable import Search
 
@@ -44,6 +45,50 @@ final class SiteStylesTests: XCTestCase {
 
         again.remove(on: "example.com")
         XCTAssertTrue(again.hosts.isEmpty)
+    }
+
+    /// The editor's card resizes from its bottom corner, within a least
+    /// size and the window, and opens again at the size it was left.
+    func testTheEditorResizesAndKeepsItsSize() throws {
+        _ = NSApplication.shared
+        defer {
+            Store.settings.removeObject(forKey: "sitestyle.width")
+            Store.settings.removeObject(forKey: "sitestyle.height")
+        }
+        Store.settings.removeObject(forKey: "sitestyle.width")
+        Store.settings.removeObject(forKey: "sitestyle.height")
+        XCTAssertEqual(StylePanel.kept, StylePanel.first)
+
+        let room = CGSize(width: 1200, height: 900)
+        // Left and down: larger; right and up: smaller, never under the least.
+        XCTAssertEqual(StylePanel.pulled(StylePanel.first, by: CGSize(width: -180, height: 200), room: room),
+                       CGSize(width: 600, height: 420))
+        XCTAssertEqual(StylePanel.pulled(StylePanel.first, by: CGSize(width: 500, height: -500), room: room),
+                       StylePanel.least)
+        // Never past the window.
+        let most = StylePanel.most(in: room)
+        XCTAssertEqual(StylePanel.pulled(StylePanel.first, by: CGSize(width: -5000, height: 5000), room: room), most)
+        XCTAssertLessThan(most.width, room.width)
+        XCTAssertLessThan(most.height, room.height)
+
+        StylePanel.keep(CGSize(width: 600, height: 420))
+        XCTAssertEqual(StylePanel.kept, CGSize(width: 600, height: 420), "kept for next time")
+
+        // Drawn off screen at that size: the card is as wide, the editor as tall.
+        let browser = Browser(record: WindowRecord())
+        defer { browser.closeAll() }
+        let host = NSHostingView(rootView: StylePanel(browser: browser, host: "example.com"))
+        host.appearance = NSAppearance(named: .aqua)
+        host.frame = NSRect(origin: .zero, size: host.fittingSize)
+        host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(host.fittingSize.width, 600, accuracy: 1)
+        XCTAssertGreaterThan(host.fittingSize.height, 420)
+        if let out = ProcessInfo.processInfo.environment["SNAPSHOT_DIR"],
+           let picture = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: picture)
+            try picture.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: out).appendingPathComponent("site-style-600x420.png"))
+        }
     }
 
     func testTurningTheSettingOffKeepsTheStyles() {
