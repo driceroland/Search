@@ -1805,23 +1805,36 @@ final class Extensions: NSObject, ObservableObject {
     }
 
     /// What an extension's popup hangs from: its own button in the row,
-    /// else the puzzle button — whichever is in the window now.
+    /// else the puzzle button — whichever is in the window now, and in
+    /// sight. Folded away, the column or the strip keeps its buttons in the
+    /// window, slid out past its edge: a popup hung from one there opened
+    /// off the window, where nobody saw it, and a shortcut for it seemed to
+    /// do nothing. None in sight, the popup stands where they would be
+    /// (ExtensionPopup.show).
     func anchor(for id: String, in targetBrowser: Browser? = nil) -> NSView? {
         let target = targetBrowser ?? browser
         if let key = target.map(ObjectIdentifier.init), let windowAnchors = anchors[key] {
             let own = windowAnchors[id]?.view
-            if own?.window != nil { return own }
-            if let puzzle = windowAnchors[Extensions.menuAnchor]?.view, puzzle.window != nil {
+            if let own, Extensions.inSight(own) { return own }
+            if let puzzle = windowAnchors[Extensions.menuAnchor]?.view, Extensions.inSight(puzzle) {
                 return puzzle
             }
         }
         for (_, map) in anchors {
-            if let own = map[id]?.view, own.window != nil { return own }
+            if let own = map[id]?.view, Extensions.inSight(own) { return own }
         }
         for (_, map) in anchors {
-            if let puzzle = map[Extensions.menuAnchor]?.view, puzzle.window != nil { return puzzle }
+            if let puzzle = map[Extensions.menuAnchor]?.view, Extensions.inSight(puzzle) { return puzzle }
         }
         return nil
+    }
+
+    /// In a window, not hidden, and within the window's content rather
+    /// than slid out past its edge.
+    static func inSight(_ view: NSView) -> Bool {
+        guard let content = view.window?.contentView, !view.isHiddenOrHasHiddenAncestor else { return false }
+        let spot = view.convert(view.bounds, to: content)
+        return content.bounds.contains(NSPoint(x: spot.midX, y: spot.midY))
     }
 
     /// action.openPopup: the button's popup as it is now, in the window in

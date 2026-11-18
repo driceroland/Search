@@ -904,6 +904,7 @@ final class Bench {
                     "tabs": browser.tabs.map { Bench.short($0) },
                     "urls": browser.tabs.map { $0.address?.absoluteString ?? "" },
                     "active": browser.activeID.flatMap { id in browser.tabs.first { $0.id == id } }.map { Bench.short($0) } ?? "",
+                    "menu": PageView.lastMenu,
                 ])
             }
 
@@ -4844,6 +4845,10 @@ final class Bench {
                     "action": action?.label ?? "", "badge": action?.badgeText ?? "",
                     "popup": action?.presentsPopup ?? false,
                     "pinned": item.pinned ?? false, "source": item.source ?? "",
+                    // Its commands, with the key each has now (Settings › Shortcuts).
+                    "commands": (context?.commands ?? []).map { command -> [String: Any] in
+                        ["id": command.id, "key": KeyCombo(activation: command.activationKey, flags: command.modifierFlags)?.display ?? ""]
+                    },
                 ]
             }])
         case "ext-add":
@@ -4955,7 +4960,12 @@ final class Bench {
             web.evaluateJavaScript(request["js"] as? String ?? "document.title") { value, error in
                 MainActor.assumeIsolated {
                     if let error { answer(["error": error.localizedDescription]); return }
-                    answer(["value": Bench.plain(value)])
+                    // Whether the popover is up, and where its window stands
+                    // beside the browser's, from their bottom-left corners.
+                    let frame = { (w: NSWindow?) in w.map { [Int($0.frame.minX), Int($0.frame.minY), Int($0.frame.width), Int($0.frame.height)] } ?? [] }
+                    answer(["value": Bench.plain(value), "up": ExtensionPopup.shared.isUp,
+                            "visible": web.window?.isVisible ?? false, "frame": frame(web.window), "browser": frame(browser.window),
+                            "placement": ExtensionPopup.shared.placement])
                 }
             }
         case "ext-page":

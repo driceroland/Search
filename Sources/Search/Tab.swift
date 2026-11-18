@@ -2464,6 +2464,9 @@ final class PageView: WKWebView {
         // comes up, the way a hand would choose it, and the menu goes.
         if Store.testing, let title = PageView.picking {
             PageView.picking = nil
+            PageView.lastMenu = menu.items.filter { !$0.isSeparatorItem }.map { item in
+                item.submenu.map { sub in item.title + " › " + sub.items.filter { !$0.isSeparatorItem }.map(\.title).joined(separator: " | ") } ?? item.title
+            }
             RunLoop.main.perform(inModes: [.eventTracking, .default]) {
                 if let index = menu.items.firstIndex(where: { $0.title == title }) { menu.performActionForItem(at: index) }
                 menu.cancelTracking()
@@ -2511,6 +2514,8 @@ final class PageView: WKWebView {
 
     /// The item the bench's linkmenu will choose in the next menu.
     static var picking: String?
+    /// The titles of the last menu the bench's linkmenu opened.
+    static var lastMenu: [String] = []
     var searchName: (() -> String?)?
     var onSearch: ((String) -> Void)?
     private var selection: String?

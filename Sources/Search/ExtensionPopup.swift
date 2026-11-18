@@ -107,6 +107,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         Extensions.shared.controller.didOpenTab(page)
 
         shown = false
+        placement = anchor.map(ExtensionPopup.describe) ?? ["from": "window"]
         if let anchor, anchor.window != nil {
             popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
         } else if let content = (targetBrowser?.window ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain && $0.frame.minX > -10_000 }))?.contentView {
@@ -136,6 +137,21 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
             guard let self, let popover, popover === self.popover else { return }
             self.reveal()
         }
+    }
+
+    /// Where the last popup was hung from, for the bench.
+    private(set) var placement: [String: Any] = [:]
+
+    static func describe(_ view: NSView) -> [String: Any] {
+        guard let window = view.window, let content = window.contentView else { return ["from": "view", "inWindow": false] }
+        let r = view.convert(view.bounds, to: nil)
+        var alpha = view.alphaValue
+        var up = view.superview
+        while let v = up { alpha *= v.alphaValue; up = v.superview }
+        return ["from": "view", "inWindow": true, "hidden": view.isHiddenOrHasHiddenAncestor, "alpha": Double(alpha),
+                "rect": [Int(r.minX), Int(r.minY), Int(r.width), Int(r.height)],
+                "content": [Int(content.bounds.width), Int(content.bounds.height)],
+                "onWindow": content.convert(content.bounds, to: nil).intersects(r)]
     }
 
     /// Each extension's popup size, so the next opening starts there.
