@@ -438,10 +438,12 @@ final class PaneStage: NSView {
                 shadow.frame = frame
                 shadow.isHidden = corner == 0 || !visible
             }
-            // Only with two pages on screen does it matter which one keys go to.
+            // Only with two pages on screen does it matter which one keys go to,
+            // and only as cards: edge to edge, a grey frame round one page
+            // of two read as a stray border (Drice, 18 Nov 2026).
             let cue = cues[index]
             cue.frame = frame
-            let lit = paired && index < tabs.count && tabs[index].id == focused
+            let lit = paired && corner > 0 && index < tabs.count && tabs[index].id == focused
             if (cue.alphaValue == 1) != lit {
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = Motion.reduced ? 0 : 0.14
