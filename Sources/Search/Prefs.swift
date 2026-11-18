@@ -552,6 +552,14 @@ final class Preferences: ObservableObject {
             AutoScroll.on = autoScroll
         }
     }
+    /// Pages bounce at their top and bottom, as in Safari, rather than stop
+    /// there (see Swipe.calm). Off unless asked for.
+    @Published var bounces: Bool {
+        didSet {
+            store.set(bounces, forKey: "pages.bounce")
+            Swipe.bounces = bounces
+        }
+    }
     /// Pages draw at 120 frames a second on a screen that can (see FrameRate.swift).
     /// On power unless chosen otherwise.
     @Published var fastPages: FastPages {
@@ -1109,6 +1117,9 @@ final class Preferences: ObservableObject {
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls
+        let bouncing = store.bool(forKey: "pages.bounce")
+        bounces = bouncing
+        Swipe.bounces = bouncing
         // "pages.120" was a switch before it was three choices: on is now
         // always, an explicit off never. Never touched: On power (24 Oct
         // 2026), which changes nothing on battery.
@@ -1191,6 +1202,8 @@ final class Preferences: ObservableObject {
             .flatMap { Preferences.sidePanelWidths.contains($0) ? $0 : nil }, or: 380)
         take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)
         take(\.cardsInFullScreen, store.bool(forKey: "layout.cardsFullScreen"))
+        take(\.bounces, store.bool(forKey: "pages.bounce"))
+        Swipe.bounces = bounces
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
         take(\.instantMotion, store.bool(forKey: Motion.instantKey))

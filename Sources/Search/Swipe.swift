@@ -47,6 +47,9 @@ enum Swipe {
     /// broke mouse-wheel scrolling entirely on any page that had a non-passive
     /// wheel event listener (WebKit bug rdar://137757208). Native edge
     /// configuration avoids touching the page's styling and prevents the bug.
+    /// Top and bottom bounce after all, when asked for in Settings (Prefs.bounces).
+    static var bounces = false
+
     static func calm(_ web: WKWebView) {
         let set = NSSelectorFromString("_setRubberBandingEnabled:")
         guard web.responds(to: set) else { return }
@@ -54,8 +57,9 @@ enum Swipe {
         // _WKRectEdge: one bit per CGRectEdge (_WKRectEdge.h) — the edges
         // that keep their bounce. Left and right, and only pinched in.
         let left: UInt = 1 << 0, right: UInt = 1 << 2   // CGRectMinXEdge, CGRectMaxXEdge
+        let top: UInt = 1 << 1, bottom: UInt = 1 << 3   // CGRectMinYEdge, CGRectMaxYEdge
         let sides: UInt = web.magnification > 1 ? left | right : 0
-        unsafeBitCast(web.method(for: set), to: Setter.self)(web, set, sides)
+        unsafeBitCast(web.method(for: set), to: Setter.self)(web, set, sides | (bounces ? top | bottom : 0))
     }
 
     /// Whether a sideways swipe here would scroll something. Said once per

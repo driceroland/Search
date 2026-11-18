@@ -755,6 +755,7 @@ struct SettingsPanel: View {
             .fixedSize()
         case "links.peek.stays": Switch(on: $prefs.peekStays)
         case "autoscroll": Switch(on: $prefs.autoScroll)
+        case "pages.bounce": Switch(on: $prefs.bounces)
         case "swipe.history": Switch(on: $prefs.holdsHistory)
         case "launcher.on": Switch(on: $prefs.launcher)
         case "launcher.key": LauncherKeyBox(prefs: prefs)
