@@ -409,13 +409,18 @@ extension Browser {
             return visible.contains { $0 == floating || $0 == pictured }
         } ?? false
         if !returningVideo { leavingSpace() }
-        writeSession(now: true)
+        // Off the main thread: the row is parked in memory just below, and
+        // quitting writes whatever is still waiting (Disk.drain). Written at
+        // once, a long row held the switch until it was on disk.
+        writeSession()
         for tab in tabs where visibleTabIDs.contains(tab.id) { tab.touch() }
 
         // The row on screen is parked as it is, sound and all: music or a
         // stream keeps playing in the space you left, as it does in a tab
         // you left. ⌘⇧M, or its speaker, stops it.
         parked[spaceID] = Parked(tabs: tabs, active: activeID, splits: splits, groups: tabGroups)
+        // Its loose rows, for the space coming in (see rowKey).
+        let leaving = looseRow
 
         spaceID = id
         sitePanelFollowsSpace()
@@ -440,10 +445,14 @@ extension Browser {
             for tab in tabs where visibleTabIDs.contains(tab.id) {
                 if !tab.wake() { tab.revive() }
             }
+            // The page now, as a tab switch does (see PaneStage.show(now:)),
+            // rather than after the whole column has been built again.
+            if activeSplit == nil, let active, let window { PaneStage.stages.object(forKey: window)?.show(now: active) }
         } else {
             showRow([], active: nil)
             restoreSession()
         }
+        handOverRowKeys(leaving)
         returnSpaceVideo()
         editing = active?.isBlank ?? true
         typed = ""
@@ -454,6 +463,50 @@ extension Browser {
         // Beside the space's icon when the tabs are on screen (SpaceDot);
         // folded away, at the bottom.
         if folded && !peeking { announce(space.name) }
+    }
+
+    /// The key a loose row of the column is drawn under: the tab's own, kept
+    /// with it as it moves, so a tab opened, closed or carried among the
+    /// others moves as it always has — until another space comes in, whose
+    /// tabs are given the rows of the one going, place by place
+    /// (handOverRowKeys). Drawn under their own ids, every row of the space
+    /// going was taken down and every row of the one coming was built anew,
+    /// 2 ms a row, close to half a second for a space of 200 tabs; given
+    /// the same rows, each is only told its new tab.
+    func rowKey(_ tab: Tab) -> Int {
+        if let key = rowKeys[tab.id] { return key }
+        lastRowKey += 1
+        rowKeys[tab.id] = lastRowKey
+        return lastRowKey
+    }
+
+    /// The tabs the column draws loose, out of any group (SideBar.looseTabs).
+    var looseRow: [Tab] {
+        displayedTabs.filter { $0.pin == nil && (!prefs.usesTabGroups || group(of: $0) == nil) }
+    }
+
+    /// The rows of `leaving`, the loose tabs of the space gone, for the
+    /// loose tabs now on screen, in their order; past its end, each tab its
+    /// own key, or a new one where that key went to one of the others. Only
+    /// this row's tabs keep one.
+    private func handOverRowKeys(_ leaving: [Tab]) {
+        let handed = leaving.map(rowKey)
+        var kept: [Tab.ID: Int] = [:]
+        var taken = Set(handed)
+        for (index, tab) in looseRow.enumerated() {
+            if index < handed.count {
+                kept[tab.id] = handed[index]
+                continue
+            }
+            var key = rowKeys[tab.id] ?? 0
+            if key == 0 || taken.contains(key) {
+                lastRowKey += 1
+                key = lastRowKey
+            }
+            taken.insert(key)
+            kept[tab.id] = key
+        }
+        rowKeys = kept
     }
 
     /// Every other space's row, made ahead of time, so the column can show

@@ -2581,6 +2581,9 @@ final class Browser: NSObject, ObservableObject {
     /// sign-ins, its history and bookmarks.
     let profileID: UUID
     @Published var spaceID = Space.firstID
+    /// The key each loose row of the column is drawn under (see rowKey).
+    var rowKeys: [Tab.ID: Int] = [:]
+    var lastRowKey = 0
     var parked: [UUID: Parked] = [:]
     /// How far the column's rows have followed two fingers sideways, and
     /// whether the card for a new space stands in for them (see SpaceSwipe).

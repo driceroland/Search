@@ -380,7 +380,7 @@ struct SideBar: View {
                                     // Without the glide on a test run: a hidden
                                     // probe's window draws no frames, and the
                                     // scroll stopped where its first one left it.
-                                    withAnimation(Store.testing ? nil : Motion.glide) { proxy.scrollTo(representative) }
+                                    withAnimation(Store.testing ? nil : Motion.glide) { scroll(proxy, to: representative) }
                                 }
                                 // A turn of the run loop later, as the row across
                                 // the top does it (TabBar.reveal): the folded
@@ -400,7 +400,7 @@ struct SideBar: View {
                                     room.fitted = nil
                                     guard !stayed, let id = browser.activeID else { return }
                                     DispatchQueue.main.async {
-                                        proxy.scrollTo(browser.activeSplit?.left ?? id, anchor: .center)
+                                        scroll(proxy, to: browser.activeSplit?.left ?? id, anchor: .center)
                                     }
                                 }
                             }
@@ -540,7 +540,7 @@ struct SideBar: View {
     private var rowsHeight: CGFloat {
         let displayed = browser.displayedTabs
         let listed = browser.listedPins.count
-        let ungrouped = displayed.filter { $0.pin == nil && (!prefs.usesTabGroups || browser.group(of: $0) == nil) }.count
+        let ungrouped = browser.looseRow.count
         let listBlock = listedHeight(listed)
             + (showsLine(kept: keptCount, listed: listed, loose: ungrouped) ? KeepLine.height + SideBar.gap : 0)
         let grouped = prefs.usesTabGroups ? browser.tabGroups.map { browser.visibleTabs(in: $0) } : []
@@ -621,9 +621,7 @@ struct SideBar: View {
     // MARK: - the pinned squares
 
     private var pinnedTabs: [Tab] { browser.squarePins }
-    private var looseTabs: [Tab] {
-        browser.displayedTabs.filter { $0.pin == nil && (!prefs.usesTabGroups || browser.group(of: $0) == nil) }
-    }
+    private var looseTabs: [Tab] { browser.looseRow }
 
     /// The line between what is kept and what comes and goes, with the
     /// pinned rows on: over the tabs Clear would close, or under rows with
@@ -955,8 +953,12 @@ struct SideBar: View {
             // among them would land.
             if !loose.isEmpty || ghost != nil {
                 let looseSteps = steps(loose)
+                // Under each tab's row key, not its id: another space's tabs
+                // come into these same rows (see Browser.rowKey).
+                let rows = loose.enumerated().map { LooseRow(id: browser.rowKey($0.element), index: $0.offset, tab: $0.element) }
                 VStack(spacing: SideBar.gap) {
-                    ForEach(Array(loose.enumerated()), id: \.element.id) { index, tab in
+                    ForEach(rows) { row in
+                        let index = row.index, tab = row.tab
                         if ghost == index, let carried = crossingTab {
                             RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
                         }
@@ -1010,6 +1012,16 @@ struct SideBar: View {
         let loose = Set(looseTabs.map(\.id))
         return GroupDropFrames.leaving(point, frames: groupFrames, loose: looseFrames.rects.filter { loose.contains($0.key) },
                                        groups: browser.tabGroups, source: tab.id, vertical: true)
+    }
+
+    /// Where the scroll goes for `id`: a loose row is drawn under its row
+    /// key, not its tab's id (see Browser.rowKey); any other row under its id.
+    private func scroll(_ proxy: ScrollViewProxy, to id: Tab.ID, anchor: UnitPoint? = nil) {
+        if let tab = looseTabs.first(where: { $0.id == id }) {
+            proxy.scrollTo(browser.rowKey(tab), anchor: anchor)
+        } else {
+            proxy.scrollTo(id, anchor: anchor)
+        }
     }
 
     private func groupRows(_ group: TabGroup) -> some View {
@@ -1428,6 +1440,14 @@ private struct PinSquare: View, Equatable {
     }
 }
 
+/// A loose row of the column: the key it is drawn under (Browser.rowKey),
+/// its place among the loose rows and the tab in it.
+private struct LooseRow: Identifiable {
+    let id: Int
+    let index: Int
+    let tab: Tab
+}
+
 /// One tab, as a line in the column.
 ///
 /// It doesn't watch the Browser. The little of it a row shows is read as the
@@ -1669,6 +1689,12 @@ private struct SideRow: View, Equatable {
         .onHover(perform: hover)
         .onAppear { if interactive { Bench.rowAppeared(tab.id, hover: hover) } }
         .onDisappear { if interactive { Bench.rowDisappeared(tab.id) } }
+        // Another space's tab come into this row (Browser.rowKey).
+        .onChange(of: tab.id) { was, now in
+            guard interactive else { return }
+            Bench.rowDisappeared(was)
+            Bench.rowAppeared(now, hover: hover)
+        }
         .contextMenu { if interactive { TabMenu(browser: browser, tab: tab, close: close) } }
         .background {
             if interactive && prefs.splitView {
