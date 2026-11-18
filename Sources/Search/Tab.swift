@@ -2082,6 +2082,10 @@ final class Tab: ObservableObject, Identifiable {
         if !blockedPopups.isEmpty { blockedPopups = [] }
         translationGone(sleeping: true)
         watch = []
+        // The page still loading goes with its view, and what said so goes
+        // first: its stopLoading below is heard by no one. Left set, a pin
+        // put down mid-load spun on its row for good.
+        if loading { loading = false }
         ears.stop()
         noisy = false
         quiet?.invalidate()
