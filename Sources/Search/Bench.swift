@@ -515,9 +515,11 @@ final class Bench {
             // a launcher a harness can't have signed; forgotten.
             case "trusted": break
             case "trust":
+                // "agedDays": granted that many days ago, to see it run out.
+                let added = Date().addingTimeInterval(-86_400 * (request["agedDays"] as? Double ?? 0))
                 let ok = AgentTrust.shared.rememberSimulated(client: request["client"] as? String ?? "",
                                                              requirement: request["requirement"] as? String ?? "",
-                                                             seesTabs: request["tabs"] as? Bool ?? false)
+                                                             added: added)
                 guard ok else { answer(["error": "nothing remembered: this build has nowhere safe to keep it"]); return }
             case "forget":
                 if let client = request["client"] as? String {
@@ -557,7 +559,8 @@ final class Bench {
             var out = agents.state
             out["usable"] = AgentTrust.shared.usable
             out["trusted"] = AgentTrust.shared.remembered.map { ["client": $0.client, "requirement": $0.requirement,
-                                                                 "team": $0.team, "seesTabs": $0.seesTabs,
+                                                                 "team": $0.team, "suspended": $0.suspended ?? false,
+                                                                 "expires": $0.expires.timeIntervalSince1970,
                                                                  "used": $0.used.timeIntervalSince1970] }
             answer(out)
 

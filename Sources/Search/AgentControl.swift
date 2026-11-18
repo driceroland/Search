@@ -378,6 +378,11 @@ final class AgentSession: ObservableObject, Identifiable {
     @Published fileprivate(set) var wantsAlways = false
     /// Let in without asking: remembered (AgentTrust).
     @Published fileprivate(set) var auto = false
+    /// The entry that let it in, suspended if you press Stop.
+    fileprivate var admittedBy: RememberedAgent.ID?
+    /// Just let in without asking: the column's line says so out loud for a
+    /// few seconds.
+    @Published fileprivate(set) var justAdmitted = false
     /// The program that started it, as its signature says, once checked at
     /// hello; nil if it couldn't be.
     @Published fileprivate(set) var launcher: AgentLauncher?
@@ -771,6 +776,12 @@ final class AgentControl: ObservableObject {
     private func end(_ session: AgentSession, _ why: String) {
         guard self.session === session else { return }
         let was = session.consent.state
+        // Stopped while let in without asking: not let in again without
+        // asking, until you allow it in the question.
+        if why.hasPrefix("stopped"), was == .allowed, let id = session.admittedBy {
+            AgentTrust.shared.suspend(id)
+            Self.log.notice("stopped: \(session.client, privacy: .public) is asked about again from now on")
+        }
         session.hello?(AgentRefusal(code: "stopped", message: "Stopped in Search").said)
         session.hello = nil
         session.consent.end()
@@ -874,8 +885,11 @@ final class AgentControl: ObservableObject {
         Self.log.notice("\(allow ? "allowed" : "not allowed", privacy: .public)\(allow && seesTabs ? ", with your tabs" : "", privacy: .public)")
         // Remembered only as ticked, and only a program that can be: the
         // box isn't there otherwise, and this says so again.
+        // Allowed in the question: whatever Stop suspended under its name
+        // may let it in again.
+        if allow { AgentTrust.shared.resume(client: session.client) }
         if allow, session.wantsAlways, session.noAlways == nil, let launcher = session.launcher,
-           AgentTrust.shared.remember(client: session.client, launcher: launcher, seesTabs: session.consent.seesTabs) {
+           AgentTrust.shared.remember(client: session.client, launcher: launcher) {
             Self.log.notice("always allowed from now on: \(session.client, privacy: .public), started by \(launcher.identifier, privacy: .public) of team \(launcher.team, privacy: .public)")
         }
         let hello = session.hello
@@ -910,17 +924,38 @@ final class AgentControl: ObservableObject {
             return
         }
         session.auto = true
-        session.consent.answer(allow: true, seesTabs: entry.seesTabs)
+        session.admittedBy = entry.id
+        // Your tabs never without a click of yours in the question.
+        session.consent.answer(allow: true, seesTabs: false)
         var seen = entry
         seen.path = session.launcher?.path ?? entry.path
         trust.used(seen)
-        Self.log.notice("allowed automatically: \(session.client, privacy: .public), started by \(session.launcher?.identifier ?? "", privacy: .public) of team \(session.launcher?.team ?? "", privacy: .public)\(entry.seesTabs ? ", with your tabs" : "", privacy: .public)")
+        Self.log.notice("allowed automatically: \(session.client, privacy: .public), started by \(session.launcher?.identifier ?? "", privacy: .public) of team \(session.launcher?.team ?? "", privacy: .public)")
+        admitted(session)
         let hello = session.hello
         session.hello = nil
         hello?(["allowed": true, "seesTabs": session.consent.seesTabs, "remembered": true])
         began(session)
         pump(session)
     }
+
+    /// Let in without asking, said where you'll see it: the column's line
+    /// (or the strip's) says so for a few seconds; with neither there — the
+    /// column folded away, a page full screen — a line at the window's foot,
+    /// gone in a moment.
+    private func admitted(_ session: AgentSession) {
+        admissions += 1
+        session.justAdmitted = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak session] in session?.justAdmitted = false }
+        guard let browser = session.browser else { return }
+        let bare = browser.folded || browser.active.map { browser.fillsHere($0) } == true
+        if bare {
+            browser.announce("\(session.client) was let in automatically — File › Stop Agent (⌃⌥⌘.) stops it")
+        }
+    }
+
+    /// How many agents were let in without asking: for the bench.
+    private(set) var admissions = 0
 
     /// Allowed: Stop goes up in its window's chrome, kept honest about
     /// whether it is working.
@@ -985,7 +1020,7 @@ final class AgentControl: ObservableObject {
         return ["running": running, "connected": true, "state": state, "client": session.client,
                 "program": session.program, "seesTabs": session.consent.seesTabs, "wantsTabs": session.wantsTabs,
                 "drawn": allowButton?.window != nil && tabsBox?.window != nil,
-                "own": session.own.count, "auto": session.auto, "wantsAlways": session.wantsAlways,
+                "own": session.own.count, "auto": session.auto, "justAdmitted": session.justAdmitted, "admissions": admissions, "wantsAlways": session.wantsAlways,
                 "offersAlways": session.noAlways == nil, "noAlways": session.noAlways ?? "",
                 "alwaysDrawn": alwaysBox?.window != nil, "busy": session.busy,
                 "pillDrawn": stopButton?.window != nil, "overPage": stopOverPage,

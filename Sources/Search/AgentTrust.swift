@@ -20,11 +20,16 @@ import Security
 // leaves its children to launchd, so a pid given to someone else no longer
 // reads as the parent.
 //
-// Offered only for a parent signed by a named developer (a Team ID, not
-// ad-hoc, not one of macOS's own programs, which have none) and not an
-// interpreter or a shell, which runs whatever it is given. Checked again on
-// every connection: the parent must pass the requirement remembered, and the
-// client give the same name; anything else and the question is asked.
+// Offered only for a parent on a short list of agents' own programs, each
+// signed by its maker's team (AgentLauncher.allowed: Claude Code's
+// `claude`) — never a terminal, an editor, an interpreter or a shell, which
+// run whatever they are given. Checked again on every connection: the
+// parent must pass the requirement remembered, and the client give the same
+// name; anything else and the question is asked. Stop suspends it (asked
+// again until you allow it in the question), and it runs out by itself 30
+// days after it was granted or 7 days after it was last used. It never
+// carries "Let it see my open tabs": let in without asking, an agent sees
+// only its own tabs.
 //
 // Kept in the keychain's data protection half, under Search's own access
 // group, as the switch's mark is (SwitchMark): only an app signed as Search
@@ -63,25 +68,16 @@ struct AgentLauncher: Equatable {
         return text.isEmpty ? team : text
     }
 
-    /// Programs that run whatever they are given: started by one of them,
-    /// a client could be anyone's.
-    static let interpreters = [
-        "python", "org.python", "node", "bun", "deno", "ruby", "perl", "php", "java", "lua", "tclsh", "wish",
-        "osascript", "sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh", "env", "nohup", "xargs", "script",
-        "sudo", "launchctl", "open", "uv", "pipx", "npx", "npm",
+    /// The only programs an agent can be remembered as started by: their
+    /// signing identifier, and the team that must have signed it. Not a list
+    /// of what to keep out — terminals, editors, Electron helpers, tmux,
+    /// interpreters and shells all run anything they are given — but of what
+    /// to let in: agents' own command-line programs, each signed by its
+    /// maker. Codex's CLI isn't here: it ships unsigned through npm and
+    /// Homebrew, so there is no signature to remember it by.
+    static let allowed: [String: String] = [
+        "com.anthropic.claude-code": "Q6L2SF6YDW",
     ]
-
-    static func interpreter(_ word: String) -> Bool {
-        let word = word.lowercased()
-        guard !word.isEmpty else { return false }
-        if word.hasPrefix("org.python") { return true }
-        let last = word.split(separator: "/").last.map(String.init) ?? word
-        let names = interpreters.joined(separator: "|")
-        func one(_ text: String) -> Bool {
-            text.range(of: "^(\(names))[0-9.\\-]*$", options: .regularExpression) != nil
-        }
-        return one(last) || one(last.split(separator: ".").last.map(String.init) ?? last)
-    }
 
     /// Why a launcher can't be remembered, or nil when it can.
     static func refusal(signed: Bool, adhoc: Bool, team: String, identifier: String, path: String) -> String? {
@@ -89,7 +85,9 @@ struct AgentLauncher: Equatable {
         let called = name.isEmpty ? "the program that started it" : name
         guard signed else { return "\(called), which started it, isn't signed" }
         guard !adhoc, !team.isEmpty else { return "\(called), which started it, isn't signed by a named developer" }
-        if interpreter(identifier) || interpreter(name) { return "it was started by \(called), which runs anything it's given" }
+        guard let expected = allowed[identifier], expected == team else {
+            return "it was started by \(called), which isn't an agent's own program Search knows"
+        }
         return nil
     }
 }
@@ -216,16 +214,26 @@ struct RememberedAgent: Codable, Equatable, Identifiable {
     /// Where that program was, the last time: shown, not checked — an update
     /// moves it (~/.local/share/claude/versions/<version>).
     var path: String
-    /// "Let it see my open tabs", as ticked when it was remembered.
-    var seesTabs: Bool
     var added: Date
     var used: Date
+    /// Stopped while let in without asking: asked again, until you allow it
+    /// again in the question.
+    var suspended: Bool?
     /// Put there by the bench in a probe's world (`agents trust`), for a
     /// program that couldn't otherwise be remembered. Never honoured outside
     /// a test run.
     var simulated: Bool?
 
     var id: String { client + "\n" + requirement }
+
+    /// Remembered for this long after it was granted…
+    static let lasts: TimeInterval = 30 * 86_400
+    /// …and for this long after it was last let in, whichever ends first.
+    static let idleLasts: TimeInterval = 7 * 86_400
+
+    /// When it is forgotten by itself.
+    var expires: Date { min(added.addingTimeInterval(Self.lasts), used.addingTimeInterval(Self.idleLasts)) }
+    func expired(at now: Date) -> Bool { now >= expires }
 }
 
 /// Where the remembered agents are kept.
@@ -243,18 +251,31 @@ struct KeychainVault: AgentVault {
     let service: String
     let account: String
 
+    /// Search's own access group, named outright: the application identifier
+    /// this copy is signed with (TEAM.com.officecommun.search), from its own
+    /// entitlements. A copy without one has no group, and nowhere to keep this.
+    static let group: String? = {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let value = SecTaskCopyValueForEntitlement(task, "com.apple.application-identifier" as CFString, nil)
+        else { return nil }
+        return value as? String
+    }()
+
     static let agents = KeychainVault(service: "com.officecommun.search.agents.trusted",
                                       account: Store.world.map { "trusted (\($0))" } ?? "trusted")
 
     private var query: [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
-         kSecUseDataProtectionKeychain as String: true,
-         kSecAttrService as String: service,
-         kSecAttrAccount as String: account]
+        var out: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                  kSecUseDataProtectionKeychain as String: true,
+                                  kSecAttrService as String: service,
+                                  kSecAttrAccount as String: account]
+        if let group = Self.group { out[kSecAttrAccessGroup as String] = group }
+        return out
     }
 
     /// A copy built without Search's profile has no access group: no.
     var usable: Bool {
+        guard Self.group != nil else { return false }
         var asked = query
         asked[kSecReturnAttributes as String] = true
         let status = SecItemCopyMatching(asked as CFDictionary, nil)
@@ -307,34 +328,55 @@ final class AgentTrust: ObservableObject {
     /// Whether this copy can keep anyone, asked once.
     let usable: Bool
 
-    init(vault: AgentVault) {
+    init(vault: AgentVault, now: Date = Date()) {
         self.vault = vault
         usable = vault.usable
         if usable, let data = vault.read(),
            let found = try? JSONDecoder().decode([RememberedAgent].self, from: data) {
             remembered = found
+            // What has run out is forgotten for good.
+            if found.contains(where: { $0.expired(at: now) }) { _ = save(found.filter { !$0.expired(at: now) }) }
         }
     }
 
     /// Remembered as allowed, from now on: the client by its name, the
     /// program that started it by its signature. Only a launcher that can be.
     @discardableResult
-    func remember(client: String, launcher: AgentLauncher, seesTabs: Bool, now: Date = Date()) -> Bool {
+    func remember(client: String, launcher: AgentLauncher, now: Date = Date()) -> Bool {
         guard usable, launcher.unrememberable == nil, !launcher.requirement.isEmpty else { return false }
         let entry = RememberedAgent(client: client, requirement: launcher.requirement, team: launcher.team,
                                     identifier: launcher.identifier, signer: launcher.who, path: launcher.path,
-                                    seesTabs: seesTabs, added: now, used: now)
+                                    added: now, used: now)
         return keep(entry)
+    }
+
+    /// Stopped while let in without asking: asked again from now on, until
+    /// you allow it again in the question.
+    func suspend(_ id: RememberedAgent.ID) {
+        guard let index = remembered.firstIndex(where: { $0.id == id }) else { return }
+        var next = remembered
+        next[index].suspended = true
+        _ = save(next)
+    }
+
+    /// You allowed it in the question: what was suspended under that name
+    /// is let in again next time.
+    func resume(client: String) {
+        guard remembered.contains(where: { $0.client == client && $0.suspended == true }) else { return }
+        _ = save(remembered.map { entry in
+            var entry = entry
+            if entry.client == client { entry.suspended = nil }
+            return entry
+        })
     }
 
     /// The bench's, in a probe's world only: a requirement remembered for a
     /// launcher that couldn't otherwise be — a test harness's own.
     @discardableResult
-    func rememberSimulated(client: String, requirement: String, seesTabs: Bool) -> Bool {
+    func rememberSimulated(client: String, requirement: String, added: Date = Date()) -> Bool {
         guard Store.testing, usable else { return false }
-        let now = Date()
         return keep(RememberedAgent(client: client, requirement: requirement, team: "TESTTEAM", identifier: "probe",
-                                    signer: "a probe", path: "", seesTabs: seesTabs, added: now, used: now, simulated: true))
+                                    signer: "a probe", path: "", added: added, used: added, simulated: true))
     }
 
     private func keep(_ entry: RememberedAgent) -> Bool {
@@ -375,8 +417,8 @@ final class AgentTrust: ObservableObject {
 
     /// The requirements to check a client by, before it is let in: those
     /// remembered under the name it gave.
-    func requirements(for client: String) -> [String] {
-        remembered.filter { $0.client == client }.map(\.requirement)
+    func requirements(for client: String, now: Date = Date()) -> [String] {
+        remembered.filter { $0.client == client && $0.suspended != true && !$0.expired(at: now) }.map(\.requirement)
     }
 
     /// The entry that lets a connection in without asking, if one does: the
@@ -384,10 +426,11 @@ final class AgentTrust: ObservableObject {
     /// requirement (`passed`, from AgentIdentity.examine) and still one that
     /// could be remembered. Nothing read, nothing let in.
     static func match(client: String, launcher: AgentLauncher?, passed: Set<String>,
-                      among remembered: [RememberedAgent], testing: Bool = Store.testing) -> RememberedAgent? {
+                      among remembered: [RememberedAgent], testing: Bool = Store.testing, now: Date = Date()) -> RememberedAgent? {
         guard let launcher else { return nil }
         return remembered.first { entry in
-            guard entry.client == client, passed.contains(entry.requirement) else { return false }
+            guard entry.client == client, passed.contains(entry.requirement),
+                  entry.suspended != true, !entry.expired(at: now) else { return false }
             if entry.simulated == true { return testing }
             return launcher.unrememberable == nil
         }

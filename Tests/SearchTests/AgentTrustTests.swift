@@ -108,12 +108,19 @@ final class AgentTrustTests: XCTestCase {
                         "ad-hoc: anyone can sign so")
         XCTAssertNotNil(AgentLauncher.refusal(signed: true, adhoc: false, team: "", identifier: "com.apple.zsh", path: "/bin/zsh"),
                         "macOS's own, no team")
-        for (identifier, path) in [("python3", "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14"),
-                                   ("org.python.python", "/usr/local/bin/python3"), ("node", "/opt/homebrew/bin/node"),
-                                   ("com.example.bun", "/usr/local/bin/bun"), ("com.apple.bash", "/bin/bash")] {
-            XCTAssertNotNil(AgentLauncher.refusal(signed: true, adhoc: false, team: "BMM5U3QVKW", identifier: identifier, path: path),
-                            "\(identifier) runs anything it's given")
+        // Only agents' own programs, by identifier and the team that signs
+        // them: never an interpreter, a terminal, an editor or tmux, however
+        // well signed.
+        for (identifier, team, path) in [("python3", "BMM5U3QVKW", "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14"),
+                                         ("com.googlecode.iterm2", "H7V7XYVQ7D", "/Applications/iTerm.app/Contents/MacOS/iTerm2"),
+                                         ("com.microsoft.VSCode.helper", "UBF8T346G9", "/Applications/Visual Studio Code.app/x/Code Helper"),
+                                         ("com.todesktop.230313mzl4w4u92.helper", "VDXQ22DGB9", "/Applications/Cursor.app/x/Cursor Helper"),
+                                         ("tmux", "ABCDE12345", "/opt/homebrew/bin/tmux")] {
+            XCTAssertNotNil(AgentLauncher.refusal(signed: true, adhoc: false, team: team, identifier: identifier, path: path),
+                            "\(identifier) isn't an agent's own program")
         }
+        XCTAssertNotNil(AgentLauncher.refusal(signed: true, adhoc: false, team: "EVILTEAM00", identifier: "com.anthropic.claude-code",
+                                              path: "/tmp/claude"), "Claude Code's identifier, signed by someone else")
         XCTAssertNil(Self.signed().unrememberable, "Claude Code, signed by Anthropic, can be")
         XCTAssertEqual(Self.signed().who, "Anthropic PBC")
     }
@@ -122,10 +129,10 @@ final class AgentTrustTests: XCTestCase {
 
     func testRememberedIsLetInOnlyWithItsNameAndItsSignature() {
         let trust = AgentTrust(vault: MemoryVault())
-        XCTAssertTrue(trust.remember(client: "Claude Code", launcher: Self.signed(), seesTabs: true))
+        XCTAssertTrue(trust.remember(client: "Claude Code", launcher: Self.signed()))
         let launcher = Self.signed()
         let entry = AgentTrust.match(client: "Claude Code", launcher: launcher, passed: [Self.claude], among: trust.remembered, testing: false)
-        XCTAssertEqual(entry?.seesTabs, true, "let in, with your tabs as you ticked")
+        XCTAssertNotNil(entry, "let in")
         XCTAssertNil(AgentTrust.match(client: "Codex", launcher: launcher, passed: [Self.claude], among: trust.remembered, testing: false),
                      "another name: asked")
         XCTAssertNil(AgentTrust.match(client: "Claude Code", launcher: launcher, passed: [], among: trust.remembered, testing: false),
@@ -146,15 +153,15 @@ final class AgentTrustTests: XCTestCase {
         unsigned.adhoc = true
         unsigned.team = ""
         unsigned.unrememberable = AgentLauncher.refusal(signed: true, adhoc: true, team: "", identifier: "a.out", path: "/tmp/a.out")
-        XCTAssertFalse(trust.remember(client: "Claude Code", launcher: unsigned, seesTabs: false))
+        XCTAssertFalse(trust.remember(client: "Claude Code", launcher: unsigned))
         XCTAssertTrue(trust.remembered.isEmpty)
     }
 
     func testForgottenIsAskedAgain() {
         let vault = MemoryVault()
         let trust = AgentTrust(vault: vault)
-        trust.remember(client: "Claude Code", launcher: Self.signed(), seesTabs: false)
-        trust.remember(client: "Codex", launcher: Self.signed("identifier \"com.openai.codex\" and anchor apple generic"), seesTabs: false)
+        trust.remember(client: "Claude Code", launcher: Self.signed())
+        trust.remember(client: "Codex", launcher: Self.signed("identifier \"com.openai.codex\" and anchor apple generic"))
         XCTAssertEqual(trust.remembered.count, 2)
         trust.forget(trust.remembered[0].id)
         XCTAssertNil(AgentTrust.match(client: "Claude Code", launcher: Self.signed(), passed: [Self.claude], among: trust.remembered, testing: false))
@@ -164,7 +171,7 @@ final class AgentTrustTests: XCTestCase {
     func testTurningTheSettingOffForgetsEveryone() {
         let vault = MemoryVault()
         let trust = AgentTrust(vault: vault)
-        trust.remember(client: "Claude Code", launcher: Self.signed(), seesTabs: true)
+        trust.remember(client: "Claude Code", launcher: Self.signed())
         trust.forgetAll()
         XCTAssertTrue(trust.remembered.isEmpty)
         XCTAssertNil(vault.data)
@@ -185,7 +192,7 @@ final class AgentTrustTests: XCTestCase {
     func testWhatIsWrittenBehindSearchsBackIsIgnored() throws {
         let forged = try JSONEncoder().encode([RememberedAgent(
             client: "Claude Code", requirement: "anchor apple generic", team: "EVIL", identifier: "evil", signer: "evil",
-            path: "/tmp/evil", seesTabs: true, added: Date(), used: Date())])
+            path: "/tmp/evil", added: Date(), used: Date())])
         Store.settings.set(forged, forKey: "agents.trusted")
         Store.settings.set(String(decoding: forged, as: UTF8.self), forKey: "trusted")
         defer {
@@ -204,7 +211,7 @@ final class AgentTrustTests: XCTestCase {
         let trust = AgentTrust(vault: keychain)
         if !trust.usable {
             XCTAssertTrue(trust.remembered.isEmpty)
-            XCTAssertFalse(trust.remember(client: "Claude Code", launcher: Self.signed(), seesTabs: false))
+            XCTAssertFalse(trust.remember(client: "Claude Code", launcher: Self.signed()))
             XCTAssertTrue(trust.remembered.isEmpty)
         } else {
             keychain.erase()
@@ -221,19 +228,73 @@ final class AgentTrustTests: XCTestCase {
     /// The bench's stand-in for a signed launcher is a test run's only.
     func testASimulatedEntryIsATestRunsOnly() {
         let entry = RememberedAgent(client: "Claude Code", requirement: "cdhash H\"00\"", team: "TESTTEAM", identifier: "probe",
-                                    signer: "a probe", path: "", seesTabs: false, added: Date(), used: Date(), simulated: true)
+                                    signer: "a probe", path: "", added: Date(), used: Date(), simulated: true)
         var adhoc = Self.signed("cdhash H\"00\"")
         adhoc.unrememberable = "not signed"
         XCTAssertNil(AgentTrust.match(client: "Claude Code", launcher: adhoc, passed: ["cdhash H\"00\""], among: [entry], testing: false))
         XCTAssertNotNil(AgentTrust.match(client: "Claude Code", launcher: adhoc, passed: ["cdhash H\"00\""], among: [entry], testing: true))
     }
 
-    func testInterpretersByName() {
-        for word in ["python3", "python3.14", "Python", "org.python.python", "node", "bash", "com.apple.zsh", "env", "osascript", "npx"] {
-            XCTAssertTrue(AgentLauncher.interpreter(word), word)
+    // MARK: - Stop, time, your tabs
+
+    func testStopSuspendsUntilAllowedAgain() {
+        let vault = MemoryVault()
+        let trust = AgentTrust(vault: vault)
+        trust.remember(client: "Claude Code", launcher: Self.signed())
+        let id = trust.remembered[0].id
+        trust.suspend(id)
+        XCTAssertNil(AgentTrust.match(client: "Claude Code", launcher: Self.signed(), passed: [Self.claude], among: trust.remembered, testing: false),
+                     "stopped: asked again")
+        XCTAssertEqual(trust.requirements(for: "Claude Code"), [], "not even checked")
+        XCTAssertEqual(AgentTrust(vault: vault).remembered.first?.suspended, true, "and still after a relaunch")
+        trust.resume(client: "Codex")
+        XCTAssertEqual(trust.remembered.first?.suspended, true, "another name's Allow changes nothing")
+        trust.resume(client: "Claude Code")
+        XCTAssertNotNil(AgentTrust.match(client: "Claude Code", launcher: Self.signed(), passed: [Self.claude], among: trust.remembered, testing: false),
+                        "allowed again in the question: let in again")
+    }
+
+    func testItRunsOut() {
+        let vault = MemoryVault()
+        let granted = Date().addingTimeInterval(-86_400 * 29)
+        let trust = AgentTrust(vault: vault, now: granted)
+        trust.remember(client: "Claude Code", launcher: Self.signed(), now: granted)
+        let day: TimeInterval = 86_400
+        func admitted(at now: Date) -> Bool {
+            AgentTrust.match(client: "Claude Code", launcher: Self.signed(), passed: [Self.claude], among: trust.remembered,
+                             testing: false, now: now) != nil
         }
-        for word in ["claude", "com.anthropic.claude-code", "codex", "com.openai.codex", "Cursor", "shortcuts"] {
-            XCTAssertFalse(AgentLauncher.interpreter(word), word)
+        XCTAssertTrue(admitted(at: granted.addingTimeInterval(6 * day)))
+        XCTAssertFalse(admitted(at: granted.addingTimeInterval(7 * day)), "7 days unused")
+        // Used every few days: still 30 days at most from when it was granted.
+        for days in stride(from: 5.0, through: 25.0, by: 5.0) { trust.used(trust.remembered[0], now: granted.addingTimeInterval(days * day)) }
+        XCTAssertTrue(admitted(at: granted.addingTimeInterval(29 * day)))
+        XCTAssertFalse(admitted(at: granted.addingTimeInterval(30 * day)), "30 days after it was granted")
+        XCTAssertEqual(trust.remembered[0].expires, granted.addingTimeInterval(30 * day))
+        // Read after it ran out: forgotten for good.
+        XCTAssertTrue(AgentTrust(vault: vault, now: granted.addingTimeInterval(31 * day)).remembered.isEmpty)
+        XCTAssertNil(vault.data)
+    }
+
+    func testYourTabsAreNeverRemembered() throws {
+        let data = try JSONEncoder().encode([RememberedAgent(client: "Claude Code", requirement: Self.claude, team: "Q6L2SF6YDW",
+                                                             identifier: "com.anthropic.claude-code", signer: "Anthropic PBC",
+                                                             path: "", added: Date(), used: Date())])
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("Tabs"), "nothing about your tabs is kept")
+        // And AgentControl lets a remembered agent in without them, whatever.
+        let source = try String(contentsOfFile: #filePath.replacingOccurrences(of: "Tests/SearchTests/AgentTrustTests.swift",
+                                                                                 with: "Sources/Search/AgentControl.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("session.consent.answer(allow: true, seesTabs: false)"))
+    }
+
+    func testTheKeychainItemNamesItsGroup() throws {
+        // This runner has no application identifier: no group, and so
+        // nowhere to keep anyone.
+        if KeychainVault.group == nil {
+            XCTAssertFalse(KeychainVault(service: "com.officecommun.search.agents.trusted.tests", account: "x").usable)
         }
+        let source = try String(contentsOfFile: #filePath.replacingOccurrences(of: "Tests/SearchTests/AgentTrustTests.swift",
+                                                                                 with: "Sources/Search/AgentTrust.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("out[kSecAttrAccessGroup as String] = group"))
     }
 }

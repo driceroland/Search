@@ -81,9 +81,10 @@ private struct AgentStatusFace: View {
             case .row, .door:
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        Text(style == .door ? AgentWords.short(session) : AgentWords.line(session))
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.muted)
+                        Text(session.justAdmitted ? AgentWords.admitted(session)
+                             : style == .door ? AgentWords.short(session) : AgentWords.line(session))
+                            .font(.system(size: 11, weight: session.justAdmitted ? .medium : .regular))
+                            .foregroundStyle(session.justAdmitted ? Palette.ink : Palette.muted)
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Text("·").font(.system(size: 11)).foregroundStyle(Palette.muted)
@@ -122,9 +123,11 @@ private struct AgentStop: View {
     }
 }
 
-/// On the icon's corner of the tab an agent is working in: a small dot in
-/// the accent colour, ringed with the row's ground so it reads on any icon.
-/// The row's layout never changes for it.
+/// On the icon's corner of an agent's tab, the row's layout never changing
+/// for it: while the agent works there, a small dot in the accent colour;
+/// otherwise, for as long as the tab is open, a fainter hollow ring, so a
+/// tab an agent opened is always told from yours. Each ringed with the row's
+/// ground so it reads on any icon.
 struct AgentMark: View {
     @ObservedObject var tab: Tab
 
@@ -139,6 +142,15 @@ struct AgentMark: View {
                 .allowsHitTesting(false)
                 .help("A coding agent is working in this tab")
                 .transition(.opacity)
+        } else if tab.agent {
+            Circle()
+                .strokeBorder(Palette.muted, lineWidth: 1)
+                .frame(width: 5.5, height: 5.5)
+                .padding(1.5)
+                .background(Circle().fill(Palette.ground))
+                .offset(x: 3, y: 3)
+                .allowsHitTesting(false)
+                .help("Opened by a coding agent")
         }
     }
 }
@@ -169,6 +181,7 @@ struct StopAgentMenuItem: View {
         Button(agents.shownIn == nil ? "Stop Agent" : "Stop \(agents.session?.client ?? "Agent")") {
             AgentControl.shared.stopSession()
         }
+        .shortcut("file.stopAgent")
         .disabled(agents.shownIn == nil)
     }
 }
@@ -178,6 +191,12 @@ enum AgentWords {
     @MainActor
     static func line(_ session: AgentSession) -> String {
         session.busy ? "\(session.client) is using Search" : "\(session.client), idle"
+    }
+
+    /// Said for a few seconds once let in without asking.
+    @MainActor
+    static func admitted(_ session: AgentSession) -> String {
+        "\(session.client) let in automatically"
     }
 
     /// In the strip, where there is room for one short line.
@@ -269,7 +288,8 @@ private struct AgentQuestion: View {
     private var alwaysHelp: String {
         guard let launcher = session.launcher else { return "" }
         return "Next time, if it is started by \(launcher.name), signed by \(launcher.who), and calls itself “\(session.client)”, "
-            + "it is let in without asking. The pill and Stop still show. Forget it in Settings › About › Developer."
+            + "it is let in without asking, for 30 days at most and 7 after it was last used, seeing only its own tabs. "
+            + "Stop shows as ever, and stopping it asks again next time. Forget it in Settings › About › Developer."
     }
 
     /// The name is the program's own word for itself; this is macOS's.

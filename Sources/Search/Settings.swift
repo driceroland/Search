@@ -1572,12 +1572,16 @@ private struct RememberedAgents: View {
         ForEach(trust.remembered) { entry in
             Rule()
             SettingRow(icon: "checkmark.shield", title: entry.client,
-                       detail: "Allowed without asking · signed by \(entry.signer) · last used \(Self.when(entry.used))"
-                           + (entry.seesTabs ? " · sees your tabs" : ""),
+                       detail: (entry.suspended == true ? "Asked again since you stopped it" : "Allowed without asking")
+                           + " · signed by \(entry.signer) · last used \(Self.when(entry.used)) · until \(Self.day(entry.expires))",
                        more: entry.path.isEmpty ? nil : "Started by \((entry.path as NSString).lastPathComponent) (\(entry.identifier), team \(entry.team)), last seen at \(entry.path). Let in only while that program still passes its code signature and it calls itself “\(entry.client)”.") {
                 Pill("Forget") { trust.forget(entry.id) }
             }
         }
+    }
+
+    private static func day(_ date: Date) -> String {
+        date.formatted(.dateTime.day().month(.abbreviated))
     }
 
     private static func when(_ date: Date) -> String {

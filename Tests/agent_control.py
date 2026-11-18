@@ -497,7 +497,7 @@ def main():
             t.ok("always: asked", until(lambda: agents().get("state") == "asking"), agents())
             st = agents("draw")
             t.ok("always: not offered when Python started it", st.get("offersAlways") is False
-                 and "runs anything" in st.get("noAlways", "") and st.get("alwaysDrawn") is False, st)
+                 and "isn't an agent's own program" in st.get("noAlways", "") and st.get("alwaysDrawn") is False, st)
             try:
                 agents("click", on="always")
                 t.ok("always: no box to click", False)
@@ -542,6 +542,9 @@ def main():
             listed, err = h.tool("list_tabs")
             st = agents()
             t.ok("always: let in without asking", not err and st.get("state") == "allowed" and st.get("auto") is True, (listed, st))
+            t.ok("always: and said so in the window", st.get("admissions") == 1 and st.get("justAdmitted") is True, st)
+            t.ok("always: without your tabs, which it never keeps", st.get("seesTabs") is False
+                 and not any(p["url"].endswith("/yours") for p in listed.get("tabs", [])), listed)
             t.ok("always: still only its own tabs", not err and all(p["mine"] for p in listed.get("tabs", [])), listed)
             st = agents("draw")
             t.ok("always: Stop shows, allowed automatically, not over the page",
@@ -550,6 +553,22 @@ def main():
             t.ok("always: Stop still stops it", until(lambda: agents().get("connected") is False), agents())
             x, err = h.tool("list_tabs")
             t.ok("always: and the agent hears it", err and code(x) == "stopped", x)
+            t.ok("always: Stop suspends what let it in", [e["suspended"] for e in agents().get("trusted", [])] == [True],
+                 agents().get("trusted"))
+            # It calls again, as search-mcp does: asked, not let back in.
+            time.sleep(11)
+            n = h.send("tools/call", {"name": "list_tabs", "arguments": {}})
+            t.ok("always: after Stop, the next connection is asked",
+                 until(lambda: agents().get("state") == "asking") and agents().get("auto") is False, agents())
+            agents("allow")
+            said("list_tabs", {}, h.answer(n))
+            t.ok("always: allowed again in the question, it is no longer suspended",
+                 [e["suspended"] for e in agents().get("trusted", [])] == [False], agents().get("trusted"))
+            h.tool("disconnect")
+            listed, err = h.tool("list_tabs")
+            t.ok("always: and is let in without asking again", not err and agents().get("auto") is True
+                 and agents().get("admissions") == 2, agents())
+            h.tool("disconnect")
             h.close()
 
             # Another name through the same launcher: asked.
@@ -573,6 +592,14 @@ def main():
             k.send("tools/call", {"name": "list_tabs", "arguments": {}})
             t.ok("always: forgotten is asked again", until(lambda: agents().get("state") == "asking"), agents())
             k.close()
+
+            # Run out: granted 31 days ago, asked.
+            time.sleep(11)
+            agents("trust", client="Claude Code", requirement=requirement, agedDays=31)
+            m = Client("claude-code", via=launcher); clients.append(m)
+            m.send("tools/call", {"name": "list_tabs", "arguments": {}})
+            t.ok("always: run out after 30 days, asked again", until(lambda: agents().get("state") == "asking"), agents())
+            m.close()
             time.sleep(11)
             agents("trust", client="Claude Code", requirement=requirement)
         finally:

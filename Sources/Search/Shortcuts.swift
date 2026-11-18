@@ -182,6 +182,10 @@ struct Command: Identifiable {
         Command("file.savePage", "Save Page As…", .file, nil) { $0.savePage() },
         Command("file.exportPDF", "Export as PDF…", .file, nil) { $0.exportPDF() },
         Command("file.print", "Print…", .file, KeyCombo("p")) { $0.printPage() },
+        // A coding agent connected (AgentControl): Stop from the keyboard.
+        Command("file.stopAgent", "Stop Agent", .file, KeyCombo(".", option: true, control: true)) { _ in
+            AgentControl.shared.stopSession()
+        },
 
         Command("edit.find", "Find on Page…", .edit, KeyCombo("f")) { $0.openFind() },
         Command("edit.findNext", "Find Next", .edit, KeyCombo("g")) { $0.look(forward: true) },
