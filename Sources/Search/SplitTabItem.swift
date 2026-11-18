@@ -276,7 +276,7 @@ private struct SplitTabHalf: View {
     private var ground: some View {
         if focused {
             ZStack(alignment: .leading) {
-                Rectangle().fill(greys.wash)
+                Rectangle().fill(greys.washOnTile)
                 if prefs.showsReading, !narrow {
                     GeometryReader { geo in
                         ReadingFill(meter: tab.meter, width: geo.size.width)
@@ -286,9 +286,9 @@ private struct SplitTabHalf: View {
             .clipShape(shape)
             .matchedGeometryEffect(id: "live", in: pill)
         } else if browser.selectedTabIDs.contains(tab.id) {
-            shape.fill(greys.wash)
+            shape.fill(greys.washOnTile)
         } else if hovering {
-            shape.fill(greys.hover)
+            shape.fill(greys.hoverOnTile)
         }
     }
 

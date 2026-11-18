@@ -86,11 +86,29 @@ struct Greys {
     let hover: Color
     let tile: Color
     let pinLive: Color
+    /// The live and hovered greys for a row lying on a tile (a Split View
+    /// tab's panes), so the two together land where the plain ones do.
+    let washOnTile: Color
+    let hoverOnTile: Color
 
-    static let white = Greys(wash: Palette.wash, hover: Palette.hover,
-                             tile: Palette.wash.opacity(0.55), pinLive: Palette.pinLive)
-    static let frame = Greys(wash: Palette.sideWash, hover: Palette.sideHover,
-                             tile: Palette.sideTile, pinLive: Palette.sidePinLive)
+    // Black in a light window, white in a dark one, at the strength that
+    // lands on the same grey as Palette's over the ground they lie on (the
+    // white, or the frame beside the card). On that ground nothing changes;
+    // on a space's colour or gradient they take its tint, where an opaque
+    // grey sat on it as a grey patch (Drice, 18 Nov 2026).
+    static let white = Greys(wash: shade(0.063, 0.073), hover: shade(0.035, 0.045),
+                             tile: shade(0.063, 0.073).opacity(0.55), pinLive: shade(0.10, 0.112),
+                             washOnTile: shade(0.0294, 0.0342), hoverOnTile: shade(0.004, 0.005))
+    static let frame = Greys(wash: shade(0.0628, 0.0865), hover: shade(0.0419, 0.0595),
+                             tile: shade(0.0314, 0.0432), pinLive: shade(0.0995, 0.1243),
+                             washOnTile: shade(0.0324, 0.0452), hoverOnTile: shade(0.0108, 0.0169))
+
+    private static func shade(_ light: CGFloat, _ dark: CGFloat) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                ? NSColor(white: 1, alpha: dark) : NSColor(white: 0, alpha: light)
+        })
+    }
 }
 
 private struct GreysKey: EnvironmentKey {

@@ -189,7 +189,8 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
-                landing ? greys.hover : onFrame ? Palette.frame : Palette.ground
+                onFrame ? Palette.frame : Palette.ground
+                if landing { greys.hover }
                 // The space's colour, if it has one: over the ground, so the
                 // column stays opaque and folded out over the page it brings
                 // the same wash along.
