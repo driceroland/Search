@@ -1165,6 +1165,9 @@ final class Bench {
             var passes: [[String: Any]] = []
             var woke: CFAbsoluteTime = 0
             var rows = 0
+            // The window's buttons' slide, as Core Animation was given it:
+            // the column's own motion in its terms (see Fold.slide).
+            var lights: [String: Any]?
             let pressed = CFAbsoluteTimeGetCurrent()
             let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { _, _ in
                 woke = CFAbsoluteTimeGetCurrent()
@@ -1178,6 +1181,10 @@ final class Bench {
                                "away": browser.foldingAway])
                 rows = built
                 woke = 0
+                if lights == nil, let slide = Fold.titlebar?.layer?.animation(forKey: "fold") {
+                    lights = ["kind": slide is CASpringAnimation ? "spring" : "eased", "duration": slide.duration,
+                              "timing": slide.timingFunction.map { "\($0)" } ?? ""]
+                }
             }
             for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes) }
             Bench.bodies = [:]
@@ -1187,7 +1194,8 @@ final class Bench {
             if request["twice"] as? Bool == true { browser.toggleFold() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
                 for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
-                answer(["folded": browser.folded, "pageBefore": before, "passes": passes])
+                answer(["folded": browser.folded, "pageBefore": before, "passes": passes, "lights": lights ?? NSNull(),
+                        "slides": browser.prefs.slidesColumn])
             }
 
         case "bookmarksweep":

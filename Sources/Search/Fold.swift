@@ -594,14 +594,23 @@ struct Fold: View {
             bar.isHidden = off
             return
         }
-        let fold = Motion.fold(out: !off)
-        let spring = CASpringAnimation(keyPath: path)
-        spring.mass = 1
-        spring.stiffness = pow(2 * .pi / fold.response, 2)
-        spring.damping = 4 * .pi * fold.damping / fold.response
+        let spring: CABasicAnimation
+        if let slide = Motion.slide(out: !off) {
+            // The column's eased slide (Slide the column in and out).
+            spring = CABasicAnimation(keyPath: path)
+            spring.timingFunction = CAMediaTimingFunction(name: off ? .easeIn : .easeOut)
+            spring.duration = slide
+        } else {
+            let fold = Motion.fold(out: !off)
+            let bounce = CASpringAnimation(keyPath: path)
+            bounce.mass = 1
+            bounce.stiffness = pow(2 * .pi / fold.response, 2)
+            bounce.damping = 4 * .pi * fold.damping / fold.response
+            bounce.duration = bounce.settlingDuration
+            spring = bounce
+        }
         spring.fromValue = from
         spring.toValue = to
-        spring.duration = spring.settlingDuration
         spring.fillMode = .forwards
         spring.isRemovedOnCompletion = false
         bar.isHidden = false

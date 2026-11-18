@@ -215,6 +215,11 @@ final class Preferences: ObservableObject {
     @Published var sideHides: Bool {
         didSet { store.set(sideHides, forKey: "sidebar.hides") }
     }
+    /// The column slides out and back in a longer, eased slide (Motion.slidesColumn),
+    /// where it otherwise snaps out on a short spring. Off unless asked for.
+    @Published var slidesColumn: Bool {
+        didSet { store.set(slidesColumn, forKey: Motion.slidesKey) }
+    }
     /// Taller lines and larger titles in the column, for anyone who finds
     /// the default hard to read (#570). Off unless asked for.
     @Published var roomyTabs: Bool {
@@ -983,6 +988,7 @@ final class Preferences: ObservableObject {
             ?? SidebarDefault.fresh(testing: Store.testing)
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
+        slidesColumn = store.bool(forKey: Motion.slidesKey)
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         sideIcons = store.bool(forKey: "sidebar.icons")
         foldsToIcons = store.bool(forKey: "sidebar.foldIcons")
@@ -1227,6 +1233,7 @@ final class Preferences: ObservableObject {
         take(\.sidePosition, "sidebar.position", store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init),
              or: .left)
         take(\.sideHides, store.bool(forKey: "sidebar.hides"))
+        take(\.slidesColumn, store.bool(forKey: Motion.slidesKey))
         take(\.roomyTabs, store.bool(forKey: "sidebar.roomy"))
         take(\.sideIcons, store.bool(forKey: "sidebar.icons"))
         take(\.foldsToIcons, store.bool(forKey: "sidebar.foldIcons"))

@@ -348,9 +348,24 @@ enum Motion {
     }
 
     static func folding(out: Bool) -> Animation? {
+        if reduced { return nil }
+        if let slide = slide(out: out) {
+            return out ? .easeOut(duration: slide) : .easeIn(duration: slide)
+        }
         let spring = fold(out: out)
-        return reduced ? nil : .spring(response: spring.response, dampingFraction: spring.damping)
+        return .spring(response: spring.response, dampingFraction: spring.damping)
     }
+
+    /// Settings › Appearance › Slide the column in and out: the column comes
+    /// out on an ease-out and goes back on an ease-in, over this long, as
+    /// Arc's does, rather than on the short springs above. Nil when off.
+    /// Read at the moment it moves, as `light` is.
+    static func slide(out: Bool) -> TimeInterval? {
+        guard Store.settings.bool(forKey: slidesKey) else { return nil }
+        return out ? 0.26 : 0.22
+    }
+
+    nonisolated static let slidesKey = "sidebar.slides"
 }
 
 /// Search's mark — Drice's Subtract.svg, a pill with an S cut out of it,
