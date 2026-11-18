@@ -853,11 +853,21 @@ final class Bench {
             func number(_ key: String) -> Double { (request[key] as? NSNumber)?.doubleValue ?? 0 }
             switch mode {
             case "start", "stop", "state":
+                if mode == "start" {
+                    SnapGeometry.taken = nil
+                    NSPasteboard(name: NSPasteboard.Name("search.bench.snap")).clearContents()
+                }
                 if mode == "start", !browser.snapping { browser.toggleSnap() }
                 if mode == "stop" { browser.stopSnapping() }
+                // "taken": what the layer itself last took, from a press
+                // handed to the page (split mouse … to view), and the PNG
+                // on the bench's own pasteboard, never the Mac's.
+                let board = NSPasteboard(name: NSPasteboard.Name("search.bench.snap"))
+                let copied = board.data(forType: .png).flatMap(NSBitmapImageRep.init(data:))
                 tab.web.evaluateInSearch("!!(window.__officeCapture && window.__officeCapture.live())") { live in
                     answer(["snapping": browser.snapping, "live": (live as? Bool) ?? false,
-                            "on": browser.prefs.capturesPages])
+                            "on": browser.prefs.capturesPages, "taken": SnapGeometry.taken ?? [:],
+                            "copied": copied.map { [$0.pixelsWide, $0.pixelsHigh] } ?? []])
                 }
             case "area", "element", "page":
                 house(tab)

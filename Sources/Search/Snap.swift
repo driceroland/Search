@@ -196,6 +196,18 @@ enum SnapGeometry {
         }
     }
 
+    /// The last picture the layer took on a test run, as the bench's
+    /// `snap` answers it, and what it was: for `snap state`. Test runs only.
+    @MainActor static var taken: [String: Any]?
+
+    /// The Mac's accent colour (System Settings › Appearance) as "r, g, b",
+    /// for the layer's outline.
+    static var accent: String {
+        let color = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
+        func byte(_ part: CGFloat) -> Int { Int((part * 255).rounded()) }
+        return "\(byte(color.redComponent)), \(byte(color.greenComponent)), \(byte(color.blueComponent))"
+    }
+
     /// The layer over the page, in Search's own world (see Web.world), put
     /// in only when Capture… is chosen. `on(done)` raises it; `done` is
     /// handed the choice, or null when it is put away. Everything it draws
@@ -206,6 +218,8 @@ enum SnapGeometry {
       if (window.__officeCapture) return;
       var host = null, frame = null, tag = null, band = null, bar = null;
       var live = false, done = null, start = null, dragging = false, target = null;
+      // The Mac's accent colour, as "r, g, b" (see SnapGeometry.accent).
+      var accent = '10, 132, 255';
 
       function css(el, text) { el.style.cssText = text; return el; }
 
@@ -213,24 +227,39 @@ enum SnapGeometry {
         host = css(document.createElement('div'),
           'all:initial;position:fixed;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none');
         var root = host.attachShadow({ mode: 'closed' });
-        frame = css(document.createElement('div'),
-          'position:fixed;pointer-events:none;border:2px solid rgba(23,23,23,.9);' +
-          'background:rgba(23,23,23,.07);border-radius:4px;box-sizing:border-box;display:none');
+        // The outline in the accent colour, ringed in white and then a dark
+        // hairline so it reads on a page of any colour, a dark one included,
+        // and a fill of the accent a little stronger in dark mode. It was
+        // near-black on near-black there, and hard to see.
+        var look = document.createElement('style');
+        look.textContent =
+          '.frame{position:fixed;pointer-events:none;box-sizing:border-box;border-radius:4px;display:none;' +
+          'border:2px solid rgb(' + accent + ');background:rgba(' + accent + ',.12);' +
+          'box-shadow:0 0 0 1px rgba(255,255,255,.9),0 0 0 2px rgba(0,0,0,.35)}' +
+          '.band{position:fixed;pointer-events:none;box-sizing:border-box;display:none;' +
+          'border:2px solid rgb(' + accent + ');background:rgba(' + accent + ',.08);' +
+          'box-shadow:0 0 0 1px rgba(255,255,255,.9),0 0 0 2px rgba(0,0,0,.35),0 0 0 100vmax rgba(0,0,0,.22)}' +
+          '@media (prefers-color-scheme: dark){' +
+          '.frame{background:rgba(' + accent + ',.24)}' +
+          '.band{background:rgba(' + accent + ',.14);' +
+          'box-shadow:0 0 0 1px rgba(255,255,255,.9),0 0 0 2px rgba(0,0,0,.5),0 0 0 100vmax rgba(0,0,0,.4)}}';
+        root.appendChild(look);
+        frame = document.createElement('div');
+        frame.className = 'frame';
         tag = css(document.createElement('div'),
           'position:absolute;font:500 11px -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;' +
-          'background:#171717;padding:2px 7px;border-radius:5px;white-space:nowrap;overflow:hidden;' +
-          'text-overflow:ellipsis');
+          'background:rgb(' + accent + ');padding:2px 7px;border-radius:5px;white-space:nowrap;overflow:hidden;' +
+          'text-overflow:ellipsis;box-shadow:0 0 0 1px rgba(255,255,255,.6)');
         frame.appendChild(tag);
         // The area being dragged, and everything else a shade darker.
-        band = css(document.createElement('div'),
-          'position:fixed;pointer-events:none;border:1px solid rgba(255,255,255,.9);' +
-          'box-shadow:0 0 0 1px rgba(23,23,23,.5),0 0 0 100vmax rgba(0,0,0,.18);box-sizing:border-box;display:none');
+        band = document.createElement('div');
+        band.className = 'band';
         bar = css(document.createElement('div'),
           'position:fixed;top:12px;left:50%;transform:translateX(-50%);pointer-events:auto;' +
           'display:flex;align-items:center;gap:10px;padding:5px 5px 5px 12px;border-radius:10px;' +
           'background:rgba(23,23,23,.92);color:rgba(255,255,255,.75);cursor:default;' +
           'font:500 12px -apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap;' +
-          'box-shadow:0 6px 18px rgba(0,0,0,.18)');
+          'box-shadow:0 0 0 1px rgba(255,255,255,.16),0 6px 18px rgba(0,0,0,.18)');
         var hint = document.createElement('span');
         hint.textContent = 'Drag an area or click an element';
         var whole = css(document.createElement('div'),
@@ -341,6 +370,25 @@ enum SnapGeometry {
         place(el);
       }
 
+      // What a press brings after its pointerup — the click, a mouseup —
+      // still the page's once the layer is down, eaten for a moment: a
+      // link or a button clicked to be captured was followed or pressed
+      // as the picture was taken, which looked like no capture at all.
+      var after = ['click', 'dblclick', 'mouseup', 'auxclick', 'contextmenu'];
+
+      function eat(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
+
+      function trail() {
+        after.forEach(function (kind) { window.addEventListener(kind, eat, true); });
+        setTimeout(function () {
+          after.forEach(function (kind) { window.removeEventListener(kind, eat, true); });
+        }, 500);
+      }
+
       function onUp(e) {
         if (!live || !start) return;
         swallow(e);
@@ -353,11 +401,27 @@ enum SnapGeometry {
             width: Math.abs(e.clientX - from.x), height: Math.abs(e.clientY - from.y)
           };
           if (r.width < 4 || r.height < 4) { band.style.display = 'none'; return; }
+          trail();
           finish(pageChoice('area', r));
           return;
         }
         var el = target || under(e.clientX, e.clientY);
         if (!el) return;
+        trail();
+        finish(pageChoice('element', el.getBoundingClientRect()));
+      }
+
+      // WebKit took the press for itself — a link or an image dragged a
+      // few points, text selected — and sends no pointerup. A press that
+      // wasn't yet an area is the click it was meant as.
+      function onCancel(e) {
+        if (!live || !start) return;
+        var from = start;
+        start = null;
+        if (dragging) { dragging = false; band.style.display = 'none'; return; }
+        var el = target || under(from.x, from.y);
+        if (!el) return;
+        trail();
         finish(pageChoice('element', el.getBoundingClientRect()));
       }
 
@@ -367,13 +431,17 @@ enum SnapGeometry {
         off();
       }
 
-      var presses = ['mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu', 'touchstart', 'auxclick'];
+      // dragstart and selectstart too: a link or an image pressed is
+      // otherwise picked up by WebKit to be dragged, and text selected.
+      var presses = ['mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu', 'touchstart', 'auxclick',
+                     'dragstart', 'selectstart'];
 
       function listen(add) {
         var how = add ? 'addEventListener' : 'removeEventListener';
         window[how]('pointerdown', onDown, true);
         window[how]('pointermove', onMove, true);
         window[how]('pointerup', onUp, true);
+        window[how]('pointercancel', onCancel, true);
         window[how]('keydown', onKey, true);
         presses.forEach(function (kind) { window[how](kind, swallow, true); });
       }
@@ -399,8 +467,9 @@ enum SnapGeometry {
       function off() { finish(null); }
 
       window.__officeCapture = {
-        on: function (answer) {
+        on: function (answer, colour) {
           if (live) finish(null);
+          if (colour) accent = colour;
           done = answer;
           live = true;
           build();
@@ -434,8 +503,8 @@ extension Browser {
         snapTab = tab
         tab.web.callInSearch(SnapGeometry.script + """
 
-        return await new Promise(function (answer) { window.__officeCapture.on(answer); });
-        """, arguments: [:]) { [weak self, weak tab] value in
+        return await new Promise(function (answer) { window.__officeCapture.on(answer, accent); });
+        """, arguments: ["accent": SnapGeometry.accent]) { [weak self, weak tab] value in
             guard let self, let tab, snapTab === tab else { return }
             snapping = false
             snapTab = nil
@@ -445,7 +514,9 @@ extension Browser {
                 let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("search-bench-snap")
                 try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 snap(choice, in: tab, to: Browser.free(SnapGeometry.fileName(Date()), in: folder),
-                     board: NSPasteboard(name: NSPasteboard.Name("search.bench.snap")))
+                     board: NSPasteboard(name: NSPasteboard.Name("search.bench.snap"))) { taken in
+                    SnapGeometry.taken = taken.merging(["kind": choice.kind.rawValue]) { $1 }
+                }
             } else {
                 snap(choice, in: tab)
             }
