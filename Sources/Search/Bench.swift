@@ -804,6 +804,46 @@ final class Bench {
                 answer(["tabsBefore": before, "tabsAfter": browser.tabs.count])
             }
 
+        case "columnmenu":
+            // A right-click at X Y of the window (from its top left) as the
+            // column takes it: what the click lands on, and the menu that
+            // comes up there — the column's own (ColumnMenu), a row's, or
+            // none. "paste": text put on a pasteboard of the bench's own,
+            // which Paste and Go reads instead of the Mac's clipboard.
+            // "pick": that item chosen. Only on a SEARCH_PROBE run; nothing
+            // is drawn and no menu is shown.
+            guard Store.testing else { answer(["error": "columnmenu only works on a --test run"]); return }
+            guard let window = browser.window, let frame = window.contentView?.superview,
+                  let x = request["x"] as? Double, let y = request["y"] as? Double
+            else { answer(["error": "columnmenu needs an x and a y"]); return }
+            let board = NSPasteboard(name: NSPasteboard.Name("search.bench.column"))
+            board.clearContents()
+            if let text = request["paste"] as? String { board.setString(text, forType: .string) }
+            ColumnMenu.board = board
+            let point = NSPoint(x: x, y: Double(window.frame.height) - y)
+            DragStrip.probingRightClick = true
+            let hit = frame.hitTest(frame.convert(point, from: nil))
+            DragStrip.probingRightClick = false
+            let event = NSEvent.mouseEvent(with: .rightMouseDown, location: point, modifierFlags: [],
+                                           timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                           context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+            let menu = event.flatMap { hit?.menu(for: $0) }
+            let titles = menu?.items.filter { !$0.isSeparatorItem && !$0.isHidden }.map(\.title) ?? []
+            let before = browser.tabs.count
+            if let pick = request["pick"] as? String, let menu,
+               let index = menu.items.firstIndex(where: { $0.title == pick }) {
+                menu.performActionForItem(at: index)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + (request["pick"] == nil ? 0 : 0.6)) {
+                ColumnMenu.board = .general
+                answer(["hit": hit.map { String(describing: type(of: $0)) } ?? "", "items": titles,
+                        "tabsBefore": before, "tabsAfter": browser.tabs.count,
+                        "urls": browser.tabs.map { $0.address?.absoluteString ?? "" },
+                        "tuning": browser.tuning, "settingsPage": browser.settingsPage.rawValue,
+                        "folders": browser.pinFolders.map(\.name), "launching": browser.launching,
+                        "activeBlank": browser.active?.isBlank ?? false])
+            }
+
         case "linkmenu":
             // A right-click at X Y of a tab's page (its own points from the
             // top left), and the item named "pick" chosen from the menu that

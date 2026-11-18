@@ -714,6 +714,12 @@ struct DragStrip: NSViewRepresentable {
     /// the tabs, where a double-click opens a new tab instead of zooming the
     /// window.
     var onDoubleClick: (() -> Void)? = nil
+    /// What a right-click on the strip brings up, if anything: the
+    /// column's own menu (ColumnMenu), made when it is asked for.
+    var menu: (() -> NSMenu?)? = nil
+    /// A right-click asked about by the bench (`columnmenu`), where there
+    /// is no event: the strips answer the hit test as they would for one.
+    @MainActor static var probingRightClick = false
 
     func makeNSView(context: Context) -> NSView { Strip() }
 
@@ -722,6 +728,7 @@ struct DragStrip: NSViewRepresentable {
         (view as? Strip)?.below = below
         (view as? Strip)?.trailing = trailing
         (view as? Strip)?.onDoubleClick = onDoubleClick
+        (view as? Strip)?.rightMenu = menu
     }
 
     private final class Strip: NSView {
@@ -729,6 +736,7 @@ struct DragStrip: NSViewRepresentable {
         var below: CGFloat = 0 { didSet { if below != oldValue { aimCursor() } } }
         var trailing: CGFloat = 0 { didSet { if trailing != oldValue { aimCursor() } } }
         var onDoubleClick: (() -> Void)?
+        var rightMenu: (() -> NSMenu?)?
 
         private var pressed: NSEvent?
         private var moved = false
@@ -746,9 +754,17 @@ struct DragStrip: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? {
             let inside = convert(point, from: superview)
             guard inside.x >= reserved, inside.x <= bounds.width - trailing else { return nil }
+            // A right-click over the rows, with a menu to give: the strip
+            // lies behind them, so it is asked only where no row, heading
+            // or button took it first — the gaps between them.
+            let right = NSApp.currentEvent?.type == .rightMouseDown || DragStrip.probingRightClick
             // AppKit measures up from the bottom; the reservation is from the top.
-            guard bounds.height - inside.y >= below else { return nil }
+            guard bounds.height - inside.y >= below || (right && rightMenu != nil) else { return nil }
             return super.hitTest(point)
+        }
+
+        override func menu(for event: NSEvent) -> NSMenu? {
+            rightMenu?() ?? super.menu(for: event)
         }
 
         /// The window is not movable while the pointer is over a strip: macOS

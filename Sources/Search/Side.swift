@@ -104,23 +104,27 @@ struct SideBar: View {
         ZStack(alignment: .top) {
             // Not under the card for a new space: it isn't made of views that
             // would take the click first.
-            DragStrip(reserved: 0, below: browser.makingSpace ? .greatestFiniteMagnitude : rowsEnd, onDoubleClick: browser.newTab)
+            // A right-click anywhere in the column with nothing of its own
+            // there — under the tabs, between groups, the band at the top,
+            // round the foot's buttons — brings up the column's menu.
+            DragStrip(reserved: 0, below: browser.makingSpace ? .greatestFiniteMagnitude : rowsEnd, onDoubleClick: browser.newTab,
+                      menu: browser.makingSpace ? nil : columnMenu)
 
             // The band the lights sit in is this mode's title bar: the window
             // is dragged by it and a double-click fills the screen with it,
             // everywhere but over the three doors, which take their own
             // clicks. The lights are the title bar's own and answer first.
             if icons {
-                DragStrip()
+                DragStrip(menu: columnMenu)
                     .frame(height: lightsBand)
             } else {
                 HStack(spacing: 0) {
-                    DragStrip()
+                    DragStrip(menu: columnMenu)
                         .frame(width: 10 + lights)
                     Color.clear
                         .frame(width: Metrics.helm)
                         .allowsHitTesting(false)
-                    DragStrip()
+                    DragStrip(menu: columnMenu)
                 }
                 .frame(height: Metrics.strip)
             }
@@ -222,6 +226,12 @@ struct SideBar: View {
         // The last square made the first row changes nothing in the row's
         // order; only how many of each there are.
         .animation(Motion.settle, value: browser.listedPins.count)
+    }
+
+    /// The column's menu, for a right-click where nothing else has one.
+    private var columnMenu: () -> NSMenu? {
+        let browser = self.browser
+        return { [weak browser] in browser.map(ColumnMenu.make(for:)) }
     }
 
     /// The column's edge: pull it to make the column wider or narrower,
@@ -1173,9 +1183,12 @@ struct SideBar: View {
         if icons {
             Quiet(icon: "plus", title: "", height: rowHeight, size: prefs.sideTitle, centred: true) { browser.launch() }
                 .help("New Tab   ⌘T")
+                // The column's menu on a right-click, as round it.
+                .overlay { RightClick(menu: columnMenu) }
                 .padding(.top, SideBar.gap)
         } else {
             Quiet(icon: "plus", title: "New tab", height: rowHeight, size: prefs.sideTitle) { browser.launch() }
+                .overlay { RightClick(menu: columnMenu) }
                 .padding(.top, SideBar.gap)
         }
     }
@@ -1859,7 +1872,7 @@ private struct RightClick: NSViewRepresentable {
         var pages: (() -> NSMenu?)?
 
         override func hitTest(_ point: NSPoint) -> NSView? {
-            guard let event = NSApp.currentEvent, event.type == .rightMouseDown else { return nil }
+            guard NSApp.currentEvent?.type == .rightMouseDown || DragStrip.probingRightClick else { return nil }
             return super.hitTest(point)
         }
 
@@ -1867,6 +1880,9 @@ private struct RightClick: NSViewRepresentable {
             guard let menu = pages?() else { return }
             NSMenu.popUpContextMenu(menu, with: event, for: self)
         }
+
+        /// The same menu, for the bench (`columnmenu`).
+        override func menu(for event: NSEvent) -> NSMenu? { pages?() }
     }
 }
 
