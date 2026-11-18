@@ -6014,6 +6014,15 @@ final class Browser: NSObject, ObservableObject {
         openInSplit(open(url, foreground: false, from: active))
     }
 
+    /// A link ⌥-clicked: in a tab of its own beside the page it came from,
+    /// the two as a pair, with the keys, as the link's Open Link in Split
+    /// View makes it. A pair that can't be made leaves it behind, as there.
+    func openLinkBeside(_ url: URL, from opener: Tab) {
+        guard tabs.contains(where: { $0.id == opener.id }) else { return }
+        let tab = open(url, foreground: false, from: opener, link: true)
+        pair(tab, with: opener, onLeft: false)
+    }
+
     /// A page in a tab that keeps nothing, as ⌘⇧N makes one, already on its
     /// way there. Not `open(_:foreground:)`, whose tab is private only when
     /// the one it comes from is. Used, for one, by the bookmarks bar's Open
@@ -7708,6 +7717,19 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
            let from = tab(for: webView), !peekInFront {
             decisionHandler(.cancel)
             DispatchQueue.main.async { [weak self] in self?.peek(url, from: from) }
+            return
+        }
+        // ⌥ alone on a link, with Settings › Keyboard & Mouse saying so: the
+        // link beside this page, as its menu's Open Link in Split View puts
+        // it. Off, it goes on as a plain click, as before (Safari downloads
+        // it). ⌥ with ⇧ or ⌘ is a peek's or a ⌘-click's, never this. Only
+        // from a tab in the row, as a peek is.
+        if prefs.optionClickSplits, prefs.splitView, action.navigationType == .linkActivated,
+           ["http", "https"].contains(scheme),
+           action.modifierFlags.intersection([.shift, .command, .option, .control]) == .option,
+           let from = tab(for: webView), !peekInFront {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { [weak self] in self?.openLinkBeside(url, from: from) }
             return
         }
         // A plain click in a pin, on a link to another site: a peek too, when

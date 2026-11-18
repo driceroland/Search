@@ -616,6 +616,13 @@ final class Preferences: ObservableObject {
     @Published var peekStays: Bool {
         didSet { store.set(peekStays, forKey: "links.peek.stays") }
     }
+    /// ⌥-click on a link opens it in Split View, as its menu's Open Link in
+    /// Split View does (see Browser.openLinkBeside). Safari's ⌥-click
+    /// downloads the link instead, so off unless asked for; off, a ⌥-click
+    /// follows the link as before.
+    @Published var optionClickSplits: Bool {
+        didSet { store.set(optionClickSplits, forKey: "links.optionSplit") }
+    }
     /// Pins as in Arc: a link from a pinned tab to another site opens in a
     /// peek, so the pin stays on its page (see Peek.swift), and ⌘W takes it
     /// back to the page it was pinned at. Half of "Pins keep their site"
@@ -1118,6 +1125,7 @@ final class Preferences: ObservableObject {
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")
+        optionClickSplits = store.bool(forKey: "links.optionSplit")
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
         readerFollowsLook = store.bool(forKey: "reader.follows")
