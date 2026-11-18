@@ -128,6 +128,24 @@ class Search:
         except OSError:
             s.close()
             raise Refusal("not_listening", "Search isn't open for coding agents", "Is Search running?") from None
+        # Search turns a connection away at once (another agent, or just
+        # told no): read that before saying anything, or the hello would
+        # meet a closed socket and the reason would be lost.
+        s.settimeout(0.3)
+        try:
+            early = s.recv(1 << 16)
+        except socket.timeout:  # noqa: UP041
+            early = None
+        except OSError:
+            early = b""
+        if early is not None:
+            s.close()
+            try:
+                error = json.loads(early.split(b"\n", 1)[0]).get("error", {})
+            except ValueError:
+                error = {}
+            raise Refusal(error.get("code", "stopped"), error.get("message", "Search closed the connection"),
+                          error.get("hint", ""))
         self.sock, self.buffer = s, b""
         self.asking = self.send({"do": "hello", "client": self.client})
 

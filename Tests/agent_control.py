@@ -247,6 +247,10 @@ def main():
         for keys in ("ctrl+k", "ctrl+y"):
             x, err = a.tool("press", page="p1", key=keys)
             t.ok(f"H2: no {keys}", err and code(x) == "bad_key", x)
+        x, err = a.tool("press", page="p1", key="\u0019")
+        t.ok("no control character pressed", err and code(x) == "bad_key", x)
+        x, err = a.tool("type", element=node(again, "textbox", "Name")["element"], text="a\u000bb")
+        t.ok("no control character typed", err and code(x) == "bad_text", x)
         x, err = a.tool("press", page="p1", key="Tab")
         t.ok("a named key is pressed", not err, x)
         for sel in ("input[value='hunter2-secret']", '[va\\lue^="h"]', '[v\\61lue^="h"]', "input:placeholder-shown"):
@@ -294,6 +298,11 @@ def main():
         # ---- L6: the bench never reaches an agent's tab
         agent_tab = next(x["id"] for x in sv.cmd({"do": "tabs"})["tabs"] if x["url"].startswith(BASE + "/done"))
         sv.cmd({"do": "close", "id": "all"})
+        try:
+            sv.cmd({"do": "place", "id": agent_tab, "to": 0})
+            t.ok("L6: the bench can't move it", False)
+        except RuntimeError as e:
+            t.ok("L6: the bench can't move it", "place needs" in str(e), str(e))
         t.ok("L6: the bench's close all leaves it", any(x["id"] == agent_tab for x in sv.cmd({"do": "tabs"})["tabs"]))
         try:
             sv.cmd({"do": "eval", "id": agent_tab, "js": "1"})
@@ -324,10 +333,19 @@ def main():
         b = Client("codex"); clients.append(b)
         n = b.send("tools/call", {"name": "list_tabs", "arguments": {}})
         t.ok("asked again", until(lambda: agents().get("state") == "asking"), agents())
+        t.ok("the question is drawn", until(lambda: agents("draw").get("drawn") is True), agents())
         time.sleep(0.7)
         agents("press")
         t.ok("M4: Allow pressed with no click behind it is ignored", agents().get("state") == "asking", agents())
-        agents("allow", tabs=True)
+        agents("click", on="allow", stale=True)
+        t.ok("M4: a stale click still current doesn't allow", agents().get("state") == "asking", agents())
+        agents("click", on="allow", outside=True)
+        t.ok("M4: a fresh click beside the button doesn't allow", agents().get("state") == "asking", agents())
+        agents("click", on="tabs", stale=True)
+        t.ok("M4: nor tick the box", agents().get("wantsTabs") is False, agents())
+        agents("click", on="tabs")
+        t.ok("M4: a fresh click on the box ticks it", agents().get("wantsTabs") is True, agents())
+        agents("click", on="allow")
         listed, err = said("list_tabs", {}, b.answer(n))
         urls = [p["url"] for p in listed.get("tabs", [])] if not err else []
         t.ok("with your tabs: yours listed", any(u.endswith("/yours") for u in urls), listed)
@@ -373,6 +391,12 @@ def main():
 
         # ---- L1: nothing it asked for runs after Stop
         time.sleep(11)
+        # ---- a client that says nothing doesn't keep the only place
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as silent:
+            silent.connect(AGENT_SOCK)
+            t.ok("silent: connected", until(lambda: agents().get("connected") is True, 2), agents())
+            t.ok("silent: let go within a few seconds", until(lambda: agents().get("connected") is False, 8), agents())
+
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as c:
             c.settimeout(30)
             c.connect(AGENT_SOCK)

@@ -180,7 +180,8 @@ enum AgentRules {
             if [123, 124, 125, 126, 115, 119, 116, 121, 117].contains(code) { flags.insert(.function) }
             return (code, characters, flags)
         }
-        guard last.count == 1, let character = last.first, !character.isNewline, !flags.contains(.control) else { return nil }
+        guard last.count == 1, let character = last.first, !character.isNewline, !flags.contains(.control),
+              typeable(last) else { return nil }
         return (Bench.keyCode(for: character), last, flags)
     }
 
@@ -232,7 +233,7 @@ enum AgentRules {
     /// A sign-in sent by GET, or a link back from one, carries them there.
     nonisolated static func url(_ text: String) -> String {
         guard var parts = URLComponents(string: text) else { return text }
-        let named = #"pass|pwd|^pw$|^p$|otp|code|token|secret|auth|key|session|sig|cvc|cvv|card|pin$"#
+        let named = #"pass|pwd|^pw\d*$|^p$|^pwd?\d*$|mdp|kennwort|contrase|senha|parol|wachtwoord|losen|salasana|haslo|otp|code|token|secret|auth|key|session|sig|cvc|cvv|card|pin$"#
         func hidden(_ items: [URLQueryItem]) -> [URLQueryItem] {
             items.map { item in
                 guard item.value?.isEmpty == false,
@@ -265,9 +266,38 @@ enum AgentRules {
     /// mouse event at all, and is refused. Events made up by another trusted
     /// process (CGEventPost, a tool with Accessibility and input access) look
     /// like a hand's, and are out of what this can tell.
-    static func isClick(_ event: NSEvent?, in window: NSWindow?) -> Bool {
-        guard let event, let window, [.leftMouseDown, .leftMouseUp].contains(event.type) else { return false }
-        return event.window === window || event.windowNumber == window.windowNumber
+    ///
+    /// `NSApp.currentEvent` can be an earlier click still current when a
+    /// press through Accessibility comes, so the click must also be newer
+    /// than `after` (the question's first half second past), and land on
+    /// the very control pressed (`on`), in the window it is in.
+    static func isClick(_ event: NSEvent?, on view: NSView?, in window: NSWindow?, after: TimeInterval) -> Bool {
+        guard let event, let view, let window, view.window === window,
+              [.leftMouseDown, .leftMouseUp].contains(event.type),
+              event.windowNumber == window.windowNumber, event.timestamp > after else { return false }
+        return view.bounds.contains(view.convert(event.locationInWindow, from: nil))
+    }
+
+    /// Text an agent may type: no control characters but tab and newline.
+    /// ctrl+k is "\u{0b}" and ctrl+y "\u{19}" by another name.
+    static func typeable(_ text: String) -> Bool {
+        !text.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) && !"\t\n\r".unicodeScalars.contains($0) }
+    }
+
+    /// Secret-looking values taken out of every address in a piece of text,
+    /// as a page's failure says where it failed.
+    nonisolated static func scrubbed(_ text: String) -> String {
+        guard let found = try? NSRegularExpression(pattern: #"[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s"'<>]+"#) else { return text }
+        var out = text
+        for match in found.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard var range = Range(match.range, in: out) else { continue }
+            // Not the sentence's own full stop or colon after it.
+            while range.lowerBound < range.upperBound, ".,;:!?)".contains(out[out.index(before: range.upperBound)]) {
+                range = range.lowerBound..<out.index(before: range.upperBound)
+            }
+            out.replaceSubrange(range, with: url(String(out[range])))
+        }
+        return out
     }
 
     /// Why an agent can't use a tab this way, or nil if it can. A private
@@ -336,6 +366,10 @@ final class AgentSession: ObservableObject, Identifiable {
     /// When the question went up: a click in its first half second is taken
     /// as one meant for whatever was there before.
     fileprivate(set) var asked = Date()
+    /// The same moment on the clock events are stamped with.
+    fileprivate(set) var askedUptime: TimeInterval = 0
+    /// "Let it see my open tabs", as ticked in the question so far.
+    @Published fileprivate(set) var wantsTabs = false
 
     fileprivate var source: DispatchSourceRead?
     /// What is still to be sent, and the source that sends it once the
@@ -421,20 +455,28 @@ final class AgentControl: ObservableObject {
     /// between the socket being made and its mode set, and the mode is set
     /// on the socket itself, never through a link.
     static func listen() -> Int32? {
-        let dir = folder.path, path = socket.path
+        let dir = folder.path, name = socket.lastPathComponent, path = socket.path
         try? FileManager.default.createDirectory(at: folder.deletingLastPathComponent(), withIntermediateDirectories: true)
         if mkdir(dir, 0o700) != 0, errno != EEXIST { return nil }
-        var info = stat()
-        guard lstat(dir, &info) == 0, info.st_mode & S_IFMT == S_IFDIR, info.st_uid == getuid() else {
+        // The folder opened once, never through a link, and checked as
+        // opened; what can be is done relative to it. bind itself can't be:
+        // macOS's bindat isn't in the SDK, and changing directory is the
+        // whole process's, as the umask is. So the socket is bound by its
+        // path, and the folder at that path checked afterwards to be the
+        // very one opened — still this user's, 0700, never a link.
+        let folderFD = open(dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard folderFD >= 0 else {
             log.error("the agent folder isn't a folder of this user's; not listening")
             return nil
         }
-        let folderFD = open(dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
-        guard folderFD >= 0 else { return nil }
-        let held = fchmod(folderFD, 0o700)
-        close(folderFD)
-        guard held == 0 else { return nil }
-        unlink(path)
+        defer { close(folderFD) }
+        var info = stat()
+        guard fstat(folderFD, &info) == 0, info.st_mode & S_IFMT == S_IFDIR, info.st_uid == getuid(),
+              fchmod(folderFD, 0o700) == 0 else {
+            log.error("the agent folder isn't a folder of this user's; not listening")
+            return nil
+        }
+        unlinkat(folderFD, name, 0)
         let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
         var address = sockaddr_un()
@@ -448,9 +490,11 @@ final class AgentControl: ObservableObject {
         let bound = withUnsafePointer(to: &address) { pointer in
             pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, size) }
         }
-        guard bound == 0, fchmodat(AT_FDCWD, path, 0o600, AT_SYMLINK_NOFOLLOW) == 0, Darwin.listen(fd, 4) == 0 else {
+        var there = stat()
+        guard bound == 0, lstat(dir, &there) == 0, there.st_dev == info.st_dev, there.st_ino == info.st_ino,
+              fchmodat(folderFD, name, 0o600, AT_SYMLINK_NOFOLLOW) == 0, Darwin.listen(fd, 4) == 0 else {
             close(fd)
-            unlink(path)
+            unlinkat(folderFD, name, 0)
             return nil
         }
         fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
@@ -507,6 +551,12 @@ final class AgentControl: ObservableObject {
         session.source = source
         self.session = session
         source.resume()
+        // A client that connects and says nothing doesn't keep the only
+        // place: hello within a few seconds, or it is let go.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self, weak session] in
+            guard let self, let session, self.session === session, session.consent.state == .connected else { return }
+            end(session, "it said nothing")
+        }
         Self.log.notice("connected: \(session.program, privacy: .public)")
     }
 
@@ -705,15 +755,44 @@ final class AgentControl: ObservableObject {
 
     // MARK: answering the question
 
-    /// Allow or Don't Allow, from the question in the window: only a mouse
-    /// click in that window (AgentRules.isClick), and none in the
-    /// question's first half second.
-    func answer(allow: Bool, seesTabs: Bool, event: NSEvent?) {
-        guard let session, AgentRules.isClick(event, in: session.browser?.window) else {
-            Self.log.notice("an answer that was no click in the window was ignored")
-            return
-        }
-        decide(allow: allow, seesTabs: seesTabs, now: Date())
+    /// The question's controls as drawn (AgentBanner), so a click can be
+    /// told to have landed on the one it presses.
+    weak var allowButton: NSView?
+    weak var refuseButton: NSView?
+    weak var tabsBox: NSView?
+
+    private func clicked(_ event: NSEvent?, on view: NSView?, _ session: AgentSession) -> Bool {
+        let ok = AgentRules.isClick(event, on: view, in: session.browser?.window, after: session.askedUptime + 0.5)
+        if !ok { Self.log.notice("a press that was no fresh click on the question was ignored") }
+        return ok
+    }
+
+    /// Allow or Don't Allow, from the question in the window: only a fresh
+    /// mouse click on that button (AgentRules.isClick).
+    func answer(allow: Bool, event: NSEvent?) {
+        guard let session, session.consent.state == .asking,
+              clicked(event, on: allow ? allowButton : refuseButton, session) else { return }
+        decide(allow: allow, seesTabs: session.wantsTabs, now: Date())
+    }
+
+    /// "Let it see my open tabs", ticked or unticked: the same click, on
+    /// the box.
+    func toggleTabs(event: NSEvent?) {
+        guard let session, session.consent.state == .asking, clicked(event, on: tabsBox, session) else { return }
+        session.wantsTabs.toggle()
+    }
+
+    /// For the bench's `agents click`: a mouse-up made as a hand's would
+    /// be, on one of the question's controls or beside it, now or before
+    /// the question was up.
+    func madeClick(on which: String, inside: Bool, stale: Bool) -> NSEvent? {
+        guard let session, let view = which == "allow" ? allowButton : which == "tabs" ? tabsBox : refuseButton,
+              let window = view.window else { return nil }
+        let middle = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+        let spot = inside ? middle : NSPoint(x: middle.x, y: middle.y + view.bounds.height + 40)
+        let when = stale ? session.askedUptime + 0.2 : ProcessInfo.processInfo.systemUptime
+        return NSEvent.mouseEvent(with: .leftMouseUp, location: spot, modifierFlags: [], timestamp: when,
+                                  windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 0)
     }
 
     /// The bench's answer, in a test run (Bench `agents`).
@@ -751,7 +830,8 @@ final class AgentControl: ObservableObject {
         case .ended: "ended"
         }
         return ["running": running, "connected": true, "state": state, "client": session.client,
-                "program": session.program, "seesTabs": session.consent.seesTabs,
+                "program": session.program, "seesTabs": session.consent.seesTabs, "wantsTabs": session.wantsTabs,
+                "drawn": allowButton?.window != nil && tabsBox?.window != nil,
                 "own": session.own.count]
     }
 
@@ -775,6 +855,7 @@ final class AgentControl: ObservableObject {
             }
             session.consent.hello()
             session.asked = Date()
+            session.askedUptime = ProcessInfo.processInfo.systemUptime
             session.closing = NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification, object: session.browser?.window, queue: .main
             ) { [weak self, weak session] _ in
@@ -945,7 +1026,7 @@ final class AgentControl: ObservableObject {
     private func describe(_ tab: Tab, _ session: AgentSession) -> [String: Any] {
         var out: [String: Any] = ["page": session.handle(for: tab), "url": AgentRules.url(tab.address?.absoluteString ?? ""),
                                   "title": tab.title, "loading": tab.loading]
-        if let failure = tab.failure { out["failure"] = failure }
+        if let failure = tab.failure { out["failure"] = AgentRules.scrubbed(failure) }
         return out
     }
 
@@ -1004,6 +1085,8 @@ final class AgentControl: ObservableObject {
                     // Your tabs are read, never touched: no handles to touch them by.
                     if own { node["element"] = "\(handle).s\(snap).e\(index)" }
                     if let href = node["href"] as? String { node["href"] = AgentRules.url(href) }
+                    // A frame named by its address, when it has no title.
+                    if node["role"] as? String == "iframe", let named = node["name"] as? String { node["name"] = AgentRules.scrubbed(named) }
                     return node
                 }
                 out["page"] = handle
@@ -1041,6 +1124,10 @@ final class AgentControl: ObservableObject {
     private func type(_ request: [String: Any], _ session: AgentSession, _ browser: Browser, _ answer: @escaping ([String: Any]) -> Void) throws {
         let (tab, _, snap, index) = try element(request, session, browser)
         let text = String((request["text"] as? String ?? "").prefix(10000))
+        guard AgentRules.typeable(text) else {
+            throw AgentRefusal(code: "bad_text", message: "No control characters but tab and newline",
+                               hint: "Use press for Enter, Tab or Escape.")
+        }
         let replace = request["replace"] as? Bool ?? true
         func touch(_ how: String, _ text: String?, _ then: @escaping ([String: Any]) -> Void) {
             page(tab, session, PageScripts.touch(key: Self.key, snap: snap, index: index, how: how, text: text, replace: replace, strict: true)) { result in
@@ -1153,13 +1240,26 @@ final class AgentControl: ObservableObject {
     private func shot(_ request: [String: Any], _ session: AgentSession, _ browser: Browser, _ answer: @escaping ([String: Any]) -> Void) throws {
         let tab = try self.tab(request, session, browser, .drive)
         let width = (request["width"] as? Double).map { min(max($0, 200), 2560) }
-        page(tab, session, PageScripts.secrets) { result in
+        let key = Self.key + "Hidden"
+        // Put back whatever happens, alive or not: the page is yours too.
+        func putBack() {
+            tab.web.evaluateJavaScript(PageScripts.shown(key: key), in: nil, in: Web.world) { _ in }
+        }
+        // Hidden in the page for the time of the picture, so a scroll
+        // between measuring and taking it can't uncover anything; the
+        // boxes are painted over as well.
+        page(tab, session, PageScripts.hidden(key: key)) { result in
             guard case .success(let found) = result else {
+                putBack()
                 if case .failure(let refusal) = result { answer(refusal.said) }
                 return
             }
-            guard self.live(session) else { return answer(AgentRefusal(code: "stopped", message: "Stopped in Search").said) }
+            guard self.live(session) else {
+                putBack()
+                return answer(AgentRefusal(code: "stopped", message: "Stopped in Search").said)
+            }
             PageHands.snapshot(tab.web, width: width) { taken in
+                putBack()
                 switch taken {
                 case .failure(let error):
                     answer(AgentRefusal(code: "no_picture", message: error.localizedDescription).said)

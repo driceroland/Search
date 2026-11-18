@@ -15,8 +15,10 @@ struct AgentBar: View {
 
     var body: some View {
         Group {
-            if let session = agents.session, session.browser === browser {
-                AgentSessionBar(session: session)
+            // Which window it asked in is the session's to say, once it has
+            // said hello: watched there, not here.
+            if let session = agents.session {
+                AgentSessionBar(session: session, browser: browser)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -26,12 +28,15 @@ struct AgentBar: View {
 
 private struct AgentSessionBar: View {
     @ObservedObject var session: AgentSession
+    let browser: Browser
 
     var body: some View {
-        switch session.consent.state {
-        case .asking: AgentQuestion(session: session)
-        case .allowed: AgentPill(session: session)
-        default: EmptyView()
+        if session.browser === browser {
+            switch session.consent.state {
+            case .asking: AgentQuestion(session: session)
+            case .allowed: AgentPill(session: session)
+            default: EmptyView()
+            }
         }
     }
 }
@@ -39,7 +44,6 @@ private struct AgentSessionBar: View {
 /// "Claude Code wants to use Search", Allow or Don't Allow.
 private struct AgentQuestion: View {
     @ObservedObject var session: AgentSession
-    @State private var seesTabs = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -58,25 +62,31 @@ private struct AgentQuestion: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Toggle("Let it see my open tabs", isOn: $seesTabs)
+            // Ticked only by a fresh click on it, as Allow is pressed.
+            Toggle("Let it see my open tabs", isOn: Binding(
+                get: { session.wantsTabs },
+                set: { _ in AgentControl.shared.toggleTabs(event: NSApp.currentEvent) }))
                 .toggleStyle(.checkbox)
+                .background(ClickSpot { AgentControl.shared.tabsBox = $0 })
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.ink)
                 .padding(.leading, 23)
             HStack(spacing: 12) {
                 Spacer(minLength: 8)
-                Button { AgentControl.shared.answer(allow: false, seesTabs: false, event: NSApp.currentEvent) } label: {
+                Button { AgentControl.shared.answer(allow: false, event: NSApp.currentEvent) } label: {
                     Text("Don't Allow")
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
                         .contentShape(Rectangle())
+                        .background(ClickSpot { AgentControl.shared.refuseButton = $0 })
                 }
-                Button { AgentControl.shared.answer(allow: true, seesTabs: seesTabs, event: NSApp.currentEvent) } label: {
+                Button { AgentControl.shared.answer(allow: true, event: NSApp.currentEvent) } label: {
                     Text("Allow")
                         .foregroundStyle(Palette.ground)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Palette.ink, in: Capsule())
+                        .background(ClickSpot { AgentControl.shared.allowButton = $0 })
                 }
             }
             .font(.system(size: 12))
@@ -130,4 +140,23 @@ private struct AgentPill: View {
         .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.10), radius: 14, y: 4)
     }
+}
+
+/// An AppKit view the size of the control it sits behind, so a click can be
+/// checked to have landed on that control (AgentRules.isClick). It takes no
+/// clicks itself.
+private struct ClickSpot: NSViewRepresentable {
+    let made: (NSView) -> Void
+
+    final class Spot: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = Spot()
+        made(view)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {}
 }

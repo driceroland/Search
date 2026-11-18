@@ -512,7 +512,19 @@ final class Bench {
             case "deny": agents.answerForTest(allow: false, seesTabs: false)
             // The question's Allow pressed with no click behind it, as
             // Accessibility would press it: ignored.
-            case "press": agents.answer(allow: true, seesTabs: true, event: nil)
+            case "press": agents.answer(allow: true, event: nil)
+            // A click made on one of the question's controls ("allow",
+            // "deny", "tabs"), or beside it, now or stamped from before the
+            // question was up: only a fresh one on the control counts.
+            // A hidden probe's window is laid out on demand: the question
+            // drawn, so its controls are there to be clicked.
+            case "draw": browser.window?.contentView?.layoutSubtreeIfNeeded()
+            case "click":
+                let which = request["on"] as? String ?? "allow"
+                let made = agents.madeClick(on: which, inside: request["outside"] as? Bool != true,
+                                            stale: request["stale"] as? Bool == true)
+                guard let made else { answer(["error": "the question isn't drawn"]); return }
+                if which == "tabs" { agents.toggleTabs(event: made) } else { agents.answer(allow: which == "allow", event: made) }
             case "stop": agents.stopSession()
             // The switch in Settings turned off, as its click would.
             case "off": browser.prefs.agents = false
@@ -2629,7 +2641,7 @@ final class Bench {
         case "place":
             // A tab put at another place in the row, as a drag would.
             guard let id = request["id"] as? String, let to = request["to"] as? Int,
-                  let tab = browser.tabs.first(where: { Bench.short($0) == id && (Store.testing || $0.bench) })
+                  let tab = browser.tabs.first(where: { Bench.short($0) == id && (Store.testing || $0.bench) && !$0.agent })
             else { answer(["error": "place needs a tab id and an index"]); return }
             browser.move(tab, to: to)
             answer(["at": browser.tabs.firstIndex { $0.id == tab.id } ?? -1])

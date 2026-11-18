@@ -170,10 +170,40 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       var secrets = globalThis.__searchSecrets || (globalThis.__searchSecrets = new WeakSet());
       function keepSecret(box) { try { if (box) secrets.add(box); } catch (e) {} }
       function passwordBox(el) { return !!el && el.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'password'; }
+      // The box itself, inside an open shadow root too: the event's target
+      // is only its host from out here.
+      function boxOf(e) { var path = e.composedPath ? e.composedPath() : []; return path[0] || e.target; }
       ['focusin', 'input', 'change'].forEach(function (kind) {
-        document.addEventListener(kind, function (e) { if (passwordBox(e.target)) keepSecret(e.target); }, true);
+        document.addEventListener(kind, function (e) {
+          var box = boxOf(e);
+          if (passwordBox(box)) return keepSecret(box);
+          // A code typed in by hand: a one-time-code box, or one of a row
+          // of one-character boxes.
+          if (kind !== 'focusin' && box && box.tagName === 'INPUT') {
+            try { if ((box.getAttribute('autocomplete') || '').indexOf('one-time-code') >= 0 || saysCode(box) || cells(box)) keepSecret(box); } catch (err) {}
+          }
+        }, true);
       });
       Array.prototype.forEach.call(document.querySelectorAll('input[type="password"]'), keepSecret);
+      // A "show password" that swaps the box for a new one holding the
+      // same value: the new one is as secret as the one it replaced.
+      try {
+        new MutationObserver(function (changes) {
+          var gone = [], came = [];
+          function inputs(node, into) {
+            if (!node || node.nodeType !== 1) return;
+            if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') into.push(node);
+            if (node.querySelectorAll) Array.prototype.push.apply(into, node.querySelectorAll('input, textarea'));
+          }
+          changes.forEach(function (c) {
+            Array.prototype.forEach.call(c.removedNodes, function (n) { inputs(n, gone); });
+            Array.prototype.forEach.call(c.addedNodes, function (n) { inputs(n, came); });
+          });
+          var held = gone.filter(function (b) { return secrets.has(b) && b.value; }).map(function (b) { return b.value; });
+          if (!held.length) return;
+          came.forEach(function (b) { if (held.indexOf(b.value) >= 0) keepSecret(b); });
+        }).observe(document, { childList: true, subtree: true });
+      } catch (err) {}
 
       // The password box, and the last box before it that could hold a name.
       function pair() {

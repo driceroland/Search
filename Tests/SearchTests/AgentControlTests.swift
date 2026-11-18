@@ -173,28 +173,52 @@ final class AgentControlTests: XCTestCase {
         XCTAssertEqual(AgentRules.url("https://a.test/?q=pass"), "https://a.test/?q=pass", "a value is only hidden by its name")
         XCTAssertEqual(AgentRules.url("https://a.test/#top"), "https://a.test/#top")
         XCTAssertEqual(AgentRules.url(""), "")
+        for name in ["mdp", "kennwort", "pw1", "pwd2", "contrasena", "senha", "haslo", "passwd"] {
+            XCTAssertEqual(AgentRules.url("https://a.test/?\(name)=s3cret"), "https://a.test/?\(name)=redacted", name)
+        }
+        XCTAssertEqual(AgentRules.scrubbed("Couldn't open https://a.test/x?token=abc: refused. Also http://b.test/?q=1"),
+                       "Couldn't open https://a.test/x?token=redacted: refused. Also http://b.test/?q=1")
     }
 
-    // M4
-    func testOnlyAClickInThatWindowAnswers() throws {
+    // M4: a fresh mouse click, on the control pressed, in its window.
+    func testOnlyAFreshClickOnTheControlAnswers() throws {
         _ = NSApplication.shared
-        let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 200, height: 100), styleMask: [.titled],
-                              backing: .buffered, defer: false)
-        let other = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 200, height: 100), styleMask: [.titled],
-                             backing: .buffered, defer: false)
-        func mouse(_ type: NSEvent.EventType, in window: NSWindow) -> NSEvent? {
-            NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+        func window() -> NSWindow {
+            NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 300, height: 200), styleMask: [.titled],
+                     backing: .buffered, defer: false)
+        }
+        let here = window(), other = window()
+        let button = NSView(frame: NSRect(x: 100, y: 50, width: 80, height: 30))
+        here.contentView?.addSubview(button)
+        let asked: TimeInterval = 1000
+        func mouse(_ type: NSEvent.EventType, at point: NSPoint, in window: NSWindow, at time: TimeInterval) -> NSEvent? {
+            NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: time, windowNumber: window.windowNumber,
                                context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
         }
-        XCTAssertFalse(AgentRules.isClick(nil, in: window), "Accessibility's press has no event")
-        XCTAssertTrue(AgentRules.isClick(mouse(.leftMouseUp, in: window), in: window))
-        XCTAssertTrue(AgentRules.isClick(mouse(.leftMouseDown, in: window), in: window))
-        XCTAssertFalse(AgentRules.isClick(mouse(.leftMouseUp, in: other), in: window), "a click in another window")
-        XCTAssertFalse(AgentRules.isClick(mouse(.rightMouseUp, in: window), in: window))
-        let key = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+        let middle = button.convert(NSPoint(x: 40, y: 15), to: nil)
+        func click(_ event: NSEvent?) -> Bool { AgentRules.isClick(event, on: button, in: here, after: asked + 0.5) }
+        XCTAssertFalse(click(nil), "Accessibility's press has no event")
+        XCTAssertTrue(click(mouse(.leftMouseUp, at: middle, in: here, at: asked + 1)))
+        XCTAssertTrue(click(mouse(.leftMouseDown, at: middle, in: here, at: asked + 1)))
+        XCTAssertFalse(click(mouse(.leftMouseUp, at: middle, in: here, at: asked - 3)), "an earlier click still current")
+        XCTAssertFalse(click(mouse(.leftMouseUp, at: middle, in: here, at: asked + 0.3)), "in the question's first half second")
+        XCTAssertFalse(click(mouse(.leftMouseUp, at: NSPoint(x: 10, y: 10), in: here, at: asked + 1)), "beside the button")
+        XCTAssertFalse(click(mouse(.leftMouseUp, at: middle, in: other, at: asked + 1)), "in another window")
+        XCTAssertFalse(click(mouse(.rightMouseUp, at: middle, in: here, at: asked + 1)))
+        let key = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: asked + 1, windowNumber: here.windowNumber,
                                    context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)
-        XCTAssertFalse(AgentRules.isClick(key, in: window), "Return never allows")
-        XCTAssertFalse(AgentRules.isClick(mouse(.leftMouseUp, in: window), in: nil))
+        XCTAssertFalse(click(key), "Return never allows")
+        XCTAssertFalse(AgentRules.isClick(mouse(.leftMouseUp, at: middle, in: here, at: asked + 1), on: nil, in: here, after: asked))
+    }
+
+    // Low 3: no control characters but tab and newline.
+    func testNoControlCharacters() {
+        XCTAssertTrue(AgentRules.typeable("Ada\tLovelace\nline two"))
+        XCTAssertFalse(AgentRules.typeable("\u{0b}"))
+        XCTAssertFalse(AgentRules.typeable("x\u{19}"))
+        XCTAssertFalse(AgentRules.typeable("\u{1b}"))
+        XCTAssertNil(AgentRules.key("\u{0b}"))
+        XCTAssertNil(AgentRules.key("shift+\u{19}"))
     }
 
     func testClientNames() {
@@ -397,6 +421,79 @@ final class AgentControlTests: XCTestCase {
         let boxes = try await run(web, PageScripts.secrets)
         // Two frames, the embed, the closed root's host, the open root's password.
         XCTAssertEqual((boxes["boxes"] as? [[Double]])?.count, 5, "\(boxes)")
+    }
+
+    // Low 9: a closed root on a standard element, up to a widget's size.
+    func testClosedRootsOnStandardElements() async throws {
+        let web = try await page("""
+            <!doctype html><div id=small style="width:200px;height:40px"></div>
+            <div id=wide style="width:1200px;height:600px"></div>
+            <script>document.getElementById('small').attachShadow({ mode: 'closed' }).innerHTML = '<b>4242</b>';</script>
+            """)
+        defer { web.removeFromSuperview() }
+        let boxes = try await run(web, PageScripts.secrets)
+        XCTAssertEqual((boxes["boxes"] as? [[Double]])?.count, 1, "the small one, not a page-sized background")
+    }
+
+    // M2a: hidden in the page for the picture, then put back as it was.
+    func testHiddenForThePictureAndPutBack() async throws {
+        let web = try await page("""
+            <!doctype html><input id=pw type=password value=x>
+            <iframe id=f srcdoc="hi" style="opacity:0.5"></iframe><input id=plain value=y>
+            """)
+        defer { web.removeFromSuperview() }
+        func opacity(_ id: String) async throws -> String {
+            try await web.evaluateJavaScript("getComputedStyle(document.getElementById('\(id)')).opacity") as? String ?? ""
+        }
+        let hidden = try await run(web, PageScripts.hidden(key: "__testHidden"))
+        XCTAssertEqual((hidden["boxes"] as? [[Double]])?.count, 2)
+        let duringPw = try await opacity("pw"), duringFrame = try await opacity("f"), duringPlain = try await opacity("plain")
+        XCTAssertEqual(duringPw, "0")
+        XCTAssertEqual(duringFrame, "0")
+        XCTAssertEqual(duringPlain, "1")
+        let shown = try await run(web, PageScripts.shown(key: "__testHidden"))
+        XCTAssertEqual(shown["shown"] as? Int, 2)
+        let afterPw = try await opacity("pw"), afterFrame = try await opacity("f")
+        XCTAssertEqual(afterPw, "1")
+        XCTAssertEqual(afterFrame, "0.5", "its own opacity put back")
+    }
+
+    // Low 4: in a shadow root, swapped for a text box, or typed into a code row.
+    func testSecretsSearchSeesOnItsOwn() async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: FormRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world))
+        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
+        PageRoom.shared.made().contentView?.addSubview(web)
+        defer { web.removeFromSuperview() }
+        web.loadHTMLString("""
+            <!doctype html><title>own</title>
+            <login-box id=host></login-box>
+            <script>document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML =
+              '<label>Key <input id=inner type=password></label>';</script>
+            <span id=swap><input id=pw type=password></span>
+            <div id=row><input maxlength=1><input maxlength=1><input maxlength=1><input maxlength=1></div>
+            """, baseURL: URL(string: "https://agent-own.invalid/"))
+        for _ in 0..<100 where web.isLoading || web.url == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        _ = try await web.evaluateJavaScript("""
+            var inner = document.getElementById('host').shadowRoot.getElementById('inner');
+            inner.focus(); inner.value = 'shadow-pw-3'; inner.type = 'text';
+            var pw = document.getElementById('pw'); pw.focus(); pw.value = 'swapped-pw-4';
+            var shown = document.createElement('input'); shown.value = pw.value;
+            pw.replaceWith(shown);
+            document.querySelectorAll('#row input').forEach(function (b, i) {
+              b.value = String(7 - i); b.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+            true
+            """)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        let read = try await run(web, PageScripts.read(key: "__test", snap: 1, most: 50, longest: 5000, text: true))
+        let all = String(data: try JSONSerialization.data(withJSONObject: read), encoding: .utf8) ?? ""
+        for secret in ["shadow-pw-3", "swapped-pw-4", "\"value\":\"7\"", "\"value\":\"6\"", "\"value\":\"5\"", "\"value\":\"4\""] {
+            XCTAssertFalse(all.contains(secret), "\(secret) left the page")
+        }
     }
 
     // H2, tried for real: ctrl+k in a password box, ctrl+y in a text box.

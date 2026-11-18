@@ -276,33 +276,82 @@ enum PageScripts {
     })
     """#
 
-    /// Where a picture of the page must be blacked out, in CSS pixels of the
-    /// viewport: every secret field (by what it says it is, or because
-    /// Search filled it or saw it as a password: the shared secret set), and
-    /// everything whose inside isn't read here and so can't be vouched for —
-    /// every frame, whoever's it is, every embed and object, and an element
-    /// that draws something but shows no inside to read, as one with a
-    /// closed shadow root does.
-    private static let secretsBody = #"""
-    (function () {
+    /// What a picture of the page must not show: every secret field (by
+    /// what it says it is, or because Search filled it or saw it as a
+    /// password: the shared secret set), and everything whose inside isn't
+    /// read here and so can't be vouched for — every frame, whoever's it
+    /// is, every embed and object, and an element that draws something but
+    /// shows no inside to read, as one with a closed shadow root does. A
+    /// custom element that does so is always counted; a standard one that
+    /// can carry a shadow root (div, span, section…) only up to a field's or
+    /// a widget's size, or every empty background would go too. A closed
+    /// root on a standard element larger than that, or one whose host also
+    /// has children of its own, is not told apart from an ordinary element.
+    private static let maskedHelper = #"""
+    function masked() {
       var out = [], roots = [document];
-      function box(el) {
-        var r = el.getBoundingClientRect();
-        if (r.width && r.height) out.push([r.left - 2, r.top - 2, r.width + 4, r.height + 4]);
-      }
+      var hosts = /^(ARTICLE|ASIDE|BLOCKQUOTE|DIV|FOOTER|H[1-6]|HEADER|MAIN|NAV|P|SECTION|SPAN)$/;
       while (roots.length) {
         var root = roots.shift(), all = root.querySelectorAll('*');
         for (var i = 0; i < all.length; i++) {
           var el = all[i], t = el.tagName;
           if (el.shadowRoot) roots.push(el.shadowRoot);
-          if (/^(IFRAME|FRAME|EMBED|OBJECT|PORTAL|FENCEDFRAME)$/.test(t)) { box(el); continue; }
-          if ((t === 'INPUT' || t === 'TEXTAREA') && secret(el)) { box(el); continue; }
-          if (t.indexOf('-') > 0 && !el.shadowRoot && !el.children.length && !(el.textContent || '').trim()) box(el);
+          if (/^(IFRAME|FRAME|EMBED|OBJECT|PORTAL|FENCEDFRAME)$/.test(t)) { out.push(el); continue; }
+          if ((t === 'INPUT' || t === 'TEXTAREA') && secret(el)) { out.push(el); continue; }
+          if (el.shadowRoot || el.children.length || (el.textContent || '').trim()) continue;
+          var r = el.getBoundingClientRect();
+          if (!r.width || !r.height) continue;
+          if (t.indexOf('-') > 0 || (hosts.test(t) && r.width <= 800 && r.height <= 300)) out.push(el);
         }
       }
-      return JSON.stringify({ boxes: out, width: innerWidth, height: innerHeight });
-    })()
+      return out;
+    }
+    function boxes(els) {
+      var out = [];
+      els.forEach(function (el) {
+        var r = el.getBoundingClientRect();
+        if (r.width && r.height) out.push([r.left - 2, r.top - 2, r.width + 4, r.height + 4]);
+      });
+      return out;
+    }
+
     """#
+
+    /// Where a picture must be blacked out, in CSS pixels of the viewport.
+    static var secrets: String {
+        helpers + maskedHelper
+            + "JSON.stringify({ boxes: boxes(masked()), width: innerWidth, height: innerHeight })"
+    }
+
+    /// What a picture must not show, made invisible for the time the picture
+    /// is taken (opacity, which nothing inside can undo), and where it was.
+    /// Kept under `key` for `shown`, which puts each back as it was.
+    static func hidden(key: String) -> String {
+        call(maskedHelper + #"""
+        (function (key) {
+          var els = masked(), kept = [];
+          els.forEach(function (el) {
+            kept.push([el, el.style.getPropertyValue('opacity'), el.style.getPropertyPriority('opacity')]);
+            el.style.setProperty('opacity', '0', 'important');
+          });
+          globalThis[key] = kept;
+          return JSON.stringify({ boxes: boxes(els), width: innerWidth, height: innerHeight });
+        })
+        """#, [key])
+    }
+
+    static func shown(key: String) -> String {
+        call(#"""
+        (function (key) {
+          var kept = globalThis[key] || [];
+          kept.forEach(function (k) {
+            if (k[1]) k[0].style.setProperty('opacity', k[1], k[2]); else k[0].style.removeProperty('opacity');
+          });
+          globalThis[key] = null;
+          return JSON.stringify({ shown: kept.length });
+        })
+        """#, [key])
+    }
 
     private static func json(_ value: Any) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: [value], options: [.fragmentsAllowed]),
@@ -332,7 +381,6 @@ enum PageScripts {
         call(checkBody, [condition])
     }
 
-    static var secrets: String { helpers + secretsBody }
 
     /// The page scrolled by so many CSS pixels, or to its "top" or "bottom".
     static func scroll(dx: Double, dy: Double, to end: String?) -> String {
