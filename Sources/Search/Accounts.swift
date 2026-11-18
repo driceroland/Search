@@ -6,8 +6,9 @@ import SwiftUI
 /// grey; a click puts both into the form. The Mac's passkeys for a page
 /// waiting for one come first, as in Safari; a click on one brings up the
 /// Mac's sheet for it. Under a box for your name, email, phone or address,
-/// your card in Contacts, and a click fills the form. It follows the box
-/// when the page scrolls, and goes when the caret does.
+/// your card in Contacts, and a click fills the form. ↓ and ↑ light a row
+/// from the keyboard and Return takes it, as a click (App.swift's `take`).
+/// It follows the box when the page scrolls, and goes when the caret does.
 struct AccountList: View {
     @ObservedObject var browser: Browser
     let asked: Browser.Suggesting
@@ -17,43 +18,23 @@ struct AccountList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(asked.passkeys) { passkey in
-                Row(mark: .symbol("person.badge.key"), name: passkey.name,
-                    detail: "Passkey" + (passkey.provider.map { " · \($0)" } ?? "")) { browser.choose(passkey) }
-            }
-            // The page's own host first, from both places; the rest of its
-            // site under a line, so a login saved for example.com is still
-            // there on admin.example.com without passing for admin's.
-            ForEach(ownLogins) { loginRow($0) }
-            ForEach(ownApple) { appleRow($0) }
-            if !(ownLogins.isEmpty && ownApple.isEmpty) && !(siteLogins.isEmpty && siteApple.isEmpty) {
-                Text("Other accounts on \(Vault.registrable(asked.host))")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.faint)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
-            }
-            ForEach(siteLogins) { loginRow($0) }
-            ForEach(siteApple) { appleRow($0) }
-            ForEach(asked.codes) { code in
-                Row(mark: .symbol("number"), name: code.user.isEmpty ? "Verification code" : code.user,
-                    detail: code.user.isEmpty ? "Apple Passwords" : "Verification code · Apple Passwords") { browser.choose(code) }
-            }
-            if asked.appleConnect {
-                Row(mark: .symbol("key.icloud"), name: "Connect Apple Passwords…",
-                    detail: "Pair once with a code from your Mac") { browser.connectApplePasswords() }
-            }
-            if asked.appleOffer != nil {
-                OfferRow(use: browser.useApplePasswords, never: browser.neverOfferApplePasswords)
-            }
-            // A click fills the form; a shift-click, the box alone.
-            ForEach(asked.contacts) { contact in
-                Row(mark: .symbol("person.crop.circle"), name: contact.title, detail: contact.detail) {
-                    browser.choose(contact, alone: NSEvent.modifierFlags.contains(.shift))
+            // The rows in the order ↓ walks them (Suggesting.choices): the
+            // Mac's passkeys, the page's own host's accounts from both places,
+            // then the rest of its site's under a line, so a login saved for
+            // example.com is still there on admin.example.com without passing
+            // for admin's; codes, the rows about Apple Passwords, your card.
+            let choices = asked.choices
+            ForEach(Array(choices.enumerated()), id: \.offset) { at, choice in
+                if at == asked.othersFrom {
+                    Text("Other accounts on \(Vault.registrable(asked.host))")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Palette.faint)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
                 }
-                .help("Fills the form. Shift-click fills only this box.")
+                row(choice, lit: asked.lit == at)
             }
             if !offerOnly {
             HStack(spacing: 6) {
@@ -84,25 +65,35 @@ struct AccountList: View {
         .offset(x: asked.spot.minX, y: asked.spot.maxY + 6)
     }
 
-    private var ownLogins: [Kept] { asked.logins.filter { Vault.belongs($0.host, to: asked.host, wide: false) } }
-    private var siteLogins: [Kept] { asked.logins.filter { !Vault.belongs($0.host, to: asked.host, wide: false) } }
-    private var ownApple: [AppleLogin] { asked.apple.filter { owns($0) } }
-    private var siteApple: [AppleLogin] { asked.apple.filter { !owns($0) } }
-
-    private func owns(_ login: AppleLogin) -> Bool {
-        asked.appleHost.map { ApplePasswords.belongs(login.sites, to: $0, wide: false) } ?? false
-    }
-
-    private func loginRow(_ login: Kept) -> some View {
-        Row(mark: .letter(login.user.first.map { String($0).uppercased() } ?? "•"),
-            name: login.user.isEmpty ? "No name" : login.user, detail: login.host) { browser.choose(login) }
-    }
-
-    /// The Mac's Passwords app, when turned on (ApplePasswords.swift):
-    /// marked as Apple's.
-    private func appleRow(_ login: AppleLogin) -> some View {
-        Row(mark: .letter(login.user.first.map { String($0).uppercased() } ?? "•"),
-            name: login.user.isEmpty ? "No name" : login.user, detail: "Apple Passwords") { browser.choose(login) }
+    @ViewBuilder
+    private func row(_ choice: Browser.Suggesting.Choice, lit: Bool) -> some View {
+        switch choice {
+        case .passkey(let passkey):
+            Row(mark: .symbol("person.badge.key"), name: passkey.name,
+                detail: "Passkey" + (passkey.provider.map { " · \($0)" } ?? ""), lit: lit) { browser.choose(passkey) }
+        case .login(let login):
+            Row(mark: .letter(login.user.first.map { String($0).uppercased() } ?? "•"),
+                name: login.user.isEmpty ? "No name" : login.user, detail: login.host, lit: lit) { browser.choose(login) }
+        case .apple(let login):
+            // The Mac's Passwords app, when turned on (ApplePasswords.swift):
+            // marked as Apple's.
+            Row(mark: .letter(login.user.first.map { String($0).uppercased() } ?? "•"),
+                name: login.user.isEmpty ? "No name" : login.user, detail: "Apple Passwords", lit: lit) { browser.choose(login) }
+        case .code(let code):
+            Row(mark: .symbol("number"), name: code.user.isEmpty ? "Verification code" : code.user,
+                detail: code.user.isEmpty ? "Apple Passwords" : "Verification code · Apple Passwords", lit: lit) { browser.choose(code) }
+        case .connect:
+            Row(mark: .symbol("key.icloud"), name: "Connect Apple Passwords…",
+                detail: "Pair once with a code from your Mac", lit: lit) { browser.connectApplePasswords() }
+        case .offer:
+            OfferRow(lit: lit, use: browser.useApplePasswords, never: browser.neverOfferApplePasswords)
+        case .contact(let contact):
+            // A click fills the form; a shift-click, the box alone.
+            Row(mark: .symbol("person.crop.circle"), name: contact.title, detail: contact.detail, lit: lit) {
+                browser.choose(contact, alone: NSEvent.modifierFlags.contains(.shift))
+            }
+            .help("Fills the form. Shift-click fills only this box.")
+        }
     }
 
     /// Nothing but the offer: no footer under it, the row says it all.
@@ -130,6 +121,8 @@ struct AccountList: View {
     /// an account, so it never reads as one. A click turns Apple Passwords
     /// on and pairs; the ✕ says don't offer again.
     struct OfferRow: View {
+        /// Come to with ↓ and ↑: Return takes it, as a click on it.
+        var lit = false
         let use: () -> Void
         let never: () -> Void
         @State private var hovering = false
@@ -147,7 +140,7 @@ struct AccountList: View {
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
-                    .foregroundStyle(hovering && !onCross ? Palette.ink : Palette.muted)
+                    .foregroundStyle((hovering && !onCross) || lit ? Palette.ink : Palette.muted)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -168,7 +161,7 @@ struct AccountList: View {
             .padding(.leading, 10)
             .padding(.trailing, 8)
             .padding(.vertical, 6)
-            .background(hovering ? Palette.hover : .clear)
+            .background(hovering || lit ? Palette.hover : .clear)
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
             .animation(Motion.quick, value: onCross)
@@ -179,6 +172,8 @@ struct AccountList: View {
         let mark: Mark
         let name: String
         let detail: String
+        /// Come to with ↓ and ↑: lit as under the pointer.
+        var lit = false
         let pick: () -> Void
         @State private var hovering = false
 
@@ -208,12 +203,50 @@ struct AccountList: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(hovering ? Palette.hover : .clear)
+                .background(hovering || lit ? Palette.hover : .clear)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
         }
+    }
+}
+
+extension Browser.Suggesting {
+    /// One row of the list, which a click or Return on it picks.
+    enum Choice: Equatable {
+        case passkey(Passkeys.Offered)
+        case login(Kept)
+        case apple(AppleLogin)
+        case code(AppleCode)
+        /// "Connect Apple Passwords…"
+        case connect
+        /// "Use your Apple passwords?"
+        case offer
+        case contact(MeCard.Offer)
+    }
+
+    /// The rows top to bottom, as drawn and as ↓ walks them.
+    var choices: [Choice] {
+        passkeys.map(Choice.passkey) + ownLogins.map(Choice.login) + ownApple.map(Choice.apple)
+            + siteLogins.map(Choice.login) + siteApple.map(Choice.apple) + codes.map(Choice.code)
+            + (appleConnect ? [.connect] : []) + (appleOffer != nil ? [.offer] : []) + contacts.map(Choice.contact)
+    }
+
+    /// Where "Other accounts on …" goes, before the first of the rest of the
+    /// site's accounts: only when this host has some of its own above them.
+    var othersFrom: Int? {
+        guard !(ownLogins.isEmpty && ownApple.isEmpty), !(siteLogins.isEmpty && siteApple.isEmpty) else { return nil }
+        return passkeys.count + ownLogins.count + ownApple.count
+    }
+
+    private var ownLogins: [Kept] { logins.filter { Vault.belongs($0.host, to: host, wide: false) } }
+    private var siteLogins: [Kept] { logins.filter { !Vault.belongs($0.host, to: host, wide: false) } }
+    private var ownApple: [AppleLogin] { apple.filter { owns($0) } }
+    private var siteApple: [AppleLogin] { apple.filter { !owns($0) } }
+
+    private func owns(_ login: AppleLogin) -> Bool {
+        appleHost.map { ApplePasswords.belongs(login.sites, to: $0, wide: false) } ?? false
     }
 }

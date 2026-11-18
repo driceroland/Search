@@ -868,6 +868,14 @@ final class Browser: NSObject, ObservableObject {
     /// Nothing is put into a page until you have pointed at it.
     @Published private(set) var suggesting: Suggesting? {
         didSet {
+            // Rows joining the list while one is lit (Apple Passwords answers
+            // after it is up): the light stays on the same row, not the same
+            // place, which is now another account's.
+            if let old = oldValue, let at = old.lit, var list = suggesting, list.tab == old.tab, list.lit == at,
+               old.choices.indices.contains(at), list.choices != old.choices {
+                list.lit = list.choices.firstIndex(of: old.choices[at])
+                suggesting = list
+            }
             // The offer to use Apple Passwords went without a click on it
             // or its ✕: counted, and after twice it isn't made again.
             guard let site = oldValue?.appleOffer, suggesting?.appleOffer != site else { return }
@@ -922,6 +930,10 @@ final class Browser: NSObject, ObservableObject {
         /// offered on, which a pick has to find still up, origin and all.
         var box: Int?
         var page: URL?
+        /// The row ↓ and ↑ have come to (`choices`, counted from 0), which
+        /// Return takes as a click on it. None until an arrow is pressed:
+        /// Return is the page's until then.
+        var lit: Int?
     }
     /// Set once you have picked, so the list doesn't come straight back for
     /// the box you are still in. Cleared when the caret leaves the boxes.
@@ -1297,6 +1309,12 @@ final class Browser: NSObject, ObservableObject {
         applePasswordsOffer.shown(on: site)
     }
 
+    /// For a test run only: `list` hung up as `hang` puts one up.
+    func testSuggest(_ list: Suggesting) {
+        guard Store.testing else { return }
+        suggesting = list
+    }
+
     /// Pairing with Apple Passwords from under a sign-in box: the card that
     /// takes the code, over the page it was asked from. Native, never in the
     /// page; the page learns nothing of it.
@@ -1389,6 +1407,46 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func dropChoice() { suggesting = nil }
+
+    /// ↓ or ↑ while the list hangs from the box the caret is in: the row lit
+    /// moves, as in Safari. ↓ from the box lights the first; ↑ from the first
+    /// goes back to the box, nothing lit; ↓ on the last stays there. False
+    /// when the key isn't the list's: no list, or ↑ with nothing lit, which
+    /// stays the page's.
+    func moveChoice(by step: Int) -> Bool {
+        guard var list = suggesting, list.tab == activeID else { return false }
+        let count = list.choices.count
+        guard count > 0 else { return false }
+        switch (list.lit, step > 0) {
+        case (nil, true): list.lit = 0
+        case (nil, false): return false
+        case (let at?, true): list.lit = min(at + 1, count - 1)
+        case (let at?, false): list.lit = at > 0 ? at - 1 : nil
+        }
+        suggesting = list
+        return true
+    }
+
+    /// Return on the row lit: as a click on it. `alone` (⇧ held) puts one of
+    /// your card's rows into the box alone, as a shift-click does. False with
+    /// nothing lit: Return is the page's, and sends its form.
+    func takeLitChoice(alone: Bool = false) -> Bool {
+        guard var list = suggesting, list.tab == activeID, let at = list.lit, list.choices.indices.contains(at) else { return false }
+        // Come to with the arrows: chosen, not a click already on its way
+        // when the list came up, which the half second is there to refuse.
+        list.shown = .distantPast
+        suggesting = list
+        switch list.choices[at] {
+        case .passkey(let passkey): choose(passkey)
+        case .login(let login): choose(login)
+        case .apple(let login): choose(login)
+        case .code(let code): choose(code)
+        case .connect: connectApplePasswords()
+        case .offer: useApplePasswords()
+        case .contact(let contact): choose(contact, alone: alone)
+        }
+        return true
+    }
 
     // The list of what is kept.
 
