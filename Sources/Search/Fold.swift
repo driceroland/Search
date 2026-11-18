@@ -53,10 +53,26 @@ extension Browser {
             withAnimation(Motion.glide) { prefs.sideIcons.toggle() }
             return
         }
+        // Out over the page already (the pointer at the edge brought it):
+        // it stays where it is, beside the page now. Put away first and then
+        // brought out, it went for a frame — the page bare where the column
+        // had been, the window's buttons over it — and slid out again.
+        if folded, peeking {
+            foldTicket += 1
+            withAnimation(Motion.folding(out: true)) {
+                peeking = false
+                folded = false
+            }
+            return
+        }
         // Only if it was out: set at all, every row of the column is built
         // again, 30 of them with 30 tabs, before the slide starts.
         if peeking { peeking = false }
         foldTicket += 1
+        // Going away, however the column or the strip moves, what a page
+        // grows into is in its own colour until WebKit has drawn it there
+        // (see cover). Called off, it shrinks back and the cover goes.
+        if !folded, !foldingAway { Browser.cover(shownPages) }
         // Pressed again before the column went: it stays.
         if foldingAway {
             foldingAway = false
@@ -117,6 +133,74 @@ extension Browser {
             presented(pages, finish)
         }
         DispatchQueue.main.async { MainActor.assumeIsolated { resized() } }
+    }
+
+    /// What each of `pages` grows into, once its size changes, covered in
+    /// the page's own colour until WebKit has drawn it at that size.
+    ///
+    /// WebKit draws a page that has grown at its old size until its web
+    /// process has laid it out again, and the rest of the view shows the web
+    /// view's own ground: black or white with the theme, the column's width
+    /// across. A page waited for (see `drawn`) is ready before the column
+    /// moves; one busy for longer than that wait — a large app, a page that
+    /// does work on resize — had the bar slide into the window on the far
+    /// side and stay there until it was ready (idea 737, seen frame by
+    /// frame at 250 ms). Reduce Motion and the strip across the top, which
+    /// give the page its room at once, showed it too. The cover lies over
+    /// only what the page hasn't drawn, in the colour WebKit gives the
+    /// page's surround, and goes once the page has been put on screen at
+    /// its new size, or after a second whatever happens.
+    static func cover(_ pages: [WKWebView]) {
+        guard !pages.isEmpty else { return }
+        let sizes = pages.map(\.frame.size)
+        let until = CFAbsoluteTimeGetCurrent() + 0.25
+        func resized() {
+            let grown = zip(pages, sizes).filter { page, size in
+                page.frame.width > size.width + 0.5 || page.frame.height > size.height + 0.5
+            }
+            guard !grown.isEmpty else {
+                guard CFAbsoluteTimeGetCurrent() < until,
+                      zip(pages, sizes).allSatisfy({ $0.frame.size == $1 }) else { return }
+                DispatchQueue.main.async { MainActor.assumeIsolated { resized() } }
+                return
+            }
+            var covers: [NSView] = []
+            for (page, old) in grown {
+                for rect in undrawn(page, old: old) {
+                    let cover = FoldCover(frame: rect)
+                    cover.wantsLayer = true
+                    cover.layer?.backgroundColor = page.underPageBackgroundColor.cgColor
+                    page.addSubview(cover)
+                    covers.append(cover)
+                }
+            }
+            Bench.foldCovers = covers.count
+            var gone = false
+            let remove = {
+                guard !gone else { return }
+                gone = true
+                covers.forEach { $0.removeFromSuperview() }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { MainActor.assumeIsolated { remove() } }
+            presented(grown.map(\.0), remove)
+        }
+        DispatchQueue.main.async { MainActor.assumeIsolated { resized() } }
+    }
+
+    /// The part of `page`, now larger than `old`, that WebKit has yet to
+    /// draw: past the old width, and below the old height. Its drawing
+    /// keeps to the top left corner.
+    static func undrawn(_ page: NSView, old: CGSize) -> [CGRect] {
+        let size = page.bounds.size
+        var rects: [CGRect] = []
+        if size.width > old.width {
+            rects.append(CGRect(x: old.width, y: 0, width: size.width - old.width, height: size.height))
+        }
+        if size.height > old.height {
+            let tall = size.height - old.height
+            rects.append(CGRect(x: 0, y: page.isFlipped ? old.height : 0, width: min(old.width, size.width), height: tall))
+        }
+        return rects
     }
 
     private static func presented(_ pages: [WKWebView], _ finish: @escaping @MainActor () -> Void) {
@@ -696,4 +780,11 @@ private final class Pointer {
         global = nil
         window?.acceptsMouseMovedEvents = accepted
     }
+}
+
+/// What a page has yet to draw while it grows (see Browser.cover): its
+/// own colour, never in the way of the pointer.
+final class FoldCover: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var isOpaque: Bool { true }
 }

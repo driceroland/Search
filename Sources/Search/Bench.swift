@@ -41,6 +41,9 @@ final class Bench {
     /// Test runs only; anywhere else counting is one check of a constant.
     private static let counting = Store.testing
     static var bodies: [String: Int] = [:]
+    /// How many covers the last ⌘S laid over what a page had yet to draw
+    /// (see Browser.cover).
+    static var foldCovers = 0
     static func count(_ name: String) {
         if counting { bodies[name, default: 0] += 1 }
     }
@@ -1254,6 +1257,17 @@ final class Bench {
             // The window's buttons' slide, as Core Animation was given it:
             // the column's own motion in its terms (see Fold.slide).
             var lights: [String: Any]?
+            // Where the column's rows are, across the window, as it slides:
+            // the left edge of the views catching a middle click on each
+            // row (MiddleClick), the column's only AppKit views.
+            let frame = browser.window?.contentView?.superview
+            func catches(in view: NSView) -> [NSView] {
+                (String(describing: type(of: view)) == "Catch" ? [view] : []) + view.subviews.flatMap(catches)
+            }
+            func columnX() -> Any {
+                guard let frame else { return NSNull() }
+                return catches(in: frame).map { Double($0.convert($0.bounds, to: nil).minX) }.min() ?? NSNull()
+            }
             let pressed = CFAbsoluteTimeGetCurrent()
             let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { _, _ in
                 woke = CFAbsoluteTimeGetCurrent()
@@ -1264,7 +1278,9 @@ final class Bench {
                 let built = Bench.bodies["row", default: 0]
                 passes.append(["at": ((start - pressed) * 1000).rounded(), "ms": ((now - start) * 10000).rounded() / 10,
                                "page": Double(web.frame.width), "rows": built - rows, "folded": browser.folded,
-                               "away": browser.foldingAway])
+                               "away": browser.foldingAway, "peeking": browser.peeking, "column": columnX(),
+                               // Covers over what the page has yet to draw (Browser.cover).
+                               "covered": web.subviews.filter { $0 is FoldCover }.count])
                 rows = built
                 woke = 0
                 if lights == nil, let slide = Fold.titlebar?.layer?.animation(forKey: "fold") {
@@ -1274,6 +1290,7 @@ final class Bench {
             }
             for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes) }
             Bench.bodies = [:]
+            Bench.foldCovers = 0
             let before = Double(web.frame.width)
             browser.toggleFold()
             // "twice": ⌘S again at once, while the page takes its room.
@@ -1281,7 +1298,8 @@ final class Bench {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
                 for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
                 answer(["folded": browser.folded, "pageBefore": before, "passes": passes, "lights": lights ?? NSNull(),
-                        "slides": browser.prefs.slidesColumn])
+                        "slides": browser.prefs.slidesColumn, "covers": Bench.foldCovers,
+                        "coveredAfter": web.subviews.filter { $0 is FoldCover }.count])
             }
 
         case "bookmarksweep":
