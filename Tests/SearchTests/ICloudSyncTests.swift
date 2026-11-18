@@ -172,6 +172,159 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertEqual(prefs.look, look)
     }
 
+    // MARK: - SYNC.md's examples, as written there (its "…" ids made whole)
+
+    private static let examples: [(key: String, json: String)] = [
+        ("device.6F1C0000-0000-4000-8000-000000000001",
+         #"{"at":785164000,"name":"iPhone","platform":"ios","tabs":[{"title":"Example Domain","url":"https://example.com/"}]}"#),
+        ("pins.00000000-0000-0000-0000-000000000001",
+         #"[{"home":"https://mail.google.com/","id":"0E4B0000-0000-4000-8000-000000000002","letter":"M","title":"Inbox"},"#
+         + #"{"folder":"F0F00000-0000-4000-8000-000000000003","home":"https://github.com/","id":"7A2D0000-0000-4000-8000-000000000004","letter":"G","listed":true,"title":"GitHub"}]"#),
+        ("bookmarks",
+         #"[{"id":"B0000000-0000-4000-8000-000000000005","title":"Reading","children":[{"id":"B0000000-0000-4000-8000-000000000006","title":"Example","url":"https://example.com/"}]},"#
+         + #"{"id":"B0000000-0000-4000-8000-000000000007","title":"Office Commun","url":"https://officecommun.com/"}]"#),
+        ("spaces",
+         #"[{"id":"00000000-0000-0000-0000-000000000001","name":"Personal","colour":0,"icon":"house"},"#
+         + #"{"id":"5BAC0000-0000-4000-8000-000000000008","name":"Work","colour":3,"icon":"briefcase"}]"#),
+        ("settings", #"{"custom":"","engine":"duckduckgo","look":"system"}"#),
+    ]
+
+    private func object(_ data: Data?) -> NSObject? {
+        data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? NSObject }
+    }
+
+    /// Each example decodes into the Mac's own type, and the Mac writes it
+    /// back as the same JSON: no field lost, none added, none changed.
+    func testEveryExampleRoundTrips() throws {
+        for (key, text) in Self.examples {
+            let data = Data(text.utf8)
+            let written: Data?
+            switch key {
+            case _ where key.hasPrefix("device."):
+                written = ICloudMerge.outgoing(try JSONDecoder().decode(DeviceTabs.self, from: data), over: nil, shape: .device)
+            case _ where key.hasPrefix("pins."):
+                written = ICloudMerge.outgoing(try JSONDecoder().decode([PinDef].self, from: data), over: nil, shape: .pins)
+            case "bookmarks":
+                written = ICloudMerge.outgoing(try JSONDecoder().decode([Bookmark].self, from: data), over: nil, shape: .bookmarks)
+            case "spaces":
+                written = ICloudMerge.outgoing(try JSONDecoder().decode([Space].self, from: data).map(ICloudMerge.forCloud), over: nil, shape: .spaces)
+            default:
+                written = ICloudMerge.outgoing(try JSONDecoder().decode(SharedSettings.self, from: data), over: nil, shape: .settings)
+            }
+            XCTAssertNotNil(object(data), key)
+            XCTAssertNotNil(object(written), key)
+            XCTAssertEqual(object(written), object(data), key)
+        }
+    }
+
+    /// What each example says, read by the Mac.
+    func testEveryExampleReadsAsItSays() throws {
+        let get = { (key: String) in Data(Self.examples.first { $0.key == key || $0.key.hasPrefix(key) }!.json.utf8) }
+        let device = try JSONDecoder().decode(DeviceTabs.self, from: get("device."))
+        XCTAssertEqual(device.at, Date(timeIntervalSinceReferenceDate: 785164000))
+        XCTAssertEqual(device.platform, "ios")
+        XCTAssertEqual(device.tabs, [DeviceTabs.Page(url: "https://example.com/", title: "Example Domain")])
+
+        let pins = try JSONDecoder().decode([PinDef].self, from: get("pins."))
+        XCTAssertEqual(pins.map(\.letter), ["M", "G"])
+        XCTAssertNil(pins[0].name, "a pin with no name has no name key")
+        XCTAssertNil(pins[0].listed)
+        XCTAssertEqual(pins[1].listed, true)
+        XCTAssertEqual(pins[1].folder, UUID(uuidString: "F0F00000-0000-4000-8000-000000000003"))
+
+        let marks = try JSONDecoder().decode([Bookmark].self, from: get("bookmarks"))
+        XCTAssertTrue(marks[0].isFolder)
+        XCTAssertEqual(marks[0].children?.first?.url, "https://example.com/")
+        XCTAssertEqual(marks[1].url, "https://officecommun.com/")
+
+        let spaces = try JSONDecoder().decode([Space].self, from: get("spaces"))
+        XCTAssertTrue(spaces[0].isFirst)
+        XCTAssertEqual(spaces[1].colour, 3)
+        XCTAssertEqual(spaces[1].icon, "briefcase")
+
+        let settings = try JSONDecoder().decode(SharedSettings.self, from: get("settings"))
+        XCTAssertEqual(settings, SharedSettings(engine: "duckduckgo", custom: "", look: "system"))
+        XCTAssertNotNil(Engine(rawValue: settings.engine!))
+        XCTAssertNotNil(Look(rawValue: settings.look!))
+    }
+
+    /// SYNC.md's engine and look values are exactly the Mac's.
+    func testEngineAndLookValuesMatchTheContract() {
+        XCTAssertEqual(Engine.allCases.map(\.rawValue), ["google", "duckduckgo", "bing", "ecosia", "startpage", "kagi", "brave", "qwant", "custom"])
+        XCTAssertEqual(Look.allCases.map(\.rawValue), ["light", "dark", "system"])
+    }
+
+    // MARK: - fields this Mac doesn't know ride along
+
+    /// The fields the merge treats as the Mac's own are exactly what its
+    /// types write with everything set: a field added to one of them can't
+    /// be mistaken for someone else's.
+    func testKnownFieldsAreTheTypesOwn() throws {
+        func keys<T: Encodable>(_ value: T) throws -> Set<String> {
+            let object = try JSONSerialization.jsonObject(with: ICloudMerge.encode(value)!)
+            return Set(((object as? [String: Any]) ?? [:]).keys)
+        }
+        let pin = PinDef(id: UUID(), letter: "a", home: "h", title: "t", name: "n", listed: true, folder: UUID())
+        XCTAssertEqual(try keys(pin), ICloudMerge.known[.pins])
+        let mark = Bookmark(title: "t", url: "u", children: [])
+        XCTAssertEqual(try keys(mark), ICloudMerge.known[.bookmarks])
+        var space = Space(id: UUID(), name: "n", colour: 1, icon: "i", sharesSignIns: true, downloads: "/d", profile: UUID())
+        space.gradient = SpaceGradient(colours: ["#000000", "#FFFFFF"])
+        space.strength = .vivid
+        XCTAssertEqual(try keys(space), ICloudMerge.known[.spaces])
+        XCTAssertEqual(try keys(SharedSettings(engine: "e", custom: "c", look: "l")), ICloudMerge.known[.settings])
+    }
+
+    func testFieldsTheMacDoesntKnowSurviveItsWrite() async throws {
+        let mac = FakeMac(), engine = FakeEngine()
+        let sync = await joined(mac, engine)
+        let id = UUID()
+        // Another device's pin, with a field from a newer Search.
+        let theirs = #"[{"home":"https://a.example/","id":"\#(id.uuidString)","letter":"A","title":"A","glow":{"hue":3}}]"#
+        sync.arrived("pins.\(first.uuidString)", data: Data(theirs.utf8), at: Date(), fields: nil)
+        engine.saved = []
+        sync.publish()
+        XCTAssertEqual(engine.saved, [], "read and unchanged: nothing goes up, unknown field and all")
+        // The Mac renames it: its own field changes, the other rides along.
+        mac.pinList[first]![0].name = "Alpha"
+        sync.publish()
+        XCTAssertEqual(engine.saved, ["pins.\(first.uuidString)"])
+        let sent = try XCTUnwrap(object(sync.outgoing("pins.\(first.uuidString)")?.data) as? [[String: Any]])
+        XCTAssertEqual(sent.first?["name"] as? String, "Alpha")
+        XCTAssertEqual((sent.first?["glow"] as? [String: Any])?["hue"] as? Int, 3)
+        // A field the Mac owns, cleared here, is cleared there.
+        mac.pinList[first]![0].name = nil
+        sync.publish()
+        let again = try XCTUnwrap(object(sync.outgoing("pins.\(first.uuidString)")?.data) as? [[String: Any]])
+        XCTAssertNil(again.first?["name"])
+        XCTAssertNotNil(again.first?["glow"])
+    }
+
+    func testUnknownFieldsRideAlongInBookmarksSpacesAndSettings() throws {
+        let folder = UUID(), site = UUID(), space = UUID()
+        let marks = #"[{"id":"\#(folder.uuidString)","title":"F","colour":"red","children":[{"id":"\#(site.uuidString)","title":"S","url":"https://s.example/","tags":["x"]}]}]"#
+        var tree = try JSONDecoder().decode([Bookmark].self, from: Data(marks.utf8))
+        tree[0].children![0].title = "Site"
+        let outMarks = try XCTUnwrap(object(ICloudMerge.outgoing(tree, over: ICloudMerge.canonical(Data(marks.utf8)), shape: .bookmarks)) as? [[String: Any]])
+        XCTAssertEqual(outMarks[0]["colour"] as? String, "red")
+        let child = (outMarks[0]["children"] as? [[String: Any]])?.first
+        XCTAssertEqual(child?["title"] as? String, "Site")
+        XCTAssertEqual(child?["tags"] as? [String], ["x"])
+
+        let spaces = #"[{"id":"\#(space.uuidString)","name":"W","colour":2,"wallpaper":"dunes"}]"#
+        var list = try JSONDecoder().decode([Space].self, from: Data(spaces.utf8))
+        list[0].name = "Work"
+        let outSpaces = try XCTUnwrap(object(ICloudMerge.outgoing(list, over: ICloudMerge.canonical(Data(spaces.utf8)), shape: .spaces)) as? [[String: Any]])
+        XCTAssertEqual(outSpaces[0]["name"] as? String, "Work")
+        XCTAssertEqual(outSpaces[0]["wallpaper"] as? String, "dunes")
+
+        let settings = #"{"engine":"kagi","look":"dark","zoom":1.25}"#
+        let outSettings = try XCTUnwrap(object(ICloudMerge.outgoing(SharedSettings(engine: "bing", custom: "", look: "dark"),
+                                                                     over: ICloudMerge.canonical(Data(settings.utf8)), shape: .settings)) as? [String: Any])
+        XCTAssertEqual(outSettings["engine"] as? String, "bing")
+        XCTAssertEqual(outSettings["zoom"] as? Double, 1.25)
+    }
+
     // MARK: - open tabs
 
     func testPrivatePinnedAndOtherTabsNeverGo() {
@@ -412,6 +565,32 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertFalse(sync.isScheduled)
         XCTAssertNil(defaults.object(forKey: ICloudSync.onKey))
         XCTAssertEqual(sync.ledger.deviceKey, key, "the same device when it comes back")
+    }
+
+    func testADeletedZoneTurnsSyncOffAndSaysWhy() async {
+        let mac = FakeMac(), engine = FakeEngine()
+        mac.tabs = [DeviceTabs.Page(url: "https://a.example/", title: "A")]
+        engine.cloud = [("device.PHONE", json(DeviceTabs(name: "iPhone", platform: "ios", at: Date(),
+                                                         tabs: [DeviceTabs.Page(url: "https://b.example/", title: "B")])), Date())]
+        let sync = await joined(mac, engine)
+        mac.pinList[first] = [pin("p", "https://p.example/")]
+        engine.saved = []
+        sync.zoneGone()
+        XCTAssertFalse(sync.on)
+        XCTAssertFalse(sync.isScheduled)
+        XCTAssertNil(defaults.object(forKey: ICloudSync.onKey))
+        XCTAssertTrue(sync.others.isEmpty, "the other devices' tabs go with it")
+        XCTAssertFalse(sync.joined)
+        XCTAssertEqual(sync.summary(folderSyncOn: false, otherwise: "x"), ICloudSync.deletedElsewhere)
+        // Nothing goes back up, now or later.
+        sync.publish()
+        XCTAssertEqual(engine.saved, [])
+        XCTAssertEqual(engine.deleted, [])
+        XCTAssertEqual(mac.pins(first).count, 1, "what is on this Mac stays")
+        // Turned on again: a device joining, and the line is its own again.
+        sync.turnOn()
+        XCTAssertTrue(sync.on)
+        XCTAssertNil(sync.offReason)
     }
 
     func testSigningOutForgetsTheLastAccount() async {

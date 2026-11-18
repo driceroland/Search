@@ -18,6 +18,10 @@ import Combine
 //     fetch comes before anything goes up, pins and bookmarks here are added
 //     to iCloud's, and iCloud's settings win. Nothing is sent that is the
 //     same JSON as the last one written or read (no echo).
+//   - A record is written again over the last version read: this Mac's own
+//     fields as it has them, anyone else's riding along untouched.
+//   - Search's zone deleted (Delete Search's data from iCloud, anywhere):
+//     sync turns off here and says why; nothing is put back.
 //
 // Only the Personal profile syncs: its spaces, each space's own pins, its
 // bookmarks; the pins every space shows (Settings › Spaces & Pins) stay on
@@ -133,6 +137,78 @@ enum ICloudMerge {
     }()
 
     static func encode<T: Encodable>(_ value: T) -> Data? { try? encoder.encode(value) }
+
+    /// What a record holds, for passing through what this Mac doesn't know.
+    enum Shape {
+        case device, pins, bookmarks, spaces, settings
+    }
+
+    /// The fields each shape's Mac type writes: its own, which it sets or
+    /// clears. Any other field in a record is someone else's and rides
+    /// along untouched (SYNC.md, "Fields a device doesn't know ride along").
+    /// ICloudSyncTests checks these against the types themselves.
+    static let known: [Shape: Set<String>] = [
+        .pins: ["id", "letter", "home", "title", "name", "listed", "folder"],
+        .bookmarks: ["id", "title", "url", "children"],
+        .spaces: ["id", "name", "colour", "icon", "sharesSignIns", "downloads", "profile", "gradient", "strength"],
+        .settings: ["engine", "custom", "look"],
+    ]
+
+    /// JSON as both apps compare it: sorted keys, by one writer, so what was
+    /// read and what goes up are alike byte for byte when they say the same.
+    static func canonical(_ data: Data) -> Data? {
+        guard let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else { return nil }
+        return try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes, .fragmentsAllowed])
+    }
+
+    /// This Mac's value as it goes up: its own fields as it has them, laid
+    /// over the last version written or read, so fields it doesn't know
+    /// stay as they were. A pin, a bookmark or a space is matched by id;
+    /// a bookmark wherever it now is in the tree.
+    static func outgoing<T: Encodable>(_ value: T, over last: Data?, shape: Shape) -> Data? {
+        guard let data = encode(value) else { return nil }
+        guard shape != .device, let keys = known[shape], let last,
+              let before = try? JSONSerialization.jsonObject(with: last),
+              let mine = try? JSONSerialization.jsonObject(with: data)
+        else { return canonical(data) }
+
+        func keep(_ mine: [String: Any], _ before: [String: Any]?) -> [String: Any] {
+            var out = mine
+            for (key, value) in before ?? [:] where !keys.contains(key) { out[key] = value }
+            return out
+        }
+        func byID(_ list: Any?) -> [String: [String: Any]] {
+            var out: [String: [String: Any]] = [:]
+            func walk(_ nodes: [[String: Any]]) {
+                for node in nodes {
+                    if let id = node["id"] as? String { out[id] = node }
+                    if shape == .bookmarks, let children = node["children"] as? [[String: Any]] { walk(children) }
+                }
+            }
+            walk(list as? [[String: Any]] ?? [])
+            return out
+        }
+        let merged: Any
+        switch shape {
+        case .settings:
+            merged = keep(mine as? [String: Any] ?? [:], before as? [String: Any])
+        case .pins, .spaces, .bookmarks:
+            let old = byID(before)
+            func each(_ nodes: [[String: Any]]) -> [[String: Any]] {
+                nodes.map { node in
+                    var out = keep(node, (node["id"] as? String).flatMap { old[$0] })
+                    if shape == .bookmarks, let children = node["children"] as? [[String: Any]] { out["children"] = each(children) }
+                    return out
+                }
+            }
+            merged = each(mine as? [[String: Any]] ?? [])
+        case .device:
+            merged = mine
+        }
+        guard let out = try? JSONSerialization.data(withJSONObject: merged, options: [.sortedKeys, .withoutEscapingSlashes])
+        else { return canonical(data) }
+        return out
+    }
 
     static func decode<T: Decodable>(_ type: T.Type, _ data: Data) -> T? { try? JSONDecoder().decode(type, from: data) }
 
@@ -288,6 +364,9 @@ final class ICloudSync: ObservableObject {
     nonisolated static let zoneName = "Search"
     nonisolated static let recordType = "Item"
     nonisolated static let onKey = "icloud.sync"
+    /// Why sync turned itself off, for the setting's line until it is
+    /// turned on again.
+    nonisolated static let offKey = "icloud.off"
 
     enum Account: Equatable {
         case unknown, signedIn, signedOut, restricted
@@ -355,6 +434,7 @@ final class ICloudSync: ObservableObject {
         guard available, !on, !Sync.shared.on else { return }
         on = true
         defaults.set(true, forKey: ICloudSync.onKey)
+        defaults.removeObject(forKey: ICloudSync.offKey)
         ledger = ledger.fresh()
         save()
         begin()
@@ -513,18 +593,20 @@ final class ICloudSync: ObservableObject {
         let pages = local.openTabs()
         let last = ledger.values[ledger.deviceKey].flatMap { ICloudMerge.decode(DeviceTabs.self, $0) }
         if last?.tabs != pages || last?.name != local.deviceName || last?.platform != "macos",
-           let data = ICloudMerge.encode(DeviceTabs(name: local.deviceName, platform: "macos", at: now, tabs: pages)),
+           let data = ICloudMerge.outgoing(DeviceTabs(name: local.deviceName, platform: "macos", at: now, tabs: pages),
+                                           over: nil, shape: .device),
            ledger.offer(ledger.deviceKey, data, now: now) {
             due.append(ledger.deviceKey)
         }
         let spaces = local.spaces()
-        func put<T: Encodable>(_ key: String, _ value: T) {
-            if let data = ICloudMerge.encode(value), ledger.offer(key, data, now: now) { due.append(key) }
+        func put<T: Encodable>(_ key: String, _ value: T, _ shape: ICloudMerge.Shape) {
+            if let data = ICloudMerge.outgoing(value, over: ledger.values[key], shape: shape),
+               ledger.offer(key, data, now: now) { due.append(key) }
         }
-        put("spaces", spaces.map(ICloudMerge.forCloud))
-        for space in spaces { put("pins." + space.id.uuidString, local.pins(space.id)) }
-        put("bookmarks", local.bookmarks())
-        put("settings", local.settings())
+        put("spaces", spaces.map(ICloudMerge.forCloud), .spaces)
+        for space in spaces { put("pins." + space.id.uuidString, local.pins(space.id), .pins) }
+        put("bookmarks", local.bookmarks(), .bookmarks)
+        put("settings", local.settings(), .settings)
         guard !due.isEmpty else { return }
         save()
         engine?.save(due)
@@ -558,21 +640,26 @@ final class ICloudSync: ObservableObject {
     /// from it (ICloudMerge.carryRows).
     private var raw: [String: Data] = [:]
 
-    /// The JSON as this app writes it, or nil for a record it can't read.
+    /// The JSON as both apps compare it, fields this Mac doesn't know and
+    /// all (they ride along when it writes the record again), or nil for a
+    /// record it can't read.
     private func canonical(_ key: String, _ data: Data) -> Data? {
+        let readable: Bool
         if key.hasPrefix("device.") {
-            return ICloudMerge.decode(DeviceTabs.self, data).flatMap(ICloudMerge.encode)
+            readable = ICloudMerge.decode(DeviceTabs.self, data) != nil
         } else if key.hasPrefix("pins.") {
-            return ICloudMerge.decode([PinDef].self, data).flatMap(ICloudMerge.encode)
+            readable = ICloudMerge.decode([PinDef].self, data) != nil
         } else if key == "spaces" {
-            return ICloudMerge.decode([Space].self, data).map { $0.map(ICloudMerge.forCloud) }.flatMap(ICloudMerge.encode)
+            readable = ICloudMerge.decode([Space].self, data) != nil
         } else if key == "bookmarks" {
-            return ICloudMerge.decode([Bookmark].self, data).flatMap(ICloudMerge.encode)
+            readable = ICloudMerge.decode([Bookmark].self, data) != nil
         } else if key == "settings" {
-            return ICloudMerge.decode(SharedSettings.self, data).flatMap(ICloudMerge.encode)
+            readable = ICloudMerge.decode(SharedSettings.self, data) != nil
+        } else {
+            // A record a newer Search writes: kept, never applied.
+            return data
         }
-        // A record a newer Search writes: kept, never applied.
-        return data
+        return readable ? ICloudMerge.canonical(data) : nil
     }
 
     /// The value kept for a key, made this Mac's.
@@ -683,12 +770,28 @@ final class ICloudSync: ObservableObject {
 
     /// Search's zone deleted from another device: everything starts again,
     /// as a device joining.
+    /// Search's zone deleted, from another device (Delete Search's data
+    /// from iCloud) or in iCloud's settings: sync turns off here and says
+    /// why. The zone isn't made again and nothing goes back up; what is on
+    /// this Mac stays (SYNC.md).
     func zoneGone() {
+        guard on else { return }
+        engine?.close()
+        stop()
+        on = false
+        defaults.removeObject(forKey: ICloudSync.onKey)
+        defaults.set(ICloudSync.deletedElsewhere, forKey: ICloudSync.offKey)
         ledger = ledger.fresh()
-        others = [:]
         save()
-        Task { await join() }
+        others = [:]
+        lastSynced = nil
+        problem = nil
     }
+
+    static let deletedElsewhere = "Off: Search's data was deleted from iCloud, on another device. Turn on to start again"
+
+    /// Why it is off, when it turned itself off.
+    var offReason: String? { on ? nil : defaults.string(forKey: ICloudSync.offKey) }
 
     // MARK: kept on disk
 
@@ -753,7 +856,7 @@ final class ICloudSync: ObservableObject {
             return Store.testing && ICloudSync.entitled ? "Off in a test run" : "Needs a build of Search signed for iCloud"
         }
         if folderSyncOn && !on { return "Turn off Sync with your other Macs first" }
-        guard on else { return otherwise }
+        guard on else { return offReason ?? otherwise }
         switch account {
         case .signedOut: return "Not signed in to iCloud: System Settings › Apple Account"
         case .restricted: return "iCloud is restricted on this Mac"
@@ -969,8 +1072,9 @@ final class CloudKitEngine: ICloudEngine, CKSyncEngineDelegate, @unchecked Senda
                         actions.append { owner.conflict(key, serverData: found?.data, serverAt: found?.at ?? .distantPast, fields: fields) }
                     }
                 case .zoneNotFound:
-                    syncEngine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: CloudKitEngine.zoneID))])
-                    syncEngine.state.add(pendingRecordZoneChanges: [.saveRecord(failure.record.recordID)])
+                    // Deleted while this Mac had something to send: it
+                    // turns off, and the zone isn't made again (SYNC.md).
+                    actions.append { owner.zoneGone() }
                 case .unknownItem:
                     actions.append { owner.forgetFields(key) }
                 case .networkFailure, .networkUnavailable, .serviceUnavailable, .requestRateLimited, .zoneBusy:

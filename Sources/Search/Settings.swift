@@ -563,7 +563,7 @@ struct SettingsPanel: View {
             Pill("Delete…") {
                 let alert = NSAlert()
                 alert.messageText = "Delete Search's data from iCloud?"
-                alert.informativeText = "Open tabs, pins, spaces, bookmarks and settings leave iCloud for every device. What is on each device stays. Sync with iCloud turns off on this Mac."
+                alert.informativeText = "Open tabs, pins, spaces, bookmarks and settings leave iCloud for every device. What is on each device stays. Sync with iCloud turns off here and on your other devices."
                 alert.addButton(withTitle: "Delete")
                 alert.addButton(withTitle: "Cancel")
                 if alert.runModal() == .alertFirstButtonReturn { icloud.erase() }
