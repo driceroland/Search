@@ -493,6 +493,18 @@ private final class PanelDelegate: NSObject, WKNavigationDelegate, WKUIDelegate 
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loaded = true }
 
+    /// A frame of the page's that can't work in the panel here, as its
+    /// response arrives: the page is told what the site would tell it, and
+    /// shows what it shows without that frame (PanelFrameFallback). Every
+    /// other answer is WebKit's default.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if !navigationResponse.isForMainFrame, let script = PanelFrameFallback.script(for: navigationResponse.response.url) {
+            webView.evaluateJavaScript(script) { _, _ in }
+        }
+        decisionHandler(navigationResponse.canShowMIMEType ? .allow : .cancel)
+    }
+
     /// The panel's page never came up (a missing file, a page WebKit
     /// refuses): it opens as a tab instead, as it did before the panel.
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -580,6 +592,51 @@ private final class PanelDelegate: NSObject, WKNavigationDelegate, WKUIDelegate 
         else { return }
         usedTouch = touch
         openInTab(url)
+    }
+}
+
+/// Frames an extension's panel shows that can't work in Search, and what
+/// the extension does without them.
+///
+/// Claude in Chrome (idea 686): for paid accounts its panel is claude.ai
+/// itself, /cic/new in a frame, signed in by claude.ai's own session
+/// cookies. Those are SameSite=Lax, and WebKit counts a frame in an
+/// extension's page as another site, so it sends them none (Chrome counts
+/// a site the extension may reach as the same site). The frame is signed
+/// out, sends the panel nothing and stays empty; and the panel's own call
+/// to claude.ai, which Search signs in (ExtensionFetch), says you are
+/// signed in, so it never shows its "can't load" page either: a blank
+/// panel. Claude's panel has its own way out, for a claude.ai that can't
+/// host it there: claude.ai posts `cic_sidepanel_cowork_unavailable`, and
+/// the panel shows the chat it had before, which runs on the extension's
+/// own sign-in. That message is what the panel is given here, as the frame
+/// starts, before it has shown anything. Drop this once WebKit sends a
+/// frame in an extension's page its site's Lax cookies.
+enum PanelFrameFallback {
+    /// claude.ai's hosts, as Claude's panel accepts its messages from them.
+    static let claudeHosts = ["claude.ai", "preview.claude.ai"]
+
+    /// Test runs can add a local stand-in for claude.ai
+    /// (`test.claudeHosts` in the test settings), so a fixture extension
+    /// can be checked without claude.ai.
+    static var claudeHostsThisRun: [String] {
+        guard Store.testing else { return claudeHosts }
+        return claudeHosts + (Store.settings.stringArray(forKey: "test.claudeHosts") ?? [])
+    }
+
+    /// What to run in the panel's page for a frame of it loading `url`:
+    /// nil for every frame but Claude's panel on claude.ai.
+    static func script(for url: URL?, hosts: [String] = claudeHostsThisRun) -> String? {
+        guard let url, let host = url.host?.lowercased(), hosts.contains(host),
+              url.path == "/cic" || url.path.hasPrefix("/cic/")
+        else { return nil }
+        let local = !claudeHosts.contains(host)
+        // Its listener takes claude.ai's origin only; a stand-in's https.
+        guard url.scheme?.lowercased() == "https" || local else { return nil }
+        return """
+        window.dispatchEvent(new MessageEvent("message", { origin: "https://claude.ai", \
+        data: { type: "cic_sidepanel_cowork_unavailable" } }));
+        """
     }
 }
 
