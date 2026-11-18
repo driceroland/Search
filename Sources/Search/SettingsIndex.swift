@@ -172,6 +172,7 @@ enum SettingsIndex {
               keys: ["sidebar.hides"], words: ["auto hide", "sidebar"], parent: "tabs.layout"),
         .init(id: "sidebar.slides", group: "window", icon: "rectangle.lefthalf.inset.filled.arrow.left",
               title: "Slide the column in and out", detail: "A gentler slide when ⌘S or the window's edge brings the column out or puts it away",
+              more: "With Reduce Motion on in System Settings › Accessibility › Display, the column fades in and out instead. With Reduce animations on, it comes and goes at once.",
               keys: [Motion.slidesKey], words: ["animation", "animate", "smooth", "slide", "sidebar", "arc"], parent: "tabs.layout"),
         .init(id: "sidebar.foldIcons", group: "window", icon: "arrow.down.right.and.arrow.up.left",
               title: "⌘S makes the column icons only", detail: "The tabs stay in sight as a narrow column of icons; ⌘S again brings the titles back",

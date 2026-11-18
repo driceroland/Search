@@ -376,6 +376,19 @@ enum Motion {
     }
 
     nonisolated static let slidesKey = "sidebar.slides"
+
+    /// Slide the column in and out with the Mac's Reduce Motion on: the
+    /// column fades in place where it would slide, as Apple's own sidebars
+    /// do under Reduce Motion, rather than doing nothing at all, which read
+    /// as a switch that does nothing. Search's own Reduce animations still
+    /// means at once (see `instant`).
+    static var fadesColumn: Bool {
+        !instant && slide(out: true) != nil
+            && (testReduceMotion ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
+    /// That fade's length.
+    static let fade: TimeInterval = 0.2
 }
 
 /// Search's mark — Drice's Subtract.svg, a pill with an S cut out of it,

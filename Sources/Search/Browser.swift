@@ -369,6 +369,10 @@ final class Browser: NSObject, ObservableObject {
     /// the column has not moved yet (see Browser.toggleFold).
     @Published var foldingAway = false
     var foldTicket = 0
+    /// The column kept in its place while it fades out or in (see
+    /// Browser.moveColumn and Motion.fadesColumn).
+    @Published var fadeHeld = false
+    var fadeTicket = 0
 
     /// The address field, raised over a page by ⌘L. A blank tab shows it
     /// without being asked — there is nothing else for that tab to show.

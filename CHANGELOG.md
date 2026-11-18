@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Fixed
 
 - Hiding the column with ⌘S no longer flashes a dark block on the far side of the window on a page that takes a while to draw at its new size (a large web app, a page that works when the window changes size). The column waits for the page to be drawn wider, but only for a moment; past that it slid away with the room the page grew into still undrawn, shown in the page view's own ground (black in the dark theme, white in the light) until the page caught up. That room is now covered in the page's own colour until it has been drawn, with the column on either side, edge to edge or as a card, the strip across the top and Reduce animations alike. And ⌘S with the column out over the page (the pointer at the window's edge brought it out) keeps it where it is: it went away for a frame, the page bare with the window's buttons over it, and slid out again. `python3 Tests/fold_cover.py`
+- Settings › Appearance › Slide the column in and out does something with Reduce Motion on in System Settings › Accessibility › Display: the column fades in and out where it stands, as Apple's own sidebars do, for ⌘S and for the column brought out at the window's edge. Under Reduce Motion it came and went at once whether the switch was on or off, so the switch seemed to do nothing; the setting now says so. Search's own Reduce animations still makes it immediate, and without Reduce Motion the slide is as it was (0.26 s out, 0.22 s back, against about 0.1 s with the switch off). `python3 Tests/slide_column.py`
 
 ### Held back
 

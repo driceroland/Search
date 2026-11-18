@@ -59,9 +59,9 @@ extension Browser {
         // had been, the window's buttons over it — and slid out again.
         if folded, peeking {
             foldTicket += 1
-            withAnimation(Motion.folding(out: true)) {
-                peeking = false
-                folded = false
+            moveColumn(out: true) {
+                self.peeking = false
+                self.folded = false
             }
             return
         }
@@ -90,14 +90,46 @@ extension Browser {
             foldingAway = true
             Browser.drawn(pages, within: 0.12) { [weak self] in
                 guard let self, ticket == self.foldTicket, self.foldingAway else { return }
-                withAnimation(Motion.folding(out: false)) {
+                self.moveColumn(out: false) {
                     self.foldingAway = false
                     self.folded = true
                 }
             }
             return
         }
-        withAnimation(Motion.folding(out: folded)) { folded.toggle() }
+        moveColumn(out: folded) { self.folded.toggle() }
+    }
+
+    /// `change`, which brings the column out (`out`) or puts it away, on
+    /// the column's motion: its slide (Motion.folding), nothing under
+    /// Reduce Motion, or with Slide the column in and out on under Reduce
+    /// Motion a fade where it stands (Motion.fadesColumn). Fading, the
+    /// column is held in its place (`fadeHeld`) while its opacity goes, and
+    /// only then sent off the window's edge, where it waits for the next
+    /// time; coming back, it is put in its place, still clear, a turn
+    /// before it fades in.
+    func moveColumn(out: Bool, _ change: @escaping () -> Void) {
+        guard prefs.sidebar, Motion.fadesColumn else {
+            withAnimation(Motion.folding(out: out)) { change() }
+            return
+        }
+        fadeTicket += 1
+        let ticket = fadeTicket
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { fadeHeld = true }
+        // Nothing else moves, as under Reduce Motion: the page takes or
+        // gives its room at once. Only the column's opacity is animated, by
+        // its own modifier (see Fold).
+        if out {
+            DispatchQueue.main.async { withTransaction(Transaction()) { change() } }
+        } else {
+            withTransaction(Transaction()) { change() }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Motion.fade + 0.05) { [weak self] in
+            guard let self, ticket == self.fadeTicket else { return }
+            withTransaction(still) { self.fadeHeld = false }
+        }
     }
 
     /// The pages on screen beside the column: the one in front, and its
@@ -222,7 +254,7 @@ extension Browser {
 
     /// The folded column out over the page, or back in.
     func peek(_ out: Bool) {
-        withAnimation(Motion.folding(out: out)) { peeking = out }
+        moveColumn(out: out) { self.peeking = out }
     }
 
     /// A page filling the screen in front of this window. With
@@ -374,7 +406,12 @@ struct Fold: View {
                         .frame(maxHeight: .infinity, alignment: .top)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
                                              strength: browser.folded && browser.peeking ? 1 : 0))
-                        .offset(x: lightsOff ? (onRight ? prefs.columnWidth : -prefs.columnWidth) : 0)
+                        // Faded rather than slid under Reduce Motion with
+                        // Slide the column in and out on (Browser.moveColumn).
+                        .animation(Motion.fadesColumn ? .easeInOut(duration: Motion.fade) : nil) { column in
+                            column.opacity(lightsOff && Motion.fadesColumn ? 0 : 1)
+                        }
+                        .offset(x: lightsOff && !browser.fadeHeld ? (onRight ? prefs.columnWidth : -prefs.columnWidth) : 0)
                         .allowsHitTesting(!lightsOff)
                         .transition(.move(edge: onRight ? .trailing : .leading))
                 }
@@ -443,7 +480,7 @@ struct Fold: View {
             resetPending()
             guard prefs.sidebar else { return }
             browser.peeking = false
-            withAnimation(Motion.folding(out: !hides)) { browser.folded = hides }
+            browser.moveColumn(out: !hides) { browser.folded = hides }
         }
         // The address typed into a row is done with, and the pointer went
         // elsewhere while it was: the column goes the way it would have.
@@ -648,6 +685,29 @@ struct Fold: View {
         let turn = slides
         guard let layer = bar.layer else {
             bar.isHidden = off
+            return
+        }
+        // Faded in place with the column (Browser.moveColumn).
+        if !up, Motion.fadesColumn {
+            layer.removeAnimation(forKey: "fold")
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = bar.isHidden ? 0 : (layer.presentation()?.opacity ?? 1)
+            fade.toValue = off ? 0 : 1
+            fade.duration = Motion.fade
+            fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            fade.fillMode = .forwards
+            fade.isRemovedOnCompletion = false
+            bar.isHidden = false
+            CATransaction.begin()
+            CATransaction.setCompletionBlock {
+                MainActor.assumeIsolated {
+                    guard turn == slides else { return }
+                    layer.removeAnimation(forKey: "fold")
+                    bar.isHidden = off
+                }
+            }
+            layer.add(fade, forKey: "fold")
+            CATransaction.commit()
             return
         }
         // With Reduce Motion on, the column comes and goes at once, and the

@@ -1278,19 +1278,23 @@ final class Bench {
                 let built = Bench.bodies["row", default: 0]
                 passes.append(["at": ((start - pressed) * 1000).rounded(), "ms": ((now - start) * 10000).rounded() / 10,
                                "page": Double(web.frame.width), "rows": built - rows, "folded": browser.folded,
-                               "away": browser.foldingAway, "peeking": browser.peeking, "column": columnX(),
+                               "away": browser.foldingAway, "peeking": browser.peeking, "column": columnX(), "held": browser.fadeHeld,
                                // Covers over what the page has yet to draw (Browser.cover).
                                "covered": web.subviews.filter { $0 is FoldCover }.count])
                 rows = built
                 woke = 0
                 if lights == nil, let slide = Fold.titlebar?.layer?.animation(forKey: "fold") {
                     lights = ["kind": slide is CASpringAnimation ? "spring" : "eased", "duration": slide.duration,
+                              "path": (slide as? CABasicAnimation)?.keyPath ?? "",
                               "timing": slide.timingFunction.map { "\($0)" } ?? ""]
                 }
             }
             for observer in [wake, sleep].compactMap({ $0 }) { CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes) }
             Bench.bodies = [:]
             Bench.foldCovers = 0
+            // "reduceMotion": the Mac's Reduce Motion as this run should see
+            // it (true, false, or null for the Mac's own), kept afterwards.
+            if request.keys.contains("reduceMotion") { Motion.testReduceMotion = request["reduceMotion"] as? Bool }
             let before = Double(web.frame.width)
             browser.toggleFold()
             // "twice": ⌘S again at once, while the page takes its room.
