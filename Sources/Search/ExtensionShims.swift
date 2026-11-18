@@ -593,6 +593,89 @@ enum ExtensionShims {
       // mended there, no API that Chrome doesn't give content scripts either.
       const inContent = typeof location !== "undefined" && !/^(chrome|webkit)-extension:$/.test(location.protocol);
       const runtime = chrome.runtime;
+      // A <script src> of the extension's own that a content script puts in
+      // the page runs there whatever the page's Content Security Policy, in
+      // Chrome. WebKit holds it to the page's: YouTube's script-src names no
+      // extension, and Language Reactor's and Ambient light's scripts never
+      // ran — nothing of theirs showed. So a script element this content
+      // script inserted, with its own extension's address, that the page's
+      // policy refuses, is run by the browser in the page instead
+      // ("page.script": only a file the manifest makes web-accessible to
+      // that page, only in the top frame), and the element then hears load,
+      // or error, as it would have. Nothing else changes: a page without
+      // such a policy loads the script itself, as before.
+      if (inContent && runtime && typeof runtime.getURL === "function" && typeof document !== "undefined"
+          && root.HTMLScriptElement && root.Node && Element) {
+        const own = runtime.getURL("");
+        // The address as the content script writes it: read back, WebKit
+        // gives an extension's address masked (webkit-masked-url://hidden/),
+        // the attribute as well as the property.
+        const written = new WeakMap();
+        const scriptSrc = Object.getOwnPropertyDescriptor(root.HTMLScriptElement.prototype, "src");
+        if (scriptSrc && scriptSrc.set) {
+          Object.defineProperty(root.HTMLScriptElement.prototype, "src", { ...scriptSrc, set(value) {
+            try { written.set(this, String(value)); } catch (e) {}
+            return scriptSrc.set.call(this, value);
+          } });
+        }
+        const setAttribute = Element.prototype.setAttribute;
+        Object.defineProperty(Element.prototype, "setAttribute", { configurable: true, writable: true, value: function (name, value) {
+          try { if (this instanceof root.HTMLScriptElement && String(name).toLowerCase() === "src") written.set(this, String(value)); } catch (e) {}
+          return setAttribute.apply(this, arguments);
+        } });
+        // Element → its address, while the page's policy may still refuse it.
+        const ours = new Map();
+        const note = (node) => {
+          try {
+            if (!(node instanceof root.HTMLScriptElement) || !written.has(node)) return;
+            const address = new URL(written.get(node), document.baseURI).href;
+            if (!address.startsWith(own)) return;
+            ours.set(node, address);
+            setTimeout(() => ours.delete(node), 30000);
+          } catch (e) {}
+        };
+        const watch = (proto, name, all) => {
+          const f = proto && proto[name];
+          if (typeof f !== "function") return;
+          Object.defineProperty(proto, name, { configurable: true, writable: true, value: function (...args) {
+            if (all) args.forEach(note); else note(args[0]);
+            return f.apply(this, args);
+          } });
+        };
+        watch(root.Node.prototype, "appendChild");
+        watch(root.Node.prototype, "insertBefore");
+        watch(root.Node.prototype, "replaceChild");
+        for (const name of ["append", "prepend", "after", "before", "replaceWith"]) watch(Element.prototype, name, true);
+        if (Element.prototype.insertAdjacentElement) {
+          const f = Element.prototype.insertAdjacentElement;
+          Object.defineProperty(Element.prototype, "insertAdjacentElement", { configurable: true, writable: true, value: function (where, node) { note(node); return f.call(this, where, node); } });
+        }
+        document.addEventListener("securitypolicyviolation", (event) => {
+          if (event.disposition !== "enforce" || !/^script-src/.test(String(event.effectiveDirective || event.violatedDirective))) return;
+          const element = ours.has(event.target) ? event.target : [...ours.keys()].find((s) => ours.get(s) === event.blockedURI);
+          if (!element) return;
+          const address = ours.get(element);
+          ours.delete(element);
+          const token = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+          const path = new URL(address).pathname;
+          const done = (ran) => {
+            try { element.removeAttribute("data-search-page-script"); } catch (e) {}
+            element.dispatchEvent(new Event(ran ? "load" : "error"));
+          };
+          try { element.setAttribute("data-search-page-script", token); } catch (e) {}
+          // Asked again until the background answers: one just waking can
+          // miss the first. The browser runs a token's script once.
+          let answered = false;
+          const ask = () => {
+            if (answered) return;
+            Promise.resolve(runtime.sendMessage({ __searchPageScript: { path, token, module: element.type === "module" } }))
+              .then((reply) => { if (!answered && reply && typeof reply.ran === "boolean") { answered = true; done(reply.ran); } }, () => {});
+          };
+          ask();
+          for (const ms of [1500, 3000, 6000, 12000]) setTimeout(ask, ms);
+          setTimeout(() => { if (!answered) { answered = true; done(false); } }, 20000);
+        }, true);
+      }
       // WebKit fills Chrome's enums on a worker but leaves them out of a
       // content script, where extensions read them as their code starts.
       // GPTZero's copy tracker, LMS bridge and recorder stopped on a missing
@@ -1474,6 +1557,25 @@ enum ExtensionShims {
           // make itself (see `embedded`), made here for it — and only for
           // one of its pages: a content script gets no more than Chrome
           // gives it.
+          // A script of the extension's own that a page's policy refused
+          // its content script (see "page.script" at the content script's
+          // end): the browser runs it in the page, after checking for
+          // itself. Only for a content script, in a tab's top frame.
+          if (message && message.__searchPageScript) {
+            if (!background) return true;
+            const ask = message.__searchPageScript;
+            const refuse = (why) => {
+              try { native("debug.error", ["page script " + String(ask.path).slice(0, 200) + " not run — " + why]).catch(() => {}); } catch (e) {}
+              sendResponse({ ran: false });
+            };
+            const fromContent = !!(sender && sender.tab && typeof sender.url === "string" && /^https?:/.test(sender.url));
+            if (!fromContent) { refuse("not asked by a content script in a web page"); return; }
+            if (sender.frameId !== 0) { refuse("only a tab's top frame is supported"); return; }
+            if (ask.module) { refuse("a module script isn't supported"); return; }
+            frames().then((known) => native("page.script", [placeOf(sender.tab, known), String(ask.path), String(ask.token), sender.url]))
+              .then((ran) => sendResponse({ ran: !!ran }), (e) => refuse(String(e && e.message || e)));
+            return true;
+          }
           if (message && message.__searchCall) {
             if (!background) return true;
             const { space, method, args } = message.__searchCall;
@@ -5002,6 +5104,12 @@ enum ExtensionShims {
             return nil
 
         // MARK: script injection and user scripts
+        // Its own script, refused by a page's policy (ExtensionPageScript).
+        case "page.script":
+            guard let tab = located(first, context: context, owner: owner) else { throw Unsupported(what: "No tab there") }
+            let rest = Array(args.dropFirst())
+            return try await ExtensionPageScript.run(path: rest.first as? String ?? "", token: rest.dropFirst().first as? String ?? "",
+                                                     frameURL: rest.dropFirst(2).first as? String ?? "", in: tab, context: context)
         case "scripting.file":
             return try scriptingFile(first as? String ?? "", arguments: args.dropFirst().first as? [Any] ?? [], in: Extensions.folder(for: id))
         case "userScripts.file":
