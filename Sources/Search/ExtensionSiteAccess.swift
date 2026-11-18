@@ -195,7 +195,7 @@ extension Extensions {
         let asked = context.webExtension.allRequestedMatchPatterns
         for host in access.hosts {
             for pattern in SiteAccess.patterns(asked, on: host, subdomains: true) {
-                context.setPermissionStatus(.grantedExplicitly, for: pattern)
+                grant(pattern, in: context)
             }
         }
     }
@@ -214,13 +214,14 @@ extension Extensions {
     /// already did until that page is loaded again.
     ///
     /// Only the difference is touched, and `fence` isn't run again (its
-    /// refusals stand from `load`): WebKit puts an extension's content
-    /// scripts into every open page a new grant covers, there and then.
-    /// Taking a grant back costs more: WebKit builds all of the extension's
-    /// content scripts again and puts them into every open page it may
-    /// still run on, so those run once more. That is WebKit's way with any
-    /// grant taken back (its own activeTab does the same), and it happens
-    /// once per change here.
+    /// refusals stand from `load`). WebKit puts an extension's content
+    /// scripts into every open page a new grant covers, there and then, and
+    /// leaves pages alone when a grant naming sites is taken out of the
+    /// list (#705). A grant for every website is the exception both ways:
+    /// given, WebKit swaps its per-site scripts for every-website ones; taken
+    /// back, it leaves the every-website ones in place until they are built
+    /// again (see `rebuildScripts`). Either way a page it may still run in
+    /// gets its scripts once more — WebKit's, once per change.
     static func apply(_ access: SiteAccess, to context: WKWebExtensionContext, keeping clicks: [ClickGrant] = []) {
         let id = context.uniqueIdentifier
         // What it would hold, worked out on a context of its own that is
@@ -231,24 +232,31 @@ extension Extensions {
         fence(fresh)
         let wanted = Set(fresh.grantedPermissionMatchPatterns.keys.filter { isWebsite($0, of: id) }.map(\.string))
             .union(clicks.flatMap(\.patterns))
-        let gone = Set(context.grantedPermissionMatchPatterns.keys
-            .filter { isWebsite($0, of: id) && !wanted.contains($0.string) }.map(\.string))
-        let held = Set(context.grantedPermissionMatchPatterns.keys.map(\.string))
-        for text in wanted.subtracting(held).sorted() {
-            if let pattern = try? WKWebExtension.MatchPattern(string: text) {
-                context.setPermissionStatus(.grantedExplicitly, for: pattern)
-            }
+        let held = context.grantedPermissionMatchPatterns.keys
+        var gone = held.filter { isWebsite($0, of: id) && !wanted.contains($0.string) }
+        var added = wanted.subtracting(held.map(\.string)).sorted().compactMap { try? WKWebExtension.MatchPattern(string: $0) }
+        // Every website held one way (<all_urls>) and wanted another
+        // (*://*/*, see `fence`): kept as it is held.
+        if held.contains(where: { isWebsite($0, of: id) && reachesEveryWebsite($0) }), added.contains(where: reachesEveryWebsite) {
+            gone.removeAll(where: reachesEveryWebsite)
+            added.removeAll(where: reachesEveryWebsite)
         }
-        guard !gone.isEmpty else { return }
-        context.grantedPermissionMatchPatterns = context.grantedPermissionMatchPatterns.filter { !gone.contains($0.key.string) }
-        // Taken out of the list, WebKit no longer lets it reach those sites,
-        // but leaves their content scripts in its pages: an extension
-        // narrowed from every site went on running everywhere. Only a
-        // refusal has it build them again from what is granted, so one
-        // refusal it already has (files, see `fence`) is made again.
-        if let files = try? WKWebExtension.MatchPattern(string: "file:///*") {
-            context.setPermissionStatus(.deniedExplicitly, for: files)
+        let goneText = Set(gone.map(\.string))
+        func drop() {
+            context.grantedPermissionMatchPatterns = context.grantedPermissionMatchPatterns.filter { !goneText.contains($0.key.string) }
         }
+        guard gone.contains(where: reachesEveryWebsite) else {
+            for pattern in added { grant(pattern, in: context) }
+            if !gone.isEmpty { drop() }
+            return
+        }
+        // Every website taken back: out of the list, built again from what
+        // is left, then the sites it keeps. Granted before the rebuild, a
+        // named site's scripts went into its open pages twice — once as the
+        // every-website ones left, once in the rebuild.
+        drop()
+        rebuildScripts(context)
+        for pattern in added { grant(pattern, in: context) }
     }
 
     // MARK: on click
@@ -285,9 +293,9 @@ extension Extensions {
         let patterns = SiteAccess.patterns(context.webExtension.allRequestedMatchPatterns, on: host, subdomains: false)
         guard !patterns.isEmpty else { return false }
         // Never <all_urls>, an extension page or a file, so nothing for
-        // `fence` to refuse — and running it would put the extension's
-        // scripts into every open page again (see `apply`).
-        for pattern in patterns { context.setPermissionStatus(.grantedExplicitly, for: pattern) }
+        // `fence` to refuse. One held already isn't granted again (see
+        // `grant`).
+        for pattern in patterns { Extensions.grant(pattern, in: context) }
         clickGrants[id, default: [:]][tab.id] = ClickGrant(host: host, patterns: patterns.map(\.string))
         buttonsChanged()
         return true

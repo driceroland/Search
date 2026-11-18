@@ -304,3 +304,96 @@ final class ExtensionSiteAccessTests: XCTestCase {
         }
     }
 }
+
+/// Permission changes leave the pages an extension's content scripts are
+/// already in alone (#705): WebKit puts them back into every open page
+/// they may run in on a refusal, on a grant made again, and on any grant
+/// for every website, where they run once more.
+@available(macOS 15.4, *)
+@MainActor
+final class ExtensionRerunTests: XCTestCase {
+    override class func setUp() {
+        setenv("SEARCH_PROBE", "extension-rerun-\(getpid())", 1)
+        super.setUp()
+    }
+
+    func testPermissionChangesDontRunScriptsAgain() async throws {
+        _ = NSApplication.shared
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("rerun-\(UUID())")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let manifest: [String: Any] = [
+            "manifest_version": 3, "name": "Rerun", "version": "1",
+            "host_permissions": ["<all_urls>"], "optional_permissions": ["tabs"],
+            "content_scripts": [["matches": ["<all_urls>"], "js": ["content.js"]]],
+        ]
+        try JSONSerialization.data(withJSONObject: manifest).write(to: folder.appendingPathComponent("manifest.json"))
+        // Wrapped, as bundled scripts are: a top-level const would make a
+        // second run a SyntaxError, hiding it.
+        try Data("(() => { const d = document.documentElement.dataset; d.ran = String(Number(d.ran || 0) + 1); })();".utf8)
+            .write(to: folder.appendingPathComponent("content.js"))
+        let ext = try await WKWebExtension(resourceBaseURL: folder)
+        let controller = WKWebExtensionController(configuration: .nonPersistent())
+        let context = WKWebExtensionContext(for: ext)
+        context.uniqueIdentifier = "rerun"
+        Extensions.grantSites(context, as: SiteAccess(mode: .some, hosts: ["a.test", "b.test"]))
+        Extensions.fence(context)
+        context.hasAccessToPrivateData = true
+        try controller.load(context)
+        defer { try? controller.unload(context) }
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .nonPersistent()
+        config.webExtensionController = controller
+        func open(_ host: String) async throws -> WKWebView {
+            let web = WKWebView(frame: .zero, configuration: config)
+            web.loadHTMLString("<html><body>fixture</body></html>", baseURL: URL(string: "https://\(host)/"))
+            for _ in 0..<100 {
+                if !web.isLoading, (try? await web.evaluateJavaScript("document.readyState")) as? String == "complete" { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            return web
+        }
+        func ran(_ web: WKWebView) async throws -> Int {
+            try await Task.sleep(for: .milliseconds(400))
+            return Int(try await web.evaluateJavaScript("document.documentElement.dataset.ran || '0'") as? String ?? "0") ?? 0
+        }
+        let a = try await open("a.test"), b = try await open("b.test")
+        let startA = try await ran(a), startB = try await ran(b)
+        XCTAssertEqual([startA, startB], [1, 1])
+
+        // Fenced again after a permission is given: nothing to refuse anew.
+        context.setPermissionStatus(.grantedExplicitly, for: .tabs)
+        Extensions.fence(context)
+        let fencedA = try await ran(a)
+        XCTAssertEqual(fencedA, 1, "fence made again runs nothing again")
+        // A site held already, granted again: no second copy.
+        Extensions.grant(try .init(string: "*://*.a.test/*"), in: context)
+        let regrantA = try await ran(a)
+        let freshA = try await ran(try await open("a.test"))
+        XCTAssertEqual([regrantA, freshA], [1, 1], "a held site granted again isn't injected twice")
+
+        // Narrowed, then widened, among named sites: kept pages untouched.
+        Extensions.apply(SiteAccess(mode: .some, hosts: ["a.test"]), to: context)
+        let narrowA = try await ran(a), narrowB = try await ran(b)
+        XCTAssertEqual([narrowA, narrowB], [1, 1])
+        let lostB = try await ran(try await open("b.test"))
+        XCTAssertEqual(lostB, 0, "the lost site's next page goes without")
+        Extensions.apply(SiteAccess(mode: .some, hosts: ["a.test", "b.test"]), to: context)
+        let widenA = try await ran(a)
+        XCTAssertEqual(widenA, 1, "a kept site's page isn't run again")
+
+        // Every site and back: WebKit's own swap, once at most, and never
+        // a second copy in the next page.
+        Extensions.apply(SiteAccess(), to: context)
+        let allA = try await ran(a)
+        XCTAssertLessThanOrEqual(allA, 2)
+        let allC = try await ran(try await open("c.test"))
+        XCTAssertEqual(allC, 1)
+        let beforeA = try await ran(a)
+        Extensions.apply(SiteAccess(mode: .some, hosts: ["a.test"]), to: context)
+        let backA = try await ran(a)
+        XCTAssertLessThanOrEqual(backA - beforeA, 1, "every website taken back: once more at most")
+        let nextA = try await ran(try await open("a.test")), nextC = try await ran(try await open("c.test"))
+        XCTAssertEqual([nextA, nextC], [1, 0], "built again from what is left: once on the kept site, none elsewhere")
+    }
+}

@@ -3455,7 +3455,7 @@ enum ExtensionShims {
         // Extensions.reachesExtensions): never held, never asked for. Nor
         // files, as in Chrome with file access left off (Extensions.reachesFiles).
         const extensionPages = (origins) => origins.some((o) => /^((chrome|webkit)-extension|file):/i.test(String(o)));
-        // <all_urls> is held as *://*/* once given (see Extensions.fence).
+        // <all_urls> is reached as *://*/* once given (see Extensions.fence).
         const websites = (origins) => origins.map((o) => (o === "<all_urls>" ? "*://*/*" : o));
         put(p, "contains", withCb(async ({ permissions = [], origins = [] }) => {
           origins = websites(origins);
@@ -3492,14 +3492,23 @@ enum ExtensionShims {
         put(p, "remove", withCb(async ({ permissions = [], origins = [] }) => {
           const { theirs, mine } = split(permissions);
           if (mine.length) await native("permissions.remove", [mine]);
-          const done = theirs.length || origins.length ? await remove({ permissions: theirs, origins }) : true;
           // <all_urls> given back gives back what it is held as, *://*/*,
           // too (see Extensions.fence): contains() then says no to both.
-          // Not when the manifest itself asks for every website: what it
-          // can't give back stays.
-          const required = new Set([...(manifest.host_permissions || []), ...(manifest.permissions || [])]);
-          const always = required.has("<all_urls>") || required.has("*://*/*");
-          if (done && !always && origins.some((o) => o === "<all_urls>" || o === "*://*/*")) await native("permissions.removeWebsites", []);
+          // Search takes those back itself, not WebKit, whose remove()
+          // took every site <all_urls> covers with them — the ones the
+          // manifest requires too, which Chrome keeps — and left the
+          // content scripts running everywhere (#705). Not when the
+          // manifest itself asks for every website, its content scripts
+          // included: what it can't give back stays, and WebKit says so.
+          const every = (o) => o === "<all_urls>" || o === "*://*/*";
+          const required = new Set([...(manifest.host_permissions || []), ...(manifest.permissions || []),
+            ...(manifest.content_scripts || []).flatMap((c) => c.matches || [])]);
+          const always = [...required].some(every);
+          const optional = [...(manifest.optional_host_permissions || []), ...(manifest.optional_permissions || [])];
+          const ours = !always && optional.some(every) && origins.some(every);
+          const rest = ours ? origins.filter((o) => !every(o)) : origins;
+          const done = theirs.length || rest.length ? await remove({ permissions: theirs, origins: rest }) : true;
+          if (done && ours) await native("permissions.removeWebsites", []);
           return done;
         }));
       }
@@ -5087,7 +5096,7 @@ enum ExtensionShims {
             let detail = missing.isEmpty ? "Until you remove the extension." : missing.map(\.rawValue).sorted().joined(separator: ", ")
             guard await owner.ask(question, detail: detail, context: context) else { return false }
             for permission in missing { context.setPermissionStatus(.grantedExplicitly, for: permission) }
-            for pattern in unreached { context.setPermissionStatus(.grantedExplicitly, for: pattern) }
+            for pattern in unreached { Extensions.grant(pattern, in: context) }
             Extensions.fence(context)
             return true
         case "permissions.removeWebsites":
@@ -5095,10 +5104,18 @@ enum ExtensionShims {
             // <all_urls> itself: both, and exactly those, so a host the
             // manifest names stays. Taken out of the granted list as it is:
             // WebKit's own "unknown" leaves *://*/* granted beside a named
-            // host (AllURLsRemovalTests).
+            // host (AllURLsRemovalTests), and its permissions.remove takes
+            // the named hosts too.
+            //
+            // Taken out of the list, WebKit leaves the content scripts it
+            // put in for every website, and the extension went on running
+            // everywhere (#705): built again from what is left.
             let everything: Set<String> = ["<all_urls>", "*://*/*"]
-            context.grantedPermissionMatchPatterns = context.grantedPermissionMatchPatterns
-                .filter { !everything.contains($0.key.string) }
+            let held = context.grantedPermissionMatchPatterns
+            let left = held.filter { !everything.contains($0.key.string) }
+            guard left.count != held.count else { return true }
+            context.grantedPermissionMatchPatterns = left
+            Extensions.rebuildScripts(context)
             return true
         case "permissions.remove":
             let gone = Set((first as? [String]) ?? [])

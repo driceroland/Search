@@ -1378,29 +1378,80 @@ final class Extensions: NSObject, ObservableObject {
     /// refusal for all hosts doesn't outweigh a grant naming one — WebKit
     /// looks at those first — which is why none is ever made (see
     /// `reachesExtensions`). Set again after anything is granted.
+    ///
+    /// Only what is missing is made (see `grant` and `refuse`): set again
+    /// as it was, every refusal had WebKit run all the extension's content
+    /// scripts once more in every open page they may run in (#705).
     static func fence(_ context: WKWebExtensionContext) {
         // WebKit takes back any grant that covers what is refused here, so a
         // refusal of extension pages wipes a grant of <all_urls> the moment
         // it is made — permissions.request said yes, contains() says no, and
         // the extension (Figma's) waits forever. What <all_urls> means for
-        // websites is kept as *://*/*, which the refusals don't touch.
+        // websites is kept as *://*/*, which the refusals don't touch. Only
+        // when it was wiped: <all_urls> still held already grants *://*/*
+        // (contains() for either is asked as *://*/*, see the shim), and a
+        // second every-website grant runs the scripts in every page again.
         let everything = context.grantedPermissionMatchPatterns.keys.contains { $0.matchesAllURLs }
         defer {
-            if everything, let web = try? WKWebExtension.MatchPattern(string: "*://*/*") {
-                context.setPermissionStatus(.grantedExplicitly, for: web)
+            if everything, !context.grantedPermissionMatchPatterns.keys.contains(where: reachesEveryWebsite),
+               let web = try? WKWebExtension.MatchPattern(string: "*://*/*") {
+                grant(web, in: context)
             }
         }
         for scheme in Set([Extensions.scheme, Extensions.formerScheme, "webkit-extension"]) {
             if let pages = try? WKWebExtension.MatchPattern(string: "\(scheme)://*/*") {
-                context.setPermissionStatus(.deniedExplicitly, for: pages)
+                refuse(pages, in: context)
             }
         }
         // Nor files (see `reachesFiles`).
         for string in ["file:///*", "file://*/*"] {
             if let files = try? WKWebExtension.MatchPattern(string: string) {
-                context.setPermissionStatus(.deniedExplicitly, for: files)
+                refuse(files, in: context)
             }
         }
+    }
+
+    /// Whether `pattern` is in `patterns` as it is written: one that only
+    /// covers it is another grant to WebKit.
+    private static func holds(_ patterns: [WKWebExtension.MatchPattern: Date], _ pattern: WKWebExtension.MatchPattern) -> Bool {
+        patterns.keys.contains { $0.string == pattern.string }
+    }
+
+    /// Grants a site, unless it is held already. WebKit doesn't check: a
+    /// pattern granted again gets a second copy of the extension's content
+    /// scripts, which then run twice in every page it matches, and one for
+    /// every website has them all run once more in every open page.
+    static func grant(_ pattern: WKWebExtension.MatchPattern, in context: WKWebExtensionContext) {
+        guard !holds(context.grantedPermissionMatchPatterns, pattern) else { return }
+        context.setPermissionStatus(.grantedExplicitly, for: pattern)
+    }
+
+    /// Refuses a site, unless it is refused already. Any refusal, even one
+    /// WebKit holds, has it build the extension's content scripts again and
+    /// put them into every open page they may run in, where they run again.
+    static func refuse(_ pattern: WKWebExtension.MatchPattern, in context: WKWebExtensionContext) {
+        guard !holds(context.deniedPermissionMatchPatterns, pattern) else { return }
+        context.setPermissionStatus(.deniedExplicitly, for: pattern)
+    }
+
+    /// Has WebKit build the extension's content scripts again from what it
+    /// is granted now. Needed once a grant for every website is taken out of
+    /// the granted list: WebKit keeps those scripts apart from the ones
+    /// for named sites and leaves them in place, so the extension went on
+    /// running on every site (and twice on the ones still named). Only a
+    /// refusal rebuilds them, so one it holds already (files, see `fence`)
+    /// is made again. Pages it may still run in get its scripts once more:
+    /// WebKit's cost, and why this is only for that case.
+    static func rebuildScripts(_ context: WKWebExtensionContext) {
+        if let files = try? WKWebExtension.MatchPattern(string: "file:///*") {
+            context.setPermissionStatus(.deniedExplicitly, for: files)
+        }
+    }
+
+    /// Whether a pattern is one of WebKit's every-website grants (see
+    /// `rebuildScripts`).
+    nonisolated static func reachesEveryWebsite(_ pattern: WKWebExtension.MatchPattern) -> Bool {
+        pattern.matchesAllURLs || pattern.matchesAllHosts
     }
 
     /// You let it into private tabs, by its id and off until you do, and its
