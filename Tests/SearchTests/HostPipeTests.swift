@@ -181,6 +181,34 @@ final class HostPipeTests: XCTestCase {
         XCTAssertEqual(exits.count, 1)
     }
 
+    /// How a host ended, for the log (#1122): its status, or the signal
+    /// it was stopped with.
+    func testTerminationSaysHowTheHostEnded() throws {
+        final class Note: @unchecked Sendable {
+            private let lock = NSLock()
+            private var text: String?
+            var value: String? { lock.lock(); defer { lock.unlock() }; return text }
+            func set(_ new: String) { lock.lock(); text = new; lock.unlock() }
+        }
+        let (quitting, _) = try host("sys.exit(3)")
+        let quit = Note()
+        let first = HostPipe(program: quitting, origin: "chrome-extension://test/")
+        first.onTerminated = { quit.set($0) }
+        try first.start()
+        XCTAssertTrue(settle { quit.value != nil })
+        XCTAssertTrue(quit.value?.hasPrefix("status 3, ") == true, quit.value ?? "")
+
+        let (sleeping, pidFile) = try host("time.sleep(60)")
+        let stopped = Note()
+        let second = HostPipe(program: sleeping, origin: "chrome-extension://test/")
+        second.onTerminated = { stopped.set($0) }
+        try second.start()
+        XCTAssertTrue(settle { self.alive(pidFile) })
+        second.stop()
+        XCTAssertTrue(settle { stopped.value != nil })
+        XCTAssertEqual(stopped.value, "signal \(SIGTERM), stopped by the browser")
+    }
+
     // (d)
     func testStopAfterHostExitedEndsOnceWithoutHanging() throws {
         let (script, pidFile) = try host("send({\"bye\": True})")
