@@ -87,9 +87,10 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
     /// A build without Apple's browser entitlement can't do them: WebKit then
     /// answers isUserVerifyingPlatformAuthenticatorAvailable() with false,
     /// yet the API object exists, so sites offer the passkey path and strand
-    /// you there. Taken away, they go straight to the password. Signed with
-    /// the entitlement, as releases are, this is on, and Search carries out
-    /// the sites' requests itself (see Passkeys.swift).
+    /// you there. Told there are none, they go straight to the password
+    /// (see withoutPasskeys). Signed with the entitlement, as releases are,
+    /// this is on, and Search carries out the sites' requests itself (see
+    /// Passkeys.swift).
     ///
     /// Held here, not read from the store: a build of your own running beside
     /// a release shares the store, and its first run writes passkeys off into
@@ -98,15 +99,28 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
     /// first page, and so does every flip of the switch.
     static var passkeysOffered = false
 
-    /// Only the passkey object goes. navigator.credentials itself stays: sites
-    /// use it for stored passwords too, and that half still works.
+    /// The passkey object stays, and says there are none here, as Safari's
+    /// does on a Mac with nothing to sign in with: isConditionalMediation
+    /// Available() and isUserVerifyingPlatformAuthenticatorAvailable() are
+    /// false, getClientCapabilities() offers none, and a passkey asked for
+    /// or made is refused at once (NotAllowedError), under the name field
+    /// too. Sites take that to mean the password. navigator.credentials
+    /// keeps its other half — stored passwords, identities — untouched.
+    ///
+    /// It used to be taken away, its name left on the window with nothing
+    /// in it: a site that looks for a method on it (X's sign-in asks
+    /// `'isUserVerifyingPlatformAuthenticatorAvailable' in
+    /// window.PublicKeyCredential`) threw there and never went on to the
+    /// password, and a request under the field never ended.
     ///
     /// Unless an extension answers passkey requests itself — a password
     /// manager with your passkeys in it, as 1Password is. It puts its own get
     /// and create on navigator.credentials, and reaches for the passkey object
-    /// from its own script as it does; from then on sites see the object, and
-    /// the extension is the one they ask. Whatever it leaves to the browser is
-    /// refused at once, as if you had said no, where WebKit would try and fail.
+    /// from its own script as it does; from then on sites hear WebKit's own
+    /// answers to those questions, or the extension's where it gives its own,
+    /// and the extension is the one they ask. Whatever it leaves to the
+    /// browser is refused at once, as if you had said no, where WebKit would
+    /// try and fail.
     static let withoutPasskeys = """
     (function () {
       var real = window.PublicKeyCredential;
@@ -120,37 +134,43 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         } catch (e) {}
         return claimed;
       }
-      try {
-        Object.defineProperty(window, 'PublicKeyCredential', {
-          configurable: true,
-          get: function () { return answered() ? real : undefined; },
-          set: function (value) { real = value; }
-        });
-      } catch (e) {
-        try { delete window.PublicKeyCredential; } catch (ignored) {}
-        return;
-      }
+      function refused() { return new DOMException('The operation either timed out or was not allowed.', 'NotAllowedError'); }
+      // Methods, not arrow functions: their names and lengths are WebKit's.
+      var none = {
+        isConditionalMediationAvailable() { return Promise.resolve(false); },
+        isUserVerifyingPlatformAuthenticatorAvailable() { return Promise.resolve(false); },
+        getClientCapabilities() {
+          var native = none.native.getClientCapabilities;
+          return Promise.resolve(native ? native.call(real) : {}).then(function (caps) {
+            var told = {};
+            Object.keys(caps || {}).forEach(function (key) { told[key] = caps[key]; });
+            ['conditionalCreate', 'conditionalGet', 'hybridTransport', 'passkeyPlatformAuthenticator',
+             'userVerifyingPlatformAuthenticator'].forEach(function (key) { told[key] = false; });
+            return told;
+          });
+        },
+        native: {}
+      };
+      ['isConditionalMediationAvailable', 'isUserVerifyingPlatformAuthenticatorAvailable', 'getClientCapabilities'].forEach(function (name) {
+        var native = real[name];
+        if (typeof native !== 'function') return;
+        none.native[name] = native;
+        var ours = none[name];
+        var wrapped = { [name]() { return answered() ? native.apply(this, arguments) : ours.apply(this, arguments); } }[name];
+        try { Object.defineProperty(real, name, { configurable: true, writable: true, enumerable: true, value: wrapped }); } catch (e) {}
+      });
       var proto = CredentialsContainer.prototype;
       ['get', 'create'].forEach(function (name) {
         var native = proto[name];
         try {
           Object.defineProperty(proto, name, {
             configurable: true, writable: true,
-            value: function (options) {
+            value: { [name](options) {
               if (!options || !options.publicKey) return native.apply(this, arguments);
               var signal = options.signal;
-              // Under the name field: nothing to offer, so it waits, as it
-              // would while nobody picks one, until the page lets it go.
-              if (name === 'get' && options.mediation === 'conditional') {
-                return new Promise(function (resolve, reject) {
-                  if (!signal) return;
-                  var aborted = function () { return signal.reason || new DOMException('The operation was aborted.', 'AbortError'); };
-                  if (signal.aborted) return reject(aborted());
-                  signal.addEventListener('abort', function () { reject(aborted()); }, { once: true });
-                });
-              }
-              return Promise.reject(new DOMException('The operation either timed out or was not allowed.', 'NotAllowedError'));
-            }
+              if (signal && signal.aborted) return Promise.reject(signal.reason || new DOMException('The operation was aborted.', 'AbortError'));
+              return Promise.reject(refused());
+            } }[name]
           });
         } catch (e) {}
       });
