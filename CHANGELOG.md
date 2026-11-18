@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- A popover's arrow is drawn whole near the edge of the screen. With the window down to the foot of the screen, the bookmarks and extensions lists at the column's foot had their arrow bent into the popover's rounded corner, and the same happened to a popover above or under a button near the screen's left or right edge. The arrow now moves along the popover's side, just enough to stay clear of the corner, and a list beside a button too near the foot of the screen to point at it opens above it instead. The bookmarks list's arrow is the colour of the list too, where it was lighter. With the column on the right, its lists open toward the page. Thanks [@egegokdenizduman](https://github.com/egegokdenizduman) for reporting ([#1167](https://github.com/driceroland/Search/issues/1167))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
