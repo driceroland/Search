@@ -70,6 +70,7 @@ enum SettingsIndex {
         .init(id: "newtabs", page: .tabs, title: "New tabs", icon: "plus.square"),
         .init(id: "memory", page: .tabs, title: "Memory", icon: "moon.zzz"),
         .init(id: "tabbar", page: .tabs, title: "In the tab bar", icon: "number"),
+        .init(id: "tabwindows", page: .tabs, title: "Windows", icon: "macwindow.on.rectangle"),
 
         .init(id: "search", page: .browsing, title: "Searching", icon: "magnifyingglass"),
         .init(id: "links", page: .browsing, title: "Links", icon: "link"),
@@ -260,6 +261,10 @@ enum SettingsIndex {
               title: "Show the address on the tab you're on", detail: "Its site in place of its title; the title comes back under the pointer",
               more: "Look-alike names in other alphabets show as they really are, and plain http says Not secure. Off, the tab you're on still says so for those two.",
               keys: ["tabs.address"], words: ["url", "domain", "security", "address bar"]),
+        .init(id: "tabs.mirror", group: "tabwindows", icon: "rectangle.on.rectangle",
+              title: "Same tabs in every window", detail: "Each window lists the same open tabs in a space, as it lists the same pins",
+              more: "A tab opened, closed, moved, grouped or renamed in one window is so in the others. Each window shows the page on its own, so the same tab can be open in two windows at once. Private tabs stay in their window, and closing a window leaves its tabs in the others.",
+              keys: ["tabs.mirror"], words: ["mirror", "arc", "sync tabs", "shared tabs", "every window", "all windows", "same tabs", "windows"]),
 
         // Browsing
         .init(id: "search.engine", group: "search", icon: "magnifyingglass",
@@ -770,6 +775,7 @@ extension SettingsIndex {
             "float.flicks": prefs.floatFlicks,
             "arc": prefs.looksLikeArc,
             "profiles.oneWindow": prefs.profilesInOneWindow,
+            "tabs.mirror": prefs.mirrorsTabs,
             "always": [
                 "splitView": prefs.splitView, "tabs.groups": prefs.usesTabGroups,
                 "panel.sites": prefs.sitesInPanel, "translate": PageTranslator.enabled,
@@ -796,6 +802,9 @@ extension SettingsIndex {
         case "pins.keep":
             guard let on = value as? Bool else { return false }
             prefs.pinsKeepSite = on
+        case "tabs.mirror":
+            guard let on = value as? Bool else { return false }
+            prefs.mirrorsTabs = on
         case "pins.folders":
             guard let on = value as? Bool else { return false }
             prefs.pinFolders = on

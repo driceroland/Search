@@ -32,8 +32,12 @@ enum Session {
         /// bring the window back (Windows.closed). Never written: it can
         /// hold what was typed into the page, and is left out of the keys.
         var keepsake: Browser.Keepsake? = nil
+        /// An open tab's identity, the same in every window, while Settings ›
+        /// Tabs › Same tabs in every window is on (see Twins.swift). Nil, and
+        /// so not written, otherwise.
+        var twinID: UUID? = nil
 
-        enum CodingKeys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted }
+        enum CodingKeys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, twinID }
     }
 
     struct Shape: Codable {
@@ -139,7 +143,7 @@ enum Session {
 // key it isn't asked for. In extensions, so the memberwise initialisers stay.
 
 extension Session.Entry {
-    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted }
+    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, twinID }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -154,6 +158,7 @@ extension Session.Entry {
         letGo = try? c.decodeIfPresent(Date.self, forKey: .letGo)
         listed = try? c.decodeIfPresent(Bool.self, forKey: .listed)
         muted = (try? c.decodeIfPresent(Bool.self, forKey: .muted)) ?? false
+        twinID = try? c.decodeIfPresent(UUID.self, forKey: .twinID)
     }
 }
 

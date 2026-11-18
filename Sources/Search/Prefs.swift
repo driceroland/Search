@@ -364,6 +364,12 @@ final class Preferences: ObservableObject {
     @Published var frontLinksBeside: Bool {
         didSet { store.set(frontLinksBeside, forKey: "tabs.frontBeside") }
     }
+    /// Every window of a profile lists the same open tabs in each space, as
+    /// it lists the same pins: opened, closed, moved, grouped or renamed in
+    /// one, so in the others (see Twins.swift). Off unless asked for.
+    @Published var mirrorsTabs: Bool {
+        didSet { store.set(mirrorsTabs, forKey: "tabs.mirror") }
+    }
     /// Each launch starts with a fresh window: the pins stay, last time's
     /// other tabs don't come back (see Session.startFresh). Off unless
     /// asked for (#406).
@@ -980,6 +986,7 @@ final class Preferences: ObservableObject {
         switcherBehindFirst = store.bool(forKey: "tabs.switcherBehindFirst")
         switcherLeavesOutPins = store.bool(forKey: "tabs.switcherLeavesOutPins")
         frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
+        mirrorsTabs = store.bool(forKey: "tabs.mirror")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
         confirmsQuit = store.bool(forKey: Preferences.confirmQuitKey)
