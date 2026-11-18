@@ -17,6 +17,10 @@ in [ROADMAP.md](ROADMAP.md).
 - Settings › Appearance › Slide the column in and out does something with Reduce Motion on in System Settings › Accessibility › Display: the column fades in and out where it stands, as Apple's own sidebars do, for ⌘S and for the column brought out at the window's edge. Under Reduce Motion it came and went at once whether the switch was on or off, so the switch seemed to do nothing; the setting now says so. Search's own Reduce animations still makes it immediate, and without Reduce Motion the slide is as it was (0.26 s out, 0.22 s back, against about 0.1 s with the switch off). `python3 Tests/slide_column.py`
 - A long query keeps the caret and its last letter in sight at the end of the field: in a new tab's field in the column, in the field ⌘T floats over a page and in ⌘L's. Scrolled to the end, the text stopped a fraction of a point from the field's edge, and on macOS 27 the caret and part of the last letter were cut off there; the fields now keep a few points clear past the caret. `python3 Tests/field_caret.py`
 
+### Improved
+
+- The miniplayer keeps the pointer attached through two-finger moves and corner glides until you move it with one finger. It lifts slightly while swiping and settles back when you let go; pinch gestures resize it about the pointer, including small pinches, within the current display.
+
 ### Held back
 
 Not in this version, kept on main for a later one:

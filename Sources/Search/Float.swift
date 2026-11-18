@@ -133,6 +133,7 @@ final class Float {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
+        panel.acceptsMouseMovedEvents = true
         panel.backgroundColor = .clear
         panel.isOpaque = false
         // No shadow. A window with one is composited by WindowServer on every
@@ -151,6 +152,7 @@ final class Float {
         let keep: (Notification.Name, AnyObject) -> NSObjectProtocol = { name, object in
             NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
+                    if name == NSApplication.willTerminateNotification { self?.controls?.finishInteraction() }
                     if let frame = self?.restingFrame { Float.remembered = frame }
                 }
             }
@@ -291,6 +293,7 @@ final class Float {
         guard let panel else { return }
         settling.stop()
         cover = nil
+        controls?.finishInteraction()
         if let frame = restingFrame { Float.remembered = frame }
         keeping.forEach(NotificationCenter.default.removeObserver)
         keeping = []
@@ -300,6 +303,7 @@ final class Float {
         (page as? WKWebView)?.allowsMagnification = true
         page?.removeFromSuperview()
         page = nil
+        controls?.removeFromSuperview()
         controls = nil
         panel.orderOut(nil)
         panel.close()
@@ -346,7 +350,7 @@ final class Float {
     ///
     /// Out of sight until the pointer is over the window — the whole point of
     /// this window is the picture.
-    private final class Controls: NSView {
+    final class Controls: NSView {
         var onClose: (() -> Void)?
         var onReturn: (() -> Void)?
         var onPlayPause: (() -> Void)?
@@ -527,7 +531,7 @@ final class Float {
                 return
             }
             ignoringDrag = false
-            stopGlide()
+            finishInteraction()
             grab = NSEvent.mouseLocation
             origin = window.frame
             stretching = atCorner(convert(event.locationInWindow, from: nil))
@@ -546,43 +550,111 @@ final class Float {
             resize(to: origin.width + dx, from: origin)
         }
 
-        /// Two fingers on the trackpad move the window. There is nothing to
-        /// scroll here — the window holds one picture — so the gesture is free
-        /// to mean the thing you actually want it to mean.
-        ///
-        /// And the pointer travels with it. Moving the window alone leaves the
-        /// cursor behind: it drifts towards the edge, falls out, and the window
-        /// stops answering mid-gesture. Carrying it keeps it at the same place
-        /// in the frame, so the window can be pushed as far as the screen goes.
+        // Keep a position within the picture, rather than a screen position:
+        // a corner glide can cross most of the display after fingers lift.
+        private(set) var pointerAnchor: NSPoint?
+        private var liftedSize: NSSize?
+        private var movement: [NSObjectProtocol] = []
+        private var pointerMonitor: Any?
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            finishInteraction()
+            movement.forEach(NotificationCenter.default.removeObserver)
+            movement = []
+            if let pointerMonitor { NSEvent.removeMonitor(pointerMonitor) }
+            pointerMonitor = nil
+            super.viewWillMove(toWindow: newWindow)
+            guard let newWindow else { return }
+            for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
+                movement.append(NotificationCenter.default.addObserver(forName: name, object: newWindow, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.carryPointer() }
+                })
+            }
+            pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+                MainActor.assumeIsolated { self?.releasePointer() }
+                return event
+            }
+        }
+
+        override func mouseMoved(with event: NSEvent) { releasePointer() }
+
+        private func releasePointer() { pointerAnchor = nil }
+
+        private func attachPointer() {
+            guard pointerAnchor == nil, let window else { return }
+            let frame = window.frame, mouse = NSEvent.mouseLocation
+            // Bench windows live offscreen and must never take the real cursor.
+            guard Float.benchAway == nil, frame.contains(mouse) else { return }
+            pointerAnchor = NSPoint(x: (mouse.x - frame.minX) / frame.width,
+                                    y: (mouse.y - frame.minY) / frame.height)
+        }
+
+        private func carryPointer() {
+            guard let anchor = pointerAnchor, let window, window.isVisible,
+                  let screen = NSScreen.screens.first else { return }
+            let frame = window.frame
+            let mouse = NSPoint(x: frame.minX + anchor.x * frame.width,
+                                y: frame.minY + anchor.y * frame.height)
+            // CGWarp doesn't synthesize mouseMoved: the next physical one-finger
+            // movement releases the attachment and is delivered normally.
+            CGWarpMouseCursorPosition(CGPoint(x: mouse.x, y: screen.frame.maxY - mouse.y))
+            CGAssociateMouseAndMouseCursorPosition(1)
+        }
+
+        private func liftPicture() {
+            guard liftedSize == nil, docked == nil, let window,
+                  !Motion.reduced else { return }
+            liftedSize = window.frame.size
+            let frame = window.frame
+            window.setFrame(frame.insetBy(dx: -frame.width * 0.015, dy: -frame.height * 0.015), display: false)
+            window.hasShadow = true
+        }
+
+        private func lowerPicture() {
+            guard let size = liftedSize, let window else { return }
+            liftedSize = nil
+            let frame = window.frame
+            window.setFrame(NSRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2,
+                                   width: size.width, height: size.height), display: false)
+            window.hasShadow = false
+        }
+
+        func finishInteraction() {
+            releasePointer()
+            lowerPicture()
+            stopGlide()
+            settling?.cancel()
+            settling = nil
+        }
+
+        /// Two fingers move the picture and keep the pointer attached until
+        /// a physical pointer movement (one finger on a trackpad) releases it.
         override func scrollWheel(with event: NSEvent) {
-            guard let window else { return }
-            // Only while fingers are actually down. Letting the glide continue
-            // would fling the pointer across the screen after them.
-            guard event.momentumPhase == [] else { return }
+            guard let window, event.momentumPhase == [] else { return }
+            let ended = event.phase.contains(.ended) || event.phase.contains(.cancelled)
+            if event.phase.contains(.began) {
+                attachPointer()
+                if !Float.flicks { liftPicture() }
+            }
+            // Restore the real size before picking a corner or docking target.
+            if ended { lowerPicture() }
+            if event.phase.contains(.cancelled) {
+                releasePointer()
+                if pulling != nil { glide(to: pullFrom, bouncing: true) }
+                pulling = nil
+                swipe = .zero
+                flicked = false
+                settling?.cancel()
+                settling = nil
+                return
+            }
             if Float.flicks { return flickWheel(with: event) }
-            // Docked, and flicks turned off since: out first, where it was.
             if docked != nil { return undock() }
-
-            let dx = event.scrollingDeltaX
-            let dy = event.scrollingDeltaY
+            let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
             guard dx != 0 || dy != 0 else { return }
-
+            stopGlide()
             let spot = window.frame.origin
             window.setFrameOrigin(NSPoint(x: spot.x + dx, y: spot.y - dy))
-
-            // Screen coordinates run up from the bottom, the cursor's run down
-            // from the top of the first display.
-            guard let ground = NSScreen.screens.first else { return }
-            let mouse = NSEvent.mouseLocation
-            CGWarpMouseCursorPosition(
-                CGPoint(
-                    x: mouse.x + dx,
-                    y: ground.frame.height - (mouse.y - dy)
-                )
-            )
-            // Without this the pointer and the physical trackpad stay parted
-            // for a moment, and the next flick arrives from the wrong place.
-            CGAssociateMouseAndMouseCursorPosition(1)
         }
 
         /// Two fingers flick the window to a corner, as in Dia and Arc: a
@@ -615,10 +687,13 @@ final class Float {
                 return
             }
             if event.phase.contains(.began) {
+                // Corner and docking geometry uses the resting origin.
+                lowerPicture()
                 swipe = .zero
                 flicked = false
                 pulling = nil
                 pullFrom = window?.frame.origin ?? .zero
+                liftPicture()
             }
             swipe.dx += step.dx
             swipe.dy += step.dy
@@ -641,6 +716,7 @@ final class Float {
             // fingers, and on lifting either goes into the side — only a
             // sliver left — or springs back out.
             if pulling == nil, !flicked, let side = against(), outward(swipe, from: side), abs(swipe.dx) > 6 {
+                lowerPicture()
                 pulling = side
                 // A spring still settling from the last one would pull the
                 // other way, a frame at a time.
@@ -739,6 +815,8 @@ final class Float {
 
         private func dock(_ side: Side, from origin: NSPoint? = nil) {
             guard let window, let area else { return }
+            releasePointer()
+            lowerPicture()
             dockedFrom = origin ?? window.frame.origin
             docked = side
             glide(to: Float.docked(window.frame, right: side == .right, in: area, sliver: Controls.sliver))
@@ -755,6 +833,7 @@ final class Float {
         /// To the corner the swipe points at, a margin in from the edges of
         /// the screen's usable part.
         private func flick(_ way: CGVector) {
+            lowerPicture()
             guard let window, let area else { return }
             let target = Float.corner(for: window.frame, in: area, toward: way)
             guard target != window.frame.origin else { return }
@@ -833,14 +912,19 @@ final class Float {
 
         override func magnify(with event: NSEvent) {
             guard let window else { return }
-            if event.phase == .began { pinching = 0 }
+            if event.phase.contains(.began) {
+                lowerPicture()
+                stopGlide()
+                pinching = 0
+            }
+            if event.phase.contains(.cancelled) { pinching = 0; return }
             pinching += event.magnification
 
             // Every event would mean a window resize, a web view relayout and a
             // video re-fit sixty times a second, which is the stutter. Moving
             // in steps of a fiftieth is below what an eye reads as a jump and
             // an order of magnitude less work.
-            guard abs(pinching) > 0.02 else { return }
+            guard abs(pinching) > 0.02 || (event.phase.contains(.ended) && pinching != 0) else { return }
             let by = pinching
             pinching = 0
             resize(
@@ -852,7 +936,8 @@ final class Float {
 
         private func resize(to width: CGFloat, from was: NSRect, around anchor: NSPoint? = nil) {
             guard let window, was.width > 0 else { return }
-            let limit = NSScreen.main?.visibleFrame.width ?? 1600
+            let available = area?.size ?? NSSize(width: 1600, height: 1000)
+            let limit = min(available.width, available.height * was.width / was.height)
             // Keeps the shape: a video window that can be squashed is a video
             // window showing bars.
             let wide = min(max(window.minSize.width, width), limit * 0.85)
@@ -897,6 +982,7 @@ final class Float {
 
         private func tuckAway() {
             guard let window, tuckedFrom == nil, window.frame.width > 230 else { return }
+            finishInteraction()
             tuckedFrom = window.frame
             tuckedMin = window.minSize
             let wide: CGFloat = 220
