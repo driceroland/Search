@@ -3,7 +3,9 @@
 
 Build first (`./build.sh debug`), then `python3 Tests/space_gradient.py`. It
 uses the split suite's harness: started hidden in a world of its own, nothing
-shown, everything removed afterwards. Through the bench's `space` verb: a
+shown, everything removed afterwards. Through the bench's `space` verb (its
+`pick` is a choice in the Colour… picker, its `picker` what the picker rings
+and its preview says): a
 gradient set on one space washes the chrome only while that space is on
 screen, follows ⌃-switches and swipes, is kept beside the space's colour in
 spaces.json (a space without one is written as before), comes back after a
@@ -36,7 +38,11 @@ def saved():
 
 
 def menu(st):
-    return {i["title"]: i["on"] for i in st["colourMenu"]}
+    return [i["title"] for i in st["menu"]]
+
+
+def ringed(st):
+    return (st["picker"]["kind"], st["picker"]["ringed"], st["picker"]["preview"])
 
 
 def main():
@@ -44,16 +50,17 @@ def main():
         sv.setup(**{"spaces": True, "sidebar": True}); sv.launch()
         st = space()
         t.ok("one space, no wash", st["wash"] == "" and st["gradient"] == "", st)
-        t.ok("the Colour menu offers a gradient, unticked", menu(st).get("Gradient…") is False and "Remove Gradient" not in menu(st), menu(st))
+        t.ok("one Colour… item in the space's menu, no submenu", "Colour…" in menu(st) and "Colour" not in menu(st) and "Gradient…" not in menu(st), menu(st))
+        t.ok("picker: None ringed, the preview says no colour", ringed(st) == ("none", "None", "No colour"), st["picker"])
+        t.ok("picker: None and five colours, six ready-made gradients",
+             st["picker"]["colours"] == ["None", "Blue", "Green", "Orange", "Red", "Violet"] and len(st["picker"]["presets"]) == 6, st["picker"])
         space(action="new", name="Two"); time.sleep(0.8)
         space(action="colour", colour=1)
         st = space(action="gradient", colours=DUSK, angle=90.0, grain=True)
         t.ok("Two on screen with a gradient: washed with it", st["current"] == "Two" and st["wash"] == "Gradient", st["wash"])
         g = st["gradient"]
         t.ok("three colours, its angle and grain, drawn as 24 stops", len(g["colours"]) == 3 and g["angle"] == 90 and g["grain"] and g["stops"] == 24, g)
-        m = menu(st)
-        t.ok("menu: Gradient… ticked, no colour ticked, Remove offered",
-             m.get("Gradient…") and not any(m[c] for c in ["None", "Blue", "Green"]) and "Remove Gradient" in m, m)
+        t.ok("picker: a gradient of its own, nothing in the rows ringed", ringed(st) == ("custom", "", "Custom gradient"), st["picker"])
 
         disk = saved()
         t.ok("spaces.json: kept beside the colour", disk["Two"].get("gradient", {}).get("colours") == DUSK and disk["Two"]["colour"] == 1, disk["Two"])
@@ -78,7 +85,7 @@ def main():
 
         st = space(action="gradient")
         t.ok("removed: back to its colour", st["wash"] == "Blue" and st["gradient"] == "", st["wash"])
-        t.ok("menu: Blue ticked again, nothing to remove", menu(st).get("Blue") and not menu(st).get("Gradient…") and "Remove Gradient" not in menu(st), menu(st))
+        t.ok("picker: Blue ringed again", ringed(st) == ("colour", "Blue", "Blue"), st["picker"])
         t.ok("spaces.json: the gradient gone, the colour kept", "gradient" not in saved()["Two"] and saved()["Two"]["colour"] == 1, saved()["Two"])
 
         space(action="gradient", colours=DUSK[:2])
@@ -86,6 +93,19 @@ def main():
         t.ok("a colour picked replaces the gradient", st["wash"] == "Orange" and "gradient" not in saved()["Two"], st["wash"])
         st = space(action="gradient", colours=["#4285F5"])
         t.ok("one colour is no gradient", st["wash"] == "Orange", st["wash"])
+
+        # The picker's choices, as its swatches make them.
+        st = space(action="pick", choice="Dusk")
+        t.ok("a ready-made gradient: washed with it, ringed", st["wash"] == "Gradient" and ringed(st) == ("gradient", "Dusk", "Dusk"), st["picker"])
+        st = space(action="pick", choice="Green")
+        t.ok("a colour: the gradient goes", st["wash"] == "Green" and "gradient" not in saved()["Two"], st["wash"])
+        st = space(action="pick", choice="Custom")
+        t.ok("Custom from a colour: a first gradient of its own", st["wash"] == "Gradient" and st["picker"]["kind"] == "custom", st["picker"])
+        st = space(action="pick", choice="None")
+        t.ok("None: no wash, nothing kept", st["wash"] == "" and ringed(st)[0] == "none" and saved()["Two"]["colour"] == 0, st["wash"])
+        st = space(action="restore", colour=3, colours=DUSK)
+        t.ok("Escape: what it had back", st["wash"] == "Gradient" and saved()["Two"]["colour"] == 3, (st["wash"], saved()["Two"]))
+        space(action="restore", colour=3)
 
         # Kept across a relaunch.
         space(action="gradient", colours=DUSK, angle=180.0)

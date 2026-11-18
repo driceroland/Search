@@ -754,26 +754,8 @@ enum SpaceMenu {
         return plain?.withSymbolConfiguration(.init(paletteColors: [NSColor(tint)]))
     }
 
-    /// A dot of the colour for the Colour menu; an empty ring for none.
-    private static func swatch(_ colour: Int) -> NSImage {
-        let image = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
-            let dot = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
-            if colour > 0, Spaces.colours.indices.contains(colour) {
-                NSColor(Spaces.colours[colour]).setFill()
-                dot.fill()
-            } else {
-                NSColor.secondaryLabelColor.setStroke()
-                dot.lineWidth = 1
-                dot.stroke()
-            }
-            return true
-        }
-        image.accessibilityDescription = Spaces.colourNames.indices.contains(colour) ? Spaces.colourNames[colour] : nil
-        return image
-    }
-
     static func show(for browser: Browser) {
-        GradientPopover.anchor = NSEvent.mouseLocation
+        SpaceLookPopover.anchor = NSEvent.mouseLocation
         menu(for: browser).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
@@ -825,29 +807,11 @@ enum SpaceMenu {
         let icon = NSMenuItem(title: "Icon", action: nil, keyEquivalent: "")
         icon.submenu = icons
         menu.addItem(icon)
-        let colours = NSMenu()
-        let gradient = here.gradient?.usable == true
-        for (index, name) in Spaces.colourNames.enumerated() {
-            let choice = item(name, checked: !gradient && (here.colour == index || (index == 0 && here.tint == nil))) {
-                browser.setSpaceColour(here.id, to: index)
-            }
-            choice.image = swatch(index)
-            colours.addItem(choice)
-            if index == 0 { colours.addItem(.separator()) }
-        }
-        // Two or three colours instead (see SpaceGradient.swift), for
-        // whoever wants them; and back to the one colour.
-        colours.addItem(.separator())
-        colours.addItem(item("Gradient…", checked: gradient) {
+        // Everything the space can wear, in one popover (see SpaceLookPicker).
+        menu.addItem(item("Colour…") {
             // Once the menu has gone: a popover shown while it tracks closes with it.
-            DispatchQueue.main.async { GradientPopover.show(for: browser) }
+            DispatchQueue.main.async { SpaceLookPopover.show(for: browser) }
         })
-        if gradient {
-            colours.addItem(item("Remove Gradient") { browser.setSpaceGradient(here.id, to: nil) })
-        }
-        let colour = NSMenuItem(title: "Colour", action: nil, keyEquivalent: "")
-        colour.submenu = colours
-        menu.addItem(colour)
         // The order is the swipe's, and ⌃1–⌃9's.
         if let at = browser.spaces.firstIndex(where: { $0.id == here.id }) {
             if at > 0 { menu.addItem(item("Move Left") { browser.moveSpace(here.id, to: at - 1) }) }

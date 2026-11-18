@@ -2657,6 +2657,10 @@ final class Browser: NSObject, ObservableObject {
     /// Whether its rows are the session files' — the oldest window's — or
     /// its own line in windows.json.
     private(set) var usesFiles = false
+    /// Whether it has taken in the open tabs every window lists, and says
+    /// its own to the others (see Twins.swift); and whether it is about to.
+    var twinsJoined = false
+    var twinsDue = false
     /// The first browser does what is done once for the app.
     private static var booted = false
 
@@ -2756,6 +2760,15 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // And, with Same tabs in every window, the open tabs (Twins.swift).
+        NotificationCenter.default.publisher(for: Twins.changed)
+            .sink { [weak self] note in
+                guard let self, (note.object as? Browser) !== self,
+                      let space = note.userInfo?["space"] as? UUID else { return }
+                twinsChanged(in: space)
+            }
+            .store(in: &bag)
+
         // The spaces are every window's: one renamed, added or taken away in
         // another window is so here too.
         NotificationCenter.default.publisher(for: Spaces.changed)
@@ -2809,6 +2822,10 @@ final class Browser: NSObject, ObservableObject {
         // restored tabs or warm pages from other spaces.
         guard !websitePopup else { return }
         restoreSession()
+        // The open tabs every window lists, a turn from now: by then a
+        // window made for an extension's pop-up is known to be one, and has
+        // none of them (see joinTwins).
+        if prefs.mirrorsTabs { DispatchQueue.main.async { [weak self] in self?.joinTwins() } }
         // After the first frame, a space a turn: the other spaces' rows are
         // only for a swipe to show beside this one, and made here, every tab
         // of every space was made before the window could draw (see
@@ -2872,13 +2889,14 @@ final class Browser: NSObject, ObservableObject {
     /// The pins are every window's (see Pins.swift): a window new to this
     /// space has them too, before an empty tab.
     func restoreSession() {
-        let saved = readRow(spaceID)
+        let saved = twinned(readRow(spaceID), space: spaceID)
         tabGroups = (saved.groups ?? []).filter { group in
             saved.tabs.contains { $0.groupID == group.id }
         }
         let restored = restoreRow(saved, space: spaceID, groups: tabGroups)
         splits = restored.splits
         tabs += restored.tabs
+        twinsSoon()
         // No tab in front (a fresh start, see Session.startFresh): an empty
         // one beside the pins.
         let front = saved.tabs.isEmpty || saved.active < 0 ? nil
@@ -2936,6 +2954,17 @@ final class Browser: NSObject, ObservableObject {
                 }
                 guard !isPopup else { return }
                 if on { preloadSpaces() } else { leaveSpaces() }
+            }
+            .store(in: &bag)
+        // Same tabs in every window, switched: on, every window's open tabs
+        // come together, nothing lost; off, each window keeps what it has.
+        // Received on the next turn, once the setting has changed.
+        prefs.$mirrorsTabs
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] on in
+                guard let self, !isPopup, !retired else { return }
+                if on { joinTwins() } else { leaveTwins() }
             }
             .store(in: &bag)
         // Pins in every space, or Spaces, switched: every row takes the
@@ -3187,6 +3216,7 @@ final class Browser: NSObject, ObservableObject {
             for space in Array(parked.keys) { pinsChanged(in: space) }
         }
         writeRow(spaceID, session(tabs, active: activeID, groups: tabGroups, splits: splits), now: now)
+        twinsSoon()
     }
 
     // MARK: - pins, the same in every window
@@ -3738,7 +3768,7 @@ final class Browser: NSObject, ObservableObject {
         tabs = []
     }
 
-    private func session(_ tabs: [Tab], active id: Tab.ID?, groups: [TabGroup]? = nil, splits: [TabSplit] = [],
+    func session(_ tabs: [Tab], active id: Tab.ID?, groups: [TabGroup]? = nil, splits: [TabSplit] = [],
                          keeping: Bool = false) -> Session.Shape {
         var entries: [Session.Entry] = []
         // A row with nothing in front — a space not yet gone to since a fresh
@@ -3762,7 +3792,10 @@ final class Browser: NSObject, ObservableObject {
                 muted: tab.muted,
                 // Asked for only when the window goes: reading it for every
                 // tab at every save would be work for nothing.
-                keepsake: keeping ? tab.keepsake.map(Keepsake.init) : nil
+                keepsake: keeping ? tab.keepsake.map(Keepsake.init) : nil,
+                // Only with Same tabs in every window on: off, the file is
+                // what it always was.
+                twinID: prefs.mirrorsTabs && twinnable(tab) ? tab.twinID : nil
             ))
         }
         // The tab you were on isn't kept — a private one: the one kept just
@@ -3795,7 +3828,7 @@ final class Browser: NSObject, ObservableObject {
     /// Whether a tab goes into the session: not a private one or the
     /// bench's, and only a web page, local file or one of Search's own pages.
     /// A sleeping view is blank, so `pending` must win or its page disappears.
-    private func kept(_ tab: Tab) -> Bool {
+    func kept(_ tab: Tab) -> Bool {
         // A tab holding an extension's sign-in answer (Tab.hold) carries its
         // code in the address: that is never written down.
         let url = tab.pending ?? tab.address
@@ -3809,12 +3842,15 @@ final class Browser: NSObject, ObservableObject {
     func writeSession(now: Bool, space: UUID, row: Parked) {
         let groups = row.groups ?? readRow(space).groups
         writeRow(space, session(row.tabs, active: row.active, groups: groups, splits: row.splits), now: now)
+        twinsSoon()
     }
 
     /// The session written a moment from now, for other files.
     func writeSessionSoon() { rememberSession() }
 
     private func rememberSession() {
+        // The other windows hear at once; the file waits a moment.
+        twinsSoon()
         guard !remembering else { return }
         remembering = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
@@ -4458,6 +4494,9 @@ final class Browser: NSObject, ObservableObject {
         if floating == tab.id { land() }
         if pictured == tab.id { unpicture() }
         if floatPrevious { leaving() }
+        // Asleep here and read in another window since: it wakes where that
+        // window is (see Twins.swift).
+        catchUp(tab)
         activeID = tab.id
         tab.touch()
         // A tab brought back from last time, or waking from ⌘W while pinned,
@@ -5167,8 +5206,12 @@ final class Browser: NSObject, ObservableObject {
               target.map({ $0.profileID == profileID }) ?? true
         else { return }
         let destination = target ?? Browser(record: WindowRecord(space: spaceID))
-        detach(tab)
-        destination.receive(tab)
+        // With Same tabs in every window, it is there already: that window
+        // goes to it, and this one keeps it (see Twins.swift).
+        if !showTwin(tab, in: destination) {
+            detach(tab)
+            destination.receive(tab)
+        }
         if target == nil {
             // Dragged out: the new window where the tab was let go, its row
             // under the hand.
@@ -6146,7 +6189,7 @@ final class Browser: NSObject, ObservableObject {
     /// on screen: tabs with an address and no page yet, which cost next to
     /// nothing until one is looked at (see Spaces.swift).
     func loadRow(_ space: UUID) -> Parked {
-        let saved = readRow(space)
+        let saved = twinned(readRow(space), space: space)
         var restored = restoreRow(saved, space: space, groups: saved.groups ?? [])
         // As restoreSession has it: nothing in front after a fresh start, so
         // the space opens on an empty tab beside its pins (see enter); and a
@@ -6157,6 +6200,7 @@ final class Browser: NSObject, ObservableObject {
             restored.active = restored.tabs.first { $0.pin == nil }?.id ?? restored.tabs.first?.id
         }
         restored.groups = saved.groups
+        twinsSoon()
         return restored
     }
 
@@ -6182,6 +6226,7 @@ final class Browser: NSObject, ObservableObject {
             tab.muted = entry.muted
             tab.pin = entry.pin
             tab.pinID = entry.pin == nil ? nil : entry.pinID
+            tab.twinID = entry.pin == nil ? entry.twinID : nil
             tab.listed = entry.pin != nil && entry.listed == true
             tab.home = home
             tab.groupID = entry.pin == nil && groups.contains(where: { $0.id == entry.groupID })
@@ -6752,6 +6797,13 @@ final class Browser: NSObject, ObservableObject {
         tab.$muted
             .dropFirst()
             .sink { [weak self] _ in self?.rememberSession() }
+            .store(in: &bag)
+
+        // Named or grouped here: so in the other windows, with Same tabs in
+        // every window on (Twins.swift). Nothing otherwise.
+        tab.$name.dropFirst().map { _ in () }
+            .merge(with: tab.$groupID.dropFirst().map { _ in () })
+            .sink { [weak self] in self?.twinsSoon() }
             .store(in: &bag)
 
         tab.$title
@@ -8636,7 +8688,8 @@ extension Browser: WKDownloadDelegate {
         let asked = response.url.flatMap { namedDownloads.removeValue(forKey: $0) }
         let chosen = fetches.destination(for: download)
         let name = Browser.fileName(asked ?? suggestedFilename)
-        let file = chosen ?? whereToSave(name)
+        let folders = asked.map(Browser.downloadFolders) ?? []
+        let file = chosen ?? (folders.isEmpty || prefs.asksWhereToSave ? whereToSave(name) : saveInside(folders, name))
         guard let file else {
             if let ended = fetches.destinationCancelled(download) {
                 ended.owner.relinquish(download)
@@ -8750,6 +8803,28 @@ extension Browser: WKDownloadDelegate {
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK else { return nil }
         return panel.url
+    }
+
+    /// The folders in a name an extension asked for ("photos/2026/a.jpg"),
+    /// as Chrome's downloads.download makes them inside Downloads. Nothing
+    /// that could climb out: an absolute path, "..", "." or an empty part
+    /// leaves no folders, and the file lands in Downloads itself.
+    nonisolated static func downloadFolders(_ name: String) -> [String] {
+        let parts = name.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count > 1, !name.hasPrefix("/"), !name.hasPrefix("~") else { return [] }
+        let folders = Array(parts.dropLast())
+        guard folders.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains(":") }) else { return [] }
+        return folders
+    }
+
+    /// In those folders under Downloads, made if missing; Downloads itself
+    /// if they can't be.
+    private func saveInside(_ folders: [String], _ name: String) -> URL? {
+        let folder = folders.reduce(downloadsFolder) { $0.appendingPathComponent($1, isDirectory: true) }
+        guard folder.standardizedFileURL.path.hasPrefix(downloadsFolder.standardizedFileURL.path + "/"),
+              (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil
+        else { return Browser.free(name, in: downloadsFolder) }
+        return Browser.free(name, in: folder)
     }
 
     private static func fileName(_ name: String) -> String {

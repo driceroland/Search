@@ -70,6 +70,7 @@ enum SettingsIndex {
         .init(id: "newtabs", page: .tabs, title: "New tabs", icon: "plus.square"),
         .init(id: "memory", page: .tabs, title: "Memory", icon: "moon.zzz"),
         .init(id: "tabbar", page: .tabs, title: "In the tab bar", icon: "number"),
+        .init(id: "tabwindows", page: .tabs, title: "Windows", icon: "macwindow.on.rectangle"),
 
         .init(id: "search", page: .browsing, title: "Searching", icon: "magnifyingglass"),
         .init(id: "links", page: .browsing, title: "Links", icon: "link"),
@@ -95,6 +96,9 @@ enum SettingsIndex {
 
         .init(id: "updates", page: .about, title: "Updates", icon: "arrow.triangle.2.circlepath"),
         .init(id: "developer", page: .about, title: "Developer", icon: "hammer"),
+
+        // Drawn by ExtensionsPage itself; here so the find field reaches it.
+        .init(id: "extensions", page: .extensions, title: "Installed", icon: "puzzlepiece.extension"),
     ]
 
     static func group(_ id: String) -> SettingsGroup? { groups.first { $0.id == id } }
@@ -257,6 +261,10 @@ enum SettingsIndex {
               title: "Show the address on the tab you're on", detail: "Its site in place of its title; the title comes back under the pointer",
               more: "Look-alike names in other alphabets show as they really are, and plain http says Not secure. Off, the tab you're on still says so for those two.",
               keys: ["tabs.address"], words: ["url", "domain", "security", "address bar"]),
+        .init(id: "tabs.mirror", group: "tabwindows", icon: "rectangle.on.rectangle",
+              title: "Same tabs in every window", detail: "Each window lists the same open tabs in a space, as it lists the same pins",
+              more: "A tab opened, closed, moved, grouped or renamed in one window is so in the others. Each window shows the page on its own, so the same tab can be open in two windows at once. Private tabs stay in their window, and closing a window leaves its tabs in the others.",
+              keys: ["tabs.mirror"], words: ["mirror", "arc", "sync tabs", "shared tabs", "every window", "all windows", "same tabs", "windows"]),
 
         // Browsing
         .init(id: "search.engine", group: "search", icon: "magnifyingglass",
@@ -498,6 +506,12 @@ enum SettingsIndex {
         .init(id: "note.translate", group: "pages", icon: "translate",
               title: "Translate pages on this Mac", detail: "Always there: right-click a page › Translate Page",
               keys: ["translate.pages"], words: ["translate", "language"], kind: .note, findOnly: true),
+        .init(id: "extensions.sites", group: "extensions", icon: "globe",
+              title: "Where an extension runs", detail: "Each extension's Runs on: all sites, sites you name, or on click",
+              more: "Fewer sites means less memory on the rest. Right-click an extension's button to run it on the site you're on.",
+              keys: ["extensions.sites"],
+              words: ["site access", "sites", "permissions", "host", "on click", "activetab", "memory", "extension"],
+              kind: .note, findOnly: true),
         .init(id: "note.awake", group: "memory", icon: "sun.max",
               title: "Keep selected sites awake", detail: "Always there: Keep This Site Awake, on the site's card",
               keys: ["tabs.keepAwake"], words: ["awake", "sleep"], kind: .note, findOnly: true),
@@ -505,7 +519,7 @@ enum SettingsIndex {
               title: "Search a site from the address field", detail: "Always there: type red, then Tab, and search Reddit",
               keys: ["search.sites"], words: ["tab to search", "site search"], kind: .note, findOnly: true),
         .init(id: "note.spaceGradient", group: "spaces", icon: "paintpalette",
-              title: "A space's colour or gradient", detail: "Always there with Spaces: the space's menu › Colour, or Gradient… for two or three",
+              title: "A space's colour or gradient", detail: "Always there with Spaces: the space's menu › Colour…, one colour or a gradient",
               keys: ["spaces.gradient"], words: ["gradient", "theme", "colour", "color", "tint", "grain", "arc"], kind: .note, findOnly: true),
         .init(id: "note.sharedpins", group: "pins", icon: "pin",
               title: "Pins in every space", detail: "Always there with Spaces: right-click a pin › Keep in Every Space",
@@ -761,6 +775,7 @@ extension SettingsIndex {
             "float.flicks": prefs.floatFlicks,
             "arc": prefs.looksLikeArc,
             "profiles.oneWindow": prefs.profilesInOneWindow,
+            "tabs.mirror": prefs.mirrorsTabs,
             "always": [
                 "splitView": prefs.splitView, "tabs.groups": prefs.usesTabGroups,
                 "panel.sites": prefs.sitesInPanel, "translate": PageTranslator.enabled,
@@ -787,6 +802,9 @@ extension SettingsIndex {
         case "pins.keep":
             guard let on = value as? Bool else { return false }
             prefs.pinsKeepSite = on
+        case "tabs.mirror":
+            guard let on = value as? Bool else { return false }
+            prefs.mirrorsTabs = on
         case "pins.folders":
             guard let on = value as? Bool else { return false }
             prefs.pinFolders = on

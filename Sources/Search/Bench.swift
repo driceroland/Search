@@ -3793,6 +3793,21 @@ final class Bench {
             case "colour":
                 // The space on screen's colour, by index into Spaces.colours.
                 browser.setSpaceColour(browser.spaceID, to: request["colour"] as? Int ?? 0)
+            case "pick":
+                // A choice in the Colour… picker, by what it is called there:
+                // None, a colour, a ready-made gradient, or Custom.
+                let name = request["choice"] as? String ?? ""
+                let choice: SpaceLookChoice? = name == "None" ? SpaceLookChoice.none
+                    : name == "Custom" ? .custom
+                    : Spaces.colourNames.firstIndex(of: name).map(SpaceLookChoice.colour)
+                    ?? SpaceGradient.presets.firstIndex { $0.name == name }.map(SpaceLookChoice.preset)
+                guard let choice else { answer(["error": "no choice “\(name)” in the picker"]); return }
+                browser.chooseLook(browser.spaceID, choice)
+            case "restore":
+                // Escape in the picker: the look as it was, given as colour and gradient.
+                let colours = request["colours"] as? [String] ?? []
+                browser.restoreLook(browser.spaceID, colour: request["colour"] as? Int ?? 0,
+                                    gradient: colours.isEmpty ? nil : SpaceGradient(colours: colours))
             case "gradient":
                 // The space on screen's gradient, as the editor sets it:
                 // colours ("#RRGGBB"), angle and grain; no colours removes it.
@@ -3835,9 +3850,19 @@ final class Bench {
                 "looks": browser.spaces.map { space -> [String: Any] in
                     ["name": space.name, "colour": space.colour, "gradient": space.gradient?.colours ?? []]
                 },
-                // The Colour submenu, as it would open.
-                "colourMenu": SpaceMenu.menu(for: browser).items.first { $0.title == "Colour" }?.submenu?.items
-                    .filter { !$0.isSeparatorItem }.map { ["title": $0.title, "on": $0.state == .on] } ?? [],
+                // The Colour… picker as it would open on the space on screen
+                // (SpaceLookPicker): what is ringed and the preview's name.
+                "picker": { () -> [String: Any] in
+                    let kind: String, ringed: String
+                    switch browser.space.lookChoice {
+                    case .none: (kind, ringed) = ("none", "None")
+                    case .colour(let colour): (kind, ringed) = ("colour", Spaces.colourNames[colour])
+                    case .preset(let at): (kind, ringed) = ("gradient", SpaceGradient.presets[at].name)
+                    case .custom: (kind, ringed) = ("custom", "")
+                    }
+                    return ["kind": kind, "ringed": ringed, "preview": browser.space.lookName,
+                            "colours": ["None"] + Spaces.colourNames.dropFirst(), "presets": SpaceGradient.presets.map(\.name)]
+                }(),
                 "swipe": Double(browser.spaceSwipe),
                 // Each space off screen as a swipe draws it passing by
                 // (Parked.drawn): its groups, folded or not, and their tabs.
@@ -4096,7 +4121,7 @@ final class Bench {
             answer(["on": SiteStyles.shared.on, "css": SiteStyles.shared.css(on: host) ?? "",
                     "written": SiteStyles.shared.written(on: host), "editing": browser.styling ?? ""])
 
-        case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "capture", "capture-stop":
+        case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "ext-sites", "capture", "capture-stop":
             guard #available(macOS 15.4, *) else {
                 answer(["error": "extensions need macOS 15.4"])
                 return
@@ -4653,6 +4678,26 @@ final class Bench {
             }
             extensions.setPrivate(id, request["on"] as? Bool ?? true)
             answer(["private": context.hasAccessToPrivateData])
+        case "ext-sites":
+            // Where an extension runs (Settings › Extensions › Runs on): set
+            // with "mode" (all, some, click) and "hosts", or "here": true for
+            // the right-click's Run on This Site; read without them.
+            guard Store.testing else { answer(["error": "only in a test run"]); return }
+            guard let id = request["id"] as? String, let context = extensions.contexts[id] else {
+                answer(["error": "ext-sites needs a loaded extension's id"]); return
+            }
+            if let mode = (request["mode"] as? String).flatMap(SiteAccess.Mode.init(rawValue:)) {
+                let hosts = (request["hosts"] as? [String])?.compactMap(SiteAccess.host(from:)) ?? extensions.siteAccess(id).hosts
+                extensions.setSiteAccess(id, SiteAccess(mode: mode, hosts: hosts))
+            }
+            if request["here"] as? Bool == true { extensions.runHere(id) }
+            let access = extensions.siteAccess(id)
+            let reaches = (request["url"] as? String).flatMap(URL.init(string:)).map { context.hasAccess(to: $0) }
+            answer(["mode": access.mode.rawValue, "hosts": access.hosts, "runsHere": extensions.runsHere(id),
+                    "reaches": reaches.map { $0 as Any } ?? NSNull(),
+                    "denied": context.deniedPermissionMatchPatterns.keys.map(\.string).sorted(),
+                    "granted": context.grantedPermissionMatchPatterns.keys.map(\.string).sorted(),
+                    "clicked": (extensions.clickGrants[id] ?? [:]).values.map(\.host).sorted()])
         case "capture":
             // Extensions' screen recording: ids given, what is recording, who
             // may, and the last request with its answer.
