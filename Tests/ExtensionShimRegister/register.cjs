@@ -17,14 +17,16 @@ const scripting = state.root.chrome.scripting;
 scripting.registerContentScripts([
   { id: 'isolated', js: ['page.js'] },
   { id: 'main', js: ['page.js'], world: 'MAIN' },
-  { id: 'again', js: ['search-shim.js', 'page.js'] },
+  { id: 'again', js: ['search-shim-content.js', 'page.js'] },
+  { id: 'older', js: ['search-shim.js', 'page.js'] },
 ]);
 scripting.updateContentScripts([{ id: 'plain', js: ['page.js'] }]);
 const js = (name) => seen.find((entry) => entry[0] === name)[1].map((script) => script.js);
 assert.equal(JSON.stringify(js('register')), JSON.stringify([
-  ['search-shim.js', 'page.js'],
+  ['search-shim-content.js', 'page.js'],
   ['search-passkeys.js', 'page.js'],
-  ['search-shim.js', 'page.js'],
+  ['search-shim-content.js', 'page.js'],
+  ['search-shim-content.js', 'page.js'],
 ]));
-assert.equal(JSON.stringify(js('update')), JSON.stringify([['search-passkeys.js', 'search-shim.js', 'page.js']]));
-console.log('PASS runtime content scripts get the shim, and the page world gets only the passkey patch');
+assert.equal(JSON.stringify(js('update')), JSON.stringify([['search-passkeys.js', 'search-shim-content.js', 'page.js']]));
+console.log('PASS runtime content scripts get the content shim, and the page world gets only the passkey patch');

@@ -28,6 +28,14 @@ enum ExtensionShims {
     /// The name native messages to the browser itself go to.
     static let application = "search"
     nonisolated static let file = "search-shim.js"
+    /// What content scripts carry instead: the shim up to the point where a
+    /// content script's run of it returns, so the same code with nothing
+    /// after it. A frame parses whatever its content scripts carry, every
+    /// time it loads, once for each entry that names it; the whole shim is
+    /// 230 KB, almost all of it for the worker and the extension's pages,
+    /// and a content script never runs a line of that part (see contentShim).
+    nonisolated static let contentFile = "search-shim-content.js"
+    nonisolated static let contentEnd = "/* Search: a content script's shim ends here */"
     /// Search's passkey patch, put first in every script an extension runs in
     /// a page's own world (see Passkeys.swift, and `first` in the script).
     nonisolated static let passkeys = "search-passkeys.js"
@@ -67,6 +75,7 @@ enum ExtensionShims {
 
         let script = shim(for: folder).replacingOccurrences(of: "__SEARCH_WORKER_GENERATION__", with: String(workerGeneration))
         try script.write(to: folder.appendingPathComponent(file), atomically: true, encoding: .utf8)
+        try contentShim(script).write(to: folder.appendingPathComponent(contentFile), atomically: true, encoding: .utf8)
         try PasskeyRelay.page.write(to: folder.appendingPathComponent(passkeys), atomically: true, encoding: .utf8)
 
         // Native messaging is how the shim reaches the browser; user scripts
@@ -122,17 +131,21 @@ enum ExtensionShims {
             manifest["background"] = background
         }
 
-        // Content scripts too — there only Chrome's behaviour is mended. One
-        // that runs in the page's own world has Search's passkey patch before
-        // it: a password manager's there keeps a reference to
-        // navigator.credentials as it finds it, and that has to be Search's,
-        // not WebKit's (see Passkeys.swift).
+        // Content scripts too — there only Chrome's behaviour is mended, so
+        // they carry only the part of the shim a content script runs
+        // (contentShim). One that runs in the page's own world has Search's
+        // passkey patch before it instead: a password manager's there keeps
+        // a reference to navigator.credentials as it finds it, and that has
+        // to be Search's, not WebKit's (see Passkeys.swift). It used to carry
+        // the shim as well, which a page's world has no extension APIs for:
+        // the shim returned at its first check, after every frame of every
+        // page had parsed all of it.
         //
         // Entries that run in the same place at the same time share one copy
         // rather than each carrying its own: WebKit parses a content script
-        // once per entry per frame, and the shim is 200 KB, so a manifest
-        // with three <all_urls> entries paid for it three times in every
-        // frame of a page. Only `matches` is pooled, and only between entries
+        // once per entry per frame, and even a content script's part of the
+        // shim is 70 KB, so a manifest with three <all_urls> entries paid for
+        // it three times in every frame of a page. Only `matches` is pooled, and only between entries
         // that agree on everything else, so the shared copy never reaches a
         // page the extension's own scripts would not: Catppuccin's one entry
         // names eight forges, and would otherwise have carried the shim
@@ -155,8 +168,8 @@ enum ExtensionShims {
             var own: [[String: Any]] = []
             for var entry in entries {
                 guard var js = entry["js"] as? [String] else { own.append(entry); continue }
-                if entry["css"] == nil, js == [file] || js == [passkeys, file] { continue }
-                js.removeAll { $0 == file || $0 == passkeys }
+                if entry["css"] == nil, [[file], [passkeys, file], [contentFile], [passkeys, contentFile]].contains(js) { continue }
+                js.removeAll { $0 == file || $0 == contentFile || $0 == passkeys }
                 if js.isEmpty, entry["css"] == nil { continue }
                 entry["js"] = js
                 own.append(entry)
@@ -197,14 +210,17 @@ enum ExtensionShims {
                 guard let pool = pools[key] else { continue }
                 var entry = pool.place
                 entry["matches"] = pool.matches
-                entry["js"] = (pool.place["world"] as? String)?.uppercased() == "MAIN" ? [passkeys, file] : [file]
+                entry["js"] = (pool.place["world"] as? String)?.uppercased() == "MAIN" ? [passkeys] : [contentFile]
                 shimmed.append(entry)
             }
             manifest["content_scripts"] = shimmed + own.map { entry -> [String: Any] in
                 var entry = entry
                 guard var js = entry["js"] as? [String], !shared.contains(place(entry)) else { return entry }
-                js.insert(file, at: 0)
-                if (entry["world"] as? String)?.uppercased() == "MAIN" { js.insert(passkeys, at: 0) }
+                if (entry["world"] as? String)?.uppercased() == "MAIN" {
+                    js.insert(passkeys, at: 0)
+                } else {
+                    js.insert(contentFile, at: 0)
+                }
                 entry["js"] = js
                 return entry
             }
@@ -452,6 +468,23 @@ enum ExtensionShims {
             .replacingOccurrences(of: "__SEARCH_SCRIPTS__", with: shipped)
             .replacingOccurrences(of: "__SEARCH_CHROME__", with: Crx.chromeVersion)
             .replacingOccurrences(of: "__SEARCH_VERBOSE__", with: Store.testing ? "true" : "false")
+    }
+
+    /// The shim as a content script runs it: everything up to the `return`
+    /// that ends a content script's run, then the function closed. Nothing
+    /// after that point is declared before it (no function declarations to
+    /// hoist; the names after it are only ever read after it), so a content
+    /// script does exactly what it did with the whole file. Without the
+    /// mark, the whole shim, as before.
+    ///
+    /// A frame often gets it more than once, from each entry that carries
+    /// it (uBlock Origin Lite registers two for every frame); every copy
+    /// after the first returns at its first check. Asked before the
+    /// function rather than inside it, that check spares those copies
+    /// compiling the function at all: it is only read, not built.
+    nonisolated static func contentShim(_ full: String) -> String {
+        guard let end = full.range(of: contentEnd) else { return full }
+        return "if (!globalThis.__searchShim) " + String(full[..<end.lowerBound]) + "})();\n"
     }
 
     /// Defines only what is missing, so the day WebKit implements an API,
@@ -1747,6 +1780,7 @@ enum ExtensionShims {
         }
         return;
       }
+      /* Search: a content script's shim ends here */
 
       // An extension's page framed in a website, as Vimium's Vomnibar is:
       // its content script focuses the frame on a key press, and the page
@@ -3445,8 +3479,11 @@ enum ExtensionShims {
           if (!s || !Array.isArray(s.js)) return s;
           const world = String(s.world || "").toUpperCase();
           const before = world === "MAIN" ? ["search-passkeys.js"]
-            : updating && !world ? ["search-passkeys.js", "search-shim.js"] : ["search-shim.js"];
-          return { ...s, js: [...before.filter((file) => !s.js.includes(file)), ...s.js] };
+            : updating && !world ? ["search-passkeys.js", "search-shim-content.js"] : ["search-shim-content.js"];
+          // An older Search's whole shim, named by a registration it kept,
+          // gives way to the content script's part of it.
+          const js = s.js.filter((file) => file !== "search-shim.js");
+          return { ...s, js: [...before.filter((file) => !js.includes(file)), ...js] };
         }) : scripts;
         for (const name of ["registerContentScripts", "updateContentScripts"]) {
           const original = scripting[name];
