@@ -170,6 +170,18 @@ extension Browser {
         writeSession(now: true)
     }
 
+    /// A folder carried by its heading and let go (PinTree.folderPlace):
+    /// into another, out to the top, or before another folder, if it fits.
+    func movePinFolder(_ id: UUID, to place: PinTree.FolderPlace) {
+        let folders = pinFolders
+        guard PinTree.canMove(id, into: place.parent, in: folders) else { return }
+        let moved = PinTree.moving(id, to: place, in: folders)
+        guard moved != folders else { return }
+        savePinFolders(moved)
+        arrangePinFolders()
+        writeSession(now: true)
+    }
+
     /// A pinned row into a folder (nil: the top), beside `anchor`, or at the
     /// end of that folder's pins.
     func movePin(_ tab: Tab, into folder: UUID?, anchor: Tab.ID? = nil, after: Bool = false) {

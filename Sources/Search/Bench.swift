@@ -3704,8 +3704,55 @@ final class Bench {
                     window.contentView = nil
                 }
                 return
+            case "carry":
+                // A folder carried by its heading and let go, as the column's
+                // drag does it: the column drawn off screen, the place worked
+                // out from where its lines were drawn (PinTree.folderPlace),
+                // and the folder moved there. "over": a folder's name or a
+                // pin's id; "part": "top" (its upper third) or "middle"; or
+                // "at": "above" or "below" every line.
+                guard let folder = named("name") else { answer(["error": "no folder “\(request["name"] as? String ?? "")”"]); return }
+                let width = Double(browser.prefs.columnWidth)
+                let host = NSHostingView(rootView: SideBar(browser: browser, prefs: browser.prefs).frame(width: width, height: 2000))
+                host.frame = NSRect(x: 0, y: 0, width: width, height: 2000)
+                let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+                window.contentView = host
+                SideBar.drawnPinFrames = [:]
+                host.layoutSubtreeIfNeeded()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    host.layoutSubtreeIfNeeded()
+                    defer { window.contentView = nil }
+                    let lines = browser.pinRowLines()
+                    let measured = lines.compactMap { line -> (line: PinTree.Line, frame: CGRect)? in
+                        guard let rect = SideBar.drawnPinFrames[line.id] else { return nil }
+                        switch line {
+                        case .folder(let folder, let depth): return (.folder(folder, depth: depth), rect)
+                        case .pin(let tab, let depth): return (.pin(tab.id, depth: depth), rect)
+                        case .item(let item, let folder, let depth): return (.item(item, folder: folder, depth: depth), rect)
+                        }
+                    }
+                    var owners: [UUID: UUID?] = [:]
+                    for line in lines { if case .pin(let tab, _) = line { owners[tab.id] = tab.everywhere ? nil : tab.pinFolder } }
+                    let y: CGFloat
+                    switch request["at"] as? String {
+                    case "above": y = (measured.first?.frame.minY ?? 0) - 4
+                    case "below": y = (measured.last?.frame.maxY ?? 0) + 4
+                    default:
+                        let over = named("over")?.id ?? pinned("over")?.id
+                        guard let over, let rect = SideBar.drawnPinFrames[over] else {
+                            answer(["error": "nothing drawn for “\(request["over"] as? String ?? "")”"]); return
+                        }
+                        y = request["part"] as? String == "top" ? rect.minY + 2 : rect.midY + 2
+                    }
+                    let place = PinTree.folderPlace(y: y, lines: measured, folders: browser.pinFolders,
+                                                    pinFolder: owners, carrying: folder.id)
+                    if let place { browser.movePinFolder(folder.id, to: place) }
+                    let name = { (id: UUID?) -> Any in id.flatMap { id in browser.pinFolders.first { $0.id == id }?.name } ?? NSNull() }
+                    answer(state(["place": place.map { ["parent": name($0.parent), "before": name($0.before)] as [String: Any] } ?? NSNull()]))
+                }
+                return
             default:
-                answer(["error": "pinfolder: state|on|off|pin|new|move|fold|open|rename|nest|delete|live|refresh|openitem|drawn"]); return
+                answer(["error": "pinfolder: state|on|off|pin|new|move|fold|open|rename|nest|delete|live|refresh|openitem|drawn|carry"]); return
             }
             answer(state())
 

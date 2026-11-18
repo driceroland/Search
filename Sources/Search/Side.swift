@@ -57,6 +57,8 @@ struct SideBar: View {
     @State private var pinLineFrames = PinLineFrames()
     /// Where a pin carried among the folders would go (see PinTree.place).
     @State private var folderDrop: PinTree.Place?
+    /// Where a folder carried by its heading would go (PinTree.folderPlace).
+    @State private var folderMove: PinTree.FolderPlace?
     /// Whether this space's rows fit under the pins without scrolling: set
     /// only when the answer changes, from the room under the pins and what
     /// the rows add up to, which are kept where changing them draws nothing.
@@ -435,6 +437,8 @@ struct SideBar: View {
     @MainActor static var drawnPinLines: [[Any]] = []
     /// Where each of those lines was drawn, in the rows' own space. Test runs only.
     @MainActor static var drawnPinFrames: [UUID: CGRect] = [:]
+    /// Where those lines' own space starts down the window. Test runs only.
+    @MainActor static var drawnPinTop: CGFloat?
 
     /// Another space's rows, drawn with the same pieces as this one's so the
     /// two read as one column while they pass — and nothing to press until
@@ -721,16 +725,30 @@ struct SideBar: View {
             return rowHeight + SideBar.gap
         }
         let drop = folderDrop
+        let move = folderMove
+        let moveMark = Self.folderMoveMark(move, lines: lines)
         return VStack(spacing: SideBar.gap) {
             ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                 switch line {
                 case .folder(let folder, let depth):
                     PinFolderHeading(browser: browser, prefs: prefs, folder: folder, depth: depth, compact: icons,
-                                     target: drop?.folder == folder.id && drop?.anchor == nil)
+                                     target: (drop?.folder == folder.id && drop?.anchor == nil)
+                                        || (move != nil && move?.parent == folder.id && move?.before == nil))
+                        .overlay(alignment: moveMark?.after == true ? .bottom : .top) {
+                            if let moveMark, moveMark.id == folder.id {
+                                PinFolderMark().offset(y: (moveMark.after ? 1 : -1) * (SideBar.gap / 2 + 1))
+                            }
+                        }
                         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
                             pinLineFrames.rects[folder.id] = $0
                             if Store.testing { SideBar.drawnPinFrames[folder.id] = $0 }
                         }
+                        // Carried by its heading, as a pinned row is, and put
+                        // down where let go: into a folder, out of one, or
+                        // before another (PinTree.folderPlace).
+                        .modifier(Carried(index: index, steps: lineSteps, vertical: true, space: "listed",
+                                          cross: { folderMoveCross(folder, $0) },
+                                          land: { folderMoveLand(folder, $0) }) { _ in })
                 case .item(let item, _, let depth):
                     // A live folder's post: opened, never carried.
                     FeedItemRow(browser: browser, prefs: prefs, item: item, depth: depth, compact: icons)
@@ -755,6 +773,11 @@ struct SideBar: View {
                             PinFolderMark().offset(y: (drop.after ? 1 : -1) * (SideBar.gap / 2 + 1))
                         }
                     }
+                    .overlay(alignment: moveMark?.after == true ? .bottom : .top) {
+                        if let moveMark, moveMark.id == tab.id {
+                            PinFolderMark().offset(y: (moveMark.after ? 1 : -1) * (SideBar.gap / 2 + 1))
+                        }
+                    }
                     .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
                         pinLineFrames.rects[tab.id] = $0
                         if Store.testing { SideBar.drawnPinFrames[tab.id] = $0 }
@@ -770,11 +793,19 @@ struct SideBar: View {
         }
         .coordinateSpace(name: "listed")
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.listed = $0 }
+        .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { if Store.testing { SideBar.drawnPinTop = $0 } }
         .padding(.bottom, lines.isEmpty ? 0 : SideBar.gap)
     }
 
     /// Where a pin let go at `y` in the rows' own space would go.
     private func folderPlace(for id: UUID, y: CGFloat) -> PinTree.Place? {
+        let measured = measuredPinLines()
+        return PinTree.place(y: y, lines: measured.lines, folders: measured.folders, carrying: id)
+    }
+
+    /// The pin folders' lines as measured, for where something let go
+    /// among them goes.
+    private func measuredPinLines() -> (lines: [(line: PinTree.Line, frame: CGRect)], folders: [UUID: UUID?]) {
         let lines = browser.pinRowLines()
         let measured = lines.compactMap { line -> (line: PinTree.Line, frame: CGRect)? in
             guard let rect = pinLineFrames.rects[line.id] else { return nil }
@@ -786,7 +817,36 @@ struct SideBar: View {
         }
         var folders: [UUID: UUID?] = [:]
         for line in lines { if case .pin(let tab, _) = line { folders[tab.id] = tab.everywhere ? nil : tab.pinFolder } }
-        return PinTree.place(y: y, lines: measured, folders: folders, carrying: id)
+        return (measured, folders)
+    }
+
+    /// Where the mark for a carried folder goes: over the folder it would
+    /// go before; going last at the top, over the first pin there, or under
+    /// the last line. Into a folder, that folder's heading is lit instead.
+    static func folderMoveMark(_ place: PinTree.FolderPlace?, lines: [PinRowLine]) -> (id: UUID, after: Bool)? {
+        guard let place else { return nil }
+        if let before = place.before { return (before, false) }
+        guard place.parent == nil else { return nil }
+        if let top = lines.first(where: { if case .pin(_, 0) = $0 { return true }; return false }) { return (top.id, false) }
+        return lines.last.map { ($0.id, true) }
+    }
+
+    /// A folder carried by its heading: the place it would go. It stays
+    /// among the pinned rows, so no other block takes it.
+    private func folderMoveCross(_ folder: PinFolder, _ point: CGPoint) -> Bool {
+        let measured = measuredPinLines()
+        let place = PinTree.folderPlace(y: point.y, lines: measured.lines, folders: browser.pinFolders,
+                                        pinFolder: measured.folders, carrying: folder.id)
+        if folderMove != place { withAnimation(Motion.settle) { folderMove = place } }
+        return true
+    }
+
+    private func folderMoveLand(_ folder: PinFolder, _ point: CGPoint?) -> Bool {
+        let place = folderMove
+        if folderMove != nil { withAnimation(Motion.settle) { folderMove = nil } }
+        guard point != nil, let place else { return true }
+        withAnimation(Motion.settle) { browser.movePinFolder(folder.id, to: place) }
+        return true
     }
 
     private func showFolderDrop(_ place: PinTree.Place?) {

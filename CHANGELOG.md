@@ -34,6 +34,7 @@ in [ROADMAP.md](ROADMAP.md).
 - A pin closed, put down or put to sleep while its page was still loading no longer spins on its row for good. The page's view was torn down after what listened to it, so its last "done loading" was never heard.
 - Folders in pinned rows are as tall as the tab rows beside them, their folder icon as large as a tab's icon and their name as large as a tab's title, and they follow Settings › Appearance › Roomier tabs. They were a smaller group heading's size. `python3 Tests/pin_folders.py` checks it.
 - Opening a pin folder opens it in place. When it held more pins than the column had room for, the column started scrolling and jumped down to the tab you were on, and the folder's own row had to be scrolled back to. `python3 Tests/pin_folder_scroll.py` checks it.
+- A folder in the pinned rows can be moved by dragging its row, as a pinned row is: let go on the top of another folder's row to put it before that folder, on the rest of it to put it inside, or among the pins of a folder (or at the top) to move it there. Nested folders move the same way, and a folder never goes inside itself or deeper than three levels. Before, only the right-click menu could move one. `python3 Tests/pin_folders.py` checks it.
 
 ### Added
 

@@ -265,6 +265,73 @@ enum PinTree {
         }
     }
 
+    // MARK: - a folder let go among the rows
+
+    /// Where a folder carried by its heading goes: into `parent` (nil: the
+    /// top), before the folder `before` there, or with none after that
+    /// level's other folders (a level's folders come before its pins).
+    struct FolderPlace: Equatable {
+        var parent: UUID?
+        var before: UUID? = nil
+    }
+
+    /// The place for the folder `carrying` let go at `y`, as `place` works
+    /// one out for a pin. Over another folder's heading: before it in the
+    /// heading's upper third, into it below (a live folder: before it
+    /// only). Over a pin: in that pin's folder, after its folders. Above
+    /// every line: first at the top; below them all: last at the top. Over
+    /// itself, anything inside it, between lines, or where it would go too
+    /// deep (canMove): nil, nothing moves. The carried heading's own line
+    /// is left out: it goes along under the hand, over the lines it passes.
+    static func folderPlace(y: CGFloat, lines: [(line: Line, frame: CGRect)], folders: [PinFolder],
+                            pinFolder: [UUID: UUID?], carrying: UUID) -> FolderPlace? {
+        let folders = sanitized(folders)
+        let lines = lines.filter { if case .folder(let folder, _) = $0.line { return folder.id != carrying }; return true }
+        guard folders.contains(where: { $0.id == carrying }), let first = lines.first, let last = lines.last else { return nil }
+        func inside(_ id: UUID?) -> Bool {
+            guard let id else { return false }
+            return id == carrying || ancestors(of: id, in: folders).contains(carrying)
+        }
+        func fits(_ place: FolderPlace) -> FolderPlace? {
+            canMove(carrying, into: place.parent, in: folders) ? place : nil
+        }
+        if y < first.frame.minY {
+            return fits(FolderPlace(parent: nil, before: folders.first { $0.parent == nil && $0.id != carrying }?.id))
+        }
+        if y > last.frame.maxY { return fits(FolderPlace(parent: nil)) }
+        guard let hit = lines.first(where: { y >= $0.frame.minY && y <= $0.frame.maxY }) else { return nil }
+        switch hit.line {
+        case .folder(let folder, _):
+            guard !inside(folder.id) else { return nil }
+            if folder.isLive || y < hit.frame.minY + hit.frame.height / 3 {
+                return fits(FolderPlace(parent: folder.parent, before: folder.id))
+            }
+            return fits(FolderPlace(parent: folder.id))
+        case .pin(let id, _):
+            let parent = pinFolder[id] ?? nil
+            guard !inside(parent) else { return nil }
+            return fits(FolderPlace(parent: parent))
+        case .item:
+            return nil
+        }
+    }
+
+    /// The folders with `id` moved to `place`: its parent changed, and put
+    /// before `place.before` or after the other folders of that level.
+    static func moving(_ id: UUID, to place: FolderPlace, in folders: [PinFolder]) -> [PinFolder] {
+        var folders = folders
+        guard let index = folders.firstIndex(where: { $0.id == id }), place.before != id else { return folders }
+        var folder = folders.remove(at: index)
+        folder.parent = place.parent
+        if let before = place.before, let at = folders.firstIndex(where: { $0.id == before }) {
+            folders.insert(folder, at: at)
+        } else {
+            let at = folders.lastIndex { $0.parent == place.parent }.map { $0 + 1 } ?? folders.count
+            folders.insert(folder, at: at)
+        }
+        return folders
+    }
+
     /// The folders less any not in `keeping` that hold no pin, directly or
     /// in a folder inside: an import that found every page of a folder
     /// already pinned makes no empty folder for it.

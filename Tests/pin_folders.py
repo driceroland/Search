@@ -46,6 +46,26 @@ try:
         t.ok(f"{mode}: a folder row is as tall as a tab row ({d.get('row')})",
              folders_h == pins_h == {d.get("row")}, hs)
     pf(action="drawn", roomy=False)
+    # A folder carried by its heading: out of its folder, reordered, back in.
+    def tops(st): return [x[2] for x in st.get("lines") or [] if x[0] == "folder" and x[1] == 0]
+    st = pf(action="carry", name="Docs", over=c)
+    parent = {f["name"]: f["parent"] for f in st["folders"]}
+    t.ok("carried over a pin at the top: Docs out of Work", parent.get("Docs") is None, st.get("place"))
+    t.ok("…after the top's folders", tops(st) == ["Work", "Docs"], tops(st))
+    st = pf(action="carry", name="Docs", at="above")
+    t.ok("carried above every line: Docs first", tops(st) == ["Docs", "Work"], tops(st))
+    st = pf(action="carry", name="Work", over="Docs", part="top")
+    t.ok("carried onto the top of Docs's heading: Work before it", tops(st) == ["Work", "Docs"], tops(st))
+    st = pf(action="carry", name="Work", over="Docs")
+    parent = {f["name"]: f["parent"] for f in st["folders"]}
+    t.ok("carried onto the middle of Docs's heading: Work into Docs", parent.get("Work") == "Docs", st.get("place"))
+    st = pf(action="carry", name="Docs", over=b)
+    parent = {f["name"]: f["parent"] for f in st["folders"]}
+    t.ok("never into a folder inside itself", parent.get("Docs") is None and st.get("place") is None, st.get("place"))
+    st = pf(action="carry", name="Work", at="below")
+    st = pf(action="carry", name="Docs", over="Work")
+    parent = {f["name"]: f["parent"] for f in st["folders"]}
+    t.ok("…and back: Docs into Work", parent.get("Docs") == "Work" and parent.get("Work") is None, parent)
     pf(action="fold", name="Work")
     st = pf(action="state"); flat2 = [str(x) for x in st.get("lines") or []]
     t.ok("folded: fewer rows drawn", len(flat2) < len(flat), (flat, flat2))

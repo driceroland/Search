@@ -188,6 +188,79 @@ final class PinFoldersTests: XCTestCase {
                        PinTree.Place(folder: nil, anchor: a.id))
     }
 
+    // MARK: - a folder carried by its heading
+
+    /// Work at 0–30 holding Docs at 32–62 (its pin B at 64–94), then Home
+    /// at 96–126, then the pin A at 128–158.
+    private func carried(_ work: PinFolder, _ docs: PinFolder, _ home: PinFolder, _ b: PinDef, _ a: PinDef)
+        -> [(line: PinTree.Line, frame: CGRect)] {
+        [(.folder(work, depth: 0), CGRect(x: 0, y: 0, width: 200, height: 30)),
+         (.folder(docs, depth: 1), CGRect(x: 0, y: 32, width: 200, height: 30)),
+         (.pin(b.id, depth: 2), CGRect(x: 0, y: 64, width: 200, height: 30)),
+         (.folder(home, depth: 0), CGRect(x: 0, y: 96, width: 200, height: 30)),
+         (.pin(a.id, depth: 0), CGRect(x: 0, y: 128, width: 200, height: 30))]
+    }
+
+    func testAFolderLetGoOverAHeadingGoesBeforeItOrIntoIt() {
+        let work = folder("Work"), docs = folder("Docs", in: work.id), home = folder("Home")
+        let b = def("B", folder: docs.id), a = def("A")
+        let lines = carried(work, docs, home, b, a)
+        let all = [work, docs, home]
+        let owners: [UUID: UUID?] = [b.id: docs.id, a.id: nil]
+        // Home over Work's upper third: before it, at the top; lower: into it.
+        XCTAssertEqual(PinTree.folderPlace(y: 4, lines: lines, folders: all, pinFolder: owners, carrying: home.id),
+                       PinTree.FolderPlace(parent: nil, before: work.id))
+        XCTAssertEqual(PinTree.folderPlace(y: 20, lines: lines, folders: all, pinFolder: owners, carrying: home.id),
+                       PinTree.FolderPlace(parent: work.id))
+        // Docs, nested, carried out over a pin at the top: to the top.
+        XCTAssertEqual(PinTree.folderPlace(y: 140, lines: lines, folders: all, pinFolder: owners, carrying: docs.id),
+                       PinTree.FolderPlace(parent: nil))
+        // Docs before Work: reordered at the top.
+        XCTAssertEqual(PinTree.folderPlace(y: -5, lines: lines, folders: all, pinFolder: owners, carrying: docs.id),
+                       PinTree.FolderPlace(parent: nil, before: work.id))
+        // Home over B, in Docs: into Docs.
+        XCTAssertEqual(PinTree.folderPlace(y: 70, lines: lines, folders: all, pinFolder: owners, carrying: home.id),
+                       PinTree.FolderPlace(parent: docs.id))
+    }
+
+    func testAFolderNeverGoesIntoItselfOrTooDeep() {
+        let work = folder("Work"), docs = folder("Docs", in: work.id), home = folder("Home")
+        let b = def("B", folder: docs.id), a = def("A")
+        let lines = carried(work, docs, home, b, a)
+        let owners: [UUID: UUID?] = [b.id: docs.id, a.id: nil]
+        // Work over its own Docs, or a pin inside it: nothing.
+        XCTAssertNil(PinTree.folderPlace(y: 50, lines: lines, folders: [work, docs, home], pinFolder: owners, carrying: work.id))
+        XCTAssertNil(PinTree.folderPlace(y: 70, lines: lines, folders: [work, docs, home], pinFolder: owners, carrying: work.id))
+        // Work let go where it was: it stays where it is drawn.
+        let still = PinTree.folderPlace(y: 10, lines: lines, folders: [work, docs, home], pinFolder: owners, carrying: work.id)
+        let kept = still.map { PinTree.moving(work.id, to: $0, in: [work, docs, home]) } ?? [work, docs, home]
+        XCTAssertEqual(PinTree.lines(pins: [], folders: kept), PinTree.lines(pins: [], folders: [work, docs, home]))
+        // Home holding two levels can't go into Docs (2 deep): 2 + 2 > 3.
+        let inner = folder("Inner", in: home.id)
+        XCTAssertNil(PinTree.folderPlace(y: 50, lines: lines, folders: [work, docs, home, inner], pinFolder: owners, carrying: home.id))
+        // Between lines: nothing.
+        XCTAssertNil(PinTree.folderPlace(y: 31, lines: lines, folders: [work, docs, home], pinFolder: owners, carrying: home.id))
+    }
+
+    func testMovingAFolderReordersItAmongItsLevel() {
+        let work = folder("Work"), docs = folder("Docs", in: work.id), home = folder("Home"), more = folder("More")
+        let all = [work, docs, home, more]
+        // More before Work.
+        XCTAssertEqual(PinTree.moving(more.id, to: .init(parent: nil, before: work.id), in: all).map(\.name),
+                       ["More", "Work", "Docs", "Home"])
+        // Work after the top's folders.
+        let last = PinTree.moving(work.id, to: .init(parent: nil), in: all)
+        XCTAssertEqual(PinTree.lines(pins: [], folders: last).compactMap { line -> String? in
+            if case .folder(let f, _) = line { return f.name }; return nil
+        }, ["Home", "More", "Work", "Docs"])
+        // Home into Work, after Docs.
+        let into = PinTree.moving(home.id, to: .init(parent: work.id), in: all)
+        XCTAssertEqual(into.first { $0.id == home.id }?.parent, work.id)
+        XCTAssertEqual(PinTree.lines(pins: [], folders: into).compactMap { line -> String? in
+            if case .folder(let f, _) = line { return f.name }; return nil
+        }, ["Work", "Docs", "Home", "More"])
+    }
+
     func testOrderedIDsOpenFoldedFolders() {
         let work = folder("Work", collapsed: true)
         let a = def("A"), b = def("B", folder: work.id)
