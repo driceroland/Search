@@ -115,6 +115,19 @@ try:
     front = next((x for x in s["tabs"] if x["id"] == s["active"]), {})
     t.ok("…and Return runs it rather than searching the web",
          s["up"] is False and not front.get("address", "").startswith("http"), front)
+
+    # Open in a small window (Arc's ⌥⌘N, Little Arc): off unless asked for.
+    t.ok("small window: off unless asked for", la()["little"] is False)
+    la("little", on=True)
+    la("fire")
+    la("type", text=f"{sv.BASE}/launcher-little")
+    before = len(la()["tabs"])
+    s = la("submit")
+    t.ok("small window on: Return opens the page in a small window",
+         s["up"] is False and f"{sv.BASE}/launcher-little" in s["littles"], s.get("littles"))
+    t.ok("…and no new tab in Search's window", len(s["tabs"]) == before, s["tabs"])
+    sv.cmd({"do": "little", "what": "close"})
+    la("little", on=False)
 finally:
     t.done()
     sv.finish()

@@ -434,6 +434,11 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
             let browser = Browsers.ensureWindow()
             browser.show(page)
             Self.bringUp(browser)
+        } else if Shared.prefs.launcherLittle {
+            // In a small window over the app you're in, as a link from
+            // another app can open (Settings › From any app).
+            Links.openLittle(url, for: target)
+            return
         } else if let open = openTab(for: url, in: target) {
             // Already open — typed out, finished by the grey ending, or a row
             // lower than the open pages reach: that tab, not a second one.

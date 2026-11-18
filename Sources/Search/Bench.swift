@@ -3575,13 +3575,15 @@ final class Bench {
             // ⇧⌘Space, as Settings offers it, or "none".
             case "key": prefs.launcherKey = (request["key"] as? String) == "none" ? nil : .suggested
             case "fire": launcher.toggle()
+            // Return to a small window (Settings › From any app).
+            case "little": prefs.launcherLittle = request["on"] as? Bool ?? true
             case "type": launcher.type(request["text"] as? String ?? "")
             case "pick": launcher.picked = request["index"] as? Int
             case "submit": launcher.submit()
             case "escape": launcher.dismiss()
             case "state": break
             default:
-                answer(["error": "launcher takes on, key, fire, type, pick, submit, escape or state"])
+                answer(["error": "launcher takes on, key, little, fire, type, pick, submit, escape or state"])
                 return
             }
             // A turn later, once the switch's and the key's sinks have run.
@@ -3590,6 +3592,8 @@ final class Bench {
                 answer([
                     "on": prefs.launcher,
                     "key": prefs.launcherKey?.combo.display ?? "",
+                    "little": prefs.launcherLittle,
+                    "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" },
                     "wants": launcher.wants,
                     "registered": HotKey.isSet,
                     "up": launcher.up,

@@ -481,6 +481,10 @@ enum SettingsIndex {
         .init(id: "launcher.key", group: "anywhere", icon: "keyboard",
               title: "Key", detail: "Press it in any app to bring the address field up",
               keys: ["launcher.key"], words: ["hotkey", "global shortcut", "shift command space"], parent: "launcher.on"),
+        .init(id: "launcher.little", group: "anywhere", icon: "macwindow",
+              title: "Open in a small window", detail: "Return opens the page in a small window over the app you're in, not in Search's window",
+              more: "As links from other apps can (Settings › General): a small window with the page and Open in Search, to read and close or to keep. A page already open in a tab, picked from the list, still goes to its tab.",
+              keys: ["launcher.little"], words: ["little arc", "little window", "small window", "quick look", "option command n"], parent: "launcher.on"),
 
         // About
         .init(id: "updates.version", group: "updates", icon: "arrow.down.app",

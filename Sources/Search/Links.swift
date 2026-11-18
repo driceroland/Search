@@ -347,6 +347,15 @@ final class Links: NSObject, NSApplicationDelegate {
         // A site sent to a space opens there, with that space's sign-ins.
         if SpaceRoutes.space(for: url) != nil { return false }
         if Shared.prefs.littleFindsTabs, goToOpen(url) { return true }
+        openLittle(url)
+        return true
+    }
+
+    /// A small window for `url`, and the browser's windows left where they
+    /// are: for a link from another app, and for the address field from
+    /// any app with its small window asked for (Launcher.submit).
+    @MainActor
+    static func openLittle(_ url: URL, for asked: Browser? = nil) {
         // Hidden (⌘H), the app comes forward for the small window and shows
         // every window it had: the browser's came up beside it, as if the
         // link had opened twice. They are kept away, as a launch's are.
@@ -355,10 +364,9 @@ final class Links: NSObject, NSApplicationDelegate {
             Browsers.putAway()
         }
         // The space and sign-ins of the window in front, on screen or not.
-        let browser = Browsers.front.flatMap { !$0.isPopup ? $0 : nil }
+        let browser = asked.flatMap { !$0.isPopup ? $0 : nil } ?? Browsers.front.flatMap { !$0.isPopup ? $0 : nil }
             ?? Browsers.primary ?? SceneSlot.shared.browser
         LittleWindow.show(url, for: browser)
-        return true
     }
 
     /// The page already open, for whoever asked for that in Settings: a

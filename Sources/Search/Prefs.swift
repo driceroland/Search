@@ -935,6 +935,12 @@ final class Preferences: ObservableObject {
     @Published var launcher: Bool {
         didSet { store.set(launcher, forKey: "launcher.on") }
     }
+    /// Return in that field opens the page in a small window of its own
+    /// (Little.swift) over the app you're in, as Arc's ⌥⌘N opens Little Arc,
+    /// rather than in Search's window. Off unless asked for.
+    @Published var launcherLittle: Bool {
+        didSet { store.set(launcherLittle, forKey: "launcher.little") }
+    }
     /// The key it is on, chosen in Settings. None until then.
     @Published var launcherKey: LauncherKey? {
         didSet {
@@ -1104,6 +1110,7 @@ final class Preferences: ObservableObject {
         commandBar = store.bool(forKey: "commandbar")
         floatingNewTab = store.bool(forKey: "newtab.floating")
         launcher = store.bool(forKey: "launcher.on")
+        launcherLittle = store.bool(forKey: "launcher.little")
         launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
         recentInNewTab = store.bool(forKey: "newtab.recent")
         // On for everyone who never touched it (24 Oct 2026).
