@@ -1292,6 +1292,33 @@ enum ExtensionShims {
         if (n > 0) { if (map.size > 200) map.clear(); map.set(key, { n, at: now }); } else map.delete(key);
       };
       const pending = (map, key) => { const v = map.get(key); return !!v && Date.now() - v.at <= 5000 && v.n > 0; };
+      // The messages the worker answers, heard lately, for the extension's
+      // pages framed in websites, which can't hear its word on the channel
+      // (see `answeredByWorker`). Not one too big to keep a copy of.
+      const answering = new Map();
+      const answers = (message) => {
+        const key = relayKey(message);
+        if (!key || key.length > 20000) return;
+        const now = Date.now();
+        for (const [k, at] of answering) { if (now - at > 60000) answering.delete(k); else break; }
+        if (answering.size > 200) answering.delete(answering.keys().next().value);
+        answering.delete(key);
+        answering.set(key, now);
+      };
+      // Asked from a framed page: a moment first, for the worker to hear the
+      // message too, then a few times more while it hasn't said it answers.
+      const answeredByWorker = (message, then) => {
+        const key = relayKey(message);
+        if (!key || key.length > 20000 || !runtime) return;
+        let tries = 0;
+        const ask = () => Promise.resolve(Object.getPrototypeOf(runtime).sendMessage.call(runtime, { __searchAnswers: key }))
+          .catch(() => null)
+          .then((said) => {
+            if (said === true) return then();
+            if (++tries < 4) setTimeout(ask, 500 * tries);
+          });
+        setTimeout(ask, 100);
+      };
       let deliverRelayed = null, relaying = false;
       const relay = (message) => { if (channel && !inContent) try { channel.postMessage({ relay: message, from: me, url: location.href }); } catch (e) {} };
       if (channel) {
@@ -1396,6 +1423,15 @@ enum ExtensionShims {
             if (background) { sendResponse("pong"); return; }
             return true;
           }
+          // One of the extension's pages framed in a website asking whether
+          // the worker answers a message they both heard (see
+          // `answeredByWorker`). Only the worker says.
+          if (message && typeof message.__searchAnswers === "string") {
+            if (!fromOwnPages(sender)) return;
+            if (!background) return true;
+            sendResponse(answering.has(message.__searchAnswers));
+            return;
+          }
           // Search's own envelopes come from this extension only: another
           // extension (onMessageExternal) could otherwise speak as one of its
           // user scripts, or as a frame of its own.
@@ -1466,6 +1502,7 @@ enum ExtensionShims {
             else if (result && typeof result.then === "function") { keep = true; result.then(sendResponse, () => sendResponse(undefined)); }
           }
           if (!local && !inContent) tell(message, keep || settled ? "answers" : "passes", true);
+          if (!local && background && keep && !settled) answers(message);
           if (keep || settled) return keep && !settled ? true : undefined;
           // A direct offscreen delivery has no other local receiver to wait for.
           if (local) return undefined;
@@ -1486,6 +1523,15 @@ enum ExtensionShims {
             let check = () => {}, roll = null;
             const done = () => { waiting.delete(check); clearTimeout(late); clearTimeout(roll); };
             const late = setTimeout(() => { done(); sendResponse(undefined); }, 10000);
+            // A page framed in a website hears nothing on the channel, and
+            // its nothing after ten seconds took the place of an answer the
+            // worker gives later: 1Password's worker answers a site's passkey
+            // request once you pick one in its prompt, and its menu or
+            // prompt, framed in another tab, answered first — the passkey
+            // never reached the site, which stayed on its sign-in page (idea
+            // 702). So it asks the worker itself, and keeps quiet for good
+            // if the worker answers.
+            if (!key && embedded && hasWorker) answeredByWorker(message, () => { if (!settled) done(); });
             if (key) {
               // Only what was said about this message, not an identical one
               // a while ago.

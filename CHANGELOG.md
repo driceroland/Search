@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Signing in with a passkey from 1Password no longer leaves the site on its sign-in page when you take more than a few seconds to pick it. While 1Password showed its menu or a prompt in another tab, that tab answered for 1Password after ten seconds, with nothing; the passkey you then picked never reached the site. Any extension's long answer, a password manager's or another's, now waits for the extension itself.
 - An extension that downloads a file into a folder, as "photos/2026/a.jpg", gets that folder inside Downloads, as in Chrome, where only the file's name was kept.
 - Cosmos's window now opens, from its button in the toolbar and from the one on an image. Its background loads a common add-on (webextension-polyfill) that, in Search, cut it off from your clicks.
 - Eagle's extension saves images to the Eagle app again, and 好采助手 saves Xiaohongshu images to it: an extension's background can now talk to an app on your Mac that its manifest names (Eagle's, on localhost), as in Chrome. Eagle's extension also stopped half-way through starting, on a check that only works in Chrome, so it never even asked the app.
