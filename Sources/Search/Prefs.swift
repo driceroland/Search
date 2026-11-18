@@ -672,6 +672,11 @@ final class Preferences: ObservableObject {
         let before = ["welcomed", "glyph", "passkeys.for", "passkeys.entitled"].contains { store.object(forKey: $0) != nil }
         store.set(!before, forKey: littleKey)
     }
+    /// The webmail email links open in (see Webmail.swift). None unless
+    /// asked for: the Mac's mail app, as before.
+    @Published var webmail: Webmail {
+        didSet { store.set(webmail.rawValue, forKey: "mail.webmail") }
+    }
     /// With those small windows on: a link to a page already open in a tab
     /// goes to that tab instead (see Links.little). Off unless asked for.
     @Published var littleFindsTabs: Bool {
@@ -1146,6 +1151,7 @@ final class Preferences: ObservableObject {
         readerFollowsLook = store.bool(forKey: "reader.follows")
         littleLinks = store.bool(forKey: Preferences.littleKey)
         littleFindsTabs = store.bool(forKey: "links.little.tabs")
+        webmail = store.string(forKey: "mail.webmail").flatMap(Webmail.init(rawValue:)) ?? .none
         sendsLinksToSpaces = store.bool(forKey: SpaceRoutes.key)
         spaceRoutes = (store.array(forKey: SpaceRoutes.rulesKey) ?? []).compactMap(SpaceRoute.init(plist:))
         bookmarksBar = store.bool(forKey: "bookmarks.bar")

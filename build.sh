@@ -205,6 +205,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
       <key>CFBundleURLSchemes</key>
       <array><string>http</string><string>https</string></array>
     </dict>
+    <!-- mailto, so Search can be the Mac's email app: an email link then
+         opens the webmail chosen in Settings › General › Email links open
+         in (Webmail.swift). Only ever made the default from that page's
+         button; with no webmail chosen, a link that comes anyway goes on to
+         the next mail app. -->
+    <dict>
+      <key>CFBundleURLName</key><string>Email address</string>
+      <key>CFBundleURLSchemes</key>
+      <array><string>mailto</string></array>
+    </dict>
   </array>
   <key>CFBundleDocumentTypes</key>
   <array>

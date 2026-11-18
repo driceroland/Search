@@ -1084,6 +1084,8 @@ final class Bench {
             out["locationAnswered"] = Browser.locationAnswered ?? ""
             out["passkeyAsks"] = Passkeys.asked
             out["handedOff"] = Browser.handedOff
+            // Email links: compose pages opened, links handed on (Webmail.swift).
+            out["mail"] = Mail.seen
             out["passkeyLast"] = Passkeys.last
             answer(out)
 
@@ -1317,6 +1319,14 @@ final class Bench {
                 DispatchQueue.main.asyncAfter(deadline: .now() + interval) { edit(n + 1) }
             }
             edit(0)
+
+        case "mail":
+            // Search's own Send Feedback, as its button sends it, and what
+            // email links did (Webmail.swift). Only on a SEARCH_PROBE run:
+            // with no webmail chosen it would open the Mac's mail app.
+            guard Store.testing else { answer(["error": "mail only works on a --test run"]); return }
+            if request["action"] as? String == "feedback" { Links.writeFeedback() }
+            answer(["seen": Mail.seen, "webmail": browser.prefs.webmail.rawValue])
 
         case "keeppage":
             // The page on screen kept, or let go ("keep": false), on the

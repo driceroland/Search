@@ -112,6 +112,14 @@ enum SettingsIndex {
         .init(id: "general.default", group: "browser", icon: "link.badge.plus",
               title: "Open links from other apps", detail: "Make Search the browser Mail, Slack and the rest send links to",
               words: ["default browser"]),
+        .init(id: "mail.webmail", group: "browser", icon: "envelope",
+              title: "Email links open in", detail: "Write in Gmail or another webmail, in a tab, instead of your mail app",
+              more: "Email (mailto:) links clicked in a page open the webmail's new message in a tab beside it, with the address, subject and text filled in. From a private tab too, in an ordinary tab, where you're signed in. Links from other apps, and Send Feedback, go there once Search opens email links.",
+              keys: ["mail.webmail"], words: ["email", "mailto", "gmail", "mail", "outlook", "fastmail", "proton", "webmail", "compose"]),
+        .init(id: "mail.default", group: "browser", icon: "envelope.badge",
+              title: "Make Search open email links", detail: "So links from other apps open your webmail too",
+              more: "macOS asks you to confirm. Pick another app in Mail › Settings › General › Default email reader to undo it.",
+              words: ["email", "mailto", "gmail", "mail", "default email", "handler"], parent: "mail.webmail"),
         .init(id: "general.import", group: "browser", icon: "square.and.arrow.down.on.square",
               title: "Bring things over", detail: "Bookmarks, history, passwords and extensions from another browser",
               more: "From another browser on this Mac, or from a file it exported. Nothing leaves your Mac.",
@@ -603,6 +611,7 @@ enum SettingsIndex {
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
+        case "mail.default": return prefs.webmail != .none
         case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
         case "launcher.key": return prefs.launcher
         default: return true
@@ -623,6 +632,7 @@ enum SettingsIndex {
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent": return "Only with the new tab in a floating field"
         case "links.little.tabs": return "Only with links from other apps in a small window"
+        case "mail.default": return "Only with a webmail chosen for email links"
         case "links.peek.stays": return "Only when links or pins open peeks"
         case "launcher.key": return "Only with the address field from any app on"
         default: return "Only with the tabs down a side"

@@ -24,6 +24,9 @@ struct SettingsPanel: View {
     /// The keys rows name, as Settings › Shortcuts has them now.
     @ObservedObject private var shortcuts = ShortcutStore.shared
     @State private var isDefault = Links.isDefault
+    /// Whether Search opens email links, and which app does now.
+    @State private var mailDefault = Mail.isDefault
+    @State private var mailHandler = Mail.handlerName
     /// A site shortcut being written, kept out of Preferences until it's saved.
     @State private var draft: Keyword?
     @State private var page: Page = Page.named(Store.settings.string(forKey: "settings.page") ?? "") ?? .general
@@ -429,6 +432,9 @@ struct SettingsPanel: View {
         switch item.id {
         case "general.default":
             return isDefault ? "Search is the default browser on this Mac" : item.detail
+        case "mail.default":
+            if mailDefault { return "Email links from other apps open here" }
+            return mailHandler.map { "Email links from other apps go to \($0) now" } ?? item.detail
         case "downloads.folder":
             return prefs.downloads.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         case "sync": return sync.on ? sync.summary : item.detail
@@ -482,6 +488,32 @@ struct SettingsPanel: View {
                     Links.becomeDefault { worked in
                         isDefault = Links.isDefault
                         browser.announce(worked && isDefault ? "Links now open here" : "macOS didn't change it")
+                    }
+                }
+            }
+        case "mail.webmail":
+            Picker("", selection: $prefs.webmail) {
+                ForEach(Webmail.allCases) { mail in
+                    Text(mail.title).tag(mail)
+                    if mail == .none { Divider() }
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
+        case "mail.default":
+            if mailDefault {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.ink)
+                    .frame(width: 24)
+            } else {
+                // Only ever from this click: macOS asks to confirm.
+                Pill("Make default", filled: true) {
+                    Mail.becomeDefault { worked in
+                        mailDefault = Mail.isDefault
+                        mailHandler = Mail.handlerName
+                        browser.announce(worked && mailDefault ? "Email links now open here" : "macOS didn't change it")
                     }
                 }
             }

@@ -7871,6 +7871,31 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             if Store.testing { Browser.handedOff.append("\(scheme): ignored") }
             return
         }
+        // An email link, with a webmail chosen (Settings › General): its
+        // compose page beside the page, clicked, or once you've said so when
+        // the page's script asked (see Webmail.swift).
+        if scheme == "mailto", let compose = Mail.compose(for: url) {
+            let source = tab(for: webView)
+            if clicked {
+                openCompose(compose, beside: source)
+            } else if Store.testing {
+                Browser.handedOff.append("\(scheme): asked")
+            } else {
+                let name = Mail.webmail.title
+                ask(from: webView, show: {
+                    let alert = NSAlert()
+                    alert.messageText = "Write an email in \u{201C}\(name)\u{201D}?"
+                    alert.informativeText = "\(webView.url?.host() ?? "This page") wants to start an email."
+                    alert.addButton(withTitle: "Write")
+                    alert.addButton(withTitle: "Cancel")
+                    Dialogs.show(alert, over: webView) { [weak self, weak source] answer in
+                        guard answer == .alertFirstButtonReturn else { return }
+                        self?.openCompose(compose, beside: source)
+                    }
+                }, drop: {})
+            }
+            return
+        }
         guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else {
             if Store.testing { Browser.handedOff.append("\(scheme): no app") }
             return
@@ -7881,7 +7906,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             return
         }
         if clicked, ["mailto", "tel"].contains(scheme) {
-            NSWorkspace.shared.open(url)
+            // Never back to Search, made the Mac's email app with no webmail
+            // chosen: the next app that takes email links.
+            if scheme == "mailto" { Mail.handToSystem(url) } else { NSWorkspace.shared.open(url) }
             return
         }
         let name = FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "")
