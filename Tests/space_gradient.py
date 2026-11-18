@@ -11,7 +11,8 @@ screen, follows ⌃-switches and swipes, is kept beside the space's colour in
 spaces.json (a space without one is written as before), comes back after a
 relaunch, and goes when removed or when a plain colour is picked. A
 gradient spaces.json can't read costs the space its gradient, never the
-list. The editor itself is a popover and is never opened here: how it looks
+list. Its strength (Subtle, Rich, Vivid) is kept the same way, and one
+that doesn't read is Subtle. The editor itself is a popover and is never opened here: how it looks
 is checked off screen (see SpaceGradientTests).
 """
 import json
@@ -107,20 +108,50 @@ def main():
         t.ok("Escape: what it had back", st["wash"] == "Gradient" and saved()["Two"]["colour"] == 3, (st["wash"], saved()["Two"]))
         space(action="restore", colour=3)
 
+        # Strength: Subtle (as before), Rich or Vivid, for a colour and a
+        # gradient alike, kept per space beside its look.
+        st = space()
+        t.ok("strength: Subtle, unwritten", st["strength"] == "subtle" and st["picker"]["strength"] == "Subtle"
+             and st["picker"]["strengths"] == ["Subtle", "Rich", "Vivid"] and "strength" not in saved()["Two"], (st["strength"], saved()["Two"]))
+        st = space(action="strength", strength="vivid")
+        t.ok("Vivid on a colour: washed stronger, toned", st["strength"] == "vivid" and st["toned"]["light"]["opacity"] > 0.25
+             and st["toned"]["dark"]["opacity"] > 0.35 and len(st["toned"]["light"]["colours"]) == 1, st["toned"])
+        t.ok("spaces.json: vivid kept beside the colour", saved()["Two"].get("strength") == "vivid" and saved()["Two"]["colour"] == 3, saved()["Two"])
+        st = space(action="pick", choice="Dusk")
+        t.ok("a gradient picked keeps the strength", st["wash"] == "Gradient" and st["strength"] == "vivid" and len(st["toned"]["dark"]["colours"]) == 3, st["toned"])
+        st = space(action="go", index=1)
+        t.ok("⌃1: Personal, no wash, Subtle", st["wash"] == "" and st["strength"] == "subtle", (st["wash"], st["strength"]))
+        st = space(action="go", index=2)
+        t.ok("⌃2: Vivid again", st["strength"] == "vivid", st["strength"])
+        st = space(action="strength", strength="rich")
+        t.ok("Rich", st["strength"] == "rich" and saved()["Two"].get("strength") == "rich", saved()["Two"])
+        try:
+            space(action="strength", strength="loud"); refused = False
+        except RuntimeError:
+            refused = True
+        t.ok("a strength there isn't: refused, Rich kept", refused and space()["strength"] == "rich", refused)
+        st = space(action="restore", colour=3, strength="vivid")
+        t.ok("Escape: the strength it had back", st["strength"] == "vivid" and st["wash"] == "Orange", (st["strength"], st["wash"]))
+        space(action="strength", strength="subtle")
+        t.ok("Subtle again: unwritten", "strength" not in saved()["Two"], saved()["Two"])
+        space(action="strength", strength="vivid")
+
         # Kept across a relaunch.
         space(action="gradient", colours=DUSK, angle=180.0)
         sv.quit(); time.sleep(0.5); sv.launch()
         space(action="go", index=2); st = space()
         t.ok("relaunched: Two still has its gradient", st["current"] == "Two" and st["wash"] == "Gradient" and st["gradient"]["angle"] == 180, st["gradient"])
+        t.ok("relaunched: and its strength", st["strength"] == "vivid", st["strength"])
 
         # A gradient that doesn't read: the list survives, the colour stands.
         sv.quit(); time.sleep(0.5)
         spaces = json.load(open(f"{sv.SUPPORT}/spaces.json"))
         for s in spaces:
-            if s["name"] == "Two": s["gradient"] = {"colours": "not a list", "angle": "wide"}
+            if s["name"] == "Two": s["gradient"] = {"colours": "not a list", "angle": "wide"}; s["strength"] = 7
         json.dump(spaces, open(f"{sv.SUPPORT}/spaces.json", "w"))
         sv.launch()
         space(action="go", index=2); st = space()
+        t.ok("damaged strength: Subtle", st["strength"] == "subtle", st["strength"])
         t.ok("damaged gradient: both spaces there, Two washed with its colour",
              [s["name"] for s in st["spaces"]] == ["Personal", "Two"] and st["current"] == "Two" and st["wash"] == "Orange", (st["spaces"], st["wash"]))
     finally:

@@ -224,6 +224,11 @@ enum SyncItems {
     /// Only a space with a gradient has one.
     static func gradientKey(_ id: UUID) -> String { "gradient:" + id.uuidString }
 
+    /// How strongly a space's colour or gradient washes the chrome, an item
+    /// of its own in the same way: a Search from before strengths carries
+    /// it along untouched. Only a space that isn't Subtle has one.
+    static func strengthKey(_ id: UUID) -> String { "strength:" + id.uuidString }
+
     /// One profile's spaces, as items. Whether a space has sign-ins of its
     /// own is what was agreed when it was first synced (`base`), never
     /// changed after: a store can't change under a space's open tabs.
@@ -235,6 +240,7 @@ enum SyncItems {
                                      sharesSignIns: agreed.map(\.sharesSignIns) ?? space.sharesSignIns)
             out[spaceKey(space.id)] = SyncMerge.text(synced)
             if let gradient = space.gradient, gradient.usable { out[gradientKey(space.id)] = SyncMerge.text(gradient) }
+            if let strength = space.strength, strength != .subtle { out[strengthKey(space.id)] = SyncMerge.text(strength) }
         }
         if !list.isEmpty { out[spacesOrder] = SyncMerge.text(list.map(\.id.uuidString)) }
         return out
@@ -268,10 +274,17 @@ enum SyncItems {
                 space.icon = synced.icon
                 if !local.contains(where: { $0.id == id }) { space.sharesSignIns = synced.sharesSignIns }
                 space.gradient = live[gradientKey(id)].flatMap { SyncMerge.value(SpaceGradient.self, $0) }.flatMap { $0.usable ? $0 : nil }
+                space.strength = live[strengthKey(id)].flatMap(SyncItems.strength).flatMap { $0 == .subtle ? nil : $0 }
             }
             if space.name.isEmpty { space.name = "Space" }
             return space
         }
+    }
+
+    /// A strength item's text as one this build knows; nil for one it
+    /// doesn't (a newer Search's), which it then carries along untouched.
+    static func strength(_ text: String) -> SpaceStrength? {
+        SyncMerge.value(String.self, text).flatMap(SpaceStrength.init(rawValue:))
     }
 
     // MARK: pins
@@ -391,6 +404,7 @@ enum SyncItems {
     static func understood(_ key: String, _ text: String) -> Bool {
         if key.hasPrefix("space:") { return SyncMerge.value(SyncedSpace.self, text) != nil }
         if key.hasPrefix("gradient:") { return SyncMerge.value(SpaceGradient.self, text)?.usable == true }
+        if key.hasPrefix("strength:") { return strength(text) != nil }
         if key.hasPrefix("pin:") { return SyncMerge.value(SyncedPin.self, text) != nil }
         if key.hasPrefix("bm:") { return SyncMerge.value(SyncedBookmark.self, text) != nil }
         if key.hasPrefix("order:") || key.hasPrefix("kids:") { return SyncMerge.value([String].self, text) != nil }

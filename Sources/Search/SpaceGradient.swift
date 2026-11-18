@@ -65,8 +65,8 @@ struct SpaceGradient: Codable, Equatable, Hashable {
     /// What the gradient is drawn with: its colours mixed in OKLab at
     /// `count` stops, evenly spaced. SwiftUI blends between neighbours,
     /// which are close enough that how it blends doesn't show.
-    func stops(count: Int = 24) -> [Gradient.Stop] {
-        let lab = drawn
+    func stops(count: Int = 24, strength: SpaceStrength = .subtle, dark: Bool = false) -> [Gradient.Stop] {
+        let lab = drawn.map { strength.tone($0, dark: dark) }
         guard lab.count >= 2 else { return [] }
         return (0..<count).map { step in
             let t = Double(step) / Double(count - 1)
@@ -133,6 +133,82 @@ struct SpaceGradient: Codable, Equatable, Hashable {
         guard from.indices.contains(colour), colour > 0 else { return presets[1].gradient }
         return SpaceGradient(colours: [swatch(from[colour]), swatch(to[colour])])
     }
+}
+
+/// How strongly a space's colour or gradient washes the chrome. Subtle is
+/// the faint wash every space had; Rich and Vivid are for whoever wants the
+/// colour seen, closer to Arc's saturated themes (the Colour… picker's
+/// Strength). Nil in spaces.json is Subtle, so a list from before reads
+/// and writes as it did.
+///
+/// Stronger, the wash stays on its side of the window's appearance: in a
+/// light window a deeper tint the ink still reads on, in a dark one a deep
+/// colour the light ink reads on. So the column's ink never has to turn
+/// over; the colour's lightness is held further for that (`tone`), and the
+/// greys and the tab titles are black or white with alpha (see Greys),
+/// keeping their step from whatever ground they land on. Checked against
+/// the worst colours in SpaceGradientTests.
+enum SpaceStrength: String, CaseIterable, Codable, Hashable {
+    case subtle, rich, vivid
+
+    var name: String {
+        switch self {
+        case .subtle: return "Subtle"
+        case .rich: return "Rich"
+        case .vivid: return "Vivid"
+        }
+    }
+
+    /// Never fails: a strength a newer Search writes, or one that doesn't
+    /// read, is Subtle. Failing here would fail the whole list of spaces.
+    init(from decoder: Decoder) throws {
+        let text = try? decoder.singleValueContainer().decode(String.self)
+        self = text.flatMap(SpaceStrength.init(rawValue:)) ?? .subtle
+    }
+
+    /// How much of the colour the chrome wears. Subtle is the colour's
+    /// wash as it always was (Spaces.washLight, washDark).
+    func opacity(dark: Bool) -> Double {
+        switch self {
+        case .subtle: return dark ? Spaces.washDark : Spaces.washLight
+        case .rich: return dark ? 0.22 : 0.18
+        case .vivid: return dark ? 0.40 : 0.30
+        }
+    }
+
+    /// The colour as this strength washes with it: more chroma, and its
+    /// lightness held so the washed ground stays light in a light window
+    /// (Vivid: no darker than 0.62) and deep in a dark one (Rich: no
+    /// lighter than 0.72, Vivid: 0.48 to 0.58). Subtle is the colour as held.
+    func tone(_ colour: OKLab, dark: Bool) -> OKLab {
+        let (boost, band): (Double, ClosedRange<Double>) = {
+            switch self {
+            case .subtle: return (1, 0...1)
+            case .rich: return (1.15, dark ? 0...0.72 : 0...1)
+            case .vivid: return (1.3, dark ? 0.48...0.58 : 0.62...1)
+            }
+        }()
+        // No more chroma than the band allows a colour, however strong: a
+        // blue already near it would otherwise wash the column royal blue.
+        let chroma = colour.chroma, wanted = min(chroma * boost, max(chroma, OKLab.mostChroma))
+        let scale = chroma > 1e-9 ? wanted / chroma : 1
+        return OKLab(L: min(max(colour.L, band.lowerBound), band.upperBound), a: colour.a * scale, b: colour.b * scale)
+    }
+
+    /// The grain, a touch stronger on a stronger colour, or it is lost in it.
+    func grain(dark: Bool) -> Double {
+        let base = dark ? Grain.dark : Grain.light
+        switch self {
+        case .subtle: return base
+        case .rich: return base * 1.25
+        case .vivid: return base * 1.5
+        }
+    }
+}
+
+extension Space {
+    /// How strongly it washes the chrome: Subtle unless chosen.
+    var washStrength: SpaceStrength { strength ?? .subtle }
 }
 
 /// What a space washes the chrome with: one of Spaces.colours, or its
@@ -267,30 +343,42 @@ private struct WashRoomKey: EnvironmentKey {
     static let defaultValue = CGSize.zero
 }
 
+/// How strongly the space on screen washes the chrome, set once for the
+/// whole window beside washRoom, so every SpaceWash draws alike.
+private struct WashStrengthKey: EnvironmentKey {
+    static let defaultValue = SpaceStrength.subtle
+}
+
 extension EnvironmentValues {
     var washRoom: CGSize {
         get { self[WashRoomKey.self] }
         set { self[WashRoomKey.self] = newValue }
+    }
+
+    var washStrength: SpaceStrength {
+        get { self[WashStrengthKey.self] }
+        set { self[WashStrengthKey.self] = newValue }
     }
 }
 
 /// A space's gradient, at the wash's strength, and its grain.
 struct GradientWash: View {
     let gradient: SpaceGradient
-    let strength: Double
+    let strength: SpaceStrength
     @Environment(\.washRoom) private var room
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         GeometryReader { geo in
             let ends = gradient.points(frame: geo.frame(in: .global), room: room)
+            let dark = scheme == .dark
             ZStack {
-                LinearGradient(stops: gradient.stops(), startPoint: ends.start, endPoint: ends.end)
-                    .opacity(strength)
+                LinearGradient(stops: gradient.stops(strength: strength, dark: dark), startPoint: ends.start, endPoint: ends.end)
+                    .opacity(strength.opacity(dark: dark))
                 if gradient.grain {
                     Image(nsImage: Grain.tile)
                         .resizable(resizingMode: .tile)
-                        .opacity(scheme == .dark ? Grain.dark : Grain.light)
+                        .opacity(strength.grain(dark: dark))
                 }
             }
         }
@@ -393,9 +481,10 @@ extension Browser {
     }
 
     /// Back to a look as it was: Escape in the picker.
-    func restoreLook(_ id: UUID, colour: Int, gradient: SpaceGradient?) {
+    func restoreLook(_ id: UUID, colour: Int, gradient: SpaceGradient?, strength: SpaceStrength? = nil) {
         setSpaceColour(id, to: colour)
         if gradient != nil { setSpaceGradient(id, to: gradient) }
+        setSpaceStrength(id, to: strength ?? .subtle)
     }
 }
 
@@ -472,6 +561,8 @@ struct SpaceLookPicker: View {
                 }
             }
 
+            section("Strength") { strengthControl }
+
             VStack(alignment: .leading, spacing: 12) {
                 Button {
                     withAnimation(Motion.quick) { customOpen.toggle() }
@@ -532,6 +623,42 @@ struct SpaceLookPicker: View {
         .frame(height: 76)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(space.name): \(space.lookName)")
+    }
+
+    /// Subtle, Rich or Vivid, for the colour and the gradient alike, in
+    /// the same small segmented row as the gradient's directions. With no
+    /// colour there is nothing to strengthen: shown, but not to be had.
+    private var strengthControl: some View {
+        let current = space.washStrength
+        let off = choice == .none
+        return HStack(spacing: 0) {
+            ForEach(SpaceStrength.allCases, id: \.self) { strength in
+                let on = current == strength
+                Button { browser.setSpaceStrength(id, to: strength) } label: {
+                    Text(strength.name)
+                        .font(.system(size: 11, weight: on ? .medium : .regular))
+                        .foregroundStyle(on ? Palette.ink : Palette.muted)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 22)
+                        .background {
+                            if on {
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .fill(Palette.ground)
+                                    .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(strength.name)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Palette.hover))
+        .opacity(off ? 0.45 : 1)
+        .disabled(off)
+        .help(off ? "Choose a colour or a gradient first" : "How strongly the space's colour shows")
     }
 
     private var custom: some View {
@@ -678,7 +805,7 @@ enum SpaceLookPopover {
               let window = browser.window, window.isVisible, let content = window.contentView else { return }
         shown?.close()
         let space = browser.space
-        let before = (colour: space.colour, gradient: space.gradient)
+        let before = (colour: space.colour, gradient: space.gradient, strength: space.strength)
         let host = NSHostingController(rootView: SpaceLookPicker(browser: browser, id: space.id))
         host.sizingOptions = .preferredContentSize
         let popover = NSPopover()
@@ -690,7 +817,7 @@ enum SpaceLookPopover {
         // Escape puts back what the space had; a click elsewhere keeps it.
         watch.keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak browser, weak popover] event in
             guard event.keyCode == 53, let popover, event.window === popover.contentViewController?.view.window else { return event }
-            browser?.restoreLook(space.id, colour: before.colour, gradient: before.gradient)
+            browser?.restoreLook(space.id, colour: before.colour, gradient: before.gradient, strength: before.strength)
             popover.close()
             return nil
         }

@@ -1687,7 +1687,7 @@ private struct SideRow: View, Equatable {
 
     private var colour: Color {
         if live { return Palette.ink }
-        let colour = hovering ? Palette.ink.opacity(0.7) : Palette.muted
+        let colour = hovering ? Palette.ink.opacity(0.7) : greys.muted
         return putAway ? colour.opacity(0.45) : colour
     }
 }
@@ -1718,7 +1718,7 @@ struct Quiet: View {
                 }
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.faint)
+            .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : greys.faint)
             .padding(.leading, centred ? 0 : 10)
             .frame(height: height)
             .frame(maxWidth: .infinity, alignment: .leading)

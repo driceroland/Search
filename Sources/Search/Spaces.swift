@@ -40,6 +40,9 @@ struct Space: Codable, Identifiable, Equatable {
     /// nil, as every space from before has, for the colour alone. Its
     /// colour is kept beside it, and comes back when it is removed.
     var gradient: SpaceGradient? = nil
+    /// How strongly its colour or gradient washes the chrome (see
+    /// SpaceStrength); nil, as every space from before has, for Subtle.
+    var strength: SpaceStrength? = nil
 
     var profileID: UUID { profile ?? Profile.personalID }
 
@@ -88,6 +91,15 @@ enum Spaces {
     static func wash(_ colour: Int?, dark: Bool) -> Double? {
         guard let colour, colour > 0, colours.indices.contains(colour) else { return nil }
         return dark ? washDark : washLight
+    }
+
+    /// Colour COLOUR as STRENGTH washes with it (SpaceStrength.tone): the
+    /// colour itself at Subtle, so that wash is exactly as it always was.
+    static func toned(_ colour: Int, _ strength: SpaceStrength, dark: Bool) -> Color {
+        guard strength != .subtle, colours.indices.contains(colour),
+              let c = NSColor(colours[colour]).usingColorSpace(.sRGB) else { return colours.indices.contains(colour) ? colours[colour] : .clear }
+        let (r, g, b) = strength.tone(OKLab(r: c.redComponent, g: c.greenComponent, b: c.blueComponent), dark: dark).srgb
+        return Color(.sRGB, red: r, green: g, blue: b)
     }
 
     /// The icons a space can wear: Apple's own symbols, drawn in one weight
@@ -345,6 +357,9 @@ extension Browser {
         prefs.usesSpaces && !makingSpace ? space.look : nil
     }
 
+    /// How strongly the wash is drawn: the space on screen's strength.
+    var washStrength: SpaceStrength { wash == nil ? .subtle : space.washStrength }
+
     /// The wash's colour, when it is one of the colours rather than a gradient.
     var washColour: Int? {
         if case .colour(let colour)? = wash { return colour }
@@ -558,6 +573,16 @@ extension Browser {
         Spaces.write(spaces, profile: profileID)
     }
 
+    /// How strongly the space's colour or gradient washes the chrome.
+    /// Subtle is kept as none, so the space reads and writes as before.
+    func setSpaceStrength(_ id: UUID, to strength: SpaceStrength) {
+        guard let at = spaces.firstIndex(where: { $0.id == id }) else { return }
+        let kept: SpaceStrength? = strength == .subtle ? nil : strength
+        guard spaces[at].strength != kept else { return }
+        spaces[at].strength = kept
+        Spaces.write(spaces, profile: profileID)
+    }
+
     func setSpaceDownloads(_ id: UUID, to folder: URL?) {
         guard let at = spaces.firstIndex(where: { $0.id == id }) else { return }
         spaces[at].downloads = folder?.path
@@ -612,17 +637,19 @@ extension Browser {
 struct SpaceWash: View {
     let look: SpaceLook?
     @Environment(\.colorScheme) private var scheme
+    /// Subtle, Rich or Vivid: set for the whole window (see washStrength).
+    @Environment(\.washStrength) private var strength
 
     var body: some View {
         ZStack {
             switch look {
             case .colour(let colour)?:
-                if let opacity = Spaces.wash(colour, dark: scheme == .dark) {
-                    Spaces.colours[colour].opacity(opacity)
+                if Spaces.wash(colour, dark: scheme == .dark) != nil {
+                    Spaces.toned(colour, strength, dark: scheme == .dark).opacity(strength.opacity(dark: scheme == .dark))
                 }
             case .gradient(let gradient)?:
                 // One gradient for another crossfades, as a colour does.
-                GradientWash(gradient: gradient, strength: scheme == .dark ? Spaces.washDark : Spaces.washLight)
+                GradientWash(gradient: gradient, strength: strength)
                     .id(gradient)
                     .transition(.opacity)
             case nil:
@@ -631,6 +658,7 @@ struct SpaceWash: View {
         }
         .allowsHitTesting(false)
         .animation(Motion.quick, value: look)
+        .animation(Motion.quick, value: strength)
     }
 }
 

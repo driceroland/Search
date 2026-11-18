@@ -886,6 +886,8 @@ struct ContentView: View {
             .environment(\.tabShortcutNumbers, browser.tabShortcutNumbers)
             // One gradient across the column, the bars and the ground alike.
             .environment(\.washRoom, CGSize(width: across, height: tall))
+            // And as strongly, Subtle, Rich or Vivid, as the space on screen asks.
+            .environment(\.washStrength, browser.washStrength)
             // The field comes on its spring, and goes quickly: once Return
             // is pressed the page is on its way, and the field is not what
             // there is to watch.

@@ -90,6 +90,14 @@ struct Greys {
     /// tab's panes), so the two together land where the plain ones do.
     let washOnTile: Color
     let hoverOnTile: Color
+    /// The quiet ink of a tab's title that isn't live, the same way: on
+    /// the plain ground Palette.muted exactly, on a space's Rich or Vivid
+    /// colour as far from it as Palette.muted is from the plain ground,
+    /// where the opaque grey lost a third of its contrast.
+    let muted: Color
+    /// The faintest ink, New tab's, the same way: on Vivid the opaque grey
+    /// all but vanished into the colour.
+    let faint: Color
 
     // Black in a light window, white in a dark one, at the strength that
     // lands on the same grey as Palette's over the ground they lie on (the
@@ -98,10 +106,12 @@ struct Greys {
     // grey sat on it as a grey patch (Drice, 18 Nov 2026).
     static let white = Greys(wash: shade(0.063, 0.073), hover: shade(0.035, 0.045),
                              tile: shade(0.063, 0.073).opacity(0.55), pinLive: shade(0.10, 0.112),
-                             washOnTile: shade(0.0294, 0.0342), hoverOnTile: shade(0.004, 0.005))
+                             washOnTile: shade(0.0294, 0.0342), hoverOnTile: shade(0.004, 0.005),
+                             muted: shade(0.45, 0.5281), faint: shade(0.17, 0.236))
     static let frame = Greys(wash: shade(0.0628, 0.0865), hover: shade(0.0419, 0.0595),
                              tile: shade(0.0314, 0.0432), pinLive: shade(0.0995, 0.1243),
-                             washOnTile: shade(0.0324, 0.0452), hoverOnTile: shade(0.0108, 0.0169))
+                             washOnTile: shade(0.0324, 0.0452), hoverOnTile: shade(0.0108, 0.0169),
+                             muted: shade(0.4241, 0.5459), faint: shade(0.1309, 0.2649))
 
     private static func shade(_ light: CGFloat, _ dark: CGFloat) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in

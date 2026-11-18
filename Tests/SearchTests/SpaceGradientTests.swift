@@ -185,6 +185,172 @@ final class SpaceGradientTests: XCTestCase {
         }
     }
 
+    // MARK: - strength
+
+    /// A list from before strengths reads as Subtle and is written back
+    /// without a "strength" key; Subtle chosen is kept as none.
+    func testOldSpacesAreSubtleAndAStrengthIsKeptOnlyWhenChosen() throws {
+        let old = ##"[{"id":"00000000-0000-0000-0000-000000000001","name":"Personal","colour":2,"gradient":{"colours":["#4285F5","#F59E33"]}}]"##
+        let spaces = try JSONDecoder().decode([Space].self, from: Data(old.utf8))
+        XCTAssertNil(spaces[0].strength)
+        XCTAssertEqual(spaces[0].washStrength, .subtle)
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(spaces), as: UTF8.self).contains("strength"))
+
+        var space = Space(id: UUID(), name: "Studio", colour: 3)
+        space.strength = .vivid
+        let back = try JSONDecoder().decode(Space.self, from: JSONEncoder().encode(space))
+        XCTAssertEqual(back.strength, .vivid)
+        XCTAssertEqual(back, space)
+    }
+
+    /// A strength that doesn't read — damaged, or one a newer Search adds —
+    /// is Subtle, never the end of the list.
+    func testADamagedStrengthNeverCostsTheList() throws {
+        for damaged in ["5", #""ultra""#, "null", "{}", "[]", #""VIVID""#] {
+            let text = #"[{"id":"00000000-0000-0000-0000-000000000001","name":"Personal","colour":4,"strength":"# + damaged + "}]"
+            let spaces = try JSONDecoder().decode([Space].self, from: Data(text.utf8))
+            XCTAssertEqual(spaces.count, 1, damaged)
+            XCTAssertEqual(spaces[0].washStrength, .subtle, damaged)
+            XCTAssertEqual(spaces[0].look, .colour(4), damaged)
+        }
+        let rich = try JSONDecoder().decode([Space].self, from: Data(#"[{"id":"00000000-0000-0000-0000-000000000001","name":"P","colour":1,"strength":"rich"}]"#.utf8))
+        XCTAssertEqual(rich[0].washStrength, .rich)
+    }
+
+    func testTheStrengthIsSetAndFollowsTheSpaceOnScreen() {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        let browser = Browser(record: WindowRecord())
+        let oldUsesSpaces = browser.prefs.usesSpaces
+        let oldSpaces = browser.spaces
+        defer {
+            browser.closeAll()
+            browser.prefs.usesSpaces = oldUsesSpaces
+            browser.spaces = oldSpaces
+        }
+        browser.prefs.usesSpaces = true
+        let first = browser.spaceID, second = UUID()
+        browser.spaces = [Space(id: first, name: "First", colour: 1), Space(id: second, name: "Second", colour: 2)]
+        browser.closeAll()
+        browser.showRow([], active: nil, blank: true)
+
+        browser.setSpaceStrength(second, to: .vivid)
+        XCTAssertEqual(browser.washStrength, .subtle, "the space on screen is still Subtle")
+        browser.switchSpace(to: second)
+        XCTAssertEqual(browser.washStrength, .vivid)
+        browser.chooseLook(second, .preset(0))
+        XCTAssertEqual(browser.washStrength, .vivid, "for a gradient as for a colour")
+        browser.chooseLook(second, .colour(3))
+        XCTAssertEqual(browser.washStrength, .vivid, "picking another colour keeps it")
+        browser.setSpaceStrength(second, to: .subtle)
+        XCTAssertNil(browser.space.strength, "Subtle is kept as none")
+        browser.setSpaceStrength(second, to: .rich)
+        browser.restoreLook(second, colour: 3, gradient: nil, strength: nil)
+        XCTAssertEqual(browser.washStrength, .subtle, "Escape puts back what it had")
+        browser.prefs.usesSpaces = false
+        XCTAssertEqual(browser.washStrength, .subtle, "no wash, nothing to strengthen")
+    }
+
+    /// Subtle draws exactly as before strengths: the same stops, opacity
+    /// and grain, and a plain colour as itself.
+    func testSubtleIsTheWashAsItWas() {
+        for (_, preset) in SpaceGradient.presets {
+            for dark in [false, true] {
+                XCTAssertEqual(preset.stops(strength: .subtle, dark: dark), preset.stops())
+            }
+        }
+        XCTAssertEqual(SpaceStrength.subtle.opacity(dark: false), Spaces.washLight)
+        XCTAssertEqual(SpaceStrength.subtle.opacity(dark: true), Spaces.washDark)
+        XCTAssertEqual(SpaceStrength.subtle.grain(dark: false), Grain.light)
+        XCTAssertEqual(Spaces.toned(2, .subtle, dark: true), Spaces.colours[2])
+        // Each step is stronger than the last, in both.
+        for dark in [false, true] {
+            XCTAssertLessThan(SpaceStrength.subtle.opacity(dark: dark), SpaceStrength.rich.opacity(dark: dark))
+            XCTAssertLessThan(SpaceStrength.rich.opacity(dark: dark), SpaceStrength.vivid.opacity(dark: dark))
+        }
+    }
+
+    /// Rich and Vivid at their worst: every colour there is, toned and
+    /// washed at full strength over the column's ground and the white, in
+    /// the light and the dark. The ground stays on its side, so the
+    /// window's own ink is the one that reads (it never needs to turn
+    /// over); the ink keeps AAA; a tab's quiet title, now black or white
+    /// with alpha, keeps about the step it has on the plain ground; and the
+    /// live tab's and the pointer's greys keep theirs.
+    func testRichAndVividKeepTheChromeLegible() {
+        func lin(_ v: Double) -> Double { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        func luminance(_ c: (Double, Double, Double)) -> Double { 0.2126 * lin(c.0) + 0.7152 * lin(c.1) + 0.0722 * lin(c.2) }
+        func ratio(_ a: Double, _ b: Double) -> Double { (max(a, b) + 0.05) / (min(a, b) + 0.05) }
+        func over(_ base: (Double, Double, Double), _ top: (Double, Double, Double), _ alpha: Double) -> (Double, Double, Double) {
+            (base.0 * (1 - alpha) + top.0 * alpha, base.1 * (1 - alpha) + top.1 * alpha, base.2 * (1 - alpha) + top.2 * alpha)
+        }
+        let plain = Spaces.colours.dropFirst().map { colour -> OKLab in
+            let c = NSColor(colour).usingColorSpace(.sRGB)!
+            return OKLab(r: c.redComponent, g: c.greenComponent, b: c.blueComponent)
+        }
+        // The band's corners at full chroma, round the wheel, and everything offered.
+        var picked = plain + SpaceGradient.swatches.map { OKLab(hex: $0.hex)!.held }
+        for hue in stride(from: 0.0, to: 360, by: 15) {
+            for lightness in [OKLab.lightnessBand.lowerBound, OKLab.lightnessBand.upperBound] {
+                picked.append(OKLab(lightness: lightness, chroma: OKLab.mostChroma, hue: hue).held)
+            }
+        }
+        picked += ["#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00"].map { OKLab(hex: $0)!.held }
+
+        // (ground, ink, quiet title as alpha, live, pointer, the opaque quiet grey; dark?)
+        let grounds: [(Double, Double, Double, Double, Double, Double, Bool)] = [
+            (0.955, 0.09, 0.4241, 0.0628, 0.0419, 0.55, false), (1.0, 0.09, 0.45, 0.063, 0.035, 0.55, false),
+            (0.075, 0.93, 0.5459, 0.0865, 0.0595, 0.58, true), (0.11, 0.93, 0.5281, 0.073, 0.045, 0.58, true),
+        ]
+        for strength in [SpaceStrength.rich, .vivid] {
+            for (ground, ink, quiet, live, hover, opaqueQuiet, dark) in grounds {
+                let shade = dark ? 1.0 : 0.0
+                let g = (ground, ground, ground)
+                let plainQuiet = ratio(luminance(g), luminance((opaqueQuiet, opaqueQuiet, opaqueQuiet)))
+                let plainLive = ratio(luminance(g), luminance(over(g, (shade, shade, shade), live)))
+                let plainHover = ratio(luminance(g), luminance(over(g, (shade, shade, shade), hover)))
+                var colours = picked.map { strength.tone($0, dark: dark).srgb }
+                for (_, preset) in SpaceGradient.presets {
+                    let toned = preset.drawn.map { strength.tone($0, dark: dark) }
+                    colours += (0...10).map { OKLab.along(toned, at: Double($0) / 10).srgb }
+                }
+                for colour in colours {
+                    let washed = over(g, colour, strength.opacity(dark: dark))
+                    let lum = luminance(washed)
+                    let what = "\(strength) on \(ground): \(colour)"
+                    // The ink the window has is the one that reads: no turning over.
+                    let own = ratio(lum, luminance((ink, ink, ink)))
+                    let other = ratio(lum, dark ? luminance((0.09, 0.09, 0.09)) : luminance((0.93, 0.93, 0.93)))
+                    XCTAssertGreaterThan(own, other * 2, "the ink stays the window's own: \(what)")
+                    XCTAssertGreaterThan(own, 7, "ink, AAA: \(what)")
+                    let title = ratio(lum, luminance(over(washed, (shade, shade, shade), quiet)))
+                    XCTAssertGreaterThanOrEqual(title, plainQuiet * (dark ? 0.68 : 0.9), "quiet title: \(what)")
+                    XCTAssertGreaterThan(title, dark ? 4 : 2.6, "quiet title: \(what)")
+                    let liveStep = ratio(lum, luminance(over(washed, (shade, shade, shade), live)))
+                    XCTAssertGreaterThanOrEqual(liveStep, plainLive * 0.93, "live tab: \(what)")
+                    let hoverStep = ratio(lum, luminance(over(washed, (shade, shade, shade), hover)))
+                    XCTAssertGreaterThanOrEqual(hoverStep, plainHover * 0.97, "pointer: \(what)")
+                }
+            }
+        }
+    }
+
+    /// Stronger is richer: Vivid's ground carries more colour than Subtle's
+    /// in both appearances, so the choice is worth having.
+    func testVividIsRicherThanSubtle() {
+        func washed(_ strength: SpaceStrength, _ lab: OKLab, dark: Bool) -> OKLab {
+            let ground = dark ? 0.075 : 0.955, (r, g, b) = strength.tone(lab, dark: dark).srgb, a = strength.opacity(dark: dark)
+            return OKLab(r: ground * (1 - a) + r * a, g: ground * (1 - a) + g * a, b: ground * (1 - a) + b * a)
+        }
+        for swatch in SpaceGradient.swatches.prefix(12) {
+            let lab = OKLab(hex: swatch.hex)!.held
+            for dark in [false, true] {
+                XCTAssertGreaterThan(washed(.vivid, lab, dark: dark).chroma, washed(.subtle, lab, dark: dark).chroma * 2, swatch.name)
+                XCTAssertGreaterThan(washed(.rich, lab, dark: dark).chroma, washed(.subtle, lab, dark: dark).chroma * 1.5, swatch.name)
+            }
+        }
+    }
+
     /// One line across the window: the column at the left edge shows the
     /// window's first stretch of it, not the whole of it squeezed in.
     func testItRunsAcrossTheWindow() {
@@ -341,6 +507,40 @@ final class SpaceGradientTests: XCTestCase {
         let gone = SyncItems.applySpaces(plain, to: back, profile: Profile.personalID, home: Space.firstID)
         XCTAssertNil(gone.first { $0.id == studio.id }?.gradient)
         XCTAssertEqual(gone.first { $0.id == studio.id }?.colour, 2)
+    }
+
+    func testAStrengthSyncsAsAnItemOfItsOwn() {
+        var studio = Space(id: UUID(), name: "Studio", colour: 2, sharesSignIns: true)
+        let plain = SyncItems.spaces([Space.first(), studio])
+        studio.strength = .subtle
+        XCTAssertEqual(SyncItems.spaces([Space.first(), studio]), plain, "Subtle is no item")
+        studio.strength = .vivid
+        let items = SyncItems.spaces([Space.first(), studio])
+        XCTAssertEqual(items[SyncItems.spaceKey(studio.id)], plain[SyncItems.spaceKey(studio.id)])
+        XCTAssertEqual(items[SyncItems.strengthKey(studio.id)], #""vivid""#)
+        let back = SyncItems.applySpaces(items, to: [], profile: Profile.personalID, home: Space.firstID)
+        XCTAssertEqual(back.first { $0.id == studio.id }?.strength, .vivid)
+        let gone = SyncItems.applySpaces(plain, to: back, profile: Profile.personalID, home: Space.firstID)
+        XCTAssertNil(gone.first { $0.id == studio.id }?.strength, "back to Subtle on one Mac: on the other too")
+        XCTAssertTrue(SyncItems.understood(SyncItems.strengthKey(studio.id), #""rich""#))
+        XCTAssertFalse(SyncItems.understood(SyncItems.strengthKey(studio.id), #""ultra""#), "a newer Search's, carried along")
+    }
+
+    /// A Search from before strengths carries the item along untouched.
+    func testAnOlderSearchCarriesTheStrengthAlong() {
+        var studio = Space(id: UUID(), name: "Studio", colour: 2, sharesSignIns: true)
+        studio.strength = .rich
+        let newer = SyncMerge.pass(current: SyncItems.spaces([Space.first(), studio]), base: nil, theirs: [],
+                                   device: "new", now: 1000)
+        var older = studio
+        older.strength = nil
+        let olderUnderstood: (String, String) -> Bool = { key, text in
+            key.hasPrefix("strength:") ? false : SyncItems.understood(key, text)
+        }
+        let after = SyncMerge.pass(current: SyncItems.spaces([Space.first(), older]), base: newer, theirs: [newer],
+                                   device: "old", now: 2000, understood: olderUnderstood)
+        XCTAssertEqual(after[SyncItems.strengthKey(studio.id)]?.v, newer[SyncItems.strengthKey(studio.id)]?.v)
+        XCTAssertEqual(after[SyncItems.spaceKey(studio.id)], newer[SyncItems.spaceKey(studio.id)], "nothing restamped")
     }
 
     /// A Search from before gradients doesn't read the item: it neither

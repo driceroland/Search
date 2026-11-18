@@ -681,6 +681,9 @@ enum Rewind {
 /// It doesn't watch the Browser, as a row in the column doesn't (SideRow).
 private struct TabPill: View, Equatable {
     @Environment(\.tabShortcutNumbers) private var shortcutNumbers
+    /// Black or white with alpha, so on a space's colour the pills take its
+    /// tint rather than sit on it as grey patches (see Greys).
+    @Environment(\.greys) private var greys
     @Environment(\.rowCarrying) private var rowCarrying
     let browser: Browser
     @ObservedObject var prefs: Preferences
@@ -969,7 +972,7 @@ private struct TabPill: View, Equatable {
             ZStack(alignment: .leading) {
                 // A pinned square among the faint grey of the others: the
                 // darker grey the column's live pin wears too.
-                Rectangle().fill(pinned ? Palette.pinLive : Palette.wash)
+                Rectangle().fill(pinned ? greys.pinLive : greys.wash)
                 // Not on a pinned square, nor a tab down to its mark. Thirty
                 // points of grey filling from the left behind a single letter
                 // says nothing about anything — it needs the width of a title
@@ -982,10 +985,10 @@ private struct TabPill: View, Equatable {
             .matchedGeometryEffect(id: "live", in: pill)
         } else if selected {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Palette.wash)
+                .fill(greys.wash)
         } else if hovering {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Palette.hover)
+                .fill(greys.hover)
         } else if pinned || compact || rowCarrying {
             // A letter with nothing behind it reads as debris. A pinned tab
             // keeps a faint ground of its own so the block of them reads as
@@ -1000,13 +1003,13 @@ private struct TabPill: View, Equatable {
             // its left under it too, and the half left showing was nothing,
             // so it seemed gone until the hand moved on (#898).
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Palette.wash.opacity(0.55))
+                .fill(greys.tile)
         }
     }
 
     private var colour: Color {
         if live { return Palette.ink }
-        return hovering ? Palette.ink.opacity(0.7) : Palette.muted
+        return hovering ? Palette.ink.opacity(0.7) : greys.muted
     }
 }
 
