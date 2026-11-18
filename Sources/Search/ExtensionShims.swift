@@ -3858,21 +3858,26 @@ enum ExtensionShims {
         }
       }
 
-      // WebKit says "install" again when an extension is taken up afresh in
-      // the same session — after a Reload, or a worker brought back — where
-      // Chrome says "update"; extensions open their welcome page on
-      // "install". The first one of a session is marked, and any later one
-      // told as the update it is.
+      // WebKit says "install" for any load of the same version once the
+      // browser has been up five seconds: a relaunch with many extensions,
+      // a Reload, a worker brought back. Extensions open their welcome page
+      // on "install", and did on every launch. Search says what it is (see
+      // Extensions.installReason): an install once, an update for one taken
+      // up again in this run, and otherwise nothing — Chrome tells a worker
+      // nothing of the browser starting but onStartup.
       if (background && runtime.onInstalled && typeof runtime.onInstalled.addListener === "function") {
         let decided = null;
-        const seenBefore = () => decided || (decided = native("background.loadedBefore", []).then((v) => !!v, () => false));
+        const reason = () => decided || (decided = native("background.installReason", []).then((v) => v == null ? null : String(v), () => "install"));
         const add = runtime.onInstalled.addListener.bind(runtime.onInstalled);
         const remove = runtime.onInstalled.removeListener.bind(runtime.onInstalled);
         const wrapped = new Map();
         put(runtime.onInstalled, "addListener", (listener) => {
           const w = (details) => {
             if (!details || details.reason !== "install") return listener(details);
-            seenBefore().then((seen) => listener(seen ? { ...details, reason: "update", previousVersion: runtime.getManifest().version } : details));
+            reason().then((r) => {
+              if (r === "install") listener(details);
+              else if (r === "update") listener({ ...details, reason: "update", previousVersion: runtime.getManifest().version });
+            });
           };
           wrapped.set(listener, w);
           return add(w);
@@ -5153,10 +5158,10 @@ enum ExtensionShims {
             }
             owner.revive(id, because: "its worker wouldn't start")
             return nil
-        // Whether this extension was loaded before in this run of the
-        // browser — an "install" then is really a restart (see the shim).
-        case "background.loadedBefore":
-            return owner.loadedBefore.contains(id)
+        // What WebKit's "install" really is (see Extensions.installReason):
+        // "install", "update", or nothing to tell.
+        case "background.installReason":
+            return owner.installReason(id) ?? NSNull()
         // A page found the worker gone though WebKit believes it runs (see
         // the shim's ping).
         case "background.revive":
