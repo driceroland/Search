@@ -67,6 +67,9 @@ struct SideBar: View {
         var needed: CGFloat = 0
         /// The rows' own height, as last laid out.
         var drawn: CGFloat = 0
+        /// The tab in front and the room when the rows last fitted in a
+        /// room measured: the column on screen, a plain stack at its top.
+        var fitted: (active: Tab.ID?, height: CGFloat)?
     }
 
     /// A tab's line: taller with roomier tabs turned on.
@@ -362,8 +365,17 @@ struct SideBar: View {
                                 // once, before the rows had their height, the
                                 // scroll could be dropped and the tab you were on
                                 // left out of sight.
+                                //
+                                // Not when the rows grew past the same room
+                                // under the tab you were already on, a folder
+                                // opened: the stack was at its top, and
+                                // the scroll that takes over starts there too,
+                                // where Arc leaves it (a folder opened is
+                                // opened in place).
                                 .onAppear {
-                                    guard let id = browser.activeID else { return }
+                                    let stayed = room.fitted.map { $0.active == browser.activeID && $0.height == room.height } ?? false
+                                    room.fitted = nil
+                                    guard !stayed, let id = browser.activeID else { return }
                                     DispatchQueue.main.async {
                                         proxy.scrollTo(browser.activeSplit?.left ?? id, anchor: .center)
                                     }
@@ -411,6 +423,7 @@ struct SideBar: View {
 
     private func refit() {
         let now = max(room.needed, room.drawn) <= room.height
+        if now, room.height.isFinite { room.fitted = (browser.activeID, room.height) }
         if Store.testing { SideBar.measured = ["room": room.height, "needed": room.needed, "drawn": room.drawn, "fits": now ? 1 : 0] }
         if fits != now { fits = now }
     }
