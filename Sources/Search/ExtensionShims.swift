@@ -788,6 +788,15 @@ enum ExtensionShims {
       // calls sendResponse or returns true. So the extension's listeners are
       // gathered behind a single one of WebKit's that follows Chrome's rule.
       const worker = typeof ServiceWorkerGlobalScope !== "undefined" && root instanceof ServiceWorkerGlobalScope;
+      // The extension's declarativeNetRequest rules that change request
+      // headers, as it wrote them ("updateSessionRules:<id>" and
+      // "updateDynamicRules:<id>"). WebKit applies them to its own requests,
+      // but not to the extension's fetches the browser sends
+      // (ExtensionFetch), which then went without them: VOT's translation
+      // request lost the headers its rule sets for its service, and was
+      // refused. Those are handed over with each such fetch; the browser
+      // applies what matches, only to an address the extension has.
+      const headerRules = new Map();
       // Chrome's worker has no background page to get: neither
       // extension.getBackgroundPage nor runtime.getBackgroundPage is there.
       // WebKit has both, and code that tells its background from its pages
@@ -1106,7 +1115,8 @@ enum ExtensionShims {
             }
             const id = ++sequence + "-" + Math.random().toString(36).slice(2);
             const hello = { fetch: id, url: request.url, method: request.method, headers: [...request.headers], body,
-                            redirect: request.redirect, userAgent: navigator.userAgent, credentials };
+                            redirect: request.redirect, userAgent: navigator.userAgent, credentials,
+                            headerRules: headerRules.size ? [...headerRules.values()] : undefined };
             return await new Promise((resolve, reject) => {
               let port;
               try { port = connect("search.fetch"); } catch (e) { resolve(original.apply(self, args)); return; }
@@ -3161,6 +3171,7 @@ enum ExtensionShims {
         if (typeof dnr[name] !== "function") continue;
         const original = dnr[name].bind(dnr);
         put(dnr, name, (options = {}, callback) => {
+          const given = options;
           const ready = (rawGet[name] ? rawGet[name]() : Promise.resolve([])).catch(() => []).then((all) => {
             const present = new Set(all.map((r) => r.id));
             if (options && Array.isArray(options.removeRuleIds)) {
@@ -3198,18 +3209,55 @@ enum ExtensionShims {
               if (!at || !Array.isArray(opts.addRules) || left <= 0) throw e;
               const index = Number(at[1]);
               const rule = opts.addRules[index];
+              // A header WebKit has no name for (VOT's x-client-data): only
+              // that header is left out of the rule, the rest of it stays.
+              // The browser still applies the whole rule to the extension's
+              // own fetches it sends (see headerRules).
+              const unknown = /The header `([^`]+)` is not recognized/.exec(String(e && e.message));
+              if (unknown && rule && rule.action && rule.action.type === "modifyHeaders") {
+                const name = unknown[1].toLowerCase();
+                const keep = (list) => Array.isArray(list) ? list.filter((h) => !h || String(h.header).toLowerCase() !== name) : list;
+                const action = { ...rule.action, requestHeaders: keep(rule.action.requestHeaders), responseHeaders: keep(rule.action.responseHeaders) };
+                if (!action.requestHeaders || !action.requestHeaders.length) delete action.requestHeaders;
+                if (!action.responseHeaders || !action.responseHeaders.length) delete action.responseHeaders;
+                try { native("debug.error", ["declarativeNetRequest: header " + unknown[1] + " left out of rule " + rule.id + " — WebKit doesn't know it"]).catch(() => {}); } catch (x) {}
+                const mended = action.requestHeaders || action.responseHeaders ? { ...rule, action } : null;
+                return attempt({ ...opts, addRules: opts.addRules.flatMap((r, i) => i !== index ? [r] : mended ? [mended] : []) }, left - 1);
+              }
               try { native("debug.error", ["declarativeNetRequest: rule " + (rule && rule.id) + " left out — " + e.message]).catch(() => {}); } catch (x) {}
               return attempt({ ...opts, addRules: opts.addRules.filter((_, i) => i !== index) }, left - 1);
             }
           };
           const p = ready.then(() => attempt(options, 100));
           p.then(built, () => {});
+          // Its request-header rules, as it wrote them, for its own fetches
+          // the browser sends (see headerRules).
+          p.then(() => {
+            for (const id of (given && given.removeRuleIds) || []) headerRules.delete(name + ":" + id);
+            for (const rule of (given && given.addRules) || []) {
+              if (rule && rule.action && rule.action.type === "modifyHeaders" && Array.isArray(rule.action.requestHeaders) && headerRules.size < 500) {
+                try { headerRules.set(name + ":" + rule.id, JSON.parse(JSON.stringify(rule))); } catch (e) {}
+              }
+            }
+          }, () => {});
           // In a test run, an update that still fails is said, not only
           // handed back to an extension that may drop it.
           if (__SEARCH_VERBOSE__) p.catch((e) => { try { native("debug.error", ["declarativeNetRequest: " + name + " failed — " + (e && e.message)]).catch(() => {}); } catch (x) {} });
           if (typeof callback !== "function") return p;
           p.then(() => callback(), (e) => withLastError(e, callback));
         });
+      }
+      // The rules already in place when the worker starts again: WebKit's
+      // copy, which is all there is of them now.
+      if (dnr) for (const name of ["updateSessionRules", "updateDynamicRules"]) {
+        if (!rawGet[name]) continue;
+        rawGet[name]().then((all) => {
+          for (const rule of all || []) {
+            const key = name + ":" + rule.id;
+            if (rule && rule.action && rule.action.type === "modifyHeaders" && Array.isArray(rule.action.requestHeaders)
+                && !headerRules.has(key) && headerRules.size < 500) headerRules.set(key, rule);
+          }
+        }, () => {});
       }
 
       // Context menu entries for places Search has no menu for — the old

@@ -251,4 +251,63 @@ final class ExtensionFetchTests: XCTestCase {
         XCTAssertTrue(ExtensionFetch.loopback(URL(string: "http://127.0.0.1:1/")!))
         XCTAssertFalse(ExtensionFetch.loopback(URL(string: "http://localhost.example.com/")!))
     }
+
+    /// Chrome's urlFilter, as VOT's rules write it.
+    func testURLFilter() {
+        let m = { (f: String, a: String) in ExtensionFetch.urlFilterMatches(f, a, caseSensitive: false) }
+        XCTAssertTrue(m("|https://api.browser.yandex.ru/", "https://api.browser.yandex.ru/video-translation/translate"))
+        XCTAssertFalse(m("|https://api.browser.yandex.ru/", "https://evil.example/https://api.browser.yandex.ru/"), "anchored at the start")
+        XCTAssertTrue(m("||googlevideo.com/", "https://rr3---sn-x.googlevideo.com/videoplayback"))
+        XCTAssertTrue(m("||googlevideo.com/", "https://googlevideo.com/x"))
+        XCTAssertFalse(m("||googlevideo.com/", "https://notgooglevideo.com/x"), "a domain label, not any suffix")
+        XCTAssertTrue(m("example.com^", "https://example.com/"))
+        XCTAssertTrue(m("example.com^", "https://example.com"))
+        XCTAssertFalse(m("example.com^", "https://example.community/"))
+        XCTAssertTrue(m("/api/*/x|", "https://a.b/api/v1/x"))
+        XCTAssertFalse(m("/api/*/x|", "https://a.b/api/v1/xy"))
+    }
+
+    /// An extension's own header rules: what matches, by priority, and
+    /// never the headers that are the browser's, nor a line break.
+    func testHeaderRules() {
+        let url = URL(string: "https://api.browser.yandex.ru/video-translation/translate")!
+        let vot: [String: Any] = ["id": 9001, "priority": 1,
+            "action": ["type": "modifyHeaders", "requestHeaders": [
+                ["header": "Origin", "operation": "remove"],
+                ["header": "Sec-Vtrans-Sk", "operation": "set", "value": "k"],
+                ["header": "User-Agent", "operation": "set", "value": "YaBrowser"],
+                ["header": "Cookie", "operation": "set", "value": "stolen=1"],
+                ["header": "Host", "operation": "set", "value": "other.example"],
+                ["header": "Proxy-Authorization", "operation": "set", "value": "x"],
+                ["header": "X-Bad\r\nInjected", "operation": "set", "value": "1"],
+                ["header": "X-Val", "operation": "set", "value": "a\r\nB: c"],
+                ["header": "X-Lf", "operation": "set", "value": "a\nB: c"],
+            ]],
+            "condition": ["urlFilter": "|https://api.browser.yandex.ru/", "resourceTypes": ["xmlhttprequest"]]]
+        let changes = ExtensionFetch.headerChanges([vot], url: url, method: "POST")
+        XCTAssertEqual(changes.map(\.name), ["Origin", "Sec-Vtrans-Sk", "User-Agent"], "never Cookie, Host, Proxy-*, or a line break")
+        XCTAssertTrue(ExtensionFetch.headerChanges([vot], url: URL(string: "https://example.com/")!, method: "POST").isEmpty, "another address")
+
+        var request = URLRequest(url: url)
+        request.setValue("chrome-extension://x", forHTTPHeaderField: "Origin")
+        ExtensionFetch.apply(changes, to: &request)
+        XCTAssertNil(request.value(forHTTPHeaderField: "Origin"))
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Sec-Vtrans-Sk"), "k")
+
+        // Higher priority decides a header; a condition this can't judge,
+        // or a resource type that isn't a fetch, doesn't match.
+        let high: [String: Any] = ["id": 2, "priority": 5, "action": ["type": "modifyHeaders", "requestHeaders": [["header": "User-Agent", "operation": "set", "value": "high"]]], "condition": ["requestDomains": ["yandex.ru"]]]
+        XCTAssertEqual(ExtensionFetch.headerChanges([vot, high], url: url, method: "POST").first { $0.name == "User-Agent" }?.value, "high")
+        let initiator: [String: Any] = ["id": 3, "action": ["type": "modifyHeaders", "requestHeaders": [["header": "X-A", "operation": "set", "value": "1"]]], "condition": ["initiatorDomains": ["youtube.com"]]]
+        let frames: [String: Any] = ["id": 4, "action": ["type": "modifyHeaders", "requestHeaders": [["header": "X-B", "operation": "set", "value": "1"]]], "condition": ["resourceTypes": ["main_frame"]]]
+        XCTAssertTrue(ExtensionFetch.headerChanges([initiator, frames], url: url, method: "GET").isEmpty)
+    }
+
+    /// A header value with a line break in it, however written.
+    func testBreaksLine() {
+        XCTAssertTrue(ExtensionFetch.breaksLine("a\r\nb"), "CRLF is one Character to Swift")
+        XCTAssertTrue(ExtensionFetch.breaksLine("a\nb"))
+        XCTAssertTrue(ExtensionFetch.breaksLine("a\u{0}b"))
+        XCTAssertFalse(ExtensionFetch.breaksLine("plain value"))
+    }
 }

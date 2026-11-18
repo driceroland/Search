@@ -274,6 +274,141 @@ enum ExtensionFetch {
         }
     }
 
+    // MARK: - its own header rules
+
+    // An extension's declarativeNetRequest rules that change request
+    // headers apply, in Chrome, to its own requests too. WebKit applies them
+    // to the requests it sends, but a fetch sent here goes without: VOT's
+    // translation request lost the headers its rule sets for its service
+    // (Sec-Vtrans-*, its User-Agent, no Origin) and was refused. So the
+    // shim hands the extension's own rules over with each fetch, and the
+    // ones that match it are applied here: only for an extension that may
+    // use declarativeNetRequest, only to an address it has (every request
+    // here is one; a redirect is checked again), and never to the headers
+    // below, which are the browser's to set.
+
+    /// Never changed by a rule: how the request is framed and sent, and its
+    /// cookies (which come from the store, see `sign`).
+    nonisolated static let neverByRule: Set<String> = [
+        "host", "content-length", "transfer-encoding", "connection", "keep-alive", "te", "trailer", "upgrade", "expect",
+        "cookie", "cookie2", "accept-encoding",
+    ]
+
+    nonisolated static func ruleMayChange(_ name: String) -> Bool {
+        guard name.range(of: #"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"#, options: .regularExpression) != nil else { return false }
+        let lower = name.lowercased()
+        return !neverByRule.contains(lower) && !lower.hasPrefix("proxy-")
+    }
+
+    /// A header value that would end its line: CR, LF or NUL, looked for
+    /// one scalar at a time — "\r\n" is a single Character to Swift, and
+    /// a check for "\r" or "\n" passed it.
+    nonisolated static func breaksLine(_ value: String) -> Bool {
+        value.unicodeScalars.contains { $0 == "\r" || $0 == "\n" || $0 == "\0" }
+    }
+
+    struct HeaderChange: Equatable {
+        let name: String
+        let operation: String
+        let value: String?
+    }
+
+    /// What the rules that match this request do to its headers, the
+    /// highest priority first: once a rule has set or removed a header,
+    /// lower ones leave it alone; appends add up.
+    nonisolated static func headerChanges(_ rules: [[String: Any]], url: URL, method: String) -> [HeaderChange] {
+        let matching = rules.filter { rule in
+            guard let action = rule["action"] as? [String: Any], action["type"] as? String == "modifyHeaders" else { return false }
+            return ruleMatches(rule["condition"] as? [String: Any] ?? [:], url: url, method: method)
+        }.sorted {
+            let (a, b) = (($0["priority"] as? Int) ?? 1, ($1["priority"] as? Int) ?? 1)
+            return a != b ? a > b : (($0["id"] as? Int) ?? 0) < (($1["id"] as? Int) ?? 0)
+        }
+        var decided = Set<String>(), changes: [HeaderChange] = []
+        for rule in matching {
+            for entry in ((rule["action"] as? [String: Any])?["requestHeaders"] as? [[String: Any]]) ?? [] {
+                guard let name = entry["header"] as? String, ruleMayChange(name),
+                      let operation = entry["operation"] as? String, ["set", "remove", "append"].contains(operation) else { continue }
+                let value = entry["value"] as? String
+                if operation != "remove" {
+                    guard let value, !breaksLine(value) else { continue }
+                }
+                let key = name.lowercased()
+                if decided.contains(key) { continue }
+                if operation != "append" { decided.insert(key) }
+                changes.append(HeaderChange(name: name, operation: operation, value: value))
+            }
+        }
+        return changes
+    }
+
+    nonisolated static func apply(_ changes: [HeaderChange], to request: inout URLRequest) {
+        for change in changes {
+            switch change.operation {
+            case "remove": request.setValue(nil, forHTTPHeaderField: change.name)
+            case "set": request.setValue(change.value, forHTTPHeaderField: change.name)
+            default: if let value = change.value { request.addValue(value, forHTTPHeaderField: change.name) }
+            }
+        }
+    }
+
+    /// Whether a rule's condition takes this request, as Chrome reads it
+    /// for a request the extension itself makes: resource type
+    /// xmlhttprequest, from no tab and no site. A condition this can't
+    /// judge (domainType, initiator domains) doesn't match.
+    nonisolated static func ruleMatches(_ c: [String: Any], url: URL, method: String) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        let strings = { (key: String) in (c[key] as? [Any])?.compactMap { ($0 as? String)?.lowercased() } }
+        let ints = { (key: String) in (c[key] as? [Any])?.compactMap { $0 as? Int } }
+        let under = { (domains: [String]) in domains.contains { host == $0 || host.hasSuffix("." + $0) } }
+        if c["domainType"] != nil || c["initiatorDomains"] != nil || c["domains"] != nil { return false }
+        if let types = strings("resourceTypes"), !types.contains("xmlhttprequest") { return false }
+        if let types = strings("excludedResourceTypes"), types.contains("xmlhttprequest") { return false }
+        if let methods = strings("requestMethods"), !methods.contains(method.lowercased()) { return false }
+        if let methods = strings("excludedRequestMethods"), methods.contains(method.lowercased()) { return false }
+        if let domains = strings("requestDomains"), !under(domains) { return false }
+        if let domains = strings("excludedRequestDomains"), under(domains) { return false }
+        if let tabs = ints("tabIds"), !tabs.contains(-1) { return false }
+        if let tabs = ints("excludedTabIds"), tabs.contains(-1) { return false }
+        let sensitive = c["isUrlFilterCaseSensitive"] as? Bool ?? false
+        let address = url.absoluteString
+        if let filter = c["urlFilter"] as? String {
+            guard urlFilterMatches(filter, address, caseSensitive: sensitive) else { return false }
+        }
+        if let regex = c["regexFilter"] as? String {
+            guard address.range(of: regex, options: sensitive ? .regularExpression : [.regularExpression, .caseInsensitive]) != nil else { return false }
+        }
+        return true
+    }
+
+    /// Chrome's urlFilter: `||` anchors at the start of a domain label,
+    /// `|` at the start or end of the address, `*` is anything, `^` a
+    /// separator (or the end).
+    nonisolated static func urlFilterMatches(_ filter: String, _ address: String, caseSensitive: Bool) -> Bool {
+        var rest = Substring(filter), pattern = ""
+        if rest.hasPrefix("||") { pattern = #"^[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^/?#]*\.)?"#; rest = rest.dropFirst(2) }
+        else if rest.hasPrefix("|") { pattern = "^"; rest = rest.dropFirst() }
+        var end = ""
+        if rest.hasSuffix("|") { end = "$"; rest = rest.dropLast() }
+        for ch in rest {
+            switch ch {
+            case "*": pattern += ".*"
+            case "^": pattern += "(?:[^A-Za-z0-9_.%-]|$)"
+            default: pattern += NSRegularExpression.escapedPattern(for: String(ch))
+            }
+        }
+        pattern += end
+        return address.range(of: pattern, options: caseSensitive ? .regularExpression : [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// Whether it may use declarativeNetRequest at all.
+    static func mayUseHeaderRules(_ context: WKWebExtensionContext) -> Bool {
+        [WKWebExtension.Permission.declarativeNetRequest, .declarativeNetRequestWithHostAccess].contains {
+            let status = context.permissionStatus(for: $0)
+            return status == .grantedExplicitly || status == .grantedImplicitly
+        }
+    }
+
     // MARK: - the request
 
     /// Headers the page may not set, as fetch forbids them; the browser
@@ -338,6 +473,7 @@ enum ExtensionFetch {
         private var store: WKWebsiteDataStore?
         private var id: String?
         private var mode = "follow"
+        private var headerRules: [[String: Any]] = []
         private var redirected = false
         private var stopped = false
         private var ended = false
@@ -393,12 +529,18 @@ enum ExtensionFetch {
             var request = URLRequest(url: url)
             request.httpMethod = method
             for pair in message["headers"] as? [[String]] ?? [] where pair.count == 2 && sendable(pair[0])
-                && !pair[1].contains(where: { $0 == "\r" || $0 == "\n" || $0 == "\0" }) {
+                && !ExtensionFetch.breaksLine(pair[1]) {
                 request.addValue(pair[1], forHTTPHeaderField: pair[0])
             }
             request.setValue(origin, forHTTPHeaderField: "Origin")
             if let agent = message["userAgent"] as? String { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
             if let body = message["body"] as? String { request.httpBody = Data(base64Encoded: body) }
+            if ExtensionFetch.mayUseHeaderRules(context), let rules = message["headerRules"] as? [[String: Any]] {
+                headerRules = Array(rules.prefix(500))
+                let changes = ExtensionFetch.headerChanges(headerRules, url: url, method: method)
+                ExtensionFetch.apply(changes, to: &request)
+                if !changes.isEmpty { ExtensionFetch.note(["ruleHeaders": changes.map { "\($0.operation) \($0.name)" }, "for": url.absoluteString]) }
+            }
             let unsigned = request
             Task { @MainActor in
                 var request = unsigned
@@ -459,6 +601,7 @@ enum ExtensionFetch {
                     return handler(nil)
                 }
                 var hop = ExtensionFetch.hop(request, from: response.url)
+                ExtensionFetch.apply(ExtensionFetch.headerChanges(self.headerRules, url: next, method: hop.httpMethod ?? "GET"), to: &hop)
                 await self.sign(&hop)
                 self.redirected = true
                 handler(hop)
