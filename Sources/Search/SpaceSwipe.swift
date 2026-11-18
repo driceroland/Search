@@ -20,6 +20,7 @@ final class SpaceSwipe {
     private var monitor: Any?
     private var buttons: Any?
     private var interrupts: Any?
+    private var pointer: Any?
     private enum Axis { case undecided, across, along }
     private var axis = Axis.undecided
     private var tracking = false
@@ -63,6 +64,10 @@ final class SpaceSwipe {
 
     /// How long after a space comes before another can.
     static let rest: TimeInterval = 0.4
+    /// How long after a stroke a stroke the other way is the hand coming
+    /// back, let go by (began): for all of `rest`, a quick stroke back to
+    /// the space just left often did nothing.
+    static let back: TimeInterval = 0.2
 
     /// How far the fingers have to go for the next space to come: 50
     /// points in the column; in a bar only 52 tall, most of its height, so
@@ -89,6 +94,14 @@ final class SpaceSwipe {
         interrupts = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { event in
             if event.type != .keyDown || !event.modifierFlags.contains(.control) {
                 MainActor.assumeIsolated { SpaceSwipe.shared.interrupted() }
+            }
+            return event
+        }
+        // The pointer setting off once the rows stand still: the hand is
+        // going for a tab, not on to another space (landSoon).
+        pointer = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
+            if abs(event.deltaX) + abs(event.deltaY) > 2 {
+                MainActor.assumeIsolated { SpaceSwipe.shared.reached() }
             }
             return event
         }
@@ -230,19 +243,31 @@ final class SpaceSwipe {
         }
     }
 
-    /// The space on its way in taken once the hand has been still a moment:
-    /// taken the moment its rows stopped, a quarter of a second of work for
-    /// a long space, a stroke begun just after waited for it. Its rows in
-    /// the map are drawn as the column's will be, so nothing shows it.
+    /// The space on its way in taken once the hand has been still a moment,
+    /// or as the pointer sets off (reached): taken the moment its rows
+    /// stopped, a quarter of a second of work for a long space, a stroke
+    /// begun just after waited for it — and a third of a second after, a
+    /// quick next stroke still ran into it, and started late or not at all.
+    /// Its rows in the map are drawn as the column's will be, so nothing
+    /// shows it.
     private func landSoon(_ browser: Browser) {
         landing?.cancel()
         guard browser.spaceComing != nil else { return }
+        // For the pointer's moves to be told (reached).
+        browser.window?.acceptsMouseMovedEvents = true
         let work = DispatchWorkItem { [weak self, weak browser] in
             guard let self, let browser, !self.fingersDown, !(self.tracking && self.holding) else { return }
             self.land(browser)
         }
         landing = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+    }
+
+    /// The pointer moved: the space on its way in taken, once its rows
+    /// stand still and no fingers are on them.
+    private func reached() {
+        guard let browser, browser.spaceComing != nil, SwipeGlide.idle, !fingersDown, !tracking else { return }
+        land(browser)
     }
 
     /// A key or a click: the space on its way in taken first, for it to
@@ -403,7 +428,7 @@ final class SpaceSwipe {
         // it goes back the way it came (moved): that is the hand coming back.
         // On the same way it is the next space, quickly — every stroke let
         // go by for 0.4 s, a quick run across the spaces stalled at each.
-        early = Date() <= resting
+        early = Date() <= resting.addingTimeInterval(SpaceSwipe.back - SpaceSwipe.rest)
         ignoring = false
         tracking = true
     }
@@ -418,7 +443,10 @@ final class SpaceSwipe {
         gathered.height += aside
         if axis == .undecided {
             guard abs(gathered.width) + abs(gathered.height) > 6 else { return false }
-            axis = abs(gathered.width) > abs(gathered.height) * 1.5 ? .across : .along
+            // A quick stroke is seldom quite level: at one and a half
+            // times as far across as up or down, it was often taken for a
+            // scroll of the rows.
+            axis = abs(gathered.width) > abs(gathered.height) * 1.2 ? .across : .along
             // Scrolling the rows: those of the space on its way in.
             if axis == .along { land(browser) }
         }
