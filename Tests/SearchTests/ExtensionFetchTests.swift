@@ -233,4 +233,22 @@ final class ExtensionFetchTests: XCTestCase {
         XCTAssertNil(ExtensionFetch.only([a, b]), "windows of different profiles or spaces: no telling whose sign-in")
         XCTAssertNil(ExtensionFetch.only([NSObject]()))
     }
+
+    /// An app on this Mac named with a port (WebKit drops such a pattern):
+    /// only loopback, only the scheme, host and port named.
+    func testLoopbackNamedWithAPort() {
+        let manifest: [String: Any] = ["host_permissions": ["http://localhost:41595/*", "*://*.example.com/*"],
+                                       "optional_host_permissions": ["http://127.0.0.1:9000/*"]]
+        let declares = { (address: String) in ExtensionFetch.declares(URL(string: address)!, in: manifest) }
+        XCTAssertTrue(declares("http://localhost:41595/api/item/addFromURL"))
+        XCTAssertFalse(declares("http://localhost:41596/"), "another port")
+        XCTAssertFalse(declares("https://localhost:41595/"), "another scheme")
+        XCTAssertFalse(declares("http://127.0.0.1:41595/"), "another host")
+        XCTAssertFalse(declares("http://127.0.0.1:9000/"), "optional, not granted")
+        XCTAssertFalse(ExtensionFetch.declares(URL(string: "http://example.com:8080/")!,
+                                               in: ["host_permissions": ["http://example.com:8080/*"]]), "loopback only")
+        XCTAssertTrue(ExtensionFetch.declares(URL(string: "http://[::1]:5000/")!, in: ["permissions": ["*://[::1]:*/*"]]))
+        XCTAssertTrue(ExtensionFetch.loopback(URL(string: "http://127.0.0.1:1/")!))
+        XCTAssertFalse(ExtensionFetch.loopback(URL(string: "http://localhost.example.com/")!))
+    }
 }

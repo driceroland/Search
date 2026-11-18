@@ -13,9 +13,11 @@ import WebKit
 //
 // So the shim sends such a fetch — credentials "include" from the
 // extension's own page or worker, or "same-origin" (the default) from its
-// page, to another http(s) origin — here, over a
-// native port. WebKit says which extension opened the port; no page or
-// other extension can speak for it. Here, and only for an address that
+// page, to another http(s) origin, and any fetch from its worker to an
+// app on this Mac (localhost: WebKit holds a worker to CORS there, and
+// Eagle's app sends no CORS headers) — here, over a native port. WebKit
+// says which extension opened the port; no page or other extension can
+// speak for it. Here, and only for an address that
 // extension has been granted (checked again on every redirect: a hop to an
 // address it isn't granted fails the fetch), it goes out with the cookies a
 // top-level request would carry — Lax and Strict alike, as Chrome sends
@@ -63,7 +65,37 @@ enum ExtensionFetch {
     static func granted(_ url: URL, to context: WKWebExtensionContext) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return false }
         let status = context.permissionStatus(for: url)
-        return status == .grantedExplicitly || status == .grantedImplicitly
+        if status == .grantedExplicitly || status == .grantedImplicitly { return true }
+        return loopback(url) && declares(url, in: context.webExtension.manifest)
+    }
+
+    /// An app on this Mac its manifest names with a port, as Chrome takes
+    /// it: "http://localhost:41595/*" (好采助手's, for Eagle). WebKit can't
+    /// parse a pattern with a port and drops it, so the extension was
+    /// granted nothing there. Only loopback, only the scheme, host and port
+    /// named, and only what it asks for outright (host_permissions, or an
+    /// MV2 extension's permissions), never an optional one.
+    nonisolated static func declares(_ url: URL, in manifest: [String: Any]) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else { return false }
+        let port = url.port ?? (scheme == "https" ? 443 : 80)
+        let named = ((manifest["host_permissions"] as? [Any] ?? []) + (manifest["permissions"] as? [Any] ?? [])).compactMap { $0 as? String }
+        let shape = #"^(\*|https?)://(localhost|127\.0\.0\.1|\[::1\]):(\d{1,5}|\*)/"#
+        for pattern in named {
+            guard let found = pattern.range(of: shape, options: .regularExpression) else { continue }
+            let parts = pattern[found].dropLast().components(separatedBy: "://")
+            guard parts.count == 2, let colon = parts[1].lastIndex(of: ":") else { continue }
+            let (s, h, p) = (parts[0].lowercased(), String(parts[1][..<colon]).lowercased(), String(parts[1][parts[1].index(after: colon)...]))
+            guard s == "*" ? (scheme == "http" || scheme == "https") : s == scheme else { continue }
+            guard h.trimmingCharacters(in: CharacterSet(charactersIn: "[]")) == host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")) else { continue }
+            if p == "*" || Int(p) == port { return true }
+        }
+        return false
+    }
+
+    /// An app on this Mac: localhost, 127.0.0.1 or [::1].
+    nonisolated static func loopback(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
+        return ["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host?.lowercased() ?? "")
     }
 
     // MARK: - which store
@@ -344,13 +376,20 @@ enum ExtensionFetch {
             guard ExtensionFetch.on, let context,
                   let address = message["url"] as? String, let url = URL(string: address),
                   ExtensionFetch.granted(url, to: context),
-                  ["follow", "manual", "error"].contains(mode),
-                  let store = ExtensionFetch.store(for: context)
+                  ["follow", "manual", "error"].contains(mode)
             else {
                 ExtensionFetch.note(["pass": message["url"] as? String ?? "", "extension": context?.uniqueIdentifier ?? ""])
                 return pass()
             }
-            self.store = store
+            // An app on this Mac is reached without a store: a worker's fetch
+            // there comes here for CORS (see the shim), not for cookies, and
+            // then goes with none when it isn't known whose to send.
+            let store = ExtensionFetch.store(for: context)
+            guard store != nil || ExtensionFetch.loopback(url) else {
+                ExtensionFetch.note(["pass": address, "extension": context.uniqueIdentifier])
+                return pass()
+            }
+            self.store = message["credentials"] as? String == "omit" ? nil : store
             var request = URLRequest(url: url)
             request.httpMethod = method
             for pair in message["headers"] as? [[String]] ?? [] where pair.count == 2 && sendable(pair[0])

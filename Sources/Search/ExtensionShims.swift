@@ -664,6 +664,26 @@ enum ExtensionShims {
       // calls sendResponse or returns true. So the extension's listeners are
       // gathered behind a single one of WebKit's that follows Chrome's rule.
       const worker = typeof ServiceWorkerGlobalScope !== "undefined" && root instanceof ServiceWorkerGlobalScope;
+      // Chrome's worker has no background page to get: neither
+      // extension.getBackgroundPage nor runtime.getBackgroundPage is there.
+      // WebKit has both, and code that tells its background from its pages
+      // by `getBackgroundPage() === window` then reads `window`, which a
+      // worker doesn't have: Eagle's worker threw so as it loaded its logger,
+      // tabs and fetch, never answered its pages, and saved nothing. WebKit
+      // won't let the method be removed or covered on its own objects, nor
+      // the worker's `chrome` be replaced (its events stop). So the name
+      // `window` reads as undefined in the worker instead of throwing:
+      // `typeof window` and `self.window` are as before, and a worker that
+      // sets `self.window` itself gets what it set.
+      if (worker && !("window" in root)) {
+        try {
+          Object.defineProperty(root, "window", {
+            configurable: true, enumerable: false,
+            get: () => undefined,
+            set(value) { Object.defineProperty(root, "window", { value, configurable: true, writable: true, enumerable: true }); },
+          });
+        } catch (e) {}
+      }
       // The extension's background, whichever WebKit runs: the worker, or a
       // page — it picks the page when a manifest names scripts as well.
       const background = worker || (!inContent && typeof document !== "undefined" && (() => {
@@ -932,7 +952,23 @@ enum ExtensionShims {
             credentials = init && init.credentials !== undefined ? String(init.credentials)
               : (input instanceof Request ? input.credentials : "same-origin");
           } catch (e) { return original.apply(self, args); }
-          if (credentials !== "include" && (worker || credentials !== "same-origin")) return original.apply(self, args);
+          // From the worker, also any fetch to an app on this Mac (localhost,
+          // 127.0.0.1, [::1]): WebKit holds a worker's fetch to CORS even for
+          // a host the extension declares, and an app's local server
+          // (Eagle's, on localhost:41595) sends no CORS headers, as Chrome
+          // never asks for them. The request got there and its answer was
+          // thrown away: "Load failed", and nothing saved to Eagle. The
+          // browser still sends it only if the extension has been granted
+          // the address.
+          const loopback = () => {
+            try {
+              const u = new URL(input instanceof Request ? input.url : String(input), root.location.href);
+              return /^https?:$/.test(u.protocol) && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+            } catch (e) { return false; }
+          };
+          if (credentials !== "include" && (worker || credentials !== "same-origin") && !(worker && loopback())) {
+            return original.apply(self, args);
+          }
           // A copy to read, so the page's own Request keeps its body for
           // WebKit's fetch if the browser passes.
           let request, url;
@@ -946,7 +982,7 @@ enum ExtensionShims {
             }
             const id = ++sequence + "-" + Math.random().toString(36).slice(2);
             const hello = { fetch: id, url: request.url, method: request.method, headers: [...request.headers], body,
-                            redirect: request.redirect, userAgent: navigator.userAgent };
+                            redirect: request.redirect, userAgent: navigator.userAgent, credentials };
             return await new Promise((resolve, reject) => {
               let port;
               try { port = connect("search.fetch"); } catch (e) { resolve(original.apply(self, args)); return; }
