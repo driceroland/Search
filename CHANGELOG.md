@@ -11,6 +11,15 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+
+## 1.0.15 — 18 November 2026
+
 ### Fixed
 
 - A page you bookmark (Add This Page, ⇧⌘B) goes into the folder you picked last on a bookmark's card, as in Safari and Chrome, instead of the top level every time. Each profile remembers its own; a page already kept stays where it is, and with the folder gone it's the top level again.
@@ -56,13 +65,6 @@ in [ROADMAP.md](ROADMAP.md).
 - A space can wear a gradient instead of one colour, if you like. The space's menu › Colour… opens one small panel with everything a space can wear: its icon on its look at the top, then the colours and None, a few ready-made gradients, and a gradient of your own (two or three colours, which way they run, a faint grain). The window changes as you choose; click elsewhere to keep it, or press Escape to put back what was there. A gradient washes the tabs, the bookmarks bar and the ground around the page as faintly as a colour does, and goes with the space when you switch or swipe. If that is too quiet for you, the panel's Strength makes a colour or a gradient Rich or Vivid: a deeper tint in light mode and a deep, saturated colour in dark mode, closer to Arc's themes, with the tab titles, the open tab and the pins kept as readable as on Subtle, which stays the default. Spaces without one look exactly as before, and it syncs with your other Macs.
 - Spread two fingers on a peek to open it as a tab, as zooming into it: the panel grows a little with your fingers, the trackpad taps once when letting go will open it, and a lighter tap when your fingers come back under that. Let go past it and the panel grows to the whole page and simply is the tab, with no flash. A page already zoomed in keeps its pinch.
 - Settings › Appearance › Slide the column in and out: the tab column comes out on a quarter-second ease-out and goes back on a slightly shorter ease-in, as Arc's does, for ⌘S and for a column that hides until the pointer reaches the edge alike, the window's buttons riding with it. The page slides with it and is laid out again only once, as before. Off by default: the column keeps its short, quick slide. `python3 Tests/slide_column.py` checks it.
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
-
 
 ## 1.0.14 — 17 November 2026
 

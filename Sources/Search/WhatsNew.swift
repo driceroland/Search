@@ -38,6 +38,18 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "⌘1–⌘9 switch spaces", detail: "As in Arc: the tabs move to ⌃1–⌃9.",
+               since: "1.0.15", get: { $0.spacesOnCommand }, set: { $0.spacesOnCommand = $1 },
+               shown: { $0.usesSpaces }),
+        Toggle(title: "Same tabs in every window", detail: "Every window lists the same open tabs, as Arc's sidebar does.",
+               since: "1.0.15", get: { $0.mirrorsTabs }, set: { $0.mirrorsTabs = $1 }),
+        Toggle(title: "⌥-click a link opens it in Split View", detail: "Beside the page you're reading.",
+               since: "1.0.15", get: { $0.optionClickSplits }, set: { $0.optionClickSplits = $1 }),
+        Toggle(title: "Bounce at the top and bottom", detail: "Pages stretch past their ends and spring back, as in Safari.",
+               since: "1.0.15", get: { $0.bounces }, set: { $0.bounces = $1 }),
+        Toggle(title: "Slide the column in and out", detail: "An eased slide for ⌘S and the column that hides.",
+               since: "1.0.15", get: { $0.slidesColumn }, set: { $0.slidesColumn = $1 }),
+
         Toggle(title: "Your own style for a site", detail: "Edit Site Style… in the View menu: your CSS for the site you're on, as Arc's Boosts.",
                since: "1.0.14", get: { $0.sitesStyles }, set: { $0.sitesStyles = $1 }),
         Toggle(title: "Keep the card in full screen", detail: "The page keeps its room and rounded corners when the window fills the screen.",
@@ -121,6 +133,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.15"),
         Release(version: "1.0.14"),
         Release(version: "1.0.13"),
         Release(version: "1.0.12"),
@@ -180,6 +193,29 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.15", date: "18 November 2026",
+            headline: "Space gradients, extensions that work, coding agents, and a day of your fixes.",
+            new: [
+                "A gradient or a stronger colour for a space. The space's menu › Colour….",
+                "The same tabs in every window. Settings › Tabs.",
+                "⌘1–⌘9 switch spaces, as in Arc. Settings › Spaces & Pins.",
+                "Email links open in Gmail, Outlook.com, Fastmail or Proton Mail. Settings › General.",
+                "Choose where each extension runs: all sites, some, or on click. Settings › Extensions.",
+                "Claude Code or Codex can browse in tabs of their own while you watch. Settings › About › Developer.",
+            ],
+            better: [
+                "Pages load faster with extensions on.",
+                "Spread two fingers on a peek to open it as a tab.",
+                "A right-click anywhere in the tab column has a menu.",
+            ],
+            fixed: [
+                "Eagle, Cosmos, Raindrop.io, Language Reactor and Voice-over-Translation.",
+                "Signing in to X with passkeys off, and 1Password passkeys.",
+                "Claude's side panel once signed in.",
+                "Extensions reopening their welcome tab at every launch.",
+            ]
+        ),
         Notes(
             version: "1.0.14", date: "17 November 2026",
             headline: "Live folders, your own style for a site, space colours on the window, and your fixes.",
